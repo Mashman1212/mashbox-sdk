@@ -1,0 +1,15 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Unity temporary (in case a dev project touches this repo locally)
+Library/
+Temp/
+Obj/
+Logs/

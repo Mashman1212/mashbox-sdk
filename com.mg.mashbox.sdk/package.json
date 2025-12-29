@@ -1,0 +1,10 @@
+{
+  "name": "com.mg.mashbox.sdk",
+  "displayName": "MashBox Modding SDK",
+  "version": "0.1.0",
+  "unity": "2022.3",
+  "description": "Public modding API for MashBox",
+  "author": {
+    "name": "MG"
+  }
+}
