@@ -16,5 +16,7 @@ namespace MashBoxSDK.Clothing
         TankTop,
         
         Shoes,
+        
+        Body,
     }
 }
