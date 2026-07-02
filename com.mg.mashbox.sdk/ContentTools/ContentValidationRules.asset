@@ -1,0 +1,1872 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f3192067a998d74986964b8ab729773, type: 3}
+  m_Name: ContentValidationRules
+  m_EditorClassIdentifier: 
+  SuperTypes:
+  - Human
+  - Scooter
+  - BMX
+  - MTB
+  - Drone
+  - Marker
+  Colors:
+  - Black
+  - Blue
+  - Red
+  - Green
+  - Purple
+  - Raw
+  - Chrome
+  - Teal
+  - Tan
+  - Orange
+  - Yellow
+  - Pink
+  - White
+  - Grey
+  - Brown
+  - Magenta
+  - Unique
+  - Gold
+  - Oil Slick
+  - Platinum
+  - Pearl
+  - Rust
+  - Blood
+  - Wood
+  - Fluorescent
+  - Pastel
+  - Oil
+  - Slick
+  - Aluminum
+  - Anodized
+  - Turquoise
+  - Titanium
+  - Silver
+  - Brass
+  - Rasta
+  - Grafitti
+  - Satin
+  - Sour
+  - Translucent
+  - Clear
+  - Powder
+  - Apple
+  - Copper
+  - Coated
+  - wall
+  - Wall
+  - Cream
+  - Camo
+  - Null
+  AllowedPairs:
+  - SuperType: Human
+    Types:
+    - Bust
+    - Body
+    - Shirt
+    - Pants
+    - Socks
+    - Shoes
+    - Hat
+    - Gloves
+    - Eyewear
+    - Accessory
+    - Full Skin
+  - SuperType: Marker
+    Types:
+    - Base
+  - SuperType: Drone
+    Types:
+    - Body
+    - Ammo
+  - SuperType: Scooter
+    Types:
+    - Deck
+    - Bars
+    - Clamp
+    - Forks
+    - Headset
+    - Griptape
+    - Wheel
+    - Peg
+    - Urethane
+    - Grip
+    - Bar End
+  - SuperType: BMX
+    Types:
+    - Frame
+    - Bars
+    - Bar End
+    - Forks
+    - Headset
+    - BB
+    - Chain
+    - CrankArm
+    - Front Hub
+    - Rear Hub
+    - Grip
+    - Hub Guard
+    - Mag
+    - Nipples
+    - Pedal
+    - Peg
+    - Rim
+    - Seat
+    - Seat Clamp
+    - Seat Post
+    - Spokes
+    - Sprocket
+    - Stem
+    - Stem Bolt
+    - Stem Cap
+    - Tire
+    - Valve Cap
+  - SuperType: MTB
+    Types:
+    - Frame
+    - Bars
+    - Bar End
+    - Forks
+    - Headset
+    - BB
+    - Chain
+    - CrankArm
+    - Front Hub
+    - Brake Lever
+    - Brake Rotor
+    - Brake Caliper
+    - Shifter
+    - Derailleur
+    - Cassette
+    - Rear Hub
+    - Grip
+    - Mag
+    - Nipples
+    - Pedal
+    - Peg
+    - Rim
+    - Seat
+    - Seat Clamp
+    - Seat Post
+    - Spokes
+    - Sprocket
+    - Stem
+    - Stem Bolt
+    - Stem Cap
+    - Tire
+    - Valve Cap
+  ItemRules:
+  - AppliesToSuperType: 0
+    AppliesToType: 24
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 4
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 2048
+    - ShaderProperty: _MaskMap
+      MaxSize: 2048
+    - ShaderProperty: _NormalMap
+      MaxSize: 2048
+    - ShaderProperty: _StickerMap
+      MaxSize: 2048
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 2048
+    - ShaderProperty: _DetailMap
+      MaxSize: 2048
+    MaxVertexCount: 15000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 25
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 4
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 2048
+    - ShaderProperty: _MaskMap
+      MaxSize: 2048
+    - ShaderProperty: _NormalMap
+      MaxSize: 2048
+    - ShaderProperty: _StickerMap
+      MaxSize: 2048
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 2048
+    - ShaderProperty: _DetailMap
+      MaxSize: 2048
+    MaxVertexCount: 20000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 26
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 2
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 2048
+    - ShaderProperty: _MaskMap
+      MaxSize: 2048
+    - ShaderProperty: _NormalMap
+      MaxSize: 2048
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    MaxVertexCount: 15000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 27
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 2
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 2048
+    - ShaderProperty: _MaskMap
+      MaxSize: 2048
+    - ShaderProperty: _NormalMap
+      MaxSize: 2048
+    - ShaderProperty: _StickerMap
+      MaxSize: 2048
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 2048
+    - ShaderProperty: _DetailMap
+      MaxSize: 2048
+    MaxVertexCount: 15000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 28
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 1024
+    - ShaderProperty: _NormalMap
+      MaxSize: 1024
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    MaxVertexCount: 5000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 29
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    MaxVertexCount: 15000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 30
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 31
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 2
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 1024
+    - ShaderProperty: _NormalMap
+      MaxSize: 1024
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 32
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 33
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    MaxVertexCount: 5000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 48
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 1024
+    - ShaderProperty: _NormalMap
+      MaxSize: 1024
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 0
+    AppliesToType: 49
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 2
+    MaxTextureDataMB:
+      MB: 10
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 2048
+    - ShaderProperty: _MaskMap
+      MaxSize: 2048
+    - ShaderProperty: _NormalMap
+      MaxSize: 2048
+    - ShaderProperty: _StickerMap
+      MaxSize: 2048
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 2048
+    - ShaderProperty: _DetailMap
+      MaxSize: 2048
+    MaxVertexCount: 20000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 1
+    AppliesToType: 25
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 4
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 2048
+    - ShaderProperty: _MaskMap
+      MaxSize: 2048
+    - ShaderProperty: _NormalMap
+      MaxSize: 2048
+    - ShaderProperty: _StickerMap
+      MaxSize: 2048
+    - ShaderProperty: _DetailMap
+      MaxSize: 2048
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 2048
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 2048
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 2048
+    MaxVertexCount: 20000
+    MaxRenderers: 6
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 2
+    AppliesToType: 34
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 2
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 1024
+    - ShaderProperty: _NormalMap
+      MaxSize: 1024
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 1024
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 20000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 0
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Mesh
+    - Forks_Anchor
+    - Headset_Anchor
+    - RearWheel_Anchor
+    - RearWheel_Anchor/Rear_Left_Peg_Anchor
+    - RearWheel_Anchor/Rear_Right_Peg_Anchor
+    - RearWheel_Anchor/Rear_Right_HubGuard_Anchor
+    - RearWheel_Anchor/Rear_Left_HubGuard_Anchor
+    - SeatClamp_Anchor
+    - SeatPost_Anchor
+    - BB_Anchor
+    PreferredOrientations:
+    - ChildPath: RearWheel_Anchor/Rear_Left_Peg_Anchor
+      Forward: 2
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    - ChildPath: RearWheel_Anchor/Rear_Right_Peg_Anchor
+      Forward: 3
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    - ChildPath: RearWheel_Anchor/Rear_Right_HubGuard_Anchor
+      Forward: 3
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    - ChildPath: RearWheel_Anchor/Rear_Left_HubGuard_Anchor
+      Forward: 2
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 4
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 1024
+    - ShaderProperty: _NormalMap
+      MaxSize: 1024
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 1024
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 1024
+    MaxVertexCount: 20000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 1
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Left_Grip_Anchor
+    - Right_Grip_Anchor
+    - Left_BarEnd_Anchor
+    - Right_BarEnd_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 2
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - FrontWheel_Anchor
+    - FrontWheel_Anchor/Front_Left_Peg_Anchor
+    - FrontWheel_Anchor/Front_Right_Peg_Anchor
+    - FrontWheel_Anchor/Front_Left_HubGuard_Anchor
+    - FrontWheel_Anchor/Front_Right_HubGuard_Anchor
+    PreferredOrientations:
+    - ChildPath: FrontWheel_Anchor
+      Forward: 0
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    - ChildPath: FrontWheel_Anchor/Front_Left_Peg_Anchor
+      Forward: 2
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    - ChildPath: FrontWheel_Anchor/Front_Right_Peg_Anchor
+      Forward: 3
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    - ChildPath: FrontWheel_Anchor/Front_Left_HubGuard_Anchor
+      Forward: 2
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    - ChildPath: FrontWheel_Anchor/Front_Right_HubGuard_Anchor
+      Forward: 3
+      Up: 4
+      Tolerance: 5
+      IsWarning: 1
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 3
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Stem_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 4
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Sprocket_Anchor
+    - Left_CrankArm_Anchor
+    - Right_CrankArm_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.25
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 128
+    - ShaderProperty: _MaskMap
+      MaxSize: 128
+    - ShaderProperty: _NormalMap
+      MaxSize: 128
+    - ShaderProperty: _StickerMap
+      MaxSize: 128
+    - ShaderProperty: _DetailMap
+      MaxSize: 128
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 128
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 128
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 5
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Pedal_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 5000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 6
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Seat_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 7
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.25
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 8
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 9
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Axle
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 2
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 10
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.25
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 128
+    - ShaderProperty: _MaskMap
+      MaxSize: 128
+    - ShaderProperty: _NormalMap
+      MaxSize: 128
+    - ShaderProperty: _StickerMap
+      MaxSize: 128
+    - ShaderProperty: _DetailMap
+      MaxSize: 128
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 128
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 128
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 11
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Bars_Anchor
+    - StemCap_Anchor
+    - StemBolt_Anchor_1
+    - StemBolt_Anchor_2
+    - StemBolt_Anchor_3
+    - StemBolt_Anchor_4
+    - StemBolt_Anchor_5
+    - StemBolt_Anchor_6
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 12
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.25
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 128
+    - ShaderProperty: _MaskMap
+      MaxSize: 128
+    - ShaderProperty: _NormalMap
+      MaxSize: 128
+    - ShaderProperty: _StickerMap
+      MaxSize: 128
+    - ShaderProperty: _DetailMap
+      MaxSize: 128
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 128
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 128
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 1000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 13
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 2
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 5000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 14
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 1000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 15
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Valve_Anchor
+    - HubDriver
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 1024
+    - ShaderProperty: _NormalMap
+      MaxSize: 1024
+    - ShaderProperty: _StickerMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 1024
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 1024
+    MaxVertexCount: 15000
+    MaxRenderers: 2
+    MaxDistinctMaterials: 2
+  - AppliesToSuperType: 3
+    AppliesToType: 23
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.25
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 128
+    - ShaderProperty: _MaskMap
+      MaxSize: 128
+    - ShaderProperty: _NormalMap
+      MaxSize: 128
+    - ShaderProperty: _StickerMap
+      MaxSize: 128
+    - ShaderProperty: _DetailMap
+      MaxSize: 128
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 128
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 128
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 36
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 39
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 128
+    - ShaderProperty: _MaskMap
+      MaxSize: 128
+    - ShaderProperty: _NormalMap
+      MaxSize: 128
+    - ShaderProperty: _StickerMap
+      MaxSize: 128
+    - ShaderProperty: _DetailMap
+      MaxSize: 128
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 128
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 128
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 40
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 41
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 42
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Standard
+    - DriveSide
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 5000
+    MaxRenderers: 2
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 43
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Valve_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 44
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 45
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - HubDriver
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 5000
+    MaxRenderers: 2
+    MaxDistinctMaterials: 2
+  - AppliesToSuperType: 3
+    AppliesToType: 46
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 4
+    MaxTextureDataMB:
+      MB: 2
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _SidewallMaskMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _MudBaseMap
+      MaxSize: 512
+    - ShaderProperty: _MudNormalMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 3
+    AppliesToType: 47
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 5
+    MaxTextureDataMB:
+      MB: 0.25
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 128
+    - ShaderProperty: _NormalMap
+      MaxSize: 128
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 1000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 1
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Left_BarEnd_Anchor
+    - Right_Grip_Anchor
+    - Left_Grip_Anchor
+    - Right_BarEnd_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 2
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - FrontWheel_Anchor
+    - FrontWheel_Anchor/Front_Left_Peg_Anchor
+    - FrontWheel_Anchor/Front_Right_Peg_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 3
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Stem_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 21
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Forks_Anchor
+    - Griptape
+    - TopCenter_Anchor
+    - Headset_Anchor
+    - RearWheel_Anchor
+    - RearWheel_Anchor/Rear_Left_Peg_Anchor
+    - RearWheel_Anchor/Rear_Right_Peg_Anchor
+    - Mesh
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 6
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 2048
+    - ShaderProperty: _MaskMap
+      MaxSize: 2048
+    - ShaderProperty: _NormalMap
+      MaxSize: 2048
+    - ShaderProperty: _StickerMap
+      MaxSize: 2048
+    - ShaderProperty: _DetailMap
+      MaxSize: 1024
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 1024
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 1024
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 2
+    MaxDistinctMaterials: 2
+  - AppliesToSuperType: 4
+    AppliesToType: 22
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - StemBolt_Anchor_1
+    - StemBolt_Anchor_2
+    - StemBolt_Anchor_3
+    - StemBolt_Anchor_4
+    - Bars_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 35
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 3
+    MaxTextureDataMB:
+      MB: 4
+    Slots:
+    - ShaderProperty: _WearAlphaCutMap
+      MaxSize: 1024
+    - ShaderProperty: _PatternAlphaCutMap
+      MaxSize: 1024
+    - ShaderProperty: _GripTapeDirt
+      MaxSize: 1024
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 1024
+    - ShaderProperty: _MaskMap
+      MaxSize: 1024
+    - ShaderProperty: _NormalMap
+      MaxSize: 1024
+    MaxVertexCount: 5000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 36
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0.5
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 256
+    - ShaderProperty: _MaskMap
+      MaxSize: 256
+    - ShaderProperty: _NormalMap
+      MaxSize: 256
+    - ShaderProperty: _StickerMap
+      MaxSize: 256
+    - ShaderProperty: _DetailMap
+      MaxSize: 256
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 256
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 256
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 256
+    MaxVertexCount: 2000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 37
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 1
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 38
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 1
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 5000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 0
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 1
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren:
+    - Mesh
+    - Left_BarEnd_Anchor
+    - Left_Grip_Anchor
+    - Right_BarEnd_Anchor
+    - Right_Grip_Anchor
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 16
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 17
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 18
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 19
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 20
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    PreferredOrientations: []
+    ShaderType: 1
+    MaxTextureDataMB:
+      MB: 0
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 64
+    - ShaderProperty: _MaskMap
+      MaxSize: 64
+    - ShaderProperty: _NormalMap
+      MaxSize: 64
+    - ShaderProperty: _StickerMap
+      MaxSize: 64
+    - ShaderProperty: _DetailMap
+      MaxSize: 64
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 64
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 64
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 64
+    MaxVertexCount: 500
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1

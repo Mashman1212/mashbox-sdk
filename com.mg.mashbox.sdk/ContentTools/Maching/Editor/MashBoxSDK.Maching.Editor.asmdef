@@ -1,0 +1,20 @@
+{
+    "name": "MashBoxSDK.Maching.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:fba81c0e043d48249bb347367a165dc1"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_EDITOR_WIN"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

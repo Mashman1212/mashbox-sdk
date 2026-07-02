@@ -1,0 +1,21 @@
+{
+    "name": "MashBoxBridge",
+    "rootNamespace": "",
+    "references": [
+        "GUID:0c752da273b17c547ae705acf0f2adf2",
+        "GUID:aab3caaf43456d6449a3e035348ff798",
+        "GUID:75469ad4d38634e559750d17036d5f7c",
+        "GUID:457756d89b35d2941b3e7b37b4ece6f1",
+        "GUID:7f7d1af65c2641843945d409d28f2e20",
+        "GUID:ef9e46d2fc66afe4aa918745e9034da8"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,59 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 81f4548504065ce4390701f52bdd5d5e, type: 3}
+  m_Name: MashBoxCustomizationCore
+  m_EditorClassIdentifier: 
+  IsCorePack: 1
+  RootFolders:
+  - {fileID: 102900000, guid: 5dbad0402dbea064abb87049449c1cc6, type: 3}
+  _coreBundleItems:
+  - {fileID: -6465566751694194690, guid: ef2f63690a486964faa40c2e3d756d1c, type: 3}
+  - {fileID: -6465566751694194690, guid: f6e1a8e1bc9060a498fdcf7858f53a50, type: 3}
+  - {fileID: -6465566751694194690, guid: 8a549b8b765d1fa46a3b1eb15020f3c0, type: 3}
+  - {fileID: -6465566751694194690, guid: 4745e36670fe34b4a94e4d1aa6800132, type: 3}
+  - {fileID: -6465566751694194690, guid: 8b6d78198f70dc645a351d1484b06eb1, type: 3}
+  - {fileID: -6465566751694194690, guid: 59ba22d2d0297c94984bc1202f3cce6a, type: 3}
+  - {fileID: 2800000, guid: 94edd900387c4ed4bafa7aa516efe915, type: 3}
+  - {fileID: 2800000, guid: a30de28562346ef47b695915731dc873, type: 3}
+  - {fileID: 2800000, guid: 32fd326733980104f95733da824d7359, type: 3}
+  - {fileID: 2800000, guid: d8a6c65372c1259479e80caab047c461, type: 3}
+  - {fileID: 2800000, guid: 87aca531fe523054fa55fcc470d974a5, type: 3}
+  - {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
+  - {fileID: 2800000, guid: 121850c026e28fe41af22c370c4755f2, type: 3}
+  - {fileID: 2800000, guid: 5a5262d6a23ebb8468c610a5cc0b404b, type: 3}
+  - {fileID: 2800000, guid: 06906cfd147dfe841abb41a148219f72, type: 3}
+  - {fileID: 2800000, guid: 930203069a489bf41ac8ec0044ba5bb5, type: 3}
+  - {fileID: 2800000, guid: a65b72807b2df7c49bf29faf7e61edf0, type: 3}
+  - {fileID: 2800000, guid: fdcaedbcc93318542b6951bc7ac571ab, type: 3}
+  - {fileID: 2800000, guid: 0d5e51be94d18034cb54b6476ef70d53, type: 3}
+  - {fileID: 2800000, guid: b5fbfc6c8ef25934797f69a281751d63, type: 3}
+  - {fileID: 2800000, guid: 241c340a0f0f60a40adcd94d41510044, type: 3}
+  - {fileID: 2800000, guid: c324271d7a680db43a90c386aead0974, type: 3}
+  - {fileID: 2800000, guid: fe480c46bb51031478f48469f29fd6bc, type: 3}
+  - {fileID: 2800000, guid: 95b4da793fcd67f4e9f6ffb85c967072, type: 3}
+  - {fileID: 2800000, guid: 14a3f7500c9353a49bc80dfa3e680ea0, type: 3}
+  - {fileID: 2800000, guid: b2b72eae3ae598c4dbc52f9ce92b66d6, type: 3}
+  - {fileID: 2800000, guid: 339b0dce997631b40a3c995944797e34, type: 3}
+  - {fileID: 2100000, guid: ded960239db7aef419e13bb088df5020, type: 2}
+  - {fileID: 919132149155446097, guid: f8781bad3916a74468473a44b9abdd8e, type: 3}
+  PackGroup: Ungrouped
+  PublisingToGameName: 
+  _items: []
+  _icons: []
+  modioUserToken: 
+  publisherEmail: 
+  GameModMappings: []
+  MashBoxSdkVersion: 0.6.12
+  IsVanillaContent: 0
+  summary: 
+  mainScreenshot: {fileID: 0}
+  BuildToCustomFolder: 1

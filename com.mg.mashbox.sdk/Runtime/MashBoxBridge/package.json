@@ -1,0 +1,13 @@
+{
+  "name": "mashboxbridge",
+  "version": "1.0.0",
+  "description": "MashBoxBridge package for Unity",
+  "unity": "2022.3",
+  "keywords": ["unity", "game", "mashboxbridge"],
+  "author": "Mash Games",
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MashGames/MashBoxBridge.git"
+  }
+}
