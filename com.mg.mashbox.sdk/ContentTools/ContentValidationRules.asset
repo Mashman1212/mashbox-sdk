@@ -781,22 +781,22 @@ MonoBehaviour:
       MB: 0.5
     Slots:
     - ShaderProperty: _BaseColorMap
-      MaxSize: 256
+      MaxSize: 512
     - ShaderProperty: _MaskMap
-      MaxSize: 256
+      MaxSize: 512
     - ShaderProperty: _NormalMap
-      MaxSize: 256
+      MaxSize: 512
     - ShaderProperty: _StickerMap
-      MaxSize: 256
+      MaxSize: 512
     - ShaderProperty: _DetailMap
-      MaxSize: 256
+      MaxSize: 512
     - ShaderProperty: _DetailColorMap
-      MaxSize: 256
+      MaxSize: 512
     - ShaderProperty: _CoatMaskMap
-      MaxSize: 256
+      MaxSize: 512
     - ShaderProperty: _EmissiveColorMap
-      MaxSize: 256
-    MaxVertexCount: 500
+      MaxSize: 512
+    MaxVertexCount: 1000
     MaxRenderers: 1
     MaxDistinctMaterials: 1
   - AppliesToSuperType: 3
@@ -825,7 +825,7 @@ MonoBehaviour:
       MaxSize: 256
     - ShaderProperty: _EmissiveColorMap
       MaxSize: 256
-    MaxVertexCount: 500
+    MaxVertexCount: 2000
     MaxRenderers: 1
     MaxDistinctMaterials: 1
   - AppliesToSuperType: 3
