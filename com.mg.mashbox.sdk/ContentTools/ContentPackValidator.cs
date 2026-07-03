@@ -119,11 +119,11 @@ namespace MashBoxSDK.ContentTools
                 });
             }
 
-            // Vanilla content still obeys item rules; only aggregate pack-size gates are skipped.
-            bool skipTotalSizeValidation = pack.IsVanillaContent;
+            // Vanilla content still obeys item rules; only aggregate pack budget gates are skipped.
+            bool skipAggregateBudgetValidation = pack.IsVanillaContent;
 
             var maxTextureBudgetMB = GetEffectiveTextureBudgetMB(pack);
-            if (!skipTotalSizeValidation && totalTextureMB > maxTextureBudgetMB)
+            if (!skipAggregateBudgetValidation && totalTextureMB > maxTextureBudgetMB)
             {
                 issues.Add(new Issue
                 {
@@ -133,7 +133,7 @@ namespace MashBoxSDK.ContentTools
                 });
             }
 
-            if (totalVertices > pack.MaxTotalVertices)
+            if (!skipAggregateBudgetValidation && totalVertices > pack.MaxTotalVertices)
             {
                 issues.Add(new Issue
                 {
@@ -146,7 +146,7 @@ namespace MashBoxSDK.ContentTools
             float estimatedBundleMB = totalTextureMB * 0.8f;
             var maxPackSizeMB = GetEffectivePackSizeMB(pack);
 
-            if (!skipTotalSizeValidation && estimatedBundleMB > maxPackSizeMB)
+            if (!skipAggregateBudgetValidation && estimatedBundleMB > maxPackSizeMB)
             {
                 issues.Add(new Issue
                 {
