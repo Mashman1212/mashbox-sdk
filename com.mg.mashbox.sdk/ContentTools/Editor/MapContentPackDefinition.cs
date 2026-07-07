@@ -44,6 +44,71 @@ namespace MashBoxSDK.ContentTools.Editor
             return match?.ModId;
         }
 
+        public void SetPublishTargetGame(string gameName)
+        {
+            GameModMappings ??= new List<ContentPackDefinition.GameModMapping>();
+
+            if (string.IsNullOrWhiteSpace(gameName))
+            {
+                ClearPublishTargets();
+                return;
+            }
+
+            var existing = GameModMappings.FirstOrDefault(g =>
+                string.Equals(g.GameName, gameName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing == null)
+            {
+                existing = new ContentPackDefinition.GameModMapping
+                {
+                    GameName = gameName
+                };
+                GameModMappings.Add(existing);
+            }
+
+            foreach (var mapping in GameModMappings)
+            {
+                if (mapping == null)
+                    continue;
+
+                mapping.IsPublishTarget = ReferenceEquals(mapping, existing);
+            }
+        }
+
+        public void ClearPublishTargets()
+        {
+            if (GameModMappings == null)
+                return;
+
+            foreach (var mapping in GameModMappings)
+            {
+                if (mapping != null)
+                    mapping.IsPublishTarget = false;
+            }
+        }
+
+        public void NormalizePublishTargets()
+        {
+            if (GameModMappings == null)
+                return;
+
+            var foundTarget = false;
+
+            foreach (var mapping in GameModMappings)
+            {
+                if (mapping == null || !mapping.IsPublishTarget)
+                    continue;
+
+                if (!foundTarget)
+                {
+                    foundTarget = true;
+                    continue;
+                }
+
+                mapping.IsPublishTarget = false;
+            }
+        }
+
         public void SetModIdForGame(string gameName, string modId)
         {
             var existing = GameModMappings.FirstOrDefault(g =>
@@ -68,6 +133,7 @@ namespace MashBoxSDK.ContentTools.Editor
                 MapName = name;
 
             _packName = MapName;
+            NormalizePublishTargets();
         }
 
         [ContextMenu("Refresh Map Pack")]

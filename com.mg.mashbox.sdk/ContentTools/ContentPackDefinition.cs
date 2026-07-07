@@ -35,6 +35,8 @@ namespace MashBoxSDK.ContentTools
         {
             public string GameName;
             public string ModId; // use int if mod.io mod IDs are numeric
+            [Tooltip("When publishing a pack with multiple game mappings, this mapping is the game the remote cooker should compile for.")]
+            public bool IsPublishTarget;
         }
 
         public List<Object> _coreBundleItems;
@@ -132,6 +134,71 @@ namespace MashBoxSDK.ContentTools
             return match.ModId;
         }
 
+        public void SetPublishTargetGame(string gameName)
+        {
+            GameModMappings ??= new List<GameModMapping>();
+
+            if (string.IsNullOrWhiteSpace(gameName))
+            {
+                ClearPublishTargets();
+                return;
+            }
+
+            var existing = GameModMappings
+                .FirstOrDefault(g => string.Equals(g.GameName, gameName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing == null)
+            {
+                existing = new GameModMapping
+                {
+                    GameName = gameName
+                };
+                GameModMappings.Add(existing);
+            }
+
+            foreach (var mapping in GameModMappings)
+            {
+                if (mapping == null)
+                    continue;
+
+                mapping.IsPublishTarget = ReferenceEquals(mapping, existing);
+            }
+        }
+
+        public void ClearPublishTargets()
+        {
+            if (GameModMappings == null)
+                return;
+
+            foreach (var mapping in GameModMappings)
+            {
+                if (mapping != null)
+                    mapping.IsPublishTarget = false;
+            }
+        }
+
+        public void NormalizePublishTargets()
+        {
+            if (GameModMappings == null)
+                return;
+
+            var foundTarget = false;
+
+            foreach (var mapping in GameModMappings)
+            {
+                if (mapping == null || !mapping.IsPublishTarget)
+                    continue;
+
+                if (!foundTarget)
+                {
+                    foundTarget = true;
+                    continue;
+                }
+
+                mapping.IsPublishTarget = false;
+            }
+        }
+
         public void SetModIdForGame(string gameName, string modId)
         {
             var existing = GameModMappings
@@ -154,6 +221,7 @@ namespace MashBoxSDK.ContentTools
         public void OnValidate()
         {
             _packName = name;
+            NormalizePublishTargets();
 
             if (!IsCorePack)
             {

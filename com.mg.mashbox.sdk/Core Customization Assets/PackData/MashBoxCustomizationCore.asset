@@ -52,7 +52,7 @@ MonoBehaviour:
   modioUserToken: 
   publisherEmail: 
   GameModMappings: []
-  MashBoxSdkVersion: 0.6.12
+  MashBoxSdkVersion: 0.7.0
   IsVanillaContent: 0
   summary: 
   mainScreenshot: {fileID: 0}

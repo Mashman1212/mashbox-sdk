@@ -1860,6 +1860,10 @@ namespace MashBoxSDK.ContentTools.Editor
             foreach (var def in GameRegistry.Games)
             {
                 string existingId = p.GetModIdForGame(def.DisplayName) ?? string.Empty;
+                bool isPublishTarget = p.GameModMappings != null &&
+                                       p.GameModMappings.Any(g =>
+                                           string.Equals(g.GameName, def.DisplayName, StringComparison.OrdinalIgnoreCase) &&
+                                           g.IsPublishTarget);
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -1868,6 +1872,14 @@ namespace MashBoxSDK.ContentTools.Editor
 
                     if (newValue != existingId)
                         ApplyContentPackModId(p, def.DisplayName, newValue);
+
+                    using (new EditorGUI.DisabledScope(true))
+                    {
+                        GUILayout.Toggle(
+                            isPublishTarget,
+                            new GUIContent("Publish Target", "Set automatically to the active Setup game when publishing."),
+                            GUILayout.Width(105f));
+                    }
 
                     ModIoModCreator.DrawCreateButton(
                         def.DisplayName,
@@ -2122,6 +2134,13 @@ namespace MashBoxSDK.ContentTools.Editor
                 return;
             }
 
+            foreach (var pack in selectedPacks)
+            {
+                pack.SetPublishTargetGame(currentGame);
+                EditorUtility.SetDirty(pack);
+            }
+            AssetDatabase.SaveAssets();
+
             if (!ValidatePacksForBatchPublish(selectedPacks, currentGame))
                 return;
 
@@ -2253,6 +2272,10 @@ namespace MashBoxSDK.ContentTools.Editor
                 EditorUtility.DisplayDialog("Cooker Offline", $"The content cooking server is {MashBoxSDKState.Cooker}.", "OK");
                 return;
             }
+
+            p.SetPublishTargetGame(currentGame);
+            EditorUtility.SetDirty(p);
+            AssetDatabase.SaveAssets();
 
             var modId = p.GetModIdForGame(currentGame);
             if (string.IsNullOrEmpty(modId))
@@ -2783,6 +2806,7 @@ namespace MashBoxSDK.ContentTools.Editor
             p.PublisingToGameName = _currentGameName;
             p.modioUserToken = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentToken;
             p.publisherEmail = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentEmail;
+            p.SetPublishTargetGame(currentGame);
 
             //EnsureModIoMarkerOnPrefabs(p);
 

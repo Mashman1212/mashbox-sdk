@@ -3048,6 +3048,10 @@ namespace MashBoxSDK.MapTools
             foreach (var game in GameRegistry.Games)
             {
                 var current = selected.GetModIdForGame(game.DisplayName) ?? string.Empty;
+                bool isPublishTarget = selected.GameModMappings != null &&
+                                       selected.GameModMappings.Any(mapping =>
+                                           string.Equals(mapping.GameName, game.DisplayName, StringComparison.OrdinalIgnoreCase) &&
+                                           mapping.IsPublishTarget);
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -3055,6 +3059,14 @@ namespace MashBoxSDK.MapTools
                     var updated = EditorGUILayout.TextField(current);
                     if (updated != current)
                         ApplyMapModId(selected, game.DisplayName, updated);
+
+                    using (new EditorGUI.DisabledScope(true))
+                    {
+                        GUILayout.Toggle(
+                            isPublishTarget,
+                            new GUIContent("Publish Target", "Set automatically to the active Setup game when publishing."),
+                            GUILayout.Width(105f));
+                    }
 
                     ModIoModCreator.DrawCreateButton(
                         game.DisplayName,
@@ -3071,6 +3083,7 @@ namespace MashBoxSDK.MapTools
             ApplyMapModId(selected, gameName, modId);
             InvalidateValidationResults(selected);
         }
+
 
         private static void ApplyMapModId(MapContentPackDefinition selected, string gameName, string modId)
         {
@@ -3579,6 +3592,10 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
+            pack.SetPublishTargetGame(currentGame);
+            EditorUtility.SetDirty(pack);
+            AssetDatabase.SaveAssets();
+
             if (!await EnsureLatestSdkForPublishingAsync())
                 return;
 
@@ -3622,6 +3639,7 @@ namespace MashBoxSDK.MapTools
                 var cts = activeMapPublishCts;
                 pack.modioUserToken = ModIoAuth.CurrentToken;
                 pack.PublisherEmail = ModIoAuth.CurrentEmail;
+                pack.SetPublishTargetGame(currentGame);
                 EditorUtility.SetDirty(pack);
                 AssetDatabase.SaveAssets();
 
@@ -3892,7 +3910,8 @@ namespace MashBoxSDK.MapTools
                     .Select(mapping => new MashBoxSDK.ContentTools.ContentPackDefinition.GameModMapping
                     {
                         GameName = mapping.GameName,
-                        ModId = mapping.ModId
+                        ModId = mapping.ModId,
+                        IsPublishTarget = mapping.IsPublishTarget
                     })
                     .ToList() ?? new List<MashBoxSDK.ContentTools.ContentPackDefinition.GameModMapping>();
 
