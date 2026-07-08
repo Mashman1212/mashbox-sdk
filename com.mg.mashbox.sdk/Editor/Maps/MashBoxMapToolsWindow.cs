@@ -3214,7 +3214,7 @@ namespace MashBoxSDK.MapTools
             }
 
             var selectedPack = GetSelectedPack();
-            var blockingIssues = new List<string>();
+            var validationErrors = new List<string>();
             foreach (var pack in packs)
             {
                 var issues = MapContentPackValidator.Validate(pack, forceOpenScene: true);
@@ -3224,18 +3224,18 @@ namespace MashBoxSDK.MapTools
                     validatedPackInstanceId = GetObjectStableId(pack);
                 }
 
-                blockingIssues.AddRange(
+                validationErrors.AddRange(
                     issues.Where(issue => issue.Severity == MapValidationSeverity.Error)
                         .Select(issue => $"{pack.PackName}: {issue.Message}"));
             }
 
-            if (blockingIssues.Count > 0)
+            if (validationErrors.Count > 0)
             {
-                EditorUtility.DisplayDialog(
-                    "Validation Failed",
-                    string.Join("\n\n", blockingIssues.Take(6)) + (blockingIssues.Count > 6 ? "\n\nMore issues were found. Fix the map validation errors and try again." : ""),
-                    "OK");
-                return;
+                Debug.LogWarning(
+                    "[MashBoxMapTools] Building map bundle with validation errors. " +
+                    "Local builds are allowed, but publishing to mod.io will remain blocked until these are fixed.\n\n" +
+                    string.Join("\n\n", validationErrors.Take(6)) +
+                    (validationErrors.Count > 6 ? "\n\nMore issues were found. See the validation panel for the full list." : ""));
             }
 
             if (string.IsNullOrWhiteSpace(buildRoot))
