@@ -42,6 +42,7 @@ namespace ContentTools.Editor
             DrawProperty(ref y, position, property, "AppliesToSuperType");
             DrawProperty(ref y, position, property, "AppliesToType");
             DrawProperty(ref y, position, property, "ShaderType");
+            DrawProperty(ref y, position, property, "AdditionalAllowedShaderTypes");
             DrawProperty(ref y, position, property, "MaxTextureDataMB");
             DrawProperty(ref y, position, property, "Slots");
 
@@ -51,6 +52,9 @@ namespace ContentTools.Editor
         void DrawProperty(ref float y, Rect position, SerializedProperty parent, string name)
         {
             var prop = parent.FindPropertyRelative(name);
+            if (prop == null)
+                return;
+
             float height = EditorGUI.GetPropertyHeight(prop, true);
 
             EditorGUI.PropertyField(
@@ -69,13 +73,20 @@ namespace ContentTools.Editor
 
             float height = EditorGUIUtility.singleLineHeight;
 
-            height += EditorGUI.GetPropertyHeight(property.FindPropertyRelative("AppliesToSuperType"), true) + 2;
-            height += EditorGUI.GetPropertyHeight(property.FindPropertyRelative("AppliesToType"), true) + 2;
-            height += EditorGUI.GetPropertyHeight(property.FindPropertyRelative("ShaderType"), true) + 2;
-            height += EditorGUI.GetPropertyHeight(property.FindPropertyRelative("MaxTextureDataMB"), true) + 2;
-            height += EditorGUI.GetPropertyHeight(property.FindPropertyRelative("Slots"), true) + 2;
+            height += MeasureProperty(property, "AppliesToSuperType");
+            height += MeasureProperty(property, "AppliesToType");
+            height += MeasureProperty(property, "ShaderType");
+            height += MeasureProperty(property, "AdditionalAllowedShaderTypes");
+            height += MeasureProperty(property, "MaxTextureDataMB");
+            height += MeasureProperty(property, "Slots");
 
             return height + 4; // small padding at bottom
+        }
+
+        private static float MeasureProperty(SerializedProperty parent, string name)
+        {
+            var prop = parent.FindPropertyRelative(name);
+            return prop == null ? 0f : EditorGUI.GetPropertyHeight(prop, true) + 2;
         }
     }
 }

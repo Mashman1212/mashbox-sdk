@@ -25,11 +25,13 @@ namespace MashBoxBridge.Achievements
         private void OnValidate()
         {
             string assetPath = AssetDatabase.GetAssetPath(this);
-            string folderPath = Path.GetDirectoryName(assetPath);
+            string folderPath = Path.GetDirectoryName(assetPath)?.Replace('\\', '/');
+
+            if (string.IsNullOrEmpty(folderPath))
+                return;
 
             string[] guids = AssetDatabase.FindAssets("t:AchievementData", new[] { folderPath });
-
-            achievements.Clear();
+            var discoveredAchievements = new List<AchievementData>();
 
             foreach (string guid in guids)
             {
@@ -38,9 +40,15 @@ namespace MashBoxBridge.Achievements
 
                 if (data != null)
                 {
-                    achievements.Add(data);
+                    discoveredAchievements.Add(data);
                 }
             }
+
+            if (discoveredAchievements.Count == 0)
+                return;
+
+            achievements.Clear();
+            achievements.AddRange(discoveredAchievements);
 
             // Mark dirty so changes get saved
             EditorUtility.SetDirty(this);

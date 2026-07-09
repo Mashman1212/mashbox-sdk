@@ -143,6 +143,9 @@ namespace MashBoxSDK.ContentTools
             
             // Texture validation
             public ShaderType ShaderType;
+
+            [Tooltip("Optional extra shaders accepted by this rule. The primary ShaderType is always allowed when it is not Null.")]
+            public List<ShaderType> AdditionalAllowedShaderTypes = new();
             
             [Tooltip("Max total compressed texture size in MB across all textures used by this item")]
             public TextureDataBudget MaxTextureDataMB;
@@ -165,25 +168,71 @@ namespace MashBoxSDK.ContentTools
         
         public static Shader GetShader(ShaderType type)
         {
+            var shaderName = GetShaderName(type);
+            return string.IsNullOrEmpty(shaderName) ? null : Shader.Find(shaderName);
+        }
+
+        public static string GetShaderName(ShaderType type)
+        {
             switch (type)
             {
                 case ShaderType.MG_Vehicle:
-                    return Shader.Find("MGShaders/HDRP/Lit/MG_Vehicle");
+                    return "MGShaders/HDRP/Lit/MG_Vehicle";
 
                 case ShaderType.MG_Clothing:
-                    return Shader.Find("MGShaders/HDRP/Lit/MG_Clothing");
+                    return "MGShaders/HDRP/Lit/MG_Clothing";
 
                 case ShaderType.Griptape:
-                    return Shader.Find("MGShaders/HDRP/Lit/Griptape");
+                    return "MGShaders/HDRP/Lit/Griptape";
                 case ShaderType.MG_Tire:
-                    return Shader.Find("MGShaders/HDRP/Lit/MG_Tire");
+                    return "MGShaders/HDRP/Lit/MG_Tire";
                 case ShaderType.MG_Chain:
-                    return Shader.Find("MGShaders/HDRP/Lit/MG_Chain");
+                    return "MGShaders/HDRP/Lit/MG_Chain";
                 case ShaderType.Null:
                     return null;
                 default:
                     return null;
             }
+        }
+
+        public static List<ShaderType> GetAllowedShaderTypes(ItemRule rule)
+        {
+            var allowed = new List<ShaderType>();
+
+            if (rule == null)
+                return allowed;
+
+            AddAllowedShaderType(allowed, rule.ShaderType);
+
+            if (rule.AdditionalAllowedShaderTypes != null)
+            {
+                foreach (var shaderType in rule.AdditionalAllowedShaderTypes)
+                    AddAllowedShaderType(allowed, shaderType);
+            }
+
+            return allowed;
+        }
+
+        public static string GetAllowedShaderLabel(ItemRule rule)
+        {
+            var allowed = GetAllowedShaderTypes(rule);
+            if (allowed.Count == 0)
+                return "<none>";
+
+            return string.Join(", ", allowed.Select(GetShaderLabel));
+        }
+
+        private static void AddAllowedShaderType(List<ShaderType> allowed, ShaderType shaderType)
+        {
+            if (shaderType == ShaderType.Null || allowed.Contains(shaderType))
+                return;
+
+            allowed.Add(shaderType);
+        }
+
+        private static string GetShaderLabel(ShaderType shaderType)
+        {
+            return GetShaderName(shaderType) ?? shaderType.ToString();
         }
         
         public List<ItemRule> ItemRules = new();

@@ -937,6 +937,7 @@ namespace MashBoxSDK.ContentTools.Editor
                                 if (!_rulesRuleFoldouts[ruleFoldKey]) continue;
 
                                 EditorGUI.indentLevel++;
+                                EditorGUILayout.LabelField("Shaders", ContentValidationRules.GetAllowedShaderLabel(r), EditorStyles.miniLabel);
                                 var tree = BuildRuleTree(r);
                                 bool hasAny = (r.RequiredChildren != null && r.RequiredChildren.Length > 0);
 

@@ -1,4 +1,6 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
+using System.Linq;
 using MashBoxSDK.ContentTools;
 using UnityEditor;
 using UnityEngine;
@@ -12,8 +14,6 @@ namespace ContentTools.Editor
         {
             serializedObject.Update();
 
-            SerializedProperty rulesProp = serializedObject.FindProperty("ItemRules");
-
             EditorGUI.BeginChangeCheck();
             DrawDefaultInspector();
             bool changed = EditorGUI.EndChangeCheck();
@@ -24,17 +24,22 @@ namespace ContentTools.Editor
 
                 foreach (var rule in rules.ItemRules)
                 {
-                    if (rule.ShaderType == ContentValidationRules.ShaderType.Null)
+                    var shaderTypes = ContentValidationRules.GetAllowedShaderTypes(rule);
+                    if (shaderTypes.Count == 0)
                         continue;
 
-                    Shader shader = ContentValidationRules.GetShader(rule.ShaderType);
-                    if (shader == null)
+                    var shaders = shaderTypes
+                        .Select(ContentValidationRules.GetShader)
+                        .Where(shader => shader != null)
+                        .ToList();
+
+                    if (shaders.Count == 0)
                         continue;
 
                     // Only rebuild slots if empty
                     if (rule.Slots == null || rule.Slots.Count == 0)
                     {
-                        PopulateShaderSlots(rule, shader);
+                        PopulateShaderSlots(rule, shaders);
                     }
                 }
 
@@ -44,27 +49,34 @@ namespace ContentTools.Editor
             serializedObject.ApplyModifiedProperties();
         }
 
-        void PopulateShaderSlots(ContentValidationRules.ItemRule rule, Shader shader)
+        void PopulateShaderSlots(ContentValidationRules.ItemRule rule, IEnumerable<Shader> shaders)
         {
             rule.Slots.Clear();
+            var propertyNames = new HashSet<string>();
 
-            int propertyCount = ShaderUtil.GetPropertyCount(shader);
-
-            for (int i = 0; i < propertyCount; i++)
+            foreach (var shader in shaders)
             {
-                if (ShaderUtil.GetPropertyType(shader, i) != ShaderUtil.ShaderPropertyType.TexEnv)
-                    continue;
+                int propertyCount = ShaderUtil.GetPropertyCount(shader);
 
-                string propName = ShaderUtil.GetPropertyName(shader, i);
-
-                if (propName.StartsWith("unity_"))
-                    continue;
-
-                if (propName.StartsWith("_SampleTexture"))
+                for (int i = 0; i < propertyCount; i++)
                 {
-                    continue;
+                    if (ShaderUtil.GetPropertyType(shader, i) != ShaderUtil.ShaderPropertyType.TexEnv)
+                        continue;
+
+                    string propName = ShaderUtil.GetPropertyName(shader, i);
+
+                    if (propName.StartsWith("unity_"))
+                        continue;
+
+                    if (propName.StartsWith("_SampleTexture"))
+                        continue;
+
+                    propertyNames.Add(propName);
                 }
-                
+            }
+
+            foreach (var propName in propertyNames.OrderBy(name => name))
+            {
                 rule.Slots.Add(new ContentValidationRules.TextureSlotLimit
                 {
                     ShaderProperty = propName,

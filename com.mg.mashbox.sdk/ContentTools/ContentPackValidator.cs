@@ -643,9 +643,18 @@ namespace MashBoxSDK.ContentTools
                         }
                     }
                     
-                    if (rule.ShaderType != ContentValidationRules.ShaderType.Null)
+                    var allowedShaderTypes = ContentValidationRules.GetAllowedShaderTypes(rule);
+                    if (allowedShaderTypes.Count > 0)
                     {
-                        Shader expectedShader = ContentValidationRules.GetShader(rule.ShaderType);
+                        var expectedShaders = allowedShaderTypes
+                            .Select(ContentValidationRules.GetShader)
+                            .Where(shader => shader != null)
+                            .ToList();
+                        var expectedShaderNames = new HashSet<string>(
+                            allowedShaderTypes
+                                .Select(ContentValidationRules.GetShaderName)
+                                .Where(shaderName => !string.IsNullOrEmpty(shaderName)));
+                        var allowedShaderLabel = ContentValidationRules.GetAllowedShaderLabel(rule);
                         var renderers = go.GetComponentsInChildren<Renderer>(true);
                         var distinctMaterials = new HashSet<Material>();
                         var maxRenderers = rule.MaxRenderers;
@@ -688,13 +697,17 @@ namespace MashBoxSDK.ContentTools
                                 distinctMaterials.Add(mat);
 
                                 // Shader validation
-                                if (expectedShader != null && mat.shader != expectedShader)
+                                var shaderIsAllowed =
+                                    expectedShaders.Contains(mat.shader) ||
+                                    (mat.shader != null && expectedShaderNames.Contains(mat.shader.name));
+
+                                if (!shaderIsAllowed)
                                 {
                                     issues.Add(new Issue
                                     {
                                         severity = Severity.Error,
                                         message =
-                                            $"{go.name}: material '{mat.name}' must use shader '{expectedShader.name}' (found '{mat.shader?.name ?? "None"}').",
+                                            $"{go.name}: material '{mat.name}' must use one of these shaders: {allowedShaderLabel} (found '{mat.shader?.name ?? "None"}').",
                                         context = r.gameObject
                                     });
 

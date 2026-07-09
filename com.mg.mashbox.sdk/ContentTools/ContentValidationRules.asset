@@ -174,6 +174,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 4
     Slots:
@@ -199,6 +200,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 4
     Slots:
@@ -224,6 +226,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 2
     Slots:
@@ -249,6 +252,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 2
     Slots:
@@ -274,6 +278,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -299,6 +304,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -324,6 +330,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -349,6 +356,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 2
     Slots:
@@ -374,6 +382,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -399,6 +408,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -424,6 +434,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -449,6 +460,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 2
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 10
     Slots:
@@ -474,6 +486,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 4
     Slots:
@@ -503,6 +516,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 2
     Slots:
@@ -563,6 +577,7 @@ MonoBehaviour:
       Tolerance: 5
       IsWarning: 1
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 4
     Slots:
@@ -596,6 +611,7 @@ MonoBehaviour:
     - Right_BarEnd_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -655,6 +671,7 @@ MonoBehaviour:
       Tolerance: 5
       IsWarning: 1
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -685,6 +702,7 @@ MonoBehaviour:
     - Stem_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -717,6 +735,7 @@ MonoBehaviour:
     - Right_CrankArm_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.25
     Slots:
@@ -747,6 +766,7 @@ MonoBehaviour:
     - Pedal_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -777,6 +797,7 @@ MonoBehaviour:
     - Seat_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -806,6 +827,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.25
     Slots:
@@ -835,6 +857,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -865,6 +888,7 @@ MonoBehaviour:
     - Axle
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -894,6 +918,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.25
     Slots:
@@ -931,6 +956,7 @@ MonoBehaviour:
     - StemBolt_Anchor_6
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -960,6 +986,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.25
     Slots:
@@ -989,6 +1016,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 2
     Slots:
@@ -1018,6 +1046,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1049,6 +1078,7 @@ MonoBehaviour:
     - HubDriver
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 5
     Slots:
@@ -1078,6 +1108,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.25
     Slots:
@@ -1107,6 +1138,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1136,6 +1168,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1165,6 +1198,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1194,6 +1228,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1225,6 +1260,7 @@ MonoBehaviour:
     - DriveSide
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1255,6 +1291,7 @@ MonoBehaviour:
     - Valve_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -1284,6 +1321,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1314,6 +1352,7 @@ MonoBehaviour:
     - HubDriver
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1343,6 +1382,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 4
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 2
     Slots:
@@ -1372,6 +1412,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 5
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.25
     Slots:
@@ -1395,6 +1436,7 @@ MonoBehaviour:
     - Right_BarEnd_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -1427,6 +1469,7 @@ MonoBehaviour:
     - FrontWheel_Anchor/Front_Right_Peg_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -1457,6 +1500,7 @@ MonoBehaviour:
     - Stem_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1494,6 +1538,7 @@ MonoBehaviour:
     - Mesh
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 6
     Slots:
@@ -1528,6 +1573,7 @@ MonoBehaviour:
     - Bars_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -1557,6 +1603,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 3
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 4
     Slots:
@@ -1582,6 +1629,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0.5
     Slots:
@@ -1611,6 +1659,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -1640,6 +1689,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 04000000
     MaxTextureDataMB:
       MB: 1
     Slots:
@@ -1669,6 +1719,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0
     Slots:
@@ -1703,6 +1754,7 @@ MonoBehaviour:
     - Right_Grip_Anchor
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0
     Slots:
@@ -1732,6 +1784,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0
     Slots:
@@ -1761,6 +1814,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0
     Slots:
@@ -1790,6 +1844,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0
     Slots:
@@ -1819,6 +1874,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0
     Slots:
@@ -1848,6 +1904,7 @@ MonoBehaviour:
     RequiredChildren: []
     PreferredOrientations: []
     ShaderType: 1
+    AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
       MB: 0
     Slots:

@@ -17,6 +17,7 @@ namespace ContentTools
             var requiredChildren = property.FindPropertyRelative("RequiredChildren");
             var preferredOrientations = property.FindPropertyRelative("PreferredOrientations");
             var shader = property.FindPropertyRelative("ShaderType");
+            var additionalAllowedShaders = property.FindPropertyRelative("AdditionalAllowedShaderTypes");
             var maxTextureData = property.FindPropertyRelative("MaxTextureDataMB");
             var slots = property.FindPropertyRelative("Slots");
             var maxVertexCount = property.FindPropertyRelative("MaxVertexCount");
@@ -66,6 +67,7 @@ namespace ContentTools
 
             // --- Rendering ---
             DrawProperty(ref y, position, shader);
+            DrawProperty(ref y, position, additionalAllowedShaders);
             DrawProperty(ref y, position, maxTextureData);
             DrawProperty(ref y, position, slots);
 
@@ -119,6 +121,7 @@ namespace ContentTools
 
             // --- Rendering ---
             height += DrawAndMeasure(property.FindPropertyRelative("ShaderType"));
+            height += DrawAndMeasure(property.FindPropertyRelative("AdditionalAllowedShaderTypes"));
             height += DrawAndMeasure(property.FindPropertyRelative("MaxTextureDataMB"));
             height += DrawAndMeasure(property.FindPropertyRelative("Slots"));
 
