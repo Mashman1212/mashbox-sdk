@@ -173,6 +173,22 @@ namespace MashBoxSDK.MapTools
 
             paintColor = EditorGUILayout.ColorField("Paint Color", paintColor);
             useFalloff = EditorGUILayout.Toggle("Use Falloff", useFalloff);
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Brush Control", EditorStyles.boldLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(
+                    painterBrushActive ? "Status: Active" : "Status: Paused",
+                    GUILayout.Width(100f));
+
+                if (GUILayout.Button(
+                    painterBrushActive ? "Pause Brush (W)" : "Enable Brush (B)",
+                    GUILayout.Height(24f)))
+                {
+                    SetPainterBrushActive(!painterBrushActive);
+                }
+            }
             
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField("UV Generation", EditorStyles.boldLabel);
@@ -802,6 +818,9 @@ namespace MashBoxSDK.MapTools
 
         private void SetPainterBrushActive(bool active)
         {
+            if (active)
+                ActivateSceneTool();
+
             if (painterBrushActive == active)
                 return;
 
