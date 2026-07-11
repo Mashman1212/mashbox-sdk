@@ -654,14 +654,16 @@ namespace MashBoxSDK.MapTools
             if (authoringBrushTool == null)
             {
                 authoringBrushTool = CreateInstance<MGBrushWindow>();
-                authoringBrushTool.hideFlags = HideFlags.HideAndDontSave;
+                // HideAndDontSave also includes NotEditable, which makes fields drawn
+                // through SerializedObject (such as the prefab palette) read-only.
+                authoringBrushTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
                 authoringBrushTool.DeactivateSceneTool();
             }
 
             if (authoringLoftTool == null)
             {
                 authoringLoftTool = CreateInstance<MultiSplineLoftWindow>();
-                authoringLoftTool.hideFlags = HideFlags.HideAndDontSave;
+                authoringLoftTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
             }
         }
 
