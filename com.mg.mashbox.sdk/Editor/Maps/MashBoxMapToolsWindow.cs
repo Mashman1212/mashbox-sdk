@@ -2692,7 +2692,7 @@ namespace MashBoxSDK.MapTools
 
             if (manifest == null)
             {
-                Debug.LogError("[MGMapTools] BuildPipeline returned NULL — build failed.");
+                Debug.LogError("[MGMapTools] BuildPipeline returned NULL â€” build failed.");
                 return;
             }
 
@@ -3318,6 +3318,21 @@ namespace MashBoxSDK.MapTools
             var scenePath = AssetDatabase.GetAssetPath(pack.Scene);
             if (string.IsNullOrWhiteSpace(scenePath))
                 throw new Exception("Could not resolve the selected scene asset.");
+
+            // A light bake assigns the generated LightingDataAsset to the scene and
+            // marks that scene dirty. BuildPipeline resolves bundle dependencies from
+            // the scene on disk, so exporting before the scene is saved silently drops
+            // Unity lightmaps even though they are still visible in the authoring view.
+            var loadedScene = SceneManager.GetSceneByPath(scenePath);
+            if (loadedScene.IsValid() && loadedScene.isLoaded && loadedScene.isDirty)
+            {
+                if (!EditorSceneManager.SaveScene(loadedScene))
+                    throw new Exception($"Could not save '{loadedScene.name}' before building its map bundle.");
+
+                Debug.Log($"[MashBoxMapTools] Saved dirty scene '{loadedScene.name}' before resolving map bundle dependencies.");
+            }
+
+            AssetDatabase.SaveAssets();
 
             var bundleName = SanitizeBundleName(pack.PackName);
             var tempRoot = Path.Combine(Path.GetTempPath(), "MashBoxSDK", "MapBuild", bundleName, EditorUserBuildSettings.activeBuildTarget.ToString());
