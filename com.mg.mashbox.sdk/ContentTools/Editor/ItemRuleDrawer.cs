@@ -15,6 +15,7 @@ namespace ContentTools
 
             var ignoreRequireChildren = property.FindPropertyRelative("IgnoreRequiredChildren");
             var requiredChildren = property.FindPropertyRelative("RequiredChildren");
+            var requiredDescendantsAnywhere = property.FindPropertyRelative("RequiredDescendantsAnywhere");
             var preferredOrientations = property.FindPropertyRelative("PreferredOrientations");
             var shader = property.FindPropertyRelative("ShaderType");
             var additionalAllowedShaders = property.FindPropertyRelative("AdditionalAllowedShaderTypes");
@@ -54,6 +55,7 @@ namespace ContentTools
             // --- Anchors ---
             DrawProperty(ref y, position, ignoreRequireChildren);
             DrawProperty(ref y, position, requiredChildren);
+            DrawProperty(ref y, position, requiredDescendantsAnywhere);
             DrawProperty(ref y, position, preferredOrientations);
 
             y += EditorGUIUtility.standardVerticalSpacing * 2;
@@ -108,6 +110,7 @@ namespace ContentTools
             // --- Anchors ---
             height += DrawAndMeasure(property.FindPropertyRelative("IgnoreRequiredChildren"));
             height += DrawAndMeasure(property.FindPropertyRelative("RequiredChildren"));
+            height += DrawAndMeasure(property.FindPropertyRelative("RequiredDescendantsAnywhere"));
             height += DrawAndMeasure(property.FindPropertyRelative("PreferredOrientations"));
 
             height += EditorGUIUtility.standardVerticalSpacing * 2;

@@ -196,6 +196,24 @@
             "AppliesToType": "Frame",
             "AppliesToBrand": "",
             "RequiredChildren": [
+                "BB_Anchor",
+                "body",
+                "Cam",
+                "Cam/SeatStayConnection",
+                "chainstay",
+                "chainstay/SeatStay",
+                "chainstay/SeatStay/CamConnection",
+                "chainstay/SeatStay/RearBrakeCaliper_Anchor",
+                "chainstay/SeatStay/RearAxle_Anchor",
+                "SeatClamp_Anchor",
+                "Headset_Anchor",
+                "Forks_Anchor",
+                "SeatPost_Anchor",
+                "RearWheel_Anchor"
+            ],
+            "RequiredDescendantsAnywhere": [
+                "PistonConnection_base",
+                "PistonConnection_tip"
             ],
             "RequiredPatterns": []
         },

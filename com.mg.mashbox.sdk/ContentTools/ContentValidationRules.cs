@@ -139,6 +139,10 @@ namespace MashBoxSDK.ContentTools
             public bool IgnoreRequiredChildren;
             // Anchor validation
             public string[] RequiredChildren;
+
+            [Tooltip("Transform names that must exist somewhere below the item root, but may be parented anywhere in its hierarchy.")]
+            public string[] RequiredDescendantsAnywhere;
+
             public PreferredChildOrientation[] PreferredOrientations;
             
             // Texture validation

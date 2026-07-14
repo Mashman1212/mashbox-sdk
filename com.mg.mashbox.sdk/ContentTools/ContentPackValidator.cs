@@ -459,14 +459,20 @@ namespace MashBoxSDK.ContentTools
                 {
                     float totalMB = GetTotalTextureMB(go, go.GetComponentsInChildren<Renderer>(true), rule, superType, type);
        
-                    // 1) Exact child requirements
-                    if (rule.RequiredChildren != null && !rule.IgnoreRequiredChildren)
+                    // 1) Exact-path and hierarchy-independent child requirements
+                    if (!rule.IgnoreRequiredChildren &&
+                        (rule.RequiredChildren != null || rule.RequiredDescendantsAnywhere != null))
                     {
-                        var required = rule.RequiredChildren
+                        var required = (rule.RequiredChildren ?? Array.Empty<string>())
                             .Where(r => !string.IsNullOrWhiteSpace(r))
                             .Select(r => r.Trim().Replace("\\", "/"))
                             .Distinct(StringComparer.Ordinal)
                             .ToList();
+
+                        var requiredAnywhere = new HashSet<string>((rule.RequiredDescendantsAnywhere ?? Array.Empty<string>())
+                            .Where(r => !string.IsNullOrWhiteSpace(r))
+                            .Select(r => r.Trim())
+                            .Distinct(StringComparer.Ordinal), StringComparer.Ordinal);
 
                         foreach (var req in required)
                         {
@@ -476,6 +482,24 @@ namespace MashBoxSDK.ContentTools
                                 {
                                     severity = Severity.Error,
                                     message = $"{go.name}: missing child '{req}'",
+                                    context = go
+                                });
+                            }
+                        }
+
+                        foreach (var requiredName in requiredAnywhere)
+                        {
+                            bool exists = go.transform
+                                .GetComponentsInChildren<Transform>(true)
+                                .Any(descendant => descendant != go.transform &&
+                                                   string.Equals(descendant.name, requiredName, StringComparison.Ordinal));
+
+                            if (!exists)
+                            {
+                                issues.Add(new Issue
+                                {
+                                    severity = Severity.Error,
+                                    message = $"{go.name}: missing descendant '{requiredName}' (it may be parented anywhere below the item root)",
                                     context = go
                                 });
                             }
@@ -504,7 +528,9 @@ namespace MashBoxSDK.ContentTools
                                 continue;
 
                             string childPath = GetRelativeTransformPath(go.transform, child);
-                            if (string.IsNullOrEmpty(childPath) || allowedHierarchyPaths.Contains(childPath))
+                            if (string.IsNullOrEmpty(childPath) ||
+                                allowedHierarchyPaths.Contains(childPath) ||
+                                requiredAnywhere.Contains(child.name))
                                 continue;
 
                             issues.Add(new Issue

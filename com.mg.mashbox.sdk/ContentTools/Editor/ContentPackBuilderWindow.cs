@@ -939,7 +939,8 @@ namespace MashBoxSDK.ContentTools.Editor
                                 EditorGUI.indentLevel++;
                                 EditorGUILayout.LabelField("Shaders", ContentValidationRules.GetAllowedShaderLabel(r), EditorStyles.miniLabel);
                                 var tree = BuildRuleTree(r);
-                                bool hasAny = (r.RequiredChildren != null && r.RequiredChildren.Length > 0);
+                                bool hasAny = (r.RequiredChildren != null && r.RequiredChildren.Length > 0) ||
+                                              (r.RequiredDescendantsAnywhere != null && r.RequiredDescendantsAnywhere.Length > 0);
 
                                 if (!hasAny)
                                 {
@@ -1021,6 +1022,15 @@ namespace MashBoxSDK.ContentTools.Editor
                 }
             }
 
+            if (r.RequiredDescendantsAnywhere != null)
+            {
+                foreach (var name in r.RequiredDescendantsAnywhere)
+                {
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    root.Annotations.Add($"required anywhere: {name}");
+                }
+            }
+
             return root;
         }
 
@@ -1038,7 +1048,7 @@ namespace MashBoxSDK.ContentTools.Editor
             if (node.Annotations.Count > 0)
             {
                 foreach (var a in node.Annotations)
-                    DrawTreeLine($"(pattern) {a}", indent + (isRoot ? 0 : 1), isLast: false, muted: true);
+                    DrawTreeLine($"({a})", indent + (isRoot ? 0 : 1), isLast: false, muted: true);
             }
 
             // Children
@@ -1066,7 +1076,7 @@ namespace MashBoxSDK.ContentTools.Editor
         {
             // annotations
             foreach (var a in node.Annotations)
-                DrawTreeLine($"(pattern) {a}", indent + 1, isLast: false, muted: true);
+                DrawTreeLine($"({a})", indent + 1, isLast: false, muted: true);
 
             // grandchildren
             var kids = node.Children.Values.ToList();

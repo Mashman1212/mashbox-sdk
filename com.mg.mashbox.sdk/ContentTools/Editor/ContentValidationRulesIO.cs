@@ -39,6 +39,7 @@ namespace MashBoxSDK.ContentTools.Editor
                 public string AppliesToType;
                 public string AppliesToBrand;
                 public string[] RequiredChildren;
+                public string[] RequiredDescendantsAnywhere;
                 public bool ForbidUnexpectedChildren;
             }
 
