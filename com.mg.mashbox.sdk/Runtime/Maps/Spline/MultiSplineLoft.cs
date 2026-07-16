@@ -31,6 +31,12 @@ namespace MashBoxSDK.Maps.Spline
             Distance
         }
 
+        public enum AlongAlignment
+        {
+            Parameter,
+            ReferencePerpendicular
+        }
+
         [Serializable]
         public sealed class ResolutionZone
         {
@@ -73,6 +79,12 @@ namespace MashBoxSDK.Maps.Spline
 
         [SerializeField]
         AlongResolutionMode m_AlongResolutionMode = AlongResolutionMode.FixedSamples;
+
+        [SerializeField]
+        AlongAlignment m_AlongAlignment = AlongAlignment.ReferencePerpendicular;
+
+        [SerializeField]
+        int m_AlignmentReferenceSource = -1;
 
         [SerializeField, Min(0.01f)]
         float m_TargetSegmentLength = 1f;
@@ -149,6 +161,8 @@ namespace MashBoxSDK.Maps.Spline
         public int CurrentSamplesAlong => m_AlongSampleCount;
         public AcrossInterpolation AcrossMode { get => m_AcrossInterpolation; set => m_AcrossInterpolation = value; }
         public AlongResolutionMode AlongResolution { get => m_AlongResolutionMode; set => m_AlongResolutionMode = value; }
+        public AlongAlignment Alignment { get => m_AlongAlignment; set => m_AlongAlignment = value; }
+        public int AlignmentReferenceSource { get => m_AlignmentReferenceSource; set => m_AlignmentReferenceSource = value; }
         public float TargetSegmentLength { get => m_TargetSegmentLength; set => m_TargetSegmentLength = Mathf.Max(0.01f, value); }
         public bool AutoRegenerate { get => m_AutoRegenerate; set => m_AutoRegenerate = value; }
         public bool CloseAlongClosedSplines { get => m_CloseAlongClosedSplines; set => m_CloseAlongClosedSplines = value; }
@@ -393,20 +407,10 @@ namespace MashBoxSDK.Maps.Spline
             if (m_SampledPoints == null || m_SampledPoints.GetLength(0) != m_CrossSampleCount || m_SampledPoints.GetLength(1) != m_AlongSampleCount)
                 m_SampledPoints = new Vector3[m_CrossSampleCount, m_AlongSampleCount];
 
-            for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++)
-            {
-                var source = m_Sources[m_ValidSourceIndices[sourceIndex]];
-                for (int along = 0; along < m_AlongSampleCount; along++)
-                {
-                    float t = m_AlongParameters[along];
-                    if (source.reverse)
-                        t = 1f - t;
-
-                    var worldPoint = source.container.EvaluatePosition(source.splineIndex, t);
-                    var localPoint = transform.InverseTransformPoint(new Vector3(worldPoint.x, worldPoint.y, worldPoint.z));
-                    m_SourcePoints[sourceIndex, along] = IsFinite(localPoint) ? localPoint : Vector3.zero;
-                }
-            }
+            if (m_AlongAlignment == AlongAlignment.ReferencePerpendicular)
+                BuildReferenceAlignedSourcePoints(sourceCount, closedAlong);
+            else
+                BuildParameterAlignedSourcePoints(sourceCount);
 
             for (int cross = 0; cross < m_CrossSampleCount; cross++)
             {
@@ -420,6 +424,182 @@ namespace MashBoxSDK.Maps.Spline
             }
 
             BuildDistanceTables(m_CrossSampleCount);
+        }
+
+        void BuildParameterAlignedSourcePoints(int sourceCount)
+        {
+            for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++)
+            {
+                var source = m_Sources[m_ValidSourceIndices[sourceIndex]];
+                for (int along = 0; along < m_AlongSampleCount; along++)
+                    m_SourcePoints[sourceIndex, along] = ToLocalPoint(EvaluateSourcePosition(source, m_AlongParameters[along]));
+            }
+        }
+
+        void BuildReferenceAlignedSourcePoints(int sourceCount, bool closedAlong)
+        {
+            int referenceIndex = ResolveAlignmentReference(sourceCount);
+            var referenceSource = m_Sources[m_ValidSourceIndices[referenceIndex]];
+
+            for (int along = 0; along < m_AlongSampleCount; along++)
+                m_SourcePoints[referenceIndex, along] = ToLocalPoint(EvaluateSourcePosition(referenceSource, m_AlongParameters[along]));
+
+            for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++)
+            {
+                if (sourceIndex == referenceIndex)
+                    continue;
+
+                var source = m_Sources[m_ValidSourceIndices[sourceIndex]];
+                float previousParameter = 0f;
+                for (int along = 0; along < m_AlongSampleCount; along++)
+                {
+                    float referenceParameter = m_AlongParameters[along];
+                    Vector3 referencePoint = EvaluateSourcePosition(referenceSource, referenceParameter);
+                    Vector3 referenceTangent = EvaluateSourceTangent(referenceSource, referenceParameter, closedAlong);
+                    float sourceParameter;
+
+                    if (!closedAlong && along == 0)
+                        sourceParameter = 0f;
+                    else if (!closedAlong && along == m_AlongSampleCount - 1)
+                        sourceParameter = 1f;
+                    else
+                        sourceParameter = FindPlaneIntersectionParameter(
+                            source,
+                            referencePoint,
+                            referenceTangent,
+                            referenceParameter,
+                            closedAlong ? 0f : previousParameter);
+
+                    previousParameter = sourceParameter;
+                    m_SourcePoints[sourceIndex, along] = ToLocalPoint(EvaluateSourcePosition(source, sourceParameter));
+                }
+            }
+        }
+
+        int ResolveAlignmentReference(int sourceCount)
+        {
+            if (m_AlignmentReferenceSource >= 0)
+            {
+                for (int validIndex = 0; validIndex < m_ValidSourceIndices.Count; validIndex++)
+                {
+                    if (m_ValidSourceIndices[validIndex] == m_AlignmentReferenceSource)
+                        return validIndex;
+                }
+            }
+
+            return Mathf.Clamp(sourceCount / 2, 0, sourceCount - 1);
+        }
+
+        Vector3 EvaluateSourcePosition(SplineSource source, float logicalParameter)
+        {
+            float t = source.reverse ? 1f - logicalParameter : logicalParameter;
+            var point = source.container.EvaluatePosition(source.splineIndex, Mathf.Clamp01(t));
+            return new Vector3(point.x, point.y, point.z);
+        }
+
+        Vector3 EvaluateSourceTangent(SplineSource source, float logicalParameter, bool closed)
+        {
+            const float step = 0.001f;
+            float before = logicalParameter - step;
+            float after = logicalParameter + step;
+
+            if (closed)
+            {
+                before = Mathf.Repeat(before, 1f);
+                after = Mathf.Repeat(after, 1f);
+            }
+            else
+            {
+                before = Mathf.Clamp01(before);
+                after = Mathf.Clamp01(after);
+            }
+
+            Vector3 tangent = EvaluateSourcePosition(source, after) - EvaluateSourcePosition(source, before);
+            if (!IsFinite(tangent) || tangent.sqrMagnitude < 0.000001f)
+                return Vector3.forward;
+
+            return tangent.normalized;
+        }
+
+        float FindPlaneIntersectionParameter(
+            SplineSource source,
+            Vector3 planePoint,
+            Vector3 planeNormal,
+            float preferredParameter,
+            float minimumParameter)
+        {
+            const int searchSteps = 32;
+            const int refinementSteps = 10;
+            float min = Mathf.Clamp01(minimumParameter);
+            float bestParameter = Mathf.Clamp(preferredParameter, min, 1f);
+            float bestDistance = Mathf.Abs(SignedPlaneDistance(source, bestParameter, planePoint, planeNormal));
+            float previousParameter = min;
+            float previousDistance = SignedPlaneDistance(source, previousParameter, planePoint, planeNormal);
+            float bestRoot = bestParameter;
+            float bestRootPreference = float.PositiveInfinity;
+
+            if (Mathf.Abs(previousDistance) < bestDistance)
+            {
+                bestDistance = Mathf.Abs(previousDistance);
+                bestParameter = previousParameter;
+            }
+
+            for (int step = 1; step <= searchSteps; step++)
+            {
+                float parameter = Mathf.Lerp(min, 1f, step / (float)searchSteps);
+                float distance = SignedPlaneDistance(source, parameter, planePoint, planeNormal);
+                float absoluteDistance = Mathf.Abs(distance);
+                if (absoluteDistance < bestDistance)
+                {
+                    bestDistance = absoluteDistance;
+                    bestParameter = parameter;
+                }
+
+                if (previousDistance == 0f || distance == 0f || Mathf.Sign(previousDistance) != Mathf.Sign(distance))
+                {
+                    float lower = previousParameter;
+                    float upper = parameter;
+                    float lowerDistance = previousDistance;
+                    for (int refinement = 0; refinement < refinementSteps; refinement++)
+                    {
+                        float middle = (lower + upper) * 0.5f;
+                        float middleDistance = SignedPlaneDistance(source, middle, planePoint, planeNormal);
+                        if (Mathf.Sign(lowerDistance) == Mathf.Sign(middleDistance))
+                        {
+                            lower = middle;
+                            lowerDistance = middleDistance;
+                        }
+                        else
+                        {
+                            upper = middle;
+                        }
+                    }
+
+                    float root = (lower + upper) * 0.5f;
+                    float preference = Mathf.Abs(root - preferredParameter);
+                    if (preference < bestRootPreference)
+                    {
+                        bestRootPreference = preference;
+                        bestRoot = root;
+                    }
+                }
+
+                previousParameter = parameter;
+                previousDistance = distance;
+            }
+
+            return bestRootPreference < float.PositiveInfinity ? bestRoot : bestParameter;
+        }
+
+        float SignedPlaneDistance(SplineSource source, float parameter, Vector3 planePoint, Vector3 planeNormal)
+        {
+            return Vector3.Dot(EvaluateSourcePosition(source, parameter) - planePoint, planeNormal);
+        }
+
+        Vector3 ToLocalPoint(Vector3 worldPoint)
+        {
+            var localPoint = transform.InverseTransformPoint(worldPoint);
+            return IsFinite(localPoint) ? localPoint : Vector3.zero;
         }
 
         void BuildAlongParameters(int sourceCount, bool closedAlong)

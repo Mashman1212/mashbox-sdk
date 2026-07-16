@@ -17,6 +17,8 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_SegmentsAcross;
         SerializedProperty m_AcrossInterpolation;
         SerializedProperty m_AlongResolutionMode;
+        SerializedProperty m_AlongAlignment;
+        SerializedProperty m_AlignmentReferenceSource;
         SerializedProperty m_TargetSegmentLength;
         SerializedProperty m_MaxDistanceSamples;
         SerializedProperty m_ResolutionZones;
@@ -40,6 +42,8 @@ namespace MashBoxSDK.Maps.Spline
             m_SegmentsAcross = serializedObject.FindProperty("m_SegmentsAcross");
             m_AcrossInterpolation = serializedObject.FindProperty("m_AcrossInterpolation");
             m_AlongResolutionMode = serializedObject.FindProperty("m_AlongResolutionMode");
+            m_AlongAlignment = serializedObject.FindProperty("m_AlongAlignment");
+            m_AlignmentReferenceSource = serializedObject.FindProperty("m_AlignmentReferenceSource");
             m_TargetSegmentLength = serializedObject.FindProperty("m_TargetSegmentLength");
             m_MaxDistanceSamples = serializedObject.FindProperty("m_MaxDistanceSamples");
             m_ResolutionZones = serializedObject.FindProperty("m_ResolutionZones");
@@ -90,6 +94,15 @@ namespace MashBoxSDK.Maps.Spline
             else
             {
                 EditorGUILayout.PropertyField(m_SamplesAlong, new GUIContent("Samples Along"));
+            }
+
+            EditorGUILayout.PropertyField(m_AlongAlignment, new GUIContent("Cross-Section Alignment"));
+            if (m_AlongAlignment.enumValueIndex == (int)MultiSplineLoft.AlongAlignment.ReferencePerpendicular)
+            {
+                int reference = m_AlignmentReferenceSource.intValue;
+                reference = EditorGUILayout.IntField(new GUIContent("Reference Source", "Use -1 to automatically use the middle valid loft curve."), reference);
+                m_AlignmentReferenceSource.intValue = Mathf.Clamp(reference, -1, Mathf.Max(-1, m_Sources.arraySize - 1));
+                EditorGUILayout.HelpBox("Each cross-section is matched to a plane perpendicular to the reference curve. Reference Source -1 uses the middle valid curve.", MessageType.Info);
             }
 
             EditorGUILayout.PropertyField(m_SegmentsAcross, new GUIContent("Segments Across"));
