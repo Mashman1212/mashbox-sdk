@@ -1,4 +1,8 @@
 using System.Collections.Generic;
+#if UNITY_EDITOR
+using System.Linq;
+using UnityEditor;
+#endif
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -11,12 +15,16 @@ public class RuntimeMeshCombiner : MonoBehaviour
     [SerializeField] private bool includeRootRenderer;
     [SerializeField] private bool disableSourceRenderers = true;
     [SerializeField] private bool addMeshCollider;
+#if UNITY_EDITOR
+    [SerializeField] private bool enableReadWriteInEditorBeforeCombine = true;
+#endif
     [SerializeField] private string combinedObjectName = "Combined Mesh";
 
     private readonly List<MeshRenderer> sourceRenderers = new List<MeshRenderer>();
     private readonly List<bool> sourceRendererEnabledStates = new List<bool>();
     private GameObject combinedObject;
     private Mesh combinedMesh;
+    private MeshRenderer sourceRendererTemplate;
 
     private void Awake()
     {
@@ -35,11 +43,23 @@ public class RuntimeMeshCombiner : MonoBehaviour
     {
         RestoreSourceRenderers();
         ClearCombinedObject();
+        sourceRendererTemplate = null;
 
         MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>(includeInactiveChildren);
-        Dictionary<Material, List<CombineInstance>> combinesByMaterial = new Dictionary<Material, List<CombineInstance>>();
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying && enableReadWriteInEditorBeforeCombine)
+        {
+            EnableReadWriteOnChildMeshAssets(meshFilters);
+            meshFilters = GetComponentsInChildren<MeshFilter>(includeInactiveChildren);
+        }
+#endif
+
+        List<CombineInstance> combineInstances = new List<CombineInstance>();
         List<Material> orderedMaterials = new List<Material>();
         int vertexCount = 0;
+        int sourceMeshCount = 0;
+        int sourceSubMeshCount = 0;
 
         for (int i = 0; i < meshFilters.Length; i++)
         {
@@ -50,62 +70,53 @@ public class RuntimeMeshCombiner : MonoBehaviour
 
             Mesh mesh = meshFilter.sharedMesh;
             MeshRenderer meshRenderer = meshFilter.GetComponent<MeshRenderer>();
+
+#if UNITY_EDITOR
+            if (!mesh.isReadable && !Application.isPlaying && enableReadWriteInEditorBeforeCombine)
+                mesh = ReloadMeshFromAssetIfReadable(mesh, meshFilter);
+#endif
+
+            if (!mesh.isReadable)
+            {
+                Debug.LogWarning(
+                    $"Skipping '{mesh.name}' on '{meshFilter.name}' because the mesh is not readable. Enable Read/Write on the mesh import settings to combine it.",
+                    meshFilter);
+                continue;
+            }
+
             Material[] materials = meshRenderer.sharedMaterials;
-            int subMeshCount = Mathf.Min(mesh.subMeshCount, materials.Length);
+            int subMeshCount = mesh.subMeshCount;
             bool usedRenderer = false;
 
             for (int subMeshIndex = 0; subMeshIndex < subMeshCount; subMeshIndex++)
             {
-                Material material = materials[subMeshIndex];
-
-                if (material == null)
-                    continue;
-
-                if (!combinesByMaterial.TryGetValue(material, out List<CombineInstance> combines))
-                {
-                    combines = new List<CombineInstance>();
-                    combinesByMaterial.Add(material, combines);
-                    orderedMaterials.Add(material);
-                }
-
-                combines.Add(new CombineInstance
+                combineInstances.Add(new CombineInstance
                 {
                     mesh = mesh,
                     subMeshIndex = subMeshIndex,
                     transform = transform.worldToLocalMatrix * meshFilter.transform.localToWorldMatrix
                 });
+                orderedMaterials.Add(subMeshIndex < materials.Length ? materials[subMeshIndex] : null);
                 usedRenderer = true;
+                sourceSubMeshCount++;
             }
 
             if (!usedRenderer)
                 continue;
 
             vertexCount += mesh.vertexCount;
+            sourceMeshCount++;
             sourceRenderers.Add(meshRenderer);
             sourceRendererEnabledStates.Add(meshRenderer.enabled);
+
+            if (sourceRendererTemplate == null)
+                sourceRendererTemplate = meshRenderer;
         }
 
-        if (orderedMaterials.Count == 0)
-            return;
-
-        CombineInstance[] materialCombines = new CombineInstance[orderedMaterials.Count];
-
-        for (int i = 0; i < orderedMaterials.Count; i++)
+        if (combineInstances.Count == 0)
         {
-            Mesh materialMesh = new Mesh
-            {
-                name = $"{combinedObjectName} Material {i:00}",
-                indexFormat = vertexCount > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16
-            };
-
-            materialMesh.CombineMeshes(combinesByMaterial[orderedMaterials[i]].ToArray(), true, true, false);
-
-            materialCombines[i] = new CombineInstance
-            {
-                mesh = materialMesh,
-                subMeshIndex = 0,
-                transform = Matrix4x4.identity
-            };
+            Debug.LogWarning($"RuntimeMeshCombiner on '{name}' found no valid readable child meshes to combine.", this);
+            return;
         }
 
         combinedMesh = new Mesh
@@ -113,15 +124,29 @@ public class RuntimeMeshCombiner : MonoBehaviour
             name = $"{name} Combined Mesh",
             indexFormat = vertexCount > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16
         };
-        combinedMesh.CombineMeshes(materialCombines, false, false, false);
+        combinedMesh.CombineMeshes(combineInstances.ToArray(), false, true, false);
         combinedMesh.RecalculateBounds();
 
-        for (int i = 0; i < materialCombines.Length; i++)
-            DestroyObject(materialCombines[i].mesh);
+        int combinedIndexCount = GetCombinedIndexCount(combinedMesh);
+
+        if (combinedMesh.vertexCount == 0 || combinedIndexCount == 0)
+        {
+            Debug.LogWarning(
+                $"RuntimeMeshCombiner on '{name}' built an empty mesh from {sourceMeshCount} source meshes / {sourceSubMeshCount} submeshes. Source renderers were left enabled.",
+                this);
+            DestroyObject(combinedMesh);
+            combinedMesh = null;
+            RestoreSourceRenderers();
+            return;
+        }
 
         CreateCombinedObject(orderedMaterials);
 
-        if (disableSourceRenderers)
+        Debug.Log(
+            $"RuntimeMeshCombiner on '{name}' built '{combinedMesh.name}' with {combinedMesh.vertexCount} vertices, {combinedIndexCount / 3} triangles, {combinedMesh.subMeshCount} submeshes from {sourceMeshCount} source meshes.",
+            this);
+
+        if (disableSourceRenderers && combinedObject != null && combinedMesh != null && combinedMesh.vertexCount > 0)
         {
             for (int i = 0; i < sourceRenderers.Count; i++)
             {
@@ -145,6 +170,108 @@ public class RuntimeMeshCombiner : MonoBehaviour
         sourceRenderers.Clear();
         sourceRendererEnabledStates.Clear();
     }
+
+#if UNITY_EDITOR
+    [ContextMenu("Enable Read/Write On Child Mesh Assets")]
+    public void EnableReadWriteOnChildMeshAssets()
+    {
+        EnableReadWriteOnChildMeshAssets(GetComponentsInChildren<MeshFilter>(includeInactiveChildren));
+    }
+
+    private void EnableReadWriteOnChildMeshAssets(MeshFilter[] meshFilters)
+    {
+        if (meshFilters == null || meshFilters.Length == 0)
+            return;
+
+        HashSet<string> reimportedAssetPaths = new HashSet<string>();
+        int changedCount = 0;
+        int unreadableSceneMeshCount = 0;
+
+        for (int i = 0; i < meshFilters.Length; i++)
+        {
+            MeshFilter meshFilter = meshFilters[i];
+
+            if (!ShouldUseMeshFilter(meshFilter))
+                continue;
+
+            Mesh mesh = meshFilter.sharedMesh;
+
+            if (mesh == null || mesh.isReadable)
+                continue;
+
+            string assetPath = AssetDatabase.GetAssetPath(mesh);
+
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                unreadableSceneMeshCount++;
+                continue;
+            }
+
+            if (reimportedAssetPaths.Contains(assetPath))
+                continue;
+
+            ModelImporter modelImporter = AssetImporter.GetAtPath(assetPath) as ModelImporter;
+
+            if (modelImporter == null)
+            {
+                Debug.LogWarning(
+                    $"RuntimeMeshCombiner could not enable Read/Write for '{mesh.name}' because '{assetPath}' is not imported by a ModelImporter.",
+                    meshFilter);
+                continue;
+            }
+
+            if (modelImporter.isReadable)
+                continue;
+
+            modelImporter.isReadable = true;
+            modelImporter.SaveAndReimport();
+            reimportedAssetPaths.Add(assetPath);
+            changedCount++;
+        }
+
+        if (changedCount > 0)
+        {
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log($"RuntimeMeshCombiner enabled Read/Write on {changedCount} mesh import asset(s) under '{name}'.", this);
+        }
+
+        if (unreadableSceneMeshCount > 0)
+        {
+            Debug.LogWarning(
+                $"RuntimeMeshCombiner found {unreadableSceneMeshCount} unreadable scene/procedural mesh(es) under '{name}' that do not have an import asset path, so Read/Write could not be changed automatically.",
+                this);
+        }
+    }
+
+    private static Mesh ReloadMeshFromAssetIfReadable(Mesh mesh, MeshFilter meshFilter)
+    {
+        if (mesh == null || mesh.isReadable)
+            return mesh;
+
+        string assetPath = AssetDatabase.GetAssetPath(mesh);
+
+        if (string.IsNullOrEmpty(assetPath))
+            return mesh;
+
+        Mesh[] meshes = AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<Mesh>().ToArray();
+
+        for (int i = 0; i < meshes.Length; i++)
+        {
+            Mesh candidate = meshes[i];
+
+            if (candidate == null || candidate.name != mesh.name || !candidate.isReadable)
+                continue;
+
+            if (meshFilter != null)
+                meshFilter.sharedMesh = candidate;
+
+            return candidate;
+        }
+
+        return mesh;
+    }
+#endif
 
     private bool ShouldUseMeshFilter(MeshFilter meshFilter)
     {
@@ -177,12 +304,16 @@ public class RuntimeMeshCombiner : MonoBehaviour
     {
         combinedObject = new GameObject(combinedObjectName);
         combinedObject.transform.SetParent(transform, false);
+        combinedObject.layer = sourceRendererTemplate != null
+            ? sourceRendererTemplate.gameObject.layer
+            : gameObject.layer;
 
         MeshFilter meshFilter = combinedObject.AddComponent<MeshFilter>();
         meshFilter.sharedMesh = combinedMesh;
 
         MeshRenderer meshRenderer = combinedObject.AddComponent<MeshRenderer>();
         meshRenderer.sharedMaterials = materials.ToArray();
+        ApplyRendererSettings(meshRenderer);
 
         if (!addMeshCollider)
             return;
@@ -205,6 +336,33 @@ public class RuntimeMeshCombiner : MonoBehaviour
             DestroyObject(existingCombinedObject.gameObject);
 
         combinedObject = null;
+        sourceRendererTemplate = null;
+    }
+
+    private void ApplyRendererSettings(MeshRenderer targetRenderer)
+    {
+        if (targetRenderer == null || sourceRendererTemplate == null)
+            return;
+
+        targetRenderer.shadowCastingMode = sourceRendererTemplate.shadowCastingMode;
+        targetRenderer.receiveShadows = sourceRendererTemplate.receiveShadows;
+        targetRenderer.lightProbeUsage = sourceRendererTemplate.lightProbeUsage;
+        targetRenderer.reflectionProbeUsage = sourceRendererTemplate.reflectionProbeUsage;
+        targetRenderer.motionVectorGenerationMode = sourceRendererTemplate.motionVectorGenerationMode;
+        targetRenderer.renderingLayerMask = sourceRendererTemplate.renderingLayerMask;
+    }
+
+    private static int GetCombinedIndexCount(Mesh mesh)
+    {
+        if (mesh == null)
+            return 0;
+
+        int indexCount = 0;
+
+        for (int i = 0; i < mesh.subMeshCount; i++)
+            indexCount += (int)mesh.GetIndexCount(i);
+
+        return indexCount;
     }
 
     private static void DestroyObject(Object target)
