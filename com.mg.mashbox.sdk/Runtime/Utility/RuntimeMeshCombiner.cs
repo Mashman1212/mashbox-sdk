@@ -56,8 +56,8 @@ public class RuntimeMeshCombiner : MonoBehaviour
 
         MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>(includeInactiveChildren);
 
-        List<CombineInstance> combineInstances = new List<CombineInstance>();
         List<Material> orderedMaterials = new List<Material>();
+        List<List<CombineInstance>> combineInstancesByMaterial = new List<List<CombineInstance>>();
         int vertexCount = 0;
         int sourceMeshCount = 0;
         int sourceSubMeshCount = 0;
@@ -91,13 +91,16 @@ public class RuntimeMeshCombiner : MonoBehaviour
 
             for (int subMeshIndex = 0; subMeshIndex < subMeshCount; subMeshIndex++)
             {
-                combineInstances.Add(new CombineInstance
+                Material material = subMeshIndex < materials.Length ? materials[subMeshIndex] : null;
+                int materialIndex = GetOrAddMaterialIndex(orderedMaterials, combineInstancesByMaterial, material);
+                List<CombineInstance> materialCombines = combineInstancesByMaterial[materialIndex];
+
+                materialCombines.Add(new CombineInstance
                 {
                     mesh = mesh,
                     subMeshIndex = subMeshIndex,
                     transform = transform.worldToLocalMatrix * meshFilter.transform.localToWorldMatrix
                 });
-                orderedMaterials.Add(subMeshIndex < materials.Length ? materials[subMeshIndex] : null);
                 usedRenderer = true;
                 sourceSubMeshCount++;
             }
@@ -114,7 +117,7 @@ public class RuntimeMeshCombiner : MonoBehaviour
                 sourceRendererTemplate = meshRenderer;
         }
 
-        if (combineInstances.Count == 0)
+        if (orderedMaterials.Count == 0)
         {
             Debug.LogWarning($"RuntimeMeshCombiner on '{name}' found no valid readable child meshes to combine.", this);
             return;
@@ -125,8 +128,12 @@ public class RuntimeMeshCombiner : MonoBehaviour
             name = $"{name} Combined Mesh",
             indexFormat = vertexCount > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16
         };
-        combinedMesh.CombineMeshes(combineInstances.ToArray(), false, true, false);
+        CombineInstance[] materialCombineInstances = BuildMaterialCombineInstances(combineInstancesByMaterial, orderedMaterials);
+        combinedMesh.CombineMeshes(materialCombineInstances, false, true, false);
         combinedMesh.RecalculateBounds();
+
+        for (int i = 0; i < materialCombineInstances.Length; i++)
+            DestroyObject(materialCombineInstances[i].mesh);
 
         int combinedIndexCount = GetCombinedIndexCount(combinedMesh);
 
@@ -144,7 +151,7 @@ public class RuntimeMeshCombiner : MonoBehaviour
         CreateCombinedObject(orderedMaterials);
 
         Debug.Log(
-            $"RuntimeMeshCombiner on '{name}' built '{combinedMesh.name}' with {combinedMesh.vertexCount} vertices, {combinedIndexCount / 3} triangles, {combinedMesh.subMeshCount} submeshes from {sourceMeshCount} source meshes.",
+            $"RuntimeMeshCombiner on '{name}' built '{combinedMesh.name}' with {combinedMesh.vertexCount} vertices, {combinedIndexCount / 3} triangles, {combinedMesh.subMeshCount} material submeshes from {sourceMeshCount} source meshes / {sourceSubMeshCount} source submeshes.",
             this);
 
         if (disableSourceRenderers && combinedObject != null && combinedMesh != null && combinedMesh.vertexCount > 0)
@@ -351,6 +358,66 @@ public class RuntimeMeshCombiner : MonoBehaviour
         targetRenderer.reflectionProbeUsage = sourceRendererTemplate.reflectionProbeUsage;
         targetRenderer.motionVectorGenerationMode = sourceRendererTemplate.motionVectorGenerationMode;
         targetRenderer.renderingLayerMask = sourceRendererTemplate.renderingLayerMask;
+    }
+
+    private static CombineInstance[] BuildMaterialCombineInstances(
+        List<List<CombineInstance>> combinesByMaterial,
+        List<Material> orderedMaterials)
+    {
+        CombineInstance[] materialCombines = new CombineInstance[orderedMaterials.Count];
+
+        for (int i = 0; i < orderedMaterials.Count; i++)
+        {
+            Material material = orderedMaterials[i];
+            List<CombineInstance> sourceCombines = combinesByMaterial[i];
+            int vertexCount = GetSourceVertexCount(sourceCombines);
+            Mesh materialMesh = new Mesh
+            {
+                name = material != null ? $"{material.name} Combined" : "Null Material Combined",
+                indexFormat = vertexCount > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16
+            };
+            materialMesh.CombineMeshes(sourceCombines.ToArray(), true, true, false);
+
+            materialCombines[i] = new CombineInstance
+            {
+                mesh = materialMesh,
+                subMeshIndex = 0,
+                transform = Matrix4x4.identity
+            };
+        }
+
+        return materialCombines;
+    }
+
+    private static int GetOrAddMaterialIndex(
+        List<Material> orderedMaterials,
+        List<List<CombineInstance>> combinesByMaterial,
+        Material material)
+    {
+        for (int i = 0; i < orderedMaterials.Count; i++)
+        {
+            if (orderedMaterials[i] == material)
+                return i;
+        }
+
+        orderedMaterials.Add(material);
+        combinesByMaterial.Add(new List<CombineInstance>());
+        return orderedMaterials.Count - 1;
+    }
+
+    private static int GetSourceVertexCount(List<CombineInstance> sourceCombines)
+    {
+        int vertexCount = 0;
+
+        for (int i = 0; i < sourceCombines.Count; i++)
+        {
+            Mesh mesh = sourceCombines[i].mesh;
+
+            if (mesh != null)
+                vertexCount += mesh.vertexCount;
+        }
+
+        return vertexCount;
     }
 
     private static int GetCombinedIndexCount(Mesh mesh)
