@@ -5,6 +5,7 @@ using UnityEditor;
 #endif
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Serialization;
 
 [DisallowMultipleComponent]
 public class RuntimeMeshCombiner : MonoBehaviour
@@ -16,7 +17,7 @@ public class RuntimeMeshCombiner : MonoBehaviour
     [SerializeField] private bool disableSourceRenderers = true;
     [SerializeField] private bool addMeshCollider;
 #if UNITY_EDITOR
-    [SerializeField] private bool enableReadWriteInEditorBeforeCombine = true;
+    [SerializeField] [FormerlySerializedAs("enableReadWriteInEditorBeforeCombine")] private bool enableReadWriteOnValidate = true;
 #endif
     [SerializeField] private string combinedObjectName = "Combined Mesh";
 
@@ -38,6 +39,14 @@ public class RuntimeMeshCombiner : MonoBehaviour
             DestroyObject(combinedMesh);
     }
 
+    private void OnValidate()
+    {
+#if UNITY_EDITOR
+        if (!Application.isPlaying && enableReadWriteOnValidate)
+            EnableReadWriteOnChildMeshAssets(GetComponentsInChildren<MeshFilter>(includeInactiveChildren));
+#endif
+    }
+
     [ContextMenu("Combine Now")]
     public void Combine()
     {
@@ -46,14 +55,6 @@ public class RuntimeMeshCombiner : MonoBehaviour
         sourceRendererTemplate = null;
 
         MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>(includeInactiveChildren);
-
-#if UNITY_EDITOR
-        if (!Application.isPlaying && enableReadWriteInEditorBeforeCombine)
-        {
-            EnableReadWriteOnChildMeshAssets(meshFilters);
-            meshFilters = GetComponentsInChildren<MeshFilter>(includeInactiveChildren);
-        }
-#endif
 
         List<CombineInstance> combineInstances = new List<CombineInstance>();
         List<Material> orderedMaterials = new List<Material>();
@@ -72,7 +73,7 @@ public class RuntimeMeshCombiner : MonoBehaviour
             MeshRenderer meshRenderer = meshFilter.GetComponent<MeshRenderer>();
 
 #if UNITY_EDITOR
-            if (!mesh.isReadable && !Application.isPlaying && enableReadWriteInEditorBeforeCombine)
+            if (!mesh.isReadable && !Application.isPlaying)
                 mesh = ReloadMeshFromAssetIfReadable(mesh, meshFilter);
 #endif
 
