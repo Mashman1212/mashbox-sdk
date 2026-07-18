@@ -2,7 +2,9 @@ using System.Collections.Generic;
 using System.IO;
 using MashBoxSDK.EditorResources;
 using UnityEditor;
+using UnityEditor.EditorTools;
 using UnityEditorInternal;
+using UnityEditor.Splines;
 using UnityEngine;
 using UnityEngine.Splines;
 
@@ -33,6 +35,12 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_FlipNormals;
         SerializedProperty m_UvScaleAlong;
         SerializedProperty m_UvScaleAcross;
+        SerializedProperty m_GenerateUvSplineWithLoft;
+        SerializedProperty m_UvSplineChannel;
+        SerializedProperty m_UvSplineDirection;
+        SerializedProperty m_UvSplinePointCount;
+        SerializedProperty m_UvSpline;
+        SerializedProperty m_SculptModifier;
         SerializedProperty m_GeneratedMesh;
 
         void OnEnable()
@@ -58,6 +66,12 @@ namespace MashBoxSDK.Maps.Spline
             m_FlipNormals = serializedObject.FindProperty("m_FlipNormals");
             m_UvScaleAlong = serializedObject.FindProperty("m_UvScaleAlong");
             m_UvScaleAcross = serializedObject.FindProperty("m_UvScaleAcross");
+            m_GenerateUvSplineWithLoft = serializedObject.FindProperty("m_GenerateUvSplineWithLoft");
+            m_UvSplineChannel = serializedObject.FindProperty("m_UvSplineChannel");
+            m_UvSplineDirection = serializedObject.FindProperty("m_UvSplineDirection");
+            m_UvSplinePointCount = serializedObject.FindProperty("m_UvSplinePointCount");
+            m_UvSpline = serializedObject.FindProperty("m_UvSpline");
+            m_SculptModifier = serializedObject.FindProperty("m_SculptModifier");
             m_GeneratedMesh = serializedObject.FindProperty("m_GeneratedMesh");
 
             m_SourceList = new ReorderableList(serializedObject, m_Sources, true, true, true, true)
@@ -117,15 +131,24 @@ namespace MashBoxSDK.Maps.Spline
             EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(m_NormalMode);
             EditorGUILayout.PropertyField(m_FlipNormals, new GUIContent("Flip Normals"));
-            EditorGUILayout.PropertyField(m_UvScaleAcross, new GUIContent("UV Across Scale"));
+            EditorGUILayout.PropertyField(m_UvScaleAcross, new GUIContent("UV Across Scale", "1 maps the full left-to-right width to U 0-1. Higher values repeat across the width."));
             EditorGUILayout.PropertyField(m_UvScaleAlong, new GUIContent("UV Along Scale"));
             EditorGUILayout.PropertyField(m_UpdateMeshCollider, new GUIContent("Update Mesh Collider"));
             EditorGUILayout.PropertyField(m_AutoRegenerate, new GUIContent("Live Regenerate"));
+            EditorGUILayout.PropertyField(m_SculptModifier, new GUIContent("Sculpt Modifier", "Replays recorded sculpt strokes after every loft regeneration."));
+
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.LabelField("UV Spline", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(m_GenerateUvSplineWithLoft, new GUIContent("Generate With Loft"));
+            EditorGUILayout.PropertyField(m_UvSplineChannel, new GUIContent("UV Channel"));
+            EditorGUILayout.PropertyField(m_UvSplineDirection, new GUIContent("UV Direction"));
+            EditorGUILayout.PropertyField(m_UvSplinePointCount, new GUIContent("Generated Points"));
 
             using (new EditorGUI.DisabledScope(true))
             {
                 EditorGUILayout.IntField("Generated Samples Along", loft.CurrentSamplesAlong);
                 EditorGUILayout.PropertyField(m_GeneratedMesh, new GUIContent("Generated Mesh"));
+                EditorGUILayout.PropertyField(m_UvSpline, new GUIContent("Generated UV Spline"));
             }
 
             bool changed = serializedObject.ApplyModifiedProperties();
@@ -163,6 +186,33 @@ namespace MashBoxSDK.Maps.Spline
                 if (GUILayout.Button("Bake Mesh Asset", GUILayout.Height(26f)))
                     BakeMesh(loft);
             }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Generate UV Spline", GUILayout.Height(26f)))
+                    GenerateUvSpline(loft);
+
+                using (new EditorGUI.DisabledScope(loft.GeneratedUvSpline == null))
+                {
+                    if (GUILayout.Button("Select UV Spline", GUILayout.Height(26f)))
+                        Selection.activeGameObject = loft.GeneratedUvSpline.gameObject;
+                }
+            }
+        }
+
+        static void GenerateUvSpline(MultiSplineLoft loft)
+        {
+            Undo.RecordObject(loft, "Generate UV Spline");
+            if (!loft.RegenerateUvSpline(out string error))
+            {
+                EditorUtility.DisplayDialog("Generate UV Spline", error, "OK");
+                return;
+            }
+
+            EditorUtility.SetDirty(loft);
+            EditorUtility.SetDirty(loft.GeneratedUvSpline);
+            Selection.activeGameObject = loft.GeneratedUvSpline.gameObject;
+            SceneView.RepaintAll();
         }
 
         void DrawSourceElement(Rect rect, int index, bool isActive, bool isFocused)
@@ -344,15 +394,200 @@ namespace MashBoxSDK.Maps.Spline
     {
         MultiSplineLoft m_ActiveLoft;
         Vector2 m_Scroll;
+        bool m_SceneToolActive;
+        bool m_ChangingSelection;
+        bool m_SplineEditActivationQueued;
+        UnityEngine.Object[] m_QueuedSplineTargets;
+        int m_SplineToolActivationAttempts;
+        SplineContainer m_QueuedKnotPlacementTarget;
 
         public static void ShowWindow()
         {
-            GetWindow<MultiSplineLoftWindow>("Multi-Spline Loft");
+            MultiSplineLoftWindow window = GetWindow<MultiSplineLoftWindow>("Multi-Spline Loft");
+            window.ActivateSceneTool();
         }
 
         void OnGUI()
         {
             Draw();
+        }
+
+        void OnDisable()
+        {
+            DeactivateSceneTool();
+        }
+
+        public void ActivateSceneTool()
+        {
+            if (m_SceneToolActive)
+            {
+                MultiSplineLoft selectedLoft = Selection.activeGameObject != null
+                    ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
+                    : null;
+                if (selectedLoft != null)
+                {
+                    m_ActiveLoft = selectedLoft;
+                    EnterUnitySplineEditMode(selectedLoft);
+                }
+                return;
+            }
+            m_SceneToolActive = true;
+            Selection.selectionChanged += OnSelectionChanged;
+            UseSelectedLoftAndEditSplines();
+        }
+
+        public void DeactivateSceneTool()
+        {
+            if (!m_SceneToolActive) return;
+            m_SceneToolActive = false;
+            Selection.selectionChanged -= OnSelectionChanged;
+            EditorApplication.delayCall -= ApplyQueuedSplineSelection;
+            EditorApplication.delayCall -= ActivateQueuedSplineTool;
+            EditorApplication.delayCall -= ApplyQueuedKnotPlacementSelection;
+            EditorApplication.delayCall -= ActivateKnotPlacementTool;
+            m_SplineEditActivationQueued = false;
+            m_QueuedSplineTargets = null;
+            if (ToolManager.activeContextType == typeof(SplineToolContext))
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+        }
+
+        void OnSelectionChanged()
+        {
+            if (!m_SceneToolActive || m_ChangingSelection) return;
+            MultiSplineLoft selectedLoft = Selection.activeGameObject != null
+                ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
+                : null;
+            if (selectedLoft == null) return;
+
+            m_ActiveLoft = selectedLoft;
+            EnterUnitySplineEditMode(selectedLoft);
+            Repaint();
+        }
+
+        void UseSelectedLoftAndEditSplines()
+        {
+            MultiSplineLoft selectedLoft = Selection.activeGameObject != null
+                ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
+                : null;
+            if (selectedLoft != null)
+                m_ActiveLoft = selectedLoft;
+            if (m_ActiveLoft != null)
+                EnterUnitySplineEditMode(m_ActiveLoft);
+        }
+
+        void EnterUnitySplineEditMode(MultiSplineLoft loft)
+        {
+            if (loft == null) return;
+            var targets = new List<UnityEngine.Object>();
+            foreach (MultiSplineLoft.SplineSource source in loft.Sources)
+            {
+                GameObject splineObject = source?.container != null ? source.container.gameObject : null;
+                if (splineObject != null && !targets.Contains(splineObject))
+                    targets.Add(splineObject);
+            }
+            if (targets.Count == 0) return;
+
+            m_QueuedSplineTargets = targets.ToArray();
+            m_SplineToolActivationAttempts = 0;
+            if (m_SplineEditActivationQueued) return;
+            m_SplineEditActivationQueued = true;
+            EditorApplication.delayCall -= ApplyQueuedSplineSelection;
+            EditorApplication.delayCall += ApplyQueuedSplineSelection;
+        }
+
+        void ApplyQueuedSplineSelection()
+        {
+            EditorApplication.delayCall -= ApplyQueuedSplineSelection;
+            if (!m_SceneToolActive || m_QueuedSplineTargets == null || m_QueuedSplineTargets.Length == 0)
+            {
+                m_SplineEditActivationQueued = false;
+                return;
+            }
+
+            m_ChangingSelection = true;
+            Selection.objects = m_QueuedSplineTargets;
+            m_ChangingSelection = false;
+            EditorApplication.delayCall -= ActivateQueuedSplineTool;
+            EditorApplication.delayCall += ActivateQueuedSplineTool;
+        }
+
+        void ActivateQueuedSplineTool()
+        {
+            EditorApplication.delayCall -= ActivateQueuedSplineTool;
+            m_SplineEditActivationQueued = false;
+            m_QueuedSplineTargets = null;
+            if (!m_SceneToolActive || Selection.GetFiltered<SplineContainer>(SelectionMode.Editable | SelectionMode.Deep).Length == 0)
+                return;
+
+            try
+            {
+                ToolManager.SetActiveContext<SplineToolContext>();
+                ToolManager.SetActiveTool<SplineMoveTool>();
+            }
+            catch (System.InvalidOperationException)
+            {
+                if (++m_SplineToolActivationAttempts < 3 && m_SceneToolActive)
+                {
+                    EditorApplication.delayCall += ActivateQueuedSplineTool;
+                    return;
+                }
+                throw;
+            }
+
+            if (ToolManager.activeContextType != typeof(SplineToolContext) && ++m_SplineToolActivationAttempts < 3)
+            {
+                EditorApplication.delayCall += ActivateQueuedSplineTool;
+                return;
+            }
+            SceneView.RepaintAll();
+        }
+
+        void QueueSplineMoveTool()
+        {
+            EditorApplication.delayCall -= ActivateQueuedSplineTool;
+            EditorApplication.delayCall += ActivateQueuedSplineTool;
+        }
+
+        void QueueKnotPlacementTool(SplineContainer target = null)
+        {
+            m_QueuedKnotPlacementTarget = target;
+            EditorApplication.delayCall -= ApplyQueuedKnotPlacementSelection;
+            EditorApplication.delayCall += ApplyQueuedKnotPlacementSelection;
+        }
+
+        void ApplyQueuedKnotPlacementSelection()
+        {
+            EditorApplication.delayCall -= ApplyQueuedKnotPlacementSelection;
+            if (!m_SceneToolActive) return;
+            if (m_QueuedKnotPlacementTarget != null)
+                Selection.activeGameObject = m_QueuedKnotPlacementTarget.gameObject;
+            EditorApplication.delayCall -= ActivateKnotPlacementTool;
+            EditorApplication.delayCall += ActivateKnotPlacementTool;
+        }
+
+        void ActivateKnotPlacementTool()
+        {
+            EditorApplication.delayCall -= ActivateKnotPlacementTool;
+            m_QueuedKnotPlacementTarget = null;
+            if (!m_SceneToolActive) return;
+            EditorSplineUtility.SetKnotPlacementTool();
+            SceneView.RepaintAll();
+        }
+
+        void CreateAndAddLoftSpline()
+        {
+            if (m_ActiveLoft == null) return;
+            var splineObject = new GameObject("SPLINE [NEW]", typeof(SplineContainer));
+            Undo.RegisterCreatedObjectUndo(splineObject, "Create Loft Spline");
+            Transform parent = m_ActiveLoft.transform.parent;
+            if (parent != null)
+                splineObject.transform.SetParent(parent, false);
+
+            SplineContainer container = splineObject.GetComponent<SplineContainer>();
+            Undo.RecordObject(m_ActiveLoft, "Add Loft Spline");
+            m_ActiveLoft.AddSelectedSpline(container);
+            EditorUtility.SetDirty(m_ActiveLoft);
+            QueueKnotPlacementTool(container);
         }
 
         public void Draw(bool embeddedInParentWindow = false)
@@ -366,11 +601,31 @@ namespace MashBoxSDK.Maps.Spline
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Use Selection"))
+                {
                     m_ActiveLoft = Selection.activeGameObject != null ? Selection.activeGameObject.GetComponent<MultiSplineLoft>() : null;
+                    if (m_ActiveLoft != null)
+                        EnterUnitySplineEditMode(m_ActiveLoft);
+                }
 
                 if (GUILayout.Button("Create From Splines"))
                     MultiSplineLoftEditor.CreateLoftFromSelection();
             }
+
+            EditorGUILayout.Space(8f);
+            EditorGUILayout.LabelField("Spline Editing", EditorStyles.boldLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Move / Edit Knots"))
+                    QueueSplineMoveTool();
+                if (GUILayout.Button("Draw / Add Knots"))
+                    QueueKnotPlacementTool();
+            }
+            using (new EditorGUI.DisabledScope(m_ActiveLoft == null))
+            {
+                if (GUILayout.Button("Create New Loft Spline", GUILayout.Height(24f)))
+                    CreateAndAddLoftSpline();
+            }
+            EditorGUILayout.HelpBox("Select knots with Unity's spline handles. Press Delete or Backspace to remove selected knots.", MessageType.None);
 
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Selected Splines", EditorStyles.boldLabel);
@@ -393,11 +648,40 @@ namespace MashBoxSDK.Maps.Spline
 
             using (new EditorGUI.DisabledScope(m_ActiveLoft == null))
             {
+                EditorGUILayout.Space(8f);
+                EditorGUILayout.LabelField("UV Spline", EditorStyles.boldLabel);
+
+                if (m_ActiveLoft != null)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    bool generateWithLoft = EditorGUILayout.Toggle("Generate With Loft", m_ActiveLoft.GenerateUvSplineWithLoft);
+                    int uvChannel = EditorGUILayout.IntSlider("UV Channel", m_ActiveLoft.UvSplineChannel, 0, 3);
+                    var direction = (UVSpline.LongitudinalAxis)EditorGUILayout.EnumPopup("UV Direction", m_ActiveLoft.UvSplineDirection);
+                    int pointCount = EditorGUILayout.IntSlider("Generated Points", m_ActiveLoft.UvSplinePointCount, 2, 200);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(m_ActiveLoft, "Edit Loft UV Spline Settings");
+                        m_ActiveLoft.GenerateUvSplineWithLoft = generateWithLoft;
+                        m_ActiveLoft.UvSplineChannel = uvChannel;
+                        m_ActiveLoft.UvSplineDirection = direction;
+                        m_ActiveLoft.UvSplinePointCount = pointCount;
+                        EditorUtility.SetDirty(m_ActiveLoft);
+                    }
+                }
+
                 if (GUILayout.Button("Generate Active Loft", GUILayout.Height(26f)))
                 {
                     Undo.RecordObject(m_ActiveLoft, "Generate Multi Spline Loft");
                     m_ActiveLoft.Regenerate();
                     EditorUtility.SetDirty(m_ActiveLoft);
+                }
+
+                if (GUILayout.Button("Generate And Select UV Spline", GUILayout.Height(26f)))
+                {
+                    if (!m_ActiveLoft.RegenerateUvSpline(out string error))
+                        EditorUtility.DisplayDialog("Generate UV Spline", error, "OK");
+                    else
+                        Selection.activeGameObject = m_ActiveLoft.GeneratedUvSpline.gameObject;
                 }
             }
 

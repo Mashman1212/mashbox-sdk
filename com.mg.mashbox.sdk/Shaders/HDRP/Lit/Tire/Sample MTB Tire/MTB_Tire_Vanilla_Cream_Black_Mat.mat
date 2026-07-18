@@ -8,8 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: MTB_Tire_Vanilla_Cream_Black_Mat
-  m_Shader: {fileID: -6465566751694194690, guid: 8b6d78198f70dc645a351d1484b06eb1,
-    type: 3}
+  m_Shader: {fileID: -6465566751694194690, guid: 8b6d78198f70dc645a351d1484b06eb1, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
@@ -148,6 +147,10 @@ Material:
         m_Texture: {fileID: 2800000, guid: 49883abd4e7bdb34e988383427a6910b, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_68469cf257504c78ba2f4c2fdebf2a47_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: 95b4da793fcd67f4e9f6ffb85c967072, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_6d577a544c464465847a13b42ed84ab6_Texture_1_Texture2D:
         m_Texture: {fileID: 2800000, guid: 194cf8ba28f1c2349a029fb39d0ca837, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -257,6 +260,7 @@ Material:
     - _DoubleSidedGIMode: 0
     - _DoubleSidedNormalMode: 1
     - _DstBlend: 0
+    - _DstBlend2: 0
     - _EdgeDetectPower: 0.158
     - _EmissiveColorMode: 1
     - _EmissiveExposureWeight: 1
@@ -297,6 +301,7 @@ Material:
     - _IridescenceThickness: 1
     - _LinkDetailsWithBase: 1
     - _MaterialID: 1
+    - _MaterialTypeMask: 2
     - _Metallic: 0
     - _MetallicRemapMax: 1
     - _MetallicRemapMin: 0
@@ -342,6 +347,7 @@ Material:
     - _PPDPrimitiveWidth: 1
     - _PatternOverlayPolarity: 1
     - _PatternOverlayStrength: 0
+    - _PerPixelSorting: 0
     - _RayTracing: 0
     - _ReceivesSSR: 1
     - _ReceivesSSRTransparent: 0
@@ -392,8 +398,8 @@ Material:
     - _Tessellation: 0
     - _TessellationBackFaceCullEpsilon: -0.262
     - _TessellationFactor: 0
-    - _TessellationFactorMaxDistance: 10
-    - _TessellationFactorMinDistance: 1
+    - _TessellationFactorMaxDistance: 1
+    - _TessellationFactorMinDistance: 0
     - _TessellationFactorTriangleSize: 100
     - _TessellationHeight: 1
     - _TessellationMaxDisplacement: 0.01
@@ -414,6 +420,7 @@ Material:
     - _TransparentWritingMotionVec: 0
     - _TransparentZWrite: 0
     - _TreadTiling: 1
+    - _TreadWear: 0
     - _TreadWearStrength: 0.182
     - _UVBase: 0
     - _UVDetail: 0
@@ -482,6 +489,7 @@ Material:
     - _UVMappingMask: {r: 1, g: 0, b: 0, a: 0}
     - _UVMappingMaskEmissive: {r: 1, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!114 &9089912708599149171
 MonoBehaviour:
   m_ObjectHideFlags: 11

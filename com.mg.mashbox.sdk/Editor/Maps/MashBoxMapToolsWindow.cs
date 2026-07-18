@@ -27,12 +27,15 @@ namespace MashBoxSDK.MapTools
     public class MashBoxMapToolsWindow : EditorWindow
     {
         private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
-        private enum AuthoringToolTab { MGBrush, SplineLoft }
+        private enum AuthoringToolTab { MGBrush, SplineLoft, MeshSculpt, UVSpline }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
         private const string PREF_KEY_AUTHORING_TOOL_TAB = "MashBoxSDK.SelectedMapAuthoringToolTab";
         private const string PREF_KEY_MAP_TOOL_TAB_ORDER = "MashBoxSDK.SelectedMapToolTab.Order";
         private ToolTab currentToolTab = ToolTab.ArtTools;
         private int authoringToolTab;
+        private bool changingAuthoringSelection;
+        private bool uvSplineSelectionQueued;
+        private UVSpline queuedUvSpline;
         private const string SpawnLocationPrefabPath = "Packages/com.mg.mashbox.sdk/Runtime/Maps/[MashBox] Spawn Location.prefab";
         private const string FreeCamPrefabPath = "Packages/com.mg.mashbox.sdk/Runtime/Maps/Freecam/Free Cam.prefab";
         private const string ChallengesRootName = "Challenges";
@@ -99,6 +102,7 @@ namespace MashBoxSDK.MapTools
         private bool initialized;
         [NonSerialized] private MGBrushWindow authoringBrushTool;
         [NonSerialized] private MultiSplineLoftWindow authoringLoftTool;
+        [NonSerialized] private MeshSculptWindow authoringSculptTool;
 
         private const string UGC_REQUEST_PATH =
             "https://ugc-remote-cook-func-node-fecqe4asaabhcddn.centralus-01.azurewebsites.net/api/request-upload";
@@ -137,12 +141,21 @@ namespace MashBoxSDK.MapTools
         public void OnEnable()
         {
             initialized = false;
+            authoringToolTab = EditorPrefs.GetInt(PREF_KEY_AUTHORING_TOOL_TAB, 0);
+            UVSplineEditor.SceneEditingEnabled = (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
+            Selection.selectionChanged -= OnAuthoringSelectionChanged;
+            Selection.selectionChanged += OnAuthoringSelectionChanged;
         }
 
         private void OnDisable()
         {
             EditorApplication.hierarchyChanged -= MarkSceneToolCacheDirty;
             EditorSceneManager.activeSceneChangedInEditMode -= OnActiveSceneChangedInEditMode;
+            Selection.selectionChanged -= OnAuthoringSelectionChanged;
+            EditorApplication.delayCall -= ProcessQueuedUvSplineSelection;
+            queuedUvSpline = null;
+            uvSplineSelectionQueued = false;
+            UVSplineEditor.SceneEditingEnabled = true;
             DestroyAuthoringToolInstances();
             initialized = false;
         }
@@ -180,12 +193,16 @@ namespace MashBoxSDK.MapTools
 
             currentToolTab = GetSavedMapToolTab();
             authoringToolTab = EditorPrefs.GetInt(PREF_KEY_AUTHORING_TOOL_TAB, 0);
+            UVSplineEditor.SceneEditingEnabled = currentToolTab == ToolTab.ArtTools
+                && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
             db = MapContentDatabase.GetOrCreate();
 
             EditorApplication.hierarchyChanged -= MarkSceneToolCacheDirty;
             EditorApplication.hierarchyChanged += MarkSceneToolCacheDirty;
             EditorSceneManager.activeSceneChangedInEditMode -= OnActiveSceneChangedInEditMode;
             EditorSceneManager.activeSceneChangedInEditMode += OnActiveSceneChangedInEditMode;
+            Selection.selectionChanged -= OnAuthoringSelectionChanged;
+            Selection.selectionChanged += OnAuthoringSelectionChanged;
 
             MarkSceneToolCacheDirty();
             RefreshGameplayValidationIssues(force: true);
@@ -199,7 +216,137 @@ namespace MashBoxSDK.MapTools
             list.onRemoveCallback = (l) => RemovePackAt(l.index);
 
             initialized = true;
+            OnAuthoringSelectionChanged();
         }
+
+        private void OnAuthoringSelectionChanged()
+        {
+            if (changingAuthoringSelection || (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
+                return;
+
+            GameObject selected = Selection.activeGameObject;
+            UVSpline uvSpline = FindUvSpline(selected, (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline);
+            if (uvSpline == null)
+                return;
+
+            currentToolTab = ToolTab.ArtTools;
+            authoringToolTab = (int)AuthoringToolTab.UVSpline;
+            EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)currentToolTab);
+            EditorPrefs.SetString(PREF_KEY_MAP_TOOL_TAB_ORDER, "ArtToolsFirst");
+            EditorPrefs.SetInt(PREF_KEY_AUTHORING_TOOL_TAB, authoringToolTab);
+            QueueUvSplineSelection(uvSpline);
+            UpdateAuthoringSceneToolState();
+            Repaint();
+        }
+
+        private static UVSpline FindUvSpline(GameObject selected, bool includeChildren)
+        {
+            if (selected == null)
+                return null;
+
+            UVSpline uvSpline = selected.GetComponent<UVSpline>() ?? selected.GetComponentInParent<UVSpline>();
+            if (uvSpline != null || !includeChildren)
+                return uvSpline;
+
+            uvSpline = selected.GetComponentInChildren<UVSpline>(true);
+            if (uvSpline != null)
+                return uvSpline;
+
+            MultiSplineLoft loft = selected.GetComponent<MultiSplineLoft>()
+                ?? selected.GetComponentInParent<MultiSplineLoft>()
+                ?? FindSiblingLoftForSpline(selected);
+            if (loft == null)
+                return null;
+
+            return loft.GeneratedUvSpline != null
+                ? loft.GeneratedUvSpline
+                : loft.GetComponentInChildren<UVSpline>(true);
+        }
+
+        private static MultiSplineLoft FindSiblingLoftForSpline(GameObject selected)
+        {
+            UnityEngine.Splines.SplineContainer selectedSpline = selected != null ? selected.GetComponent<UnityEngine.Splines.SplineContainer>() : null;
+            if (selectedSpline == null)
+                return null;
+
+            for (Transform ancestor = selected.transform.parent; ancestor != null; ancestor = ancestor.parent)
+            {
+                MultiSplineLoft[] lofts = ancestor.GetComponentsInChildren<MultiSplineLoft>(true);
+                foreach (MultiSplineLoft loft in lofts)
+                {
+                    if (loft == null) continue;
+                    foreach (MultiSplineLoft.SplineSource source in loft.Sources)
+                    {
+                        if (source?.container == selectedSpline)
+                            return loft;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private void SelectUvSpline(UVSpline uvSpline)
+        {
+            if (uvSpline == null)
+                return;
+            if (Selection.activeGameObject != uvSpline.gameObject)
+            {
+                changingAuthoringSelection = true;
+                Selection.activeGameObject = uvSpline.gameObject;
+                changingAuthoringSelection = false;
+            }
+            InternalEditorUtility.RepaintAllViews();
+            SceneView.RepaintAll();
+        }
+
+        private void QueueUvSplineSelection(UVSpline uvSpline)
+        {
+            if (uvSpline == null)
+                return;
+            queuedUvSpline = uvSpline;
+            if (uvSplineSelectionQueued)
+                return;
+            uvSplineSelectionQueued = true;
+            EditorApplication.delayCall -= ProcessQueuedUvSplineSelection;
+            EditorApplication.delayCall += ProcessQueuedUvSplineSelection;
+        }
+
+        private void ProcessQueuedUvSplineSelection()
+        {
+            EditorApplication.delayCall -= ProcessQueuedUvSplineSelection;
+            uvSplineSelectionQueued = false;
+            UVSpline uvSpline = queuedUvSpline;
+            queuedUvSpline = null;
+            if (this == null || uvSpline == null || (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
+                return;
+            SelectUvSpline(uvSpline);
+            EditorApplication.QueuePlayerLoopUpdate();
+        }
+
+        private void SelectUvSplineForCurrentSelection()
+        {
+            QueueUvSplineSelection(FindUvSpline(Selection.activeGameObject, true));
+        }
+
+        private void DeselectUvSplineForOtherTool()
+        {
+            UVSpline uvSpline = Selection.activeGameObject != null
+                ? Selection.activeGameObject.GetComponent<UVSpline>()
+                : null;
+            if (uvSpline == null)
+                return;
+
+            GameObject target = uvSpline.Target != null
+                ? uvSpline.Target.gameObject
+                : uvSpline.transform.parent != null ? uvSpline.transform.parent.gameObject : null;
+            if (target == null)
+                return;
+
+            changingAuthoringSelection = true;
+            Selection.activeGameObject = target;
+            changingAuthoringSelection = false;
+        }
+
         private void OnActiveSceneChangedInEditMode(Scene previousScene, Scene newScene)
         {
             MarkSceneToolCacheDirty();
@@ -625,13 +772,22 @@ namespace MashBoxSDK.MapTools
             int newTab = MashBoxTabDrawer.DrawTabs(authoringToolTab, new[]
             {
                 "MG Brush",
-                "Spline Loft"
+                "Spline Loft",
+                "Mesh Sculpt",
+                "UV Spline"
             }, MashBoxTabDrawer.TabVisualStyle.Secondary);
 
             if (newTab != authoringToolTab)
             {
+                bool leavingUvSpline = (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline
+                    && (AuthoringToolTab)newTab != AuthoringToolTab.UVSpline;
                 authoringToolTab = newTab;
+                UVSplineEditor.SceneEditingEnabled = (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
                 EditorPrefs.SetInt(PREF_KEY_AUTHORING_TOOL_TAB, authoringToolTab);
+                if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline)
+                    SelectUvSplineForCurrentSelection();
+                else if (leavingUvSpline)
+                    DeselectUvSplineForOtherTool();
             }
 
             GUILayout.Space(8f);
@@ -639,13 +795,52 @@ namespace MashBoxSDK.MapTools
             switch ((AuthoringToolTab)authoringToolTab)
             {
                 case AuthoringToolTab.MGBrush:
+                    authoringLoftTool?.DeactivateSceneTool();
+                    authoringSculptTool?.DeactivateSceneTool();
                     authoringBrushTool?.ActivateSceneTool();
                     authoringBrushTool?.Draw(embeddedInParentWindow: true);
                     break;
                 case AuthoringToolTab.SplineLoft:
                     authoringBrushTool?.DeactivateSceneTool();
+                    authoringSculptTool?.DeactivateSceneTool();
+                    authoringLoftTool?.ActivateSceneTool();
                     authoringLoftTool?.Draw(embeddedInParentWindow: true);
                     break;
+                case AuthoringToolTab.MeshSculpt:
+                    authoringBrushTool?.DeactivateSceneTool();
+                    authoringLoftTool?.DeactivateSceneTool();
+                    authoringSculptTool?.ActivateSceneTool();
+                    authoringSculptTool?.Draw(embeddedInParentWindow: true);
+                    break;
+                case AuthoringToolTab.UVSpline:
+                    authoringBrushTool?.DeactivateSceneTool();
+                    authoringLoftTool?.DeactivateSceneTool();
+                    authoringSculptTool?.DeactivateSceneTool();
+                    DrawUvSplineToolSection();
+                    break;
+            }
+        }
+
+        private void DrawUvSplineToolSection()
+        {
+            GameObject selected = Selection.activeGameObject;
+            UVSpline uvSpline = FindUvSpline(selected, true);
+            if (uvSpline != null && selected != uvSpline.gameObject)
+                SelectUvSpline(uvSpline);
+
+            EditorGUILayout.LabelField("UV Spline", EditorStyles.boldLabel);
+            if (uvSpline == null)
+            {
+                EditorGUILayout.HelpBox("Select a GameObject with a UV Spline component to activate its Scene handles and Inspector controls.", MessageType.Info);
+                return;
+            }
+
+            EditorGUILayout.ObjectField("Active UV Spline", uvSpline, typeof(UVSpline), true);
+            EditorGUILayout.HelpBox("The UV spline Scene handles are active and other authoring brushes are paused. Edit the UV settings in the selected object's Inspector.", MessageType.Info);
+            if (GUILayout.Button("Focus UV Spline Inspector"))
+            {
+                Selection.activeObject = uvSpline.gameObject;
+                EditorGUIUtility.PingObject(uvSpline.gameObject);
             }
         }
 
@@ -664,6 +859,14 @@ namespace MashBoxSDK.MapTools
             {
                 authoringLoftTool = CreateInstance<MultiSplineLoftWindow>();
                 authoringLoftTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
+                authoringLoftTool.DeactivateSceneTool();
+            }
+
+            if (authoringSculptTool == null)
+            {
+                authoringSculptTool = CreateInstance<MeshSculptWindow>();
+                authoringSculptTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
+                authoringSculptTool.DeactivateSceneTool();
             }
         }
 
@@ -678,20 +881,54 @@ namespace MashBoxSDK.MapTools
 
             if (authoringLoftTool != null)
             {
+                authoringLoftTool.DeactivateSceneTool();
                 DestroyImmediate(authoringLoftTool);
                 authoringLoftTool = null;
+            }
+
+            if (authoringSculptTool != null)
+            {
+                authoringSculptTool.DeactivateSceneTool();
+                DestroyImmediate(authoringSculptTool);
+                authoringSculptTool = null;
             }
         }
 
         public void DeactivateEmbeddedSceneTools()
         {
             authoringBrushTool?.DeactivateSceneTool();
+            authoringLoftTool?.DeactivateSceneTool();
+            authoringSculptTool?.DeactivateSceneTool();
         }
 
         private void UpdateAuthoringSceneToolState()
         {
-            if (currentToolTab == ToolTab.ArtTools && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.MGBrush)
-                return;
+            UVSplineEditor.SceneEditingEnabled = currentToolTab == ToolTab.ArtTools
+                && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
+            if (currentToolTab == ToolTab.ArtTools)
+            {
+                if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.MGBrush)
+                {
+                    authoringLoftTool?.DeactivateSceneTool();
+                    authoringSculptTool?.DeactivateSceneTool();
+                    return;
+                }
+
+                if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.SplineLoft)
+                {
+                    authoringBrushTool?.DeactivateSceneTool();
+                    authoringSculptTool?.DeactivateSceneTool();
+                    authoringLoftTool?.ActivateSceneTool();
+                    return;
+                }
+
+                if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.MeshSculpt)
+                {
+                    authoringBrushTool?.DeactivateSceneTool();
+                    authoringLoftTool?.DeactivateSceneTool();
+                    return;
+                }
+            }
 
             DeactivateEmbeddedSceneTools();
         }

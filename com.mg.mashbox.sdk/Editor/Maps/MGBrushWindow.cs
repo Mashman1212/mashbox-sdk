@@ -48,6 +48,8 @@ namespace MashBoxSDK.MapTools
         private float lastScatterTime = 0f;
         private HashSet<Mesh> strokeMeshes = new HashSet<Mesh>();
         private bool sceneToolActive;
+        private bool isAdjustingBrush;
+        private Vector2 brushAdjustMousePosition;
 
         public static void ShowWindow()
         {
@@ -195,7 +197,7 @@ namespace MashBoxSDK.MapTools
             targetUVChannel = (UVChannel)EditorGUILayout.EnumPopup("Target UV Channel", targetUVChannel);
 
             EditorGUILayout.HelpBox("Painting modifies vertex colors. Auto UV will generate unwrapped coordinates for the selected channel.", MessageType.Info);
-            EditorGUILayout.HelpBox("Scene View: B enables the paint brush. W pauses the brush so you can select and move objects.", MessageType.None);
+            EditorGUILayout.HelpBox("Scene View: B enables the paint brush. W pauses it. Ctrl+Middle-drag adjusts the brush: horizontal changes radius and vertical changes strength.", MessageType.None);
 
             DrawPaintTargetSettings();
 
@@ -757,6 +759,10 @@ namespace MashBoxSDK.MapTools
 
                     return;
                 }
+
+                int brushAdjustControlId = GUIUtility.GetControlID("MGVertexBrushAdjust".GetHashCode(), FocusType.Passive);
+                if (HandlePainterBrushAdjustment(e, brushAdjustControlId, sceneView))
+                    return;
             }
 
             Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
@@ -814,6 +820,46 @@ namespace MashBoxSDK.MapTools
             }
             
             if (e.type == EventType.MouseMove) sceneView.Repaint();
+        }
+
+        private bool HandlePainterBrushAdjustment(Event e, int controlId, SceneView sceneView)
+        {
+            if (e.type == EventType.MouseDown && e.button == 2 && e.control && !e.alt)
+            {
+                isPainting = false;
+                strokeMeshes.Clear();
+                isAdjustingBrush = true;
+                brushAdjustMousePosition = e.mousePosition;
+                GUIUtility.hotControl = controlId;
+                e.Use();
+            }
+            else if (isAdjustingBrush && e.type == EventType.MouseDrag && e.button == 2)
+            {
+                brushRadius = Mathf.Clamp(brushRadius * Mathf.Exp(e.delta.x * 0.01f), 0.1f, 10f);
+                brushStrength = Mathf.Clamp(brushStrength - e.delta.y * 0.005f, 0.01f, 1f);
+                brushAdjustMousePosition = e.mousePosition;
+                e.Use();
+                Repaint();
+                sceneView.Repaint();
+            }
+            else if (isAdjustingBrush && e.type == EventType.MouseUp && e.button == 2)
+            {
+                isAdjustingBrush = false;
+                GUIUtility.hotControl = 0;
+                e.Use();
+                Repaint();
+                sceneView.Repaint();
+                return true;
+            }
+
+            if (!isAdjustingBrush)
+                return false;
+
+            Handles.BeginGUI();
+            GUI.Label(new Rect(brushAdjustMousePosition.x + 18f, brushAdjustMousePosition.y + 18f, 240f, 22f),
+                $"Radius {brushRadius:0.00}   Strength {brushStrength:0.00}", EditorStyles.helpBox);
+            Handles.EndGUI();
+            return true;
         }
 
         private void SetPainterBrushActive(bool active)

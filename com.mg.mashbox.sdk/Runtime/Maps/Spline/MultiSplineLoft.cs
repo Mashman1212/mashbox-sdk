@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using MashBoxSDK.Maps.Sculpting;
 using UnityEngine;
 using UnityEngine.Splines;
 using UnitySpline = UnityEngine.Splines.Spline;
@@ -129,6 +130,24 @@ namespace MashBoxSDK.Maps.Spline
         float m_UvScaleAcross = 1f;
 
         [SerializeField]
+        bool m_GenerateUvSplineWithLoft;
+
+        [SerializeField, Range(0, 3)]
+        int m_UvSplineChannel;
+
+        [SerializeField]
+        UVSpline.LongitudinalAxis m_UvSplineDirection = UVSpline.LongitudinalAxis.V;
+
+        [SerializeField, Min(2)]
+        int m_UvSplinePointCount = 8;
+
+        [SerializeField]
+        UVSpline m_UvSpline;
+
+        [SerializeField]
+        MeshSculptModifier m_SculptModifier;
+
+        [SerializeField]
         Mesh m_GeneratedMesh;
 
         readonly List<Vector3> m_Vertices = new List<Vector3>();
@@ -173,6 +192,12 @@ namespace MashBoxSDK.Maps.Spline
         public bool UpdateMeshCollider { get => m_UpdateMeshCollider; set => m_UpdateMeshCollider = value; }
         public NormalMode SurfaceNormalMode { get => m_NormalMode; set => m_NormalMode = value; }
         public bool FlipNormals { get => m_FlipNormals; set => m_FlipNormals = value; }
+        public bool GenerateUvSplineWithLoft { get => m_GenerateUvSplineWithLoft; set => m_GenerateUvSplineWithLoft = value; }
+        public int UvSplineChannel { get => m_UvSplineChannel; set => m_UvSplineChannel = Mathf.Clamp(value, 0, 3); }
+        public UVSpline.LongitudinalAxis UvSplineDirection { get => m_UvSplineDirection; set => m_UvSplineDirection = value; }
+        public int UvSplinePointCount { get => m_UvSplinePointCount; set => m_UvSplinePointCount = Mathf.Max(2, value); }
+        public UVSpline GeneratedUvSpline => m_UvSpline;
+        public MeshSculptModifier SculptModifier { get => m_SculptModifier; set => m_SculptModifier = value; }
         public Mesh GeneratedMesh => m_GeneratedMesh;
 
         public void SetGeneratedMesh(Mesh mesh)
@@ -209,6 +234,8 @@ namespace MashBoxSDK.Maps.Spline
             m_MaxDistanceSamples = Mathf.Max(2, m_MaxDistanceSamples);
             m_UvScaleAlong = Mathf.Max(0.0001f, m_UvScaleAlong);
             m_UvScaleAcross = Mathf.Max(0.0001f, m_UvScaleAcross);
+            m_UvSplineChannel = Mathf.Clamp(m_UvSplineChannel, 0, 3);
+            m_UvSplinePointCount = Mathf.Max(2, m_UvSplinePointCount);
 
             for (int i = 0; i < m_Sources.Count; i++)
             {
@@ -317,6 +344,45 @@ namespace MashBoxSDK.Maps.Spline
                 DuplicateBackFaces();
 
             ApplyMesh();
+
+            if (m_SculptModifier != null)
+                m_SculptModifier.ApplyToFreshMesh(m_GeneratedMesh);
+
+            if (m_GenerateUvSplineWithLoft || (m_UvSpline != null && m_UvSpline.OutputMesh != null))
+                RegenerateUvSpline(out _);
+        }
+
+        public bool RegenerateUvSpline(out string error)
+        {
+            error = null;
+            if (m_GeneratedMesh == null || m_GeneratedMesh.vertexCount == 0)
+            {
+                error = "Generate a valid loft mesh before generating its UV spline.";
+                return false;
+            }
+
+            EnsureUvSpline();
+            m_UvSpline.Target = GetComponent<MeshFilter>();
+            m_UvSpline.UvChannel = m_UvSplineChannel;
+            m_UvSpline.Direction = m_UvSplineDirection;
+            m_UvSpline.GeneratedPointCount = m_UvSplinePointCount;
+            if (!m_UvSpline.GenerateFromTarget(out error))
+                return false;
+            m_UvSpline.RebuildOutputMesh();
+            return true;
+        }
+
+        void EnsureUvSpline()
+        {
+            if (m_UvSpline == null)
+                m_UvSpline = GetComponentInChildren<UVSpline>(true);
+
+            if (m_UvSpline != null)
+                return;
+
+            var splineObject = new GameObject("UV Spline", typeof(SplineContainer), typeof(UVSpline));
+            splineObject.transform.SetParent(transform, false);
+            m_UvSpline = splineObject.GetComponent<UVSpline>();
         }
 
         public void AddSelectedSpline(SplineContainer container, int splineIndex = 0)
@@ -837,6 +903,8 @@ namespace MashBoxSDK.Maps.Spline
         {
             int crossCount = m_CrossSampleCount;
             int vertexCount = crossCount * m_AlongSampleCount;
+            float totalAcrossDistance = crossCount > 1 ? m_CrossDistances[crossCount - 1] : 0f;
+            float inverseAcrossDistance = totalAcrossDistance > Mathf.Epsilon ? 1f / totalAcrossDistance : 0f;
             m_Vertices.Capacity = Mathf.Max(m_Vertices.Capacity, vertexCount);
             m_Normals.Capacity = Mathf.Max(m_Normals.Capacity, vertexCount);
             m_Uvs.Capacity = Mathf.Max(m_Uvs.Capacity, vertexCount);
@@ -847,7 +915,8 @@ namespace MashBoxSDK.Maps.Spline
                 {
                     m_Vertices.Add(m_SampledPoints[cross, along]);
                     m_Normals.Add(CalculateGridNormal(cross, along));
-                    m_Uvs.Add(new Vector2(m_CrossDistances[cross] * m_UvScaleAcross, m_AlongDistances[along] * m_UvScaleAlong));
+                    float acrossUv = m_CrossDistances[cross] * inverseAcrossDistance * m_UvScaleAcross;
+                    m_Uvs.Add(new Vector2(acrossUv, m_AlongDistances[along] * m_UvScaleAlong));
                 }
             }
 
