@@ -16,6 +16,10 @@ using UnityEngine.SceneManagement;
 public sealed class MapPerformanceScanResult
 {
     public float PerformanceScore { get; internal set; }
+    public float PerformanceScoreBeforeRuntimeCombining { get; internal set; }
+    public float RuntimeCombinerScoreGain { get; internal set; }
+    public long DrawSubmissionsBeforeRuntimeCombining { get; internal set; }
+    public long DrawSubmissionsAfterRuntimeCombining { get; internal set; }
     public long SharedMemoryBytes { get; internal set; }
     public long TextureMemoryBytes { get; internal set; }
     public long MeshMemoryBytes { get; internal set; }
@@ -33,6 +37,8 @@ public sealed class MapPerformanceScanResult
 public class MapPerformanceScannerPanel
 {
     public const int MaximumTextureDimension = 4096;
+    private const float DrawScoreThreshold = 2000f;
+    private const long MaximumInstancesPerBatch = 1023L;
 
     [Serializable]
     private class MaterialInfo
@@ -76,6 +82,11 @@ public class MapPerformanceScannerPanel
         public int sourceSubMeshCount;
         public int materialCount;
         public int skippedUnreadableMeshCount;
+        public long sourceDrawSubmissions;
+        public long combinedDrawSubmissions;
+        public int sourceRendererIssueCount;
+        public int combinedRendererIssueCount;
+        public bool executesInCurrentState;
         public bool combineOnAwake;
         public bool disableSourceRenderers;
         public bool addMeshCollider;
@@ -91,9 +102,19 @@ public class MapPerformanceScannerPanel
         public int heightmapResolution;
         public int alphamapLayers;
         public int detailPrototypeCount;
+        public int detailPatchesPerAxis;
+        public long visibleDetailChunkBudgetPerPrototype;
         public long detailInstanceCount;
         public int treePrototypeCount;
         public int treeInstanceCount;
+        public long surfaceChunkCount;
+        public long surfaceDrawSubmissions;
+        public long occupiedDetailChunkCount;
+        public long detailChunkCount;
+        public long detailDrawSubmissions;
+        public long treeDrawSubmissions;
+        public bool usesInstancedTerrain;
+        public bool contributesDrawSubmissions;
     }
 
     [Serializable]
@@ -138,9 +159,14 @@ public class MapPerformanceScannerPanel
     [SerializeField] private List<MaterialInfo> materialInfos = new();
     [SerializeField] private List<RendererIssue> rendererIssues = new();
     [SerializeField] private long totalDrawCalls;
+    [SerializeField] private long estimatedDrawCallsAfterRuntimeCombining;
+    [SerializeField] private int estimatedRendererIssuesAfterRuntimeCombining;
     [SerializeField] private long sceneRendererDrawCalls;
+    [SerializeField] private long terrainSurfaceChunkCount;
     [SerializeField] private long terrainSurfaceDrawCalls;
-    [SerializeField] private long terrainInstanceDrawCalls;
+    [SerializeField] private long terrainDetailChunkCount;
+    [SerializeField] private long terrainDetailDrawCalls;
+    [SerializeField] private long terrainTreeDrawCalls;
     [SerializeField] private int decalDrawCalls;
     [SerializeField] private long totalTextureMemory;
     [SerializeField] private long totalMeshMemory;
@@ -168,6 +194,8 @@ public class MapPerformanceScannerPanel
     [SerializeField] private List<TextureInfo> textureInfos = new();
     [SerializeField] private bool showTextureDetails = true;
     [SerializeField] private float performanceScore = 100f;
+    [SerializeField] private float performanceScoreBeforeRuntimeCombining = 100f;
+    [SerializeField] private float runtimeCombinerScoreGain;
     [SerializeField] private string performanceGrade = "A";
     [SerializeField] private Color scoreColor = Color.green;
     [SerializeField] private Vector2 scroll;
@@ -312,9 +340,14 @@ public class MapPerformanceScannerPanel
             terrainPrototypeMaterials.Clear();
 
             totalDrawCalls = 0;
+            estimatedDrawCallsAfterRuntimeCombining = 0;
+            estimatedRendererIssuesAfterRuntimeCombining = 0;
             sceneRendererDrawCalls = 0;
+            terrainSurfaceChunkCount = 0;
             terrainSurfaceDrawCalls = 0;
-            terrainInstanceDrawCalls = 0;
+            terrainDetailChunkCount = 0;
+            terrainDetailDrawCalls = 0;
+            terrainTreeDrawCalls = 0;
             decalDrawCalls = 0;
             totalTextureMemory = 0;
             totalMeshMemory = 0;
@@ -336,6 +369,8 @@ public class MapPerformanceScannerPanel
             reflectionProbeCount = 0;
             postVolumeCount = 0;
             postVolumeProfileCount = 0;
+            performanceScoreBeforeRuntimeCombining = 100f;
+            runtimeCombinerScoreGain = 0f;
 
             CollectRenderers();
             CollectAdditionalMeshes();
@@ -361,6 +396,10 @@ public class MapPerformanceScannerPanel
             return new MapPerformanceScanResult
             {
                 PerformanceScore = performanceScore,
+                PerformanceScoreBeforeRuntimeCombining = performanceScoreBeforeRuntimeCombining,
+                RuntimeCombinerScoreGain = runtimeCombinerScoreGain,
+                DrawSubmissionsBeforeRuntimeCombining = totalDrawCalls,
+                DrawSubmissionsAfterRuntimeCombining = estimatedDrawCallsAfterRuntimeCombining,
                 SharedMemoryBytes = totalMapMemory,
                 TextureMemoryBytes = totalTextureMemory,
                 MeshMemoryBytes = totalMeshMemory,
@@ -451,7 +490,9 @@ public class MapPerformanceScannerPanel
         Metric("Scene", string.IsNullOrWhiteSpace(scene.path) ? scene.name : scene.path);
         Metric("Target Game", targetGame?.DisplayName ?? "Not selected");
         Metric("Texture Import Target", EditorUserBuildSettings.activeBuildTarget);
-        Metric("Performance Score", $"{performanceScore:F0} ({performanceGrade})");
+        Metric("Projected Runtime Score", $"{performanceScore:F1} ({performanceGrade})");
+        Metric("Score Before Runtime Combining", $"{performanceScoreBeforeRuntimeCombining:F1}");
+        Metric("Runtime Combiner Score Change", runtimeCombinerScoreGain.ToString("+0.0;-0.0;0.0"));
 
         Section("PUBLISHING SUMMARY");
         Metric("Estimated Shared Memory", FormatBytes(totalMapMemory));
@@ -471,8 +512,12 @@ public class MapPerformanceScannerPanel
         Metric("Textures Above 4K", oversizedTextures.Count == 0 ? "0 - PASS" : $"{oversizedTextures.Count:N0} - VALIDATION ERROR");
 
         Section("SCORE BREAKDOWN");
-        Metric("Renderer Issues", rendererIssues.Count.ToString("N0"));
-        Metric("Estimated Draw Submissions", $"{totalDrawCalls:N0} / 2,000 scoring threshold");
+        Metric("Renderer Issues Before", rendererIssues.Count.ToString("N0"));
+        Metric("Renderer Issues After Combining", estimatedRendererIssuesAfterRuntimeCombining.ToString("N0"));
+        Metric("Draw Submissions Before", totalDrawCalls.ToString("N0"));
+        Metric("Draw Submissions After Combining", estimatedDrawCallsAfterRuntimeCombining.ToString("N0"));
+        Metric("Estimated Draw Change", FormatDrawDifference(totalDrawCalls, estimatedDrawCallsAfterRuntimeCombining));
+        Metric("Estimated Runtime Draw Submissions", $"{estimatedDrawCallsAfterRuntimeCombining:N0} / {DrawScoreThreshold:N0} scoring threshold");
         Metric("Decals", $"{decalDrawCalls:N0} / 5 scoring threshold");
         Metric("Shader Variants", $"{batches.Count:N0} / 6 scoring threshold");
         Metric("Texture Memory", $"{FormatBytes(totalTextureMemory)} / 2.00 GB scoring threshold");
@@ -483,8 +528,11 @@ public class MapPerformanceScannerPanel
         Metric("Shader Variants (Batches)", batches.Count.ToString("N0"));
         Metric("Estimated Draw Submissions", totalDrawCalls.ToString("N0"));
         Metric("Scene Renderer Submissions", sceneRendererDrawCalls.ToString("N0"));
-        Metric("Terrain Surface Submissions", terrainSurfaceDrawCalls.ToString("N0"));
-        Metric("Terrain Detail/Tree Submissions", terrainInstanceDrawCalls.ToString("N0"));
+        Metric("Terrain Surface Chunks", terrainSurfaceChunkCount.ToString("N0"));
+        Metric("Terrain Surface Batch Submissions", terrainSurfaceDrawCalls.ToString("N0"));
+        Metric("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
+        Metric("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
+        Metric("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
         Metric("Decal Draw Calls", decalDrawCalls.ToString("N0"));
 
         Section("MEMORY SUMMARY");
@@ -508,11 +556,17 @@ public class MapPerformanceScannerPanel
         Metric("Unique Prototype Materials", terrainPrototypeMaterialCount.ToString("N0"));
         foreach (var info in terrainInfos.OrderByDescending(item => item.terrainDataMemory + item.textureMemory))
         {
+            var drawState = info.contributesDrawSubmissions ? "active" : "disabled/inactive - zero draws";
             report.AppendLine(
                 $"- {info.terrain?.name ?? "Missing Terrain"}: TerrainData {FormatBytes(info.terrainDataMemory)}, " +
                 $"textures {FormatBytes(info.textureMemory)}, height {info.heightmapResolution}, splat layers {info.alphamapLayers}, " +
                 $"details {info.detailInstanceCount:N0}/{info.detailPrototypeCount:N0} prototypes, " +
-                $"trees {info.treeInstanceCount:N0}/{info.treePrototypeCount:N0} prototypes");
+                $"detail grid {info.detailPatchesPerAxis:N0}x{info.detailPatchesPerAxis:N0}, visible budget/prototype {info.visibleDetailChunkBudgetPerPrototype:N0}, " +
+                $"trees {info.treeInstanceCount:N0}/{info.treePrototypeCount:N0} prototypes, " +
+                $"surface chunks/batches {info.surfaceChunkCount:N0}/{info.surfaceDrawSubmissions:N0}, " +
+                $"detail chunks occupied/visible/submissions {info.occupiedDetailChunkCount:N0}/{info.detailChunkCount:N0}/{info.detailDrawSubmissions:N0}, " +
+                $"tree batches {info.treeDrawSubmissions:N0}, " +
+                $"surface instancing {(info.usesInstancedTerrain ? "on" : "off")}, {drawState}");
         }
 
         Section($"TEXTURES BY MEMORY ({textureInfos.Count:N0} UNIQUE)");
@@ -548,6 +602,13 @@ public class MapPerformanceScannerPanel
             var combinerPath = info.combiner != null ? GetTransformPath(info.combiner.transform) : "Missing RuntimeMeshCombiner";
             var trigger = info.combineOnAwake ? "Awake" : "Manual";
             var sourceState = info.disableSourceRenderers ? "sources disabled" : "sources retained";
+            var runtimeDraws = !info.executesInCurrentState
+                ? info.sourceDrawSubmissions
+                : info.disableSourceRenderers
+                    ? info.combinedDrawSubmissions
+                    : info.sourceDrawSubmissions + info.combinedDrawSubmissions;
+            var drawChange = GetDrawChangeDescription(info);
+            var activeState = info.executesInCurrentState ? "active" : "disabled/inactive - zero combined draws";
             var collider = info.addMeshCollider ? ", adds MeshCollider" : string.Empty;
             var unreadable = info.skippedUnreadableMeshCount > 0
                 ? $", skipped unreadable meshes {info.skippedUnreadableMeshCount:N0}"
@@ -557,7 +618,9 @@ public class MapPerformanceScannerPanel
                 $"(vertices {FormatBytes(info.estimatedVertexBytes)}, indices {FormatBytes(info.estimatedIndexBytes)}) | " +
                 $"estimated output vertices {info.estimatedOutputVertices:N0}, indices {info.indexCount:N0}, " +
                 $"materials {info.materialCount:N0}, source meshes {info.sourceMeshCount:N0}, " +
-                $"source submeshes {info.sourceSubMeshCount:N0}, trigger {trigger}, {sourceState}{collider}{unreadable}");
+                $"source submeshes {info.sourceSubMeshCount:N0}, draws {info.sourceDrawSubmissions:N0} -> " +
+                $"{runtimeDraws:N0} " +
+                $"({drawChange}), {activeState}, trigger {trigger}, {sourceState}{collider}{unreadable}");
         }
 
         Section("SHADER FRAGMENTATION");
@@ -606,13 +669,18 @@ public class MapPerformanceScannerPanel
         report.AppendLine("NOTE");
         report.AppendLine("====");
         report.AppendLine(
-            "Estimated Draw Submissions is a conservative static scene estimate before camera culling. " +
-            "Actual per-frame draw calls vary with terrain LOD, visibility, static batching, and GPU instancing.");
+            "Estimated Draw Submissions is a static runtime estimate. Terrain detail chunks are bounded by their configured draw distance; " +
+            "actual per-frame draw calls still vary with camera location, terrain LOD, visibility, static batching, and GPU instancing.");
+        report.AppendLine(
+            $"Terrain surface and trees use instance batches of up to {MaximumInstancesPerBatch:N0} items when applicable. " +
+            "Terrain detail density is grouped by occupied spatial detail chunk and prototype, then capped to the chunks that can fit inside the configured detail draw radius. Individual density instances inside a chunk do not add submissions. These estimated submissions feed directly into the performance score.");
         report.AppendLine(
             "Runtime combined mesh memory is an estimate of the generated vertex and index buffers. " +
             "Source mesh assets remain included separately because RuntimeMeshCombiner disables renderers but does not unload their meshes.");
         report.AppendLine(
             "If a combiner adds a MeshCollider, the collider shares the generated Mesh; platform-specific physics cooking overhead is not included in this editor estimate.");
+        report.AppendLine(
+            "Disabled components and inactive GameObjects contribute zero estimated draw submissions. Active manual RuntimeMeshCombiners are assumed to execute; the estimate uses one combined draw submission per non-null material and removes source draws only when Disable Source Renderers is enabled.");
 
         return report.ToString();
     }
@@ -653,13 +721,14 @@ public class MapPerformanceScannerPanel
                 includedLightmapIndices.Add(renderer.lightmapIndex);
 
             var mats = renderer.sharedMaterials.Where(m => m != null).ToList();
+            var contributesDraws = RendererContributesDrawSubmissions(renderer);
             sceneRendererDrawCalls += EstimateRendererDrawSubmissions(renderer);
             CollectRendererMesh(renderer, 1, false);
 
             foreach (var mat in mats)
                 CollectMaterial(mat, false, renderer.lightmapIndex);
 
-            if (mats.Count <= 1)
+            if (!contributesDraws || mats.Count <= 1)
                 continue;
 
             var variants = mats.Select(GetVariantKey).Distinct().ToList();
@@ -692,7 +761,17 @@ public class MapPerformanceScannerPanel
                 includedLightmapIndices.Add(terrain.lightmapIndex);
             var detailPrototypes = data.detailPrototypes;
             var treePrototypes = data.treePrototypes;
-            terrainSurfaceDrawCalls += EstimateTerrainSurfaceDrawSubmissions(data);
+            var contributesDraws = BehaviourContributesDrawSubmissions(terrain);
+            var surfaceChunks = EstimateTerrainSurfaceChunkCount(data);
+            var surfaceSubmissions = contributesDraws
+                ? EstimateTerrainSurfaceDrawSubmissions(data, terrain.drawInstanced)
+                : 0L;
+            var visibleDetailChunkBudget = EstimateVisibleTerrainDetailChunkBudget(terrain, data);
+            if (contributesDraws)
+            {
+                terrainSurfaceChunkCount += surfaceChunks;
+                terrainSurfaceDrawCalls += surfaceSubmissions;
+            }
             var info = new TerrainInfo
             {
                 terrain = terrain,
@@ -701,8 +780,14 @@ public class MapPerformanceScannerPanel
                 heightmapResolution = data.heightmapResolution,
                 alphamapLayers = data.alphamapLayers,
                 detailPrototypeCount = detailPrototypes.Length,
+                detailPatchesPerAxis = data.detailPatchCount,
+                visibleDetailChunkBudgetPerPrototype = visibleDetailChunkBudget,
                 treePrototypeCount = treePrototypes.Length,
-                treeInstanceCount = data.treeInstanceCount
+                treeInstanceCount = data.treeInstanceCount,
+                surfaceChunkCount = surfaceChunks,
+                surfaceDrawSubmissions = surfaceSubmissions,
+                usesInstancedTerrain = terrain.drawInstanced,
+                contributesDrawSubmissions = contributesDraws
             };
 
             if (terrain.materialTemplate != null)
@@ -729,14 +814,26 @@ public class MapPerformanceScannerPanel
                 var terrainProgress = (terrainIndex + (layer + 1f) / Math.Max(1, detailPrototypes.Length)) / Math.Max(1, terrains.Length);
                 ReportProgress($"Reading {terrain.name} detail layer {layer + 1:N0} of {detailPrototypes.Length:N0}...", Mathf.Lerp(0.40f, 0.68f, terrainProgress));
 
-                var instanceCount = CountDetailInstances(data, layer);
-                info.detailInstanceCount += instanceCount;
-                if (instanceCount > 0)
-                    terrainInstanceDrawCalls += EstimateTerrainDetailDrawSubmissions(data, detailPrototypes[layer]);
+                var detailStats = GetDetailLayerStats(data, layer);
+                info.detailInstanceCount += detailStats.instanceCount;
+                info.occupiedDetailChunkCount += detailStats.occupiedChunkCount;
+                var estimatedVisibleChunks = Math.Min(
+                    detailStats.occupiedChunkCount,
+                    visibleDetailChunkBudget);
+                info.detailChunkCount += estimatedVisibleChunks;
+                if (contributesDraws && estimatedVisibleChunks > 0)
+                {
+                    var submissions = EstimateTerrainDetailDrawSubmissions(
+                        detailPrototypes[layer],
+                        estimatedVisibleChunks);
+                    info.detailDrawSubmissions += submissions;
+                    terrainDetailChunkCount += estimatedVisibleChunks;
+                    terrainDetailDrawCalls += submissions;
+                }
 
                 var prototype = detailPrototypes[layer];
                 if (prototype.prototype != null)
-                    CollectPrototypeResources(prototype.prototype, instanceCount);
+                    CollectPrototypeResources(prototype.prototype, detailStats.instanceCount);
 
                 if (prototype.prototypeTexture != null)
                     terrainTextures.Add(prototype.prototypeTexture);
@@ -748,9 +845,14 @@ public class MapPerformanceScannerPanel
                 if (treePrototypes[index].prefab != null)
                 {
                     CollectPrototypeResources(treePrototypes[index].prefab, treeCounts[index]);
-                    terrainInstanceDrawCalls += EstimateInstancedPrototypeDrawSubmissions(
-                        treePrototypes[index].prefab,
-                        treeCounts[index]);
+                    if (contributesDraws)
+                    {
+                        var submissions = EstimateInstancedPrototypeDrawSubmissions(
+                            treePrototypes[index].prefab,
+                            treeCounts[index]);
+                        info.treeDrawSubmissions += submissions;
+                        terrainTreeDrawCalls += submissions;
+                    }
                 }
             }
 
@@ -892,20 +994,40 @@ public class MapPerformanceScannerPanel
         while (property.NextVisible(true));
     }
 
-    private static long CountDetailInstances(TerrainData data, int layer)
+    private static (long instanceCount, long occupiedChunkCount) GetDetailLayerStats(TerrainData data, int layer)
     {
         try
         {
             var density = data.GetDetailLayer(0, 0, data.detailWidth, data.detailHeight, layer);
-            long count = 0;
-            foreach (var value in density)
-                count += value;
-            return count;
+            var rowCount = density.GetLength(0);
+            var columnCount = density.GetLength(1);
+            var chunkColumns = Math.Max(1, data.detailPatchCount);
+            var chunkRows = Math.Max(1, data.detailPatchCount);
+            var occupiedChunks = new HashSet<int>();
+            long instanceCount = 0;
+
+            for (var row = 0; row < rowCount; row++)
+            {
+                for (var column = 0; column < columnCount; column++)
+                {
+                    var value = density[row, column];
+                    if (value <= 0)
+                        continue;
+
+                    instanceCount += value;
+                    var chunkRow = Math.Min(chunkRows - 1, row * chunkRows / Math.Max(1, rowCount));
+                    var chunkColumn = Math.Min(chunkColumns - 1, column * chunkColumns / Math.Max(1, columnCount));
+                    var chunkIndex = chunkRow * chunkColumns + chunkColumn;
+                    occupiedChunks.Add(chunkIndex);
+                }
+            }
+
+            return (instanceCount, occupiedChunks.Count);
         }
         catch (Exception exception)
         {
             Debug.LogWarning($"[MashBox] Could not read detail layer {layer} from {data.name}: {exception.Message}");
-            return 0;
+            return (0L, 0L);
         }
     }
 
@@ -1000,6 +1122,7 @@ public class MapPerformanceScannerPanel
             var info = new RuntimeMeshCombinerInfo
             {
                 combiner = combiner,
+                executesInCurrentState = combiner.isActiveAndEnabled,
                 combineOnAwake = GetSerializedBool(serializedCombiner, "combineOnAwake", true),
                 disableSourceRenderers = GetSerializedBool(serializedCombiner, "disableSourceRenderers", true),
                 addMeshCollider = GetSerializedBool(serializedCombiner, "addMeshCollider")
@@ -1057,6 +1180,9 @@ public class MapPerformanceScannerPanel
                 info.estimatedVertexBytes += GetEstimatedCombinedVertexBytes(mesh, vertexStride);
                 runtimeVertexThresholdCount += mesh.vertexCount;
                 info.sourceMeshCount++;
+                info.sourceDrawSubmissions += EstimateRendererDrawSubmissions(meshRenderer);
+                if (rendererIssues.Any(issue => issue.renderer == meshRenderer))
+                    info.sourceRendererIssueCount++;
             }
 
             info.materialCount = materials.Count;
@@ -1072,6 +1198,18 @@ public class MapPerformanceScannerPanel
             }
 
             info.estimatedMemoryBytes = info.estimatedVertexBytes + info.estimatedIndexBytes;
+            if (info.sourceMeshCount > 0 && info.indexCount > 0 && info.estimatedOutputVertices > 0)
+            {
+                var drawableMaterials = materials.Where(material => material != null).ToList();
+                info.combinedDrawSubmissions = drawableMaterials.Count;
+                info.combinedRendererIssueCount = drawableMaterials
+                    .Select(GetVariantKey)
+                    .Distinct()
+                    .Take(2)
+                    .Count() > 1
+                    ? 1
+                    : 0;
+            }
             runtimeMeshCombinerInfos.Add(info);
         }
     }
@@ -1125,6 +1263,38 @@ public class MapPerformanceScannerPanel
         }
     }
 
+    private static long GetEstimatedDrawSavings(RuntimeMeshCombinerInfo info)
+    {
+        if (info == null || !info.executesInCurrentState)
+            return 0;
+
+        return info.disableSourceRenderers
+            ? info.sourceDrawSubmissions - info.combinedDrawSubmissions
+            : -info.combinedDrawSubmissions;
+    }
+
+    private static string GetDrawChangeDescription(RuntimeMeshCombinerInfo info)
+    {
+        var savings = GetEstimatedDrawSavings(info);
+        if (savings > 0)
+            return $"saves {savings:N0}";
+        if (savings < 0)
+            return $"adds {-savings:N0}";
+
+        return "no draw change";
+    }
+
+    private static string FormatDrawDifference(long before, long after)
+    {
+        var savings = before - after;
+        if (savings > 0)
+            return $"{savings:N0} fewer";
+        if (savings < 0)
+            return $"{-savings:N0} more";
+
+        return "No change";
+    }
+
     private void CollectRendererMesh(Renderer renderer, long useCount, bool terrainPrototype)
     {
         Mesh mesh = null;
@@ -1145,7 +1315,7 @@ public class MapPerformanceScannerPanel
 
     private static long EstimateRendererDrawSubmissions(Renderer renderer)
     {
-        if (renderer == null)
+        if (!RendererContributesDrawSubmissions(renderer))
             return 0;
 
         // Each populated material slot can submit its corresponding mesh submesh. Extra material
@@ -1153,33 +1323,74 @@ public class MapPerformanceScannerPanel
         return renderer.sharedMaterials.LongCount(material => material != null);
     }
 
-    private static long EstimateTerrainSurfaceDrawSubmissions(TerrainData data)
+    private static bool RendererContributesDrawSubmissions(Renderer renderer)
+    {
+        return renderer != null && renderer.enabled && renderer.gameObject.activeInHierarchy;
+    }
+
+    private static bool BehaviourContributesDrawSubmissions(Behaviour behaviour)
+    {
+        return behaviour != null && behaviour.enabled && behaviour.gameObject.activeInHierarchy;
+    }
+
+    private static long EstimateTerrainSurfaceChunkCount(TerrainData data)
     {
         if (data == null)
             return 0;
 
-        // Unity terrain draw counts are camera/LOD dependent. Use maximum-detail 64x64 heightmap
-        // regions and one surface pass per four terrain layers as a conservative scene estimate.
+        // Terrain visibility and LOD are camera dependent. A 64x64 heightmap region gives us a
+        // stable maximum-detail chunk estimate that can then be grouped by the active renderer.
         const int estimatedPatchResolution = 64;
         var patchesPerAxis = Math.Max(1L, (data.heightmapResolution - 1L + estimatedPatchResolution - 1L) / estimatedPatchResolution);
-        var layerPasses = Math.Max(1L, (data.alphamapLayers + 3L) / 4L);
-        return patchesPerAxis * patchesPerAxis * layerPasses;
+        return patchesPerAxis * patchesPerAxis;
     }
 
-    private static long EstimateTerrainDetailDrawSubmissions(TerrainData data, DetailPrototype prototype)
+    private static long EstimateTerrainSurfaceDrawSubmissions(TerrainData data, bool usesInstancing)
     {
-        if (data == null || prototype == null)
+        if (data == null)
             return 0;
 
-        var resolutionPerPatch = Math.Max(1, data.detailResolutionPerPatch);
-        var patchesPerAxis = Math.Max(1L, (data.detailResolution + (long)resolutionPerPatch - 1L) / resolutionPerPatch);
+        var chunkCount = EstimateTerrainSurfaceChunkCount(data);
+        var layerPasses = Math.Max(1L, (data.alphamapLayers + 3L) / 4L);
+        var surfaceBatches = usesInstancing ? CalculateInstanceBatchCount(chunkCount) : chunkCount;
+        return surfaceBatches * layerPasses;
+    }
+
+    private static long EstimateVisibleTerrainDetailChunkBudget(Terrain terrain, TerrainData data)
+    {
+        if (terrain == null || data == null || terrain.detailObjectDistance <= 0f)
+            return 0L;
+
+        var chunkColumns = Math.Max(1L, data.detailPatchCount);
+        var chunkRows = Math.Max(1L, data.detailPatchCount);
+        var chunkWidth = Math.Max(0.01d, data.size.x / chunkColumns);
+        var chunkDepth = Math.Max(0.01d, data.size.z / chunkRows);
+        var radiusInChunkColumns = terrain.detailObjectDistance / chunkWidth;
+        var radiusInChunkRows = terrain.detailObjectDistance / chunkDepth;
+
+        // Detail distance is radial around the camera. The ellipse area gives a stable upper
+        // estimate of the number of spatial chunks that can be visible simultaneously.
+        var visibleChunkArea = (long)Math.Ceiling(
+            Math.PI * radiusInChunkColumns * radiusInChunkRows);
+        return Math.Min(chunkColumns * chunkRows, Math.Max(1L, visibleChunkArea));
+    }
+
+    private static long EstimateTerrainDetailDrawSubmissions(
+        DetailPrototype prototype,
+        long occupiedChunkCount)
+    {
+        if (prototype == null || occupiedChunkCount <= 0)
+            return 0;
+
         var prototypePasses = prototype.prototype != null
             ? Math.Max(1L, prototype.prototype.GetComponentsInChildren<Renderer>(true)
                 .Where(renderer => !IsEditorOnly(renderer.transform))
                 .Sum(renderer => (long)renderer.sharedMaterials.Count(material => material != null)))
             : 1L;
 
-        return patchesPerAxis * patchesPerAxis * prototypePasses;
+        // Terrain details are submitted by spatial detail chunks. Density values inside a chunk
+        // change its instance population, not the number of chunk/prototype submissions.
+        return occupiedChunkCount * prototypePasses;
     }
 
     private static long EstimateInstancedPrototypeDrawSubmissions(GameObject prefab, long instanceCount)
@@ -1187,13 +1398,19 @@ public class MapPerformanceScannerPanel
         if (prefab == null || instanceCount <= 0)
             return 0;
 
-        const long maximumInstancesPerBatch = 1023L;
-        var batchesForInstances = (instanceCount + maximumInstancesPerBatch - 1L) / maximumInstancesPerBatch;
+        var batchesForInstances = CalculateInstanceBatchCount(instanceCount);
         var prototypePasses = prefab.GetComponentsInChildren<Renderer>(true)
             .Where(renderer => !IsEditorOnly(renderer.transform))
             .Sum(renderer => (long)renderer.sharedMaterials.Count(material => material != null));
 
         return batchesForInstances * Math.Max(1L, prototypePasses);
+    }
+
+    private static long CalculateInstanceBatchCount(long instanceCount)
+    {
+        return instanceCount <= 0
+            ? 0L
+            : (instanceCount + MaximumInstancesPerBatch - 1L) / MaximumInstancesPerBatch;
     }
 
     private void CollectMesh(Mesh mesh, long useCount, bool terrainPrototype, bool colliderUse)
@@ -1276,7 +1493,8 @@ public class MapPerformanceScannerPanel
 
             if (decal.material != null)
             {
-                decalDrawCalls++;
+                if (BehaviourContributesDrawSubmissions(decal))
+                    decalDrawCalls++;
                 CollectMaterial(decal.material, true, -1);
             }
         }
@@ -1374,7 +1592,29 @@ public class MapPerformanceScannerPanel
 
     private void CalculateDrawCalls()
     {
-        totalDrawCalls = sceneRendererDrawCalls + terrainSurfaceDrawCalls + terrainInstanceDrawCalls + decalDrawCalls;
+        totalDrawCalls = sceneRendererDrawCalls + terrainSurfaceDrawCalls + terrainDetailDrawCalls + terrainTreeDrawCalls + decalDrawCalls;
+        estimatedDrawCallsAfterRuntimeCombining = totalDrawCalls;
+        estimatedRendererIssuesAfterRuntimeCombining = rendererIssues.Count;
+
+        foreach (var info in runtimeMeshCombinerInfos)
+        {
+            if (!info.executesInCurrentState ||
+                info.sourceMeshCount == 0 || info.indexCount == 0 || info.estimatedOutputVertices == 0)
+                continue;
+
+            if (info.disableSourceRenderers)
+            {
+                estimatedDrawCallsAfterRuntimeCombining -= info.sourceDrawSubmissions;
+                estimatedRendererIssuesAfterRuntimeCombining -= info.sourceRendererIssueCount;
+            }
+
+            estimatedDrawCallsAfterRuntimeCombining += info.combinedDrawSubmissions;
+            estimatedRendererIssuesAfterRuntimeCombining += info.combinedRendererIssueCount;
+        }
+
+        estimatedDrawCallsAfterRuntimeCombining = Math.Max(0L, estimatedDrawCallsAfterRuntimeCombining);
+        estimatedRendererIssuesAfterRuntimeCombining = Math.Max(0, estimatedRendererIssuesAfterRuntimeCombining);
+
     }
 
     private void CalculateTextureMemory()
@@ -1529,25 +1769,16 @@ public class MapPerformanceScannerPanel
 
     private void CalculatePerformanceScore()
     {
-        const float maxDrawCalls = 2000f;
-        const float maxTextureMemory = 2f * 1024f * 1024f * 1024f;
-        const float maxDecals = 5f;
-        const float maxShaderVariants = 6f;
-
-        var rendererPenalty = Mathf.Clamp01(rendererIssues.Count / 100f);
-        var drawPenalty = Mathf.Clamp01(totalDrawCalls / maxDrawCalls);
-        var texturePenalty = Mathf.Clamp01(totalMapMemory / (maxTextureMemory * 1.5f));
-        var decalPenalty = Mathf.Clamp01(decalDrawCalls / maxDecals);
-        var shaderPenalty = Mathf.Clamp01(batches.Count / maxShaderVariants);
-
-        var penalty =
-            rendererPenalty * 0.4f +
-            drawPenalty * 0.2f +
-            texturePenalty * 0.15f +
-            decalPenalty * 0.15f +
-            shaderPenalty * 0.1f;
-
-        performanceScore = Mathf.Clamp(100f - penalty * 100f, 0f, 100f);
+        var memoryBeforeRuntimeCombining = Math.Max(0L, totalMapMemory - totalRuntimeCombinedMeshMemory);
+        performanceScoreBeforeRuntimeCombining = CalculatePerformanceScoreValue(
+            rendererIssues.Count,
+            totalDrawCalls,
+            memoryBeforeRuntimeCombining);
+        performanceScore = CalculatePerformanceScoreValue(
+            estimatedRendererIssuesAfterRuntimeCombining,
+            estimatedDrawCallsAfterRuntimeCombining,
+            totalMapMemory);
+        runtimeCombinerScoreGain = performanceScore - performanceScoreBeforeRuntimeCombining;
 
         if (performanceScore > 85f)
         {
@@ -1571,11 +1802,38 @@ public class MapPerformanceScannerPanel
         }
     }
 
+    private float CalculatePerformanceScoreValue(int rendererIssueCount, long drawSubmissions, long mapMemoryBytes)
+    {
+        const float maxTextureMemory = 2f * 1024f * 1024f * 1024f;
+        const float maxDecals = 5f;
+        const float maxShaderVariants = 6f;
+
+        var rendererPenalty = Mathf.Clamp01(rendererIssueCount / 100f);
+        var drawPenalty = Mathf.Clamp01(drawSubmissions / DrawScoreThreshold);
+        var texturePenalty = Mathf.Clamp01(mapMemoryBytes / (maxTextureMemory * 1.5f));
+        var decalPenalty = Mathf.Clamp01(decalDrawCalls / maxDecals);
+        var shaderPenalty = Mathf.Clamp01(batches.Count / maxShaderVariants);
+
+        var penalty =
+            rendererPenalty * 0.4f +
+            drawPenalty * 0.2f +
+            texturePenalty * 0.15f +
+            decalPenalty * 0.15f +
+            shaderPenalty * 0.1f;
+
+        return Mathf.Clamp(100f - penalty * 100f, 0f, 100f);
+    }
+
     private void DrawScoreBreakdown()
     {
         DrawTableSectionHeader("Score Breakdown");
-        DrawMetric("Renderer Issues", rendererIssues.Count, 10f);
-        DrawMetric("Estimated Draw Submissions", totalDrawCalls, 2000f);
+        DrawMetric("Renderer Issues (Runtime)", estimatedRendererIssuesAfterRuntimeCombining, 10f);
+        DrawMetric("Estimated Draw Submissions (Runtime)", estimatedDrawCallsAfterRuntimeCombining, DrawScoreThreshold);
+        DrawTableRow("Terrain Surface Chunks", terrainSurfaceChunkCount.ToString("N0"));
+        DrawTableRow("Terrain Surface Batch Submissions", terrainSurfaceDrawCalls.ToString("N0"));
+        DrawTableRow("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
+        DrawTableRow("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
+        DrawTableRow("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
         DrawMetric("Decals", decalDrawCalls, 5f);
         DrawMetric("Shader Variants", batches.Count, 6f);
         DrawMetric("Texture Memory (Imported/Runtime)", totalTextureMemory, 2L * 1024L * 1024L * 1024L, true);
@@ -1654,8 +1912,8 @@ public class MapPerformanceScannerPanel
         DrawPerformanceScore();
         DrawScoreBreakdown();
         EditorGUILayout.HelpBox(
-            "Estimated Draw Submissions is a conservative static scene estimate before camera culling. " +
-            "Actual per-frame draw calls vary with terrain LOD, visibility, static batching, and GPU instancing.",
+            "Estimated Draw Submissions is a static runtime estimate. Actual per-frame draw calls vary with camera location, terrain LOD, visibility, static batching, and GPU instancing. " +
+            $"Terrain surface and trees are grouped into batches of up to {MaximumInstancesPerBatch:N0} when applicable. Terrain detail density is grouped by occupied spatial chunk and prototype, capped by the configured detail draw radius, so individual instances inside a chunk do not multiply submissions. These estimates feed directly into the score.",
             MessageType.Info);
         EditorGUILayout.Space(10f);
 
@@ -1665,10 +1923,17 @@ public class MapPerformanceScannerPanel
         DrawTableSectionHeader("Scene & Rendering");
         DrawTableRow("Materials", materialInfos.Count.ToString("N0"));
         DrawTableRow("Shader Variants (Batches)", batches.Count.ToString("N0"));
-        DrawTableRow("Estimated Draw Submissions", totalDrawCalls.ToString("N0"));
+        DrawTableRow("Draw Submissions Before Combining", totalDrawCalls.ToString("N0"));
+        DrawTableRow("Projected Runtime Draw Submissions", estimatedDrawCallsAfterRuntimeCombining.ToString("N0"));
+        DrawTableRow(
+            "Runtime Combiner Draw Change",
+            FormatDrawDifference(totalDrawCalls, estimatedDrawCallsAfterRuntimeCombining));
         DrawTableRow("Scene Renderer Submissions", sceneRendererDrawCalls.ToString("N0"));
-        DrawTableRow("Terrain Surface Submissions", terrainSurfaceDrawCalls.ToString("N0"));
-        DrawTableRow("Terrain Detail/Tree Submissions", terrainInstanceDrawCalls.ToString("N0"));
+        DrawTableRow("Terrain Surface Chunks", terrainSurfaceChunkCount.ToString("N0"));
+        DrawTableRow("Terrain Surface Batch Submissions", terrainSurfaceDrawCalls.ToString("N0"));
+        DrawTableRow("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
+        DrawTableRow("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
+        DrawTableRow("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
         DrawTableRow("Decal Draw Calls", decalDrawCalls.ToString("N0"));
         DrawTableRow("Texture Import Target", EditorUserBuildSettings.activeBuildTarget.ToString());
 
@@ -1693,6 +1958,10 @@ public class MapPerformanceScannerPanel
         DrawTableRow("Terrain Lightmap Memory", FormatBytes(totalTerrainLightmapMemory));
         DrawTableRow("Detail Instances", totalDetailInstances.ToString("N0"));
         DrawTableRow("Tree Instances", totalTreeInstances.ToString("N0"));
+        DrawTableRow("Surface Batch Submissions", terrainSurfaceDrawCalls.ToString("N0"));
+        DrawTableRow("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
+        DrawTableRow("Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
+        DrawTableRow("Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
         DrawTableRow("Unique Prototype Materials", $"{terrainPrototypeMaterialCount:N0} (included in shader variants)");
 
         DrawTableSectionHeader("Lighting & Probes");
@@ -1854,7 +2123,12 @@ public class MapPerformanceScannerPanel
                 $"{info.terrain.name}: TerrainData {FormatBytes(info.terrainDataMemory)}, terrain textures {FormatBytes(info.textureMemory)}, " +
                 $"height {info.heightmapResolution}, splat layers {info.alphamapLayers}, " +
                 $"details {info.detailInstanceCount:N0}/{info.detailPrototypeCount} prototypes, " +
-                $"trees {info.treeInstanceCount:N0}/{info.treePrototypeCount} prototypes");
+                $"detail grid {info.detailPatchesPerAxis:N0}x{info.detailPatchesPerAxis:N0}, visible budget/prototype {info.visibleDetailChunkBudgetPerPrototype:N0}, " +
+                $"trees {info.treeInstanceCount:N0}/{info.treePrototypeCount} prototypes, " +
+                $"surface chunks/batches {info.surfaceChunkCount:N0}/{info.surfaceDrawSubmissions:N0} ({(info.usesInstancedTerrain ? "instanced" : "non-instanced")}), " +
+                $"detail chunks occupied/visible/submissions {info.occupiedDetailChunkCount:N0}/{info.detailChunkCount:N0}/{info.detailDrawSubmissions:N0}, " +
+                $"tree batches {info.treeDrawSubmissions:N0}, " +
+                $"{(info.contributesDrawSubmissions ? "active" : "disabled/inactive - zero draws")}");
             EditorGUILayout.EndHorizontal();
         }
     }
@@ -1906,6 +2180,13 @@ public class MapPerformanceScannerPanel
             var combinerName = info.combiner != null ? GetTransformPath(info.combiner.transform) : "Missing RuntimeMeshCombiner";
             var trigger = info.combineOnAwake ? "Awake" : "Manual";
             var sourceState = info.disableSourceRenderers ? "sources disabled" : "sources retained";
+            var runtimeDraws = !info.executesInCurrentState
+                ? info.sourceDrawSubmissions
+                : info.disableSourceRenderers
+                    ? info.combinedDrawSubmissions
+                    : info.sourceDrawSubmissions + info.combinedDrawSubmissions;
+            var drawChange = GetDrawChangeDescription(info);
+            var activeState = info.executesInCurrentState ? "active" : "disabled/inactive - zero combined draws";
             var collider = info.addMeshCollider ? ", MeshCollider" : string.Empty;
             var unreadable = info.skippedUnreadableMeshCount > 0
                 ? $", skipped unreadable {info.skippedUnreadableMeshCount:N0}"
@@ -1915,7 +2196,8 @@ public class MapPerformanceScannerPanel
                 $"vertices {FormatBytes(info.estimatedVertexBytes)}, indices {FormatBytes(info.estimatedIndexBytes)} | " +
                 $"output {info.estimatedOutputVertices:N0} verts/{info.indexCount:N0} indices, " +
                 $"{info.materialCount:N0} materials, {info.sourceMeshCount:N0} meshes/{info.sourceSubMeshCount:N0} submeshes, " +
-                $"{trigger}, {sourceState}{collider}{unreadable}");
+                $"draws {info.sourceDrawSubmissions:N0} -> {runtimeDraws:N0} ({drawChange}), " +
+                $"{activeState}, {trigger}, {sourceState}{collider}{unreadable}");
             EditorGUILayout.EndHorizontal();
         }
     }
@@ -1929,8 +2211,28 @@ public class MapPerformanceScannerPanel
         };
 
         GUI.color = scoreColor;
-        GUILayout.Label($"Performance Score: {performanceScore:F0} ({performanceGrade})", big);
+        GUILayout.Label($"Projected Runtime Score: {performanceScore:F0} ({performanceGrade})", big);
         GUI.color = Color.white;
+
+        if (runtimeMeshCombinerInfos.Count > 0)
+        {
+            var gainStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                alignment = TextAnchor.MiddleCenter
+            };
+            var previousColor = GUI.contentColor;
+            GUI.contentColor = runtimeCombinerScoreGain > 0.05f
+                ? Color.green
+                : runtimeCombinerScoreGain < -0.05f ? Color.red : Color.yellow;
+            GUILayout.Label(
+                $"Runtime mesh combining: {performanceScoreBeforeRuntimeCombining:F1} -> {performanceScore:F1} " +
+                $"({runtimeCombinerScoreGain:+0.0;-0.0;0.0} points), estimated draws {totalDrawCalls:N0} -> {estimatedDrawCallsAfterRuntimeCombining:N0}",
+                gainStyle);
+            GUI.contentColor = previousColor;
+            EditorGUILayout.HelpBox(
+                "Disabled components and inactive GameObjects contribute zero estimated draws. Active manual combiners are assumed to execute. Draw gains replace source renderer submissions with one submission per combined non-null material; generated mesh memory is included as a cost.",
+                MessageType.Info);
+        }
     }
 
     private void DrawShaderFragmentation()

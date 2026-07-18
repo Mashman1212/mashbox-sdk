@@ -18,6 +18,10 @@ public class RuntimeMeshCombiner : MonoBehaviour
     [SerializeField] private bool addMeshCollider;
 #if UNITY_EDITOR
     [SerializeField] [FormerlySerializedAs("enableReadWriteInEditorBeforeCombine")] private bool enableReadWriteOnValidate = true;
+    private static readonly HashSet<RuntimeMeshCombiner> PendingReadWriteCombiners = new HashSet<RuntimeMeshCombiner>();
+    private static readonly HashSet<RuntimeMeshCombiner> ForcedReadWriteCombiners = new HashSet<RuntimeMeshCombiner>();
+    private static bool readWriteBatchScheduled;
+    private static bool processingReadWriteBatch;
 #endif
     [SerializeField] private string combinedObjectName = "Combined Mesh";
 
@@ -42,8 +46,8 @@ public class RuntimeMeshCombiner : MonoBehaviour
     private void OnValidate()
     {
 #if UNITY_EDITOR
-        if (!Application.isPlaying && enableReadWriteOnValidate)
-            EnableReadWriteOnChildMeshAssets(GetComponentsInChildren<MeshFilter>(includeInactiveChildren));
+        if (!Application.isPlaying && enableReadWriteOnValidate && !processingReadWriteBatch)
+            QueueEnableReadWriteOnChildMeshAssets(false);
 #endif
     }
 
@@ -183,72 +187,122 @@ public class RuntimeMeshCombiner : MonoBehaviour
     [ContextMenu("Enable Read/Write On Child Mesh Assets")]
     public void EnableReadWriteOnChildMeshAssets()
     {
-        EnableReadWriteOnChildMeshAssets(GetComponentsInChildren<MeshFilter>(includeInactiveChildren));
+        QueueEnableReadWriteOnChildMeshAssets(true);
     }
 
-    private void EnableReadWriteOnChildMeshAssets(MeshFilter[] meshFilters)
+    private void QueueEnableReadWriteOnChildMeshAssets(bool force)
     {
-        if (meshFilters == null || meshFilters.Length == 0)
+        if (this == null)
             return;
 
-        HashSet<string> reimportedAssetPaths = new HashSet<string>();
-        int changedCount = 0;
+        PendingReadWriteCombiners.Add(this);
+        if (force)
+            ForcedReadWriteCombiners.Add(this);
+        if (readWriteBatchScheduled)
+            return;
+
+        readWriteBatchScheduled = true;
+        EditorApplication.delayCall += ProcessPendingReadWriteBatch;
+    }
+
+    private static void ProcessPendingReadWriteBatch()
+    {
+        readWriteBatchScheduled = false;
+        if (processingReadWriteBatch)
+            return;
+
+        RuntimeMeshCombiner[] combiners = PendingReadWriteCombiners
+            .Where(combiner => combiner != null &&
+                               (combiner.enableReadWriteOnValidate || ForcedReadWriteCombiners.Contains(combiner)))
+            .ToArray();
+        PendingReadWriteCombiners.Clear();
+        ForcedReadWriteCombiners.Clear();
+
+        if (combiners.Length == 0)
+            return;
+
+        HashSet<string> modelAssetPaths = new HashSet<string>();
         int unreadableSceneMeshCount = 0;
 
-        for (int i = 0; i < meshFilters.Length; i++)
+        for (int combinerIndex = 0; combinerIndex < combiners.Length; combinerIndex++)
         {
-            MeshFilter meshFilter = meshFilters[i];
+            RuntimeMeshCombiner combiner = combiners[combinerIndex];
+            MeshFilter[] meshFilters = combiner.GetComponentsInChildren<MeshFilter>(combiner.includeInactiveChildren);
 
-            if (!ShouldUseMeshFilter(meshFilter))
-                continue;
-
-            Mesh mesh = meshFilter.sharedMesh;
-
-            if (mesh == null || mesh.isReadable)
-                continue;
-
-            string assetPath = AssetDatabase.GetAssetPath(mesh);
-
-            if (string.IsNullOrEmpty(assetPath))
+            for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
             {
-                unreadableSceneMeshCount++;
-                continue;
+                MeshFilter meshFilter = meshFilters[meshIndex];
+
+                if (!combiner.ShouldUseMeshFilter(meshFilter))
+                    continue;
+
+                Mesh mesh = meshFilter.sharedMesh;
+
+                if (mesh == null || mesh.isReadable)
+                    continue;
+
+                string assetPath = AssetDatabase.GetAssetPath(mesh);
+
+                if (string.IsNullOrEmpty(assetPath))
+                {
+                    unreadableSceneMeshCount++;
+                    continue;
+                }
+
+                modelAssetPaths.Add(assetPath);
             }
+        }
 
-            if (reimportedAssetPaths.Contains(assetPath))
-                continue;
-
+        Dictionary<string, ModelImporter> importersToUpdate = new Dictionary<string, ModelImporter>();
+        foreach (string assetPath in modelAssetPaths)
+        {
             ModelImporter modelImporter = AssetImporter.GetAtPath(assetPath) as ModelImporter;
 
             if (modelImporter == null)
             {
                 Debug.LogWarning(
-                    $"RuntimeMeshCombiner could not enable Read/Write for '{mesh.name}' because '{assetPath}' is not imported by a ModelImporter.",
-                    meshFilter);
+                    $"RuntimeMeshCombiner could not enable Read/Write because '{assetPath}' is not imported by a ModelImporter.");
                 continue;
             }
 
             if (modelImporter.isReadable)
                 continue;
 
-            modelImporter.isReadable = true;
-            modelImporter.SaveAndReimport();
-            reimportedAssetPaths.Add(assetPath);
-            changedCount++;
+            importersToUpdate.Add(assetPath, modelImporter);
         }
 
-        if (changedCount > 0)
+        if (importersToUpdate.Count > 0)
         {
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            Debug.Log($"RuntimeMeshCombiner enabled Read/Write on {changedCount} mesh import asset(s) under '{name}'.", this);
+            processingReadWriteBatch = true;
+            bool assetEditingStarted = false;
+            try
+            {
+                AssetDatabase.StartAssetEditing();
+                assetEditingStarted = true;
+
+                foreach (KeyValuePair<string, ModelImporter> entry in importersToUpdate)
+                {
+                    entry.Value.isReadable = true;
+                    AssetDatabase.WriteImportSettingsIfDirty(entry.Key);
+                    AssetDatabase.ImportAsset(entry.Key, ImportAssetOptions.ForceUpdate);
+                }
+            }
+            finally
+            {
+                if (assetEditingStarted)
+                    AssetDatabase.StopAssetEditing();
+
+                processingReadWriteBatch = false;
+            }
+
+            Debug.Log(
+                $"RuntimeMeshCombiner enabled Read/Write on {importersToUpdate.Count} unique model asset(s) in one batched import for {combiners.Length} combiner(s).");
         }
 
         if (unreadableSceneMeshCount > 0)
         {
             Debug.LogWarning(
-                $"RuntimeMeshCombiner found {unreadableSceneMeshCount} unreadable scene/procedural mesh(es) under '{name}' that do not have an import asset path, so Read/Write could not be changed automatically.",
-                this);
+                $"RuntimeMeshCombiner found {unreadableSceneMeshCount} unreadable scene/procedural mesh(es) without an import asset path, so Read/Write could not be changed automatically.");
         }
     }
 
