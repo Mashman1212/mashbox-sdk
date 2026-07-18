@@ -2339,7 +2339,7 @@
     "m_ObjectId": "03fbc66bd8c54a609c347685f65564d9",
     "m_Title": "MASK MAP REMAPPING",
     "m_Position": {
-        "x": 1343.199951171875,
+        "x": 1343.1998291015625,
         "y": 1075.199951171875
     }
 }
@@ -4021,7 +4021,7 @@
     "m_ObjectId": "26d1241eaa9c45f79bc03d88cd341339",
     "m_NormalDropOffSpace": 0,
     "m_BlendPreserveSpecular": true,
-    "m_ReceiveDecals": true,
+    "m_ReceiveDecals": false,
     "m_ReceiveSSR": true,
     "m_ReceiveSSRTransparent": false,
     "m_SpecularAA": false,
@@ -4306,7 +4306,7 @@
     "m_Title": "Normal Map",
     "m_Position": {
         "x": 2863.2001953125,
-        "y": 311.99993896484377
+        "y": 312.0
     }
 }
 
@@ -6144,7 +6144,7 @@
     "m_ObjectId": "50d835c9e8324d76ac8fca9106cdb4df",
     "m_Title": "Detail",
     "m_Position": {
-        "x": 2026.4002685546875,
+        "x": 2026.4000244140625,
         "y": 1917.5999755859375
     }
 }
@@ -8581,7 +8581,7 @@
     "m_Title": "Decal Map",
     "m_Position": {
         "x": -107.20001220703125,
-        "y": 317.5999755859375
+        "y": 317.6000061035156
     }
 }
 
@@ -8608,8 +8608,8 @@
     "m_ObjectId": "89928fec505c442a95f3cdd521e5ab41",
     "m_Title": "Emissive Map",
     "m_Position": {
-        "x": 4311.201171875,
-        "y": 2376.00048828125
+        "x": 4311.20068359375,
+        "y": 2376.0
     }
 }
 
@@ -9074,8 +9074,8 @@
     "m_ObjectId": "969889577b40454b87fb8a9197f5e075",
     "m_Title": "Base Color",
     "m_Position": {
-        "x": 196.0,
-        "y": -269.6000061035156
+        "x": 195.99993896484376,
+        "y": -269.6000671386719
     }
 }
 
@@ -14115,3 +14115,4 @@
     "m_StageCapability": 3,
     "m_BareResource": false
 }
+
