@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MashBoxSDK.ContentTools;
 using MashBoxSDK.Exporting;
 using MashBoxSDK.Maps;
 using UnityEditor;
@@ -1317,41 +1318,22 @@ namespace MashBoxSDK.MapTools
             if (!scene.IsValid() || !scene.isLoaded)
                 return;
 
-            var missingPrefabPaths = scene.GetRootGameObjects()
-                .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
-                .Where(transform => transform != null && HasMissingPrefabAsset(transform.gameObject))
-                .Select(transform => GetTransformPath(transform))
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .ToList();
+            var integrityProblems = ContentPackValidator.FindPrefabIntegrityProblems(
+                scene.GetRootGameObjects(),
+                includePrefabDependencies: true);
 
-            if (missingPrefabPaths.Count == 0)
+            if (integrityProblems.Count == 0)
                 return;
 
-            var shownPaths = string.Join("\n", missingPrefabPaths.Take(12).Select(path => $"- {path}"));
-            var hiddenCount = missingPrefabPaths.Count - 12;
+            var shownProblems = string.Join("\n", integrityProblems.Take(12).Select(problem => $"- {problem.message}"));
+            var hiddenCount = integrityProblems.Count - 12;
             var hiddenMessage = hiddenCount > 0 ? $"\n...and {hiddenCount} more." : string.Empty;
 
             issues.Add(new MapValidationIssue(
                 MapValidationSeverity.Error,
-                "This map contains missing prefab references. The exporter cannot recover a prefab asset that is already unresolved in the source scene.\n\n" +
-                "Restore or replace these prefab instances, then validate again:\n" +
-                $"{shownPaths}{hiddenMessage}"));
-        }
-
-        private static bool HasMissingPrefabAsset(GameObject gameObject)
-        {
-            if (gameObject == null)
-                return false;
-
-            try
-            {
-                return PrefabUtility.IsPartOfAnyPrefab(gameObject) && PrefabUtility.IsPrefabAssetMissing(gameObject);
-            }
-            catch
-            {
-                return false;
-            }
+                "This map contains missing scripts or broken prefab references. These assets cannot be recovered by the remote cooker.\n\n" +
+                "Fix the following problems, then validate again:\n" +
+                $"{shownProblems}{hiddenMessage}"));
         }
 
         private static bool TryGetInvalidRendererMaterialReason(string assetPath, out string reason)

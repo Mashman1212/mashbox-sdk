@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using MashBoxSDK.EditorResources;
 using MashBoxSDK.Exporting;
 using UnityEditor;
@@ -8,6 +10,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.Profiling;
+using UnityEngine.SceneManagement;
 
 [Serializable]
 public sealed class MapPerformanceScanResult
@@ -16,6 +19,7 @@ public sealed class MapPerformanceScanResult
     public long SharedMemoryBytes { get; internal set; }
     public long TextureMemoryBytes { get; internal set; }
     public long MeshMemoryBytes { get; internal set; }
+    public long RuntimeCombinedMeshMemoryBytes { get; internal set; }
     public long TerrainDataMemoryBytes { get; internal set; }
     public long TerrainSplatMemoryBytes { get; internal set; }
     public long LightmapMemoryBytes { get; internal set; }
@@ -57,6 +61,24 @@ public class MapPerformanceScannerPanel
         public long sceneUses;
         public long terrainUses;
         public long colliderUses;
+    }
+
+    [Serializable]
+    private class RuntimeMeshCombinerInfo
+    {
+        public RuntimeMeshCombiner combiner;
+        public long estimatedMemoryBytes;
+        public long estimatedVertexBytes;
+        public long estimatedIndexBytes;
+        public long estimatedOutputVertices;
+        public long indexCount;
+        public int sourceMeshCount;
+        public int sourceSubMeshCount;
+        public int materialCount;
+        public int skippedUnreadableMeshCount;
+        public bool combineOnAwake;
+        public bool disableSourceRenderers;
+        public bool addMeshCollider;
     }
 
     [Serializable]
@@ -122,6 +144,7 @@ public class MapPerformanceScannerPanel
     [SerializeField] private int decalDrawCalls;
     [SerializeField] private long totalTextureMemory;
     [SerializeField] private long totalMeshMemory;
+    [SerializeField] private long totalRuntimeCombinedMeshMemory;
     [SerializeField] private long totalTerrainDataMemory;
     [SerializeField] private long totalTerrainSplatMemory;
     [SerializeField] private long totalLightmapMemory;
@@ -140,6 +163,7 @@ public class MapPerformanceScannerPanel
     [SerializeField] private int postVolumeCount;
     [SerializeField] private int postVolumeProfileCount;
     [SerializeField] private List<MeshInfo> meshInfos = new();
+    [SerializeField] private List<RuntimeMeshCombinerInfo> runtimeMeshCombinerInfos = new();
     [SerializeField] private List<TerrainInfo> terrainInfos = new();
     [SerializeField] private List<TextureInfo> textureInfos = new();
     [SerializeField] private bool showTextureDetails = true;
@@ -175,8 +199,17 @@ public class MapPerformanceScannerPanel
             "Scan the loaded scene to review shared-memory usage, terrain density, unique meshes, shader fragmentation, decals, and renderers that are likely preventing batching.",
             MessageType.Info);
 
-        if (GUILayout.Button("Scan Scene", GUILayout.Height(40)))
-            ScanScene();
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Scan Scene", GUILayout.Height(40)))
+                ScanScene();
+
+            using (new EditorGUI.DisabledScope(!hasScanResults))
+            {
+                if (GUILayout.Button("Save Text Report...", GUILayout.Height(40), GUILayout.Width(170f)))
+                    SaveTextReport();
+            }
+        }
 
         EditorGUILayout.Space(10f);
 
@@ -263,6 +296,7 @@ public class MapPerformanceScannerPanel
             processedMaterials.Clear();
             rendererIssues.Clear();
             meshInfos.Clear();
+            runtimeMeshCombinerInfos.Clear();
             terrainInfos.Clear();
             textureInfos.Clear();
             meshLookup.Clear();
@@ -284,6 +318,7 @@ public class MapPerformanceScannerPanel
             decalDrawCalls = 0;
             totalTextureMemory = 0;
             totalMeshMemory = 0;
+            totalRuntimeCombinedMeshMemory = 0;
             totalTerrainDataMemory = 0;
             totalTerrainSplatMemory = 0;
             totalLightmapMemory = 0;
@@ -304,6 +339,7 @@ public class MapPerformanceScannerPanel
 
             CollectRenderers();
             CollectAdditionalMeshes();
+            CollectRuntimeMeshCombiners();
             CollectTerrains();
             CollectLightingData();
             CollectPostVolumeData();
@@ -328,6 +364,7 @@ public class MapPerformanceScannerPanel
                 SharedMemoryBytes = totalMapMemory,
                 TextureMemoryBytes = totalTextureMemory,
                 MeshMemoryBytes = totalMeshMemory,
+                RuntimeCombinedMeshMemoryBytes = totalRuntimeCombinedMeshMemory,
                 TerrainDataMemoryBytes = totalTerrainDataMemory,
                 TerrainSplatMemoryBytes = totalTerrainSplatMemory,
                 LightmapMemoryBytes = totalLightmapMemory,
@@ -350,6 +387,234 @@ public class MapPerformanceScannerPanel
         {
             EditorUtility.ClearProgressBar();
         }
+    }
+
+    private void SaveTextReport()
+    {
+        if (!hasScanResults)
+            return;
+
+        var scene = SceneManager.GetActiveScene();
+        var sceneName = string.IsNullOrWhiteSpace(scene.name) ? "Map" : scene.name;
+        var safeSceneName = new string(sceneName
+            .Select(character => Path.GetInvalidFileNameChars().Contains(character) ? '_' : character)
+            .ToArray());
+        var defaultFileName = $"{safeSceneName}_PerformanceReport_{DateTime.Now:yyyy-MM-dd_HHmm}.txt";
+        var savePath = EditorUtility.SaveFilePanel(
+            "Save Map Performance Report",
+            Application.dataPath,
+            defaultFileName,
+            "txt");
+
+        if (string.IsNullOrWhiteSpace(savePath))
+            return;
+
+        try
+        {
+            File.WriteAllText(savePath, BuildTextReport(), new UTF8Encoding(false));
+            Debug.Log($"[MashBox] Saved map performance report to '{savePath}'.");
+            EditorUtility.RevealInFinder(savePath);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"[MashBox] Could not save map performance report: {exception}");
+            EditorUtility.DisplayDialog(
+                "Could Not Save Report",
+                $"The performance report could not be saved.\n\n{exception.Message}",
+                "OK");
+        }
+    }
+
+    private string BuildTextReport()
+    {
+        var report = new StringBuilder(16 * 1024);
+        var scene = SceneManager.GetActiveScene();
+        var selectedGameName = EditorPrefs.GetString("ModIo.CurrentGame", string.Empty);
+        var targetGame = GameRegistry.Find(selectedGameName);
+
+        void Section(string title)
+        {
+            report.AppendLine();
+            report.AppendLine(title);
+            report.AppendLine(new string('=', title.Length));
+        }
+
+        void Metric(string label, object value)
+        {
+            report.Append(label.PadRight(38));
+            report.AppendLine(value?.ToString() ?? string.Empty);
+        }
+
+        report.AppendLine("MASHBOX MAP PERFORMANCE REPORT");
+        report.AppendLine("==============================");
+        Metric("Generated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss zzz"));
+        Metric("Scene", string.IsNullOrWhiteSpace(scene.path) ? scene.name : scene.path);
+        Metric("Target Game", targetGame?.DisplayName ?? "Not selected");
+        Metric("Texture Import Target", EditorUserBuildSettings.activeBuildTarget);
+        Metric("Performance Score", $"{performanceScore:F0} ({performanceGrade})");
+
+        Section("PUBLISHING SUMMARY");
+        Metric("Estimated Shared Memory", FormatBytes(totalMapMemory));
+        if (targetGame != null && targetGame.MapSharedMemoryBudgetBytes > 0)
+        {
+            var usage = totalMapMemory / (double)targetGame.MapSharedMemoryBudgetBytes * 100d;
+            Metric("Target Shared-Memory Budget", FormatBytes(targetGame.MapSharedMemoryBudgetBytes));
+            Metric("Budget Used", $"{usage:F1}%");
+            Metric("Budget Status", totalMapMemory <= targetGame.MapSharedMemoryBudgetBytes ? "PASS" : "OVER BUDGET");
+        }
+        else
+        {
+            Metric("Target Shared-Memory Budget", "Unavailable - select a supported game");
+        }
+
+        var oversizedTextures = textureInfos.Where(info => IsOversizedTexture(info.texture)).ToList();
+        Metric("Textures Above 4K", oversizedTextures.Count == 0 ? "0 - PASS" : $"{oversizedTextures.Count:N0} - VALIDATION ERROR");
+
+        Section("SCORE BREAKDOWN");
+        Metric("Renderer Issues", rendererIssues.Count.ToString("N0"));
+        Metric("Estimated Draw Submissions", $"{totalDrawCalls:N0} / 2,000 scoring threshold");
+        Metric("Decals", $"{decalDrawCalls:N0} / 5 scoring threshold");
+        Metric("Shader Variants", $"{batches.Count:N0} / 6 scoring threshold");
+        Metric("Texture Memory", $"{FormatBytes(totalTextureMemory)} / 2.00 GB scoring threshold");
+        Metric("Estimated Shared Memory", $"{FormatBytes(totalMapMemory)} / 3.00 GB display threshold");
+
+        Section("SCENE AND RENDERING");
+        Metric("Materials", materialInfos.Count.ToString("N0"));
+        Metric("Shader Variants (Batches)", batches.Count.ToString("N0"));
+        Metric("Estimated Draw Submissions", totalDrawCalls.ToString("N0"));
+        Metric("Scene Renderer Submissions", sceneRendererDrawCalls.ToString("N0"));
+        Metric("Terrain Surface Submissions", terrainSurfaceDrawCalls.ToString("N0"));
+        Metric("Terrain Detail/Tree Submissions", terrainInstanceDrawCalls.ToString("N0"));
+        Metric("Decal Draw Calls", decalDrawCalls.ToString("N0"));
+
+        Section("MEMORY SUMMARY");
+        Metric("Texture Memory", FormatBytes(totalTextureMemory));
+        Metric("Unique Mesh Memory", $"{FormatBytes(totalMeshMemory)} ({meshInfos.Count:N0} meshes, {totalMeshUses:N0} uses)");
+        Metric("Runtime Combined Mesh Memory", $"{FormatBytes(totalRuntimeCombinedMeshMemory)} ({runtimeMeshCombinerInfos.Count:N0} combiners)");
+        Metric("Terrain Data Memory", FormatBytes(totalTerrainDataMemory));
+        Metric("Terrain Splat Map Memory", FormatBytes(totalTerrainSplatMemory));
+        Metric("All Lightmap Memory", FormatBytes(totalLightmapMemory));
+        Metric("Terrain Lightmap Memory", FormatBytes(totalTerrainLightmapMemory));
+        Metric("Light Probe Data", $"{FormatBytes(totalLightProbeMemory)} ({lightProbeCount:N0} probes)");
+        Metric("Reflection Probe Memory", $"{FormatBytes(totalReflectionProbeMemory)} ({reflectionProbeCount:N0} probes)");
+        Metric("Post Volume Texture Memory", FormatBytes(totalPostVolumeTextureMemory));
+        Metric("Post Volume Profile Data", FormatBytes(totalPostVolumeDataMemory));
+        Metric("Estimated Shared Memory", FormatBytes(totalMapMemory));
+
+        Section("TERRAIN SUMMARY");
+        Metric("Terrain Count", terrainInfos.Count.ToString("N0"));
+        Metric("Detail Instances", totalDetailInstances.ToString("N0"));
+        Metric("Tree Instances", totalTreeInstances.ToString("N0"));
+        Metric("Unique Prototype Materials", terrainPrototypeMaterialCount.ToString("N0"));
+        foreach (var info in terrainInfos.OrderByDescending(item => item.terrainDataMemory + item.textureMemory))
+        {
+            report.AppendLine(
+                $"- {info.terrain?.name ?? "Missing Terrain"}: TerrainData {FormatBytes(info.terrainDataMemory)}, " +
+                $"textures {FormatBytes(info.textureMemory)}, height {info.heightmapResolution}, splat layers {info.alphamapLayers}, " +
+                $"details {info.detailInstanceCount:N0}/{info.detailPrototypeCount:N0} prototypes, " +
+                $"trees {info.treeInstanceCount:N0}/{info.treePrototypeCount:N0} prototypes");
+        }
+
+        Section($"TEXTURES BY MEMORY ({textureInfos.Count:N0} UNIQUE)");
+        if (textureInfos.Count == 0)
+            report.AppendLine("None");
+        foreach (var info in textureInfos.Where(info => info.texture != null))
+        {
+            var oversizedLabel = IsOversizedTexture(info.texture) ? "VALIDATION ERROR >4K | " : string.Empty;
+            var location = string.IsNullOrWhiteSpace(info.assetPath) ? "runtime/generated" : info.assetPath;
+            report.AppendLine(
+                $"- {oversizedLabel}{info.texture.name}: {FormatBytes(info.memoryBytes)} | " +
+                $"{info.texture.width:N0} x {info.texture.height:N0} | {info.texture.GetType().Name} | " +
+                $"{GetTextureSourceDescription(info)} | {location}");
+        }
+
+        Section($"LARGEST UNIQUE MESHES ({meshInfos.Count:N0} TOTAL)");
+        if (meshInfos.Count == 0)
+            report.AppendLine("None");
+        foreach (var info in meshInfos.OrderByDescending(item => item.memoryBytes))
+        {
+            report.AppendLine(
+                $"- {info.mesh?.name ?? "Missing Mesh"}: {FormatBytes(info.memoryBytes)} | " +
+                $"{(info.mesh != null ? info.mesh.vertexCount : 0):N0} vertices | scene uses {info.sceneUses:N0}, " +
+                $"terrain instance uses {info.terrainUses:N0}, collider uses {info.colliderUses:N0}");
+        }
+
+        Section($"RUNTIME MESH COMBINERS ({runtimeMeshCombinerInfos.Count:N0})");
+        Metric("Total Estimated Combined Memory", FormatBytes(totalRuntimeCombinedMeshMemory));
+        if (runtimeMeshCombinerInfos.Count == 0)
+            report.AppendLine("None");
+        foreach (var info in runtimeMeshCombinerInfos.OrderByDescending(item => item.estimatedMemoryBytes))
+        {
+            var combinerPath = info.combiner != null ? GetTransformPath(info.combiner.transform) : "Missing RuntimeMeshCombiner";
+            var trigger = info.combineOnAwake ? "Awake" : "Manual";
+            var sourceState = info.disableSourceRenderers ? "sources disabled" : "sources retained";
+            var collider = info.addMeshCollider ? ", adds MeshCollider" : string.Empty;
+            var unreadable = info.skippedUnreadableMeshCount > 0
+                ? $", skipped unreadable meshes {info.skippedUnreadableMeshCount:N0}"
+                : string.Empty;
+            report.AppendLine(
+                $"- {combinerPath}: {FormatBytes(info.estimatedMemoryBytes)} " +
+                $"(vertices {FormatBytes(info.estimatedVertexBytes)}, indices {FormatBytes(info.estimatedIndexBytes)}) | " +
+                $"estimated output vertices {info.estimatedOutputVertices:N0}, indices {info.indexCount:N0}, " +
+                $"materials {info.materialCount:N0}, source meshes {info.sourceMeshCount:N0}, " +
+                $"source submeshes {info.sourceSubMeshCount:N0}, trigger {trigger}, {sourceState}{collider}{unreadable}");
+        }
+
+        Section("SHADER FRAGMENTATION");
+        var shaderGroups = materialInfos.Where(info => !info.isDecal).GroupBy(info => info.shader).OrderByDescending(group => group.Count()).ToList();
+        if (shaderGroups.Count == 0)
+            report.AppendLine("None");
+        foreach (var group in shaderGroups)
+        {
+            var variants = group.Select(info => string.Join(";", info.keywords)).Distinct().Count();
+            report.AppendLine($"- {group.Key?.name ?? "Missing Shader"}: {variants:N0} variants ({group.Count():N0} materials)");
+        }
+
+        Section("TOP SHADER VARIANTS");
+        var worstBatches = batches.OrderByDescending(batch => batch.Value.Count).Take(20).ToList();
+        if (worstBatches.Count == 0)
+            report.AppendLine("None");
+        foreach (var batch in worstBatches)
+        {
+            report.AppendLine(
+                $"- {batch.Key.shader?.name ?? "Missing Shader"} | Lightmap {batch.Key.lightmapIndex} | " +
+                $"{batch.Value.Count:N0} materials | Keywords: " +
+                $"{(string.IsNullOrWhiteSpace(batch.Key.keywordSignature) ? "<none>" : batch.Key.keywordSignature)}");
+        }
+
+        Section($"DECALS ({decalDrawCalls:N0})");
+        var decals = materialInfos.Where(info => info.isDecal).ToList();
+        if (decals.Count == 0)
+            report.AppendLine("None");
+        foreach (var decal in decals)
+        {
+            var materialPath = decal.material != null ? AssetDatabase.GetAssetPath(decal.material) : string.Empty;
+            report.AppendLine($"- {decal.material?.name ?? "Missing Material"} ({materialPath})");
+        }
+
+        Section($"NON-BATCHING RENDERERS ({rendererIssues.Count:N0})");
+        if (rendererIssues.Count == 0)
+            report.AppendLine("None");
+        foreach (var issue in rendererIssues)
+        {
+            var rendererPath = issue.renderer != null ? GetTransformPath(issue.renderer.transform) : "Missing Renderer";
+            var materials = string.Join(", ", issue.materials.Where(material => material != null).Select(material => material.name));
+            report.AppendLine($"- {rendererPath}: {issue.reason} | Materials: {materials}");
+        }
+
+        report.AppendLine();
+        report.AppendLine("NOTE");
+        report.AppendLine("====");
+        report.AppendLine(
+            "Estimated Draw Submissions is a conservative static scene estimate before camera culling. " +
+            "Actual per-frame draw calls vary with terrain LOD, visibility, static batching, and GPU instancing.");
+        report.AppendLine(
+            "Runtime combined mesh memory is an estimate of the generated vertex and index buffers. " +
+            "Source mesh assets remain included separately because RuntimeMeshCombiner disables renderers but does not unload their meshes.");
+        report.AppendLine(
+            "If a combiner adds a MeshCollider, the collider shares the generated Mesh; platform-specific physics cooking overhead is not included in this editor estimate.");
+
+        return report.ToString();
     }
 
     private static void ReportProgress(string message, float progress)
@@ -711,6 +976,155 @@ public class MapPerformanceScannerPanel
         }
     }
 
+    private void CollectRuntimeMeshCombiners()
+    {
+        var combiners = FindSceneObjects<RuntimeMeshCombiner>();
+        for (var combinerIndex = 0; combinerIndex < combiners.Length; combinerIndex++)
+        {
+            var combiner = combiners[combinerIndex];
+            if (combiner == null || IsUnderChallengesRoot(combiner.transform))
+                continue;
+
+            if (ShouldReportProgress(combinerIndex, combiners.Length))
+            {
+                ReportProgress(
+                    $"Estimating runtime mesh combiner {combinerIndex + 1:N0} of {combiners.Length:N0}: {combiner.name}",
+                    0.40f);
+            }
+
+            var serializedCombiner = new SerializedObject(combiner);
+            var includeInactiveChildren = GetSerializedBool(serializedCombiner, "includeInactiveChildren");
+            var includeDisabledRenderers = GetSerializedBool(serializedCombiner, "includeDisabledRenderers");
+            var includeRootRenderer = GetSerializedBool(serializedCombiner, "includeRootRenderer");
+            var combinedObjectName = GetSerializedString(serializedCombiner, "combinedObjectName", "Combined Mesh");
+            var info = new RuntimeMeshCombinerInfo
+            {
+                combiner = combiner,
+                combineOnAwake = GetSerializedBool(serializedCombiner, "combineOnAwake", true),
+                disableSourceRenderers = GetSerializedBool(serializedCombiner, "disableSourceRenderers", true),
+                addMeshCollider = GetSerializedBool(serializedCombiner, "addMeshCollider")
+            };
+            var materials = new HashSet<Material>();
+            long runtimeVertexThresholdCount = 0;
+
+            foreach (var meshFilter in combiner.GetComponentsInChildren<MeshFilter>(includeInactiveChildren))
+            {
+                if (meshFilter == null || meshFilter.sharedMesh == null)
+                    continue;
+                if (!includeRootRenderer && meshFilter.transform == combiner.transform)
+                    continue;
+                if (meshFilter.transform.parent == combiner.transform &&
+                    string.Equals(meshFilter.name, combinedObjectName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var owningCombiner = meshFilter.GetComponentInParent<RuntimeMeshCombiner>();
+                if (owningCombiner != null && owningCombiner != combiner)
+                    continue;
+
+                var meshRenderer = meshFilter.GetComponent<MeshRenderer>();
+                if (meshRenderer == null || (!includeDisabledRenderers && !meshRenderer.enabled))
+                    continue;
+
+                var mesh = meshFilter.sharedMesh;
+                if (!mesh.isReadable)
+                {
+                    info.skippedUnreadableMeshCount++;
+                    continue;
+                }
+
+                var materialsForRenderer = meshRenderer.sharedMaterials;
+                var usedMesh = false;
+                var vertexStride = GetTotalVertexStride(mesh);
+                for (var subMeshIndex = 0; subMeshIndex < mesh.subMeshCount; subMeshIndex++)
+                {
+                    var material = subMeshIndex < materialsForRenderer.Length
+                        ? materialsForRenderer[subMeshIndex]
+                        : null;
+                    materials.Add(material);
+
+                    var subMeshIndexCount = (long)mesh.GetIndexCount(subMeshIndex);
+                    info.indexCount += subMeshIndexCount;
+                    info.estimatedOutputVertices += GetSubMeshReferencedVertexCount(mesh, subMeshIndex);
+                    info.sourceSubMeshCount++;
+                    usedMesh = true;
+                }
+
+                if (!usedMesh)
+                    continue;
+
+                info.estimatedVertexBytes += GetEstimatedCombinedVertexBytes(mesh, vertexStride);
+                runtimeVertexThresholdCount += mesh.vertexCount;
+                info.sourceMeshCount++;
+            }
+
+            info.materialCount = materials.Count;
+            var outputIndexSize = runtimeVertexThresholdCount > 65535 ? 4L : 2L;
+            info.estimatedIndexBytes = info.indexCount * outputIndexSize;
+
+            // CombineMeshes can duplicate vertices shared by different material submeshes. Scale the
+            // source vertex data by the measured output/source vertex ratio to account for that.
+            if (runtimeVertexThresholdCount > 0 && info.estimatedOutputVertices > 0)
+            {
+                info.estimatedVertexBytes = (long)Math.Ceiling(
+                    info.estimatedVertexBytes * (info.estimatedOutputVertices / (double)runtimeVertexThresholdCount));
+            }
+
+            info.estimatedMemoryBytes = info.estimatedVertexBytes + info.estimatedIndexBytes;
+            runtimeMeshCombinerInfos.Add(info);
+        }
+    }
+
+    private static bool GetSerializedBool(SerializedObject serializedObject, string propertyName, bool fallback = false)
+    {
+        var property = serializedObject.FindProperty(propertyName);
+        return property != null ? property.boolValue : fallback;
+    }
+
+    private static string GetSerializedString(SerializedObject serializedObject, string propertyName, string fallback)
+    {
+        var property = serializedObject.FindProperty(propertyName);
+        return property != null && !string.IsNullOrEmpty(property.stringValue) ? property.stringValue : fallback;
+    }
+
+    private static int GetTotalVertexStride(Mesh mesh)
+    {
+        if (mesh == null)
+            return 0;
+
+        var stride = 0;
+        for (var stream = 0; stream < mesh.vertexBufferCount; stream++)
+            stride += mesh.GetVertexBufferStride(stream);
+
+        return stride;
+    }
+
+    private static long GetEstimatedCombinedVertexBytes(Mesh mesh, int vertexStride)
+    {
+        if (mesh == null)
+            return 0;
+
+        if (vertexStride > 0)
+            return (long)mesh.vertexCount * vertexStride;
+
+        return Math.Max(0L, Profiler.GetRuntimeMemorySizeLong(mesh));
+    }
+
+    private static long GetSubMeshReferencedVertexCount(Mesh mesh, int subMeshIndex)
+    {
+        try
+        {
+            return new HashSet<int>(mesh.GetIndices(subMeshIndex)).Count;
+        }
+        catch
+        {
+            // A readable mesh should expose indices, but retain a conservative estimate if Unity
+            // rejects an unusual topology or imported mesh layout.
+            return mesh != null ? mesh.vertexCount : 0;
+        }
+    }
+
     private void CollectRendererMesh(Renderer renderer, long useCount, bool terrainPrototype)
     {
         Mesh mesh = null;
@@ -1022,6 +1436,7 @@ public class MapPerformanceScannerPanel
     private void CalculateMemoryTotals()
     {
         totalMeshMemory = meshInfos.Sum(info => info.memoryBytes);
+        totalRuntimeCombinedMeshMemory = runtimeMeshCombinerInfos.Sum(info => info.estimatedMemoryBytes);
         totalMeshUses = meshInfos.Sum(info => info.sceneUses + info.terrainUses + info.colliderUses);
         terrainPrototypeMaterialCount = terrainPrototypeMaterials.Count;
         totalTerrainSplatMemory = textureInfos.Where(info => info.usedByTerrainSplat).Sum(info => info.memoryBytes);
@@ -1029,7 +1444,8 @@ public class MapPerformanceScannerPanel
         totalTerrainLightmapMemory = textureInfos.Where(info => info.usedByTerrainLightmap).Sum(info => info.memoryBytes);
         totalReflectionProbeMemory = textureInfos.Where(info => info.usedByReflectionProbe).Sum(info => info.memoryBytes);
         totalPostVolumeTextureMemory = textureInfos.Where(info => info.usedByPostVolume).Sum(info => info.memoryBytes);
-        totalMapMemory = totalTextureMemory + totalMeshMemory + totalTerrainDataMemory + totalLightProbeMemory + totalPostVolumeDataMemory;
+        totalMapMemory = totalTextureMemory + totalMeshMemory + totalRuntimeCombinedMeshMemory +
+                         totalTerrainDataMemory + totalLightProbeMemory + totalPostVolumeDataMemory;
     }
 
     private long EstimateTextureSizeBytes(Texture tex)
@@ -1265,6 +1681,9 @@ public class MapPerformanceScannerPanel
             false,
             oversizedTextureCount > 0 ? Color.red : Color.green);
         DrawTableRow("Unique Mesh Memory", $"{FormatBytes(totalMeshMemory)} ({meshInfos.Count:N0} meshes, {totalMeshUses:N0} uses)");
+        DrawTableRow(
+            "Runtime Combined Mesh Memory",
+            $"{FormatBytes(totalRuntimeCombinedMeshMemory)} ({runtimeMeshCombinerInfos.Count:N0} combiners)");
         DrawTableRow("Estimated Shared Memory", FormatBytes(totalMapMemory), false, scoreColor);
 
         DrawTableSectionHeader("Terrain", true);
@@ -1291,6 +1710,9 @@ public class MapPerformanceScannerPanel
 
         GUILayout.Space(10f);
         DrawMeshUsage();
+
+        GUILayout.Space(10f);
+        DrawRuntimeMeshCombinerUsage();
 
         GUILayout.Space(20f);
         DrawShaderFragmentation();
@@ -1342,23 +1764,7 @@ public class MapPerformanceScannerPanel
             if (GUILayout.Button("Ping", GUILayout.Width(44f)))
                 EditorGUIUtility.PingObject(info.texture);
 
-            var sources = new List<string>();
-            if (info.usedByTerrainSplat)
-                sources.Add("terrain splat");
-            else if (info.usedByTerrain)
-                sources.Add("terrain");
-            if (info.usedByTerrainLightmap)
-                sources.Add("terrain lightmap");
-            else if (info.usedByLightmap)
-                sources.Add("lightmap");
-            if (info.usedByReflectionProbe)
-                sources.Add("reflection probe");
-            if (info.usedByPostVolume)
-                sources.Add("post volume");
-            if (info.materialUses > 0)
-                sources.Add($"{info.materialUses} material(s)");
-
-            var source = sources.Count > 0 ? string.Join(" + ", sources) : "scene texture";
+            var source = GetTextureSourceDescription(info);
             var location = string.IsNullOrEmpty(info.assetPath) ? "runtime/generated" : info.assetPath;
 
             var previousContentColor = GUI.contentColor;
@@ -1374,6 +1780,43 @@ public class MapPerformanceScannerPanel
 
             EditorGUILayout.EndHorizontal();
         }
+    }
+
+    private static string GetTextureSourceDescription(TextureInfo info)
+    {
+        var sources = new List<string>();
+        if (info.usedByTerrainSplat)
+            sources.Add("terrain splat");
+        else if (info.usedByTerrain)
+            sources.Add("terrain");
+        if (info.usedByTerrainLightmap)
+            sources.Add("terrain lightmap");
+        else if (info.usedByLightmap)
+            sources.Add("lightmap");
+        if (info.usedByReflectionProbe)
+            sources.Add("reflection probe");
+        if (info.usedByPostVolume)
+            sources.Add("post volume");
+        if (info.materialUses > 0)
+            sources.Add($"{info.materialUses} material(s)");
+
+        return sources.Count > 0 ? string.Join(" + ", sources) : "scene texture";
+    }
+
+    private static string GetTransformPath(Transform transform)
+    {
+        if (transform == null)
+            return "<missing object>";
+
+        var names = new Stack<string>();
+        var current = transform;
+        while (current != null)
+        {
+            names.Push(current.name);
+            current = current.parent;
+        }
+
+        return string.Join("/", names);
     }
 
     private static bool IsOversizedTexture(Texture texture)
@@ -1429,6 +1872,50 @@ public class MapPerformanceScannerPanel
             EditorGUILayout.LabelField(
                 $"{info.mesh.name}: {FormatBytes(info.memoryBytes)} | {info.mesh.vertexCount:N0} vertices | " +
                 $"scene uses {info.sceneUses:N0}, terrain instance uses {info.terrainUses:N0}, collider uses {info.colliderUses:N0}");
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawRuntimeMeshCombinerUsage()
+    {
+        EditorGUILayout.LabelField("Runtime Mesh Combiners", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(
+            $"Total estimated combined mesh memory: {FormatBytes(totalRuntimeCombinedMeshMemory)}",
+            EditorStyles.boldLabel);
+
+        if (runtimeMeshCombinerInfos.Count == 0)
+        {
+            EditorGUILayout.LabelField("None found in the scanned scene.");
+            return;
+        }
+
+        var skippedUnreadableMeshes = runtimeMeshCombinerInfos.Sum(info => info.skippedUnreadableMeshCount);
+        if (skippedUnreadableMeshes > 0)
+        {
+            EditorGUILayout.HelpBox(
+                $"{skippedUnreadableMeshes:N0} unreadable source mesh{(skippedUnreadableMeshes == 1 ? " was" : "es were")} excluded from the estimates because RuntimeMeshCombiner will skip them at runtime.",
+                MessageType.Warning);
+        }
+
+        foreach (var info in runtimeMeshCombinerInfos.OrderByDescending(item => item.estimatedMemoryBytes))
+        {
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Select", GUILayout.Width(60f)) && info.combiner != null)
+                Selection.activeObject = info.combiner.gameObject;
+
+            var combinerName = info.combiner != null ? GetTransformPath(info.combiner.transform) : "Missing RuntimeMeshCombiner";
+            var trigger = info.combineOnAwake ? "Awake" : "Manual";
+            var sourceState = info.disableSourceRenderers ? "sources disabled" : "sources retained";
+            var collider = info.addMeshCollider ? ", MeshCollider" : string.Empty;
+            var unreadable = info.skippedUnreadableMeshCount > 0
+                ? $", skipped unreadable {info.skippedUnreadableMeshCount:N0}"
+                : string.Empty;
+            EditorGUILayout.LabelField(
+                $"{combinerName}: {FormatBytes(info.estimatedMemoryBytes)} | " +
+                $"vertices {FormatBytes(info.estimatedVertexBytes)}, indices {FormatBytes(info.estimatedIndexBytes)} | " +
+                $"output {info.estimatedOutputVertices:N0} verts/{info.indexCount:N0} indices, " +
+                $"{info.materialCount:N0} materials, {info.sourceMeshCount:N0} meshes/{info.sourceSubMeshCount:N0} submeshes, " +
+                $"{trigger}, {sourceState}{collider}{unreadable}");
             EditorGUILayout.EndHorizontal();
         }
     }

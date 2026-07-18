@@ -2814,6 +2814,23 @@ namespace MashBoxSDK.ContentTools.Editor
 
         private async Task PublishToModioPackageAsync(ContentPackDefinition p, string currentGame, string progressTitle)
         {
+            var publishIssues = ValidatePackWithExportChecks(p, _rules);
+            _packIssues[p] = publishIssues;
+            var blockingIssues = publishIssues
+                .Where(issue => issue.severity == ContentPackValidator.Severity.Error)
+                .ToList();
+            if (blockingIssues.Count > 0)
+            {
+                ContentPackValidator.LogReport(p, publishIssues, "Publish blocked");
+                var shownIssues = string.Join("\n", blockingIssues.Take(8).Select(issue => "- " + issue.message));
+                var hiddenCount = blockingIssues.Count - 8;
+                if (hiddenCount > 0)
+                    shownIssues += $"\n- ...and {hiddenCount} more";
+
+                throw new InvalidOperationException(
+                    $"Publishing '{p.name}' was blocked by validation errors:\n\n{shownIssues}");
+            }
+
             p.PublisingToGameName = _currentGameName;
             p.modioUserToken = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentToken;
             p.publisherEmail = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentEmail;

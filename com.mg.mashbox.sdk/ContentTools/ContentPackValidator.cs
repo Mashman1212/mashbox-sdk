@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -22,6 +23,9 @@ namespace MashBoxSDK.ContentTools
     public static class ContentPackValidator
     {
         private const float FullSkinPackLimitMB = 10f;
+        private static readonly Regex PrefabSourceGuidRegex = new Regex(
+            @"m_SourcePrefab:\s*\{[^}]*guid:\s*([0-9a-fA-F]{32})[^}]*\}",
+            RegexOptions.Compiled);
 
         public enum Severity { Info, Warning, Error }
 
@@ -53,6 +57,33 @@ namespace MashBoxSDK.ContentTools
             var containsFullSkin = false;
             var nonFullSkinItems = new List<string>();
 
+            var missingItemIndices = pack._items
+                .Select((item, index) => new { item, index })
+                .Where(entry => !entry.item)
+                .Select(entry => entry.index + 1)
+                .ToList();
+            if (missingItemIndices.Count > 0)
+            {
+                issues.Add(new Issue
+                {
+                    severity = Severity.Error,
+                    message = $"Pack '{pack.name}' contains missing prefab item reference{(missingItemIndices.Count == 1 ? "" : "s")} at slot{(missingItemIndices.Count == 1 ? "" : "s")}: {string.Join(", ", missingItemIndices)}. Restore the prefab asset or remove the broken item before publishing.",
+                    context = pack
+                });
+            }
+
+            foreach (var problem in FindPrefabIntegrityProblems(
+                         pack._items.Where(item => item != null),
+                         includePrefabDependencies: true))
+            {
+                issues.Add(new Issue
+                {
+                    severity = Severity.Error,
+                    message = problem.message,
+                    context = problem.context ? problem.context : pack
+                });
+            }
+
             HashSet<string> seenPaths = new HashSet<string>();
             
             foreach (var go in pack._items)
@@ -66,7 +97,7 @@ namespace MashBoxSDK.ContentTools
                     nonFullSkinItems.Add(go.name);
 
                 // 🔹 run existing validation
-                ValidateItem(go, rules, issues);
+                ValidateItem(go, rules, issues, validatePrefabIntegrity: false);
                 
                 var renderers = go.GetComponentsInChildren<Renderer>(true);
                 
@@ -157,6 +188,12 @@ namespace MashBoxSDK.ContentTools
             }
 
             return issues;
+        }
+
+        public sealed class PrefabIntegrityProblem
+        {
+            public string message;
+            public Object context;
         }
 
         public static float GetEffectivePackSizeMB(ContentPackDefinition pack)
@@ -268,7 +305,11 @@ namespace MashBoxSDK.ContentTools
                    path.StartsWith("Packages/com.mg.mashbox.sdk");
         }
         
-        public static List<Issue> ValidateItem(GameObject go, ContentValidationRules rules, List<Issue> buffer = null)
+        public static List<Issue> ValidateItem(
+            GameObject go,
+            ContentValidationRules rules,
+            List<Issue> buffer = null,
+            bool validatePrefabIntegrity = true)
         {
             var issues = buffer ?? new List<Issue>();
             
@@ -285,6 +326,19 @@ namespace MashBoxSDK.ContentTools
             {
                 issues.Add(new Issue { severity = Severity.Error, message = $"'{go.name}' is not a prefab asset.", context = go });
                 return issues;
+            }
+
+            if (validatePrefabIntegrity)
+            {
+                foreach (var problem in FindPrefabIntegrityProblems(new[] { go }, includePrefabDependencies: true))
+                {
+                    issues.Add(new Issue
+                    {
+                        severity = Severity.Error,
+                        message = problem.message,
+                        context = problem.context ? problem.context : go
+                    });
+                }
             }
             
             if (!go.transform.localScale.Equals(Vector3.one))
@@ -827,6 +881,217 @@ namespace MashBoxSDK.ContentTools
             }
             
             return issues;
+        }
+
+        /// <summary>
+        /// Finds integrity failures that Unity can otherwise preserve as broken YAML until the
+        /// prefab is imported in a clean project. Publishing must block on every returned problem.
+        /// </summary>
+        public static List<PrefabIntegrityProblem> FindPrefabIntegrityProblems(
+            IEnumerable<GameObject> roots,
+            bool includePrefabDependencies)
+        {
+            var problems = new List<PrefabIntegrityProblem>();
+            var problemKeys = new HashSet<string>(StringComparer.Ordinal);
+            var prefabPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void AddProblem(string key, string message, Object context)
+            {
+                if (!problemKeys.Add(key))
+                    return;
+
+                problems.Add(new PrefabIntegrityProblem
+                {
+                    message = message,
+                    context = context
+                });
+            }
+
+            void InspectHierarchy(GameObject root, string ownerPath)
+            {
+                if (!root)
+                    return;
+
+                foreach (var transform in root.GetComponentsInChildren<Transform>(true))
+                {
+                    if (!transform)
+                        continue;
+
+                    var gameObject = transform.gameObject;
+                    var hierarchyPath = GetGameObjectPath(gameObject);
+                    var missingScriptCount = GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(gameObject);
+                    if (missingScriptCount > 0)
+                    {
+                        AddProblem(
+                            $"script|{ownerPath}|{hierarchyPath}",
+                            $"{ownerPath}: '{hierarchyPath}' has {missingScriptCount} missing script{(missingScriptCount == 1 ? "" : "s")}. Remove the missing component or restore its script before publishing.",
+                            gameObject);
+                    }
+
+                    if (HasMissingPrefabSource(gameObject))
+                    {
+                        AddProblem(
+                            $"prefab-instance|{ownerPath}|{hierarchyPath}",
+                            $"{ownerPath}: '{hierarchyPath}' has a missing nested prefab or Prefab Variant source. Restore or replace the missing prefab before publishing.",
+                            gameObject);
+                    }
+
+                    try
+                    {
+                        AddPrefabPath(PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(gameObject), prefabPaths);
+                        var source = PrefabUtility.GetCorrespondingObjectFromSource(gameObject);
+                        if (source)
+                            AddPrefabPath(AssetDatabase.GetAssetPath(source), prefabPaths);
+                    }
+                    catch
+                    {
+                        // Broken prefab links are reported by HasMissingPrefabSource above.
+                    }
+                }
+            }
+
+            foreach (var root in roots ?? Enumerable.Empty<GameObject>())
+            {
+                if (!root)
+                    continue;
+
+                var rootPath = AssetDatabase.GetAssetPath(root)?.Replace('\\', '/');
+                var ownerPath = string.IsNullOrEmpty(rootPath) ? root.name : rootPath;
+                AddPrefabPath(rootPath, prefabPaths);
+                InspectHierarchy(root, ownerPath);
+            }
+
+            if (includePrefabDependencies && prefabPaths.Count > 0)
+            {
+                try
+                {
+                    foreach (var dependency in AssetDatabase.GetDependencies(prefabPaths.ToArray(), true))
+                        AddPrefabPath(dependency, prefabPaths);
+                }
+                catch (Exception exception)
+                {
+                    AddProblem(
+                        "dependencies",
+                        $"Unity could not inspect all prefab dependencies: {exception.Message}",
+                        null);
+                }
+            }
+
+            foreach (var prefabPath in prefabPaths.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray())
+            {
+                var prefabRoot = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                if (!prefabRoot)
+                {
+                    AddProblem(
+                        $"load|{prefabPath}",
+                        $"Prefab '{prefabPath}' could not be loaded. It may be corrupt or have a missing Prefab Variant parent.",
+                        null);
+                    continue;
+                }
+
+                var assetType = PrefabUtility.GetPrefabAssetType(prefabRoot);
+                if (assetType == PrefabAssetType.MissingAsset)
+                {
+                    AddProblem(
+                        $"asset|{prefabPath}",
+                        $"Prefab '{prefabPath}' has a missing prefab asset or Prefab Variant parent.",
+                        prefabRoot);
+                }
+                else if (assetType == PrefabAssetType.Variant)
+                {
+                    Object variantParent = null;
+                    try
+                    {
+                        variantParent = PrefabUtility.GetCorrespondingObjectFromSource(prefabRoot);
+                    }
+                    catch
+                    {
+                        // A null parent below produces the actionable validation problem.
+                    }
+
+                    if (!variantParent)
+                    {
+                        AddProblem(
+                            $"variant|{prefabPath}",
+                            $"Prefab Variant '{prefabPath}' has no valid parent prefab. Restore its parent or unpack/recreate the variant before publishing.",
+                            prefabRoot);
+                    }
+                }
+
+                InspectHierarchy(prefabRoot, prefabPath);
+                InspectSerializedPrefabSources(prefabPath, prefabRoot, AddProblem);
+            }
+
+            return problems;
+        }
+
+        private static void AddPrefabPath(string path, HashSet<string> prefabPaths)
+        {
+            if (string.IsNullOrWhiteSpace(path) || prefabPaths == null)
+                return;
+
+            path = path.Replace('\\', '/');
+            if (path.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+                prefabPaths.Add(path);
+        }
+
+        private static bool HasMissingPrefabSource(GameObject gameObject)
+        {
+            if (!gameObject)
+                return false;
+
+            try
+            {
+                if (PrefabUtility.IsPartOfAnyPrefab(gameObject) && PrefabUtility.IsPrefabAssetMissing(gameObject))
+                    return true;
+
+                return PrefabUtility.GetPrefabInstanceStatus(gameObject) == PrefabInstanceStatus.MissingAsset;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void InspectSerializedPrefabSources(
+            string prefabPath,
+            Object context,
+            Action<string, string, Object> addProblem)
+        {
+            if (string.IsNullOrWhiteSpace(prefabPath) ||
+                !prefabPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            try
+            {
+                var projectRoot = Path.GetDirectoryName(Application.dataPath);
+                var absolutePath = Path.GetFullPath(Path.Combine(projectRoot ?? string.Empty, prefabPath));
+                if (!File.Exists(absolutePath))
+                    return;
+
+                var yaml = File.ReadAllText(absolutePath);
+                foreach (Match match in PrefabSourceGuidRegex.Matches(yaml))
+                {
+                    var guid = match.Groups[1].Value;
+                    if (string.IsNullOrEmpty(guid) || guid.All(character => character == '0'))
+                        continue;
+
+                    var sourcePath = AssetDatabase.GUIDToAssetPath(guid);
+                    if (!string.IsNullOrWhiteSpace(sourcePath))
+                        continue;
+
+                    addProblem(
+                        $"guid|{prefabPath}|{guid}",
+                        $"Prefab '{prefabPath}' references a missing nested prefab or Prefab Variant parent (GUID: {guid}). Restore that asset or remove the broken prefab link before publishing.",
+                        context);
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[ContentPackValidator] Could not inspect prefab YAML '{prefabPath}': {exception.Message}");
+            }
         }
         
         static string GetGameObjectPath(GameObject obj)
