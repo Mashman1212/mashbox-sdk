@@ -13,7 +13,9 @@ namespace MashBoxSDK.Shaders
             Tire,
             Skin,
             Chain,
-            Griptape
+            Griptape,
+            LitBasic,
+            LitBasicAlphaClip
         }
 
         
@@ -143,6 +145,63 @@ namespace MashBoxSDK.Shaders
             "_EmissiveColorMap",
             "_EmissiveColor",
             "_EmissiveUseUV2",
+            "_EmissiveUseUV1",
+            "_EmissiveUseUV2",
+            "_EmissiveUseUV3",
+            "_EmissiveIntensity",
+            "_EmissiveExposureWeight",
+
+            "_DetailMap",
+            "_DetailUseUV1",
+            "_DetailUseUV2",
+            "_DetailUseUV3",
+            "_DetailAlbedoScale",
+            "_DetailSmoothnessScale",
+            "_DetailNormalScale"
+        };
+
+        private static readonly string[] MGLitBasicPreservedProperties =
+        {
+            "_BaseColor",
+            "_BaseColorMap",
+            "_MaskMap",
+            "_NormalMap",
+            "_NormalStrength",
+            "_AlphaClipThreshold",
+            "_AlphaClipThresholdShadow",
+
+            "_HueShift",
+            "_DetailHueShift",
+            "_WhiteBalance",
+            "_Saturation",
+            "_Darken",
+            "_Contrast",
+            "_Lighten",
+            "_Tint",
+
+            "_SmoothnessRemapMin",
+            "_SmoothnessRemapMax",
+            "_MetallicRemapMin",
+            "_MetallicRemapMax",
+            "_AORemapMin",
+            "_AORemapMax",
+
+            "_WhiteBoost",
+
+            "_AlphaMaskBlend",
+            "_AlphaMaskInvert",
+
+            "_DecalMap",
+            "_DecalColor",
+            "_DecalWhiteBoost",
+            "_DecalHueShift",
+            "_DecalBlend",
+            "_DecalUseUV1",
+            "_DecalUseUV2",
+            "_DecalUseUV3",
+
+            "_EmissiveColorMap",
+            "_EmissiveColor",
             "_EmissiveUseUV1",
             "_EmissiveUseUV2",
             "_EmissiveUseUV3",
@@ -293,6 +352,36 @@ namespace MashBoxSDK.Shaders
                 return _clothingTemplateMat;
             }
         }
+
+        private static readonly Shader LitBasicShader = Shader.Find("MGShaders/HDRP/Lit/MG_Lit_Basic");
+        private static Material _litBasicTemplateMat;
+        private static Material LitBasicTemplateMat
+        {
+            get
+            {
+                if (!_litBasicTemplateMat)
+                {
+                    _litBasicTemplateMat = Resources.Load<Material>("MG_Lit_Basic_Template");
+                }
+
+                return _litBasicTemplateMat;
+            }
+        }
+
+        private static readonly Shader LitBasicAlphaClipShader = Shader.Find("MGShaders/HDRP/Lit/MG_Lit_Basic_AlphaClip");
+        private static Material _litBasicAlphaClipTemplateMat;
+        private static Material LitBasicAlphaClipTemplateMat
+        {
+            get
+            {
+                if (!_litBasicAlphaClipTemplateMat)
+                {
+                    _litBasicAlphaClipTemplateMat = Resources.Load<Material>("MG_Lit_Basic_AlphaClip_Template");
+                }
+
+                return _litBasicAlphaClipTemplateMat;
+            }
+        }
         
         
         private static readonly Shader TireShader = Shader.Find("MGShaders/HDRP/Lit/MG_Tire");
@@ -361,6 +450,12 @@ namespace MashBoxSDK.Shaders
 
                         case ShaderType.Clothing:
                             EnforceClothingShader(materials[i]);
+                            break;
+                        case ShaderType.LitBasic:
+                            EnforceLitBasicShader(materials[i]);
+                            break;
+                        case ShaderType.LitBasicAlphaClip:
+                            EnforceLitBasicAlphaClipShader(materials[i]);
                             break;
                         case ShaderType.Tire:
                             EnforceTireShader(materials[i]);
@@ -434,6 +529,98 @@ namespace MashBoxSDK.Shaders
             }
             
             mat.shaderKeywords = ClothingTemplateMat.shaderKeywords;
+        }
+
+        public static void EnforceLitBasicShader(Material mat)
+        {
+            if (mat == LitBasicTemplateMat)
+                return;
+
+            Texture originalDetail = null;
+            if (mat != null && mat.HasProperty("_DetailMap"))
+                originalDetail = mat.GetTexture("_DetailMap");
+
+            if (!PrepareMaterialForShaderEnforcement(mat, LitBasicShader))
+                return;
+
+            ApplyTemplateWithPreserve(mat, LitBasicTemplateMat, MGLitBasicPreservedProperties);
+
+            if (originalDetail == null || originalDetail.name == "DefaultNormal" || originalDetail.name.Contains("DefaultTexture2D"))
+            {
+                if (mat.HasProperty("_DetailNormalScale"))
+                    mat.SetFloat("_DetailNormalScale", 0.0f);
+
+                if (mat.HasProperty("_DetailSmoothnessScale"))
+                    mat.SetFloat("_DetailSmoothnessScale", 0.0f);
+
+                if (mat.HasProperty("_DetailAlbedoScale"))
+                    mat.SetFloat("_DetailAlbedoScale", 0.0f);
+            }
+
+            if (LitBasicTemplateMat != null)
+                mat.shaderKeywords = LitBasicTemplateMat.shaderKeywords;
+
+            EnforceDecalReception(mat);
+            EnforceSSRReception(mat);
+        }
+
+        public static void EnforceLitBasicAlphaClipShader(Material mat)
+        {
+            if (mat == LitBasicAlphaClipTemplateMat)
+                return;
+
+            Texture originalDetail = null;
+            if (mat != null && mat.HasProperty("_DetailMap"))
+                originalDetail = mat.GetTexture("_DetailMap");
+
+            if (!PrepareMaterialForShaderEnforcement(mat, LitBasicAlphaClipShader))
+                return;
+
+            ApplyTemplateWithPreserve(mat, LitBasicAlphaClipTemplateMat, MGLitBasicPreservedProperties);
+
+            if (originalDetail == null || originalDetail.name == "DefaultNormal" || originalDetail.name.Contains("DefaultTexture2D"))
+            {
+                if (mat.HasProperty("_DetailNormalScale"))
+                    mat.SetFloat("_DetailNormalScale", 0.0f);
+
+                if (mat.HasProperty("_DetailSmoothnessScale"))
+                    mat.SetFloat("_DetailSmoothnessScale", 0.0f);
+
+                if (mat.HasProperty("_DetailAlbedoScale"))
+                    mat.SetFloat("_DetailAlbedoScale", 0.0f);
+            }
+
+            if (LitBasicAlphaClipTemplateMat != null)
+                mat.shaderKeywords = LitBasicAlphaClipTemplateMat.shaderKeywords;
+
+            EnforceDecalReception(mat);
+            EnforceSSRReception(mat);
+
+            // Alpha clipping is an invariant of this shader variant. Keep the
+            // thresholds user-authored, but never allow template enforcement to
+            // turn the alpha-test render state back off.
+            if (mat.HasProperty("_AlphaCutoffEnable"))
+                mat.SetFloat("_AlphaCutoffEnable", 1.0f);
+
+            mat.EnableKeyword("_ALPHATEST_ON");
+            mat.renderQueue = (int)RenderQueue.AlphaTest;
+            mat.SetOverrideTag("RenderType", "TransparentCutout");
+        }
+
+        private static void EnforceDecalReception(Material mat)
+        {
+            if (mat.HasProperty("_SupportDecals"))
+                mat.SetFloat("_SupportDecals", 1.0f);
+
+            mat.DisableKeyword("_DISABLE_DECALS");
+        }
+
+        private static void EnforceSSRReception(Material mat)
+        {
+            if (mat.HasProperty("_ReceivesSSR"))
+                mat.SetFloat("_ReceivesSSR", 1.0f);
+
+            mat.DisableKeyword("_DISABLE_SSR");
         }
 
 

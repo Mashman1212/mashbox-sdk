@@ -31,12 +31,17 @@ public sealed class MapPerformanceScanResult
     public long ReflectionProbeMemoryBytes { get; internal set; }
     public long PostVolumeMemoryBytes { get; internal set; }
     public List<string> OversizedTextures { get; internal set; } = new();
+    public List<string> UnsupportedShaders { get; internal set; } = new();
 }
 
 [Serializable]
 public class MapPerformanceScannerPanel
 {
     public const int MaximumTextureDimension = 4096;
+    public const float MinimumPublishPerformanceScore = 60f;
+    private const string MashBoxPackageName = "com.mg.mashbox.sdk";
+    private const string SupportedTerrainShaderName = "HDRP/TerrainLit";
+    private const string FoldoutPreferencePrefix = "MashBox.PerformanceScanner.Foldout.";
     private const float DrawScoreThreshold = 2000f;
     private const long MaximumInstancesPerBatch = 1023L;
 
@@ -49,6 +54,8 @@ public class MapPerformanceScannerPanel
         public List<Texture> textures;
         public bool isDecal;
         public int lightmapIndex;
+        public bool isSupportedShader;
+        public string shaderAssetPath;
     }
 
     [Serializable]
@@ -192,7 +199,18 @@ public class MapPerformanceScannerPanel
     [SerializeField] private List<RuntimeMeshCombinerInfo> runtimeMeshCombinerInfos = new();
     [SerializeField] private List<TerrainInfo> terrainInfos = new();
     [SerializeField] private List<TextureInfo> textureInfos = new();
+    [SerializeField] private bool showValidationSummary = true;
+    [SerializeField] private bool showScoreBreakdown = true;
+    [SerializeField] private bool showScanResultsSummary = true;
+    [SerializeField] private bool showPostVolumeDetails = true;
     [SerializeField] private bool showTextureDetails = true;
+    [SerializeField] private bool showTerrainDetails = true;
+    [SerializeField] private bool showMeshDetails = true;
+    [SerializeField] private bool showRuntimeMeshCombinerDetails = true;
+    [SerializeField] private bool showShaderFragmentationDetails = true;
+    [SerializeField] private bool showShaderBatchGroupDetails = true;
+    [SerializeField] private bool showDecalDetails = true;
+    [SerializeField] private bool showRendererIssueDetails = true;
     [SerializeField] private float performanceScore = 100f;
     [SerializeField] private float performanceScoreBeforeRuntimeCombining = 100f;
     [SerializeField] private float runtimeCombinerScoreGain;
@@ -203,6 +221,9 @@ public class MapPerformanceScannerPanel
 
     [NonSerialized] private string cachedTargetGameName;
     [NonSerialized] private Texture2D cachedTargetGameLogo;
+    [NonSerialized] private GUIStyle gridCellStyle;
+    [NonSerialized] private GUIStyle gridHeaderCellStyle;
+    [NonSerialized] private GUIStyle reportFoldoutStyle;
 
     private readonly Dictionary<BatchKey, List<MaterialInfo>> batches = new();
     private readonly HashSet<Material> processedMaterials = new();
@@ -413,6 +434,12 @@ public class MapPerformanceScannerPanel
                 OversizedTextures = textureInfos
                     .Where(info => IsOversizedTexture(info.texture))
                     .Select(GetOversizedTextureDescription)
+                    .ToList(),
+                UnsupportedShaders = materialInfos
+                    .Where(info => !info.isSupportedShader)
+                    .Select(GetUnsupportedShaderDescription)
+                    .Distinct()
+                    .OrderBy(description => description)
                     .ToList()
             };
         }
@@ -510,6 +537,10 @@ public class MapPerformanceScannerPanel
 
         var oversizedTextures = textureInfos.Where(info => IsOversizedTexture(info.texture)).ToList();
         Metric("Textures Above 4K", oversizedTextures.Count == 0 ? "0 - PASS" : $"{oversizedTextures.Count:N0} - VALIDATION ERROR");
+        var unsupportedShaderMaterials = materialInfos.Where(info => !info.isSupportedShader).ToList();
+        Metric(
+            "Unsupported Shader Materials",
+            unsupportedShaderMaterials.Count == 0 ? "0 - PASS" : $"{unsupportedShaderMaterials.Count:N0} - VALIDATION ERROR");
 
         Section("SCORE BREAKDOWN");
         Metric("Renderer Issues Before", rendererIssues.Count.ToString("N0"));
@@ -624,24 +655,40 @@ public class MapPerformanceScannerPanel
         }
 
         Section("SHADER FRAGMENTATION");
-        var shaderGroups = materialInfos.Where(info => !info.isDecal).GroupBy(info => info.shader).OrderByDescending(group => group.Count()).ToList();
+        report.AppendLine(
+            $"Supported shaders are shaders supplied by the MashBox SDK package and Unity's {SupportedTerrainShaderName} terrain shader. Any other shader is a publishing error.");
+        report.AppendLine(
+            "A shader batch group requires the same shader, enabled shader keywords, and Lightmap ID. " +
+            "Using the same shader on different Lightmap IDs creates separate batch groups because the renderers sample different lightmap textures.");
+        report.AppendLine(
+            "Tip: Where practical, place objects using the same shader onto one lightmap atlas. When using Bakery, consolidate lightmap groups where possible; a well-packed single 4K lightmap is often sufficient for a typical map, provided texel density and visual quality remain acceptable.");
+        report.AppendLine();
+        var shaderGroups = materialInfos.GroupBy(info => info.shader).OrderByDescending(group => group.Count()).ToList();
         if (shaderGroups.Count == 0)
             report.AppendLine("None");
         foreach (var group in shaderGroups)
         {
             var variants = group.Select(info => string.Join(";", info.keywords)).Distinct().Count();
-            report.AppendLine($"- {group.Key?.name ?? "Missing Shader"}: {variants:N0} variants ({group.Count():N0} materials)");
+            var supported = group.All(info => info.isSupportedShader);
+            var status = supported ? "SUPPORTED" : "ERROR - UNSUPPORTED SHADER";
+            var shaderPath = group.Select(info => info.shaderAssetPath).FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
+            report.AppendLine(
+                $"- [{status}] {group.Key?.name ?? "Missing Shader"}: {variants:N0} variants, " +
+                $"{group.Count():N0} materials" +
+                (string.IsNullOrWhiteSpace(shaderPath) ? string.Empty : $" | {shaderPath}"));
         }
 
-        Section("TOP SHADER VARIANTS");
+        Section("TOP SHADER BATCH GROUPS");
         var worstBatches = batches.OrderByDescending(batch => batch.Value.Count).Take(20).ToList();
         if (worstBatches.Count == 0)
             report.AppendLine("None");
         foreach (var batch in worstBatches)
         {
+            var supported = batch.Value.All(info => info.isSupportedShader);
             report.AppendLine(
-                $"- {batch.Key.shader?.name ?? "Missing Shader"} | Lightmap {batch.Key.lightmapIndex} | " +
-                $"{batch.Value.Count:N0} materials | Keywords: " +
+                $"- [{(supported ? "SUPPORTED" : "ERROR - UNSUPPORTED SHADER")}] " +
+                $"{batch.Key.shader?.name ?? "Missing Shader"} | Lightmap ID: {FormatLightmapId(batch.Key.lightmapIndex)} | " +
+                $"Materials in group: {batch.Value.Count:N0} | Shader keywords: " +
                 $"{(string.IsNullOrWhiteSpace(batch.Key.keywordSignature) ? "<none>" : batch.Key.keywordSignature)}");
         }
 
@@ -1295,6 +1342,13 @@ public class MapPerformanceScannerPanel
         return "No change";
     }
 
+    private static string FormatLightmapId(int lightmapIndex)
+    {
+        return lightmapIndex < 0
+            ? "Not lightmapped (-1)"
+            : lightmapIndex.ToString();
+    }
+
     private void CollectRendererMesh(Renderer renderer, long useCount, bool terrainPrototype)
     {
         Mesh mesh = null;
@@ -1560,6 +1614,7 @@ public class MapPerformanceScannerPanel
             .Select(k => k.name)
             .OrderBy(k => k)
             .ToArray();
+        var shaderAssetPath = mat.shader != null ? AssetDatabase.GetAssetPath(mat.shader) : string.Empty;
 
         materialInfos.Add(new MaterialInfo
         {
@@ -1568,8 +1623,35 @@ public class MapPerformanceScannerPanel
             keywords = keywords,
             textures = GetTextures(mat),
             isDecal = isDecal,
-            lightmapIndex = lightmapIndex
+            lightmapIndex = lightmapIndex,
+            isSupportedShader = IsSupportedShader(mat.shader, shaderAssetPath),
+            shaderAssetPath = shaderAssetPath
         });
+    }
+
+    private static bool IsSupportedShader(Shader shader, string shaderAssetPath)
+    {
+        if (shader == null)
+            return false;
+
+        if (string.Equals(shader.name, SupportedTerrainShaderName, StringComparison.Ordinal))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(shaderAssetPath))
+            return false;
+
+        var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(shaderAssetPath);
+        return packageInfo != null &&
+               string.Equals(packageInfo.name, MashBoxPackageName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetUnsupportedShaderDescription(MaterialInfo info)
+    {
+        var shaderName = info?.shader != null ? info.shader.name : "Missing Shader";
+        var materialName = info?.material != null ? info.material.name : "Missing Material";
+        var materialPath = info?.material != null ? AssetDatabase.GetAssetPath(info.material) : string.Empty;
+        return $"{shaderName} used by {materialName}" +
+               (string.IsNullOrWhiteSpace(materialPath) ? string.Empty : $" ({materialPath})");
     }
 
     private void BuildBatches()
@@ -1824,9 +1906,113 @@ public class MapPerformanceScannerPanel
         return Mathf.Clamp(100f - penalty * 100f, 0f, 100f);
     }
 
+    private void DrawValidationSummary()
+    {
+        var errors = new List<string>();
+        var warnings = new List<string>();
+
+        var unsupportedShaderGroups = materialInfos
+            .Where(info => !info.isSupportedShader)
+            .GroupBy(info => info.shader)
+            .OrderByDescending(group => group.Count())
+            .ToList();
+        foreach (var group in unsupportedShaderGroups)
+        {
+            var materialNames = group
+                .Where(info => info.material != null)
+                .Select(info => info.material.name)
+                .Distinct()
+                .Take(6)
+                .ToList();
+            var hiddenMaterialCount = Math.Max(0, group.Select(info => info.material).Distinct().Count() - materialNames.Count);
+            var hiddenMaterials = hiddenMaterialCount > 0 ? $", and {hiddenMaterialCount:N0} more" : string.Empty;
+            errors.Add(
+                $"Unsupported shader: {group.Key?.name ?? "Missing Shader"}. " +
+                $"Used by {group.Count():N0} material{(group.Count() == 1 ? string.Empty : "s")}: " +
+                $"{(materialNames.Count > 0 ? string.Join(", ", materialNames) : "missing material")}{hiddenMaterials}. " +
+                $"Use a MashBox SDK shader or {SupportedTerrainShaderName}.");
+        }
+
+        var oversizedTextures = textureInfos.Where(info => IsOversizedTexture(info.texture)).ToList();
+        if (oversizedTextures.Count > 0)
+        {
+            var textureNames = string.Join(", ", oversizedTextures.Take(6).Select(info => info.texture.name));
+            var hiddenTextureCount = oversizedTextures.Count - 6;
+            var hiddenTextures = hiddenTextureCount > 0 ? $", and {hiddenTextureCount:N0} more" : string.Empty;
+            errors.Add(
+                $"{oversizedTextures.Count:N0} texture{(oversizedTextures.Count == 1 ? " is" : "s are")} above " +
+                $"{MaximumTextureDimension:N0}px: {textureNames}{hiddenTextures}. Reduce the imported Max Size before publishing.");
+        }
+
+        var selectedGameName = EditorPrefs.GetString("ModIo.CurrentGame", string.Empty);
+        var targetGame = GameRegistry.Find(selectedGameName);
+        if (targetGame != null &&
+            targetGame.MapSharedMemoryBudgetBytes > 0 &&
+            totalMapMemory > targetGame.MapSharedMemoryBudgetBytes)
+        {
+            errors.Add(
+                $"Shared memory is over the {targetGame.DisplayName} budget: " +
+                $"{FormatBytes(totalMapMemory)} used / {FormatBytes(targetGame.MapSharedMemoryBudgetBytes)} allowed.");
+        }
+
+        if (performanceScore <= MinimumPublishPerformanceScore)
+        {
+            errors.Add(
+                $"Performance score is {performanceScore:F0}. Publishing requires a score above " +
+                $"{MinimumPublishPerformanceScore:F0}.");
+        }
+
+        var skippedUnreadableMeshes = runtimeMeshCombinerInfos.Sum(info => info.skippedUnreadableMeshCount);
+        if (skippedUnreadableMeshes > 0)
+        {
+            warnings.Add(
+                $"Runtime Mesh Combiner skipped {skippedUnreadableMeshes:N0} unreadable source " +
+                $"mesh{(skippedUnreadableMeshes == 1 ? string.Empty : "es")}; its estimates are incomplete.");
+        }
+
+        var accentColor = errors.Count > 0
+            ? new Color(0.58f, 0.12f, 0.12f)
+            : warnings.Count > 0
+                ? new Color(0.55f, 0.34f, 0.08f)
+                : new Color(0.20f, 0.46f, 0.24f);
+        var status = errors.Count > 0
+            ? $"{errors.Count:N0} error{(errors.Count == 1 ? string.Empty : "s")}, {warnings.Count:N0} warning{(warnings.Count == 1 ? string.Empty : "s")}"
+            : warnings.Count > 0
+                ? $"0 errors, {warnings.Count:N0} warning{(warnings.Count == 1 ? string.Empty : "s")}"
+                : "PASS";
+
+        showValidationSummary = DrawReportFoldout(
+            showValidationSummary,
+            $"Validation Summary ({status})",
+            accentColor,
+            "ValidationSummary");
+        if (!showValidationSummary)
+            return;
+
+        if (errors.Count == 0 && warnings.Count == 0)
+        {
+            EditorGUILayout.HelpBox(
+                "No performance publishing validation errors were detected.",
+                MessageType.Info);
+            return;
+        }
+
+        foreach (var error in errors)
+            EditorGUILayout.HelpBox("ERROR: " + error, MessageType.Error);
+        foreach (var warning in warnings)
+            EditorGUILayout.HelpBox("WARNING: " + warning, MessageType.Warning);
+    }
+
     private void DrawScoreBreakdown()
     {
-        DrawTableSectionHeader("Score Breakdown");
+        showScoreBreakdown = DrawReportFoldout(
+            showScoreBreakdown,
+            "Score Breakdown",
+            new Color(0.18f, 0.36f, 0.56f),
+            "ScoreBreakdown");
+        if (!showScoreBreakdown)
+            return;
+
         DrawMetric("Renderer Issues (Runtime)", estimatedRendererIssuesAfterRuntimeCombining, 10f);
         DrawMetric("Estimated Draw Submissions (Runtime)", estimatedDrawCallsAfterRuntimeCombining, DrawScoreThreshold);
         DrawTableRow("Terrain Surface Chunks", terrainSurfaceChunkCount.ToString("N0"));
@@ -1889,6 +2075,14 @@ public class MapPerformanceScannerPanel
             : new Color(0.52f, 0.52f, 0.52f, 1f));
     }
 
+    private void DrawCategorySummary(params (string label, string value)[] metrics)
+    {
+        DrawTableRow("Category Totals & Estimates", "Value", true);
+        foreach (var metric in metrics)
+            DrawTableRow(metric.label, metric.value);
+        EditorGUILayout.Space(4f);
+    }
+
     private static void DrawTableCell(Rect rect, string text, GUIStyle style, Color background, Color? textColor)
     {
         var border = EditorGUIUtility.isProSkin
@@ -1910,6 +2104,7 @@ public class MapPerformanceScannerPanel
     private void DrawResults()
     {
         DrawPerformanceScore();
+        DrawValidationSummary();
         DrawScoreBreakdown();
         EditorGUILayout.HelpBox(
             "Estimated Draw Submissions is a static runtime estimate. Actual per-frame draw calls vary with camera location, terrain LOD, visibility, static batching, and GPU instancing. " +
@@ -1917,12 +2112,24 @@ public class MapPerformanceScannerPanel
             MessageType.Info);
         EditorGUILayout.Space(10f);
 
-        EditorGUILayout.LabelField("Scan Results", EditorStyles.boldLabel);
-        DrawTableRow("Metric", "Value", true);
+        showScanResultsSummary = DrawReportFoldout(
+            showScanResultsSummary,
+            "Scan Results",
+            new Color(0.18f, 0.40f, 0.46f),
+            "ScanResultsOverview");
+        if (showScanResultsSummary)
+        {
+            DrawTableRow("Metric", "Value", true);
 
         DrawTableSectionHeader("Scene & Rendering");
         DrawTableRow("Materials", materialInfos.Count.ToString("N0"));
         DrawTableRow("Shader Variants (Batches)", batches.Count.ToString("N0"));
+        var unsupportedShaderMaterialCount = materialInfos.Count(info => !info.isSupportedShader);
+        DrawTableRow(
+            "Unsupported Shader Materials",
+            unsupportedShaderMaterialCount == 0 ? "0 - PASS" : $"{unsupportedShaderMaterialCount:N0} - VALIDATION ERROR",
+            false,
+            unsupportedShaderMaterialCount == 0 ? Color.green : Color.red);
         DrawTableRow("Draw Submissions Before Combining", totalDrawCalls.ToString("N0"));
         DrawTableRow("Projected Runtime Draw Submissions", estimatedDrawCallsAfterRuntimeCombining.ToString("N0"));
         DrawTableRow(
@@ -1967,7 +2174,8 @@ public class MapPerformanceScannerPanel
         DrawTableSectionHeader("Lighting & Probes");
         DrawTableRow("All Lightmap Memory", FormatBytes(totalLightmapMemory));
         DrawTableRow("Light Probe Data", $"{FormatBytes(totalLightProbeMemory)} ({lightProbeCount:N0} probes)");
-        DrawTableRow("Reflection Probe Memory", $"{FormatBytes(totalReflectionProbeMemory)} ({reflectionProbeCount:N0} probes)");
+            DrawTableRow("Reflection Probe Memory", $"{FormatBytes(totalReflectionProbeMemory)} ({reflectionProbeCount:N0} probes)");
+        }
 
         DrawPostVolumeUsage();
 
@@ -1998,57 +2206,235 @@ public class MapPerformanceScannerPanel
 
     private void DrawPostVolumeUsage()
     {
-        DrawTableSectionHeader("Post Volume Usage");
-        DrawTableRow("Scene Volumes", postVolumeCount.ToString("N0"));
-        DrawTableRow("Unique Profiles", postVolumeProfileCount.ToString("N0"));
-        DrawTableRow("Texture Memory", FormatBytes(totalPostVolumeTextureMemory));
-        DrawTableRow("Profile Data Memory", FormatBytes(totalPostVolumeDataMemory));
-        DrawTableRow("Combined Post Volume Memory", FormatBytes(totalPostVolumeTextureMemory + totalPostVolumeDataMemory));
+        showPostVolumeDetails = DrawReportFoldout(
+            showPostVolumeDetails,
+            $"Post Volume Usage ({postVolumeCount:N0} volumes, {postVolumeProfileCount:N0} profiles)",
+            new Color(0.38f, 0.22f, 0.48f),
+            "PostVolumes");
+        if (!showPostVolumeDetails)
+            return;
+
+        DrawCategorySummary(
+            ("Scene Volumes", postVolumeCount.ToString("N0")),
+            ("Unique Profiles", postVolumeProfileCount.ToString("N0")),
+            ("Texture Memory", FormatBytes(totalPostVolumeTextureMemory)),
+            ("Profile Data Memory", FormatBytes(totalPostVolumeDataMemory)),
+            ("Combined Post Volume Memory", FormatBytes(totalPostVolumeTextureMemory + totalPostVolumeDataMemory)));
     }
 
     private void DrawTextureUsage()
     {
-        showTextureDetails = EditorGUILayout.Foldout(
+        showTextureDetails = DrawReportFoldout(
             showTextureDetails,
-            $"Textures by Memory ({textureInfos.Count} unique)",
-            true,
-            EditorStyles.foldoutHeader);
+            $"Textures by Memory ({textureInfos.Count:N0} unique)",
+            new Color(0.16f, 0.36f, 0.55f),
+            "Textures");
 
         if (!showTextureDetails)
             return;
 
+        var oversizedTextureCount = textureInfos.Count(info => IsOversizedTexture(info.texture));
+        DrawCategorySummary(
+            ("Unique Textures", textureInfos.Count.ToString("N0")),
+            ("Total Texture Memory", FormatBytes(totalTextureMemory)),
+            ("Textures Above 4K", oversizedTextureCount == 0 ? "0 - PASS" : $"{oversizedTextureCount:N0} - VALIDATION ERROR"),
+            ("Import Target", EditorUserBuildSettings.activeBuildTarget.ToString()));
+
+        var columns = new[] { -108f, 1.7f, 0.8f, 0.9f, 0.8f, 1.5f, 2.5f };
+        DrawDataGridHeader(
+            new[] { "Actions", "Texture", "Memory", "Dimensions", "Type", "Used By", "Asset Location" },
+            columns);
+
+        var rowIndex = 0;
         foreach (var info in textureInfos)
         {
             if (info.texture == null)
                 continue;
 
             var oversized = IsOversizedTexture(info.texture);
-            var rowRect = EditorGUILayout.BeginHorizontal();
-            if (oversized && Event.current.type == EventType.Repaint)
-                EditorGUI.DrawRect(rowRect, new Color(0.55f, 0.08f, 0.08f, EditorGUIUtility.isProSkin ? 0.70f : 0.28f));
-
-            if (GUILayout.Button("Select", GUILayout.Width(52f)))
-                Selection.activeObject = info.texture;
-
-            if (GUILayout.Button("Ping", GUILayout.Width(44f)))
-                EditorGUIUtility.PingObject(info.texture);
-
             var source = GetTextureSourceDescription(info);
             var location = string.IsNullOrEmpty(info.assetPath) ? "runtime/generated" : info.assetPath;
-
-            var previousContentColor = GUI.contentColor;
-            if (oversized)
-                GUI.contentColor = Color.red;
-
-            EditorGUILayout.LabelField(
-                $"{(oversized ? "VALIDATION ERROR >4K | " : string.Empty)}{info.texture.name}: {FormatBytes(info.memoryBytes)} | " +
-                $"{info.texture.width:N0} x {info.texture.height:N0} | {info.texture.GetType().Name} | {source} | {location}",
-                oversized ? EditorStyles.boldLabel : EditorStyles.label);
-
-            GUI.contentColor = previousContentColor;
-
-            EditorGUILayout.EndHorizontal();
+            var textureLabel = oversized ? $"VALIDATION ERROR >4K\n{info.texture.name}" : info.texture.name;
+            DrawDataGridRow(
+                new[]
+                {
+                    GUIContent.none,
+                    new GUIContent(textureLabel, info.texture.name),
+                    new GUIContent(FormatBytes(info.memoryBytes)),
+                    new GUIContent($"{info.texture.width:N0} x {info.texture.height:N0}"),
+                    new GUIContent(info.texture.GetType().Name),
+                    new GUIContent(source),
+                    new GUIContent(location, location)
+                },
+                columns,
+                rowIndex++,
+                false,
+                rect => DrawGridButtons(
+                    rect,
+                    ("Select", () => Selection.activeObject = info.texture),
+                    ("Ping", () => EditorGUIUtility.PingObject(info.texture))),
+                oversized ? new Color(0.40f, 0.10f, 0.10f, 1f) : null);
         }
+    }
+
+    private bool DrawReportFoldout(bool expanded, string title, Color accentColor, string preferenceKey)
+    {
+        var fullPreferenceKey = FoldoutPreferencePrefix + preferenceKey;
+        expanded = EditorPrefs.GetBool(fullPreferenceKey, expanded);
+        var rect = EditorGUILayout.GetControlRect(false, 27f);
+        var border = EditorGUIUtility.isProSkin
+            ? new Color(0.38f, 0.38f, 0.38f, 1f)
+            : new Color(0.48f, 0.48f, 0.48f, 1f);
+        var background = EditorGUIUtility.isProSkin
+            ? Color.Lerp(new Color(0.14f, 0.14f, 0.14f, 1f), accentColor, 0.72f)
+            : Color.Lerp(new Color(0.94f, 0.94f, 0.94f, 1f), accentColor, 0.32f);
+        if (rect.Contains(Event.current.mousePosition))
+            background = Color.Lerp(background, Color.white, EditorGUIUtility.isProSkin ? 0.08f : 0.16f);
+
+        EditorGUI.DrawRect(rect, border);
+        var innerRect = new Rect(rect.x + 1f, rect.y + 1f, rect.width - 2f, rect.height - 2f);
+        EditorGUI.DrawRect(innerRect, background);
+        var foldoutRect = new Rect(innerRect.x + 5f, innerRect.y, innerRect.width - 10f, innerRect.height);
+        var nextExpanded = EditorGUI.Foldout(foldoutRect, expanded, title, true, ReportFoldoutStyle);
+        if (nextExpanded != expanded)
+            EditorPrefs.SetBool(fullPreferenceKey, nextExpanded);
+        return nextExpanded;
+    }
+
+    private GUIStyle ReportFoldoutStyle => reportFoldoutStyle ??= CreateReportFoldoutStyle();
+
+    private static GUIStyle CreateReportFoldoutStyle()
+    {
+        var style = new GUIStyle(EditorStyles.foldout)
+        {
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        var textColor = EditorGUIUtility.isProSkin ? Color.white : new Color(0.12f, 0.12f, 0.12f, 1f);
+        style.normal.textColor = textColor;
+        style.hover.textColor = textColor;
+        style.focused.textColor = textColor;
+        style.active.textColor = textColor;
+        style.onNormal.textColor = textColor;
+        style.onHover.textColor = textColor;
+        style.onFocused.textColor = textColor;
+        style.onActive.textColor = textColor;
+        return style;
+    }
+
+    private GUIStyle GridCellStyle => gridCellStyle ??= CreateGridCellStyle(EditorStyles.label, false);
+
+    private GUIStyle GridHeaderCellStyle => gridHeaderCellStyle ??= CreateGridCellStyle(EditorStyles.miniBoldLabel, true);
+
+    private static GUIStyle CreateGridCellStyle(GUIStyle baseStyle, bool header)
+    {
+        return new GUIStyle(baseStyle)
+        {
+            wordWrap = true,
+            alignment = header ? TextAnchor.MiddleLeft : TextAnchor.UpperLeft,
+            padding = new RectOffset(6, 6, 4, 4)
+        };
+    }
+
+    private void DrawDataGridHeader(string[] headings, float[] columnSpecifications)
+    {
+        DrawDataGridRow(
+            headings.Select(heading => new GUIContent(heading)).ToArray(),
+            columnSpecifications,
+            -1,
+            true,
+            null);
+    }
+
+    private void DrawDataGridRow(
+        GUIContent[] cells,
+        float[] columnSpecifications,
+        int rowIndex,
+        bool header = false,
+        Action<Rect> drawActionCell = null,
+        Color? rowHighlight = null)
+    {
+        if (cells == null || columnSpecifications == null || cells.Length != columnSpecifications.Length)
+            return;
+
+        var estimatedWidth = Mathf.Max(260f, EditorGUIUtility.currentViewWidth - 64f);
+        var estimatedColumnWidths = ResolveGridColumnWidths(estimatedWidth, columnSpecifications);
+        var style = header ? GridHeaderCellStyle : GridCellStyle;
+        var rowHeight = header ? 26f : 24f;
+        for (var index = 0; index < cells.Length; index++)
+        {
+            if (drawActionCell != null && index == 0)
+                continue;
+
+            rowHeight = Mathf.Max(
+                rowHeight,
+                style.CalcHeight(cells[index] ?? GUIContent.none, Mathf.Max(24f, estimatedColumnWidths[index] - 4f)) + 2f);
+        }
+
+        var rowRect = EditorGUILayout.GetControlRect(false, rowHeight);
+        var columnWidths = ResolveGridColumnWidths(rowRect.width, columnSpecifications);
+        var background = header
+            ? (EditorGUIUtility.isProSkin ? new Color(0.18f, 0.18f, 0.18f, 1f) : new Color(0.80f, 0.80f, 0.80f, 1f))
+            : rowHighlight ?? (rowIndex % 2 == 0
+                ? (EditorGUIUtility.isProSkin ? new Color(0.15f, 0.15f, 0.15f, 1f) : new Color(0.92f, 0.92f, 0.92f, 1f))
+                : (EditorGUIUtility.isProSkin ? new Color(0.19f, 0.19f, 0.19f, 1f) : new Color(0.86f, 0.86f, 0.86f, 1f)));
+
+        var x = rowRect.x;
+        for (var index = 0; index < cells.Length; index++)
+        {
+            var cellRect = new Rect(x, rowRect.y, columnWidths[index], rowRect.height);
+            DrawGridCell(cellRect, cells[index] ?? GUIContent.none, style, background);
+            if (drawActionCell != null && index == 0)
+                drawActionCell(cellRect);
+            x += columnWidths[index];
+        }
+    }
+
+    private static float[] ResolveGridColumnWidths(float totalWidth, float[] specifications)
+    {
+        var widths = new float[specifications.Length];
+        var fixedWidth = specifications.Where(specification => specification < 0f).Sum(specification => -specification);
+        var flexibleWeight = specifications.Where(specification => specification > 0f).Sum();
+        var flexibleWidth = Mathf.Max(1f, totalWidth - fixedWidth);
+
+        for (var index = 0; index < specifications.Length; index++)
+        {
+            widths[index] = specifications[index] < 0f
+                ? -specifications[index]
+                : flexibleWidth * specifications[index] / Mathf.Max(0.01f, flexibleWeight);
+        }
+
+        return widths;
+    }
+
+    private static void DrawGridCell(Rect rect, GUIContent content, GUIStyle style, Color background)
+    {
+        var border = EditorGUIUtility.isProSkin
+            ? new Color(0.32f, 0.32f, 0.32f, 1f)
+            : new Color(0.52f, 0.52f, 0.52f, 1f);
+        EditorGUI.DrawRect(rect, border);
+        var innerRect = new Rect(rect.x + 1f, rect.y + 1f, Mathf.Max(0f, rect.width - 2f), Mathf.Max(0f, rect.height - 2f));
+        EditorGUI.DrawRect(innerRect, background);
+        GUI.Label(innerRect, content, style);
+    }
+
+    private static void DrawGridButton(Rect cellRect, string label, Action action)
+    {
+        var buttonRect = new Rect(cellRect.x + 4f, cellRect.y + 3f, Mathf.Max(1f, cellRect.width - 8f), 20f);
+        if (GUI.Button(buttonRect, label))
+            action?.Invoke();
+    }
+
+    private static void DrawGridButtons(Rect cellRect, (string label, Action action) first, (string label, Action action) second)
+    {
+        const float gap = 3f;
+        var width = Mathf.Max(1f, (cellRect.width - 8f - gap) * 0.5f);
+        var firstRect = new Rect(cellRect.x + 4f, cellRect.y + 3f, width, 20f);
+        var secondRect = new Rect(firstRect.xMax + gap, cellRect.y + 3f, width, 20f);
+        if (GUI.Button(firstRect, first.label))
+            first.action?.Invoke();
+        if (GUI.Button(secondRect, second.label))
+            second.action?.Invoke();
     }
 
     private static string GetTextureSourceDescription(TextureInfo info)
@@ -2105,7 +2491,31 @@ public class MapPerformanceScannerPanel
 
     private void DrawTerrainUsage()
     {
-        EditorGUILayout.LabelField("Terrain Details", EditorStyles.boldLabel);
+        showTerrainDetails = DrawReportFoldout(
+            showTerrainDetails,
+            $"Terrain Details ({terrainInfos.Count:N0})",
+            new Color(0.28f, 0.48f, 0.16f),
+            "Terrain");
+        if (!showTerrainDetails)
+            return;
+
+        var uniqueTerrainTextureMemory = textureInfos
+            .Where(info => info.usedByTerrain)
+            .Sum(info => info.memoryBytes);
+        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory;
+        var activeTerrainCount = terrainInfos.Count(info => info.contributesDrawSubmissions);
+        DrawCategorySummary(
+            ("Terrain Count", $"{terrainInfos.Count:N0} ({activeTerrainCount:N0} active)"),
+            ("Estimated Terrain Memory", FormatBytes(estimatedTerrainMemory)),
+            ("Terrain Data Memory", FormatBytes(totalTerrainDataMemory)),
+            ("Unique Terrain Texture Memory", FormatBytes(uniqueTerrainTextureMemory)),
+            ("Terrain Splat Map Memory", FormatBytes(totalTerrainSplatMemory)),
+            ("Terrain Lightmap Memory", FormatBytes(totalTerrainLightmapMemory)),
+            ("Surface Chunks / Submissions", $"{terrainSurfaceChunkCount:N0} / {terrainSurfaceDrawCalls:N0}"),
+            ("Detail Instances", totalDetailInstances.ToString("N0")),
+            ("Visible Detail Chunk Groups / Submissions", $"{terrainDetailChunkCount:N0} / {terrainDetailDrawCalls:N0}"),
+            ("Tree Instances / Submissions", $"{totalTreeInstances:N0} / {terrainTreeDrawCalls:N0}"),
+            ("Unique Prototype Materials", terrainPrototypeMaterialCount.ToString("N0")));
 
         if (terrainInfos.Count == 0)
         {
@@ -2113,49 +2523,105 @@ public class MapPerformanceScannerPanel
             return;
         }
 
+        var columns = new[] { -66f, 1.6f, 1.1f, 1.4f, 2.1f, 1.2f, 0.9f };
+        DrawDataGridHeader(
+            new[] { "Action", "Terrain", "Memory", "Surface", "Details", "Trees", "State" },
+            columns);
+
+        var rowIndex = 0;
         foreach (var info in terrainInfos.OrderByDescending(item => item.terrainDataMemory + item.textureMemory))
         {
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Select", GUILayout.Width(60f)))
-                Selection.activeObject = info.terrain.gameObject;
-
-            EditorGUILayout.LabelField(
-                $"{info.terrain.name}: TerrainData {FormatBytes(info.terrainDataMemory)}, terrain textures {FormatBytes(info.textureMemory)}, " +
-                $"height {info.heightmapResolution}, splat layers {info.alphamapLayers}, " +
-                $"details {info.detailInstanceCount:N0}/{info.detailPrototypeCount} prototypes, " +
-                $"detail grid {info.detailPatchesPerAxis:N0}x{info.detailPatchesPerAxis:N0}, visible budget/prototype {info.visibleDetailChunkBudgetPerPrototype:N0}, " +
-                $"trees {info.treeInstanceCount:N0}/{info.treePrototypeCount} prototypes, " +
-                $"surface chunks/batches {info.surfaceChunkCount:N0}/{info.surfaceDrawSubmissions:N0} ({(info.usesInstancedTerrain ? "instanced" : "non-instanced")}), " +
-                $"detail chunks occupied/visible/submissions {info.occupiedDetailChunkCount:N0}/{info.detailChunkCount:N0}/{info.detailDrawSubmissions:N0}, " +
-                $"tree batches {info.treeDrawSubmissions:N0}, " +
-                $"{(info.contributesDrawSubmissions ? "active" : "disabled/inactive - zero draws")}");
-            EditorGUILayout.EndHorizontal();
+            DrawDataGridRow(
+                new[]
+                {
+                    GUIContent.none,
+                    new GUIContent(info.terrain.name, GetTransformPath(info.terrain.transform)),
+                    new GUIContent($"TerrainData: {FormatBytes(info.terrainDataMemory)}\nTextures: {FormatBytes(info.textureMemory)}"),
+                    new GUIContent(
+                        $"Height: {info.heightmapResolution:N0}\nSplat layers: {info.alphamapLayers:N0}\n" +
+                        $"Chunks: {info.surfaceChunkCount:N0}\nSubmissions: {info.surfaceDrawSubmissions:N0}\n" +
+                        $"Instancing: {(info.usesInstancedTerrain ? "On" : "Off")}"),
+                    new GUIContent(
+                        $"Instances: {info.detailInstanceCount:N0}\nPrototypes: {info.detailPrototypeCount:N0}\n" +
+                        $"Patch grid: {info.detailPatchesPerAxis:N0} x {info.detailPatchesPerAxis:N0}\n" +
+                        $"Visible budget/prototype: {info.visibleDetailChunkBudgetPerPrototype:N0}\n" +
+                        $"Occupied/visible: {info.occupiedDetailChunkCount:N0} / {info.detailChunkCount:N0}\n" +
+                        $"Submissions: {info.detailDrawSubmissions:N0}"),
+                    new GUIContent(
+                        $"Instances: {info.treeInstanceCount:N0}\nPrototypes: {info.treePrototypeCount:N0}\n" +
+                        $"Submissions: {info.treeDrawSubmissions:N0}"),
+                    new GUIContent(info.contributesDrawSubmissions ? "Active" : "Disabled/inactive\nZero draws")
+                },
+                columns,
+                rowIndex++,
+                false,
+                rect => DrawGridButton(rect, "Select", () => Selection.activeObject = info.terrain.gameObject));
         }
     }
 
     private void DrawMeshUsage()
     {
-        EditorGUILayout.LabelField("Largest Unique Meshes", EditorStyles.boldLabel);
+        var visibleMeshCount = Math.Min(20, meshInfos.Count);
+        showMeshDetails = DrawReportFoldout(
+            showMeshDetails,
+            $"Largest Unique Meshes ({visibleMeshCount:N0} shown, {meshInfos.Count:N0} total)",
+            new Color(0.48f, 0.33f, 0.12f),
+            "Meshes");
+        if (!showMeshDetails)
+            return;
 
+        DrawCategorySummary(
+            ("Unique Meshes", meshInfos.Count.ToString("N0")),
+            ("Meshes Shown", visibleMeshCount.ToString("N0")),
+            ("Unique Mesh Memory", FormatBytes(totalMeshMemory)),
+            ("Total Mesh Uses (Scene + Terrain + Colliders)", totalMeshUses.ToString("N0")));
+
+        var columns = new[] { -66f, 2.5f, 0.9f, 0.9f, 0.8f, 1f, 0.9f };
+        DrawDataGridHeader(
+            new[] { "Action", "Mesh", "Memory", "Vertices", "Scene Uses", "Terrain Uses", "Collider Uses" },
+            columns);
+
+        var rowIndex = 0;
         foreach (var info in meshInfos.OrderByDescending(item => item.memoryBytes).Take(20))
         {
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Select", GUILayout.Width(60f)))
-                Selection.activeObject = info.mesh;
-
-            EditorGUILayout.LabelField(
-                $"{info.mesh.name}: {FormatBytes(info.memoryBytes)} | {info.mesh.vertexCount:N0} vertices | " +
-                $"scene uses {info.sceneUses:N0}, terrain instance uses {info.terrainUses:N0}, collider uses {info.colliderUses:N0}");
-            EditorGUILayout.EndHorizontal();
+            DrawDataGridRow(
+                new[]
+                {
+                    GUIContent.none,
+                    new GUIContent(info.mesh.name, AssetDatabase.GetAssetPath(info.mesh)),
+                    new GUIContent(FormatBytes(info.memoryBytes)),
+                    new GUIContent(info.mesh.vertexCount.ToString("N0")),
+                    new GUIContent(info.sceneUses.ToString("N0")),
+                    new GUIContent(info.terrainUses.ToString("N0")),
+                    new GUIContent(info.colliderUses.ToString("N0"))
+                },
+                columns,
+                rowIndex++,
+                false,
+                rect => DrawGridButton(rect, "Select", () => Selection.activeObject = info.mesh));
         }
     }
 
     private void DrawRuntimeMeshCombinerUsage()
     {
-        EditorGUILayout.LabelField("Runtime Mesh Combiners", EditorStyles.boldLabel);
-        EditorGUILayout.LabelField(
-            $"Total estimated combined mesh memory: {FormatBytes(totalRuntimeCombinedMeshMemory)}",
-            EditorStyles.boldLabel);
+        showRuntimeMeshCombinerDetails = DrawReportFoldout(
+            showRuntimeMeshCombinerDetails,
+            $"Runtime Mesh Combiners ({runtimeMeshCombinerInfos.Count:N0})",
+            new Color(0.10f, 0.43f, 0.40f),
+            "RuntimeMeshCombiners");
+        if (!showRuntimeMeshCombinerDetails)
+            return;
+
+        var combinedOutputVertices = runtimeMeshCombinerInfos.Sum(info => info.estimatedOutputVertices);
+        var combinedOutputIndices = runtimeMeshCombinerInfos.Sum(info => info.indexCount);
+        DrawCategorySummary(
+            ("Runtime Mesh Combiners", runtimeMeshCombinerInfos.Count.ToString("N0")),
+            ("Estimated Combined Mesh Memory", FormatBytes(totalRuntimeCombinedMeshMemory)),
+            ("Estimated Output Vertices", combinedOutputVertices.ToString("N0")),
+            ("Estimated Output Indices", combinedOutputIndices.ToString("N0")),
+            ("Draw Submissions Before / Runtime", $"{totalDrawCalls:N0} / {estimatedDrawCallsAfterRuntimeCombining:N0}"),
+            ("Estimated Draw Change", FormatDrawDifference(totalDrawCalls, estimatedDrawCallsAfterRuntimeCombining)),
+            ("Score Before / Runtime", $"{performanceScoreBeforeRuntimeCombining:F1} / {performanceScore:F1}"));
 
         if (runtimeMeshCombinerInfos.Count == 0)
         {
@@ -2171,12 +2637,14 @@ public class MapPerformanceScannerPanel
                 MessageType.Warning);
         }
 
+        var columns = new[] { -66f, 1.8f, 1.15f, 1.35f, 1.2f, 1.15f, 1.4f };
+        DrawDataGridHeader(
+            new[] { "Action", "Combiner Object", "Generated Memory", "Output Mesh", "Sources", "Draw Submissions", "Runtime Configuration" },
+            columns);
+
+        var rowIndex = 0;
         foreach (var info in runtimeMeshCombinerInfos.OrderByDescending(item => item.estimatedMemoryBytes))
         {
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Select", GUILayout.Width(60f)) && info.combiner != null)
-                Selection.activeObject = info.combiner.gameObject;
-
             var combinerName = info.combiner != null ? GetTransformPath(info.combiner.transform) : "Missing RuntimeMeshCombiner";
             var trigger = info.combineOnAwake ? "Awake" : "Manual";
             var sourceState = info.disableSourceRenderers ? "sources disabled" : "sources retained";
@@ -2189,16 +2657,35 @@ public class MapPerformanceScannerPanel
             var activeState = info.executesInCurrentState ? "active" : "disabled/inactive - zero combined draws";
             var collider = info.addMeshCollider ? ", MeshCollider" : string.Empty;
             var unreadable = info.skippedUnreadableMeshCount > 0
-                ? $", skipped unreadable {info.skippedUnreadableMeshCount:N0}"
+                ? $"\nSkipped unreadable: {info.skippedUnreadableMeshCount:N0}"
                 : string.Empty;
-            EditorGUILayout.LabelField(
-                $"{combinerName}: {FormatBytes(info.estimatedMemoryBytes)} | " +
-                $"vertices {FormatBytes(info.estimatedVertexBytes)}, indices {FormatBytes(info.estimatedIndexBytes)} | " +
-                $"output {info.estimatedOutputVertices:N0} verts/{info.indexCount:N0} indices, " +
-                $"{info.materialCount:N0} materials, {info.sourceMeshCount:N0} meshes/{info.sourceSubMeshCount:N0} submeshes, " +
-                $"draws {info.sourceDrawSubmissions:N0} -> {runtimeDraws:N0} ({drawChange}), " +
-                $"{activeState}, {trigger}, {sourceState}{collider}{unreadable}");
-            EditorGUILayout.EndHorizontal();
+            DrawDataGridRow(
+                new[]
+                {
+                    GUIContent.none,
+                    new GUIContent(combinerName, combinerName),
+                    new GUIContent(
+                        $"Total: {FormatBytes(info.estimatedMemoryBytes)}\n" +
+                        $"Vertices: {FormatBytes(info.estimatedVertexBytes)}\nIndices: {FormatBytes(info.estimatedIndexBytes)}"),
+                    new GUIContent(
+                        $"Vertices: {info.estimatedOutputVertices:N0}\nIndices: {info.indexCount:N0}\nMaterials: {info.materialCount:N0}"),
+                    new GUIContent(
+                        $"Meshes: {info.sourceMeshCount:N0}\nSubmeshes: {info.sourceSubMeshCount:N0}{unreadable}"),
+                    new GUIContent(
+                        $"Before: {info.sourceDrawSubmissions:N0}\nRuntime: {runtimeDraws:N0}\n{drawChange}"),
+                    new GUIContent($"{activeState}\nTrigger: {trigger}\n{sourceState}{collider}")
+                },
+                columns,
+                rowIndex++,
+                false,
+                rect => DrawGridButton(
+                    rect,
+                    "Select",
+                    () =>
+                    {
+                        if (info.combiner != null)
+                            Selection.activeObject = info.combiner.gameObject;
+                    }));
         }
     }
 
@@ -2237,65 +2724,208 @@ public class MapPerformanceScannerPanel
 
     private void DrawShaderFragmentation()
     {
-        EditorGUILayout.LabelField("Shader Fragmentation", EditorStyles.boldLabel);
+        var shaderCount = materialInfos
+            .Select(materialInfo => materialInfo.shader)
+            .Distinct()
+            .Count();
+        var unsupportedShaderCount = materialInfos
+            .Where(materialInfo => !materialInfo.isSupportedShader)
+            .Select(materialInfo => materialInfo.shader)
+            .Distinct()
+            .Count();
+        showShaderFragmentationDetails = DrawReportFoldout(
+            showShaderFragmentationDetails,
+            $"Shader Fragmentation ({shaderCount:N0} shaders, {unsupportedShaderCount:N0} unsupported)",
+            unsupportedShaderCount > 0
+                ? new Color(0.58f, 0.12f, 0.12f)
+                : new Color(0.42f, 0.23f, 0.52f),
+            "ShaderFragmentation");
+        if (!showShaderFragmentationDetails)
+            return;
+
+        var supportedShaderCount = Math.Max(0, shaderCount - unsupportedShaderCount);
+        var totalKeywordVariants = materialInfos
+            .Where(info => info.material != null && info.material.shader != null)
+            .Select(info => GetVariantKey(info.material))
+            .Distinct()
+            .Count();
+        DrawCategorySummary(
+            ("Unique Shaders", shaderCount.ToString("N0")),
+            ("Supported / Unsupported Shaders", $"{supportedShaderCount:N0} / {unsupportedShaderCount:N0}"),
+            ("Materials Scanned", materialInfos.Count.ToString("N0")),
+            ("Unique Shader Keyword Variants", totalKeywordVariants.ToString("N0")),
+            ("Shader Batch Groups", batches.Count.ToString("N0")));
+
+        if (unsupportedShaderCount > 0)
+        {
+            EditorGUILayout.HelpBox(
+                $"ERROR: {unsupportedShaderCount:N0} unsupported shader{(unsupportedShaderCount == 1 ? " was" : "s were")} found. " +
+                $"Only shaders supplied by the MashBox SDK and Unity's {SupportedTerrainShaderName} terrain shader are supported. " +
+                "Replace every red shader before publishing.",
+                MessageType.Error);
+        }
+
+        EditorGUILayout.HelpBox(
+            "A shader batch group requires the same shader, enabled shader keywords, and Lightmap ID. " +
+            "Renderers using the same shader but different Lightmap IDs produce separate batches because they sample different lightmap textures. " +
+            "Lightmap ID -1 means the material is used by a renderer that is not lightmapped.",
+            MessageType.Info);
+        EditorGUILayout.HelpBox(
+            "Optimization tip: Where practical, place objects using the same shader onto one lightmap atlas. " +
+            "When using Bakery, consolidate lightmap groups where possible. A well-packed single 4K lightmap is often sufficient for a typical map, as long as texel density and visual quality remain acceptable.",
+            MessageType.Info);
 
         var grouped = materialInfos
-            .Where(m => !m.isDecal)
             .GroupBy(m => m.shader);
 
+        var columns = new[] { -66f, 2.6f, 1.6f, 1f, 1f };
+        DrawDataGridHeader(new[] { "Action", "Shader", "Support Status", "Keyword Variants", "Materials" }, columns);
+        var rowIndex = 0;
         foreach (var group in grouped.OrderByDescending(g => g.Count()))
         {
             var variants = group
                 .Select(m => string.Join(";", m.keywords))
                 .Distinct()
                 .Count();
+            var supported = group.All(materialInfo => materialInfo.isSupportedShader);
+            var shaderPath = group.Select(materialInfo => materialInfo.shaderAssetPath)
+                .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
+            var groupMaterials = group
+                .Where(materialInfo => materialInfo.material != null)
+                .Select(materialInfo => materialInfo.material)
+                .ToArray();
 
-            EditorGUILayout.LabelField($"{group.Key.name} -> {variants} variants ({group.Count()} materials)");
+            DrawDataGridRow(
+                new[]
+                {
+                    GUIContent.none,
+                    new GUIContent(group.Key?.name ?? "Missing Shader", shaderPath),
+                    new GUIContent(supported
+                        ? "Supported"
+                        : "ERROR: Unsupported shader\nUse a MashBox SDK shader or HDRP/TerrainLit."),
+                    new GUIContent(variants.ToString("N0")),
+                    new GUIContent(group.Count().ToString("N0"))
+                },
+                columns,
+                rowIndex++,
+                false,
+                rect => DrawGridButton(rect, "Select", () => Selection.objects = groupMaterials),
+                supported ? null : new Color(0.42f, 0.08f, 0.08f, 1f));
         }
     }
 
     private void DrawTopOffenders()
     {
-        EditorGUILayout.LabelField("Top Shader Variants", EditorStyles.boldLabel);
+        var visibleBatchCount = Math.Min(10, batches.Count);
+        showShaderBatchGroupDetails = DrawReportFoldout(
+            showShaderBatchGroupDetails,
+            $"Top Shader Batch Groups ({visibleBatchCount:N0} shown, {batches.Count:N0} total)",
+            new Color(0.27f, 0.31f, 0.55f),
+            "ShaderBatchGroups");
+        if (!showShaderBatchGroupDetails)
+            return;
+
+        var materialsInBatchGroups = batches.Sum(batch => batch.Value.Count);
+        var lightmapIdCount = batches.Keys.Select(key => key.lightmapIndex).Distinct().Count();
+        DrawCategorySummary(
+            ("Total Shader Batch Groups", batches.Count.ToString("N0")),
+            ("Batch Groups Shown", visibleBatchCount.ToString("N0")),
+            ("Materials in Batch Groups", materialsInBatchGroups.ToString("N0")),
+            ("Distinct Lightmap IDs", lightmapIdCount.ToString("N0")));
+
+        EditorGUILayout.LabelField(
+            "Materials in group is the number that was previously displayed in parentheses.",
+            EditorStyles.wordWrappedMiniLabel);
 
         var worst = batches
             .OrderByDescending(b => b.Value.Count)
-            .Take(10);
+            .Take(10)
+            .ToList();
 
-        foreach (var batch in worst)
+        var columns = new[] { -66f, 1.8f, 1.25f, 1.2f, 0.8f, 2.6f };
+        DrawDataGridHeader(
+            new[] { "Action", "Shader", "Support Status", "Lightmap ID", "Materials", "Enabled Shader Keywords" },
+            columns);
+        for (var rowIndex = 0; rowIndex < worst.Count; rowIndex++)
         {
-            EditorGUILayout.BeginHorizontal();
-
-            if (GUILayout.Button("Select", GUILayout.Width(60f)))
-                Selection.objects = batch.Value.Select(m => m.material).ToArray();
-
-            EditorGUILayout.LabelField($"{batch.Key.shader.name} | LM:{batch.Key.lightmapIndex} ({batch.Value.Count})");
-            EditorGUILayout.EndHorizontal();
+            var batch = worst[rowIndex];
+            var keywordList = string.IsNullOrWhiteSpace(batch.Key.keywordSignature)
+                ? Array.Empty<string>()
+                : batch.Key.keywordSignature.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            var keywords = keywordList.Length == 0 ? "None" : string.Join("\n", keywordList);
+            var supported = batch.Value.All(materialInfo => materialInfo.isSupportedShader);
+            DrawDataGridRow(
+                new[]
+                {
+                    GUIContent.none,
+                    new GUIContent(batch.Key.shader?.name ?? "Missing Shader"),
+                    new GUIContent(supported ? "Supported" : "ERROR: Unsupported shader"),
+                    new GUIContent(FormatLightmapId(batch.Key.lightmapIndex)),
+                    new GUIContent(batch.Value.Count.ToString("N0")),
+                    new GUIContent(keywords, keywordList.Length == 0 ? "No shader keywords are enabled." : string.Join(", ", keywordList))
+                },
+                columns,
+                rowIndex,
+                false,
+                rect => DrawGridButton(
+                    rect,
+                    "Select",
+                    () => Selection.objects = batch.Value.Select(materialInfo => materialInfo.material).ToArray()),
+                supported ? null : new Color(0.42f, 0.08f, 0.08f, 1f));
         }
     }
 
     private void DrawDecals()
     {
-        EditorGUILayout.LabelField("Decals", EditorStyles.boldLabel);
-
         var decals = materialInfos.Where(m => m.isDecal).ToList();
-        EditorGUILayout.LabelField($"Total Decals: {decals.Count}");
+        showDecalDetails = DrawReportFoldout(
+            showDecalDetails,
+            $"Decals ({decals.Count:N0})",
+            new Color(0.55f, 0.28f, 0.10f),
+            "Decals");
+        if (!showDecalDetails)
+            return;
 
-        foreach (var decal in decals.Take(20))
+        var uniqueDecalShaders = decals.Select(info => info.shader).Distinct().Count();
+        var unsupportedDecalMaterials = decals.Count(info => !info.isSupportedShader);
+        DrawCategorySummary(
+            ("Decal Materials", decals.Count.ToString("N0")),
+            ("Estimated Decal Draw Calls", decalDrawCalls.ToString("N0")),
+            ("Unique Decal Shaders", uniqueDecalShaders.ToString("N0")),
+            ("Unsupported Decal Materials", unsupportedDecalMaterials.ToString("N0")));
+
+        var columns = new[] { -66f, 2f, 3f };
+        DrawDataGridHeader(new[] { "Action", "Material", "Asset Location" }, columns);
+        var visibleDecals = decals.Take(20).ToList();
+        for (var rowIndex = 0; rowIndex < visibleDecals.Count; rowIndex++)
         {
-            EditorGUILayout.BeginHorizontal();
-
-            if (GUILayout.Button("Select", GUILayout.Width(60f)))
-                Selection.activeObject = decal.material;
-
-            EditorGUILayout.LabelField(decal.material.name);
-            EditorGUILayout.EndHorizontal();
+            var decal = visibleDecals[rowIndex];
+            var assetPath = AssetDatabase.GetAssetPath(decal.material);
+            DrawDataGridRow(
+                new[] { GUIContent.none, new GUIContent(decal.material.name), new GUIContent(assetPath, assetPath) },
+                columns,
+                rowIndex,
+                false,
+                rect => DrawGridButton(rect, "Select", () => Selection.activeObject = decal.material));
         }
     }
 
     private void DrawRendererIssues()
     {
-        EditorGUILayout.LabelField("Non-Batching Renderers", EditorStyles.boldLabel);
+        showRendererIssueDetails = DrawReportFoldout(
+            showRendererIssueDetails,
+            $"Non-Batching Renderers ({rendererIssues.Count:N0})",
+            rendererIssues.Count > 0
+                ? new Color(0.55f, 0.14f, 0.14f)
+                : new Color(0.20f, 0.42f, 0.25f),
+            "RendererIssues");
+        if (!showRendererIssueDetails)
+            return;
+
+        DrawCategorySummary(
+            ("Non-Batching Renderers Before Combining", rendererIssues.Count.ToString("N0")),
+            ("Estimated Runtime Renderer Issues", estimatedRendererIssuesAfterRuntimeCombining.ToString("N0")),
+            ("Estimated Issues Removed by Combining", Math.Max(0, rendererIssues.Count - estimatedRendererIssuesAfterRuntimeCombining).ToString("N0")));
 
         if (rendererIssues.Count == 0)
         {
@@ -2303,15 +2933,32 @@ public class MapPerformanceScannerPanel
             return;
         }
 
-        foreach (var issue in rendererIssues)
+        var columns = new[] { -66f, 1.8f, 2.2f, 2f };
+        DrawDataGridHeader(new[] { "Action", "Renderer", "Reason", "Materials" }, columns);
+        for (var rowIndex = 0; rowIndex < rendererIssues.Count; rowIndex++)
         {
-            EditorGUILayout.BeginHorizontal();
-
-            if (GUILayout.Button("Select", GUILayout.Width(60f)))
-                Selection.activeObject = issue.renderer.gameObject;
-
-            EditorGUILayout.LabelField($"{issue.renderer.name} -> {issue.reason}");
-            EditorGUILayout.EndHorizontal();
+            var issue = rendererIssues[rowIndex];
+            var rendererPath = issue.renderer != null ? GetTransformPath(issue.renderer.transform) : "Missing Renderer";
+            var materials = string.Join("\n", issue.materials.Where(material => material != null).Select(material => material.name));
+            DrawDataGridRow(
+                new[]
+                {
+                    GUIContent.none,
+                    new GUIContent(rendererPath, rendererPath),
+                    new GUIContent(issue.reason),
+                    new GUIContent(string.IsNullOrWhiteSpace(materials) ? "None" : materials)
+                },
+                columns,
+                rowIndex,
+                false,
+                rect => DrawGridButton(
+                    rect,
+                    "Select",
+                    () =>
+                    {
+                        if (issue.renderer != null)
+                            Selection.activeObject = issue.renderer.gameObject;
+                    }));
         }
     }
 

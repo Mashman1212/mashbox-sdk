@@ -37,7 +37,6 @@ namespace MashBoxSDK.MapTools
     {
         private const float MinimumRaceGateTopClearanceMeters = 3f;
         private const float RaceGateGroundProbeDistance = 1000f;
-        private const float MinimumPublishPerformanceScore = 60f;
         private static int cachedPerformanceFrame = -1;
         private static MashBoxSDK.ContentTools.Editor.MapContentPackDefinition cachedPerformancePack;
         private static string cachedPerformanceGameName;
@@ -243,11 +242,24 @@ namespace MashBoxSDK.MapTools
                     $"{shownTextures}{hiddenMessage}"));
             }
 
-            if (result.PerformanceScore <= MinimumPublishPerformanceScore)
+            if (result.UnsupportedShaders != null && result.UnsupportedShaders.Count > 0)
+            {
+                var shownShaders = string.Join("\n", result.UnsupportedShaders.Take(12).Select(shader => $"- {shader}"));
+                var hiddenCount = result.UnsupportedShaders.Count - 12;
+                var hiddenMessage = hiddenCount > 0 ? $"\n...and {hiddenCount} more." : string.Empty;
+
+                issues.Add(new MapValidationIssue(
+                    MapValidationSeverity.Error,
+                    "Unsupported shaders are not allowed in published maps. Use shaders supplied by the MashBox SDK, " +
+                    "or HDRP/TerrainLit for Unity terrain materials. Replace the unsupported material shaders, then scan again.\n" +
+                    $"{shownShaders}{hiddenMessage}"));
+            }
+
+            if (result.PerformanceScore <= MapPerformanceScannerPanel.MinimumPublishPerformanceScore)
             {
                 issues.Add(new MapValidationIssue(
                     MapValidationSeverity.Error,
-                    $"Performance score is {result.PerformanceScore:F0}. Publishing requires a score above {MinimumPublishPerformanceScore:F0}."));
+                    $"Performance score is {result.PerformanceScore:F0}. Publishing requires a score above {MapPerformanceScannerPanel.MinimumPublishPerformanceScore:F0}."));
             }
 
             if (game == null)
