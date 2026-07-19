@@ -4363,7 +4363,7 @@ namespace MashBoxSDK.MapTools
             finally
             {
                 exportContext?.Cleanup();
-                sourceLightingState?.Restore(refreshBakery: true);
+                sourceLightingState?.Restore();
                 sourceLightingState?.QueueDeferredRestores(4);
                 EditorUtility.ClearProgressBar();
             }
@@ -4610,6 +4610,14 @@ namespace MashBoxSDK.MapTools
             public Vector4 LightmapScaleOffset;
             public int RealtimeLightmapIndex;
             public Vector4 RealtimeLightmapScaleOffset;
+            public bool HasSerializedLightmapIndex;
+            public int SerializedLightmapIndex;
+            public bool HasSerializedLightmapScaleOffset;
+            public Vector4 SerializedLightmapScaleOffset;
+            public bool HasSerializedRealtimeLightmapIndex;
+            public int SerializedRealtimeLightmapIndex;
+            public bool HasSerializedRealtimeLightmapScaleOffset;
+            public Vector4 SerializedRealtimeLightmapScaleOffset;
         }
 
         private sealed class SourceSceneLightingState
@@ -4619,7 +4627,6 @@ namespace MashBoxSDK.MapTools
             private readonly LightmapsMode lightmapsMode;
             private readonly LightProbes lightProbes;
             private readonly RendererLightmapState[] rendererLightmaps;
-            private readonly bool usesBakery;
 #if !UNITY_6000_0_OR_NEWER
             private readonly LightingDataAsset lightingData;
 #endif
@@ -4631,7 +4638,6 @@ namespace MashBoxSDK.MapTools
                 lightmapsMode = LightmapSettings.lightmapsMode;
                 lightProbes = LightmapSettings.lightProbes;
                 rendererLightmaps = CaptureRendererLightmapState(sourceScene);
-                usesBakery = SceneContainsBakeryLightmapStorage(sourceScene);
 #if !UNITY_6000_0_OR_NEWER
                 lightingData = Lightmapping.lightingDataAsset;
 #endif
@@ -4650,7 +4656,7 @@ namespace MashBoxSDK.MapTools
                 return new SourceSceneLightingState(sourceScene);
             }
 
-            public void Restore(bool refreshBakery)
+            public void Restore()
             {
                 if (!scene.IsValid() || !scene.isLoaded)
                     return;
@@ -4658,9 +4664,6 @@ namespace MashBoxSDK.MapTools
                 // Never replace global lighting after the user deliberately switches scenes.
                 if (SceneManager.GetActiveScene() != scene)
                     return;
-
-                if (refreshBakery && usesBakery)
-                    TryRefreshBakeryLightmaps();
 
 #if !UNITY_6000_0_OR_NEWER
                 Lightmapping.lightingDataAsset = lightingData;
@@ -4682,73 +4685,13 @@ namespace MashBoxSDK.MapTools
                     if (remaining-- <= 0)
                         return;
 
-                    Restore(refreshBakery: false);
+                    Restore();
                     if (remaining > 0)
                         EditorApplication.delayCall += restoreNext;
                 };
 
                 if (remaining > 0)
                     EditorApplication.delayCall += restoreNext;
-            }
-        }
-
-        private static Type FindLoadedType(string fullName)
-        {
-            if (string.IsNullOrWhiteSpace(fullName))
-                return null;
-
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                var type = assembly.GetType(fullName, throwOnError: false);
-                if (type != null)
-                    return type;
-            }
-
-            return null;
-        }
-
-        private static bool SceneContainsBakeryLightmapStorage(Scene scene)
-        {
-            if (!scene.IsValid() || !scene.isLoaded)
-                return false;
-
-            var storageType = FindLoadedType("ftLightmapsStorage");
-            if (storageType == null || !typeof(Component).IsAssignableFrom(storageType))
-                return false;
-
-            return scene.GetRootGameObjects()
-                .Any(root => root != null && root.GetComponentInChildren(storageType, true) != null);
-        }
-
-        private static bool TryRefreshBakeryLightmaps()
-        {
-            var lightmapsType = FindLoadedType("ftLightmaps");
-            var refreshFull = lightmapsType?.GetMethod(
-                "RefreshFull",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
-                binder: null,
-                types: Type.EmptyTypes,
-                modifiers: null);
-            if (refreshFull == null)
-            {
-                Debug.LogWarning(
-                    "[MashBoxMapTools] The source scene contains Bakery lightmap storage, but ftLightmaps.RefreshFull() could not be found. " +
-                    "Falling back to captured Unity lightmap and renderer state.");
-                return false;
-            }
-
-            try
-            {
-                refreshFull.Invoke(null, null);
-                Debug.Log("[MashBoxMapTools] Refreshed Bakery lightmaps after closing the temporary export scene.");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                var cause = ex.GetBaseException();
-                Debug.LogWarning(
-                    $"[MashBoxMapTools] Bakery ftLightmaps.RefreshFull() failed after closing the temporary export scene: {cause.Message}");
-                return false;
             }
         }
 
@@ -4760,13 +4703,27 @@ namespace MashBoxSDK.MapTools
             return scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<Renderer>(true))
                 .Where(renderer => renderer != null)
-                .Select(renderer => new RendererLightmapState
+                .Select(renderer =>
                 {
-                    Renderer = renderer,
-                    LightmapIndex = renderer.lightmapIndex,
-                    LightmapScaleOffset = renderer.lightmapScaleOffset,
-                    RealtimeLightmapIndex = renderer.realtimeLightmapIndex,
-                    RealtimeLightmapScaleOffset = renderer.realtimeLightmapScaleOffset
+                    var state = new RendererLightmapState
+                    {
+                        Renderer = renderer,
+                        LightmapIndex = renderer.lightmapIndex,
+                        LightmapScaleOffset = renderer.lightmapScaleOffset,
+                        RealtimeLightmapIndex = renderer.realtimeLightmapIndex,
+                        RealtimeLightmapScaleOffset = renderer.realtimeLightmapScaleOffset
+                    };
+
+                    var serializedRenderer = new SerializedObject(renderer);
+                    state.HasSerializedLightmapIndex = TryGetSerializedInt(
+                        serializedRenderer, "m_LightmapIndex", out state.SerializedLightmapIndex);
+                    state.HasSerializedLightmapScaleOffset = TryGetSerializedVector4(
+                        serializedRenderer, "m_LightmapTilingOffset", out state.SerializedLightmapScaleOffset);
+                    state.HasSerializedRealtimeLightmapIndex = TryGetSerializedInt(
+                        serializedRenderer, "m_DynamicLightmapIndex", out state.SerializedRealtimeLightmapIndex);
+                    state.HasSerializedRealtimeLightmapScaleOffset = TryGetSerializedVector4(
+                        serializedRenderer, "m_DynamicLightmapTilingOffset", out state.SerializedRealtimeLightmapScaleOffset);
+                    return state;
                 })
                 .ToArray();
         }
@@ -4788,13 +4745,51 @@ namespace MashBoxSDK.MapTools
                 // Unity's serialized renderer fields as well so the Inspector and scene state retain
                 // the exact Bakery assignment captured before export.
                 var serializedRenderer = new SerializedObject(renderer);
-                SetSerializedInt(serializedRenderer, "m_LightmapIndex", state.LightmapIndex);
-                SetSerializedVector4(serializedRenderer, "m_LightmapTilingOffset", state.LightmapScaleOffset);
-                SetSerializedInt(serializedRenderer, "m_DynamicLightmapIndex", state.RealtimeLightmapIndex);
-                SetSerializedVector4(serializedRenderer, "m_DynamicLightmapTilingOffset", state.RealtimeLightmapScaleOffset);
+                SetSerializedInt(
+                    serializedRenderer,
+                    "m_LightmapIndex",
+                    state.HasSerializedLightmapIndex ? state.SerializedLightmapIndex : state.LightmapIndex);
+                SetSerializedVector4(
+                    serializedRenderer,
+                    "m_LightmapTilingOffset",
+                    state.HasSerializedLightmapScaleOffset ? state.SerializedLightmapScaleOffset : state.LightmapScaleOffset);
+                SetSerializedInt(
+                    serializedRenderer,
+                    "m_DynamicLightmapIndex",
+                    state.HasSerializedRealtimeLightmapIndex ? state.SerializedRealtimeLightmapIndex : state.RealtimeLightmapIndex);
+                SetSerializedVector4(
+                    serializedRenderer,
+                    "m_DynamicLightmapTilingOffset",
+                    state.HasSerializedRealtimeLightmapScaleOffset ? state.SerializedRealtimeLightmapScaleOffset : state.RealtimeLightmapScaleOffset);
                 serializedRenderer.ApplyModifiedPropertiesWithoutUndo();
                 EditorUtility.SetDirty(renderer);
             }
+        }
+
+        private static bool TryGetSerializedInt(SerializedObject target, string propertyName, out int value)
+        {
+            var property = target?.FindProperty(propertyName);
+            if (property != null && property.propertyType == SerializedPropertyType.Integer)
+            {
+                value = property.intValue;
+                return true;
+            }
+
+            value = default;
+            return false;
+        }
+
+        private static bool TryGetSerializedVector4(SerializedObject target, string propertyName, out Vector4 value)
+        {
+            var property = target?.FindProperty(propertyName);
+            if (property != null && property.propertyType == SerializedPropertyType.Vector4)
+            {
+                value = property.vector4Value;
+                return true;
+            }
+
+            value = default;
+            return false;
         }
 
         private static void SetSerializedInt(SerializedObject target, string propertyName, int value)
