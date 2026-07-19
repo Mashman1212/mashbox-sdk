@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
 namespace MashBoxSDK.ContentTools
@@ -34,6 +35,14 @@ namespace MashBoxSDK.ContentTools
             public Severity severity;
             public string message;
             public Object context; // offending asset (prefab or pack)
+        }
+
+        public sealed class NormalMapImportProblem
+        {
+            public Material material;
+            public Texture texture;
+            public string propertyName;
+            public string texturePath;
         }
 
         public static List<Issue> ValidatePack(ContentPackDefinition pack, ContentValidationRules rules)
@@ -340,6 +349,8 @@ namespace MashBoxSDK.ContentTools
                     });
                 }
             }
+
+            ValidateNormalMapTextureImports(go, issues);
             
             if (!go.transform.localScale.Equals(Vector3.one))
             {
@@ -806,7 +817,8 @@ namespace MashBoxSDK.ContentTools
 
                                     int limit = rules.GetTextureLimit(superType, type, propName);
 
-                                    ValidateTexture(tex, propName, limit, go, issues);
+                                    var isNormalMapSlot = IsNormalMapTextureProperty(mat.shader, i, propName);
+                                    ValidateTexture(tex, propName, limit, isNormalMapSlot, go, issues);
                                 }
                                 
                             }
@@ -1222,9 +1234,9 @@ namespace MashBoxSDK.ContentTools
         
         static int MaxMaterialsPerRenderer = 1;
         
-        private static void ValidateTexture(Texture tex, string slot, int maxSize, GameObject go, List<Issue> issues)
+        private static void ValidateTexture(Texture tex, string slot, int maxSize, bool isNormalMapSlot, GameObject go, List<Issue> issues)
         {
-            if (tex == null || maxSize <= 0)
+            if (tex == null)
                 return;
 
             string path = AssetDatabase.GetAssetPath(tex);
@@ -1244,7 +1256,7 @@ namespace MashBoxSDK.ContentTools
             int effectiveSize = Mathf.Min(actualSize, importLimit);
 
 // Validate against rule
-            if (effectiveSize > maxSize)
+            if (maxSize > 0 && effectiveSize > maxSize)
             {
                 issues.Add(new Issue
                 {
@@ -1296,18 +1308,10 @@ namespace MashBoxSDK.ContentTools
             TextureImporterType type = importer.textureType;
 
             
-            if (slot == "_NormalMap" || slot.Contains("NormalMap"))
+            if (isNormalMapSlot)
             {
-                if (type != TextureImporterType.NormalMap)
-                {
-                    issues.Add(new Issue
-                    {
-                        severity = Severity.Error,
-                        message =
-                            $"{go.name}: texture '{tex.name}' in slot '{slot}' must use Texture Type 'Normal Map'.",
-                        context = tex
-                    });
-                }
+                // Normal-map import enforcement is performed once for every referenced material
+                // by ValidateNormalMapTextureImports, including slots without size rules.
             }
             else if (slot == "_DetailMap")
             {
@@ -1336,6 +1340,102 @@ namespace MashBoxSDK.ContentTools
                     });
                 }
             }
+        }
+
+        private static void ValidateNormalMapTextureImports(GameObject root, List<Issue> issues)
+        {
+            if (root == null || issues == null)
+                return;
+
+            var materials = root.GetComponentsInChildren<Renderer>(true)
+                .Where(renderer => renderer != null && renderer.sharedMaterials != null)
+                .SelectMany(renderer => renderer.sharedMaterials)
+                .Where(material => material != null)
+                .ToList();
+
+            var rootPath = AssetDatabase.GetAssetPath(root);
+            if (!string.IsNullOrWhiteSpace(rootPath))
+            {
+                materials.AddRange(AssetDatabase.GetDependencies(rootPath, true)
+                    .Select(AssetDatabase.LoadAssetAtPath<Material>)
+                    .Where(material => material != null));
+            }
+
+            foreach (var problem in FindNormalMapImportProblems(materials))
+            {
+                issues.Add(new Issue
+                {
+                    severity = Severity.Error,
+                    message =
+                        $"{root.name}: texture '{problem.texture.name}' in normal-map slot '{problem.propertyName}' " +
+                        $"on material '{problem.material.name}' must use Texture Type 'Normal Map' in its import settings " +
+                        $"(texture: {problem.texturePath}).",
+                    context = problem.texture
+                });
+            }
+        }
+
+        public static List<NormalMapImportProblem> FindNormalMapImportProblems(IEnumerable<Material> materials)
+        {
+            var problems = new List<NormalMapImportProblem>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var material in (materials ?? Enumerable.Empty<Material>()).Where(material => material != null).Distinct())
+            {
+                var shader = material.shader;
+                if (shader == null)
+                    continue;
+
+                var propertyCount = shader.GetPropertyCount();
+                for (var propertyIndex = 0; propertyIndex < propertyCount; propertyIndex++)
+                {
+                    if (shader.GetPropertyType(propertyIndex) != ShaderPropertyType.Texture)
+                        continue;
+
+                    var propertyName = shader.GetPropertyName(propertyIndex);
+                    if (!IsNormalMapTextureProperty(shader, propertyIndex, propertyName))
+                        continue;
+
+                    var texture = material.GetTexture(propertyName);
+                    if (texture == null)
+                        continue;
+
+                    var texturePath = AssetDatabase.GetAssetPath(texture)?.Replace('\\', '/');
+                    if (string.IsNullOrWhiteSpace(texturePath))
+                        continue;
+
+                    var importer = AssetImporter.GetAtPath(texturePath) as TextureImporter;
+                    if (importer == null || importer.textureType == TextureImporterType.NormalMap)
+                        continue;
+
+                    var key = $"{AssetDatabase.GetAssetPath(material)}|{propertyName}|{texturePath}";
+                    if (!seen.Add(key))
+                        continue;
+
+                    problems.Add(new NormalMapImportProblem
+                    {
+                        material = material,
+                        texture = texture,
+                        propertyName = propertyName,
+                        texturePath = texturePath
+                    });
+                }
+            }
+
+            return problems;
+        }
+
+        private static bool IsNormalMapTextureProperty(Shader shader, int propertyIndex, string propertyName)
+        {
+            if (shader == null)
+                return false;
+
+            if ((shader.GetPropertyFlags(propertyIndex) & ShaderPropertyFlags.Normal) != 0)
+                return true;
+
+            return !string.IsNullOrWhiteSpace(propertyName) &&
+                   (propertyName.IndexOf("normalmap", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    string.Equals(propertyName, "_BumpMap", StringComparison.OrdinalIgnoreCase));
         }
         
         public static float GetTotalTextureMB(GameObject root, Renderer[] renderers, ContentValidationRules.ItemRule rule, SuperType superType, ItemType type)

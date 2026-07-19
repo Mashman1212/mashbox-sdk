@@ -2125,6 +2125,9 @@ namespace MashBoxSDK.ContentTools.Editor
                 return;
             }
 
+            if (!EnsureCorrectUnityVersionForPublishing(currentGame))
+                return;
+
             bool cookerOk = MashBoxSDKState.Cooker == MashBoxSDKState.CookerStatus.Online;
 #if MashBoxDev
             cookerOk = true;
@@ -2269,6 +2272,9 @@ namespace MashBoxSDK.ContentTools.Editor
 
         private void PublishSelectedPack(ContentPackDefinition p, string currentGame, bool cookerOk)
         {
+            if (!EnsureCorrectUnityVersionForPublishing(currentGame))
+                return;
+
             if (!MashBoxSDK.ContentTools.Editor.ModIoAuth.IsAuthorizedForCurrentGame())
             {
                 EditorUtility.DisplayDialog(
@@ -2783,6 +2789,9 @@ namespace MashBoxSDK.ContentTools.Editor
         
         private async void PublishToModioAsync(ContentPackDefinition p, string currentGame)
         {
+            if (!EnsureCorrectUnityVersionForPublishing(currentGame))
+                return;
+
             if (!await EnsureLatestSdkForPublishingAsync())
                 return;
 
@@ -2814,6 +2823,8 @@ namespace MashBoxSDK.ContentTools.Editor
 
         private async Task PublishToModioPackageAsync(ContentPackDefinition p, string currentGame, string progressTitle)
         {
+            GameTargetUnityVersionValidator.ThrowIfInvalidForPublishing(currentGame);
+
             var publishIssues = ValidatePackWithExportChecks(p, _rules);
             _packIssues[p] = publishIssues;
             var blockingIssues = publishIssues
@@ -2900,6 +2911,15 @@ namespace MashBoxSDK.ContentTools.Editor
                 "SDK Update Required",
                 MashBoxSDKState.GetPublishBlockedMessage(),
                 "OK");
+            return false;
+        }
+
+        private static bool EnsureCorrectUnityVersionForPublishing(string currentGame)
+        {
+            if (GameTargetUnityVersionValidator.IsValidForPublishing(currentGame, out var message))
+                return true;
+
+            EditorUtility.DisplayDialog("Correct Unity Version Required", message, "OK");
             return false;
         }
 

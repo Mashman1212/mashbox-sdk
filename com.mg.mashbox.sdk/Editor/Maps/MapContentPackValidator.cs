@@ -1278,6 +1278,8 @@ namespace MashBoxSDK.MapTools
             if (!scene.IsValid() || !scene.isLoaded)
                 return;
 
+            ValidateNormalMapTextureImports(scene, issues);
+
             var invalidMaterialUsages = new List<string>();
             var seenUsages = new HashSet<string>(StringComparer.Ordinal);
 
@@ -1323,6 +1325,44 @@ namespace MashBoxSDK.MapTools
                 "FBX embedded materials, package materials, default render pipeline materials, and scene-only materials can fail to cook correctly for published maps.\n\n" +
                 "Create or extract .mat assets under Assets, assign them to the MeshRenderer or SkinnedMeshRenderer slots, then publish again.\n\n" +
                 $"Invalid material usages:\n{shownUsages}{hiddenMessage}"));
+        }
+
+        private static void ValidateNormalMapTextureImports(Scene scene, List<MapValidationIssue> issues)
+        {
+            var materials = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Renderer>(true))
+                .Where(renderer => renderer != null && renderer.sharedMaterials != null)
+                .SelectMany(renderer => renderer.sharedMaterials)
+                .Where(material => material != null)
+                .ToList();
+
+            materials.AddRange(scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Terrain>(true))
+                .Where(terrain => terrain != null && terrain.materialTemplate != null)
+                .Select(terrain => terrain.materialTemplate));
+
+            if (!string.IsNullOrWhiteSpace(scene.path))
+            {
+                materials.AddRange(AssetDatabase.GetDependencies(scene.path, true)
+                    .Select(AssetDatabase.LoadAssetAtPath<Material>)
+                    .Where(material => material != null));
+            }
+
+            var problems = ContentPackValidator.FindNormalMapImportProblems(materials);
+            if (problems.Count == 0)
+                return;
+
+            var shownProblems = string.Join("\n", problems.Take(12).Select(problem =>
+                $"- Material '{problem.material.name}', slot '{problem.propertyName}': " +
+                $"texture '{problem.texture.name}' at {problem.texturePath}"));
+            var hiddenCount = problems.Count - 12;
+            var hiddenMessage = hiddenCount > 0 ? $"\n...and {hiddenCount} more." : string.Empty;
+
+            issues.Add(new MapValidationIssue(
+                MapValidationSeverity.Error,
+                "Textures assigned to normal-map material slots must use Texture Type 'Normal Map' in their Unity import settings.\n\n" +
+                "Select each texture, set Texture Type to Normal Map in the Inspector, click Apply, then validate again.\n\n" +
+                $"Invalid normal-map textures:\n{shownProblems}{hiddenMessage}"));
         }
 
         private static void ValidatePrefabReferences(Scene scene, List<MapValidationIssue> issues)

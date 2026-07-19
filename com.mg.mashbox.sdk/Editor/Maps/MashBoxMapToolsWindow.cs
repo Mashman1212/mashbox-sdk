@@ -3188,8 +3188,10 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.Space(8f);
             var currentGame = EditorPrefs.GetString("ModIo.CurrentGame", "Custom Folder");
             var currentGameBuildLabel = GetBuildLabelForGame(currentGame);
+            var hasCorrectPublishUnityVersion = GameTargetUnityVersionValidator.IsValidForPublishing(currentGame, out var unityVersionMessage);
             var canPublish = ModIoAuth.IsAuthorizedForCurrentGame() &&
-                             !string.Equals(currentGame, "Custom Folder", StringComparison.OrdinalIgnoreCase);
+                             !string.Equals(currentGame, "Custom Folder", StringComparison.OrdinalIgnoreCase) &&
+                             hasCorrectPublishUnityVersion;
             var currentGameFolder = ResolveDocumentsMapsFolderForGame(currentGame);
             var mashBoxFolder = ResolveMashBoxMapsFolder();
 
@@ -3277,6 +3279,8 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.HelpBox("Log in to mod.io for the active game to enable map publishing.", MessageType.Info);
             else if (string.Equals(currentGame, "Custom Folder", StringComparison.OrdinalIgnoreCase))
                 EditorGUILayout.HelpBox("Choose a game target instead of Custom Folder to publish this map to mod.io.", MessageType.Info);
+            else if (!hasCorrectPublishUnityVersion)
+                EditorGUILayout.HelpBox(unityVersionMessage, MessageType.Error);
 
             if (string.IsNullOrWhiteSpace(currentGameFolder))
                 EditorGUILayout.HelpBox("Build To MashBox is always available. Set a game title when you also want to build to that game's Documents/Maps folder.", MessageType.Info);
@@ -3795,6 +3799,9 @@ namespace MashBoxSDK.MapTools
 
         private void ShowPublishPlatformSelector(MapContentPackDefinition pack, string currentGame)
         {
+            if (!EnsureCorrectUnityVersionForPublishing(currentGame))
+                return;
+
             PublishPlatformSelectionPopup.Show(
                 this,
                 currentGame,
@@ -3813,6 +3820,9 @@ namespace MashBoxSDK.MapTools
 
         private async void PublishMapToModioAsync(MapContentPackDefinition pack, string currentGame, IReadOnlyList<PublishPlatformOption> selectedPlatforms)
         {
+            if (!EnsureCorrectUnityVersionForPublishing(currentGame))
+                return;
+
             if (pack == null || pack.Scene == null)
             {
                 EditorUtility.DisplayDialog("Missing Scene", "Select a map pack with a scene before publishing.", "OK");
@@ -3887,6 +3897,7 @@ namespace MashBoxSDK.MapTools
                 SetActiveMapPublishStatus("Exporting unitypackage...", uploadRegionLabel, 0.25f);
                 DisplayProgress("Publish Map To Mod.io", "Exporting unitypackage...", 0.25f);
                 var packagePath = BuildUnityPackageForMapPack(pack);
+                GameTargetUnityVersionValidator.ThrowIfInvalidForPublishing(currentGame);
                 if (!pack.IsVanillaContent)
                     EnsurePackageSizeWithinLimit(packagePath, MaxMapPublishPackageBytes, "map");
                 var packageBytes = new FileInfo(packagePath).Length;
@@ -3944,6 +3955,15 @@ namespace MashBoxSDK.MapTools
                 "SDK Update Required",
                 MashBoxSDKState.GetPublishBlockedMessage(),
                 "OK");
+            return false;
+        }
+
+        private static bool EnsureCorrectUnityVersionForPublishing(string currentGame)
+        {
+            if (GameTargetUnityVersionValidator.IsValidForPublishing(currentGame, out var message))
+                return true;
+
+            EditorUtility.DisplayDialog("Correct Unity Version Required", message, "OK");
             return false;
         }
 
@@ -4202,6 +4222,11 @@ namespace MashBoxSDK.MapTools
 
             try
             {
+                if (!SceneManager.SetActiveScene(scene))
+                    throw new Exception($"Could not activate temporary export scene '{scenePath}' while preparing baked lighting.");
+
+                CopyAndRebindLightingDataForTemporaryScene(scene, scenePath, tempRoot);
+
                 ThrowIfSceneHasMissingPrefabInstances(scene,
                     "Cannot export this map because the copied export scene contains missing prefab reference(s). Restore or replace the missing prefab instances in the source scene before publishing.");
 
@@ -4265,6 +4290,62 @@ namespace MashBoxSDK.MapTools
                 if (previousActiveScene.IsValid() && previousActiveScene.isLoaded)
                     SceneManager.SetActiveScene(previousActiveScene);
             }
+        }
+
+        private static void CopyAndRebindLightingDataForTemporaryScene(Scene scene, string scenePath, string tempRoot)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+                return;
+
+            var sourceLightingData = Lightmapping.lightingDataAsset;
+            if (sourceLightingData == null)
+                return;
+
+            var sourceLightingDataPath = NormalizeAssetPath(AssetDatabase.GetAssetPath(sourceLightingData));
+            if (string.IsNullOrWhiteSpace(sourceLightingDataPath))
+                throw new Exception("The map uses baked lighting, but its Lighting Data Asset path could not be resolved.");
+
+            var extension = Path.GetExtension(sourceLightingDataPath);
+            if (string.IsNullOrWhiteSpace(extension))
+                extension = ".asset";
+
+            var lightingDataPath = AssetDatabase.GenerateUniqueAssetPath(
+                $"{tempRoot}/{SanitizeAssetName(Path.GetFileNameWithoutExtension(sourceLightingDataPath))}_LightingData{extension}");
+
+            if (!AssetDatabase.CopyAsset(sourceLightingDataPath, lightingDataPath))
+                throw new Exception($"Could not copy the map Lighting Data Asset from '{sourceLightingDataPath}' for export.");
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            var copiedLightingData = AssetDatabase.LoadAssetAtPath<LightingDataAsset>(lightingDataPath);
+            var temporarySceneAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath);
+            if (copiedLightingData == null || temporarySceneAsset == null)
+                throw new Exception("Could not load the copied Lighting Data Asset or temporary scene while preparing the map export.");
+
+            var serializedLightingData = new SerializedObject(copiedLightingData);
+            var targetSceneProperty = serializedLightingData.FindProperty("m_Scene");
+            if (targetSceneProperty == null || targetSceneProperty.propertyType != SerializedPropertyType.ObjectReference)
+            {
+                throw new Exception(
+                    "The map uses baked lighting, but this Unity version does not expose the Lighting Data Asset scene link expected by the exporter. " +
+                    "Publishing was stopped to avoid uploading incompatible lighting data.");
+            }
+
+            targetSceneProperty.objectReferenceValue = temporarySceneAsset;
+            serializedLightingData.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(copiedLightingData);
+
+            Lightmapping.lightingDataAsset = copiedLightingData;
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
+
+            if (Lightmapping.lightingDataAsset != copiedLightingData)
+                throw new Exception("Unity did not retain the copied Lighting Data Asset on the temporary export scene.");
+
+            Debug.Log(
+                $"[MashBoxMapTools] Copied and rebound baked lighting data '{lightingDataPath}' to temporary export scene '{scenePath}'.");
         }
 
         private static void ThrowIfSceneHasMissingPrefabInstances(Scene scene, string message)
