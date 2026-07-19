@@ -42,7 +42,12 @@ public class MapPerformanceScannerPanel
     private const string MashBoxPackageName = "com.mg.mashbox.sdk";
     private const string SupportedTerrainShaderName = "HDRP/TerrainLit";
     private const string FoldoutPreferencePrefix = "MashBox.PerformanceScanner.Foldout.";
-    private const float DrawScoreThreshold = 2000f;
+    private const float DrawPerfectScoreThreshold = 200f;
+    private const float DrawMaximumPenaltyThreshold = 2000f;
+    private const int ShaderVariantPerfectScoreThreshold = 6;
+    private const int ShaderVariantMaximumPenaltyThreshold = 12;
+    private const long SharedMemoryPerfectScoreBytes = 1L * 1024L * 1024L * 1024L;
+    private const long SharedMemoryMaximumPenaltyBytes = 3L * 1024L * 1024L * 1024L;
     private const long MaximumInstancesPerBatch = 1023L;
 
     [Serializable]
@@ -544,15 +549,28 @@ public class MapPerformanceScannerPanel
 
         Section("SCORE BREAKDOWN");
         Metric("Renderer Issues Before", rendererIssues.Count.ToString("N0"));
-        Metric("Renderer Issues After Combining", estimatedRendererIssuesAfterRuntimeCombining.ToString("N0"));
+        Metric("Renderer Issues After Combining", $"{estimatedRendererIssuesAfterRuntimeCombining:N0} / 100 scoring threshold");
         Metric("Draw Submissions Before", totalDrawCalls.ToString("N0"));
         Metric("Draw Submissions After Combining", estimatedDrawCallsAfterRuntimeCombining.ToString("N0"));
         Metric("Estimated Draw Change", FormatDrawDifference(totalDrawCalls, estimatedDrawCallsAfterRuntimeCombining));
-        Metric("Estimated Runtime Draw Submissions", $"{estimatedDrawCallsAfterRuntimeCombining:N0} / {DrawScoreThreshold:N0} scoring threshold");
+        Metric("Estimated Runtime Draw Submissions", $"{estimatedDrawCallsAfterRuntimeCombining:N0} (perfect at {DrawPerfectScoreThreshold:N0} or fewer; full penalty at {DrawMaximumPenaltyThreshold:N0})");
         Metric("Decals", $"{decalDrawCalls:N0} / 5 scoring threshold");
-        Metric("Shader Variants", $"{batches.Count:N0} / 6 scoring threshold");
-        Metric("Texture Memory", $"{FormatBytes(totalTextureMemory)} / 2.00 GB scoring threshold");
-        Metric("Estimated Shared Memory", $"{FormatBytes(totalMapMemory)} / 3.00 GB display threshold");
+        Metric("Shader Variants", $"{batches.Count:N0} (perfect at {ShaderVariantPerfectScoreThreshold:N0} or fewer; full penalty at {ShaderVariantMaximumPenaltyThreshold:N0})");
+        Metric("Texture Memory (Part of Shared Memory)", FormatBytes(totalTextureMemory));
+        Metric("Unique Mesh Memory", $"{FormatBytes(totalMeshMemory)} ({meshInfos.Count:N0} meshes, {totalMeshUses:N0} uses)");
+        Metric("Runtime Combined Mesh Memory", $"{FormatBytes(totalRuntimeCombinedMeshMemory)} ({runtimeMeshCombinerInfos.Count:N0} combiners)");
+        var uniqueTerrainTextureMemory = textureInfos.Where(info => info.usedByTerrain).Sum(info => info.memoryBytes);
+        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory;
+        Metric("Estimated Terrain Memory", $"{FormatBytes(estimatedTerrainMemory)} (within shared memory)");
+        Metric("Terrain Data Memory", FormatBytes(totalTerrainDataMemory));
+        Metric("Unique Terrain Texture Memory", FormatBytes(uniqueTerrainTextureMemory));
+        Metric("Terrain Splat Map Memory", $"{FormatBytes(totalTerrainSplatMemory)} (included in texture memory)");
+        Metric("Terrain Lightmap Memory", $"{FormatBytes(totalTerrainLightmapMemory)} (included in texture memory)");
+        Metric("Estimated Shared Memory", $"{FormatBytes(totalMapMemory)} (perfect at {FormatBytes(SharedMemoryPerfectScoreBytes)} or less; full penalty at {FormatBytes(SharedMemoryMaximumPenaltyBytes)})");
+
+        Section("HOW TO IMPROVE THE SCORE");
+        foreach (var line in GetScoreImprovementGuidanceLines())
+            report.AppendLine("- " + line);
 
         Section("SCENE AND RENDERING");
         Metric("Materials", materialInfos.Count.ToString("N0"));
@@ -1886,20 +1904,21 @@ public class MapPerformanceScannerPanel
 
     private float CalculatePerformanceScoreValue(int rendererIssueCount, long drawSubmissions, long mapMemoryBytes)
     {
-        const float maxTextureMemory = 2f * 1024f * 1024f * 1024f;
         const float maxDecals = 5f;
-        const float maxShaderVariants = 6f;
 
         var rendererPenalty = Mathf.Clamp01(rendererIssueCount / 100f);
-        var drawPenalty = Mathf.Clamp01(drawSubmissions / DrawScoreThreshold);
-        var texturePenalty = Mathf.Clamp01(mapMemoryBytes / (maxTextureMemory * 1.5f));
+        var drawPenalty = Mathf.InverseLerp(DrawPerfectScoreThreshold, DrawMaximumPenaltyThreshold, drawSubmissions);
+        var memoryPenalty = Mathf.InverseLerp(SharedMemoryPerfectScoreBytes, SharedMemoryMaximumPenaltyBytes, mapMemoryBytes);
         var decalPenalty = Mathf.Clamp01(decalDrawCalls / maxDecals);
-        var shaderPenalty = Mathf.Clamp01(batches.Count / maxShaderVariants);
+        var shaderPenalty = Mathf.InverseLerp(
+            ShaderVariantPerfectScoreThreshold,
+            ShaderVariantMaximumPenaltyThreshold,
+            batches.Count);
 
         var penalty =
             rendererPenalty * 0.4f +
             drawPenalty * 0.2f +
-            texturePenalty * 0.15f +
+            memoryPenalty * 0.15f +
             decalPenalty * 0.15f +
             shaderPenalty * 0.1f;
 
@@ -2013,25 +2032,109 @@ public class MapPerformanceScannerPanel
         if (!showScoreBreakdown)
             return;
 
-        DrawMetric("Renderer Issues (Runtime)", estimatedRendererIssuesAfterRuntimeCombining, 10f);
-        DrawMetric("Estimated Draw Submissions (Runtime)", estimatedDrawCallsAfterRuntimeCombining, DrawScoreThreshold);
+        DrawScoredMetric("Renderer Issues (Runtime)", estimatedRendererIssuesAfterRuntimeCombining, 0f, 100f);
+        DrawScoredMetric(
+            "Estimated Draw Submissions (Runtime)",
+            estimatedDrawCallsAfterRuntimeCombining,
+            DrawPerfectScoreThreshold,
+            DrawMaximumPenaltyThreshold);
         DrawTableRow("Terrain Surface Chunks", terrainSurfaceChunkCount.ToString("N0"));
         DrawTableRow("Terrain Surface Batch Submissions", terrainSurfaceDrawCalls.ToString("N0"));
         DrawTableRow("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
         DrawTableRow("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
         DrawTableRow("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
-        DrawMetric("Decals", decalDrawCalls, 5f);
-        DrawMetric("Shader Variants", batches.Count, 6f);
-        DrawMetric("Texture Memory (Imported/Runtime)", totalTextureMemory, 2L * 1024L * 1024L * 1024L, true);
-        DrawMetric("Estimated Shared Memory", totalMapMemory, 3L * 1024L * 1024L * 1024L, true);
+        DrawScoredMetric("Decals", decalDrawCalls, 0f, 5f);
+        DrawScoredMetric(
+            "Shader Variants",
+            batches.Count,
+            ShaderVariantPerfectScoreThreshold,
+            ShaderVariantMaximumPenaltyThreshold);
+        DrawTableRow("Texture Memory (part of shared memory)", FormatBytes(totalTextureMemory));
+        DrawTableRow("Unique Mesh Memory (part of shared memory)", $"{FormatBytes(totalMeshMemory)} ({meshInfos.Count:N0} meshes, {totalMeshUses:N0} uses)");
+        DrawTableRow(
+            "Runtime Combined Mesh Memory (part of shared memory)",
+            $"{FormatBytes(totalRuntimeCombinedMeshMemory)} ({runtimeMeshCombinerInfos.Count:N0} combiners)");
+        var uniqueTerrainTextureMemory = textureInfos.Where(info => info.usedByTerrain).Sum(info => info.memoryBytes);
+        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory;
+        DrawTableRow("Estimated Terrain Memory (within shared memory)", FormatBytes(estimatedTerrainMemory));
+        DrawTableRow("Terrain Data Memory (part of shared memory)", FormatBytes(totalTerrainDataMemory));
+        DrawTableRow("Unique Terrain Textures (part of shared memory)", FormatBytes(uniqueTerrainTextureMemory));
+        DrawTableRow("Terrain Splat Maps (included in texture memory)", FormatBytes(totalTerrainSplatMemory));
+        DrawTableRow("Terrain Lightmaps (included in texture memory)", FormatBytes(totalTerrainLightmapMemory));
+        DrawScoredMetric(
+            "Estimated Shared Memory",
+            totalMapMemory,
+            SharedMemoryPerfectScoreBytes,
+            SharedMemoryMaximumPenaltyBytes,
+            true);
+
+        EditorGUILayout.Space(4f);
+        EditorGUILayout.LabelField("How to Increase This Score", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            string.Join("\n", GetScoreImprovementGuidanceLines().Select(line => "- " + line)),
+            MessageType.Info);
     }
 
-    private void DrawMetric(string label, float value, float threshold, bool isBytes = false)
+    private List<string> GetScoreImprovementGuidanceLines()
     {
-        var ratio = value / threshold;
-        var color = ratio < 0.5f ? Color.green : ratio < 1f ? Color.yellow : Color.red;
-        var display = isBytes ? FormatBytes((long)value) : value.ToString("N0");
-        DrawTableRow(label, display, false, color);
+        const float rendererMaxPoints = 40f;
+        const float drawMaxPoints = 20f;
+        const float memoryMaxPoints = 15f;
+        const float decalMaxPoints = 15f;
+        const float shaderMaxPoints = 10f;
+        const float rendererThreshold = 100f;
+
+        var nextTarget = performanceScore > 85f ? 100f : performanceScore > 70f ? 85.1f : performanceScore > 50f ? 70.1f : 50.1f;
+        var nextGrade = performanceScore > 70f ? "A" : performanceScore > 50f ? "B" : "C";
+        var milestone = performanceScore >= 99.95f
+            ? "This scan receives a perfect 100; every modeled input is within its perfect-score allowance."
+            : performanceScore > 85f
+            ? $"You already have an A. There are {100f - performanceScore:F1} modeled points still available."
+            : $"Reaching grade {nextGrade} needs about {nextTarget - performanceScore:F1} more points.";
+
+        var opportunities = new List<(float pointsLost, string guidance)>
+        {
+            (
+                rendererMaxPoints * Mathf.Clamp01(estimatedRendererIssuesAfterRuntimeCombining / rendererThreshold),
+                $"Renderer issues cost {rendererMaxPoints * Mathf.Clamp01(estimatedRendererIssuesAfterRuntimeCombining / rendererThreshold):F1} points. " +
+                "Use the Renderer Issues list to fix material/shader differences or combine compatible renderers; each issue removed below 100 recovers 0.4 points."),
+            (
+                drawMaxPoints * Mathf.InverseLerp(DrawPerfectScoreThreshold, DrawMaximumPenaltyThreshold, estimatedDrawCallsAfterRuntimeCombining),
+                $"Draw submissions cost {drawMaxPoints * Mathf.InverseLerp(DrawPerfectScoreThreshold, DrawMaximumPenaltyThreshold, estimatedDrawCallsAfterRuntimeCombining):F1} points. " +
+                $"The first {DrawPerfectScoreThreshold:N0} are free. Reduce visible renderers/material slots, terrain chunks, details, and trees, or use runtime mesh combining; every 90 submissions removed between {DrawPerfectScoreThreshold:N0} and {DrawMaximumPenaltyThreshold:N0} recovers 1 point."),
+            (
+                memoryMaxPoints * Mathf.InverseLerp(SharedMemoryPerfectScoreBytes, SharedMemoryMaximumPenaltyBytes, totalMapMemory),
+                $"Shared memory costs {memoryMaxPoints * Mathf.InverseLerp(SharedMemoryPerfectScoreBytes, SharedMemoryMaximumPenaltyBytes, totalMapMemory):F1} points. " +
+                "The first 1 GB is free. Lower texture import sizes, remove unused unique meshes, simplify mesh data, reduce terrain height/splat resolutions, and avoid unnecessary combined-mesh copies; about 137 MB removed between 1 GB and 3 GB recovers 1 point."),
+            (
+                decalMaxPoints * Mathf.Clamp01(decalDrawCalls / 5f),
+                $"Decals cost {decalMaxPoints * Mathf.Clamp01(decalDrawCalls / 5f):F1} points. " +
+                "Remove or merge decals where practical; each decal removed below five recovers 3 points."),
+            (
+                shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, batches.Count),
+                $"Shader variants cost {shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, batches.Count):F1} points. " +
+                $"The first {ShaderVariantPerfectScoreThreshold:N0} are free. Reuse materials with matching shaders and keywords; each excess variant removed up to {ShaderVariantMaximumPenaltyThreshold:N0} recovers about 1.7 points.")
+        };
+
+        var lines = new List<string> { milestone };
+        lines.AddRange(opportunities
+            .Where(opportunity => opportunity.pointsLost > 0.01f)
+            .OrderByDescending(opportunity => opportunity.pointsLost)
+            .Take(3)
+            .Select(opportunity => opportunity.guidance));
+
+        if (lines.Count == 1 && performanceScore < 99.95f)
+            lines.Add("No points are currently being lost by the modeled score inputs.");
+
+        return lines;
+    }
+
+    private void DrawScoredMetric(string label, float value, float perfectThreshold, float maximumPenaltyThreshold, bool isBytes = false)
+    {
+        var color = value <= perfectThreshold ? Color.green : value < maximumPenaltyThreshold ? Color.yellow : Color.red;
+        var displayValue = isBytes ? FormatBytes((long)value) : value.ToString("N0");
+        var perfectValue = isBytes ? FormatBytes((long)perfectThreshold) : perfectThreshold.ToString("N0");
+        DrawTableRow(label, $"{displayValue} (perfect <= {perfectValue})", false, color);
     }
 
     private void DrawTableSectionHeader(string title, bool terrainHighlight = false)

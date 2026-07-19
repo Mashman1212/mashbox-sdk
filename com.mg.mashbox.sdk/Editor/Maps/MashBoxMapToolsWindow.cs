@@ -3272,6 +3272,25 @@ namespace MashBoxSDK.MapTools
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button("Debug Export .unitypackage", GUILayout.Width(190f)))
                     ExportDebugUnityPackage(selected);
+
+                using (new EditorGUI.DisabledScope(isMapPublishInProgress))
+                {
+                    if (GUILayout.Button(
+                            new GUIContent(
+                                "Debug Simulate Mod.io Publish",
+                                "Runs the same local validation, scene preparation, lighting, packaging, and cleanup path as publishing, but stops before any upload."),
+                            GUILayout.Width(230f)))
+                    {
+                        if (EditorUtility.DisplayDialog(
+                                "Simulate Mod.io Publish?",
+                                "This runs the same local pipeline as Publish Map To Mod.io, including full validation, temporary scene preparation, lighting-data rebinding, package creation, and cleanup.\n\nNothing will be uploaded to mod.io.",
+                                "Run Simulation",
+                                "Cancel"))
+                        {
+                            PublishMapToModioAsync(selected, currentGame, PublishPlatformOptions, simulateOnly: true);
+                        }
+                    }
+                }
             }
 #endif
 
@@ -3818,8 +3837,14 @@ namespace MashBoxSDK.MapTools
                 });
         }
 
-        private async void PublishMapToModioAsync(MapContentPackDefinition pack, string currentGame, IReadOnlyList<PublishPlatformOption> selectedPlatforms)
+        private async void PublishMapToModioAsync(
+            MapContentPackDefinition pack,
+            string currentGame,
+            IReadOnlyList<PublishPlatformOption> selectedPlatforms,
+            bool simulateOnly = false)
         {
+            var lightingBefore = simulateOnly ? CaptureMapLightingDebugSnapshot(pack) : null;
+
             if (!EnsureCorrectUnityVersionForPublishing(currentGame))
                 return;
 
@@ -3849,6 +3874,7 @@ namespace MashBoxSDK.MapTools
                 return;
 
             RunValidationForSelectedPack(pack, forceOpenScene: true);
+            var simulationValidationBypassConfirmed = false;
 
             var blockingIssues = (lastValidationIssues ?? new List<MapValidationIssue>())
                 .Where(issue => issue.Severity == MapValidationSeverity.Error)
@@ -3857,8 +3883,16 @@ namespace MashBoxSDK.MapTools
 
             if (blockingIssues.Count > 0)
             {
-                EditorUtility.DisplayDialog("Validation Failed", string.Join("\n\n", blockingIssues), "OK");
-                return;
+                if (!simulateOnly)
+                {
+                    EditorUtility.DisplayDialog("Validation Failed", string.Join("\n\n", blockingIssues), "OK");
+                    return;
+                }
+
+                if (!ConfirmDebugSimulationValidationBypass(blockingIssues))
+                    return;
+
+                simulationValidationBypassConfirmed = true;
             }
 
             blockingIssues = MapContentPackValidator.Validate(pack, forceOpenScene: true)
@@ -3868,8 +3902,19 @@ namespace MashBoxSDK.MapTools
 
             if (blockingIssues.Count > 0)
             {
-                EditorUtility.DisplayDialog("Validation Failed", string.Join("\n\n", blockingIssues), "OK");
-                return;
+                if (!simulateOnly)
+                {
+                    EditorUtility.DisplayDialog("Validation Failed", string.Join("\n\n", blockingIssues), "OK");
+                    return;
+                }
+
+                if (!simulationValidationBypassConfirmed && !ConfirmDebugSimulationValidationBypass(blockingIssues))
+                    return;
+
+                Debug.LogWarning(
+                    "[MashBoxMapTools] Debug Mod.io publish simulation is bypassing validation errors:\n" +
+                    string.Join("\n\n", blockingIssues),
+                    pack);
             }
 
             var modId = pack.GetModIdForGame(currentGame);
@@ -3901,6 +3946,47 @@ namespace MashBoxSDK.MapTools
                 if (!pack.IsVanillaContent)
                     EnsurePackageSizeWithinLimit(packagePath, MaxMapPublishPackageBytes, "map");
                 var packageBytes = new FileInfo(packagePath).Length;
+
+                if (simulateOnly)
+                {
+                    // Allow Bakery and other editor scene callbacks, plus our delayed restoration,
+                    // to run before comparing the final source-scene state.
+                    await WaitForEditorDelayCallAsync();
+                    var lightingAfter = CaptureMapLightingDebugSnapshot(pack);
+                    var lightingChanged = !MapLightingDebugSnapshot.AreEquivalent(lightingBefore, lightingAfter);
+                    var diagnostic =
+                        $"Before:\n{lightingBefore?.Describe() ?? "<unavailable>"}\n\n" +
+                        $"After:\n{lightingAfter?.Describe() ?? "<unavailable>"}";
+
+                    EditorUtility.ClearProgressBar();
+                    if (lightingChanged)
+                    {
+                        Debug.LogError(
+                            $"[MashBoxMapTools] Debug publish simulation changed the source map lighting state.\n{diagnostic}",
+                            pack);
+                        EditorUtility.DisplayDialog(
+                            "Simulation Detected A Lighting Change",
+                            "The local Mod.io publish pipeline changed the source map's lighting state. No upload was attempted.\n\n" +
+                            diagnostic +
+                            "\n\nThe generated package remains at:\n" + packagePath,
+                            "OK");
+                    }
+                    else
+                    {
+                        Debug.Log(
+                            $"[MashBoxMapTools] Debug publish simulation completed without changing the captured source lighting state. Package: {packagePath}\n{diagnostic}",
+                            pack);
+                        EditorUtility.DisplayDialog(
+                            "Mod.io Publish Simulation Complete",
+                            "The full local publish pipeline completed and no upload was attempted. The captured source lighting state did not change.\n\n" +
+                            diagnostic +
+                            "\n\nGenerated package:\n" + packagePath,
+                            "OK");
+                    }
+
+                    return;
+                }
+
                 await UploadMapPackageToContainersAsync(packagePath, packageBytes, uploadRegionLabel, selectedPlatforms, cts.Token);
 
                 SetActiveMapPublishStatus("Finalizing...", uploadRegionLabel, 0.98f);
@@ -3930,6 +4016,179 @@ namespace MashBoxSDK.MapTools
                 activeMapPublishCts = null;
                 ClearActiveMapPublishStatus();
             }
+        }
+
+        private static bool ConfirmDebugSimulationValidationBypass(IReadOnlyList<string> blockingIssues)
+        {
+            var issues = blockingIssues ?? Array.Empty<string>();
+            var shownIssues = string.Join("\n\n", issues.Take(6));
+            var hiddenCount = Math.Max(0, issues.Count - 6);
+            if (hiddenCount > 0)
+                shownIssues += $"\n\n...and {hiddenCount} more validation error{(hiddenCount == 1 ? string.Empty : "s")}.";
+
+            var shouldContinue = EditorUtility.DisplayDialog(
+                "Bypass Validation For Debug Simulation?",
+                "The map has publishing validation errors. You may bypass them for this local debug simulation only. " +
+                "Nothing will be uploaded to mod.io, and normal publishing will remain blocked.\n\n" +
+                shownIssues,
+                "Continue Simulation",
+                "Cancel");
+
+            if (shouldContinue)
+            {
+                Debug.LogWarning(
+                    "[MashBoxMapTools] User chose to bypass validation errors for a local debug Mod.io publish simulation:\n" +
+                    string.Join("\n\n", issues));
+            }
+
+            return shouldContinue;
+        }
+
+        private sealed class MapLightingDebugSnapshot
+        {
+            public string ScenePath;
+            public string AssociatedLightingDataPath;
+            public string[] LightingDataDependencies = Array.Empty<string>();
+            public int ActiveLightmapCount = -1;
+            public string[] ActiveLightmapTextures = Array.Empty<string>();
+            public string[] RendererLightmapAssignments = Array.Empty<string>();
+
+            public string Describe()
+            {
+                var dependencies = LightingDataDependencies.Length == 0
+                    ? "<none>"
+                    : string.Join(", ", LightingDataDependencies);
+                var lightmapCount = ActiveLightmapCount < 0 ? "<scene not active>" : ActiveLightmapCount.ToString();
+                var lightmapTextures = ActiveLightmapCount < 0
+                    ? "<scene not active>"
+                    : ActiveLightmapTextures.Length == 0
+                        ? "<none>"
+                        : string.Join("\n", ActiveLightmapTextures.Select(entry => "  " + entry));
+                var rendererAssignments = RendererLightmapAssignments.Length == 0
+                    ? "<none>"
+                    : string.Join("\n", RendererLightmapAssignments.Take(20).Select(entry => "  " + entry)) +
+                      (RendererLightmapAssignments.Length > 20
+                          ? $"\n  ...and {RendererLightmapAssignments.Length - 20} more."
+                          : string.Empty);
+                return
+                    $"Scene: {ScenePath}\n" +
+                    $"Associated Lighting Data: {AssociatedLightingDataPath}\n" +
+                    $"Lighting Data Dependencies: {dependencies}\n" +
+                    $"Active Lightmap Count: {lightmapCount}\n" +
+                    $"Active Lightmap Textures:\n{lightmapTextures}\n" +
+                    $"Renderer Lightmap Assignments ({RendererLightmapAssignments.Length}):\n{rendererAssignments}";
+            }
+
+            public static bool AreEquivalent(MapLightingDebugSnapshot left, MapLightingDebugSnapshot right)
+            {
+                if (left == null || right == null)
+                    return left == right;
+
+                var associatedLightingComparable =
+                    !string.Equals(left.AssociatedLightingDataPath, "<scene not loaded>", StringComparison.Ordinal) &&
+                    !string.Equals(right.AssociatedLightingDataPath, "<scene not loaded>", StringComparison.Ordinal);
+                var activeLightmapsComparable = left.ActiveLightmapCount >= 0 && right.ActiveLightmapCount >= 0;
+
+                return string.Equals(left.ScenePath, right.ScenePath, StringComparison.OrdinalIgnoreCase) &&
+                       (!associatedLightingComparable || string.Equals(left.AssociatedLightingDataPath, right.AssociatedLightingDataPath, StringComparison.OrdinalIgnoreCase)) &&
+                       (!activeLightmapsComparable || left.ActiveLightmapCount == right.ActiveLightmapCount) &&
+                       (!activeLightmapsComparable || left.ActiveLightmapTextures.SequenceEqual(right.ActiveLightmapTextures, StringComparer.OrdinalIgnoreCase)) &&
+                       left.RendererLightmapAssignments.SequenceEqual(right.RendererLightmapAssignments, StringComparer.Ordinal) &&
+                       left.LightingDataDependencies.SequenceEqual(right.LightingDataDependencies, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        private static Task WaitForEditorDelayCallAsync()
+        {
+            var completion = new TaskCompletionSource<bool>();
+            EditorApplication.delayCall += () => completion.TrySetResult(true);
+            return completion.Task;
+        }
+
+        private static MapLightingDebugSnapshot CaptureMapLightingDebugSnapshot(MapContentPackDefinition pack)
+        {
+            var scenePath = NormalizeAssetPath(pack == null ? null : AssetDatabase.GetAssetPath(pack.Scene));
+            var snapshot = new MapLightingDebugSnapshot
+            {
+                ScenePath = string.IsNullOrWhiteSpace(scenePath) ? "<unresolved>" : scenePath,
+                AssociatedLightingDataPath = "<scene not loaded>"
+            };
+
+            if (string.IsNullOrWhiteSpace(scenePath))
+                return snapshot;
+
+            snapshot.LightingDataDependencies = AssetDatabase.GetDependencies(scenePath, true)
+                .Select(NormalizeAssetPath)
+                .Where(path => !string.IsNullOrWhiteSpace(path) && AssetDatabase.LoadAssetAtPath<LightingDataAsset>(path) != null)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var scene = SceneManager.GetSceneByPath(scenePath);
+            if (!scene.IsValid() || !scene.isLoaded)
+                return snapshot;
+
+            snapshot.RendererLightmapAssignments = CaptureRendererLightmapDebugSignatures(scene);
+
+#if UNITY_6000_0_OR_NEWER
+            var lightingData = Lightmapping.GetLightingDataAssetForScene(scene);
+#else
+            var lightingData = SceneManager.GetActiveScene() == scene ? Lightmapping.lightingDataAsset : null;
+#endif
+            snapshot.AssociatedLightingDataPath = lightingData == null
+                ? "<none>"
+                : NormalizeAssetPath(AssetDatabase.GetAssetPath(lightingData));
+
+            if (SceneManager.GetActiveScene() == scene)
+            {
+                var activeLightmaps = LightmapSettings.lightmaps ?? Array.Empty<LightmapData>();
+                snapshot.ActiveLightmapCount = activeLightmaps.Length;
+                snapshot.ActiveLightmapTextures = activeLightmaps
+                    .Select((lightmap, index) =>
+                        $"[{index}] color={GetDebugTextureAssetPath(lightmap?.lightmapColor)}, " +
+                        $"directional={GetDebugTextureAssetPath(lightmap?.lightmapDir)}, " +
+                        $"shadowMask={GetDebugTextureAssetPath(lightmap?.shadowMask)}")
+                    .ToArray();
+            }
+
+            return snapshot;
+        }
+
+        private static string[] CaptureRendererLightmapDebugSignatures(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+                return Array.Empty<string>();
+
+            return scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Renderer>(true))
+                .Where(renderer => renderer != null &&
+                                   (IsAssignedLightmapIndex(renderer.lightmapIndex) ||
+                                    IsAssignedLightmapIndex(renderer.realtimeLightmapIndex)))
+                .Select(renderer =>
+                    $"{GetHierarchyPath(renderer.transform)} ({renderer.GetType().Name}): " +
+                    $"bakedIndex={renderer.lightmapIndex}, bakedST={FormatDebugVector4(renderer.lightmapScaleOffset)}, " +
+                    $"realtimeIndex={renderer.realtimeLightmapIndex}, realtimeST={FormatDebugVector4(renderer.realtimeLightmapScaleOffset)}")
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static string FormatDebugVector4(Vector4 value)
+        {
+            return $"({value.x:R},{value.y:R},{value.z:R},{value.w:R})";
+        }
+
+        private static bool IsAssignedLightmapIndex(int index)
+        {
+            return index >= 0 && index < 0xFFFE;
+        }
+
+        private static string GetDebugTextureAssetPath(Texture texture)
+        {
+            if (texture == null)
+                return "<none>";
+
+            var path = NormalizeAssetPath(AssetDatabase.GetAssetPath(texture));
+            return string.IsNullOrWhiteSpace(path) ? $"<non-asset:{texture.name}>" : path;
         }
 
         private static async Task<bool> EnsureLatestSdkForPublishingAsync()
@@ -4074,6 +4333,10 @@ namespace MashBoxSDK.MapTools
             if (pack == null)
                 throw new ArgumentNullException(nameof(pack));
 
+            // Protect the loaded source scene for the entire export, including deletion of the
+            // temporary copied scene. Bakery can process that deletion during AssetDatabase.Refresh
+            // and clear serialized renderer lightmap assignments after the copied scene was closed.
+            var sourceLightingState = SourceSceneLightingState.Capture(pack);
             pack.StampMashBoxSdkVersion();
             AssetDatabase.SaveAssets();
 
@@ -4100,6 +4363,8 @@ namespace MashBoxSDK.MapTools
             finally
             {
                 exportContext?.Cleanup();
+                sourceLightingState?.Restore(refreshBakery: true);
+                sourceLightingState?.QueueDeferredRestores(4);
                 EditorUtility.ClearProgressBar();
             }
         }
@@ -4213,6 +4478,10 @@ namespace MashBoxSDK.MapTools
         private static void FreezeSceneMeshesIntoAssets(string scenePath, string tempRoot)
         {
             var previousActiveScene = SceneManager.GetActiveScene();
+            var previousLightmaps = CloneLightmapData(LightmapSettings.lightmaps);
+            var previousLightmapsMode = LightmapSettings.lightmapsMode;
+            var previousLightProbes = LightmapSettings.lightProbes;
+            var previousRendererLightmaps = CaptureRendererLightmapState(previousActiveScene);
 #if !UNITY_6000_0_OR_NEWER
             var previousLightingData = previousActiveScene.IsValid() && previousActiveScene.isLoaded
                 ? Lightmapping.lightingDataAsset
@@ -4224,6 +4493,30 @@ namespace MashBoxSDK.MapTools
 
             var frozenMeshes = new Dictionary<Mesh, Mesh>();
             var frozenReferenceCount = 0;
+
+            void RestorePreviousSceneLightingState()
+            {
+                if (!previousActiveScene.IsValid() || !previousActiveScene.isLoaded)
+                    return;
+
+                // Do not replace global lighting if the user deliberately changed scenes while
+                // an upload was in progress. Renderer assignments are still safe to restore.
+                if (SceneManager.GetActiveScene() != previousActiveScene)
+                {
+                    RestoreRendererLightmapState(previousRendererLightmaps);
+                    return;
+                }
+
+#if !UNITY_6000_0_OR_NEWER
+                Lightmapping.lightingDataAsset = previousLightingData;
+#endif
+                LightmapSettings.lightmapsMode = previousLightmapsMode;
+                LightmapSettings.lightmaps = CloneLightmapData(previousLightmaps);
+                LightmapSettings.lightProbes = previousLightProbes;
+                RestoreRendererLightmapState(previousRendererLightmaps);
+                EditorApplication.QueuePlayerLoopUpdate();
+                SceneView.RepaintAll();
+            }
 
             try
             {
@@ -4290,16 +4583,255 @@ namespace MashBoxSDK.MapTools
             finally
             {
                 if (previousActiveScene.IsValid() && previousActiveScene.isLoaded)
-                {
                     SceneManager.SetActiveScene(previousActiveScene);
-#if !UNITY_6000_0_OR_NEWER
-                    Lightmapping.lightingDataAsset = previousLightingData;
-#endif
-                }
 
                 if (scene.IsValid() && scene.isLoaded)
                     EditorSceneManager.CloseScene(scene, true);
+
+                if (previousActiveScene.IsValid() && previousActiveScene.isLoaded)
+                {
+                    // Closing an additive temporary scene can clear the global LightmapSettings array.
+                    // Bakery-backed scenes commonly have populated LightmapSettings without a Unity
+                    // LightingDataAsset, so restoring only Lightmapping.lightingDataAsset is insufficient.
+                    SceneManager.SetActiveScene(previousActiveScene);
+                    RestorePreviousSceneLightingState();
+
+                    // Bakery can update renderer/lightmap state from a delayed scene-close callback.
+                    // Queue our restoration after callbacks registered during the temporary close.
+                    EditorApplication.delayCall += RestorePreviousSceneLightingState;
+                }
             }
+        }
+
+        private sealed class RendererLightmapState
+        {
+            public Renderer Renderer;
+            public int LightmapIndex;
+            public Vector4 LightmapScaleOffset;
+            public int RealtimeLightmapIndex;
+            public Vector4 RealtimeLightmapScaleOffset;
+        }
+
+        private sealed class SourceSceneLightingState
+        {
+            private readonly Scene scene;
+            private readonly LightmapData[] lightmaps;
+            private readonly LightmapsMode lightmapsMode;
+            private readonly LightProbes lightProbes;
+            private readonly RendererLightmapState[] rendererLightmaps;
+            private readonly bool usesBakery;
+#if !UNITY_6000_0_OR_NEWER
+            private readonly LightingDataAsset lightingData;
+#endif
+
+            private SourceSceneLightingState(Scene sourceScene)
+            {
+                scene = sourceScene;
+                lightmaps = CloneLightmapData(LightmapSettings.lightmaps);
+                lightmapsMode = LightmapSettings.lightmapsMode;
+                lightProbes = LightmapSettings.lightProbes;
+                rendererLightmaps = CaptureRendererLightmapState(sourceScene);
+                usesBakery = SceneContainsBakeryLightmapStorage(sourceScene);
+#if !UNITY_6000_0_OR_NEWER
+                lightingData = Lightmapping.lightingDataAsset;
+#endif
+            }
+
+            public static SourceSceneLightingState Capture(MapContentPackDefinition pack)
+            {
+                var scenePath = NormalizeAssetPath(pack == null ? null : AssetDatabase.GetAssetPath(pack.Scene));
+                if (string.IsNullOrWhiteSpace(scenePath))
+                    return null;
+
+                var sourceScene = SceneManager.GetSceneByPath(scenePath);
+                if (!sourceScene.IsValid() || !sourceScene.isLoaded || SceneManager.GetActiveScene() != sourceScene)
+                    return null;
+
+                return new SourceSceneLightingState(sourceScene);
+            }
+
+            public void Restore(bool refreshBakery)
+            {
+                if (!scene.IsValid() || !scene.isLoaded)
+                    return;
+
+                // Never replace global lighting after the user deliberately switches scenes.
+                if (SceneManager.GetActiveScene() != scene)
+                    return;
+
+                if (refreshBakery && usesBakery)
+                    TryRefreshBakeryLightmaps();
+
+#if !UNITY_6000_0_OR_NEWER
+                Lightmapping.lightingDataAsset = lightingData;
+#endif
+                LightmapSettings.lightmapsMode = lightmapsMode;
+                LightmapSettings.lightmaps = CloneLightmapData(lightmaps);
+                LightmapSettings.lightProbes = lightProbes;
+                RestoreRendererLightmapState(rendererLightmaps);
+                EditorApplication.QueuePlayerLoopUpdate();
+                SceneView.RepaintAll();
+            }
+
+            public void QueueDeferredRestores(int passCount)
+            {
+                var remaining = Math.Max(0, passCount);
+                EditorApplication.CallbackFunction restoreNext = null;
+                restoreNext = () =>
+                {
+                    if (remaining-- <= 0)
+                        return;
+
+                    Restore(refreshBakery: false);
+                    if (remaining > 0)
+                        EditorApplication.delayCall += restoreNext;
+                };
+
+                if (remaining > 0)
+                    EditorApplication.delayCall += restoreNext;
+            }
+        }
+
+        private static Type FindLoadedType(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName))
+                return null;
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var type = assembly.GetType(fullName, throwOnError: false);
+                if (type != null)
+                    return type;
+            }
+
+            return null;
+        }
+
+        private static bool SceneContainsBakeryLightmapStorage(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+                return false;
+
+            var storageType = FindLoadedType("ftLightmapsStorage");
+            if (storageType == null || !typeof(Component).IsAssignableFrom(storageType))
+                return false;
+
+            return scene.GetRootGameObjects()
+                .Any(root => root != null && root.GetComponentInChildren(storageType, true) != null);
+        }
+
+        private static bool TryRefreshBakeryLightmaps()
+        {
+            var lightmapsType = FindLoadedType("ftLightmaps");
+            var refreshFull = lightmapsType?.GetMethod(
+                "RefreshFull",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null);
+            if (refreshFull == null)
+            {
+                Debug.LogWarning(
+                    "[MashBoxMapTools] The source scene contains Bakery lightmap storage, but ftLightmaps.RefreshFull() could not be found. " +
+                    "Falling back to captured Unity lightmap and renderer state.");
+                return false;
+            }
+
+            try
+            {
+                refreshFull.Invoke(null, null);
+                Debug.Log("[MashBoxMapTools] Refreshed Bakery lightmaps after closing the temporary export scene.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                var cause = ex.GetBaseException();
+                Debug.LogWarning(
+                    $"[MashBoxMapTools] Bakery ftLightmaps.RefreshFull() failed after closing the temporary export scene: {cause.Message}");
+                return false;
+            }
+        }
+
+        private static RendererLightmapState[] CaptureRendererLightmapState(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+                return Array.Empty<RendererLightmapState>();
+
+            return scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Renderer>(true))
+                .Where(renderer => renderer != null)
+                .Select(renderer => new RendererLightmapState
+                {
+                    Renderer = renderer,
+                    LightmapIndex = renderer.lightmapIndex,
+                    LightmapScaleOffset = renderer.lightmapScaleOffset,
+                    RealtimeLightmapIndex = renderer.realtimeLightmapIndex,
+                    RealtimeLightmapScaleOffset = renderer.realtimeLightmapScaleOffset
+                })
+                .ToArray();
+        }
+
+        private static void RestoreRendererLightmapState(IEnumerable<RendererLightmapState> states)
+        {
+            foreach (var state in states ?? Enumerable.Empty<RendererLightmapState>())
+            {
+                var renderer = state?.Renderer;
+                if (renderer == null)
+                    continue;
+
+                renderer.lightmapIndex = state.LightmapIndex;
+                renderer.lightmapScaleOffset = state.LightmapScaleOffset;
+                renderer.realtimeLightmapIndex = state.RealtimeLightmapIndex;
+                renderer.realtimeLightmapScaleOffset = state.RealtimeLightmapScaleOffset;
+
+                // Runtime setters alone can be overwritten by editor scene/import callbacks. Write
+                // Unity's serialized renderer fields as well so the Inspector and scene state retain
+                // the exact Bakery assignment captured before export.
+                var serializedRenderer = new SerializedObject(renderer);
+                SetSerializedInt(serializedRenderer, "m_LightmapIndex", state.LightmapIndex);
+                SetSerializedVector4(serializedRenderer, "m_LightmapTilingOffset", state.LightmapScaleOffset);
+                SetSerializedInt(serializedRenderer, "m_DynamicLightmapIndex", state.RealtimeLightmapIndex);
+                SetSerializedVector4(serializedRenderer, "m_DynamicLightmapTilingOffset", state.RealtimeLightmapScaleOffset);
+                serializedRenderer.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(renderer);
+            }
+        }
+
+        private static void SetSerializedInt(SerializedObject target, string propertyName, int value)
+        {
+            var property = target?.FindProperty(propertyName);
+            if (property != null && property.propertyType == SerializedPropertyType.Integer)
+                property.intValue = value;
+        }
+
+        private static void SetSerializedVector4(SerializedObject target, string propertyName, Vector4 value)
+        {
+            var property = target?.FindProperty(propertyName);
+            if (property != null && property.propertyType == SerializedPropertyType.Vector4)
+                property.vector4Value = value;
+        }
+
+        private static LightmapData[] CloneLightmapData(IReadOnlyList<LightmapData> source)
+        {
+            if (source == null || source.Count == 0)
+                return Array.Empty<LightmapData>();
+
+            var clone = new LightmapData[source.Count];
+            for (var i = 0; i < source.Count; i++)
+            {
+                var entry = source[i];
+                if (entry == null)
+                    continue;
+
+                clone[i] = new LightmapData
+                {
+                    lightmapColor = entry.lightmapColor,
+                    lightmapDir = entry.lightmapDir,
+                    shadowMask = entry.shadowMask
+                };
+            }
+
+            return clone;
         }
 
         private static void CopyAndRebindLightingDataForTemporaryScene(Scene scene, string scenePath, string tempRoot)
