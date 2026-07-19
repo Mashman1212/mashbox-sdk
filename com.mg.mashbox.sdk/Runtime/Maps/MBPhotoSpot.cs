@@ -119,6 +119,10 @@ namespace MashBoxSDK.Maps
         private void OnDrawGizmos()
         {
             SnapToGround();
+
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             DrawCapsuleGizmo();
         }
 

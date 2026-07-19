@@ -48,6 +48,9 @@ namespace MashBoxSDK.Maps
         {
             SnapToGround();
 
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             if (Team == TeamID.Any)
             {
                 Gizmos.color = Color.black;

@@ -35,6 +35,9 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             Vector3 basePosition = snapPreviewToGround ? GetGroundedBasePosition(transform.position) : transform.position;
             Quaternion rotation = transform.rotation;
             Vector3 scale = SanitizeVector(transform.lossyScale);

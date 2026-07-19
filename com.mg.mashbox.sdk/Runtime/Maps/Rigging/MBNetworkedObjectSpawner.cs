@@ -140,6 +140,9 @@ namespace MashBoxSDK.Maps.Rigging
 
         private void DrawSpawnGizmo(bool selected)
         {
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             Transform basis = ResolveSpawnTransform();
             if (basis == null)
                 return;

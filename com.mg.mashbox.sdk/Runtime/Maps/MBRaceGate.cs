@@ -82,6 +82,9 @@ namespace MashBoxSDK.Maps
         {
             EnforceValidScale();
 
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             var previousMatrix = Gizmos.matrix;
             var previousColor = Gizmos.color;
             var center = GetLocalBoxCenter();

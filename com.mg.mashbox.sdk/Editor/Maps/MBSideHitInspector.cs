@@ -23,6 +23,9 @@ namespace MashBoxSDK.Maps
 
         private void OnSceneGUI()
         {
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             if (target is MBSideHit sideHit)
                 DrawSceneHandles(sideHit);
         }

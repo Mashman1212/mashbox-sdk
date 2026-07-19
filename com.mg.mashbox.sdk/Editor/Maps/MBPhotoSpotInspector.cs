@@ -18,6 +18,9 @@ namespace MashBoxSDK.Maps
 
         private void OnSceneGUI()
         {
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             var photoSpot = (MBPhotoSpot)target;
             if (photoSpot == null)
                 return;

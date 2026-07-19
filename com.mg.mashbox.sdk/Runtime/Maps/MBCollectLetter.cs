@@ -63,6 +63,9 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
+            if (!MBGameplayGizmoVisibility.Visible)
+                return;
+
             var previousMatrix = Gizmos.matrix;
             var previousColor = Gizmos.color;
             var isBlocked = IsInsideGeometry();
