@@ -4213,6 +4213,11 @@ namespace MashBoxSDK.MapTools
         private static void FreezeSceneMeshesIntoAssets(string scenePath, string tempRoot)
         {
             var previousActiveScene = SceneManager.GetActiveScene();
+#if !UNITY_6000_0_OR_NEWER
+            var previousLightingData = previousActiveScene.IsValid() && previousActiveScene.isLoaded
+                ? Lightmapping.lightingDataAsset
+                : null;
+#endif
             var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
             var meshFolder = $"{tempRoot}/Meshes";
             EnsureAssetFolder(tempRoot, "Meshes");
@@ -4284,11 +4289,16 @@ namespace MashBoxSDK.MapTools
             }
             finally
             {
+                if (previousActiveScene.IsValid() && previousActiveScene.isLoaded)
+                {
+                    SceneManager.SetActiveScene(previousActiveScene);
+#if !UNITY_6000_0_OR_NEWER
+                    Lightmapping.lightingDataAsset = previousLightingData;
+#endif
+                }
+
                 if (scene.IsValid() && scene.isLoaded)
                     EditorSceneManager.CloseScene(scene, true);
-
-                if (previousActiveScene.IsValid() && previousActiveScene.isLoaded)
-                    SceneManager.SetActiveScene(previousActiveScene);
             }
         }
 
@@ -4336,12 +4346,20 @@ namespace MashBoxSDK.MapTools
             serializedLightingData.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(copiedLightingData);
 
+#if UNITY_6000_0_OR_NEWER
+            Lightmapping.SetLightingDataAssetForScene(scene, copiedLightingData);
+#else
             Lightmapping.lightingDataAsset = copiedLightingData;
+#endif
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
             AssetDatabase.SaveAssets();
 
+#if UNITY_6000_0_OR_NEWER
+            if (Lightmapping.GetLightingDataAssetForScene(scene) != copiedLightingData)
+#else
             if (Lightmapping.lightingDataAsset != copiedLightingData)
+#endif
                 throw new Exception("Unity did not retain the copied Lighting Data Asset on the temporary export scene.");
 
             Debug.Log(
