@@ -18,7 +18,8 @@ namespace MashBoxSDK.Shaders
             LitBasicAlphaClip,
             LitBasicTriplane,
             LitAdvanced,
-            LitAdvancedMonoSH
+            LitAdvancedMonoSH,
+            EightBittPaintMaskAdvanced
         }
 
         
@@ -251,6 +252,18 @@ namespace MashBoxSDK.Shaders
             "_MonoSH_Emission_Strength"
         };
 
+        private static readonly string[] EightBittPaintMaskAdvancedPreservedProperties =
+        {
+            "_Albedo", "_Contrast", "_Saturation", "_Tint", "_WhiteBalance", "_Lighten",
+            "_GrungeRGBA", "_Scale", "_Offset",
+            "_R_Color", "_R", "_R_contrast", "_G_Color", "_G", "_G_contrast",
+            "_B_Color", "_B", "_B_contrast", "_A_Color", "_A", "_A_contrast",
+            "_Mask", "_Spec_Min", "_Spec_Max", "_Rough_Min", "_Rough_Max", "_AO_Min", "_AO_Max",
+            "_Normal", "_NormalStrength",
+            "_Paint_Mask", "_PaintColor", "_Power", "_Paint_Contrast",
+            "_Texture2D", "_Noise_Scale", "_Noise_Offset", "_Noise_Opacity", "_dirth_smoothness"
+        };
+
         
         private static readonly string[] MGChainPreservedProperties =
         {
@@ -455,6 +468,19 @@ namespace MashBoxSDK.Shaders
                 return _litAdvancedMonoSHTemplateMat;
             }
         }
+
+        private static readonly Shader EightBittPaintMaskAdvancedShader =
+            Shader.Find("8Bitt/HDRP/Lit/8Bitt_PaintMask_Advanced");
+        private static Material _eightBittPaintMaskAdvancedTemplateMat;
+        private static Material EightBittPaintMaskAdvancedTemplateMat
+        {
+            get
+            {
+                if (!_eightBittPaintMaskAdvancedTemplateMat)
+                    _eightBittPaintMaskAdvancedTemplateMat = Resources.Load<Material>("8Bitt_PaintMask_Advanced_Template");
+                return _eightBittPaintMaskAdvancedTemplateMat;
+            }
+        }
         
         
         private static readonly Shader TireShader = Shader.Find("MGShaders/HDRP/Lit/MG_Tire");
@@ -538,6 +564,9 @@ namespace MashBoxSDK.Shaders
                             break;
                         case ShaderType.LitAdvancedMonoSH:
                             EnforceLitAdvancedMonoSHShader(materials[i]);
+                            break;
+                        case ShaderType.EightBittPaintMaskAdvanced:
+                            EnforceEightBittPaintMaskAdvancedShader(materials[i]);
                             break;
                         case ShaderType.Tire:
                             EnforceTireShader(materials[i]);
@@ -738,6 +767,24 @@ namespace MashBoxSDK.Shaders
         public static void EnforceLitAdvancedMonoSHShader(Material mat)
         {
             EnforceAdvancedShader(mat, LitAdvancedMonoSHShader, LitAdvancedMonoSHTemplateMat);
+        }
+
+        public static void EnforceEightBittPaintMaskAdvancedShader(Material mat)
+        {
+            if (mat == EightBittPaintMaskAdvancedTemplateMat)
+                return;
+
+            if (!PrepareMaterialForShaderEnforcement(mat, EightBittPaintMaskAdvancedShader))
+                return;
+
+            ApplyTemplateWithPreserve(mat, EightBittPaintMaskAdvancedTemplateMat,
+                EightBittPaintMaskAdvancedPreservedProperties);
+
+            if (EightBittPaintMaskAdvancedTemplateMat != null)
+                mat.shaderKeywords = EightBittPaintMaskAdvancedTemplateMat.shaderKeywords;
+
+            EnforceDecalReception(mat);
+            EnforceSSRReception(mat);
         }
 
         private static void EnforceAdvancedShader(Material mat, Shader shader, Material template)
