@@ -16,7 +16,9 @@ namespace MashBoxSDK.Shaders
             Griptape,
             LitBasic,
             LitBasicAlphaClip,
-            LitBasicTriplane
+            LitBasicTriplane,
+            LitAdvanced,
+            LitAdvancedMonoSH
         }
 
         
@@ -222,6 +224,33 @@ namespace MashBoxSDK.Shaders
             "_DetailNormalScale"
         };
 
+        private static readonly string[] MGLitAdvancedPreservedProperties =
+        {
+            "_BaseColorMap", "_BaseColor", "_Tiling_and_Offset", "_Albedo_Multiply", "_Final_Albedo_Tint",
+            "_White_Balance", "_WhiteBoost", "_Saturation", "_Contrast", "_Tint",
+            "_Alpha_Remap_Min", "_Alpha_Remap_Max", "_Alpha_Clip_Threshold",
+            "_MaskMap", "_MetallicRemapMin", "_MetallicRemapMax", "_SmoothnessRemapMin", "_SmoothnessRemapMax",
+            "_AORemapMin", "_AORemapMax", "_NormalMap", "_NormalScale",
+            "_VrtxColorInfuence", "_Enable_Vertex_Alpha_Blend", "_Favour_Vertex_Over_BaseMap_Alpha",
+
+            "_Use_Decals", "_Decal_Layer", "_Decal_Normal", "_Decals_Tiling_and_Offset", "_Decal_Blend_Strength",
+            "_Decal_Albedo_Multiply", "_Multiply_Decal_Albedo", "_Decal_Albedo_Tint", "_Decal_Normal_Strength",
+            "_Decal_Smoothness", "_Decal_Smoothness_Amount", "_Decal_Metalness", "_Decal_Metalness_Amount",
+            "_Metal_AO_Subtracts_Decals", "_Decal_Metal_Subtract_Min", "_Decal_Metal_Subtract_Max",
+            "_Decal_AO_Subtract_Min", "_Decal_AO_Subtract_Max", "_Decal_Levels_Min", "_Decal_Levels_Max",
+            "_Decal_Levels_Strength", "_Enable_Decal_Projection_Offset", "_Projection_Offset_Amount",
+            "_Vertex_Alpha_Fades_Decals",
+
+            "_Dirt_Texture", "_Use_Dirt_Overlay", "_Dirt_Strength", "_Dirt_Scaling", "_Dirt_Contrast",
+            "_Use_Dirt_Overlay_as_Roughness", "_Dirt_Roughness_Strength", "_Dirt_Roughness_Contrast",
+            "_DetailMap", "_DetailNormalScale", "_Switch_UV0_and_UV2",
+            "_EmissiveColorMap", "_EmissiveColorLDR", "_EmissiveIntensity",
+
+            "_Specular_Occlusion_Multiplier", "_Specular_Occlusion_Contraster", "_Specular_Occlusion_Reduce",
+            "_Specular_Occlusion_Max_Clamp", "_MonoSH_Smoothness_Reduction", "_MonoSH_Normal_Strength",
+            "_MonoSH_Emission_Strength"
+        };
+
         
         private static readonly string[] MGChainPreservedProperties =
         {
@@ -402,6 +431,30 @@ namespace MashBoxSDK.Shaders
                 return _litBasicTriplaneTemplateMat;
             }
         }
+
+        private static readonly Shader LitAdvancedShader = Shader.Find("MGShaders/HDRP/Lit/MG_Lit_Advanced");
+        private static Material _litAdvancedTemplateMat;
+        private static Material LitAdvancedTemplateMat
+        {
+            get
+            {
+                if (!_litAdvancedTemplateMat)
+                    _litAdvancedTemplateMat = Resources.Load<Material>("MG_Lit_Advanced_Template");
+                return _litAdvancedTemplateMat;
+            }
+        }
+
+        private static readonly Shader LitAdvancedMonoSHShader = Shader.Find("MGShaders/HDRP/Lit/MG_Lit_Advanced_MonoSH");
+        private static Material _litAdvancedMonoSHTemplateMat;
+        private static Material LitAdvancedMonoSHTemplateMat
+        {
+            get
+            {
+                if (!_litAdvancedMonoSHTemplateMat)
+                    _litAdvancedMonoSHTemplateMat = Resources.Load<Material>("MG_Lit_Advanced_MonoSH_Template");
+                return _litAdvancedMonoSHTemplateMat;
+            }
+        }
         
         
         private static readonly Shader TireShader = Shader.Find("MGShaders/HDRP/Lit/MG_Tire");
@@ -479,6 +532,12 @@ namespace MashBoxSDK.Shaders
                             break;
                         case ShaderType.LitBasicTriplane:
                             EnforceLitBasicTriplaneShader(materials[i]);
+                            break;
+                        case ShaderType.LitAdvanced:
+                            EnforceLitAdvancedShader(materials[i]);
+                            break;
+                        case ShaderType.LitAdvancedMonoSH:
+                            EnforceLitAdvancedMonoSHShader(materials[i]);
                             break;
                         case ShaderType.Tire:
                             EnforceTireShader(materials[i]);
@@ -666,6 +725,33 @@ namespace MashBoxSDK.Shaders
 
             if (LitBasicTriplaneTemplateMat != null)
                 mat.shaderKeywords = LitBasicTriplaneTemplateMat.shaderKeywords;
+
+            EnforceDecalReception(mat);
+            EnforceSSRReception(mat);
+        }
+
+        public static void EnforceLitAdvancedShader(Material mat)
+        {
+            EnforceAdvancedShader(mat, LitAdvancedShader, LitAdvancedTemplateMat);
+        }
+
+        public static void EnforceLitAdvancedMonoSHShader(Material mat)
+        {
+            EnforceAdvancedShader(mat, LitAdvancedMonoSHShader, LitAdvancedMonoSHTemplateMat);
+        }
+
+        private static void EnforceAdvancedShader(Material mat, Shader shader, Material template)
+        {
+            if (mat == template)
+                return;
+
+            if (!PrepareMaterialForShaderEnforcement(mat, shader))
+                return;
+
+            ApplyTemplateWithPreserve(mat, template, MGLitAdvancedPreservedProperties);
+
+            if (template != null)
+                mat.shaderKeywords = template.shaderKeywords;
 
             EnforceDecalReception(mat);
             EnforceSSRReception(mat);
