@@ -41,6 +41,8 @@ public class MapPerformanceScannerPanel
     public const float MinimumPublishPerformanceScore = 60f;
     private const string MashBoxPackageName = "com.mg.mashbox.sdk";
     private const string SupportedTerrainShaderName = "HDRP/TerrainLit";
+    private const string HdrpLitShaderName = "HDRP/Lit";
+    private const string MgLitBasicShaderName = "MGShaders/HDRP/Lit/MG_Lit_Basic";
     private const string FoldoutPreferencePrefix = "MashBox.PerformanceScanner.Foldout.";
     private const float DrawPerfectScoreThreshold = 200f;
     private const float DrawMaximumPenaltyThreshold = 2000f;
@@ -229,6 +231,7 @@ public class MapPerformanceScannerPanel
     [NonSerialized] private GUIStyle gridCellStyle;
     [NonSerialized] private GUIStyle gridHeaderCellStyle;
     [NonSerialized] private GUIStyle reportFoldoutStyle;
+    [NonSerialized] private bool shaderConversionQueued;
 
     private readonly Dictionary<BatchKey, List<MaterialInfo>> batches = new();
     private readonly HashSet<Material> processedMaterials = new();
@@ -2881,7 +2884,7 @@ public class MapPerformanceScannerPanel
         var grouped = materialInfos
             .GroupBy(m => m.shader);
 
-        var columns = new[] { -66f, 2.6f, 1.6f, 1f, 1f };
+        var columns = new[] { -220f, 2.6f, 1.6f, 1f, 1f };
         DrawDataGridHeader(new[] { "Action", "Shader", "Support Status", "Keyword Variants", "Materials" }, columns);
         var rowIndex = 0;
         foreach (var group in grouped.OrderByDescending(g => g.Count()))
@@ -2912,8 +2915,132 @@ public class MapPerformanceScannerPanel
                 columns,
                 rowIndex++,
                 false,
-                rect => DrawGridButton(rect, "Select", () => Selection.objects = groupMaterials),
+                rect => DrawShaderGroupActions(rect, group.Key, groupMaterials),
                 supported ? null : new Color(0.42f, 0.08f, 0.08f, 1f));
+        }
+    }
+
+    private void DrawShaderGroupActions(Rect cellRect, Shader shader, Material[] materials)
+    {
+        if (shader == null || !string.Equals(shader.name, HdrpLitShaderName, StringComparison.Ordinal))
+        {
+            DrawGridButton(cellRect, "Select", () => Selection.objects = materials);
+            return;
+        }
+
+        var selectRect = new Rect(cellRect.x + 4f, cellRect.y + 3f, 56f, 20f);
+        if (GUI.Button(selectRect, "Select"))
+            Selection.objects = materials;
+
+        var convertRect = new Rect(
+            selectRect.xMax + 4f,
+            selectRect.y,
+            Mathf.Max(1f, cellRect.xMax - selectRect.xMax - 8f),
+            20f);
+        using (new EditorGUI.DisabledScope(shaderConversionQueued))
+        {
+            var label = new GUIContent(
+                "Convert All -> MG Basic",
+                "Convert every material in this HDRP/Lit scanner group to MG_Lit_Basic.");
+            if (GUI.Button(convertRect, label))
+                QueueHdrpLitConversion(materials);
+        }
+    }
+
+    private void QueueHdrpLitConversion(IEnumerable<Material> materials)
+    {
+        if (shaderConversionQueued)
+            return;
+
+        var candidates = materials
+            .Where(material => material != null && material.shader != null &&
+                               string.Equals(material.shader.name, HdrpLitShaderName, StringComparison.Ordinal))
+            .Distinct()
+            .ToArray();
+        if (candidates.Length == 0)
+            return;
+
+        shaderConversionQueued = true;
+        EditorApplication.delayCall += () =>
+        {
+            try
+            {
+                ConvertHdrpLitMaterials(candidates);
+            }
+            finally
+            {
+                shaderConversionQueued = false;
+            }
+        };
+    }
+
+    private void ConvertHdrpLitMaterials(Material[] materials)
+    {
+        if (materials == null || materials.Length == 0)
+            return;
+
+        if (!EditorUtility.DisplayDialog(
+                "Convert HDRP/Lit Materials",
+                $"Convert {materials.Length:N0} material{(materials.Length == 1 ? string.Empty : "s")} from " +
+                $"{HdrpLitShaderName} to {MgLitBasicShaderName}?\n\n" +
+                "Compatible material values will be preserved. Material variants whose shader is inherited from a parent will be skipped. " +
+                "The operation can be reverted with Unity Undo.",
+                "Convert All",
+                "Cancel"))
+            return;
+
+        Undo.IncrementCurrentGroup();
+        var undoGroup = Undo.GetCurrentGroup();
+        Undo.SetCurrentGroupName("Convert HDRP Lit Materials to MG Lit Basic");
+        Undo.RecordObjects(materials, "Convert HDRP Lit Materials to MG Lit Basic");
+
+        var converted = 0;
+        var skipped = 0;
+        var changedSceneMaterial = false;
+        foreach (var material in materials)
+        {
+            if (material == null || material.shader == null ||
+                !string.Equals(material.shader.name, HdrpLitShaderName, StringComparison.Ordinal))
+            {
+                skipped++;
+                continue;
+            }
+
+            var hadNormalScale = material.HasProperty("_NormalScale");
+            var normalScale = hadNormalScale ? material.GetFloat("_NormalScale") : 1f;
+
+            MashBoxSDK.Shaders.ShaderEnforcer.EnforceLitBasicShader(material);
+            if (material.shader == null || !string.Equals(material.shader.name, MgLitBasicShaderName, StringComparison.Ordinal))
+            {
+                skipped++;
+                continue;
+            }
+
+            if (hadNormalScale && material.HasProperty("_NormalStrength"))
+                material.SetFloat("_NormalStrength", normalScale);
+
+            changedSceneMaterial |= string.IsNullOrWhiteSpace(AssetDatabase.GetAssetPath(material));
+            EditorUtility.SetDirty(material);
+            converted++;
+        }
+
+        Undo.CollapseUndoOperations(undoGroup);
+        AssetDatabase.SaveAssets();
+        if (changedSceneMaterial && SceneManager.GetActiveScene().IsValid())
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+
+        ScanScene();
+        UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
+        Debug.Log($"[MashBox] Converted {converted:N0} HDRP/Lit material{(converted == 1 ? string.Empty : "s")} " +
+                  $"to MG_Lit_Basic; skipped {skipped:N0}.");
+
+        if (skipped > 0)
+        {
+            EditorUtility.DisplayDialog(
+                "HDRP/Lit Conversion Complete",
+                $"Converted: {converted:N0}\nSkipped: {skipped:N0}\n\n" +
+                "Skipped materials may be material variants with an inherited shader, or may have changed since the scan.",
+                "OK");
         }
     }
 
