@@ -14,6 +14,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
         MaterialProperty detailAlbedoScale;
         MaterialProperty detailSmoothnessScale;
         MaterialProperty detailNormalScale;
+        MaterialProperty detailWorldScale;
         MaterialProperty detailUseUV2;
         MaterialProperty detailColorMap;
         MaterialProperty detailHueShift;
@@ -40,6 +41,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             detailAlbedoScale = FindProperty("_DetailAlbedoScale");
             detailSmoothnessScale = FindProperty("_DetailSmoothnessScale");
             detailNormalScale = FindProperty("_DetailNormalScale");
+            detailWorldScale = FindProperty("_DetailWorldScale", false);
             detailHueShift = FindProperty("_DetailHueShift");
             detailUseUV2 = FindProperty("_DetailUseUV2");
             detailColorMap = FindProperty("_DetailColorMap");
@@ -65,6 +67,9 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
                 {
                     materialEditor.TexturePropertySingleLine(new GUIContent("Detail"), detailMap);
                     materialEditor.TextureScaleOffsetProperty(detailMap);
+
+                    if (detailWorldScale != null)
+                        materialEditor.ShaderProperty(detailWorldScale, "World Scale");
 
                     if (UseUV1 != null && UseUV2 != null && UseUV3 != null)
                     {

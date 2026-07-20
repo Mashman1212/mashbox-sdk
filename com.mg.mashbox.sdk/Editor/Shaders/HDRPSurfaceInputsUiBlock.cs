@@ -12,6 +12,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
 
         MaterialProperty baseColor;
         MaterialProperty baseMap;
+        MaterialProperty texWorldScale;
         MaterialProperty alphaClipThreshold;
         MaterialProperty alphaClipThresholdShadow;
         MaterialProperty whiteBoost;
@@ -47,6 +48,9 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
         private MaterialProperty aOBaseMapBlendMultiplier;
         private MaterialProperty AOBaseMapBlendContrast;
         
+        public const string DefaultBaseMapHelpText = "<b><color=#ff6b6b>(R)Red</color></b>, <b><color=#6be36b>(G)Green</color></b>, <b><color=#6ba8ff>(B)Blue</color></b>, <b><color=#cccccc>(A)Color Mult Mask</color></b>";
+        public const string AlphaClipBaseMapHelpText = "<b><color=#ff6b6b>(R)Red</color></b>, <b><color=#6be36b>(G)Green</color></b>, <b><color=#6ba8ff>(B)Blue</color></b>, <b><color=#cccccc>(A)Alpha Cut</color></b>";
+
         public string BaseMapHelpText { get; set; } = " ";
         public string maskMapHelpText { get; set; } = " ";
         internal class Styles
@@ -55,6 +59,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             public static GUIContent normalMapText = new GUIContent("Normal Map", "Specifies the Normal Map for this Material (BC7/BC5/DXT5(nm)) and controls its strength.");
             public static GUIContent maskMapSText = new GUIContent("Mask Map", "Specifies the Mask Map for this Material - Metallic (R), Ambient occlusion (G), Detail mask (B), Smoothness (A).");
             public static GUIContent baseColorText = new GUIContent("Base Map", "Specifies the base color (RGB) and opacity (A) of the Material.");
+            public static GUIContent texWorldScaleText = new GUIContent("World Scale", "Controls the world-space scale used for triplanar texture projection. This matches HDRP/Lit's _TexWorldScale property.");
             public static GUIContent alphaClipThresholdText = new GUIContent("Alpha Clip Threshold", "Pixels with alpha below this value are clipped from the rendered surface.");
             public static GUIContent alphaClipThresholdShadowText = new GUIContent("Alpha Clip Threshold Shadow", "Pixels with alpha below this value are clipped when rendering the material's shadow.");
             public static GUIContent whiteBalanceText = new GUIContent("White Balance", "Controls the white-balance adjustment applied to the base color.");
@@ -69,7 +74,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             //public static GUIContent detailNormalMapText = new GUIContent("Ambient Occlusion Remapping");
         }
             
-        public HDRPSurfaceInputsUiBlock(ExpandableBit expandableBit, string BaseMapHelpText = "<b><color=#ff6b6b>(R)Red</color></b>, <b><color=#6be36b>(G)Green</color></b>, <b><color=#6ba8ff>(B)Blue</color></b>, <b><color=#cccccc>(A)Color Mult Mask</color></b>", string maskMapHelpText = "<b><color=#ff6b6b>(R)Metallic</color></b>, <b><color=#6be36b>(G)AO</color></b>, <b><color=#6ba8ff>(B)not used</color></b>, <b><color=#cccccc>(A)Smoothness</color></b>")
+        public HDRPSurfaceInputsUiBlock(ExpandableBit expandableBit, string BaseMapHelpText = DefaultBaseMapHelpText, string maskMapHelpText = "<b><color=#ff6b6b>(R)Metallic</color></b>, <b><color=#6be36b>(G)AO</color></b>, <b><color=#6ba8ff>(B)not used</color></b>, <b><color=#cccccc>(A)Smoothness</color></b>")
         {
             foldoutBit = expandableBit;
             this.BaseMapHelpText = BaseMapHelpText;
@@ -79,7 +84,8 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
         public override void LoadMaterialProperties()//
         {
             baseColor = FindProperty("_BaseColor");
-            baseMap = FindProperty("_BaseColorMap");
+            baseMap = FindProperty("_BaseMap", false) ?? FindProperty("_BaseColorMap", false);
+            texWorldScale = FindProperty("_TexWorldScale", false);
             alphaClipThreshold = FindProperty("_AlphaClipThreshold", false);
             alphaClipThresholdShadow = FindProperty("_AlphaClipThresholdShadow", false);
             whiteBoost = FindProperty("_WhiteBoost");
@@ -128,6 +134,9 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
                     EditorGUILayout.HelpBox(BaseMapHelpText, MessageType.None);
                     materialEditor.TexturePropertySingleLine(Styles.baseColorText, baseMap, baseColor );
                     materialEditor.TextureScaleOffsetProperty(baseMap);
+
+                    if (texWorldScale != null)
+                        materialEditor.ShaderProperty(texWorldScale, Styles.texWorldScaleText);
 
                     if (alphaClipThreshold != null)
                         materialEditor.ShaderProperty(alphaClipThreshold, Styles.alphaClipThresholdText);

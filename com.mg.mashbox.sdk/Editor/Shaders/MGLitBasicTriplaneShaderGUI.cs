@@ -6,17 +6,15 @@ using UnityEngine;
 
 namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 {
-    public class MGLitBasicAlphaClipShaderGUI : LightingShaderGraphGUI
+    public class MGLitBasicTriplaneShaderGUI : LightingShaderGraphGUI
     {
         private static Texture2D cover;
 
-        public MGLitBasicAlphaClipShaderGUI()
+        public MGLitBasicTriplaneShaderGUI()
         {
             uiBlocks.RemoveAll(b => b is ShaderGraphUIBlock);
 
-            uiBlocks.Insert(1, new HDRPSurfaceInputsUiBlock(
-                MaterialUIBlock.ExpandableBit.Input,
-                HDRPSurfaceInputsUiBlock.AlphaClipBaseMapHelpText));
+            uiBlocks.Insert(1, new HDRPSurfaceInputsUiBlock(MaterialUIBlock.ExpandableBit.Input));
             uiBlocks.Insert(2, new HDRPDecalInputsUiBlock(MaterialUIBlock.ExpandableBit.Layer1));
             uiBlocks.Insert(3, new HDRPDetailInputsUiBlock(MaterialUIBlock.ExpandableBit.Detail));
             uiBlocks.Insert(4, new HDRPEmissiveInputsUiBlock(MaterialUIBlock.ExpandableBit.Emissive));
@@ -38,7 +36,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
             foreach (Material mat in materialEditor.targets)
             {
-                ShaderEnforcer.EnforceLitBasicAlphaClipShader(mat);
+                ShaderEnforcer.EnforceLitBasicTriplaneShader(mat);
                 EditorUtility.SetDirty(mat);
             }
         }
@@ -48,12 +46,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             if (cover == null)
             {
                 cover = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                    "Packages/com.mg.mashbox.sdk/Editor/Shaders/MGLitBasicAlphaClipShader_Banner.png");
+                    "Packages/com.mg.mashbox.sdk/Editor/Shaders/MGLitBasicTriplaneShader_Banner.png");
 
                 if (cover == null)
                 {
                     cover = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                        "Assets/MashBoxSDK/Editor/Shaders/MGLitBasicAlphaClipShader_Banner.png");
+                        "Assets/MashBoxSDK/Editor/Shaders/MGLitBasicTriplaneShader_Banner.png");
                 }
             }
 

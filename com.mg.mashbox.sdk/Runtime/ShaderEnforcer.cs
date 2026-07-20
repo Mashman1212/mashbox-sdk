@@ -15,7 +15,8 @@ namespace MashBoxSDK.Shaders
             Chain,
             Griptape,
             LitBasic,
-            LitBasicAlphaClip
+            LitBasicAlphaClip,
+            LitBasicTriplane
         }
 
         
@@ -163,10 +164,12 @@ namespace MashBoxSDK.Shaders
         private static readonly string[] MGLitBasicPreservedProperties =
         {
             "_BaseColor",
+            "_BaseMap",
             "_BaseColorMap",
             "_MaskMap",
             "_NormalMap",
             "_NormalStrength",
+            "_TexWorldScale",
             "_AlphaClipThreshold",
             "_AlphaClipThresholdShadow",
 
@@ -196,6 +199,7 @@ namespace MashBoxSDK.Shaders
             "_DecalWhiteBoost",
             "_DecalHueShift",
             "_DecalBlend",
+            "_DecalWorldScale",
             "_DecalUseUV1",
             "_DecalUseUV2",
             "_DecalUseUV3",
@@ -209,6 +213,7 @@ namespace MashBoxSDK.Shaders
             "_EmissiveExposureWeight",
 
             "_DetailMap",
+            "_DetailWorldScale",
             "_DetailUseUV1",
             "_DetailUseUV2",
             "_DetailUseUV3",
@@ -382,6 +387,21 @@ namespace MashBoxSDK.Shaders
                 return _litBasicAlphaClipTemplateMat;
             }
         }
+
+        private static readonly Shader LitBasicTriplaneShader = Shader.Find("MGShaders/HDRP/Lit/MG_Lit_Basic_Triplane");
+        private static Material _litBasicTriplaneTemplateMat;
+        private static Material LitBasicTriplaneTemplateMat
+        {
+            get
+            {
+                if (!_litBasicTriplaneTemplateMat)
+                {
+                    _litBasicTriplaneTemplateMat = Resources.Load<Material>("MG_Lit_Basic_Triplane_Template");
+                }
+
+                return _litBasicTriplaneTemplateMat;
+            }
+        }
         
         
         private static readonly Shader TireShader = Shader.Find("MGShaders/HDRP/Lit/MG_Tire");
@@ -456,6 +476,9 @@ namespace MashBoxSDK.Shaders
                             break;
                         case ShaderType.LitBasicAlphaClip:
                             EnforceLitBasicAlphaClipShader(materials[i]);
+                            break;
+                        case ShaderType.LitBasicTriplane:
+                            EnforceLitBasicTriplaneShader(materials[i]);
                             break;
                         case ShaderType.Tire:
                             EnforceTireShader(materials[i]);
@@ -605,6 +628,47 @@ namespace MashBoxSDK.Shaders
             mat.EnableKeyword("_ALPHATEST_ON");
             mat.renderQueue = (int)RenderQueue.AlphaTest;
             mat.SetOverrideTag("RenderType", "TransparentCutout");
+        }
+
+        public static void EnforceLitBasicTriplaneShader(Material mat)
+        {
+            if (mat == LitBasicTriplaneTemplateMat)
+                return;
+
+            Texture originalDetail = null;
+            if (mat != null && mat.HasProperty("_DetailMap"))
+                originalDetail = mat.GetTexture("_DetailMap");
+
+            bool hasOriginalTexWorldScale = mat != null && mat.HasProperty("_TexWorldScale");
+            float originalTexWorldScale = hasOriginalTexWorldScale
+                ? mat.GetFloat("_TexWorldScale")
+                : 1.0f;
+
+            if (!PrepareMaterialForShaderEnforcement(mat, LitBasicTriplaneShader))
+                return;
+
+            ApplyTemplateWithPreserve(mat, LitBasicTriplaneTemplateMat, MGLitBasicPreservedProperties);
+
+            if (hasOriginalTexWorldScale && mat.HasProperty("_TexWorldScale"))
+                mat.SetFloat("_TexWorldScale", originalTexWorldScale);
+
+            if (originalDetail == null || originalDetail.name == "DefaultNormal" || originalDetail.name.Contains("DefaultTexture2D"))
+            {
+                if (mat.HasProperty("_DetailNormalScale"))
+                    mat.SetFloat("_DetailNormalScale", 0.0f);
+
+                if (mat.HasProperty("_DetailSmoothnessScale"))
+                    mat.SetFloat("_DetailSmoothnessScale", 0.0f);
+
+                if (mat.HasProperty("_DetailAlbedoScale"))
+                    mat.SetFloat("_DetailAlbedoScale", 0.0f);
+            }
+
+            if (LitBasicTriplaneTemplateMat != null)
+                mat.shaderKeywords = LitBasicTriplaneTemplateMat.shaderKeywords;
+
+            EnforceDecalReception(mat);
+            EnforceSSRReception(mat);
         }
 
         private static void EnforceDecalReception(Material mat)

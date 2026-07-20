@@ -19,6 +19,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
         private MaterialProperty decalWhiteBoost;
         private MaterialProperty decalHueShift;
         private MaterialProperty decalBlend;
+        private MaterialProperty decalWorldScale;
         private MaterialProperty useUV1;
         private MaterialProperty useUV2;
         private MaterialProperty useUV3;
@@ -35,6 +36,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             decalWhiteBoost = FindProperty("_DecalWhiteBoost", false);
             decalHueShift = FindProperty("_DecalHueShift", false);
             decalBlend = FindProperty("_DecalBlend", false);
+            decalWorldScale = FindProperty("_DecalWorldScale", false);
             useUV1 = FindProperty("_DecalUseUV1", false);
             useUV2 = FindProperty("_DecalUseUV2", false);
             useUV3 = FindProperty("_DecalUseUV3", false);
@@ -56,6 +58,9 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
 
                     materialEditor.TextureScaleOffsetProperty(decalMap);
                 }
+
+                if (decalWorldScale != null)
+                    materialEditor.ShaderProperty(decalWorldScale, "World Scale");
 
                 if (useUV1 != null || useUV2 != null || useUV3 != null)
                     DrawUVSelector();
