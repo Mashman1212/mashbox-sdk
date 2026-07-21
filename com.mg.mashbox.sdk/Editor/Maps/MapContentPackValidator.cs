@@ -251,7 +251,8 @@ namespace MashBoxSDK.MapTools
                 issues.Add(new MapValidationIssue(
                     MapValidationSeverity.Error,
                     "Unsupported shaders are not allowed in published maps. Use shaders supplied by the MashBox SDK, " +
-                    "or HDRP/TerrainLit for Unity terrain materials. Replace the unsupported material shaders, then scan again.\n" +
+                    "HDRP/TerrainLit for Unity terrain materials, or template-enforced HDRP/Decal for decals. " +
+                    "Replace the unsupported material shaders, then scan again.\n" +
                     $"{shownShaders}{hiddenMessage}"));
             }
 

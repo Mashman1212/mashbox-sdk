@@ -52,12 +52,20 @@ Material:
         m_Texture: {fileID: 2800000, guid: ebac80f65d25cd0488cee01948d228af, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
-    - _DecalMap:
-        m_Texture: {fileID: 2800000, guid: 87aca531fe523054fa55fcc470d974a5, type: 3}
+    - _Decal_Layer:
+        m_Texture: {fileID: 2800000, guid: 121850c026e28fe41af22c370c4755f2, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
-    - _DetailMap:
-        m_Texture: {fileID: 2800000, guid: d8a6c65372c1259479e80caab047c461, type: 3}
+    - _Decal_Normal:
+        m_Texture: {fileID: 2800000, guid: a48d701456ed9124c94c28f2550a5bdd, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailNormalMap:
+        m_Texture: {fileID: 2800000, guid: a48d701456ed9124c94c28f2550a5bdd, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Dirt_Texture:
+        m_Texture: {fileID: 2800000, guid: 121850c026e28fe41af22c370c4755f2, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissiveColorMap:
@@ -89,44 +97,59 @@ Material:
     - _AORemapMax: 1
     - _AORemapMin: 0
     - _AddPrecomputedVelocity: 0
+    - _Albedo_Multiply: 1
     - _AlphaCutoffEnable: 0
     - _AlphaDstBlend: 0
     - _AlphaSrcBlend: 1
+    - _Alpha_Remap_Max: 1
+    - _Alpha_Remap_Min: 0
     - _BlendMode: 0
     - _ConservativeDepthOffsetEnable: 0
     - _Contrast: 1
     - _CullMode: 2
     - _CullModeForward: 2
-    - _Darken: 0
-    - _DecalBlend: 1
-    - _DecalHueShift: 0
-    - _DecalUseUV1: 1
-    - _DecalUseUV2: 0
-    - _DecalUseUV3: 0
-    - _DecalWhiteBoost: 0
+    - _Decal_AO_Subtract_Max: 1
+    - _Decal_AO_Subtract_Min: 0
+    - _Decal_Albedo_Multiply: 1
+    - _Decal_Blend_Strength: 1
+    - _Decal_Levels_Max: 1
+    - _Decal_Levels_Min: 0
+    - _Decal_Levels_Strength: 0
+    - _Decal_Metal_Subtract_Max: 1
+    - _Decal_Metal_Subtract_Min: 0
+    - _Decal_Metalness: 0
+    - _Decal_Metalness_Amount: 0
+    - _Decal_Normal_Strength: 0
+    - _Decal_Smoothness: 0
+    - _Decal_Smoothness_Amount: 0
     - _DepthOffsetEnable: 0
-    - _DetailAlbedoScale: 0
-    - _DetailHueShift: 0
     - _DetailNormalScale: 0
-    - _DetailSmoothnessScale: 0
-    - _DetailUseUV1: 0
-    - _DetailUseUV2: 0
-    - _DetailUseUV3: 0
+    - _Dirt_Contrast: 0
+    - _Dirt_Roughness_Contrast: 1
+    - _Dirt_Roughness_Strength: 0
+    - _Dirt_Scaling: 0
+    - _Dirt_Strength: 0
     - _DoubleSidedEnable: 0
     - _DoubleSidedGIMode: 0
     - _DoubleSidedNormalMode: 2
     - _DstBlend: 0
-    - _EmissiveExposureWeight: 0
     - _EmissiveIntensity: 0
     - _EnableBlendModePreserveSpecularLighting: 1
     - _EnableFogOnTransparent: 1
+    - _Enable_Decal_Projection_Offset: 0
+    - _Enable_Vertex_Alpha_Blend: 0
     - _ExcludeFromTUAndAA: 0
-    - _HueShift: 0
-    - _Lighten: 0
+    - _Favour_Vertex_Over_BaseMap_Alpha: 0
+    - _Metal_AO_Subtracts_Decals: 0
     - _MetallicRemapMax: 1
     - _MetallicRemapMin: 0
-    - _NormalStrength: 1
+    - _MonoSH_Emission_Strength: 1
+    - _MonoSH_Normal_Strength: 1
+    - _MonoSH_Smoothness_Reduction: 0.4
+    - _Multiply_Decal_Albedo: 0
+    - _NormalScale: 1
     - _OpaqueCullMode: 2
+    - _Projection_Offset_Amount: 0.001
     - _RayTracing: 0
     - _ReceivesSSR: 1
     - _ReceivesSSRTransparent: 0
@@ -136,6 +159,10 @@ Material:
     - _Saturation: 1
     - _SmoothnessRemapMax: 1
     - _SmoothnessRemapMin: 0
+    - _Specular_Occlusion_Contraster: 1
+    - _Specular_Occlusion_Max_Clamp: 0
+    - _Specular_Occlusion_Multiplier: 3
+    - _Specular_Occlusion_Reduce: 0
     - _SrcBlend: 1
     - _StencilRef: 0
     - _StencilRefDepth: 8
@@ -149,6 +176,7 @@ Material:
     - _StencilWriteMaskMV: 41
     - _SupportDecals: 1
     - _SurfaceType: 0
+    - _Switch_UV0_and_UV2: 0
     - _Tint: 0
     - _TransparentBackfaceEnable: 0
     - _TransparentCullMode: 2
@@ -157,17 +185,25 @@ Material:
     - _TransparentSortPriority: 0
     - _TransparentWritingMotionVec: 0
     - _TransparentZWrite: 0
-    - _UseShadowThreshold: 1
-    - _WhiteBalance: 0
+    - _UseShadowThreshold: 0
+    - _Use_Decals: 0
+    - _Use_Dirt_Overlay: 0
+    - _Use_Dirt_Overlay_as_Roughness: 0
+    - _Vertex_Alpha_Fades_Decals: 0
+    - _VrtxColorInfuence: 0
     - _WhiteBoost: 0
+    - _White_Balance: 0
     - _ZTestDepthEqualForOpaque: 3
     - _ZTestGBuffer: 4
     - _ZTestTransparent: 4
     - _ZWrite: 1
     m_Colors:
-    - _BaseColor: {r: 1, g: 1, b: 1, a: 0}
-    - _DecalColor: {r: 1, g: 1, b: 1, a: 0}
+    - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+    - _Decal_Albedo_Tint: {r: 1, g: 1, b: 1, a: 0}
+    - _Decals_Tiling_and_Offset: {r: 1, g: 1, b: 0, a: 0}
     - _DoubleSidedConstants: {r: 1, g: 1, b: -1, a: 0}
     - _EmissionColor: {r: 1, g: 1, b: 1, a: 1}
-    - _EmissiveColor: {r: 0, g: 0, b: 0, a: 0}
+    - _EmissiveColorLDR: {r: 0, g: 0, b: 0, a: 0}
+    - _Final_Albedo_Tint: {r: 1, g: 1, b: 1, a: 0}
+    - _Tiling_and_Offset: {r: 1, g: 1, b: 0, a: 0}
   m_BuildTextureStacks: []

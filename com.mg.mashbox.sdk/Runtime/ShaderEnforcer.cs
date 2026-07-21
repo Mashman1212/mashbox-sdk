@@ -5,6 +5,24 @@ namespace MashBoxSDK.Shaders
 {
     public static class ShaderEnforcer
     {
+        private static readonly string[] HdrpDecalRequiredAffectProperties =
+        {
+            "_AffectAlbedo",
+            "_AffectNormal",
+            "_AffectMetal",
+            "_AffectAO",
+            "_AffectSmoothness",
+            "_AffectEmission"
+        };
+
+        private static readonly string[] HdrpDecalTemplateFallbackTextures =
+        {
+            "_BaseColorMap",
+            "_NormalMap",
+            "_MaskMap",
+            "_EmissiveColorMap"
+        };
+
         public enum ShaderType
         {
             Vehicle,
@@ -481,6 +499,17 @@ namespace MashBoxSDK.Shaders
                 return _eightBittPaintMaskAdvancedTemplateMat;
             }
         }
+
+        private static Material _hdrpDecalTemplateMat;
+        private static Material HdrpDecalTemplateMat
+        {
+            get
+            {
+                if (!_hdrpDecalTemplateMat)
+                    _hdrpDecalTemplateMat = Resources.Load<Material>("HDRP_Decal_Template");
+                return _hdrpDecalTemplateMat;
+            }
+        }
         
         
         private static readonly Shader TireShader = Shader.Find("MGShaders/HDRP/Lit/MG_Tire");
@@ -791,7 +820,7 @@ namespace MashBoxSDK.Shaders
         /// Repairs keyword drift without copying template properties. Returns true only when the
         /// material actually needed a keyword or required surface-state correction.
         /// </summary>
-        public static bool SynchronizeTemplateKeywords(Material mat)
+        public static bool SynchronizeTemplateState(Material mat)
         {
             if (mat == null || mat.shader == null)
                 return false;
@@ -799,6 +828,7 @@ namespace MashBoxSDK.Shaders
             Material template = null;
             var enforceSurfaceReception = false;
             var enforceAlphaTest = false;
+            var enforceHdrpDecalAffects = false;
             if (UsesTemplateShader(mat, VehicleTemplateMat))
                 template = VehicleTemplateMat;
             else if (UsesTemplateShader(mat, ClothingTemplateMat))
@@ -840,6 +870,11 @@ namespace MashBoxSDK.Shaders
                 template = EightBittPaintMaskAdvancedTemplateMat;
                 enforceSurfaceReception = true;
             }
+            else if (UsesTemplateShader(mat, HdrpDecalTemplateMat))
+            {
+                template = HdrpDecalTemplateMat;
+                enforceHdrpDecalAffects = true;
+            }
             else
                 return false;
 
@@ -867,7 +902,33 @@ namespace MashBoxSDK.Shaders
             var needsAlphaSync = enforceAlphaTest &&
                                  mat.HasProperty("_AlphaCutoffEnable") &&
                                  mat.GetFloat("_AlphaCutoffEnable") < 0.5f;
-            if (!needsKeywordSync && !needsDecalSync && !needsSsrSync && !needsAlphaSync)
+            var needsHdrpDecalAffectSync = false;
+            var needsHdrpDecalTextureSync = false;
+            if (enforceHdrpDecalAffects)
+            {
+                foreach (var propertyName in HdrpDecalRequiredAffectProperties)
+                {
+                    if (mat.HasProperty(propertyName) && template.HasProperty(propertyName) &&
+                        !Mathf.Approximately(mat.GetFloat(propertyName), template.GetFloat(propertyName)))
+                    {
+                        needsHdrpDecalAffectSync = true;
+                        break;
+                    }
+                }
+
+                foreach (var propertyName in HdrpDecalTemplateFallbackTextures)
+                {
+                    if (mat.HasProperty(propertyName) && template.HasProperty(propertyName) &&
+                        mat.GetTexture(propertyName) == null && template.GetTexture(propertyName) != null)
+                    {
+                        needsHdrpDecalTextureSync = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!needsKeywordSync && !needsDecalSync && !needsSsrSync && !needsAlphaSync &&
+                !needsHdrpDecalAffectSync && !needsHdrpDecalTextureSync)
                 return false;
 
             if (needsKeywordSync)
@@ -893,6 +954,32 @@ namespace MashBoxSDK.Shaders
                 if (mat.HasProperty("_AlphaCutoffEnable"))
                     mat.SetFloat("_AlphaCutoffEnable", 1.0f);
                 mat.EnableKeyword("_ALPHATEST_ON");
+            }
+
+            if (enforceHdrpDecalAffects)
+            {
+                foreach (var propertyName in HdrpDecalRequiredAffectProperties)
+                {
+                    if (mat.HasProperty(propertyName) && template.HasProperty(propertyName))
+                        mat.SetFloat(propertyName, template.GetFloat(propertyName));
+                }
+
+                foreach (var propertyName in HdrpDecalTemplateFallbackTextures)
+                {
+                    if (!mat.HasProperty(propertyName) || !template.HasProperty(propertyName) ||
+                        mat.GetTexture(propertyName) != null)
+                    {
+                        continue;
+                    }
+
+                    var templateTexture = template.GetTexture(propertyName);
+                    if (templateTexture == null)
+                        continue;
+
+                    mat.SetTexture(propertyName, templateTexture);
+                    mat.SetTextureScale(propertyName, template.GetTextureScale(propertyName));
+                    mat.SetTextureOffset(propertyName, template.GetTextureOffset(propertyName));
+                }
             }
 
 #if UNITY_EDITOR

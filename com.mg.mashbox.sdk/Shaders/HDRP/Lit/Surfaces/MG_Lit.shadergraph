@@ -773,6 +773,9 @@
         },
         {
             "m_Id": "fb2c9aeae3fd45f1966517bd3859b94b"
+        },
+        {
+            "m_Id": "0c56f1b743e14d48ba58673d9751e070"
         }
     ],
     "m_GroupDatas": [
@@ -997,6 +1000,20 @@
                     "m_Id": "1b141e61c4fd497dad29b0e8481a9a5f"
                 },
                 "m_SlotId": 0
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "0c56f1b743e14d48ba58673d9751e070"
+                },
+                "m_SlotId": 1
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "6e6b8af81aeb447daea0e87b9fc2d18e"
+                },
+                "m_SlotId": 2
             }
         },
         {
@@ -3150,9 +3167,9 @@
             },
             "m_InputSlot": {
                 "m_Node": {
-                    "m_Id": "60649ea13aad48c3b94a0d47731f3f4c"
+                    "m_Id": "0c56f1b743e14d48ba58673d9751e070"
                 },
-                "m_SlotId": 1597323503
+                "m_SlotId": 0
             }
         },
         {
@@ -3164,9 +3181,9 @@
             },
             "m_InputSlot": {
                 "m_Node": {
-                    "m_Id": "6e6b8af81aeb447daea0e87b9fc2d18e"
+                    "m_Id": "60649ea13aad48c3b94a0d47731f3f4c"
                 },
-                "m_SlotId": 2
+                "m_SlotId": 1597323503
             }
         },
         {
@@ -4029,7 +4046,7 @@
     "m_Title": "Emission",
     "m_Position": {
         "x": -209.5999755859375,
-        "y": 727.199951171875
+        "y": 727.2000732421875
     }
 }
 
@@ -4189,7 +4206,7 @@
     "m_ObjectId": "06fa256dd1b74836b393a910d61b27a2",
     "m_Title": "Smoothness",
     "m_Position": {
-        "x": 2972.800048828125,
+        "x": 2972.7998046875,
         "y": 481.5999755859375
     }
 }
@@ -4416,7 +4433,7 @@
     "m_ObjectId": "09f56aacd18343979922c9c2f958d510",
     "m_Title": "Emission",
     "m_Position": {
-        "x": 2978.399169921875,
+        "x": 2978.39990234375,
         "y": 737.5999755859375
     }
 }
@@ -4514,8 +4531,8 @@
     "m_ObjectId": "0b4ff4b29f5e420193ea66514dd916b6",
     "m_Title": "Alpha",
     "m_Position": {
-        "x": 2977.599853515625,
-        "y": 620.0
+        "x": 2977.60009765625,
+        "y": 620.0001220703125
     }
 }
 
@@ -4570,6 +4587,42 @@
     "m_Position": {
         "x": -1451.9998779296875,
         "y": -47.2000732421875
+    }
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.RedirectNodeData",
+    "m_ObjectId": "0c56f1b743e14d48ba58673d9751e070",
+    "m_Group": {
+        "m_Id": ""
+    },
+    "m_Name": "Redirect Node",
+    "m_DrawState": {
+        "m_Expanded": true,
+        "m_Position": {
+            "serializedVersion": "2",
+            "x": -1454.4000244140625,
+            "y": 1153.5999755859375,
+            "width": 56.0,
+            "height": 24.0
+        }
+    },
+    "m_Slots": [
+        {
+            "m_Id": "c639e92a97804d3ba873a41c26866254"
+        },
+        {
+            "m_Id": "2c21611e2af841bbadff38fcb57887d4"
+        }
+    ],
+    "synonyms": [],
+    "m_Precision": 0,
+    "m_PreviewExpanded": true,
+    "m_DismissedVersion": 0,
+    "m_PreviewMode": 0,
+    "m_CustomColors": {
+        "m_SerializableColors": []
     }
 }
 
@@ -4758,7 +4811,7 @@
     "m_ObjectId": "0e65094fccb44874bf72de66ac57e858",
     "m_Title": "Albedo",
     "m_Position": {
-        "x": 2972.800048828125,
+        "x": 2972.7998046875,
         "y": -18.40008544921875
     }
 }
@@ -5178,8 +5231,8 @@
     "m_ObjectId": "130bb5b116ef40cfad3c7f859628fafb",
     "m_Title": "Metallic",
     "m_Position": {
-        "x": 1712.0,
-        "y": 193.599853515625
+        "x": 1712.0001220703125,
+        "y": 193.59991455078126
     }
 }
 
@@ -6819,7 +6872,7 @@
     "m_ObjectId": "271ac3364c1e468fbc5a05aeb3d48948",
     "m_Title": "Blend texture alpha and vertex fade",
     "m_Position": {
-        "x": 1753.60009765625,
+        "x": 1753.6002197265625,
         "y": 901.5999755859375
     }
 }
@@ -7038,6 +7091,30 @@
         "e31": 0.0,
         "e32": 0.0,
         "e33": 1.0
+    }
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot",
+    "m_ObjectId": "2c21611e2af841bbadff38fcb57887d4",
+    "m_Id": 1,
+    "m_DisplayName": "",
+    "m_SlotType": 1,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
     }
 }
 
@@ -8709,8 +8786,8 @@
     "m_ObjectId": "401280ca217a41e8bc4019625b613314",
     "m_Title": "Metallic",
     "m_Position": {
-        "x": 790.400146484375,
-        "y": 213.599853515625
+        "x": 790.4000244140625,
+        "y": 213.59991455078126
     }
 }
 
@@ -9264,7 +9341,7 @@
     "m_ObjectId": "48450643805047e7ac424951cf3686b3",
     "m_Title": "Normal",
     "m_Position": {
-        "x": 2979.999755859375,
+        "x": 2980.0,
         "y": 104.79998779296875
     }
 }
@@ -9955,7 +10032,7 @@
     "m_ObjectId": "556897a5a7d24b01a1d184cc271dc0da",
     "m_Title": "Normal",
     "m_Position": {
-        "x": 1712.0,
+        "x": 1712.0001220703125,
         "y": 79.199951171875
     }
 }
@@ -10509,7 +10586,7 @@
     "m_ObjectId": "5c17297332894df696e147b0ccaac388",
     "m_Title": "Normal",
     "m_Position": {
-        "x": -208.0001220703125,
+        "x": -208.0,
         "y": 85.59991455078125
     }
 }
@@ -10835,8 +10912,8 @@
     "m_ObjectId": "61bf36273e1a46239c25a7123910f757",
     "m_Title": "AO",
     "m_Position": {
-        "x": 2978.399169921875,
-        "y": 355.199951171875
+        "x": 2978.39990234375,
+        "y": 355.20001220703127
     }
 }
 
@@ -11396,7 +11473,7 @@
     "m_ObjectId": "6a186b1fd2094c4195480f9c45c32592",
     "m_Title": "Albedo",
     "m_Position": {
-        "x": 1712.0,
+        "x": 1712.0001220703125,
         "y": -42.40008544921875
     }
 }
@@ -12351,7 +12428,7 @@
     "m_Title": "Smoothness",
     "m_Position": {
         "x": -210.4000244140625,
-        "y": 472.800048828125
+        "y": 472.7999267578125
     }
 }
 
@@ -12743,8 +12820,8 @@
     "m_ObjectId": "7b276addb8d343849d5027f5e28a602a",
     "m_Title": "Emission",
     "m_Position": {
-        "x": 1712.0,
-        "y": 716.800048828125
+        "x": 1712.0001220703125,
+        "y": 716.7999267578125
     }
 }
 
@@ -13135,8 +13212,8 @@
     "m_ObjectId": "8348a1db62d54ba89fe86c7bb9fb44ef",
     "m_Title": "Metallic",
     "m_Position": {
-        "x": 2979.999755859375,
-        "y": 227.199951171875
+        "x": 2980.0,
+        "y": 227.20001220703126
     }
 }
 
@@ -13236,8 +13313,8 @@
     "m_ObjectId": "8553d9d0617049459df8644cf0e3bf24",
     "m_Title": "Alpha",
     "m_Position": {
-        "x": 790.400146484375,
-        "y": 603.199951171875
+        "x": 790.4000244140625,
+        "y": 603.2000732421875
     }
 }
 
@@ -13641,7 +13718,7 @@
     "m_ObjectId": "8b80ded6a3e94b949cda045c1fb4ae16",
     "m_Title": "Final Tint",
     "m_Position": {
-        "x": 2510.399169921875,
+        "x": 2510.39990234375,
         "y": -84.00006103515625
     }
 }
@@ -14373,7 +14450,7 @@
     "m_ObjectId": "959fdaf8cf3748a385b9108f47832519",
     "m_Title": "Albedo",
     "m_Position": {
-        "x": 784.0,
+        "x": 784.0001220703125,
         "y": -24.00006103515625
     }
 }
@@ -15035,7 +15112,7 @@
     "m_Title": "AO",
     "m_Position": {
         "x": -209.5999755859375,
-        "y": 344.0
+        "y": 343.9998779296875
     }
 }
 
@@ -15480,7 +15557,7 @@
     "m_ObjectId": "a69caaf6ad3a41c3b5047b09752d8cfc",
     "m_Title": "Normal",
     "m_Position": {
-        "x": 789.60009765625,
+        "x": 789.6002197265625,
         "y": 87.99993896484375
     }
 }
@@ -15724,8 +15801,8 @@
     "m_ObjectId": "a941b6299c584f3d92be3e5580acd7f0",
     "m_Title": "Smoothness",
     "m_Position": {
-        "x": 790.400146484375,
-        "y": 468.0
+        "x": 790.4000244140625,
+        "y": 467.9998779296875
     }
 }
 
@@ -15829,7 +15906,7 @@
     "m_ObjectId": "aaf9feae71e84b5ab1fd1fdabe30f400",
     "m_Title": "Albedo",
     "m_Position": {
-        "x": -208.0001220703125,
+        "x": -208.0,
         "y": -24.800048828125
     }
 }
@@ -16674,8 +16751,8 @@
     "m_ObjectId": "b5ab929d51ae4bda960bd16e939e1279",
     "m_Title": "Emission",
     "m_Position": {
-        "x": 789.60009765625,
-        "y": 732.0
+        "x": 789.6002197265625,
+        "y": 732.0001220703125
     }
 }
 
@@ -17040,7 +17117,7 @@
     "m_ObjectId": "ba73d0d8f84f4ff0b4a41393067ef66e",
     "m_Title": "Alpha",
     "m_Position": {
-        "x": 1709.60009765625,
+        "x": 1709.6002197265625,
         "y": 593.5999755859375
     }
 }
@@ -17471,7 +17548,7 @@
     "m_Title": "Alpha",
     "m_Position": {
         "x": -210.4000244140625,
-        "y": 599.199951171875
+        "y": 599.2000732421875
     }
 }
 
@@ -17781,6 +17858,30 @@
     "hlslDeclarationOverride": 0,
     "m_Hidden": false,
     "m_Value": false
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot",
+    "m_ObjectId": "c639e92a97804d3ba873a41c26866254",
+    "m_Id": 0,
+    "m_DisplayName": "",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    }
 }
 
 {
@@ -18651,8 +18752,8 @@
     "m_ObjectId": "d07b6e17c5514013ac337fe11b20b4a2",
     "m_Title": "Smoothness",
     "m_Position": {
-        "x": 1709.60009765625,
-        "y": 460.800048828125
+        "x": 1709.6002197265625,
+        "y": 460.7999267578125
     }
 }
 
@@ -19187,7 +19288,7 @@
     "m_ObjectId": "d91ccd2af2c34629b09d4944518e7f76",
     "m_Title": "Vertex Color Influence",
     "m_Position": {
-        "x": 1852.0,
+        "x": 1852.0001220703125,
         "y": -283.20001220703127
     }
 }
@@ -21155,7 +21256,7 @@
     "m_Title": "Emissive",
     "m_Position": {
         "x": -1353.5999755859375,
-        "y": 952.0
+        "y": 952.0001220703125
     }
 }
 
@@ -21356,8 +21457,8 @@
     "m_ObjectId": "f9fe29e3fde143beb4ee76810cfdad64",
     "m_Title": "AO",
     "m_Position": {
-        "x": 789.60009765625,
-        "y": 348.800048828125
+        "x": 789.6002197265625,
+        "y": 348.79998779296877
     }
 }
 
@@ -21392,8 +21493,8 @@
     "m_ObjectId": "fa5be6cf66bd4208b0ca3a082381fac6",
     "m_Title": "AO",
     "m_Position": {
-        "x": 1710.39990234375,
-        "y": 328.800048828125
+        "x": 1710.4000244140625,
+        "y": 328.79998779296877
     }
 }
 
@@ -21637,7 +21738,7 @@
     "m_ObjectId": "fb3081be934e4dc2bafffba09bdad483",
     "m_Title": "Metallic",
     "m_Position": {
-        "x": -208.0001220703125,
+        "x": -208.0,
         "y": 208.800048828125
     }
 }
@@ -21699,7 +21800,7 @@
     "m_ObjectId": "fe22ce70ca9a4debac80cc09d2e7b3ae",
     "m_Title": "Decal offset",
     "m_Position": {
-        "x": 2853.599853515625,
+        "x": 2853.60009765625,
         "y": -479.20001220703127
     }
 }

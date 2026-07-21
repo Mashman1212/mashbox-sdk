@@ -41,6 +41,7 @@ public class MapPerformanceScannerPanel
     public const float MinimumPublishPerformanceScore = 60f;
     private const string MashBoxPackageName = "com.mg.mashbox.sdk";
     private const string SupportedTerrainShaderName = "HDRP/TerrainLit";
+    private const string SupportedDecalShaderName = "HDRP/Decal";
     private const string HdrpLitShaderName = "HDRP/Lit";
     private const string MgLitBasicShaderName = "MGShaders/HDRP/Lit/MG_Lit_Basic";
     private const string FoldoutPreferencePrefix = "MashBox.PerformanceScanner.Foldout.";
@@ -48,6 +49,10 @@ public class MapPerformanceScannerPanel
     private const float DrawMaximumPenaltyThreshold = 2000f;
     private const int ShaderVariantPerfectScoreThreshold = 6;
     private const int ShaderVariantMaximumPenaltyThreshold = 12;
+    private const int DecalMaterialPerfectScoreThreshold = 1;
+    private const int DecalMaterialMaximumPenaltyThreshold = 5;
+    private const int DecalProjectorPerfectScoreThreshold = 299;
+    private const int DecalProjectorMaximumPenaltyThreshold = 1000;
     private const long SharedMemoryPerfectScoreBytes = 1L * 1024L * 1024L * 1024L;
     private const long SharedMemoryMaximumPenaltyBytes = 3L * 1024L * 1024L * 1024L;
     private const long MaximumInstancesPerBatch = 1023L;
@@ -232,7 +237,7 @@ public class MapPerformanceScannerPanel
     [NonSerialized] private GUIStyle gridHeaderCellStyle;
     [NonSerialized] private GUIStyle reportFoldoutStyle;
     [NonSerialized] private bool shaderConversionQueued;
-    [NonSerialized] private int repairedKeywordMaterialCount;
+    [NonSerialized] private int repairedTemplateMaterialCount;
 
     private readonly Dictionary<BatchKey, List<MaterialInfo>> batches = new();
     private readonly HashSet<Material> processedMaterials = new();
@@ -246,6 +251,7 @@ public class MapPerformanceScannerPanel
     private readonly HashSet<VolumeProfile> postVolumeProfiles = new();
     private readonly HashSet<TerrainData> processedTerrainData = new();
     private readonly HashSet<Material> terrainPrototypeMaterials = new();
+    private readonly HashSet<Material> decalMaterials = new();
     private readonly Dictionary<Mesh, MeshInfo> meshLookup = new();
 
     public void DrawGUI(bool embeddedInParentWindow = false)
@@ -368,6 +374,7 @@ public class MapPerformanceScannerPanel
             postVolumeProfiles.Clear();
             processedTerrainData.Clear();
             terrainPrototypeMaterials.Clear();
+            decalMaterials.Clear();
 
             totalDrawCalls = 0;
             estimatedDrawCallsAfterRuntimeCombining = 0;
@@ -395,7 +402,7 @@ public class MapPerformanceScannerPanel
             totalDetailInstances = 0;
             totalTreeInstances = 0;
             terrainPrototypeMaterialCount = 0;
-            repairedKeywordMaterialCount = 0;
+            repairedTemplateMaterialCount = 0;
             lightProbeCount = 0;
             reflectionProbeCount = 0;
             postVolumeCount = 0;
@@ -422,12 +429,12 @@ public class MapPerformanceScannerPanel
             CalculateMemoryTotals();
             CalculatePerformanceScore();
 
-            if (repairedKeywordMaterialCount > 0)
+            if (repairedTemplateMaterialCount > 0)
             {
                 AssetDatabase.SaveAssets();
                 Debug.Log(
-                    $"[MashBox] Performance scan repaired template keyword state on " +
-                    $"{repairedKeywordMaterialCount:N0} material{(repairedKeywordMaterialCount == 1 ? string.Empty : "s")}.");
+                    $"[MashBox] Performance scan repaired template state on " +
+                    $"{repairedTemplateMaterialCount:N0} material{(repairedTemplateMaterialCount == 1 ? string.Empty : "s")}.");
             }
 
             hasScanResults = true;
@@ -567,7 +574,12 @@ public class MapPerformanceScannerPanel
         Metric("Draw Submissions After Combining", estimatedDrawCallsAfterRuntimeCombining.ToString("N0"));
         Metric("Estimated Draw Change", FormatDrawDifference(totalDrawCalls, estimatedDrawCallsAfterRuntimeCombining));
         Metric("Estimated Runtime Draw Submissions", $"{estimatedDrawCallsAfterRuntimeCombining:N0} (perfect at {DrawPerfectScoreThreshold:N0} or fewer; full penalty at {DrawMaximumPenaltyThreshold:N0})");
-        Metric("Decals", $"{decalDrawCalls:N0} / 5 scoring threshold");
+        Metric(
+            "Decal Materials",
+            $"{decalMaterials.Count:N0} (perfect with fewer than 2; full penalty at {DecalMaterialMaximumPenaltyThreshold:N0})");
+        Metric(
+            "Active Decal Projectors",
+            $"{decalDrawCalls:N0} (perfect with fewer than 300; full penalty at {DecalProjectorMaximumPenaltyThreshold:N0})");
         Metric("Shader Variants", $"{batches.Count:N0} (perfect at {ShaderVariantPerfectScoreThreshold:N0} or fewer; full penalty at {ShaderVariantMaximumPenaltyThreshold:N0})");
         Metric("Texture Memory (Part of Shared Memory)", FormatBytes(totalTextureMemory));
         Metric("Unique Mesh Memory", $"{FormatBytes(totalMeshMemory)} ({meshInfos.Count:N0} meshes, {totalMeshUses:N0} uses)");
@@ -595,7 +607,8 @@ public class MapPerformanceScannerPanel
         Metric("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
         Metric("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
         Metric("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
-        Metric("Decal Draw Calls", decalDrawCalls.ToString("N0"));
+        Metric("Unique Decal Materials", decalMaterials.Count.ToString("N0"));
+        Metric("Active Decal Projectors", decalDrawCalls.ToString("N0"));
 
         Section("MEMORY SUMMARY");
         Metric("Texture Memory", FormatBytes(totalTextureMemory));
@@ -687,7 +700,7 @@ public class MapPerformanceScannerPanel
 
         Section("SHADER FRAGMENTATION");
         report.AppendLine(
-            $"Supported shaders are shaders supplied by the MashBox SDK package and Unity's {SupportedTerrainShaderName} terrain shader. Any other shader is a publishing error.");
+            $"Supported shaders are shaders supplied by the MashBox SDK package, Unity's {SupportedTerrainShaderName} terrain shader, and template-enforced {SupportedDecalShaderName} decal shader. Any other shader is a publishing error.");
         report.AppendLine(
             "A shader batch group requires the same shader, enabled shader keywords, and Lightmap ID. " +
             "Using the same shader on different Lightmap IDs creates separate batch groups because the renderers sample different lightmap textures.");
@@ -723,8 +736,8 @@ public class MapPerformanceScannerPanel
                 $"{(string.IsNullOrWhiteSpace(batch.Key.keywordSignature) ? "<none>" : batch.Key.keywordSignature)}");
         }
 
-        Section($"DECALS ({decalDrawCalls:N0})");
-        var decals = materialInfos.Where(info => info.isDecal).ToList();
+        Section($"DECALS ({decalMaterials.Count:N0} materials, {decalDrawCalls:N0} active projectors)");
+        var decals = materialInfos.Where(info => info.material != null && decalMaterials.Contains(info.material)).ToList();
         if (decals.Count == 0)
             report.AppendLine("None");
         foreach (var decal in decals)
@@ -1578,6 +1591,7 @@ public class MapPerformanceScannerPanel
 
             if (decal.material != null)
             {
+                decalMaterials.Add(decal.material);
                 if (BehaviourContributesDrawSubmissions(decal))
                     decalDrawCalls++;
                 CollectMaterial(decal.material, true, -1);
@@ -1643,8 +1657,8 @@ public class MapPerformanceScannerPanel
 
         // SDK shaders have a template-defined keyword contract. Repair stale imported materials
         // before recording variants so the report reflects the state they will use at runtime.
-        if (MashBoxSDK.Shaders.ShaderEnforcer.SynchronizeTemplateKeywords(mat))
-            repairedKeywordMaterialCount++;
+        if (MashBoxSDK.Shaders.ShaderEnforcer.SynchronizeTemplateState(mat))
+            repairedTemplateMaterialCount++;
 
         var keywords = mat.enabledKeywords
             .Select(k => k.name)
@@ -1671,6 +1685,9 @@ public class MapPerformanceScannerPanel
             return false;
 
         if (string.Equals(shader.name, SupportedTerrainShaderName, StringComparison.Ordinal))
+            return true;
+
+        if (string.Equals(shader.name, SupportedDecalShaderName, StringComparison.Ordinal))
             return true;
 
         if (string.IsNullOrWhiteSpace(shaderAssetPath))
@@ -1922,12 +1939,18 @@ public class MapPerformanceScannerPanel
 
     private float CalculatePerformanceScoreValue(int rendererIssueCount, long drawSubmissions, long mapMemoryBytes)
     {
-        const float maxDecals = 5f;
-
         var rendererPenalty = Mathf.Clamp01(rendererIssueCount / 100f);
         var drawPenalty = Mathf.InverseLerp(DrawPerfectScoreThreshold, DrawMaximumPenaltyThreshold, drawSubmissions);
         var memoryPenalty = Mathf.InverseLerp(SharedMemoryPerfectScoreBytes, SharedMemoryMaximumPenaltyBytes, mapMemoryBytes);
-        var decalPenalty = Mathf.Clamp01(decalDrawCalls / maxDecals);
+        var decalMaterialPenalty = Mathf.InverseLerp(
+            DecalMaterialPerfectScoreThreshold,
+            DecalMaterialMaximumPenaltyThreshold,
+            decalMaterials.Count);
+        var decalProjectorPenalty = Mathf.InverseLerp(
+            DecalProjectorPerfectScoreThreshold,
+            DecalProjectorMaximumPenaltyThreshold,
+            decalDrawCalls);
+        var decalPenalty = (decalMaterialPenalty + decalProjectorPenalty) * 0.5f;
         var shaderPenalty = Mathf.InverseLerp(
             ShaderVariantPerfectScoreThreshold,
             ShaderVariantMaximumPenaltyThreshold,
@@ -1967,7 +1990,7 @@ public class MapPerformanceScannerPanel
                 $"Unsupported shader: {group.Key?.name ?? "Missing Shader"}. " +
                 $"Used by {group.Count():N0} material{(group.Count() == 1 ? string.Empty : "s")}: " +
                 $"{(materialNames.Count > 0 ? string.Join(", ", materialNames) : "missing material")}{hiddenMaterials}. " +
-                $"Use a MashBox SDK shader or {SupportedTerrainShaderName}.");
+                $"Use a MashBox SDK shader, {SupportedTerrainShaderName}, or template-enforced {SupportedDecalShaderName}.");
         }
 
         var oversizedTextures = textureInfos.Where(info => IsOversizedTexture(info.texture)).ToList();
@@ -2061,7 +2084,16 @@ public class MapPerformanceScannerPanel
         DrawTableRow("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
         DrawTableRow("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
         DrawTableRow("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
-        DrawScoredMetric("Decals", decalDrawCalls, 0f, 5f);
+        DrawScoredMetric(
+            "Decal Materials",
+            decalMaterials.Count,
+            DecalMaterialPerfectScoreThreshold,
+            DecalMaterialMaximumPenaltyThreshold);
+        DrawScoredMetric(
+            "Active Decal Projectors",
+            decalDrawCalls,
+            DecalProjectorPerfectScoreThreshold,
+            DecalProjectorMaximumPenaltyThreshold);
         DrawScoredMetric(
             "Shader Variants",
             batches.Count,
@@ -2125,9 +2157,11 @@ public class MapPerformanceScannerPanel
                 $"Shared memory costs {memoryMaxPoints * Mathf.InverseLerp(SharedMemoryPerfectScoreBytes, SharedMemoryMaximumPenaltyBytes, totalMapMemory):F1} points. " +
                 "The first 1 GB is free. Lower texture import sizes, remove unused unique meshes, simplify mesh data, reduce terrain height/splat resolutions, and avoid unnecessary combined-mesh copies; about 137 MB removed between 1 GB and 3 GB recovers 1 point."),
             (
-                decalMaxPoints * Mathf.Clamp01(decalDrawCalls / 5f),
-                $"Decals cost {decalMaxPoints * Mathf.Clamp01(decalDrawCalls / 5f):F1} points. " +
-                "Remove or merge decals where practical; each decal removed below five recovers 3 points."),
+                decalMaxPoints * 0.5f *
+                (Mathf.InverseLerp(DecalMaterialPerfectScoreThreshold, DecalMaterialMaximumPenaltyThreshold, decalMaterials.Count) +
+                 Mathf.InverseLerp(DecalProjectorPerfectScoreThreshold, DecalProjectorMaximumPenaltyThreshold, decalDrawCalls)),
+                $"Decals cost {decalMaxPoints * 0.5f * (Mathf.InverseLerp(DecalMaterialPerfectScoreThreshold, DecalMaterialMaximumPenaltyThreshold, decalMaterials.Count) + Mathf.InverseLerp(DecalProjectorPerfectScoreThreshold, DecalProjectorMaximumPenaltyThreshold, decalDrawCalls)):F1} points. " +
+                "One unique decal material and up to 299 active Decal Projectors are free. Reuse decal materials and remove or disable unnecessary projectors."),
             (
                 shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, batches.Count),
                 $"Shader variants cost {shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, batches.Count):F1} points. " +
@@ -2262,7 +2296,8 @@ public class MapPerformanceScannerPanel
         DrawTableRow("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
         DrawTableRow("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
         DrawTableRow("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
-        DrawTableRow("Decal Draw Calls", decalDrawCalls.ToString("N0"));
+        DrawTableRow("Unique Decal Materials", decalMaterials.Count.ToString("N0"));
+        DrawTableRow("Active Decal Projectors", decalDrawCalls.ToString("N0"));
         DrawTableRow("Texture Import Target", EditorUserBuildSettings.activeBuildTarget.ToString());
 
         DrawTableSectionHeader("Memory Summary");
@@ -2877,12 +2912,12 @@ public class MapPerformanceScannerPanel
             ("Unique Shader Keyword Variants", totalKeywordVariants.ToString("N0")),
             ("Shader Batch Groups", batches.Count.ToString("N0")));
 
-        if (repairedKeywordMaterialCount > 0)
+        if (repairedTemplateMaterialCount > 0)
         {
             EditorGUILayout.HelpBox(
-                $"Template keyword enforcement repaired and saved {repairedKeywordMaterialCount:N0} " +
-                $"material{(repairedKeywordMaterialCount == 1 ? string.Empty : "s")} during this scan. " +
-                "The shader groups below show the corrected runtime keyword state.",
+                $"Template enforcement repaired and saved {repairedTemplateMaterialCount:N0} " +
+                $"material{(repairedTemplateMaterialCount == 1 ? string.Empty : "s")} during this scan. " +
+                "The results below show the corrected runtime state.",
                 MessageType.Info);
         }
 
@@ -2890,7 +2925,7 @@ public class MapPerformanceScannerPanel
         {
             EditorGUILayout.HelpBox(
                 $"ERROR: {unsupportedShaderCount:N0} unsupported shader{(unsupportedShaderCount == 1 ? " was" : "s were")} found. " +
-                $"Only shaders supplied by the MashBox SDK and Unity's {SupportedTerrainShaderName} terrain shader are supported. " +
+                $"Only shaders supplied by the MashBox SDK, Unity's {SupportedTerrainShaderName} terrain shader, and template-enforced {SupportedDecalShaderName} decals are supported. " +
                 "Replace every red shader before publishing.",
                 MessageType.Error);
         }
@@ -2932,7 +2967,7 @@ public class MapPerformanceScannerPanel
                     new GUIContent(group.Key?.name ?? "Missing Shader", shaderPath),
                     new GUIContent(supported
                         ? "Supported"
-                        : "ERROR: Unsupported shader\nUse a MashBox SDK shader or HDRP/TerrainLit."),
+                        : "ERROR: Unsupported shader\nUse an SDK shader, HDRP/TerrainLit, or HDRP/Decal."),
                     new GUIContent(variants.ToString("N0")),
                     new GUIContent(group.Count().ToString("N0"))
                 },
@@ -3131,7 +3166,9 @@ public class MapPerformanceScannerPanel
 
     private void DrawDecals()
     {
-        var decals = materialInfos.Where(m => m.isDecal).ToList();
+        var decals = materialInfos
+            .Where(info => info.material != null && decalMaterials.Contains(info.material))
+            .ToList();
         showDecalDetails = DrawReportFoldout(
             showDecalDetails,
             $"Decals ({decals.Count:N0})",
@@ -3143,8 +3180,8 @@ public class MapPerformanceScannerPanel
         var uniqueDecalShaders = decals.Select(info => info.shader).Distinct().Count();
         var unsupportedDecalMaterials = decals.Count(info => !info.isSupportedShader);
         DrawCategorySummary(
-            ("Decal Materials", decals.Count.ToString("N0")),
-            ("Estimated Decal Draw Calls", decalDrawCalls.ToString("N0")),
+            ("Decal Materials", $"{decals.Count:N0} (perfect with fewer than 2)"),
+            ("Active Decal Projectors", $"{decalDrawCalls:N0} (perfect with fewer than 300)"),
             ("Unique Decal Shaders", uniqueDecalShaders.ToString("N0")),
             ("Unsupported Decal Materials", unsupportedDecalMaterials.ToString("N0")));
 
