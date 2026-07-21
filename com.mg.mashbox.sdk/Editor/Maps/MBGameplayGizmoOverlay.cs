@@ -30,6 +30,13 @@ namespace MashBoxSDK.MapTools
                 MBGameplayGizmoVisibility.Visible = changeEvent.newValue;
                 SceneView.RepaintAll();
             });
+            this.RegisterCallback<AttachToPanelEvent>(_ => MBGameplayGizmoVisibility.Changed += SyncFromSharedSetting);
+            this.RegisterCallback<DetachFromPanelEvent>(_ => MBGameplayGizmoVisibility.Changed -= SyncFromSharedSetting);
+        }
+
+        private void SyncFromSharedSetting()
+        {
+            SetValueWithoutNotify(MBGameplayGizmoVisibility.Visible);
         }
     }
 }

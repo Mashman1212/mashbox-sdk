@@ -220,7 +220,7 @@ namespace MashBoxSDK.MapTools
                 EditorUtility.SetDirty(loft);
             }
 
-            if (selected.GetComponent<Collider>() == null)
+            if (loft == null && selected.GetComponent<Collider>() == null)
             {
                 MeshCollider collider = Undo.AddComponent<MeshCollider>(selected);
                 collider.sharedMesh = meshFilter.sharedMesh;

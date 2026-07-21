@@ -116,7 +116,7 @@ namespace MashBoxSDK.Maps.Sculpting
             m_BaseMesh = mesh;
             m_BaseVertices = mesh.vertices;
             m_Neighbours = null;
-            ApplyFromCachedBase(mesh);
+            ApplyFromCachedBase(mesh, false);
         }
 
         void EnsureStandaloneOutput()
@@ -142,7 +142,7 @@ namespace MashBoxSDK.Maps.Sculpting
             m_Neighbours = null;
         }
 
-        void ApplyFromCachedBase(Mesh mesh)
+        void ApplyFromCachedBase(Mesh mesh, bool updateCollider = true)
         {
             if (mesh == null || m_BaseVertices == null || m_BaseVertices.Length != mesh.vertexCount || m_Target == null) return;
             Vector3[] vertices = (Vector3[])m_BaseVertices.Clone();
@@ -154,7 +154,11 @@ namespace MashBoxSDK.Maps.Sculpting
             if (mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) mesh.RecalculateTangents();
             mesh.UploadMeshData(false);
 
-            if (m_UpdateMeshCollider && m_Target.TryGetComponent(out MeshCollider collider))
+            if (m_UpdateMeshCollider && updateCollider && m_LinkedLoft != null)
+            {
+                m_LinkedLoft.RebuildColliderChunks();
+            }
+            else if (m_UpdateMeshCollider && updateCollider && m_Target.TryGetComponent(out MeshCollider collider))
             {
                 collider.sharedMesh = null;
                 collider.sharedMesh = mesh;

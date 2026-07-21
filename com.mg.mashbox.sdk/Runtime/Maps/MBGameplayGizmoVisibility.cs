@@ -1,3 +1,5 @@
+using System;
+
 namespace MashBoxSDK.Maps
 {
     /// <summary>Shared editor visibility setting for MashBox gameplay gizmos and handles.</summary>
@@ -9,6 +11,8 @@ namespace MashBoxSDK.Maps
         private static bool initialized;
         private static bool visible;
 #endif
+
+        public static event Action Changed;
 
         public static bool Visible
         {
@@ -29,9 +33,12 @@ namespace MashBoxSDK.Maps
             set
             {
 #if UNITY_EDITOR
+                bool changed = Visible != value;
                 visible = value;
                 initialized = true;
                 UnityEditor.EditorPrefs.SetBool(EditorPreferenceKey, value);
+                if (changed)
+                    Changed?.Invoke();
 #endif
             }
         }

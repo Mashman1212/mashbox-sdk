@@ -27,7 +27,7 @@ namespace MashBoxSDK.MapTools
     public class MashBoxMapToolsWindow : EditorWindow
     {
         private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
-        private enum AuthoringToolTab { MGBrush, SplineLoft, MeshSculpt, UVSpline }
+        private enum AuthoringToolTab { MGBrush, SplineLoft, MeshSculpt, UVSpline, Terrain }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
         private const string PREF_KEY_AUTHORING_TOOL_TAB = "MashBoxSDK.SelectedMapAuthoringToolTab";
         private const string PREF_KEY_MAP_TOOL_TAB_ORDER = "MashBoxSDK.SelectedMapToolTab.Order";
@@ -103,6 +103,15 @@ namespace MashBoxSDK.MapTools
         [NonSerialized] private MGBrushWindow authoringBrushTool;
         [NonSerialized] private MultiSplineLoftWindow authoringLoftTool;
         [NonSerialized] private MeshSculptWindow authoringSculptTool;
+        [SerializeField] private List<Terrain> terrainConversionSources = new();
+        [SerializeField] private bool terrainConvertMesh = true;
+        [SerializeField] private bool terrainAddMeshCollider = true;
+        [SerializeField] private bool terrainExportSplatMaps = true;
+        [SerializeField] private bool terrainConvertTrees;
+        [SerializeField] private bool terrainConvertDetails;
+        [SerializeField] private bool terrainDisableSource = true;
+        [SerializeField] private int terrainMeshResolution = 513;
+        [NonSerialized] private TerrainConversionSummary terrainConversionSummary;
 
         private const string UGC_REQUEST_PATH =
             "https://ugc-remote-cook-func-node-fecqe4asaabhcddn.centralus-01.azurewebsites.net/api/request-upload";
@@ -579,6 +588,8 @@ namespace MashBoxSDK.MapTools
                     "Add core gameplay scene elements used by MashBox maps.",
                     MessageType.Info);
 
+                DrawGameplayGizmoVisibilitySection();
+                GUILayout.Space(10f);
                 DrawGameplayValidationSection();
                 GUILayout.Space(10f);
                 DrawSpawnLocationSection();
@@ -588,6 +599,29 @@ namespace MashBoxSDK.MapTools
                 DrawChallengesSection();
                 GUILayout.Space(10f);
                 DrawMapTasksSection();
+            }
+        }
+
+        private static void DrawGameplayGizmoVisibilitySection()
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUILayout.LabelField("Scene View", EditorStyles.boldLabel);
+                bool drawGameplayGizmos = EditorGUILayout.ToggleLeft(
+                    new GUIContent(
+                        "Draw Gameplay Gizmos",
+                        "Show or hide MashBox gameplay visualization in every Scene view."),
+                    MBGameplayGizmoVisibility.Visible);
+
+                if (drawGameplayGizmos != MBGameplayGizmoVisibility.Visible)
+                {
+                    MBGameplayGizmoVisibility.Visible = drawGameplayGizmos;
+                    SceneView.RepaintAll();
+                }
+
+                EditorGUILayout.HelpBox(
+                    "Controls MashBox gameplay drawing for races and gates, secret gaps, side hits, expert lines, photo spots, collectibles, letters, spawn points, and related gameplay handles.",
+                    MessageType.None);
             }
         }
 
@@ -774,7 +808,8 @@ namespace MashBoxSDK.MapTools
                 "MG Brush",
                 "Spline Loft",
                 "Mesh Sculpt",
-                "UV Spline"
+                "UV Spline",
+                "Terrain"
             }, MashBoxTabDrawer.TabVisualStyle.Secondary);
 
             if (newTab != authoringToolTab)
@@ -818,7 +853,238 @@ namespace MashBoxSDK.MapTools
                     authoringSculptTool?.DeactivateSceneTool();
                     DrawUvSplineToolSection();
                     break;
+                case AuthoringToolTab.Terrain:
+                    authoringBrushTool?.DeactivateSceneTool();
+                    authoringLoftTool?.DeactivateSceneTool();
+                    authoringSculptTool?.DeactivateSceneTool();
+                    DrawTerrainToolSection();
+                    break;
             }
+        }
+
+        private void DrawTerrainToolSection()
+        {
+            EditorGUILayout.LabelField("Terrain to Mesh", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Create mesh-backed copies of one or more Unity Terrains and optionally export their splat weights, trees, and painted details. Source Terrains are never deleted.",
+                MessageType.Info);
+
+            terrainConversionSources ??= new List<Terrain>();
+            EditorGUILayout.LabelField($"Source Terrains ({GetTerrainConversionTargets().Count:N0})", EditorStyles.boldLabel);
+            for (int index = 0; index < terrainConversionSources.Count; index++)
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    Terrain newSource = (Terrain)EditorGUILayout.ObjectField(
+                        terrainConversionSources[index],
+                        typeof(Terrain),
+                        true);
+                    if (newSource != terrainConversionSources[index])
+                    {
+                        terrainConversionSources[index] = newSource;
+                        terrainConversionSummary = null;
+                    }
+
+                    if (GUILayout.Button("Remove", GUILayout.Width(65f)))
+                    {
+                        terrainConversionSources.RemoveAt(index);
+                        terrainConversionSummary = null;
+                        GUIUtility.ExitGUI();
+                    }
+                }
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Use Selected Terrains"))
+                {
+                    terrainConversionSources = FindTerrainsInSelection();
+                    terrainConversionSummary = null;
+                }
+
+                if (GUILayout.Button("Add Terrain Slot"))
+                {
+                    terrainConversionSources.Add(null);
+                    terrainConversionSummary = null;
+                }
+
+                using (new EditorGUI.DisabledScope(terrainConversionSources.Count == 0))
+                {
+                    if (GUILayout.Button("Clear"))
+                    {
+                        terrainConversionSources.Clear();
+                        terrainConversionSummary = null;
+                    }
+                }
+            }
+
+            List<Terrain> targets = GetTerrainConversionTargets();
+            if (targets.Count == 0)
+            {
+                EditorGUILayout.HelpBox("Select one or more Terrain objects—or a parent containing Terrains—then click Use Selected Terrains.", MessageType.Warning);
+                return;
+            }
+
+            if (GUILayout.Button("Refresh Aggregate Counts"))
+                terrainConversionSummary = TerrainToMeshConverter.Analyze(targets);
+
+            terrainConversionSummary ??= TerrainToMeshConverter.Analyze(targets);
+            EditorGUILayout.Space(5f);
+            EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
+            terrainConvertMesh = EditorGUILayout.ToggleLeft("Convert height field to mesh", terrainConvertMesh);
+            using (new EditorGUI.DisabledScope(!terrainConvertMesh))
+            {
+                int[] resolutionValues = { 129, 257, 513, 1025 };
+                string[] resolutionLabels = { "Up to 129 x 129", "Up to 257 x 257", "Up to 513 x 513", "Up to 1025 x 1025" };
+                int resolutionIndex = Mathf.Max(0, Array.IndexOf(resolutionValues, terrainMeshResolution));
+                resolutionIndex = EditorGUILayout.Popup(new GUIContent("Mesh Resolution", "Maximum samples on either terrain axis. The outer terrain edge is always retained."), resolutionIndex, resolutionLabels);
+                terrainMeshResolution = resolutionValues[resolutionIndex];
+                terrainAddMeshCollider = EditorGUILayout.ToggleLeft("Add Mesh Collider", terrainAddMeshCollider);
+            }
+
+            terrainExportSplatMaps = EditorGUILayout.ToggleLeft(
+                $"Export splat maps ({terrainConversionSummary.SplatMapCount:N0} PNG{(terrainConversionSummary.SplatMapCount == 1 ? string.Empty : "s")})",
+                terrainExportSplatMaps);
+            terrainConvertTrees = EditorGUILayout.ToggleLeft(
+                $"Convert painted trees to GameObjects ({terrainConversionSummary.TreeCount:N0})",
+                terrainConvertTrees);
+            terrainConvertDetails = EditorGUILayout.ToggleLeft(
+                $"Convert painted details to GameObjects ({terrainConversionSummary.DetailCount:N0})",
+                terrainConvertDetails);
+            using (new EditorGUI.DisabledScope(!terrainConvertMesh))
+                terrainDisableSource = EditorGUILayout.ToggleLeft("Disable source Terrain after successful conversion", terrainDisableSource);
+
+            if (terrainConvertTrees)
+            {
+                MessageType type = terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects
+                    ? MessageType.Error
+                    : MessageType.Warning;
+                EditorGUILayout.HelpBox(
+                    terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects
+                        ? $"Tree conversion is blocked above the {TerrainToMeshConverter.MaxTreeGameObjects:N0} GameObject safety cap."
+                        : "Trees become individual GameObjects. This can make the scene and Editor substantially slower.",
+                    type);
+            }
+
+            if (terrainConvertDetails)
+            {
+                MessageType type = terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects
+                    ? MessageType.Error
+                    : MessageType.Warning;
+                EditorGUILayout.HelpBox(
+                    terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects
+                        ? $"Detail conversion is blocked above the {TerrainToMeshConverter.MaxDetailGameObjects:N0} GameObject safety cap."
+                        : "Painted details become individual GameObjects. Texture details use shared crossed-quad meshes; a future instancing system should replace these for production-scale grass.",
+                    type);
+            }
+
+            bool hasOutput = terrainConvertMesh || terrainExportSplatMaps || terrainConvertTrees || terrainConvertDetails;
+            bool overCap = (terrainConvertTrees && terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects)
+                           || (terrainConvertDetails && terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects);
+            using (new EditorGUI.DisabledScope(!hasOutput || overCap))
+            {
+                if (GUILayout.Button(targets.Count == 1 ? "Convert Terrain..." : $"Convert {targets.Count:N0} Terrains...", GUILayout.Height(38f)))
+                    ConvertSelectedTerrains(targets);
+            }
+        }
+
+        private void ConvertSelectedTerrains(IReadOnlyList<Terrain> targets)
+        {
+            terrainConversionSummary = TerrainToMeshConverter.Analyze(targets);
+            TerrainConversionOptions options = new TerrainConversionOptions
+            {
+                ConvertMesh = terrainConvertMesh,
+                AddMeshCollider = terrainAddMeshCollider,
+                ExportSplatMaps = terrainExportSplatMaps,
+                ConvertTrees = terrainConvertTrees,
+                ConvertDetails = terrainConvertDetails,
+                DisableSourceTerrain = terrainConvertMesh && terrainDisableSource,
+                MaximumMeshResolution = terrainMeshResolution
+            };
+
+            if ((options.ConvertTrees && terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects)
+                || (options.ConvertDetails && terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects))
+            {
+                EditorUtility.DisplayDialog(
+                    "Terrain Conversion Safety Cap",
+                    $"The selected batch contains {terrainConversionSummary.TreeCount:N0} trees and {terrainConversionSummary.DetailCount:N0} details. Reduce the selected terrains or turn off the conversion that exceeds its safety cap.",
+                    "OK");
+                return;
+            }
+
+            if (!TerrainToMeshConverter.ConfirmLargeGameObjectConversions(terrainConversionSummary, options))
+                return;
+
+            string defaultFolderName = targets.Count == 1 ? targets[0].name + "_Converted" : "Terrain_Conversions";
+            string absoluteFolder = EditorUtility.SaveFolderPanel("Choose Terrain Conversion Asset Folder", "Assets", defaultFolderName);
+            if (string.IsNullOrEmpty(absoluteFolder))
+                return;
+
+            string assetFolder = TerrainToMeshConverter.ToProjectAssetPath(absoluteFolder);
+            if (string.IsNullOrEmpty(assetFolder))
+            {
+                EditorUtility.DisplayDialog("Terrain Conversion", "Choose a folder inside this project's Assets folder.", "OK");
+                return;
+            }
+
+            var results = new List<GameObject>();
+            var failures = new List<string>();
+            foreach (Terrain target in targets)
+            {
+                try
+                {
+                    results.Add(TerrainToMeshConverter.Convert(target, assetFolder, options));
+                }
+                catch (Exception exception)
+                {
+                    failures.Add($"{target.name}: {exception.Message}");
+                    Debug.LogException(exception, target);
+                }
+            }
+
+            terrainConversionSummary = null;
+            if (results.Count > 0)
+            {
+                Selection.objects = results.Cast<UnityEngine.Object>().ToArray();
+                EditorGUIUtility.PingObject(results[0]);
+            }
+
+            if (failures.Count > 0)
+                EditorUtility.DisplayDialog(
+                    "Terrain Batch Conversion",
+                    $"Converted {results.Count:N0} of {targets.Count:N0} terrains.\n\n" + string.Join("\n", failures),
+                    "OK");
+        }
+
+        private List<Terrain> GetTerrainConversionTargets()
+        {
+            return terrainConversionSources?
+                       .Where(terrain => terrain != null && terrain.terrainData != null)
+                       .Distinct()
+                       .ToList()
+                   ?? new List<Terrain>();
+        }
+
+        private static List<Terrain> FindTerrainsInSelection()
+        {
+            var terrains = new HashSet<Terrain>();
+            foreach (GameObject selected in Selection.gameObjects)
+            {
+                if (selected == null)
+                    continue;
+
+                Terrain selectedTerrain = selected.GetComponent<Terrain>() ?? selected.GetComponentInParent<Terrain>();
+                if (selectedTerrain != null && selectedTerrain.terrainData != null)
+                    terrains.Add(selectedTerrain);
+
+                foreach (Terrain childTerrain in selected.GetComponentsInChildren<Terrain>(true))
+                {
+                    if (childTerrain != null && childTerrain.terrainData != null)
+                        terrains.Add(childTerrain);
+                }
+            }
+
+            return terrains.OrderBy(terrain => terrain.name).ToList();
         }
 
         private void DrawUvSplineToolSection()
@@ -2929,7 +3195,7 @@ namespace MashBoxSDK.MapTools
 
             if (manifest == null)
             {
-                Debug.LogError("[MGMapTools] BuildPipeline returned NULL � build failed.");
+                Debug.LogError("[MGMapTools] BuildPipeline returned NULL — build failed.");
                 return;
             }
 

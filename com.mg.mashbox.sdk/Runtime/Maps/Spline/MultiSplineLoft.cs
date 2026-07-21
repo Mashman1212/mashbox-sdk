@@ -9,7 +9,7 @@ namespace MashBoxSDK.Maps.Spline
 {
     [ExecuteAlways]
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
+    [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
     public sealed class MultiSplineLoft : MonoBehaviour
     {
         public enum NormalMode
@@ -79,7 +79,7 @@ namespace MashBoxSDK.Maps.Spline
         AcrossInterpolation m_AcrossInterpolation = AcrossInterpolation.CatmullRom;
 
         [SerializeField]
-        AlongResolutionMode m_AlongResolutionMode = AlongResolutionMode.FixedSamples;
+        AlongResolutionMode m_AlongResolutionMode = AlongResolutionMode.Distance;
 
         [SerializeField]
         AlongAlignment m_AlongAlignment = AlongAlignment.ReferencePerpendicular;
@@ -91,10 +91,19 @@ namespace MashBoxSDK.Maps.Spline
         float m_TargetSegmentLength = 1f;
 
         [SerializeField, Min(2)]
-        int m_MaxDistanceSamples = 512;
+        int m_MaxDistanceSamples = 10000;
 
         [SerializeField]
         List<ResolutionZone> m_ResolutionZones = new List<ResolutionZone>();
+
+        [SerializeField]
+        bool m_GenerateResolutionSplineWithLoft;
+
+        [SerializeField, Min(2)]
+        int m_ResolutionSplinePointCount = 8;
+
+        [SerializeField]
+        LoftResolutionSpline m_ResolutionSpline;
 
         [SerializeField]
         bool m_AutoRegenerate = true;
@@ -116,6 +125,9 @@ namespace MashBoxSDK.Maps.Spline
 
         [SerializeField]
         bool m_UpdateMeshCollider = true;
+
+        [SerializeField, Min(1f)]
+        float m_ColliderChunkLength = 50f;
 
         [SerializeField]
         NormalMode m_NormalMode = NormalMode.SmoothedFaces;
@@ -148,6 +160,9 @@ namespace MashBoxSDK.Maps.Spline
         MeshSculptModifier m_SculptModifier;
 
         [SerializeField]
+        LoftShoulderModifier m_ShoulderModifier;
+
+        [SerializeField]
         Mesh m_GeneratedMesh;
 
         readonly List<Vector3> m_Vertices = new List<Vector3>();
@@ -173,16 +188,22 @@ namespace MashBoxSDK.Maps.Spline
         int m_SurfaceTriangleCount;
         int m_PrimaryTriangleCount;
         bool m_RegenerateQueued;
+        int m_GenerationVersion;
 
         public List<SplineSource> Sources => m_Sources;
         public int SamplesAlong { get => m_SamplesAlong; set => m_SamplesAlong = Mathf.Max(2, value); }
         public int SegmentsAcross { get => m_SegmentsAcross; set => m_SegmentsAcross = Mathf.Max(1, value); }
         public int CurrentSamplesAlong => m_AlongSampleCount;
+        public int CurrentSamplesAcross => m_CrossSampleCount;
+        public int GenerationVersion => m_GenerationVersion;
         public AcrossInterpolation AcrossMode { get => m_AcrossInterpolation; set => m_AcrossInterpolation = value; }
         public AlongResolutionMode AlongResolution { get => m_AlongResolutionMode; set => m_AlongResolutionMode = value; }
         public AlongAlignment Alignment { get => m_AlongAlignment; set => m_AlongAlignment = value; }
         public int AlignmentReferenceSource { get => m_AlignmentReferenceSource; set => m_AlignmentReferenceSource = value; }
         public float TargetSegmentLength { get => m_TargetSegmentLength; set => m_TargetSegmentLength = Mathf.Max(0.01f, value); }
+        public bool GenerateResolutionSplineWithLoft { get => m_GenerateResolutionSplineWithLoft; set => m_GenerateResolutionSplineWithLoft = value; }
+        public int ResolutionSplinePointCount { get => m_ResolutionSplinePointCount; set => m_ResolutionSplinePointCount = Mathf.Max(2, value); }
+        public LoftResolutionSpline GeneratedResolutionSpline => ResolveResolutionSpline();
         public bool AutoRegenerate { get => m_AutoRegenerate; set => m_AutoRegenerate = value; }
         public bool CloseAlongClosedSplines { get => m_CloseAlongClosedSplines; set => m_CloseAlongClosedSplines = value; }
         public bool CloseAcrossSplines { get => m_CloseAcrossSplines; set => m_CloseAcrossSplines = value; }
@@ -190,6 +211,7 @@ namespace MashBoxSDK.Maps.Spline
         public bool CapEnd { get => m_CapEnd; set => m_CapEnd = value; }
         public bool DoubleSided { get => m_DoubleSided; set => m_DoubleSided = value; }
         public bool UpdateMeshCollider { get => m_UpdateMeshCollider; set => m_UpdateMeshCollider = value; }
+        public float ColliderChunkLength { get => m_ColliderChunkLength; set => m_ColliderChunkLength = Mathf.Max(1f, value); }
         public NormalMode SurfaceNormalMode { get => m_NormalMode; set => m_NormalMode = value; }
         public bool FlipNormals { get => m_FlipNormals; set => m_FlipNormals = value; }
         public bool GenerateUvSplineWithLoft { get => m_GenerateUvSplineWithLoft; set => m_GenerateUvSplineWithLoft = value; }
@@ -198,6 +220,7 @@ namespace MashBoxSDK.Maps.Spline
         public int UvSplinePointCount { get => m_UvSplinePointCount; set => m_UvSplinePointCount = Mathf.Max(2, value); }
         public UVSpline GeneratedUvSpline => m_UvSpline;
         public MeshSculptModifier SculptModifier { get => m_SculptModifier; set => m_SculptModifier = value; }
+        public LoftShoulderModifier ShoulderModifier { get => ResolveShoulderModifier(); set => m_ShoulderModifier = value; }
         public Mesh GeneratedMesh => m_GeneratedMesh;
 
         public void SetGeneratedMesh(Mesh mesh)
@@ -232,6 +255,8 @@ namespace MashBoxSDK.Maps.Spline
             m_SegmentsAcross = Mathf.Max(1, m_SegmentsAcross);
             m_TargetSegmentLength = Mathf.Max(0.01f, m_TargetSegmentLength);
             m_MaxDistanceSamples = Mathf.Max(2, m_MaxDistanceSamples);
+            m_ResolutionSplinePointCount = Mathf.Max(2, m_ResolutionSplinePointCount);
+            m_ColliderChunkLength = Mathf.Max(1f, m_ColliderChunkLength);
             m_UvScaleAlong = Mathf.Max(0.0001f, m_UvScaleAlong);
             m_UvScaleAcross = Mathf.Max(0.0001f, m_UvScaleAcross);
             m_UvSplineChannel = Mathf.Clamp(m_UvSplineChannel, 0, 3);
@@ -317,6 +342,33 @@ namespace MashBoxSDK.Maps.Spline
 
         public void Regenerate()
         {
+            // Generated meshes and modifier children are allowed to change, but the
+            // authored loft root is not. Preserve its transform defensively around
+            // the entire regeneration pipeline, including callbacks and early exits.
+            Transform loftTransform = transform;
+            Vector3 localPosition = loftTransform.localPosition;
+            Quaternion localRotation = loftTransform.localRotation;
+            Vector3 localScale = loftTransform.localScale;
+            bool hadChanged = loftTransform.hasChanged;
+
+            try
+            {
+                RegenerateInternal();
+            }
+            finally
+            {
+                if (loftTransform.localPosition != localPosition)
+                    loftTransform.localPosition = localPosition;
+                if (loftTransform.localRotation != localRotation)
+                    loftTransform.localRotation = localRotation;
+                if (loftTransform.localScale != localScale)
+                    loftTransform.localScale = localScale;
+                loftTransform.hasChanged = hadChanged;
+            }
+        }
+
+        void RegenerateInternal()
+        {
             EnsureMesh();
             ClearBuildBuffers();
             CollectValidSources();
@@ -324,8 +376,14 @@ namespace MashBoxSDK.Maps.Spline
             if (m_ValidSourceIndices.Count < 2)
             {
                 ApplyMesh();
+                ResolveShoulderModifier()?.ClearGenerated();
+                RebuildColliderChunks();
+                unchecked { m_GenerationVersion++; }
                 return;
             }
+
+            if (ResolveResolutionSpline() != null || m_GenerateResolutionSplineWithLoft)
+                GenerateResolutionSpline(out _);
 
             BuildSampleGrid();
             BuildVertices();
@@ -348,8 +406,14 @@ namespace MashBoxSDK.Maps.Spline
             if (m_SculptModifier != null)
                 m_SculptModifier.ApplyToFreshMesh(m_GeneratedMesh);
 
+            ResolveShoulderModifier()?.RebuildFromLoft(this);
+
+            RebuildColliderChunks();
+
             if (m_GenerateUvSplineWithLoft || (m_UvSpline != null && m_UvSpline.OutputMesh != null))
                 RegenerateUvSpline(out _);
+
+            unchecked { m_GenerationVersion++; }
         }
 
         public bool RegenerateUvSpline(out string error)
@@ -372,6 +436,47 @@ namespace MashBoxSDK.Maps.Spline
             return true;
         }
 
+        public bool GenerateResolutionSpline(out string error)
+        {
+            error = null;
+            if (!TryEvaluateResolutionCenterline(0f, out _))
+            {
+                error = "The loft needs at least two valid source splines before generating a resolution spline.";
+                return false;
+            }
+
+            EnsureResolutionSpline();
+            m_ResolutionSpline.Loft = this;
+            m_ResolutionSpline.GeneratedPointCount = m_ResolutionSplinePointCount;
+            return m_ResolutionSpline.GenerateFromLoft(out error);
+        }
+
+        public bool TryEvaluateResolutionCenterline(float pathT, out Vector3 worldPosition)
+        {
+            worldPosition = Vector3.zero;
+            var validSourceIndices = new List<int>();
+            for (int index = 0; index < m_Sources.Count; index++)
+            {
+                if (m_Sources[index]?.IsValid == true)
+                    validSourceIndices.Add(index);
+            }
+
+            if (validSourceIndices.Count < 2)
+                return false;
+
+            int sourceListIndex = validSourceIndices.Count / 2;
+            if (m_AlignmentReferenceSource >= 0)
+            {
+                int configuredIndex = validSourceIndices.IndexOf(m_AlignmentReferenceSource);
+                if (configuredIndex >= 0)
+                    sourceListIndex = configuredIndex;
+            }
+
+            SplineSource source = m_Sources[validSourceIndices[sourceListIndex]];
+            worldPosition = EvaluateSourcePosition(source, Mathf.Clamp01(pathT));
+            return IsFinite(worldPosition);
+        }
+
         void EnsureUvSpline()
         {
             if (m_UvSpline == null)
@@ -383,6 +488,103 @@ namespace MashBoxSDK.Maps.Spline
             var splineObject = new GameObject("UV Spline", typeof(SplineContainer), typeof(UVSpline));
             splineObject.transform.SetParent(transform, false);
             m_UvSpline = splineObject.GetComponent<UVSpline>();
+        }
+
+        void EnsureResolutionSpline()
+        {
+            if (ResolveResolutionSpline() != null)
+                return;
+
+            var splineObject = new GameObject("Loft Resolution Spline", typeof(SplineContainer), typeof(LoftResolutionSpline));
+            splineObject.transform.SetParent(transform, false);
+            m_ResolutionSpline = splineObject.GetComponent<LoftResolutionSpline>();
+            m_ResolutionSpline.Loft = this;
+        }
+
+        LoftResolutionSpline ResolveResolutionSpline()
+        {
+            if (m_ResolutionSpline == null)
+                m_ResolutionSpline = GetComponentInChildren<LoftResolutionSpline>(true);
+            return m_ResolutionSpline;
+        }
+
+        LoftShoulderModifier ResolveShoulderModifier()
+        {
+            if (m_ShoulderModifier == null)
+                m_ShoulderModifier = GetComponentInChildren<LoftShoulderModifier>(true);
+            return m_ShoulderModifier;
+        }
+
+        public bool TryGetShoulderEdge(
+            LoftShoulderModifier.Edge edge,
+            List<Vector3> boundary,
+            List<Vector3> inner,
+            List<float> pathDistances)
+        {
+            boundary?.Clear();
+            inner?.Clear();
+            pathDistances?.Clear();
+            if (boundary == null || inner == null || pathDistances == null || m_SampledPoints == null || m_CrossSampleCount < 2 || m_AlongSampleCount < 2)
+                return false;
+
+            Vector3[] renderedVertices = m_NormalMode != NormalMode.Face && m_GeneratedMesh != null
+                ? m_GeneratedMesh.vertices
+                : null;
+            bool canUseRenderedVertices = renderedVertices != null && renderedVertices.Length >= m_SurfaceVertexCount;
+
+            Vector3 GetPoint(int cross, int along)
+            {
+                int vertexIndex = VertexIndex(cross, along);
+                return canUseRenderedVertices && vertexIndex < renderedVertices.Length
+                    ? renderedVertices[vertexIndex]
+                    : m_SampledPoints[cross, along];
+            }
+
+            if (edge == LoftShoulderModifier.Edge.Left || edge == LoftShoulderModifier.Edge.Right)
+            {
+                int boundaryCross = edge == LoftShoulderModifier.Edge.Left ? 0 : m_CrossSampleCount - 1;
+                int innerCross = edge == LoftShoulderModifier.Edge.Left ? 1 : m_CrossSampleCount - 2;
+                for (int along = 0; along < m_AlongSampleCount; along++)
+                {
+                    boundary.Add(GetPoint(boundaryCross, along));
+                    inner.Add(GetPoint(innerCross, along));
+                    pathDistances.Add(along < m_AlongDistances.Count ? m_AlongDistances[along] : along);
+                }
+            }
+            else
+            {
+                int boundaryAlong = edge == LoftShoulderModifier.Edge.Start ? 0 : m_AlongSampleCount - 1;
+                int innerAlong = edge == LoftShoulderModifier.Edge.Start ? 1 : m_AlongSampleCount - 2;
+                for (int cross = 0; cross < m_CrossSampleCount; cross++)
+                {
+                    boundary.Add(GetPoint(cross, boundaryAlong));
+                    inner.Add(GetPoint(cross, innerAlong));
+                    pathDistances.Add(cross < m_CrossDistances.Count ? m_CrossDistances[cross] : cross);
+                }
+            }
+
+            return boundary.Count >= 2;
+        }
+
+        public bool TryGetShoulderSourceKnotCount(LoftShoulderModifier.Edge edge, out int knotCount)
+        {
+            knotCount = 0;
+            if (edge != LoftShoulderModifier.Edge.Left && edge != LoftShoulderModifier.Edge.Right)
+                return false;
+
+            int start = edge == LoftShoulderModifier.Edge.Left ? 0 : m_Sources.Count - 1;
+            int direction = edge == LoftShoulderModifier.Edge.Left ? 1 : -1;
+            for (int index = start; index >= 0 && index < m_Sources.Count; index += direction)
+            {
+                SplineSource source = m_Sources[index];
+                if (source?.IsValid != true)
+                    continue;
+
+                knotCount = source.container.Splines[source.splineIndex].Count;
+                return knotCount >= 2;
+            }
+
+            return false;
         }
 
         public void AddSelectedSpline(SplineContainer container, int splineIndex = 0)
@@ -423,8 +625,7 @@ namespace MashBoxSDK.Maps.Spline
             if (meshFilter.sharedMesh != m_GeneratedMesh)
                 meshFilter.sharedMesh = m_GeneratedMesh;
 
-            if (m_UpdateMeshCollider)
-                EnsureMeshCollider().sharedMesh = m_GeneratedMesh;
+            ClearLegacyRootCollider();
         }
 
         void ClearBuildBuffers()
@@ -529,17 +730,67 @@ namespace MashBoxSDK.Maps.Spline
                     else if (!closedAlong && along == m_AlongSampleCount - 1)
                         sourceParameter = 1f;
                     else
+                    {
+                        float referenceStep = GetReferenceParameterStep(along, closedAlong);
+                        float expectedParameter = along == 0
+                            ? referenceParameter
+                            : Mathf.Clamp01(previousParameter + referenceStep);
+                        // A perpendicular plane can intersect a winding source spline
+                        // many times. Restrict the solve to the neighboring parameter
+                        // range so it cannot jump across a hairpin to a distant branch.
+                        float backtrackTolerance = Mathf.Max(0.0025f, referenceStep * 0.75f);
+                        float forwardSearchRadius = Mathf.Max(0.01f, referenceStep * 2f);
+                        float minimumParameter = Mathf.Max(0f, previousParameter - backtrackTolerance);
+                        float maximumParameter = Mathf.Min(
+                            1f,
+                            Mathf.Max(previousParameter, expectedParameter) + forwardSearchRadius);
+
                         sourceParameter = FindPlaneIntersectionParameter(
                             source,
                             referencePoint,
                             referenceTangent,
-                            referenceParameter,
-                            closedAlong ? 0f : previousParameter);
+                            expectedParameter,
+                            minimumParameter,
+                            maximumParameter);
+
+                        if (along > 0)
+                        {
+                            Vector3 previousSourcePoint = EvaluateSourcePosition(source, previousParameter);
+                            Vector3 candidateSourcePoint = EvaluateSourcePosition(source, sourceParameter);
+                            Vector3 expectedSourcePoint = EvaluateSourcePosition(source, expectedParameter);
+                            Vector3 previousReferencePoint = EvaluateSourcePosition(referenceSource, m_AlongParameters[along - 1]);
+                            float candidateTravel = Vector3.Distance(previousSourcePoint, candidateSourcePoint);
+                            float expectedTravel = Vector3.Distance(previousSourcePoint, expectedSourcePoint);
+                            float referenceTravel = Vector3.Distance(previousReferencePoint, referencePoint);
+                            float maximumLocalTravel = Mathf.Max(0.01f, Mathf.Max(expectedTravel * 4f, referenceTravel * 6f));
+
+                            // Parameter spacing can be very uneven on edited splines.
+                            // Keep a root only if it is also spatially local; otherwise
+                            // use the continuous prediction instead of stretching a quad
+                            // across a distant portion of the course.
+                            if (candidateTravel > maximumLocalTravel)
+                                sourceParameter = expectedParameter;
+                        }
+                    }
 
                     previousParameter = sourceParameter;
                     m_SourcePoints[sourceIndex, along] = ToLocalPoint(EvaluateSourcePosition(source, sourceParameter));
                 }
             }
+        }
+
+        float GetReferenceParameterStep(int along, bool closedAlong)
+        {
+            if (m_AlongSampleCount < 2)
+                return 1f;
+
+            if (along > 0)
+                return Mathf.Abs(m_AlongParameters[along] - m_AlongParameters[along - 1]);
+
+            if (closedAlong)
+                return 1f / m_AlongSampleCount;
+
+            return Mathf.Abs(m_AlongParameters[1] - m_AlongParameters[0]);
         }
 
         int ResolveAlignmentReference(int sourceCount)
@@ -592,12 +843,14 @@ namespace MashBoxSDK.Maps.Spline
             Vector3 planePoint,
             Vector3 planeNormal,
             float preferredParameter,
-            float minimumParameter)
+            float minimumParameter,
+            float maximumParameter)
         {
-            const int searchSteps = 32;
+            const int searchSteps = 48;
             const int refinementSteps = 10;
             float min = Mathf.Clamp01(minimumParameter);
-            float bestParameter = Mathf.Clamp(preferredParameter, min, 1f);
+            float max = Mathf.Clamp(maximumParameter, min, 1f);
+            float bestParameter = Mathf.Clamp(preferredParameter, min, max);
             float bestDistance = Mathf.Abs(SignedPlaneDistance(source, bestParameter, planePoint, planeNormal));
             float previousParameter = min;
             float previousDistance = SignedPlaneDistance(source, previousParameter, planePoint, planeNormal);
@@ -612,7 +865,7 @@ namespace MashBoxSDK.Maps.Spline
 
             for (int step = 1; step <= searchSteps; step++)
             {
-                float parameter = Mathf.Lerp(min, 1f, step / (float)searchSteps);
+                float parameter = Mathf.Lerp(min, max, step / (float)searchSteps);
                 float distance = SignedPlaneDistance(source, parameter, planePoint, planeNormal);
                 float absoluteDistance = Mathf.Abs(distance);
                 if (absoluteDistance < bestDistance)
@@ -675,6 +928,13 @@ namespace MashBoxSDK.Maps.Spline
             if (m_AlongResolutionMode == AlongResolutionMode.FixedSamples)
             {
                 int count = Mathf.Max(2, m_SamplesAlong);
+                LoftResolutionSpline resolutionSpline = ResolveResolutionSpline();
+                if (resolutionSpline != null && resolutionSpline.HasCustomScales)
+                {
+                    BuildResolutionScaledFixedParameters(count, closedAlong, resolutionSpline);
+                    return;
+                }
+
                 for (int along = 0; along < count; along++)
                     m_AlongParameters.Add(closedAlong ? along / (float)count : along / (float)(count - 1));
 
@@ -682,6 +942,31 @@ namespace MashBoxSDK.Maps.Spline
             }
 
             BuildDistanceBasedAlongParameters(sourceCount, closedAlong);
+        }
+
+        void BuildResolutionScaledFixedParameters(int baseSampleCount, bool closedAlong, LoftResolutionSpline resolutionSpline)
+        {
+            float baseStep = 1f / Mathf.Max(1, closedAlong ? baseSampleCount : baseSampleCount - 1);
+            int maximumSamples = (int)Math.Min(100000L, Math.Max(2L, (long)baseSampleCount * 10L));
+            float parameter = 0f;
+            m_AlongParameters.Add(0f);
+
+            while (m_AlongParameters.Count < maximumSamples)
+            {
+                float density = Mathf.Clamp(resolutionSpline.EvaluateScale(parameter), 0.1f, 10f);
+                float nextParameter = parameter + Mathf.Max(0.00001f, baseStep / density);
+                if (nextParameter >= 1f - 0.00001f)
+                    break;
+
+                m_AlongParameters.Add(nextParameter);
+                parameter = nextParameter;
+            }
+
+            if (!closedAlong)
+                m_AlongParameters.Add(1f);
+
+            if (m_AlongParameters.Count < 2)
+                BuildFallbackAlongParameters(closedAlong);
         }
 
         void BuildDistanceBasedAlongParameters(int sourceCount, bool closedAlong)
@@ -810,7 +1095,11 @@ namespace MashBoxSDK.Maps.Spline
                 density = Mathf.Max(density, Mathf.Lerp(1f, Mathf.Max(0.1f, zone.density), Mathf.SmoothStep(0f, 1f, influence)));
             }
 
-            return density;
+            LoftResolutionSpline resolutionSpline = ResolveResolutionSpline();
+            if (resolutionSpline != null)
+                density *= resolutionSpline.EvaluateScale(t);
+
+            return Mathf.Max(0.1f, density);
         }
 
         void GetAcrossSegment(int crossSample, int sourceCount, out int segment, out float t)
@@ -1132,6 +1421,12 @@ namespace MashBoxSDK.Maps.Spline
             else if (m_NormalMode == NormalMode.LoftGrid)
                 RebuildLoftGridNormals();
 
+            // Unity meshes default to 16-bit indices. Higher along-sample counts can
+            // push the loft past 65,535 vertices, at which point 16-bit triangle
+            // indices wrap and the surface appears to explode across the scene.
+            m_GeneratedMesh.indexFormat = m_Vertices.Count > ushort.MaxValue
+                ? UnityEngine.Rendering.IndexFormat.UInt32
+                : UnityEngine.Rendering.IndexFormat.UInt16;
             m_GeneratedMesh.SetVertices(m_Vertices);
             m_GeneratedMesh.SetUVs(0, m_Uvs);
             m_GeneratedMesh.SetTriangles(m_Triangles, 0);
@@ -1147,21 +1442,156 @@ namespace MashBoxSDK.Maps.Spline
 
             var meshFilter = GetComponent<MeshFilter>();
             meshFilter.sharedMesh = m_GeneratedMesh;
+        }
 
-            if (m_UpdateMeshCollider)
+        public void RebuildColliderChunks()
+        {
+            ClearLegacyRootCollider();
+            Transform chunksRoot = FindColliderChunksRoot();
+            if (!m_UpdateMeshCollider || m_GeneratedMesh == null || m_GeneratedMesh.vertexCount == 0 || m_SurfaceTriangleCount <= 0)
             {
-                MeshCollider collider = EnsureMeshCollider();
-                collider.sharedMesh = null;
-                collider.sharedMesh = m_GeneratedMesh;
+                if (chunksRoot != null)
+                    DestroyColliderChunksRoot(chunksRoot);
+                return;
+            }
+
+            if (chunksRoot == null)
+            {
+                var rootObject = new GameObject("Collider Chunks");
+                rootObject.transform.SetParent(transform, false);
+                chunksRoot = rootObject.transform;
+            }
+            else
+            {
+                for (int index = chunksRoot.childCount - 1; index >= 0; index--)
+                    DestroyColliderChunkObject(chunksRoot.GetChild(index).gameObject);
+            }
+
+            chunksRoot.gameObject.isStatic = true;
+
+            chunksRoot.gameObject.layer = gameObject.layer;
+
+            Vector3[] sourceVertices = m_GeneratedMesh.vertices;
+            Vector2[] sourceUvs = m_GeneratedMesh.uv;
+            int[] sourceTriangles = m_GeneratedMesh.triangles;
+            int surfaceIndexCount = Mathf.Min(m_SurfaceTriangleCount, sourceTriangles.Length);
+            float totalDistance = m_AlongDistances.Count > 0 ? m_AlongDistances[m_AlongDistances.Count - 1] : 0f;
+            float chunkLength = Mathf.Max(1f, m_ColliderChunkLength);
+            int chunkCount = Mathf.Max(1, Mathf.CeilToInt(totalDistance / chunkLength));
+            var chunkTriangleIndices = new List<int>[chunkCount];
+
+            for (int triangle = 0; triangle + 2 < surfaceIndexCount; triangle += 3)
+            {
+                int a = sourceTriangles[triangle];
+                int b = sourceTriangles[triangle + 1];
+                int c = sourceTriangles[triangle + 2];
+                if (a < 0 || b < 0 || c < 0 || a >= sourceVertices.Length || b >= sourceVertices.Length || c >= sourceVertices.Length)
+                    continue;
+
+                float alongDistance;
+                if (sourceUvs.Length == sourceVertices.Length)
+                    alongDistance = (sourceUvs[a].y + sourceUvs[b].y + sourceUvs[c].y) / (3f * Mathf.Max(0.0001f, m_UvScaleAlong));
+                else
+                    alongDistance = totalDistance * triangle / Mathf.Max(1f, surfaceIndexCount);
+
+                int chunkIndex = Mathf.Clamp(Mathf.FloorToInt(alongDistance / chunkLength), 0, chunkCount - 1);
+                chunkTriangleIndices[chunkIndex] ??= new List<int>();
+                chunkTriangleIndices[chunkIndex].Add(a);
+                chunkTriangleIndices[chunkIndex].Add(b);
+                chunkTriangleIndices[chunkIndex].Add(c);
+            }
+
+            for (int chunkIndex = 0; chunkIndex < chunkTriangleIndices.Length; chunkIndex++)
+            {
+                List<int> sourceIndices = chunkTriangleIndices[chunkIndex];
+                if (sourceIndices == null || sourceIndices.Count == 0)
+                    continue;
+
+                Mesh colliderMesh = BuildColliderChunkMesh(sourceVertices, sourceIndices, chunkIndex);
+                float startDistance = chunkIndex * chunkLength;
+                float endDistance = Mathf.Min(totalDistance, startDistance + chunkLength);
+                var chunkObject = new GameObject($"Collider {chunkIndex + 1:000} [{startDistance:0}-{endDistance:0}m]");
+                chunkObject.layer = gameObject.layer;
+                chunkObject.isStatic = true;
+                chunkObject.transform.SetParent(chunksRoot, false);
+                chunkObject.AddComponent<MeshCollider>().sharedMesh = colliderMesh;
             }
         }
 
-        MeshCollider EnsureMeshCollider()
+        Mesh BuildColliderChunkMesh(Vector3[] sourceVertices, List<int> sourceIndices, int chunkIndex)
+        {
+            var remappedIndices = new Dictionary<int, int>();
+            var vertices = new List<Vector3>();
+            var triangles = new List<int>(sourceIndices.Count);
+            foreach (int sourceIndex in sourceIndices)
+            {
+                if (!remappedIndices.TryGetValue(sourceIndex, out int remappedIndex))
+                {
+                    remappedIndex = vertices.Count;
+                    remappedIndices.Add(sourceIndex, remappedIndex);
+                    vertices.Add(sourceVertices[sourceIndex]);
+                }
+                triangles.Add(remappedIndex);
+            }
+
+            var mesh = new Mesh
+            {
+                name = $"{gameObject.name} Collider Chunk {chunkIndex + 1:000}",
+                hideFlags = HideFlags.DontSave,
+                indexFormat = vertices.Count > ushort.MaxValue
+                    ? UnityEngine.Rendering.IndexFormat.UInt32
+                    : UnityEngine.Rendering.IndexFormat.UInt16
+            };
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0, true);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        Transform FindColliderChunksRoot()
+        {
+            Transform child = transform.Find("Collider Chunks");
+            return child != null && child.parent == transform ? child : null;
+        }
+
+        void ClearLegacyRootCollider()
         {
             if (!TryGetComponent(out MeshCollider collider))
-                collider = gameObject.AddComponent<MeshCollider>();
+                return;
 
-            return collider;
+            collider.sharedMesh = null;
+            collider.enabled = false;
+            DestroyGeneratedObject(collider);
+        }
+
+        static void DestroyColliderChunksRoot(Transform chunksRoot)
+        {
+            for (int index = chunksRoot.childCount - 1; index >= 0; index--)
+                DestroyColliderChunkObject(chunksRoot.GetChild(index).gameObject);
+            DestroyGeneratedObject(chunksRoot.gameObject);
+        }
+
+        static void DestroyColliderChunkObject(GameObject chunkObject)
+        {
+            if (chunkObject == null)
+                return;
+            MeshCollider collider = chunkObject.GetComponent<MeshCollider>();
+            Mesh colliderMesh = collider != null ? collider.sharedMesh : null;
+            if (collider != null)
+                collider.sharedMesh = null;
+            if (colliderMesh != null && (colliderMesh.hideFlags & HideFlags.DontSave) != 0)
+                DestroyGeneratedObject(colliderMesh);
+            DestroyGeneratedObject(chunkObject);
+        }
+
+        static void DestroyGeneratedObject(UnityEngine.Object value)
+        {
+            if (value == null)
+                return;
+            if (Application.isPlaying)
+                Destroy(value);
+            else
+                DestroyImmediate(value);
         }
 
         void RebuildSmoothedFaceNormals()

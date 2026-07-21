@@ -24,6 +24,9 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_TargetSegmentLength;
         SerializedProperty m_MaxDistanceSamples;
         SerializedProperty m_ResolutionZones;
+        SerializedProperty m_GenerateResolutionSplineWithLoft;
+        SerializedProperty m_ResolutionSplinePointCount;
+        SerializedProperty m_ResolutionSpline;
         SerializedProperty m_AutoRegenerate;
         SerializedProperty m_CloseAlongClosedSplines;
         SerializedProperty m_CloseAcrossSplines;
@@ -31,6 +34,7 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_CapEnd;
         SerializedProperty m_DoubleSided;
         SerializedProperty m_UpdateMeshCollider;
+        SerializedProperty m_ColliderChunkLength;
         SerializedProperty m_NormalMode;
         SerializedProperty m_FlipNormals;
         SerializedProperty m_UvScaleAlong;
@@ -41,6 +45,7 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_UvSplinePointCount;
         SerializedProperty m_UvSpline;
         SerializedProperty m_SculptModifier;
+        SerializedProperty m_ShoulderModifier;
         SerializedProperty m_GeneratedMesh;
 
         void OnEnable()
@@ -55,6 +60,9 @@ namespace MashBoxSDK.Maps.Spline
             m_TargetSegmentLength = serializedObject.FindProperty("m_TargetSegmentLength");
             m_MaxDistanceSamples = serializedObject.FindProperty("m_MaxDistanceSamples");
             m_ResolutionZones = serializedObject.FindProperty("m_ResolutionZones");
+            m_GenerateResolutionSplineWithLoft = serializedObject.FindProperty("m_GenerateResolutionSplineWithLoft");
+            m_ResolutionSplinePointCount = serializedObject.FindProperty("m_ResolutionSplinePointCount");
+            m_ResolutionSpline = serializedObject.FindProperty("m_ResolutionSpline");
             m_AutoRegenerate = serializedObject.FindProperty("m_AutoRegenerate");
             m_CloseAlongClosedSplines = serializedObject.FindProperty("m_CloseAlongClosedSplines");
             m_CloseAcrossSplines = serializedObject.FindProperty("m_CloseAcrossSplines");
@@ -62,6 +70,7 @@ namespace MashBoxSDK.Maps.Spline
             m_CapEnd = serializedObject.FindProperty("m_CapEnd");
             m_DoubleSided = serializedObject.FindProperty("m_DoubleSided");
             m_UpdateMeshCollider = serializedObject.FindProperty("m_UpdateMeshCollider");
+            m_ColliderChunkLength = serializedObject.FindProperty("m_ColliderChunkLength");
             m_NormalMode = serializedObject.FindProperty("m_NormalMode");
             m_FlipNormals = serializedObject.FindProperty("m_FlipNormals");
             m_UvScaleAlong = serializedObject.FindProperty("m_UvScaleAlong");
@@ -72,6 +81,7 @@ namespace MashBoxSDK.Maps.Spline
             m_UvSplinePointCount = serializedObject.FindProperty("m_UvSplinePointCount");
             m_UvSpline = serializedObject.FindProperty("m_UvSpline");
             m_SculptModifier = serializedObject.FindProperty("m_SculptModifier");
+            m_ShoulderModifier = serializedObject.FindProperty("m_ShoulderModifier");
             m_GeneratedMesh = serializedObject.FindProperty("m_GeneratedMesh");
 
             m_SourceList = new ReorderableList(serializedObject, m_Sources, true, true, true, true)
@@ -89,6 +99,7 @@ namespace MashBoxSDK.Maps.Spline
 
             serializedObject.Update();
             var loft = (MultiSplineLoft)target;
+            EnsureSourceSplinesFollowLoft(loft);
 
             EditorGUILayout.Space();
             DrawToolbar();
@@ -133,9 +144,42 @@ namespace MashBoxSDK.Maps.Spline
             EditorGUILayout.PropertyField(m_FlipNormals, new GUIContent("Flip Normals"));
             EditorGUILayout.PropertyField(m_UvScaleAcross, new GUIContent("UV Across Scale", "1 maps the full left-to-right width to U 0-1. Higher values repeat across the width."));
             EditorGUILayout.PropertyField(m_UvScaleAlong, new GUIContent("UV Along Scale"));
-            EditorGUILayout.PropertyField(m_UpdateMeshCollider, new GUIContent("Update Mesh Collider"));
+            EditorGUILayout.PropertyField(m_UpdateMeshCollider, new GUIContent("Generate Collider Chunks"));
+            using (new EditorGUI.DisabledScope(!m_UpdateMeshCollider.boolValue))
+                EditorGUILayout.PropertyField(m_ColliderChunkLength, new GUIContent("Collider Chopping Distance", "Creates a separate child MeshCollider for approximately this many meters of track."));
             EditorGUILayout.PropertyField(m_AutoRegenerate, new GUIContent("Live Regenerate"));
             EditorGUILayout.PropertyField(m_SculptModifier, new GUIContent("Sculpt Modifier", "Replays recorded sculpt strokes after every loft regeneration."));
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.PropertyField(m_ShoulderModifier, new GUIContent("Shoulder Modifier"));
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(loft.ShoulderModifier == null ? "Add Shoulder Profiles" : "Rebuild Shoulders"))
+                    CreateOrRebuildShoulders(loft);
+                using (new EditorGUI.DisabledScope(loft.ShoulderModifier == null))
+                {
+                    if (GUILayout.Button("Select Shoulder Profiles"))
+                        Selection.activeGameObject = loft.ShoulderModifier.gameObject;
+                }
+            }
+
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.LabelField("Resolution Spline", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Generate an editable centerline profile. Select its cyan Scene points and use the scale handle to multiply local mesh density.", MessageType.None);
+            EditorGUILayout.PropertyField(m_GenerateResolutionSplineWithLoft, new GUIContent("Generate With Loft"));
+            EditorGUILayout.PropertyField(m_ResolutionSplinePointCount, new GUIContent("Generated Points"));
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.PropertyField(m_ResolutionSpline, new GUIContent("Generated Spline"));
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Generate / Refresh"))
+                    GenerateResolutionSpline(loft);
+                using (new EditorGUI.DisabledScope(loft.GeneratedResolutionSpline == null))
+                {
+                    if (GUILayout.Button("Select Resolution Spline"))
+                        Selection.activeGameObject = loft.GeneratedResolutionSpline.gameObject;
+                }
+            }
 
             EditorGUILayout.Space(6f);
             EditorGUILayout.LabelField("UV Spline", EditorStyles.boldLabel);
@@ -215,6 +259,92 @@ namespace MashBoxSDK.Maps.Spline
             SceneView.RepaintAll();
         }
 
+        static void GenerateResolutionSpline(MultiSplineLoft loft)
+        {
+            Undo.RecordObject(loft, "Generate Loft Resolution Spline");
+            if (!loft.GenerateResolutionSpline(out string error))
+            {
+                EditorUtility.DisplayDialog("Generate Resolution Spline", error, "OK");
+                return;
+            }
+
+            EditorUtility.SetDirty(loft);
+            EditorUtility.SetDirty(loft.GeneratedResolutionSpline);
+            EditorUtility.SetDirty(loft.GeneratedResolutionSpline.Container);
+            Selection.activeGameObject = loft.GeneratedResolutionSpline.gameObject;
+            SceneView.RepaintAll();
+        }
+
+        internal static void CreateOrRebuildShoulders(MultiSplineLoft loft)
+        {
+            Transform shouldersRoot = loft.transform.Find("Shoulders");
+            if (shouldersRoot == null)
+            {
+                var shouldersObject = new GameObject("Shoulders");
+                Undo.RegisterCreatedObjectUndo(shouldersObject, "Create Loft Shoulders");
+                Undo.SetTransformParent(shouldersObject.transform, loft.transform, "Parent Loft Shoulders");
+                shouldersObject.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                shouldersObject.transform.localScale = Vector3.one;
+                shouldersRoot = shouldersObject.transform;
+            }
+
+            shouldersRoot.gameObject.layer = loft.gameObject.layer;
+            shouldersRoot.gameObject.isStatic = loft.gameObject.isStatic;
+
+            LoftShoulderModifier previousModifier = loft.ShoulderModifier;
+            LoftShoulderModifier modifier = shouldersRoot.GetComponent<LoftShoulderModifier>();
+            if (modifier == null)
+                modifier = Undo.AddComponent<LoftShoulderModifier>(shouldersRoot.gameObject);
+
+            if (previousModifier != null && previousModifier != modifier)
+            {
+                Undo.RecordObject(modifier, "Move Loft Shoulder Profiles");
+                EditorUtility.CopySerialized(previousModifier, modifier);
+                Undo.DestroyObjectImmediate(previousModifier);
+            }
+
+            Undo.RecordObject(loft, "Assign Loft Shoulder Profiles");
+            modifier.Loft = loft;
+            loft.ShoulderModifier = modifier;
+
+            loft.Regenerate();
+            EditorUtility.SetDirty(loft);
+            EditorUtility.SetDirty(modifier);
+            Selection.activeGameObject = modifier.gameObject;
+            SceneView.RepaintAll();
+        }
+
+        internal static void EnsureSourceSplinesFollowLoft(MultiSplineLoft loft)
+        {
+            if (loft == null)
+                return;
+
+            var sourceTransforms = new List<Transform>();
+            foreach (MultiSplineLoft.SplineSource source in loft.Sources)
+            {
+                Transform sourceTransform = source?.container != null ? source.container.transform : null;
+                if (sourceTransform == null || sourceTransform == loft.transform || sourceTransforms.Contains(sourceTransform))
+                    continue;
+                // Reparenting an ancestor beneath the loft would create a cycle.
+                if (loft.transform.IsChildOf(sourceTransform))
+                    continue;
+                sourceTransforms.Add(sourceTransform);
+            }
+
+            if (sourceTransforms.Count == 0)
+                return;
+
+            foreach (Transform sourceTransform in sourceTransforms)
+            {
+                if (sourceTransform.parent != loft.transform)
+                    Undo.SetTransformParent(sourceTransform, loft.transform, "Attach Source Spline To Loft");
+            }
+
+            Transform obsoleteSourceRoot = loft.transform.Find("Source Splines");
+            if (obsoleteSourceRoot != null && obsoleteSourceRoot.childCount == 0)
+                Undo.DestroyObjectImmediate(obsoleteSourceRoot.gameObject);
+        }
+
         void DrawSourceElement(Rect rect, int index, bool isActive, bool isFocused)
         {
             var element = m_Sources.GetArrayElementAtIndex(index);
@@ -284,6 +414,8 @@ namespace MashBoxSDK.Maps.Spline
                 foreach (var container in containers)
                     loft.AddSelectedSpline(container);
 
+                EnsureSourceSplinesFollowLoft(loft);
+
                 EditorUtility.SetDirty(loft);
             }
         }
@@ -335,12 +467,6 @@ namespace MashBoxSDK.Maps.Spline
             Undo.RecordObject(meshFilter, "Assign Baked Loft Mesh");
             meshFilter.sharedMesh = bakedMesh;
 
-            if (loft.TryGetComponent<MeshCollider>(out var meshCollider))
-            {
-                Undo.RecordObject(meshCollider, "Assign Baked Loft Collider");
-                meshCollider.sharedMesh = bakedMesh;
-            }
-
             loft.Regenerate();
             EditorUtility.SetDirty(loft);
             EditorUtility.SetDirty(bakedMesh);
@@ -374,6 +500,8 @@ namespace MashBoxSDK.Maps.Spline
             var loft = gameObject.GetComponent<MultiSplineLoft>();
             foreach (var container in containers)
                 loft.AddSelectedSpline(container);
+
+            EnsureSourceSplinesFollowLoft(loft);
 
             loft.Regenerate();
             Selection.activeGameObject = gameObject;
@@ -586,6 +714,7 @@ namespace MashBoxSDK.Maps.Spline
             SplineContainer container = splineObject.GetComponent<SplineContainer>();
             Undo.RecordObject(m_ActiveLoft, "Add Loft Spline");
             m_ActiveLoft.AddSelectedSpline(container);
+            MultiSplineLoftEditor.EnsureSourceSplinesFollowLoft(m_ActiveLoft);
             EditorUtility.SetDirty(m_ActiveLoft);
             QueueKnotPlacementTool(container);
         }
@@ -597,6 +726,7 @@ namespace MashBoxSDK.Maps.Spline
 
             EditorGUILayout.LabelField("Target", EditorStyles.boldLabel);
             m_ActiveLoft = (MultiSplineLoft)EditorGUILayout.ObjectField("Loft Component", m_ActiveLoft, typeof(MultiSplineLoft), true);
+            MultiSplineLoftEditor.EnsureSourceSplinesFollowLoft(m_ActiveLoft);
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -642,12 +772,66 @@ namespace MashBoxSDK.Maps.Spline
                     Undo.RecordObject(m_ActiveLoft, "Add Selected Splines");
                     foreach (var container in selected)
                         m_ActiveLoft.AddSelectedSpline(container);
+                    MultiSplineLoftEditor.EnsureSourceSplinesFollowLoft(m_ActiveLoft);
                     EditorUtility.SetDirty(m_ActiveLoft);
                 }
             }
 
             using (new EditorGUI.DisabledScope(m_ActiveLoft == null))
             {
+                EditorGUILayout.Space(8f);
+                EditorGUILayout.LabelField("Shoulder Profiles", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox("Add independent AnimationCurve profiles to the left, right, start, or finish edge for verges, ditches, banks, and berms.", MessageType.None);
+                if (GUILayout.Button(m_ActiveLoft != null && m_ActiveLoft.ShoulderModifier != null ? "Rebuild And Select Shoulder Profiles" : "Add Shoulder Profiles", GUILayout.Height(26f)))
+                    MultiSplineLoftEditor.CreateOrRebuildShoulders(m_ActiveLoft);
+
+                EditorGUILayout.Space(8f);
+                EditorGUILayout.LabelField("Collider Chunks", EditorStyles.boldLabel);
+
+                if (m_ActiveLoft != null)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    bool generateColliderChunks = EditorGUILayout.Toggle("Generate Collider Chunks", m_ActiveLoft.UpdateMeshCollider);
+                    using (new EditorGUI.DisabledScope(!generateColliderChunks))
+                    {
+                        float choppingDistance = EditorGUILayout.FloatField("Chopping Distance", m_ActiveLoft.ColliderChunkLength);
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            Undo.RecordObject(m_ActiveLoft, "Edit Loft Collider Chunks");
+                            m_ActiveLoft.UpdateMeshCollider = generateColliderChunks;
+                            m_ActiveLoft.ColliderChunkLength = choppingDistance;
+                            m_ActiveLoft.QueueRegenerate();
+                            EditorUtility.SetDirty(m_ActiveLoft);
+                        }
+                    }
+                }
+
+                EditorGUILayout.HelpBox("Collision is generated beneath the render object in distance-based chunks.", MessageType.None);
+                EditorGUILayout.Space(8f);
+                EditorGUILayout.LabelField("Resolution Spline", EditorStyles.boldLabel);
+
+                if (m_ActiveLoft != null)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    bool generateResolutionWithLoft = EditorGUILayout.Toggle("Generate With Loft", m_ActiveLoft.GenerateResolutionSplineWithLoft);
+                    int resolutionPointCount = EditorGUILayout.IntSlider("Generated Points", m_ActiveLoft.ResolutionSplinePointCount, 2, 200);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(m_ActiveLoft, "Edit Loft Resolution Spline Settings");
+                        m_ActiveLoft.GenerateResolutionSplineWithLoft = generateResolutionWithLoft;
+                        m_ActiveLoft.ResolutionSplinePointCount = resolutionPointCount;
+                        EditorUtility.SetDirty(m_ActiveLoft);
+                    }
+                }
+
+                if (GUILayout.Button("Generate And Select Resolution Spline", GUILayout.Height(26f)))
+                {
+                    if (!m_ActiveLoft.GenerateResolutionSpline(out string error))
+                        EditorUtility.DisplayDialog("Generate Resolution Spline", error, "OK");
+                    else
+                        Selection.activeGameObject = m_ActiveLoft.GeneratedResolutionSpline.gameObject;
+                }
+
                 EditorGUILayout.Space(8f);
                 EditorGUILayout.LabelField("UV Spline", EditorStyles.boldLabel);
 
