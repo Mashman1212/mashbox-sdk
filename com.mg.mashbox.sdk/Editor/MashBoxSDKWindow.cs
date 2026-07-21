@@ -316,6 +316,10 @@ namespace MashBoxSDK.SDKMain
 
         public static int DrawTabs(int selectedIndex, string[] labels, TabVisualStyle style, bool[] alertFlags = null)
         {
+            // Navigation must remain available even if an embedded tool was disabled
+            // or released during the previous IMGUI event.
+            bool previousGuiEnabled = GUI.enabled;
+            GUI.enabled = true;
             var containerRect = GUILayoutUtility.GetRect(0f, GetHeight(style), GUILayout.ExpandWidth(true));
             containerRect = new Rect(containerRect.x, containerRect.y, containerRect.width, GetHeight(style));
 
@@ -338,6 +342,7 @@ namespace MashBoxSDK.SDKMain
                     selectedIndex = i;
             }
 
+            GUI.enabled = previousGuiEnabled;
             return selectedIndex;
         }
 
@@ -371,7 +376,22 @@ namespace MashBoxSDK.SDKMain
             };
             textStyle.normal.textColor = textColor;
 
-            if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
+            Event currentEvent = Event.current;
+            bool directClick = currentEvent.type == EventType.MouseDown
+                && currentEvent.button == 0
+                && rect.Contains(currentEvent.mousePosition);
+            if (directClick)
+            {
+                // Handle navigation directly so a stale hotControl from an embedded
+                // Scene tool cannot prevent the SDK tabs from changing.
+                GUIUtility.hotControl = 0;
+                GUIUtility.keyboardControl = 0;
+                GUI.changed = true;
+                currentEvent.Use();
+            }
+
+            bool buttonClicked = GUI.Button(rect, GUIContent.none, GUIStyle.none);
+            if (directClick || buttonClicked)
                 return true;
 
             GUI.Label(rect, label, textStyle);

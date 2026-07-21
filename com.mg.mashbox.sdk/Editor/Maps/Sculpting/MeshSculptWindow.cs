@@ -30,6 +30,10 @@ namespace MashBoxSDK.MapTools
         bool m_SceneToolActive;
         bool m_IsAdjustingBrush;
         Vector2 m_BrushAdjustMousePosition;
+        GameObject m_SculptPickingObject;
+        MeshCollider m_SculptPickingCollider;
+        MeshFilter m_SculptPickingTarget;
+        int m_SculptPickingGenerationVersion = -1;
 
         public static void ShowWindow() => GetWindow<MeshSculptWindow>("Mesh Sculpt");
 
@@ -50,12 +54,15 @@ namespace MashBoxSDK.MapTools
 
         public void DeactivateSceneTool()
         {
-            if (!m_SceneToolActive) return;
-            m_SceneToolActive = false;
-            SceneView.duringSceneGui -= OnSceneGUI;
-            Undo.undoRedoPerformed -= OnUndoRedo;
-            Selection.selectionChanged -= OnSelectionChanged;
+            if (m_SceneToolActive)
+            {
+                m_SceneToolActive = false;
+                SceneView.duringSceneGui -= OnSceneGUI;
+                Undo.undoRedoPerformed -= OnUndoRedo;
+                Selection.selectionChanged -= OnSelectionChanged;
+            }
             StopStroke();
+            DestroySculptPickingCollider();
         }
 
         public void Draw(bool embeddedInParentWindow = false)
@@ -204,12 +211,13 @@ namespace MashBoxSDK.MapTools
         {
             GameObject selected = Selection.activeGameObject;
             if (selected == null) return;
-            MultiSplineLoft loft = selected.GetComponent<MultiSplineLoft>();
-            MeshFilter meshFilter = selected.GetComponent<MeshFilter>();
+            MultiSplineLoft loft = selected.GetComponent<MultiSplineLoft>() ?? selected.GetComponentInParent<MultiSplineLoft>();
+            GameObject targetObject = loft != null ? loft.gameObject : selected;
+            MeshFilter meshFilter = targetObject.GetComponent<MeshFilter>();
             if (meshFilter == null) return;
 
-            m_Modifier = selected.GetComponent<MeshSculptModifier>();
-            if (m_Modifier == null) m_Modifier = Undo.AddComponent<MeshSculptModifier>(selected);
+            m_Modifier = targetObject.GetComponent<MeshSculptModifier>();
+            if (m_Modifier == null) m_Modifier = Undo.AddComponent<MeshSculptModifier>(targetObject);
             Undo.RecordObject(m_Modifier, "Configure Sculpt Modifier");
             m_Modifier.SetTarget(meshFilter);
             if (loft != null)
@@ -220,9 +228,9 @@ namespace MashBoxSDK.MapTools
                 EditorUtility.SetDirty(loft);
             }
 
-            if (loft == null && selected.GetComponent<Collider>() == null)
+            if (loft == null && targetObject.GetComponent<Collider>() == null)
             {
-                MeshCollider collider = Undo.AddComponent<MeshCollider>(selected);
+                MeshCollider collider = Undo.AddComponent<MeshCollider>(targetObject);
                 collider.sharedMesh = meshFilter.sharedMesh;
             }
             EditorUtility.SetDirty(m_Modifier);
@@ -340,7 +348,16 @@ namespace MashBoxSDK.MapTools
         bool TryRaycastTarget(Ray ray, out RaycastHit targetHit)
         {
             targetHit = default;
-            RaycastHit[] hits = Physics.RaycastAll(ray, float.MaxValue);
+            EnsureSculptPickingCollider();
+            Physics.SyncTransforms();
+            if (m_SculptPickingCollider != null
+                && m_SculptPickingCollider.enabled
+                && m_SculptPickingCollider.Raycast(ray, out targetHit, float.MaxValue))
+            {
+                return true;
+            }
+
+            RaycastHit[] hits = Physics.RaycastAll(ray, float.MaxValue, ~0, QueryTriggerInteraction.Collide);
             float closest = float.MaxValue;
             for (int i = 0; i < hits.Length; i++)
             {
@@ -360,6 +377,7 @@ namespace MashBoxSDK.MapTools
             Undo.RecordObject(m_Modifier, "Mesh Sculpt Stroke");
             m_Modifier.AddStroke(m_Modifier.CreateStroke(strokeMode, m_StrokeSpace, hit.point, direction, m_Radius, strength, m_Falloff));
             m_Modifier.Rebuild();
+            RefreshSculptPickingCollider();
             EditorUtility.SetDirty(m_Modifier);
             m_LastStrokePosition = hit.point;
             m_HasLastStrokePosition = true;
@@ -376,9 +394,65 @@ namespace MashBoxSDK.MapTools
         void SetBrushActive(bool active)
         {
             m_BrushActive = active;
-            if (!active) StopStroke();
+            if (!active)
+            {
+                StopStroke();
+                DestroySculptPickingCollider();
+            }
             SceneView.RepaintAll();
             Repaint();
+        }
+
+        void EnsureSculptPickingCollider()
+        {
+            MeshFilter target = m_Modifier != null ? m_Modifier.Target : null;
+            if (target == null || target.sharedMesh == null)
+            {
+                DestroySculptPickingCollider();
+                return;
+            }
+
+            int generationVersion = m_Modifier.LinkedLoft != null ? m_Modifier.LinkedLoft.GenerationVersion : -1;
+            if (m_SculptPickingObject != null && m_SculptPickingTarget == target)
+            {
+                if (generationVersion != m_SculptPickingGenerationVersion)
+                    RefreshSculptPickingCollider();
+                return;
+            }
+
+            DestroySculptPickingCollider();
+            m_SculptPickingObject = new GameObject("MashBox Sculpt Picking Collider")
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                layer = target.gameObject.layer
+            };
+            m_SculptPickingObject.transform.SetParent(target.transform, false);
+            m_SculptPickingCollider = m_SculptPickingObject.AddComponent<MeshCollider>();
+            m_SculptPickingCollider.sharedMesh = target.sharedMesh;
+            m_SculptPickingTarget = target;
+            m_SculptPickingGenerationVersion = generationVersion;
+        }
+
+        void RefreshSculptPickingCollider()
+        {
+            if (m_SculptPickingCollider == null || m_SculptPickingTarget == null)
+                return;
+            m_SculptPickingCollider.sharedMesh = null;
+            m_SculptPickingCollider.sharedMesh = m_SculptPickingTarget.sharedMesh;
+            m_SculptPickingGenerationVersion = m_Modifier != null && m_Modifier.LinkedLoft != null
+                ? m_Modifier.LinkedLoft.GenerationVersion
+                : -1;
+            Physics.SyncTransforms();
+        }
+
+        void DestroySculptPickingCollider()
+        {
+            if (m_SculptPickingObject != null)
+                DestroyImmediate(m_SculptPickingObject);
+            m_SculptPickingObject = null;
+            m_SculptPickingCollider = null;
+            m_SculptPickingTarget = null;
+            m_SculptPickingGenerationVersion = -1;
         }
 
         void StopStroke()
@@ -393,7 +467,11 @@ namespace MashBoxSDK.MapTools
 
         void OnUndoRedo()
         {
-            if (m_Modifier != null) m_Modifier.Rebuild();
+            if (m_Modifier != null)
+            {
+                m_Modifier.Rebuild();
+                RefreshSculptPickingCollider();
+            }
             SceneView.RepaintAll();
             Repaint();
         }

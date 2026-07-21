@@ -417,10 +417,10 @@ namespace MashBoxSDK.Maps.Spline
 
             ApplyMesh();
 
+            ResolveShoulderModifier()?.RebuildFromLoft(this);
+
             if (m_SculptModifier != null)
                 m_SculptModifier.ApplyToFreshMesh(m_GeneratedMesh);
-
-            ResolveShoulderModifier()?.RebuildFromLoft(this);
 
             RebuildColliderChunks();
 
