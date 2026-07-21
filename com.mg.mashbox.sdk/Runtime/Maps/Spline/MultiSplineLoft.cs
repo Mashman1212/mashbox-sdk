@@ -169,6 +169,7 @@ namespace MashBoxSDK.Maps.Spline
         readonly List<Vector3> m_Normals = new List<Vector3>();
         readonly List<Vector2> m_Uvs = new List<Vector2>();
         readonly List<int> m_Triangles = new List<int>();
+        readonly List<int> m_ShoulderColliderSubmeshes = new List<int>();
         readonly List<Vector3> m_FlatVertices = new List<Vector3>();
         readonly List<Vector3> m_FlatNormals = new List<Vector3>();
         readonly List<Vector2> m_FlatUvs = new List<Vector2>();
@@ -222,6 +223,18 @@ namespace MashBoxSDK.Maps.Spline
         public MeshSculptModifier SculptModifier { get => m_SculptModifier; set => m_SculptModifier = value; }
         public LoftShoulderModifier ShoulderModifier { get => ResolveShoulderModifier(); set => m_ShoulderModifier = value; }
         public Mesh GeneratedMesh => m_GeneratedMesh;
+
+        public void SetShoulderColliderSubmeshes(IEnumerable<int> submeshIndices)
+        {
+            m_ShoulderColliderSubmeshes.Clear();
+            if (submeshIndices == null)
+                return;
+            foreach (int submeshIndex in submeshIndices)
+            {
+                if (submeshIndex > 0 && !m_ShoulderColliderSubmeshes.Contains(submeshIndex))
+                    m_ShoulderColliderSubmeshes.Add(submeshIndex);
+            }
+        }
 
         public void SetGeneratedMesh(Mesh mesh)
         {
@@ -371,6 +384,7 @@ namespace MashBoxSDK.Maps.Spline
         {
             EnsureMesh();
             ClearBuildBuffers();
+            m_ShoulderColliderSubmeshes.Clear();
             CollectValidSources();
 
             if (m_ValidSourceIndices.Count < 2)
@@ -1473,14 +1487,22 @@ namespace MashBoxSDK.Maps.Spline
 
             Vector3[] sourceVertices = m_GeneratedMesh.vertices;
             Vector2[] sourceUvs = m_GeneratedMesh.uv;
-            int[] sourceTriangles = m_GeneratedMesh.triangles;
-            int surfaceIndexCount = Mathf.Min(m_SurfaceTriangleCount, sourceTriangles.Length);
+            int[] baseTriangles = m_GeneratedMesh.GetTriangles(0);
+            int surfaceIndexCount = Mathf.Min(m_SurfaceTriangleCount, baseTriangles.Length);
+            var sourceTriangles = new List<int>(surfaceIndexCount);
+            for (int index = 0; index < surfaceIndexCount; index++)
+                sourceTriangles.Add(baseTriangles[index]);
+            foreach (int submeshIndex in m_ShoulderColliderSubmeshes)
+            {
+                if (submeshIndex >= 0 && submeshIndex < m_GeneratedMesh.subMeshCount)
+                    sourceTriangles.AddRange(m_GeneratedMesh.GetTriangles(submeshIndex));
+            }
             float totalDistance = m_AlongDistances.Count > 0 ? m_AlongDistances[m_AlongDistances.Count - 1] : 0f;
             float chunkLength = Mathf.Max(1f, m_ColliderChunkLength);
             int chunkCount = Mathf.Max(1, Mathf.CeilToInt(totalDistance / chunkLength));
             var chunkTriangleIndices = new List<int>[chunkCount];
 
-            for (int triangle = 0; triangle + 2 < surfaceIndexCount; triangle += 3)
+            for (int triangle = 0; triangle + 2 < sourceTriangles.Count; triangle += 3)
             {
                 int a = sourceTriangles[triangle];
                 int b = sourceTriangles[triangle + 1];
@@ -1492,7 +1514,7 @@ namespace MashBoxSDK.Maps.Spline
                 if (sourceUvs.Length == sourceVertices.Length)
                     alongDistance = (sourceUvs[a].y + sourceUvs[b].y + sourceUvs[c].y) / (3f * Mathf.Max(0.0001f, m_UvScaleAlong));
                 else
-                    alongDistance = totalDistance * triangle / Mathf.Max(1f, surfaceIndexCount);
+                    alongDistance = totalDistance * triangle / Mathf.Max(1f, sourceTriangles.Count);
 
                 int chunkIndex = Mathf.Clamp(Mathf.FloorToInt(alongDistance / chunkLength), 0, chunkCount - 1);
                 chunkTriangleIndices[chunkIndex] ??= new List<int>();

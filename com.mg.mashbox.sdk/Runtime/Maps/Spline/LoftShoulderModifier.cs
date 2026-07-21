@@ -40,6 +40,13 @@ namespace MashBoxSDK.Maps.Spline
         [SerializeField] ShoulderProfile m_Start = new ShoulderProfile();
         [SerializeField] ShoulderProfile m_Finish = new ShoulderProfile();
 
+        sealed class GeneratedShoulder
+        {
+            public Mesh mesh;
+            public Material material;
+            public bool generateCollider;
+        }
+
         public MultiSplineLoft Loft { get => m_Loft; set => m_Loft = value; }
         public ShoulderProfile Left => m_Left;
         public ShoulderProfile Right => m_Right;
@@ -68,10 +75,13 @@ namespace MashBoxSDK.Maps.Spline
                 return;
             m_Loft = loft;
             Transform root = EnsureGeneratedRoot(loft.transform);
-            RebuildEdge(root, Edge.Left, m_Left);
-            RebuildEdge(root, Edge.Right, m_Right);
-            RebuildEdge(root, Edge.Start, m_Start);
-            RebuildEdge(root, Edge.Finish, m_Finish);
+            ClearGeneratedShoulders(root);
+            var generatedShoulders = new List<GeneratedShoulder>();
+            BuildEdge(root, Edge.Left, m_Left, generatedShoulders);
+            BuildEdge(root, Edge.Right, m_Right, generatedShoulders);
+            BuildEdge(root, Edge.Start, m_Start, generatedShoulders);
+            BuildEdge(root, Edge.Finish, m_Finish, generatedShoulders);
+            CombineWithLoftMesh(generatedShoulders);
         }
 
         public void ClearGenerated()
@@ -79,69 +89,76 @@ namespace MashBoxSDK.Maps.Spline
             Transform root = FindGeneratedRoot();
             if (root != null)
                 ClearGeneratedShoulders(root);
+            m_Loft?.SetShoulderColliderSubmeshes(null);
         }
 
-        void RebuildEdge(Transform root, Edge edge, ShoulderProfile profile)
+        void BuildEdge(Transform root, Edge edge, ShoulderProfile profile, List<GeneratedShoulder> generatedShoulders)
         {
-            string edgeName = GetEdgeName(edge);
-            Transform existing = root.Find(edgeName);
             if (!profile.enabled)
-            {
-                if (existing != null)
-                    DestroyShoulderObject(existing.gameObject);
                 return;
-            }
 
             var boundary = new List<Vector3>();
             var inner = new List<Vector3>();
             var pathDistances = new List<float>();
             if (!m_Loft.TryGetShoulderEdge(edge, boundary, inner, pathDistances) || boundary.Count < 2)
-            {
-                if (existing != null)
-                    DestroyShoulderObject(existing.gameObject);
                 return;
-            }
 
             List<Vector3> generatedOuterEdge = BuildGeneratedOuterEdge(edge, profile, boundary, inner);
             LoftShoulderEdgeSpline edgeSpline = EnsureEdgeSpline(root, edge);
             if (m_Loft.TryGetShoulderSourceKnotCount(edge, out int sourceKnotCount))
                 edgeSpline.GeneratedPointCount = sourceKnotCount;
             edgeSpline.RefreshGeneratedPath(generatedOuterEdge, m_Loft);
-
-            if (existing == null)
-            {
-                var edgeObject = new GameObject(edgeName, typeof(MeshFilter), typeof(MeshRenderer));
-                edgeObject.transform.SetParent(root, false);
-                existing = edgeObject.transform;
-            }
-
-            existing.gameObject.layer = m_Loft.gameObject.layer;
-            existing.gameObject.isStatic = m_Loft.gameObject.isStatic;
-            MeshFilter filter = existing.GetComponent<MeshFilter>();
-            MeshRenderer renderer = existing.GetComponent<MeshRenderer>();
-            MeshCollider collider = existing.GetComponent<MeshCollider>();
-            if (collider != null)
-                collider.sharedMesh = null;
-            DestroyGeneratedMesh(filter.sharedMesh);
             Mesh mesh = BuildShoulderMesh(edge, profile, boundary, inner, pathDistances, edgeSpline);
-            filter.sharedMesh = mesh;
-            renderer.sharedMaterial = profile.materialOverride != null
-                ? profile.materialOverride
-                : m_Loft.GetComponent<MeshRenderer>().sharedMaterial;
+            generatedShoulders.Add(new GeneratedShoulder
+            {
+                mesh = mesh,
+                material = profile.materialOverride,
+                generateCollider = profile.generateCollider
+            });
+        }
 
-            if (profile.generateCollider)
+        void CombineWithLoftMesh(IReadOnlyList<GeneratedShoulder> shoulders)
+        {
+            Mesh loftMesh = m_Loft.GeneratedMesh;
+            MeshRenderer loftRenderer = m_Loft.GetComponent<MeshRenderer>();
+            Material[] currentMaterials = loftRenderer.sharedMaterials;
+            Material baseMaterial = currentMaterials.Length > 0 ? currentMaterials[0] : null;
+            if (loftMesh == null || shoulders == null || shoulders.Count == 0)
             {
-                if (collider == null)
-                    collider = existing.gameObject.AddComponent<MeshCollider>();
-                collider.sharedMesh = null;
-                collider.sharedMesh = mesh;
-                collider.enabled = true;
+                loftRenderer.sharedMaterials = new[] { baseMaterial };
+                m_Loft.SetShoulderColliderSubmeshes(null);
+                return;
             }
-            else if (collider != null)
+
+            Mesh baseMesh = Instantiate(loftMesh);
+            baseMesh.hideFlags = HideFlags.DontSave;
+            var combine = new CombineInstance[shoulders.Count + 1];
+            combine[0] = new CombineInstance { mesh = baseMesh, subMeshIndex = 0, transform = Matrix4x4.identity };
+            var materials = new Material[combine.Length];
+            materials[0] = baseMaterial;
+            var colliderSubmeshes = new List<int>();
+            int totalVertexCount = baseMesh.vertexCount;
+
+            for (int index = 0; index < shoulders.Count; index++)
             {
-                collider.sharedMesh = null;
-                DestroyGeneratedObject(collider);
+                GeneratedShoulder shoulder = shoulders[index];
+                combine[index + 1] = new CombineInstance { mesh = shoulder.mesh, subMeshIndex = 0, transform = Matrix4x4.identity };
+                materials[index + 1] = shoulder.material != null ? shoulder.material : baseMaterial;
+                totalVertexCount += shoulder.mesh.vertexCount;
+                if (shoulder.generateCollider)
+                    colliderSubmeshes.Add(index + 1);
             }
+
+            loftMesh.indexFormat = totalVertexCount > ushort.MaxValue ? IndexFormat.UInt32 : IndexFormat.UInt16;
+            loftMesh.CombineMeshes(combine, false, false, false);
+            loftMesh.name = $"{m_Loft.gameObject.name} Loft";
+            loftMesh.RecalculateBounds();
+            loftRenderer.sharedMaterials = materials;
+            m_Loft.SetShoulderColliderSubmeshes(colliderSubmeshes);
+
+            DestroyGeneratedMesh(baseMesh);
+            for (int index = 0; index < shoulders.Count; index++)
+                DestroyGeneratedMesh(shoulders[index].mesh);
         }
 
         Mesh BuildShoulderMesh(
