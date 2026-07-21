@@ -787,6 +787,142 @@ namespace MashBoxSDK.Shaders
             EnforceSSRReception(mat);
         }
 
+        /// <summary>
+        /// Repairs keyword drift without copying template properties. Returns true only when the
+        /// material actually needed a keyword or required surface-state correction.
+        /// </summary>
+        public static bool SynchronizeTemplateKeywords(Material mat)
+        {
+            if (mat == null || mat.shader == null)
+                return false;
+
+            Material template = null;
+            var enforceSurfaceReception = false;
+            var enforceAlphaTest = false;
+            if (UsesTemplateShader(mat, VehicleTemplateMat))
+                template = VehicleTemplateMat;
+            else if (UsesTemplateShader(mat, ClothingTemplateMat))
+                template = ClothingTemplateMat;
+            else if (UsesTemplateShader(mat, LitBasicTemplateMat))
+            {
+                template = LitBasicTemplateMat;
+                enforceSurfaceReception = true;
+            }
+            else if (UsesTemplateShader(mat, LitBasicAlphaClipTemplateMat))
+            {
+                template = LitBasicAlphaClipTemplateMat;
+                enforceSurfaceReception = true;
+                enforceAlphaTest = true;
+            }
+            else if (UsesTemplateShader(mat, LitBasicTriplaneTemplateMat))
+            {
+                template = LitBasicTriplaneTemplateMat;
+                enforceSurfaceReception = true;
+            }
+            else if (UsesTemplateShader(mat, LitAdvancedTemplateMat))
+            {
+                template = LitAdvancedTemplateMat;
+                enforceSurfaceReception = true;
+            }
+            else if (UsesTemplateShader(mat, LitAdvancedMonoSHTemplateMat))
+            {
+                template = LitAdvancedMonoSHTemplateMat;
+                enforceSurfaceReception = true;
+            }
+            else if (UsesTemplateShader(mat, TireTemplateMat))
+                template = TireTemplateMat;
+            else if (UsesTemplateShader(mat, ChainTemplateMat))
+                template = ChainTemplateMat;
+            else if (UsesTemplateShader(mat, GriptapeTemplateMat))
+                template = GriptapeTemplateMat;
+            else if (UsesTemplateShader(mat, EightBittPaintMaskAdvancedTemplateMat))
+            {
+                template = EightBittPaintMaskAdvancedTemplateMat;
+                enforceSurfaceReception = true;
+            }
+            else
+                return false;
+
+            if (template == null || mat == template)
+                return false;
+
+            var expectedKeywords = new System.Collections.Generic.HashSet<string>(
+                template.shaderKeywords,
+                System.StringComparer.Ordinal);
+            if (enforceSurfaceReception)
+            {
+                expectedKeywords.Remove("_DISABLE_DECALS");
+                expectedKeywords.Remove("_DISABLE_SSR");
+            }
+            if (enforceAlphaTest)
+                expectedKeywords.Add("_ALPHATEST_ON");
+
+            var needsKeywordSync = !KeywordSetsMatch(mat.shaderKeywords, expectedKeywords);
+            var needsDecalSync = enforceSurfaceReception &&
+                                 mat.HasProperty("_SupportDecals") &&
+                                 mat.GetFloat("_SupportDecals") < 0.5f;
+            var needsSsrSync = enforceSurfaceReception &&
+                               mat.HasProperty("_ReceivesSSR") &&
+                               mat.GetFloat("_ReceivesSSR") < 0.5f;
+            var needsAlphaSync = enforceAlphaTest &&
+                                 mat.HasProperty("_AlphaCutoffEnable") &&
+                                 mat.GetFloat("_AlphaCutoffEnable") < 0.5f;
+            if (!needsKeywordSync && !needsDecalSync && !needsSsrSync && !needsAlphaSync)
+                return false;
+
+            if (needsKeywordSync)
+            {
+                var synchronizedKeywords = new string[expectedKeywords.Count];
+                expectedKeywords.CopyTo(synchronizedKeywords);
+                System.Array.Sort(synchronizedKeywords, System.StringComparer.Ordinal);
+                mat.shaderKeywords = synchronizedKeywords;
+            }
+
+            if (enforceSurfaceReception)
+            {
+                if (mat.HasProperty("_SupportDecals"))
+                    mat.SetFloat("_SupportDecals", 1.0f);
+                if (mat.HasProperty("_ReceivesSSR"))
+                    mat.SetFloat("_ReceivesSSR", 1.0f);
+                mat.DisableKeyword("_DISABLE_DECALS");
+                mat.DisableKeyword("_DISABLE_SSR");
+            }
+
+            if (enforceAlphaTest)
+            {
+                if (mat.HasProperty("_AlphaCutoffEnable"))
+                    mat.SetFloat("_AlphaCutoffEnable", 1.0f);
+                mat.EnableKeyword("_ALPHATEST_ON");
+            }
+
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(mat);
+#endif
+            return true;
+        }
+
+        private static bool UsesTemplateShader(Material material, Material template)
+        {
+            return material != null && material.shader != null &&
+                   template != null && template.shader == material.shader;
+        }
+
+        private static bool KeywordSetsMatch(
+            string[] currentKeywords,
+            System.Collections.Generic.HashSet<string> expectedKeywords)
+        {
+            if (currentKeywords == null || currentKeywords.Length != expectedKeywords.Count)
+                return false;
+
+            foreach (var keyword in currentKeywords)
+            {
+                if (!expectedKeywords.Contains(keyword))
+                    return false;
+            }
+
+            return true;
+        }
+
         private static void EnforceAdvancedShader(Material mat, Shader shader, Material template)
         {
             if (mat == template)

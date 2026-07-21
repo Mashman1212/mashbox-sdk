@@ -232,6 +232,7 @@ public class MapPerformanceScannerPanel
     [NonSerialized] private GUIStyle gridHeaderCellStyle;
     [NonSerialized] private GUIStyle reportFoldoutStyle;
     [NonSerialized] private bool shaderConversionQueued;
+    [NonSerialized] private int repairedKeywordMaterialCount;
 
     private readonly Dictionary<BatchKey, List<MaterialInfo>> batches = new();
     private readonly HashSet<Material> processedMaterials = new();
@@ -394,6 +395,7 @@ public class MapPerformanceScannerPanel
             totalDetailInstances = 0;
             totalTreeInstances = 0;
             terrainPrototypeMaterialCount = 0;
+            repairedKeywordMaterialCount = 0;
             lightProbeCount = 0;
             reflectionProbeCount = 0;
             postVolumeCount = 0;
@@ -419,6 +421,14 @@ public class MapPerformanceScannerPanel
             ReportProgress("Finalizing shared-memory totals...", 0.97f);
             CalculateMemoryTotals();
             CalculatePerformanceScore();
+
+            if (repairedKeywordMaterialCount > 0)
+            {
+                AssetDatabase.SaveAssets();
+                Debug.Log(
+                    $"[MashBox] Performance scan repaired template keyword state on " +
+                    $"{repairedKeywordMaterialCount:N0} material{(repairedKeywordMaterialCount == 1 ? string.Empty : "s")}.");
+            }
 
             hasScanResults = true;
             Debug.Log("[MashBox] Performance scan complete.");
@@ -1630,6 +1640,11 @@ public class MapPerformanceScannerPanel
             return;
 
         processedMaterials.Add(mat);
+
+        // SDK shaders have a template-defined keyword contract. Repair stale imported materials
+        // before recording variants so the report reflects the state they will use at runtime.
+        if (MashBoxSDK.Shaders.ShaderEnforcer.SynchronizeTemplateKeywords(mat))
+            repairedKeywordMaterialCount++;
 
         var keywords = mat.enabledKeywords
             .Select(k => k.name)
@@ -2861,6 +2876,15 @@ public class MapPerformanceScannerPanel
             ("Materials Scanned", materialInfos.Count.ToString("N0")),
             ("Unique Shader Keyword Variants", totalKeywordVariants.ToString("N0")),
             ("Shader Batch Groups", batches.Count.ToString("N0")));
+
+        if (repairedKeywordMaterialCount > 0)
+        {
+            EditorGUILayout.HelpBox(
+                $"Template keyword enforcement repaired and saved {repairedKeywordMaterialCount:N0} " +
+                $"material{(repairedKeywordMaterialCount == 1 ? string.Empty : "s")} during this scan. " +
+                "The shader groups below show the corrected runtime keyword state.",
+                MessageType.Info);
+        }
 
         if (unsupportedShaderCount > 0)
         {

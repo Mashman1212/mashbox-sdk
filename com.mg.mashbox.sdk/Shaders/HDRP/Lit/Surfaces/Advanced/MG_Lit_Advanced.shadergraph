@@ -3223,7 +3223,7 @@
         },
         "preventRotation": false
     },
-    "m_Path": "Shader Graphs",
+    "m_Path": "MGShaders/HDRP/Lit",
     "m_GraphPrecision": 2,
     "m_PreviewMode": 2,
     "m_OutputNode": {
@@ -20253,4 +20253,3 @@
         "w": 0.0
     }
 }
-
