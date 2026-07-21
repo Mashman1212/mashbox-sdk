@@ -491,6 +491,59 @@ namespace MashBoxSDK.Maps.Spline
             return IsFinite(worldPosition);
         }
 
+        public bool TryEvaluateSurfaceCenterline(float pathT, out Vector3 worldPosition)
+        {
+            worldPosition = Vector3.zero;
+            if (m_SampledPoints == null || m_CrossSampleCount < 2 || m_AlongSampleCount < 2)
+                return false;
+
+            Vector3[] renderedVertices = m_NormalMode != NormalMode.Face && m_GeneratedMesh != null
+                ? m_GeneratedMesh.vertices
+                : null;
+            bool canUseRenderedVertices = renderedVertices != null && renderedVertices.Length >= m_SurfaceVertexCount;
+
+            Vector3 CenterAtColumn(int along)
+            {
+                Vector3 center = Vector3.zero;
+                for (int cross = 0; cross < m_CrossSampleCount; cross++)
+                {
+                    int vertexIndex = VertexIndex(cross, along);
+                    center += canUseRenderedVertices && vertexIndex < renderedVertices.Length
+                        ? renderedVertices[vertexIndex]
+                        : m_SampledPoints[cross, along];
+                }
+
+                return center / m_CrossSampleCount;
+            }
+
+            float normalizedDistance = Mathf.Clamp01(pathT);
+            int lower = 0;
+            int upper = m_AlongSampleCount - 1;
+            float blend = normalizedDistance;
+
+            if (m_AlongDistances.Count == m_AlongSampleCount && m_AlongDistances[m_AlongSampleCount - 1] > Mathf.Epsilon)
+            {
+                float targetDistance = normalizedDistance * m_AlongDistances[m_AlongSampleCount - 1];
+                upper = 1;
+                while (upper < m_AlongSampleCount - 1 && m_AlongDistances[upper] < targetDistance)
+                    upper++;
+
+                lower = Mathf.Max(0, upper - 1);
+                blend = Mathf.InverseLerp(m_AlongDistances[lower], m_AlongDistances[upper], targetDistance);
+            }
+            else
+            {
+                float samplePosition = normalizedDistance * (m_AlongSampleCount - 1);
+                lower = Mathf.Min(Mathf.FloorToInt(samplePosition), m_AlongSampleCount - 2);
+                upper = lower + 1;
+                blend = samplePosition - lower;
+            }
+
+            Vector3 localPosition = Vector3.Lerp(CenterAtColumn(lower), CenterAtColumn(upper), blend);
+            worldPosition = transform.TransformPoint(localPosition);
+            return IsFinite(worldPosition);
+        }
+
         void EnsureUvSpline()
         {
             if (m_UvSpline == null)

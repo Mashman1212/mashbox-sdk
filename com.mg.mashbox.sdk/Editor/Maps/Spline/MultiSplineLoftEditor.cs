@@ -244,19 +244,25 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
-        static void GenerateUvSpline(MultiSplineLoft loft)
+        internal static bool GenerateUvSpline(MultiSplineLoft loft)
         {
+            if (loft == null)
+                return false;
+
             Undo.RecordObject(loft, "Generate UV Spline");
             if (!loft.RegenerateUvSpline(out string error))
             {
                 EditorUtility.DisplayDialog("Generate UV Spline", error, "OK");
-                return;
+                return false;
             }
 
             EditorUtility.SetDirty(loft);
             EditorUtility.SetDirty(loft.GeneratedUvSpline);
+            EditorUtility.SetDirty(loft.GeneratedUvSpline.Container);
             Selection.activeGameObject = loft.GeneratedUvSpline.gameObject;
+            InternalEditorUtility.RepaintAllViews();
             SceneView.RepaintAll();
+            return true;
         }
 
         static void GenerateResolutionSpline(MultiSplineLoft loft)
@@ -862,10 +868,7 @@ namespace MashBoxSDK.Maps.Spline
 
                 if (GUILayout.Button("Generate And Select UV Spline", GUILayout.Height(26f)))
                 {
-                    if (!m_ActiveLoft.RegenerateUvSpline(out string error))
-                        EditorUtility.DisplayDialog("Generate UV Spline", error, "OK");
-                    else
-                        Selection.activeGameObject = m_ActiveLoft.GeneratedUvSpline.gameObject;
+                    MultiSplineLoftEditor.GenerateUvSpline(m_ActiveLoft);
                 }
             }
 

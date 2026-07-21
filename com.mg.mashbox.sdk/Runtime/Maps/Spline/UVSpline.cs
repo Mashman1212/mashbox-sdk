@@ -130,39 +130,56 @@ namespace MashBoxSDK.Maps.Spline
 
             int count = Mathf.Max(2, m_GeneratedPointCount);
             var worldPoints = new Vector3[count];
-            float radius = 0.75f / (count - 1);
-            Matrix4x4 localToWorld = m_Target.transform.localToWorldMatrix;
-
-            for (int pointIndex = 0; pointIndex < count; pointIndex++)
+            MultiSplineLoft loft = m_Target.GetComponent<MultiSplineLoft>();
+            bool generatedFromLoft = loft != null;
+            if (generatedFromLoft)
             {
-                float targetT = pointIndex / (float)(count - 1);
-                Vector3 weightedPosition = Vector3.zero;
-                float weightTotal = 0f;
-                int closestVertex = 0;
-                float closestDistance = float.MaxValue;
-
-                for (int vertexIndex = 0; vertexIndex < vertices.Length; vertexIndex++)
+                for (int pointIndex = 0; pointIndex < count; pointIndex++)
                 {
-                    float longitudinal = longIsU ? uvs[vertexIndex].x : uvs[vertexIndex].y;
-                    float vertexT = Mathf.InverseLerp(minLong, maxLong, longitudinal);
-                    float distance = Mathf.Abs(vertexT - targetT);
-                    if (distance < closestDistance)
+                    if (!loft.TryEvaluateSurfaceCenterline(pointIndex / (float)(count - 1), out worldPoints[pointIndex]))
                     {
-                        closestDistance = distance;
-                        closestVertex = vertexIndex;
-                    }
-
-                    if (distance <= radius)
-                    {
-                        float weight = 1f - distance / radius;
-                        weightedPosition += localToWorld.MultiplyPoint3x4(vertices[vertexIndex]) * weight;
-                        weightTotal += weight;
+                        generatedFromLoft = false;
+                        break;
                     }
                 }
+            }
 
-                worldPoints[pointIndex] = weightTotal > Mathf.Epsilon
-                    ? weightedPosition / weightTotal
-                    : localToWorld.MultiplyPoint3x4(vertices[closestVertex]);
+            if (!generatedFromLoft)
+            {
+                float radius = 0.75f / (count - 1);
+                Matrix4x4 localToWorld = m_Target.transform.localToWorldMatrix;
+
+                for (int pointIndex = 0; pointIndex < count; pointIndex++)
+                {
+                    float targetT = pointIndex / (float)(count - 1);
+                    Vector3 weightedPosition = Vector3.zero;
+                    float weightTotal = 0f;
+                    int closestVertex = 0;
+                    float closestDistance = float.MaxValue;
+
+                    for (int vertexIndex = 0; vertexIndex < vertices.Length; vertexIndex++)
+                    {
+                        float longitudinal = longIsU ? uvs[vertexIndex].x : uvs[vertexIndex].y;
+                        float vertexT = Mathf.InverseLerp(minLong, maxLong, longitudinal);
+                        float distance = Mathf.Abs(vertexT - targetT);
+                        if (distance < closestDistance)
+                        {
+                            closestDistance = distance;
+                            closestVertex = vertexIndex;
+                        }
+
+                        if (distance <= radius)
+                        {
+                            float weight = 1f - distance / radius;
+                            weightedPosition += localToWorld.MultiplyPoint3x4(vertices[vertexIndex]) * weight;
+                            weightTotal += weight;
+                        }
+                    }
+
+                    worldPoints[pointIndex] = weightTotal > Mathf.Epsilon
+                        ? weightedPosition / weightTotal
+                        : localToWorld.MultiplyPoint3x4(vertices[closestVertex]);
+                }
             }
 
             RebuildSpline(worldPoints);

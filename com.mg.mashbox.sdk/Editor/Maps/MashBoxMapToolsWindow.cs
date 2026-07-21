@@ -230,10 +230,14 @@ namespace MashBoxSDK.MapTools
 
         private void OnAuthoringSelectionChanged()
         {
-            if (changingAuthoringSelection || (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
+            if (changingAuthoringSelection)
                 return;
 
             GameObject selected = Selection.activeGameObject;
+            bool selectedUvSplineDirectly = selected != null && selected.GetComponent<UVSpline>() != null;
+            if (!selectedUvSplineDirectly && (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
+                return;
+
             UVSpline uvSpline = FindUvSpline(selected, (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline);
             if (uvSpline == null)
                 return;
