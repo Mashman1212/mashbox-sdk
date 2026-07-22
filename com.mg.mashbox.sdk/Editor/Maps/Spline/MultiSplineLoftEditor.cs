@@ -526,6 +526,8 @@ namespace MashBoxSDK.Maps.Spline
 
     public sealed class MultiSplineLoftWindow : EditorWindow
     {
+        public System.Action<UVSpline> UvSplineGenerated { get; set; }
+
         MultiSplineLoft m_ActiveLoft;
         Vector2 m_Scroll;
         bool m_SceneToolActive;
@@ -868,7 +870,8 @@ namespace MashBoxSDK.Maps.Spline
 
                 if (GUILayout.Button("Generate And Select UV Spline", GUILayout.Height(26f)))
                 {
-                    MultiSplineLoftEditor.GenerateUvSpline(m_ActiveLoft);
+                    if (MultiSplineLoftEditor.GenerateUvSpline(m_ActiveLoft))
+                        UvSplineGenerated?.Invoke(m_ActiveLoft.GeneratedUvSpline);
                 }
             }
 

@@ -59,6 +59,7 @@ namespace MashBoxSDK.SDKMain
 
         private void OnGUI()
         {
+            ReleaseStaleSceneToolCaptureForSdkClick();
 #if UNITY_EDITOR
             MashBoxInputSystemSetup.UpdateRequests();
 #endif
@@ -76,6 +77,21 @@ namespace MashBoxSDK.SDKMain
                 case 1: DrawContentToolsTab(); break;
                 case 2: DrawMapTab(); break;
             }
+        }
+
+        private static void ReleaseStaleSceneToolCaptureForSdkClick()
+        {
+            Event current = Event.current;
+            if (current == null || current.type != EventType.MouseDown || current.button != 0)
+                return;
+
+            // Embedded Scene tools can lose their MouseUp event when focus moves
+            // directly into this window. A leftover hot control prevents normal
+            // GUILayout buttons from ever seeing the new click. At the start of a
+            // fresh SDK click no SDK control has captured the mouse yet, so it is
+            // safe to release that stale capture here.
+            if (GUIUtility.hotControl != 0)
+                GUIUtility.hotControl = 0;
         }
 
         private void OnDisable()

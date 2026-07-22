@@ -238,6 +238,10 @@ public class MapPerformanceScannerPanel
     [NonSerialized] private GUIStyle reportFoldoutStyle;
     [NonSerialized] private bool shaderConversionQueued;
     [NonSerialized] private int repairedTemplateMaterialCount;
+    [NonSerialized] private bool scanQueued;
+    [NonSerialized] private bool scanRunning;
+    [NonSerialized] private string scanStatus;
+    [NonSerialized] private string scanError;
 
     private readonly Dictionary<BatchKey, List<MaterialInfo>> batches = new();
     private readonly HashSet<Material> processedMaterials = new();
@@ -265,8 +269,40 @@ public class MapPerformanceScannerPanel
 
         using (new EditorGUILayout.HorizontalScope())
         {
-            if (GUILayout.Button("Scan Scene", GUILayout.Height(40)))
-                ScanScene();
+            bool scanAvailable = !scanQueued && !scanRunning;
+            string scanButtonLabel = scanRunning
+                ? "Scanning Scene..."
+                : scanQueued
+                    ? "Starting Scan..."
+                    : "Scan Scene";
+            using (new EditorGUI.DisabledScope(!scanAvailable))
+            {
+                Rect scanRect = GUILayoutUtility.GetRect(
+                    new GUIContent(scanButtonLabel),
+                    GUI.skin.button,
+                    GUILayout.Height(40f),
+                    GUILayout.ExpandWidth(true));
+                Event current = Event.current;
+                bool directClick = scanAvailable
+                    && current != null
+                    && current.type == EventType.MouseDown
+                    && current.button == 0
+                    && scanRect.Contains(current.mousePosition);
+                if (directClick)
+                {
+                    // SDK navigation uses this same direct MouseDown route. It is
+                    // deliberately independent of IMGUI hotControl so a Scene tool
+                    // that missed MouseUp cannot swallow this action.
+                    GUIUtility.hotControl = 0;
+                    GUIUtility.keyboardControl = 0;
+                    GUI.changed = true;
+                    current.Use();
+                }
+
+                bool buttonClicked = GUI.Button(scanRect, scanButtonLabel);
+                if (directClick || buttonClicked)
+                    QueueSceneScan();
+            }
 
             using (new EditorGUI.DisabledScope(!hasScanResults))
             {
@@ -276,6 +312,11 @@ public class MapPerformanceScannerPanel
         }
 
         EditorGUILayout.Space(10f);
+
+        if (!string.IsNullOrWhiteSpace(scanError))
+            EditorGUILayout.HelpBox(scanError, MessageType.Error);
+        else if (!string.IsNullOrWhiteSpace(scanStatus))
+            EditorGUILayout.HelpBox(scanStatus, scanRunning || scanQueued ? MessageType.Info : MessageType.None);
 
         scroll = EditorGUILayout.BeginScrollView(scroll);
 
@@ -289,6 +330,52 @@ public class MapPerformanceScannerPanel
         }
 
         EditorGUILayout.EndScrollView();
+    }
+
+    private void QueueSceneScan()
+    {
+        if (scanQueued || scanRunning)
+            return;
+
+        scanQueued = true;
+        scanError = null;
+        scanStatus = "Performance scan queued...";
+        EditorApplication.delayCall -= RunQueuedSceneScan;
+        EditorApplication.delayCall += RunQueuedSceneScan;
+        UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
+    }
+
+    private void RunQueuedSceneScan()
+    {
+        EditorApplication.delayCall -= RunQueuedSceneScan;
+        if (!scanQueued || scanRunning)
+            return;
+
+        scanQueued = false;
+        scanRunning = true;
+        scanStatus = "Scanning the loaded scene...";
+        scanError = null;
+        UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
+
+        try
+        {
+            MapPerformanceScanResult result = ScanScene();
+            scanStatus = result != null
+                ? "Performance scan complete."
+                : "Performance scan cancelled.";
+        }
+        catch (Exception exception)
+        {
+            hasScanResults = false;
+            scanStatus = null;
+            scanError = $"Performance scan failed: {exception.Message}";
+            Debug.LogException(exception);
+        }
+        finally
+        {
+            scanRunning = false;
+            UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
+        }
     }
 
     private void DrawTargetGame()

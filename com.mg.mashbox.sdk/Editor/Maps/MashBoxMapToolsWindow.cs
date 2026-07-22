@@ -103,6 +103,7 @@ namespace MashBoxSDK.MapTools
         [NonSerialized] private MGBrushWindow authoringBrushTool;
         [NonSerialized] private MultiSplineLoftWindow authoringLoftTool;
         [NonSerialized] private MeshSculptWindow authoringSculptTool;
+        [NonSerialized] private bool embeddedHostVisible;
         [SerializeField] private List<Terrain> terrainConversionSources = new();
         [SerializeField] private bool terrainConvertMesh = true;
         [SerializeField] private bool terrainAddMeshCollider = true;
@@ -230,14 +231,13 @@ namespace MashBoxSDK.MapTools
 
         private void OnAuthoringSelectionChanged()
         {
-            if (changingAuthoringSelection)
+            if (!embeddedHostVisible
+                || currentToolTab != ToolTab.ArtTools
+                || changingAuthoringSelection
+                || (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
                 return;
 
             GameObject selected = Selection.activeGameObject;
-            bool selectedUvSplineDirectly = selected != null && selected.GetComponent<UVSpline>() != null;
-            if (!selectedUvSplineDirectly && (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
-                return;
-
             UVSpline uvSpline = FindUvSpline(selected, (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline);
             if (uvSpline == null)
                 return;
@@ -457,6 +457,7 @@ namespace MashBoxSDK.MapTools
 
         public void Draw()
         {
+            embeddedHostVisible = true;
             EnsureInitialized();
             GUILayout.Space(6);
             var newToolTab = (ToolTab)MashBoxTabDrawer.DrawTabs((int)currentToolTab, new[] { "Art Tools", "Gameplay", "Audio", "Performance", "Testing", "Exporter" }, MashBoxTabDrawer.TabVisualStyle.Secondary, new[]
@@ -1131,6 +1132,7 @@ namespace MashBoxSDK.MapTools
                 authoringLoftTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
                 authoringLoftTool.DeactivateSceneTool();
             }
+            authoringLoftTool.UvSplineGenerated = OnLoftUvSplineGenerated;
 
             if (authoringSculptTool == null)
             {
@@ -1138,6 +1140,21 @@ namespace MashBoxSDK.MapTools
                 authoringSculptTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
                 authoringSculptTool.DeactivateSceneTool();
             }
+        }
+
+        private void OnLoftUvSplineGenerated(UVSpline uvSpline)
+        {
+            if (uvSpline == null)
+                return;
+
+            currentToolTab = ToolTab.ArtTools;
+            authoringToolTab = (int)AuthoringToolTab.UVSpline;
+            EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)currentToolTab);
+            EditorPrefs.SetString(PREF_KEY_MAP_TOOL_TAB_ORDER, "ArtToolsFirst");
+            EditorPrefs.SetInt(PREF_KEY_AUTHORING_TOOL_TAB, authoringToolTab);
+            QueueUvSplineSelection(uvSpline);
+            UpdateAuthoringSceneToolState();
+            Repaint();
         }
 
         private void DestroyAuthoringToolInstances()
@@ -1166,6 +1183,17 @@ namespace MashBoxSDK.MapTools
 
         public void DeactivateEmbeddedSceneTools()
         {
+            embeddedHostVisible = false;
+            UVSplineEditor.SceneEditingEnabled = false;
+            GUIUtility.hotControl = 0;
+            EditorApplication.delayCall -= ProcessQueuedUvSplineSelection;
+            queuedUvSpline = null;
+            uvSplineSelectionQueued = false;
+            DeactivateAuthoringSceneTools();
+        }
+
+        private void DeactivateAuthoringSceneTools()
+        {
             authoringBrushTool?.DeactivateSceneTool();
             authoringLoftTool?.DeactivateSceneTool();
             authoringSculptTool?.DeactivateSceneTool();
@@ -1173,9 +1201,10 @@ namespace MashBoxSDK.MapTools
 
         private void UpdateAuthoringSceneToolState()
         {
-            UVSplineEditor.SceneEditingEnabled = currentToolTab == ToolTab.ArtTools
+            UVSplineEditor.SceneEditingEnabled = embeddedHostVisible
+                && currentToolTab == ToolTab.ArtTools
                 && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
-            if (currentToolTab == ToolTab.ArtTools)
+            if (embeddedHostVisible && currentToolTab == ToolTab.ArtTools)
             {
                 if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.MGBrush)
                 {
@@ -1200,7 +1229,7 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
-            DeactivateEmbeddedSceneTools();
+            DeactivateAuthoringSceneTools();
         }
 
         private void DrawChallengesSection()

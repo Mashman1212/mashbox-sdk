@@ -1,14 +1,17 @@
 using UnityEngine;
 using UnityEditor;
+using UnityEditorInternal;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using MashBoxSDK.SDKMain;
 
 namespace MashBoxSDK.MapTools
 {
     public class MGBrushWindow : EditorWindow
     {
-        private enum ToolMode { Decor, Painter }
-        private ToolMode currentMode = ToolMode.Decor;
+        private enum ToolMode { Decor, Painter, SplatMap }
+        [SerializeField] private ToolMode currentMode = ToolMode.Decor;
 
         // --- Common Settings ---
         private float brushRadius = 2.0f;
@@ -39,6 +42,19 @@ namespace MashBoxSDK.MapTools
         [SerializeField] private List<GameObject> paintTargets = new List<GameObject>();
         private string painterStatusMessage = "Add mesh objects here before painting. Only listed targets can be cloned or modified.";
 
+        // --- Splat Map Settings ---
+        private enum SplatChannel { Red, Green, Blue, Alpha }
+        [SerializeField] private Texture2D splatMapTexture;
+        [SerializeField] private SplatChannel splatChannel;
+        [SerializeField, Range(1, 512)] private int splatBrushPixels = 48;
+        [SerializeField, Range(0f, 1f)] private float splatPaintWeight = 1f;
+        [SerializeField] private bool normalizeSplatWeights = true;
+        [SerializeField] private bool splatUseFalloff = true;
+        [SerializeField] private int newSplatResolution = 1024;
+        private string splatStatusMessage = "Assign a splat-map texture, then paint through a MeshCollider's UV0 coordinates.";
+        private bool splatTextureDirty;
+        private bool splatUndoRegistered;
+
         // --- Internal State ---
         private Vector2 scrollPos;
         private GameObject previewObject;
@@ -50,6 +66,8 @@ namespace MashBoxSDK.MapTools
         private bool sceneToolActive;
         private bool isAdjustingBrush;
         private Vector2 brushAdjustMousePosition;
+        private bool paintTargetCacheDirty = true;
+        private int cachedValidPaintTargetCount;
 
         public static void ShowWindow()
         {
@@ -58,21 +76,26 @@ namespace MashBoxSDK.MapTools
 
         private void OnEnable()
         {
+            EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
+            EditorApplication.hierarchyChanged += InvalidatePaintTargetCache;
+            InvalidatePaintTargetCache();
             ActivateSceneTool();
         }
 
         private void OnDisable()
         {
+            EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
             DeactivateSceneTool();
         }
 
         public void ActivateSceneTool()
         {
-            if (sceneToolActive)
-                return;
-
             sceneToolActive = true;
+            // Re-register idempotently so B can recover after Unity drops a
+            // Scene-view callback during a focus/tool-context transition.
+            SceneView.duringSceneGui -= OnSceneGUI;
             SceneView.duringSceneGui += OnSceneGUI;
+            Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
         }
 
@@ -96,11 +119,13 @@ namespace MashBoxSDK.MapTools
         {
             EditorGUILayout.BeginVertical("box");
             GUILayout.Label("MG Brush", EditorStyles.boldLabel);
-            
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Toggle(currentMode == ToolMode.Decor, "Decor (Scatter)", "Button")) currentMode = ToolMode.Decor;
-            if (GUILayout.Toggle(currentMode == ToolMode.Painter, "Painter (Vertex)", "Button")) currentMode = ToolMode.Painter;
-            EditorGUILayout.EndHorizontal();
+
+            ToolMode requestedMode = (ToolMode)MashBoxTabDrawer.DrawTabs(
+                (int)currentMode,
+                new[] { "Decor (Scatter)", "Painter (Vertex)", "Splat Map" },
+                MashBoxTabDrawer.TabVisualStyle.Secondary);
+            if (requestedMode != currentMode)
+                SetToolMode(requestedMode);
             EditorGUILayout.EndVertical();
 
             if (!embeddedInParentWindow)
@@ -111,16 +136,93 @@ namespace MashBoxSDK.MapTools
             brushStrength = EditorGUILayout.Slider("Brush Strength", brushStrength, 0.01f, 1f);
 
             if (currentMode == ToolMode.Decor)
-            {
                 DrawDecorSettings();
-            }
-            else
-            {
+            else if (currentMode == ToolMode.Painter)
                 DrawPainterSettings();
-            }
+            else
+                DrawSplatMapSettings();
 
             if (!embeddedInParentWindow)
                 EditorGUILayout.EndScrollView();
+        }
+
+        private void SetToolMode(ToolMode mode)
+        {
+            currentMode = mode;
+            isPainting = false;
+            isAdjustingBrush = false;
+            strokeMeshes.Clear();
+            GUIUtility.hotControl = 0;
+
+            if (mode == ToolMode.Painter || mode == ToolMode.SplatMap)
+            {
+                CleanupPreview();
+                painterBrushActive = true;
+                if (mode == ToolMode.Painter)
+                    painterStatusMessage = "Brush active. Paint listed targets, or Shift-click a mesh to add it.";
+            }
+
+            ActivateSceneTool();
+            GUI.FocusControl(null);
+            GUI.changed = true;
+            EditorUtility.SetDirty(this);
+            InternalEditorUtility.RepaintAllViews();
+            SceneView.RepaintAll();
+        }
+
+        private void DrawSplatMapSettings()
+        {
+            EditorGUILayout.LabelField("Splat Map Texture", EditorStyles.boldLabel);
+            EditorGUI.BeginChangeCheck();
+            splatMapTexture = (Texture2D)EditorGUILayout.ObjectField("Texture", splatMapTexture, typeof(Texture2D), false);
+            if (EditorGUI.EndChangeCheck())
+            {
+                splatTextureDirty = false;
+                splatStatusMessage = splatMapTexture != null
+                    ? "Texture assigned. Paint in the Scene view through a MeshCollider."
+                    : "Assign a splat-map texture, then paint through a MeshCollider's UV0 coordinates.";
+            }
+
+            splatChannel = (SplatChannel)EditorGUILayout.EnumPopup("Paint Channel", splatChannel);
+            splatPaintWeight = EditorGUILayout.Slider("Paint Weight", splatPaintWeight, 0f, 1f);
+            splatBrushPixels = EditorGUILayout.IntSlider("Texture Brush (Pixels)", splatBrushPixels, 1, 512);
+            splatUseFalloff = EditorGUILayout.Toggle("Use Falloff", splatUseFalloff);
+            normalizeSplatWeights = EditorGUILayout.Toggle(
+                new GUIContent("Normalize RGBA Weights", "Keeps the four splat channels adding up to one while painting."),
+                normalizeSplatWeights);
+
+            EditorGUILayout.HelpBox(splatStatusMessage, splatTextureDirty ? MessageType.Warning : MessageType.Info);
+            EditorGUILayout.HelpBox("Scene View: paint with Left Mouse. Hold Shift to erase the selected channel. The hit collider must provide UV coordinates (normally a MeshCollider).", MessageType.None);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(splatMapTexture == null))
+                {
+                    if (GUILayout.Button("Make Readable"))
+                        MakeSplatTextureReadable();
+                    if (GUILayout.Button("Save Texture"))
+                        SaveSplatTexture(false);
+                    if (GUILayout.Button("Save As PNG"))
+                        SaveSplatTexture(true);
+                }
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                newSplatResolution = EditorGUILayout.IntPopup(
+                    "New Resolution",
+                    newSplatResolution,
+                    new[] { "256", "512", "1024", "2048", "4096" },
+                    new[] { 256, 512, 1024, 2048, 4096 });
+                if (GUILayout.Button("Create New Splat Map", GUILayout.Width(180f)))
+                    CreateSplatTexture();
+            }
+
+            if (splatMapTexture != null)
+            {
+                Rect previewRect = GUILayoutUtility.GetAspectRect(4f, GUILayout.MaxHeight(180f));
+                EditorGUI.DrawPreviewTexture(previewRect, splatMapTexture, null, ScaleMode.ScaleToFit);
+            }
         }
 
         private void OnUndoRedoPerformed()
@@ -237,6 +339,7 @@ namespace MashBoxSDK.MapTools
                     {
                         Undo.RecordObject(this, "Clear Paint Targets");
                         paintTargets.Clear();
+                        InvalidatePaintTargetCache();
                         painterStatusMessage = "Paint target list cleared.";
                     }
                 }
@@ -247,8 +350,8 @@ namespace MashBoxSDK.MapTools
             SerializedObject so = new SerializedObject(this);
             SerializedProperty targetsProperty = so.FindProperty("paintTargets");
             EditorGUILayout.PropertyField(targetsProperty, true);
-            so.ApplyModifiedProperties();
-            CleanPaintTargets();
+            if (so.ApplyModifiedProperties())
+                InvalidatePaintTargetCache();
         }
 
         private void DrawPaintTargetDropZone()
@@ -312,6 +415,7 @@ namespace MashBoxSDK.MapTools
                 return false;
 
             paintTargets.Add(gameObject);
+            InvalidatePaintTargetCache();
             return true;
         }
 
@@ -378,18 +482,26 @@ namespace MashBoxSDK.MapTools
                 if (!paintTargets[i] || !HasPaintableMesh(paintTargets[i]))
                     paintTargets.RemoveAt(i);
             }
+
+            cachedValidPaintTargetCount = 0;
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                if (paintTargets[i] && HasPaintableMesh(paintTargets[i]))
+                    cachedValidPaintTargetCount++;
+            }
+            paintTargetCacheDirty = false;
         }
 
         private int GetValidPaintTargetCount()
         {
-            int count = 0;
-            for (int i = 0; i < paintTargets.Count; i++)
-            {
-                if (paintTargets[i] && HasPaintableMesh(paintTargets[i]))
-                    count++;
-            }
+            if (paintTargetCacheDirty)
+                CleanPaintTargets();
+            return cachedValidPaintTargetCount;
+        }
 
-            return count;
+        private void InvalidatePaintTargetCache()
+        {
+            paintTargetCacheDirty = true;
         }
 
         private static bool HasPaintableMesh(GameObject gameObject)
@@ -705,11 +817,33 @@ namespace MashBoxSDK.MapTools
         private void OnSceneGUI(SceneView sceneView)
         {
             Event e = Event.current;
+
+            if (e.type == EventType.MouseLeaveWindow || e.type == EventType.Ignore)
+            {
+                isPainting = false;
+                isAdjustingBrush = false;
+                strokeMeshes.Clear();
+                GUIUtility.hotControl = 0;
+            }
+
+            if (isPainting && e.button == 0 && (e.type == EventType.MouseUp || e.rawType == EventType.MouseUp))
+            {
+                isPainting = false;
+                splatUndoRegistered = false;
+                strokeMeshes.Clear();
+                GUIUtility.hotControl = 0;
+                if (currentMode == ToolMode.SplatMap && splatTextureDirty)
+                    splatStatusMessage = "Splat map changed. Use Save Texture to write the pixels to the source asset.";
+                if (e.type != EventType.Used)
+                    e.Use();
+                sceneView.Repaint();
+                return;
+            }
             
             // Handle Hotkeys
             if (e.type == EventType.KeyDown)
             {
-                if (currentMode == ToolMode.Painter && !EditorGUIUtility.editingTextField)
+                if ((currentMode == ToolMode.Painter || currentMode == ToolMode.SplatMap) && !EditorGUIUtility.editingTextField)
                 {
                     if (e.keyCode == KeyCode.B)
                     {
@@ -749,7 +883,7 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
-            if (currentMode == ToolMode.Painter)
+            if (currentMode == ToolMode.Painter || currentMode == ToolMode.SplatMap)
             {
                 DrawPainterSceneModeOverlay();
                 if (!painterBrushActive)
@@ -774,10 +908,14 @@ namespace MashBoxSDK.MapTools
                 lastHitNormal = hit.normal;
                 
                 // Draw Brush Disc
-                Handles.color = currentMode == ToolMode.Decor ? Color.cyan : GetPainterBrushColor(hit, e.shift);
+                Handles.color = currentMode == ToolMode.Decor
+                    ? Color.cyan
+                    : currentMode == ToolMode.SplatMap ? GetSplatChannelColor(e.shift) : GetPainterBrushColor(hit, e.shift);
                 Handles.DrawWireDisc(hit.point, hit.normal, brushRadius);
                 if (currentMode == ToolMode.Painter)
                     DrawPainterHoverLabel(hit, e.shift);
+                else if (currentMode == ToolMode.SplatMap)
+                    DrawSplatHoverLabel(hit, e.shift);
 
                 // Handle Input
                 int controlID = GUIUtility.GetControlID(FocusType.Passive);
@@ -793,9 +931,12 @@ namespace MashBoxSDK.MapTools
                     }
 
                     isPainting = true;
+                    splatUndoRegistered = false;
                     strokeMeshes.Clear();
                     Undo.IncrementCurrentGroup();
-                    Undo.SetCurrentGroupName(currentMode == ToolMode.Decor ? "Scatter Decor" : "Paint Vertex Color");
+                    Undo.SetCurrentGroupName(currentMode == ToolMode.Decor
+                        ? "Scatter Decor"
+                        : currentMode == ToolMode.Painter ? "Paint Vertex Color" : "Paint Splat Map");
                     
                     GUIUtility.hotControl = controlID;
                     ExecuteAction(hit);
@@ -808,15 +949,6 @@ namespace MashBoxSDK.MapTools
                     e.Use();
                 }
 
-                if (e.type == EventType.MouseUp && e.button == 0)
-                {
-                    if (isPainting)
-                    {
-                        isPainting = false;
-                        GUIUtility.hotControl = 0;
-                        e.Use();
-                    }
-                }
             }
             
             if (e.type == EventType.MouseMove) sceneView.Repaint();
@@ -865,21 +997,33 @@ namespace MashBoxSDK.MapTools
         private void SetPainterBrushActive(bool active)
         {
             if (active)
+            {
                 ActivateSceneTool();
+                GUIUtility.hotControl = 0;
+                isPainting = false;
+                isAdjustingBrush = false;
+                splatUndoRegistered = false;
+                strokeMeshes.Clear();
+                painterBrushActive = true;
+                painterStatusMessage = "Brush active. Paint listed targets, or Shift-click a mesh to add it.";
+                InternalEditorUtility.RepaintAllViews();
+                SceneView.RepaintAll();
+                return;
+            }
 
-            if (painterBrushActive == active)
+            if (!painterBrushActive)
                 return;
 
-            painterBrushActive = active;
+            painterBrushActive = false;
             isPainting = false;
+            isAdjustingBrush = false;
+            splatUndoRegistered = false;
             strokeMeshes.Clear();
-            if (!active)
-                GUIUtility.hotControl = 0;
+            GUIUtility.hotControl = 0;
 
-            painterStatusMessage = active
-                ? "Brush active. Paint listed targets, or Shift-click a mesh to add it."
-                : "Brush paused. Select and move objects in the Scene View. Press B to paint.";
+            painterStatusMessage = "Brush paused. Select and move objects in the Scene View. Press B to paint.";
             Repaint();
+            SceneView.RepaintAll();
         }
 
         private void DrawPainterSceneModeOverlay()
@@ -913,10 +1057,16 @@ namespace MashBoxSDK.MapTools
                 }
             };
 
+            string toolName = currentMode == ToolMode.SplatMap ? "Splat Painter" : "Vertex Painter";
             GUI.Label(new Rect(rect.x + 12f, rect.y + 6f, rect.width - 20f, 18f),
-                painterBrushActive ? "Vertex Painter: Brush" : "Vertex Painter: Select / Move", titleStyle);
+                painterBrushActive ? $"{toolName}: Brush" : $"{toolName}: Select / Move", titleStyle);
             GUI.Label(new Rect(rect.x + 12f, rect.y + 26f, rect.width - 20f, 16f),
-                painterBrushActive ? "W: select/move    Shift+Click: add target" : "B: brush    W: move tool", textStyle);
+                painterBrushActive
+                    ? currentMode == ToolMode.SplatMap
+                        ? "W: select/move    Shift: erase channel"
+                        : "W: select/move    Shift+Click: add target"
+                    : "B: brush    W: move tool",
+                textStyle);
 
             Handles.EndGUI();
         }
@@ -930,9 +1080,13 @@ namespace MashBoxSDK.MapTools
                 else
                     PlacePrefabs(hit);
             }
-            else
+            else if (currentMode == ToolMode.Painter)
             {
                 PaintVertexColors(hit);
+            }
+            else
+            {
+                PaintSplatTexture(hit, Event.current.shift);
             }
         }
 
@@ -1051,6 +1205,237 @@ namespace MashBoxSDK.MapTools
                 mesh.colors = colors;
                 RefreshPaintMesh(editableMeshFilter);
             }
+        }
+
+        private Color GetSplatChannelColor(bool erasing)
+        {
+            if (erasing)
+                return new Color(1f, 0.25f, 0.25f, 1f);
+
+            return splatChannel switch
+            {
+                SplatChannel.Red => Color.red,
+                SplatChannel.Green => Color.green,
+                SplatChannel.Blue => new Color(0.2f, 0.55f, 1f, 1f),
+                _ => Color.white
+            };
+        }
+
+        private void DrawSplatHoverLabel(RaycastHit hit, bool erasing)
+        {
+            Handles.BeginGUI();
+            Vector2 mouse = Event.current.mousePosition;
+            var style = new GUIStyle(EditorStyles.helpBox);
+            style.normal.textColor = GetSplatChannelColor(erasing);
+            string action = erasing ? "Erase" : "Paint";
+            GUI.Label(
+                new Rect(mouse.x + 18f, mouse.y + 18f, 280f, 38f),
+                $"{action} {splatChannel}   UV {hit.textureCoord.x:0.000}, {hit.textureCoord.y:0.000}",
+                style);
+            Handles.EndGUI();
+        }
+
+        private void PaintSplatTexture(RaycastHit hit, bool erase)
+        {
+            if (splatMapTexture == null)
+            {
+                splatStatusMessage = "Assign a splat-map Texture2D before painting.";
+                return;
+            }
+
+            if (!splatMapTexture.isReadable)
+            {
+                splatStatusMessage = "The assigned texture is not readable. Click Make Readable before painting.";
+                return;
+            }
+
+            if (!(hit.collider is MeshCollider) && !(hit.collider is TerrainCollider))
+            {
+                splatStatusMessage = "The hit collider does not provide paintable UV coordinates. Add a MeshCollider to the rendered mesh.";
+                return;
+            }
+
+            if (!splatUndoRegistered)
+            {
+                Undo.RegisterCompleteObjectUndo(splatMapTexture, "Paint Splat Map");
+                splatUndoRegistered = true;
+            }
+
+            Vector2 uv = hit.textureCoord;
+            int centerX = Mathf.Clamp(Mathf.RoundToInt(uv.x * (splatMapTexture.width - 1)), 0, splatMapTexture.width - 1);
+            int centerY = Mathf.Clamp(Mathf.RoundToInt(uv.y * (splatMapTexture.height - 1)), 0, splatMapTexture.height - 1);
+            int radius = Mathf.Max(1, splatBrushPixels);
+            int minX = Mathf.Max(0, centerX - radius);
+            int minY = Mathf.Max(0, centerY - radius);
+            int maxX = Mathf.Min(splatMapTexture.width - 1, centerX + radius);
+            int maxY = Mathf.Min(splatMapTexture.height - 1, centerY + radius);
+            int width = maxX - minX + 1;
+            int height = maxY - minY + 1;
+            Color[] pixels = splatMapTexture.GetPixels(minX, minY, width, height);
+            float targetWeight = erase ? 0f : splatPaintWeight;
+            int channel = (int)splatChannel;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float distance = Vector2.Distance(new Vector2(minX + x, minY + y), new Vector2(centerX, centerY));
+                    if (distance > radius)
+                        continue;
+
+                    float falloff = splatUseFalloff ? Mathf.Clamp01(1f - distance / radius) : 1f;
+                    float influence = Mathf.Clamp01(brushStrength * falloff);
+                    int pixelIndex = y * width + x;
+                    Color color = pixels[pixelIndex];
+                    float selectedWeight = Mathf.Lerp(GetColorChannel(color, channel), targetWeight, influence);
+                    SetColorChannel(ref color, channel, selectedWeight);
+                    if (normalizeSplatWeights)
+                        NormalizeSplatColor(ref color, channel);
+                    pixels[pixelIndex] = color;
+                }
+            }
+
+            splatMapTexture.SetPixels(minX, minY, width, height, pixels);
+            splatMapTexture.Apply(false, false);
+            EditorUtility.SetDirty(splatMapTexture);
+            splatTextureDirty = true;
+            SceneView.RepaintAll();
+        }
+
+        private static float GetColorChannel(Color color, int channel)
+        {
+            return channel switch
+            {
+                0 => color.r,
+                1 => color.g,
+                2 => color.b,
+                _ => color.a
+            };
+        }
+
+        private static void SetColorChannel(ref Color color, int channel, float value)
+        {
+            value = Mathf.Clamp01(value);
+            switch (channel)
+            {
+                case 0: color.r = value; break;
+                case 1: color.g = value; break;
+                case 2: color.b = value; break;
+                default: color.a = value; break;
+            }
+        }
+
+        private static void NormalizeSplatColor(ref Color color, int selectedChannel)
+        {
+            float selected = GetColorChannel(color, selectedChannel);
+            float otherTotal = 0f;
+            for (int channel = 0; channel < 4; channel++)
+            {
+                if (channel != selectedChannel)
+                    otherTotal += GetColorChannel(color, channel);
+            }
+
+            float remaining = Mathf.Max(0f, 1f - selected);
+            for (int channel = 0; channel < 4; channel++)
+            {
+                if (channel == selectedChannel)
+                    continue;
+                float normalized = otherTotal > 0.00001f
+                    ? GetColorChannel(color, channel) / otherTotal * remaining
+                    : remaining / 3f;
+                SetColorChannel(ref color, channel, normalized);
+            }
+        }
+
+        private void MakeSplatTextureReadable()
+        {
+            if (splatMapTexture == null)
+                return;
+
+            string path = AssetDatabase.GetAssetPath(splatMapTexture);
+            if (string.IsNullOrEmpty(path) || !(AssetImporter.GetAtPath(path) is TextureImporter importer))
+            {
+                splatStatusMessage = splatMapTexture.isReadable
+                    ? "Texture is readable."
+                    : "This texture has no editable TextureImporter. Save it as a PNG asset first.";
+                return;
+            }
+
+            importer.isReadable = true;
+            importer.sRGBTexture = false;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.SaveAndReimport();
+            splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            splatStatusMessage = "Texture is readable and configured as linear splat-weight data.";
+        }
+
+        private void CreateSplatTexture()
+        {
+            string path = EditorUtility.SaveFilePanelInProject(
+                "Create Splat Map",
+                "SplatMap",
+                "png",
+                "Choose where to create the RGBA splat-weight texture.");
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            int resolution = Mathf.Clamp(newSplatResolution, 16, 8192);
+            var texture = new Texture2D(resolution, resolution, TextureFormat.RGBA32, false, true);
+            var pixels = new Color[resolution * resolution];
+            for (int index = 0; index < pixels.Length; index++)
+                pixels[index] = new Color(1f, 0f, 0f, 0f);
+            texture.SetPixels(pixels);
+            texture.Apply(false, false);
+            File.WriteAllBytes(Path.GetFullPath(path), texture.EncodeToPNG());
+            DestroyImmediate(texture);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            MakeSplatTextureReadable();
+            splatTextureDirty = false;
+            splatStatusMessage = $"Created {resolution} x {resolution} splat map. Red is the initial full-weight layer.";
+        }
+
+        private void SaveSplatTexture(bool saveAs)
+        {
+            if (splatMapTexture == null)
+                return;
+
+            string path = saveAs ? string.Empty : AssetDatabase.GetAssetPath(splatMapTexture);
+            string extension = Path.GetExtension(path).ToLowerInvariant();
+            if (saveAs || (extension != ".png" && extension != ".tga" && extension != ".asset"))
+            {
+                path = EditorUtility.SaveFilePanelInProject(
+                    "Save Splat Map",
+                    splatMapTexture.name + "_Painted",
+                    "png",
+                    "Save the painted splat map as a PNG asset.");
+                extension = ".png";
+            }
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            if (extension == ".asset")
+            {
+                EditorUtility.SetDirty(splatMapTexture);
+                AssetDatabase.SaveAssets();
+            }
+            else
+            {
+                if (!AssetDatabase.MakeEditable(path))
+                {
+                    splatStatusMessage = "The texture asset is read-only. Check it out from version control or use Save As PNG.";
+                    return;
+                }
+
+                byte[] bytes = extension == ".tga" ? splatMapTexture.EncodeToTGA() : splatMapTexture.EncodeToPNG();
+                File.WriteAllBytes(Path.GetFullPath(path), bytes);
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                MakeSplatTextureReadable();
+            }
+
+            splatTextureDirty = false;
+            splatStatusMessage = $"Saved splat map to {path}.";
         }
 
         private void SimulatePhysics()

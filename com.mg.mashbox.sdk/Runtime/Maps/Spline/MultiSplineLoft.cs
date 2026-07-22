@@ -224,6 +224,24 @@ namespace MashBoxSDK.Maps.Spline
         public LoftShoulderModifier ShoulderModifier { get => ResolveShoulderModifier(); set => m_ShoulderModifier = value; }
         public Mesh GeneratedMesh => m_GeneratedMesh;
 
+        public bool SynchronizeUvSplineSettings(UVSpline uvSpline)
+        {
+            if (uvSpline == null)
+                return false;
+
+            UVSpline generatedUvSpline = m_UvSpline != null
+                ? m_UvSpline
+                : GetComponentInChildren<UVSpline>(true);
+            if (generatedUvSpline != uvSpline)
+                return false;
+
+            m_UvSpline = uvSpline;
+            m_UvSplineChannel = uvSpline.UvChannel;
+            m_UvSplineDirection = uvSpline.Direction;
+            m_UvSplinePointCount = uvSpline.GeneratedPointCount;
+            return true;
+        }
+
         public void SetShoulderColliderSubmeshes(IEnumerable<int> submeshIndices)
         {
             m_ShoulderColliderSubmeshes.Clear();

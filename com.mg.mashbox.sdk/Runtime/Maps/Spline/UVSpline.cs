@@ -25,6 +25,16 @@ namespace MashBoxSDK.Maps.Spline
             [Min(0.01f)] public float lengthScale = 1f;
             public float sideOffset;
             public float alongOffset;
+            public bool mirrorSplitToNext;
+            [Range(0f, 1f)] public float mirrorBlendLength = 0.15f;
+            [Min(0f)] public float mirrorBlendWidth = 0.05f;
+            public float mirrorLeftOffset;
+            public float mirrorRightOffset;
+            public bool flipMirrorLeft = true;
+            public bool flipMirrorRight;
+            [Min(0.01f)] public float mirrorBranchUvWidth = 0.5f;
+            [Min(0.01f)] public float mirrorLeftScale = 1f;
+            [Min(0.01f)] public float mirrorRightScale = 1f;
             [HideInInspector] public Vector3 generatedLocalPosition;
 
             public ControlPoint Clone()
@@ -47,6 +57,7 @@ namespace MashBoxSDK.Maps.Spline
         [SerializeField] float m_AlongUvPerWorldUnit = 0.1f;
         [SerializeField] float m_SideUvPerWorldUnit = 0.1f;
         [SerializeField] List<ControlPoint> m_ControlPoints = new List<ControlPoint>();
+        [SerializeField, HideInInspector] int m_MirrorSettingsVersion;
         [SerializeField, HideInInspector] Mesh m_SourceMesh;
         [SerializeField, HideInInspector] Mesh m_OutputMesh;
 
@@ -59,6 +70,9 @@ namespace MashBoxSDK.Maps.Spline
         [NonSerialized] int m_CachedUvChannel = -1;
         [NonSerialized] readonly List<Vector2> m_CachedSourceUvs = new List<Vector2>();
         [NonSerialized] readonly List<Vector2> m_WorkingOutputUvs = new List<Vector2>();
+        [NonSerialized] readonly List<Vector2> m_WorkingLeftSeamUvs = new List<Vector2>();
+        [NonSerialized] readonly List<Vector2> m_WorkingRightSeamUvs = new List<Vector2>();
+        [NonSerialized] readonly List<bool> m_WorkingSeamCandidates = new List<bool>();
 
         public MeshFilter Target { get => m_Target; set => m_Target = value; }
         public int UvChannel { get => m_UvChannel; set => m_UvChannel = Mathf.Clamp(value, 0, 3); }
@@ -84,6 +98,31 @@ namespace MashBoxSDK.Maps.Spline
             m_GeneratedPointCount = Mathf.Max(2, m_GeneratedPointCount);
             m_MoveFalloffPoints = Mathf.Max(0.25f, m_MoveFalloffPoints);
             EnsureControlPointCount(Mathf.Max(2, Container.Spline.Count));
+            if (m_MirrorSettingsVersion < 1)
+            {
+                for (int index = 0; index < m_ControlPoints.Count; index++)
+                    m_ControlPoints[index].flipMirrorLeft = true;
+                m_MirrorSettingsVersion = 1;
+            }
+            for (int index = 0; index < m_ControlPoints.Count; index++)
+            {
+                if (m_MirrorSettingsVersion < 2)
+                    m_ControlPoints[index].mirrorBranchUvWidth = 0.5f;
+                if (m_MirrorSettingsVersion < 3)
+                {
+                    m_ControlPoints[index].mirrorLeftScale = 1f;
+                    m_ControlPoints[index].mirrorRightScale = 1f;
+                }
+                m_ControlPoints[index].mirrorBlendLength = Mathf.Clamp01(m_ControlPoints[index].mirrorBlendLength);
+                m_ControlPoints[index].mirrorBlendWidth = Mathf.Max(0f, m_ControlPoints[index].mirrorBlendWidth);
+                m_ControlPoints[index].mirrorBranchUvWidth = Mathf.Max(0.01f, m_ControlPoints[index].mirrorBranchUvWidth);
+                m_ControlPoints[index].mirrorLeftScale = Mathf.Max(0.01f, m_ControlPoints[index].mirrorLeftScale);
+                m_ControlPoints[index].mirrorRightScale = Mathf.Max(0.01f, m_ControlPoints[index].mirrorRightScale);
+            }
+            m_MirrorSettingsVersion = 3;
+
+            MultiSplineLoft owningLoft = GetComponentInParent<MultiSplineLoft>();
+            owningLoft?.SynchronizeUvSplineSettings(this);
         }
 
         public bool GenerateFromTarget(out string error)
@@ -222,9 +261,20 @@ namespace MashBoxSDK.Maps.Spline
             GetUvBounds(sourceUvs, longIsU, out float minLong, out float maxLong, out float minCross, out float maxCross);
             BuildLongInterpolationCache(minLong, maxLong);
             float pivot = m_AutoCrossPivot ? (minCross + maxCross) * 0.5f : m_CrossPivot;
+            bool supportsTopologySeam = m_Target.GetComponent<MultiSplineLoft>() != null;
             m_WorkingOutputUvs.Clear();
+            m_WorkingLeftSeamUvs.Clear();
+            m_WorkingRightSeamUvs.Clear();
+            m_WorkingSeamCandidates.Clear();
             if (m_WorkingOutputUvs.Capacity < sourceUvs.Count)
+            {
                 m_WorkingOutputUvs.Capacity = sourceUvs.Count;
+                m_WorkingLeftSeamUvs.Capacity = sourceUvs.Count;
+                m_WorkingRightSeamUvs.Capacity = sourceUvs.Count;
+                m_WorkingSeamCandidates.Capacity = sourceUvs.Count;
+            }
+
+            float seamTolerance = Mathf.Max(0.00001f, (maxCross - minCross) * 0.0001f);
 
             for (int vertexIndex = 0; vertexIndex < sourceUvs.Count; vertexIndex++)
             {
@@ -252,7 +302,85 @@ namespace MashBoxSDK.Maps.Spline
                     outputLong = Mathf.Lerp(longA, longB, segmentT);
                     outputCross = Mathf.Lerp(crossA, crossB, segmentT);
                 }
+
+                float leftSeamCross = outputCross;
+                float rightSeamCross = outputCross;
+                bool seamCandidate = false;
+                if (m_ControlPoints[segment].mirrorSplitToNext)
+                {
+                    ControlPoint segmentPoint = m_ControlPoints[segment];
+                    float offsetT = m_SmoothInterpolation ? Mathf.SmoothStep(0f, 1f, segmentT) : segmentT;
+                    float leftOffset = Mathf.Lerp(m_ControlPoints[aIndex].mirrorLeftOffset, m_ControlPoints[bIndex].mirrorLeftOffset, offsetT);
+                    float rightOffset = Mathf.Lerp(m_ControlPoints[aIndex].mirrorRightOffset, m_ControlPoints[bIndex].mirrorRightOffset, offsetT);
+                    float mappedPivotA = GetMappedCross(aIndex, pivot, pivot);
+                    float mappedPivotB = GetMappedCross(bIndex, pivot, pivot);
+                    float mappedPivot = m_SmoothInterpolation
+                        ? Mathf.SmoothStep(mappedPivotA, mappedPivotB, segmentT)
+                        : Mathf.Lerp(mappedPivotA, mappedPivotB, segmentT);
+                    float commonOffset = supportsTopologySeam ? mappedPivot - pivot : 0f;
+                    float crossDistance = supportsTopologySeam ? outputCross - mappedPivot : outputCross - pivot;
+                    float absoluteDistance = Mathf.Abs(crossDistance);
+                    // Independent branch offsets cannot meet at one shared center UV
+                    // without a transition. Enforce enough width to keep that
+                    // transition's UV derivative bounded instead of producing a
+                    // razor-thin, heavily stretched stripe down the split seam.
+                    float stretchSafeWidth = supportsTopologySeam ? 0f : Mathf.Abs(rightOffset - leftOffset) * 0.75f;
+                    float blendWidth = supportsTopologySeam
+                        ? 0f
+                        : Mathf.Max(Mathf.Max(0f, segmentPoint.mirrorBlendWidth), stretchSafeWidth);
+                    if (blendWidth > Mathf.Epsilon && absoluteDistance < blendWidth)
+                    {
+                        float widthT = absoluteDistance / blendWidth;
+                        absoluteDistance = blendWidth * Mathf.SmoothStep(0f, 1f, widthT);
+                    }
+
+                    float sideBlend = supportsTopologySeam
+                        ? cross < pivot ? 0f : 1f
+                        : blendWidth > Mathf.Epsilon
+                            ? Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(pivot - blendWidth, pivot + blendWidth, outputCross))
+                            : crossDistance < 0f ? 0f : 1f;
+                    float branchDistance = absoluteDistance * 2f * Mathf.Max(0.01f, segmentPoint.mirrorBranchUvWidth);
+                    float leftBranchDistance = branchDistance * Mathf.Max(0.01f, segmentPoint.mirrorLeftScale);
+                    float rightBranchDistance = branchDistance * Mathf.Max(0.01f, segmentPoint.mirrorRightScale);
+                    float leftMirroredCross = segmentPoint.flipMirrorLeft
+                        ? maxCross - leftBranchDistance + commonOffset + leftOffset
+                        : minCross + leftBranchDistance + commonOffset + leftOffset;
+                    float rightMirroredCross = segmentPoint.flipMirrorRight
+                        ? maxCross - rightBranchDistance + commonOffset + rightOffset
+                        : minCross + rightBranchDistance + commonOffset + rightOffset;
+
+                    // Moving an individual branch can otherwise push part of its
+                    // crosswise UV range past the source shell. Repeat-wrapped
+                    // materials then bring the opposite side of the texture back
+                    // into that branch, which looks like a second narrow fork.
+                    // Hold the source shell's outer edge instead; the branch can
+                    // still be positioned independently without introducing a
+                    // wrapped copy beside the topology seam.
+                    float branchMinCross = minCross + commonOffset;
+                    float branchMaxCross = maxCross + commonOffset;
+                    leftMirroredCross = Mathf.Clamp(leftMirroredCross, branchMinCross, branchMaxCross);
+                    rightMirroredCross = Mathf.Clamp(rightMirroredCross, branchMinCross, branchMaxCross);
+                    float mirroredCross = Mathf.Lerp(leftMirroredCross, rightMirroredCross, sideBlend);
+
+                    float blendLength = Mathf.Clamp01(segmentPoint.mirrorBlendLength);
+                    float alongBlend = 1f;
+                    bool previousIsSplit = segment > 0 && m_ControlPoints[segment - 1].mirrorSplitToNext;
+                    bool nextIsSplit = segment + 1 < m_ControlPoints.Count - 1 && m_ControlPoints[segment + 1].mirrorSplitToNext;
+                    if (!previousIsSplit && blendLength > Mathf.Epsilon)
+                        alongBlend *= Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(segmentT / blendLength));
+                    if (!nextIsSplit && blendLength > Mathf.Epsilon)
+                        alongBlend *= Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((1f - segmentT) / blendLength));
+
+                    leftSeamCross = Mathf.Lerp(outputCross, leftMirroredCross, alongBlend);
+                    rightSeamCross = Mathf.Lerp(outputCross, rightMirroredCross, alongBlend);
+                    outputCross = Mathf.Lerp(outputCross, mirroredCross, alongBlend);
+                    seamCandidate = Mathf.Abs(cross - pivot) <= seamTolerance && alongBlend > 0.0001f;
+                }
+
                 m_WorkingOutputUvs.Add(longIsU ? new Vector2(outputLong, outputCross) : new Vector2(outputCross, outputLong));
+                m_WorkingLeftSeamUvs.Add(longIsU ? new Vector2(outputLong, leftSeamCross) : new Vector2(leftSeamCross, outputLong));
+                m_WorkingRightSeamUvs.Add(longIsU ? new Vector2(outputLong, rightSeamCross) : new Vector2(rightSeamCross, outputLong));
+                m_WorkingSeamCandidates.Add(seamCandidate);
             }
 
             Mesh result = reusableOutput != null && reusableOutput.vertexCount == source.vertexCount
@@ -261,7 +389,145 @@ namespace MashBoxSDK.Maps.Spline
             if (result != reusableOutput)
                 result.name = source.name + "_UVSpline";
             result.SetUVs(m_UvChannel, m_WorkingOutputUvs);
+            if (supportsTopologySeam)
+                SplitMirroredLoftUvSeams(result, sourceUvs, longIsU, pivot);
             return result;
+        }
+
+        void SplitMirroredLoftUvSeams(Mesh mesh, IReadOnlyList<Vector2> sourceUvs, bool longIsU, float pivot)
+        {
+            int originalVertexCount = sourceUvs.Count;
+            if (mesh == null
+                || mesh.vertexCount != originalVertexCount
+                || m_WorkingSeamCandidates.Count != originalVertexCount)
+                return;
+
+            bool hasCandidates = false;
+            for (int index = 0; index < originalVertexCount; index++)
+            {
+                if (m_WorkingSeamCandidates[index])
+                {
+                    hasCandidates = true;
+                    break;
+                }
+            }
+            if (!hasCandidates)
+                return;
+
+            var vertices = new List<Vector3>(originalVertexCount + EstimateSeamCapacity(originalVertexCount));
+            mesh.GetVertices(vertices);
+            var normals = new List<Vector3>();
+            var tangents = new List<Vector4>();
+            var colors = new List<Color>();
+            mesh.GetNormals(normals);
+            mesh.GetTangents(tangents);
+            mesh.GetColors(colors);
+            bool hasNormals = normals.Count == originalVertexCount;
+            bool hasTangents = tangents.Count == originalVertexCount;
+            bool hasColors = colors.Count == originalVertexCount;
+
+            var uvChannels = new List<Vector4>[8];
+            for (int channel = 0; channel < uvChannels.Length; channel++)
+            {
+                uvChannels[channel] = new List<Vector4>();
+                mesh.GetUVs(channel, uvChannels[channel]);
+            }
+
+            List<Vector4> editedUvs = uvChannels[m_UvChannel];
+            if (editedUvs.Count != originalVertexCount)
+                return;
+
+            for (int index = 0; index < originalVertexCount; index++)
+            {
+                if (!m_WorkingSeamCandidates[index])
+                    continue;
+                Vector4 uv = editedUvs[index];
+                Vector2 leftUv = m_WorkingLeftSeamUvs[index];
+                uv.x = leftUv.x;
+                uv.y = leftUv.y;
+                editedUvs[index] = uv;
+            }
+
+            var duplicateForRightSide = new Dictionary<int, int>();
+            int subMeshCount = mesh.subMeshCount;
+            var subMeshTriangles = new int[subMeshCount][];
+            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+            {
+                int[] triangles = mesh.GetTriangles(subMesh);
+                subMeshTriangles[subMesh] = triangles;
+                for (int triangle = 0; triangle + 2 < triangles.Length; triangle += 3)
+                {
+                    float averageCross = 0f;
+                    for (int corner = 0; corner < 3; corner++)
+                    {
+                        Vector2 sourceUv = sourceUvs[triangles[triangle + corner]];
+                        averageCross += longIsU ? sourceUv.y : sourceUv.x;
+                    }
+                    bool rightSide = averageCross / 3f >= pivot;
+                    if (!rightSide)
+                        continue;
+
+                    for (int corner = 0; corner < 3; corner++)
+                    {
+                        int originalIndex = triangles[triangle + corner];
+                        if (!m_WorkingSeamCandidates[originalIndex])
+                            continue;
+
+                        if (!duplicateForRightSide.TryGetValue(originalIndex, out int duplicateIndex))
+                        {
+                            duplicateIndex = vertices.Count;
+                            duplicateForRightSide.Add(originalIndex, duplicateIndex);
+                            vertices.Add(vertices[originalIndex]);
+                            if (hasNormals) normals.Add(normals[originalIndex]);
+                            if (hasTangents) tangents.Add(tangents[originalIndex]);
+                            if (hasColors) colors.Add(colors[originalIndex]);
+
+                            for (int channel = 0; channel < uvChannels.Length; channel++)
+                            {
+                                List<Vector4> channelUvs = uvChannels[channel];
+                                if (channelUvs.Count != duplicateIndex)
+                                    continue;
+                                Vector4 duplicateUv = channelUvs[originalIndex];
+                                if (channel == m_UvChannel)
+                                {
+                                    Vector2 rightUv = m_WorkingRightSeamUvs[originalIndex];
+                                    duplicateUv.x = rightUv.x;
+                                    duplicateUv.y = rightUv.y;
+                                }
+                                channelUvs.Add(duplicateUv);
+                            }
+                        }
+
+                        triangles[triangle + corner] = duplicateIndex;
+                    }
+                }
+            }
+
+            if (duplicateForRightSide.Count == 0)
+                return;
+
+            mesh.Clear(false);
+            mesh.indexFormat = vertices.Count > ushort.MaxValue
+                ? UnityEngine.Rendering.IndexFormat.UInt32
+                : UnityEngine.Rendering.IndexFormat.UInt16;
+            mesh.SetVertices(vertices);
+            if (hasNormals) mesh.SetNormals(normals);
+            if (hasTangents) mesh.SetTangents(tangents);
+            if (hasColors) mesh.SetColors(colors);
+            for (int channel = 0; channel < uvChannels.Length; channel++)
+            {
+                if (uvChannels[channel].Count == vertices.Count)
+                    mesh.SetUVs(channel, uvChannels[channel]);
+            }
+            mesh.subMeshCount = subMeshCount;
+            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+                mesh.SetTriangles(subMeshTriangles[subMesh], subMesh, false);
+            mesh.RecalculateBounds();
+        }
+
+        static int EstimateSeamCapacity(int vertexCount)
+        {
+            return Mathf.Max(8, Mathf.CeilToInt(Mathf.Sqrt(vertexCount)));
         }
 
         public Mesh RebuildOutputMesh()
@@ -472,6 +738,16 @@ namespace MashBoxSDK.Maps.Spline
                 m_ControlPoints[i].lengthScale = 1f;
                 m_ControlPoints[i].sideOffset = 0f;
                 m_ControlPoints[i].alongOffset = 0f;
+                m_ControlPoints[i].mirrorSplitToNext = false;
+                m_ControlPoints[i].mirrorBlendLength = 0.15f;
+                m_ControlPoints[i].mirrorBlendWidth = 0.05f;
+                m_ControlPoints[i].mirrorLeftOffset = 0f;
+                m_ControlPoints[i].mirrorRightOffset = 0f;
+                m_ControlPoints[i].flipMirrorLeft = true;
+                m_ControlPoints[i].flipMirrorRight = false;
+                m_ControlPoints[i].mirrorBranchUvWidth = 0.5f;
+                m_ControlPoints[i].mirrorLeftScale = 1f;
+                m_ControlPoints[i].mirrorRightScale = 1f;
             }
         }
 
@@ -683,8 +959,36 @@ namespace MashBoxSDK.Maps.Spline
                 widthScale = Mathf.Lerp(points[a].widthScale, points[b].widthScale, blend),
                 lengthScale = Mathf.Lerp(points[a].lengthScale, points[b].lengthScale, blend),
                 sideOffset = Mathf.Lerp(points[a].sideOffset, points[b].sideOffset, blend),
-                alongOffset = Mathf.Lerp(points[a].alongOffset, points[b].alongOffset, blend)
+                alongOffset = Mathf.Lerp(points[a].alongOffset, points[b].alongOffset, blend),
+                mirrorSplitToNext = blend < 0.5f ? points[a].mirrorSplitToNext : points[b].mirrorSplitToNext,
+                mirrorBlendLength = Mathf.Lerp(points[a].mirrorBlendLength, points[b].mirrorBlendLength, blend),
+                mirrorBlendWidth = Mathf.Lerp(points[a].mirrorBlendWidth, points[b].mirrorBlendWidth, blend),
+                mirrorLeftOffset = Mathf.Lerp(points[a].mirrorLeftOffset, points[b].mirrorLeftOffset, blend),
+                mirrorRightOffset = Mathf.Lerp(points[a].mirrorRightOffset, points[b].mirrorRightOffset, blend),
+                flipMirrorLeft = blend < 0.5f ? points[a].flipMirrorLeft : points[b].flipMirrorLeft,
+                flipMirrorRight = blend < 0.5f ? points[a].flipMirrorRight : points[b].flipMirrorRight,
+                mirrorBranchUvWidth = Mathf.Lerp(points[a].mirrorBranchUvWidth, points[b].mirrorBranchUvWidth, blend),
+                mirrorLeftScale = Mathf.Lerp(points[a].mirrorLeftScale, points[b].mirrorLeftScale, blend),
+                mirrorRightScale = Mathf.Lerp(points[a].mirrorRightScale, points[b].mirrorRightScale, blend)
             };
+        }
+
+        public bool TryGetCrossUvBounds(out float minCross, out float maxCross)
+        {
+            minCross = 0f;
+            maxCross = 1f;
+            Mesh source = ResolveSourceMesh();
+            if (source == null)
+                return false;
+
+            var uvs = new List<Vector2>();
+            source.GetUVs(m_UvChannel, uvs);
+            if (uvs.Count != source.vertexCount || uvs.Count == 0)
+                return false;
+
+            bool longIsU = ResolveLongitudinalAxis(uvs);
+            GetUvBounds(uvs, longIsU, out _, out _, out minCross, out maxCross);
+            return maxCross - minCross > Mathf.Epsilon;
         }
 
         bool ResolveLongitudinalAxis(List<Vector2> uvs)

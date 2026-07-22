@@ -65,29 +65,42 @@ namespace MashBoxSDK.Maps.Spline
         {
             MashBoxInspectorHeaderUtility.DrawScriptHeader();
             serializedObject.Update();
+            var uvSpline = (UVSpline)target;
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("UV Spline", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("Select cyan knots in the Scene view. W moves a knot and its UV section, E edits side offset, and R scales UVs across/along.", MessageType.Info);
+            EditorGUILayout.HelpBox("Select cyan knots in the Scene view. W moves a knot and its UV section, E edits side offset, and R scales UVs across/along. Use the midpoint cube to mirror-split the segment leading to the next knot.", MessageType.Info);
 
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(m_Target, new GUIContent("Target Mesh"));
             bool targetChanged = EditorGUI.EndChangeCheck();
+
+            EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(m_UvChannel, new GUIContent("UV Channel"));
             EditorGUILayout.PropertyField(m_LongitudinalAxis, new GUIContent("UV Direction"));
             EditorGUILayout.PropertyField(m_GeneratedPointCount, new GUIContent("Generated Points"));
+            bool generationSettingsChanged = EditorGUI.EndChangeCheck();
 
             serializedObject.ApplyModifiedProperties();
+            if (generationSettingsChanged)
+            {
+                var owningLoft = uvSpline.GetComponentInParent<MultiSplineLoft>();
+                if (owningLoft != null && owningLoft.SynchronizeUvSplineSettings(uvSpline))
+                    EditorUtility.SetDirty(owningLoft);
+            }
             if (targetChanged)
             {
                 m_PreviewMesh = null;
             }
 
-            var uvSpline = (UVSpline)target;
             using (new EditorGUI.DisabledScope(uvSpline.Target == null || uvSpline.Target.sharedMesh == null))
             {
                 if (GUILayout.Button("Generate Spline From Mesh", GUILayout.Height(28f)))
                 {
+                    var owningLoft = uvSpline.GetComponentInParent<MultiSplineLoft>();
+                    if (owningLoft != null && owningLoft.SynchronizeUvSplineSettings(uvSpline))
+                        EditorUtility.SetDirty(owningLoft);
+
                     RestorePreview();
                     Undo.RecordObject(uvSpline, "Generate UV Spline");
                     Undo.RecordObject(uvSpline.Container, "Generate UV Spline");
@@ -186,6 +199,52 @@ namespace MashBoxSDK.Maps.Spline
             EditorGUILayout.PropertyField(point.FindPropertyRelative("lengthScale"), new GUIContent("Length Scale"));
             EditorGUILayout.PropertyField(point.FindPropertyRelative("sideOffset"), new GUIContent("Side Offset"));
             EditorGUILayout.PropertyField(point.FindPropertyRelative("alongOffset"), new GUIContent("Along Offset"));
+            using (new EditorGUI.DisabledScope(m_SelectedIndex >= count - 1))
+            {
+                EditorGUILayout.PropertyField(
+                    point.FindPropertyRelative("mirrorSplitToNext"),
+                    new GUIContent("Mirror Split To Next", "Maps the full crosswise UV range onto both sides of the moving UV centerline for the segment from this point to the next point."));
+            }
+            if (m_SelectedIndex >= count - 1)
+                EditorGUILayout.HelpBox("The final point has no following segment to split.", MessageType.None);
+
+            bool splitToNext = m_SelectedIndex < count - 1 && point.FindPropertyRelative("mirrorSplitToNext").boolValue;
+            bool splitFromPrevious = m_SelectedIndex > 0
+                && m_ControlPoints.GetArrayElementAtIndex(m_SelectedIndex - 1).FindPropertyRelative("mirrorSplitToNext").boolValue;
+            if (splitToNext)
+            {
+                EditorGUILayout.PropertyField(
+                    point.FindPropertyRelative("mirrorBlendLength"),
+                    new GUIContent("Split Blend Length", "Fraction of this segment used to blend between one centered path and the two mirrored paths. A value of 1 lets the transition extend all the way to the next point."));
+                bool usesTopologySeam = uvSpline.Target != null && uvSpline.Target.GetComponent<MultiSplineLoft>() != null;
+                using (new EditorGUI.DisabledScope(usesTopologySeam))
+                {
+                    EditorGUILayout.PropertyField(
+                        point.FindPropertyRelative("mirrorBlendWidth"),
+                        new GUIContent("Split Blend Width", "Crosswise fallback blending for meshes where a topology seam cannot be generated."));
+                }
+                if (usesTopologySeam)
+                    EditorGUILayout.HelpBox("This loft uses a hard duplicated UV seam to preserve texture density. Crosswise blending is disabled; use Split Blend Length for the transition into and out of the split.", MessageType.None);
+                EditorGUILayout.PropertyField(
+                    point.FindPropertyRelative("mirrorBranchUvWidth"),
+                    new GUIContent("Branch Horizontal Span", "0.5 preserves the source texture's total horizontal span across both fork branches. 1.0 maps the full source span onto each branch and may repeat the texture horizontally."));
+                EditorGUILayout.LabelField("Individual Branch Scale", EditorStyles.miniBoldLabel);
+                EditorGUILayout.PropertyField(
+                    point.FindPropertyRelative("mirrorLeftScale"),
+                    new GUIContent("Left UV Scale", "Crosswise texture scale for only the left fork branch. 1 keeps the current scale; larger values compress the texture and smaller values stretch it wider."));
+                EditorGUILayout.PropertyField(
+                    point.FindPropertyRelative("mirrorRightScale"),
+                    new GUIContent("Right UV Scale", "Crosswise texture scale for only the right fork branch. 1 keeps the current scale; larger values compress the texture and smaller values stretch it wider."));
+                EditorGUILayout.PropertyField(point.FindPropertyRelative("flipMirrorLeft"), new GUIContent("Flip Left Branch", "Reverses the crosswise UV direction on the left fork branch."));
+                EditorGUILayout.PropertyField(point.FindPropertyRelative("flipMirrorRight"), new GUIContent("Flip Right Branch", "Reverses the crosswise UV direction on the right fork branch."));
+            }
+
+            if (splitToNext || splitFromPrevious)
+            {
+                EditorGUILayout.LabelField("Split Branch Position", EditorStyles.miniBoldLabel);
+                EditorGUILayout.PropertyField(point.FindPropertyRelative("mirrorLeftOffset"), new GUIContent("Left Branch UV Offset"));
+                EditorGUILayout.PropertyField(point.FindPropertyRelative("mirrorRightOffset"), new GUIContent("Right Branch UV Offset"));
+            }
         }
 
         void OnSceneGUI()
@@ -232,11 +291,181 @@ namespace MashBoxSDK.Maps.Spline
                     EditorStyles.whiteMiniLabel);
             }
 
+            DrawMirroredSegments(uvSpline, positions, count);
+
             HandleSceneHotkeys(current);
             if (m_SelectedIndex < 0 || m_SelectedIndex >= count)
                 return;
 
+            DrawSelectedSegmentMirrorHandle(uvSpline, positions, m_SelectedIndex);
+            DrawSelectedSplitBranchHandles(uvSpline, positions, m_SelectedIndex);
             DrawSelectedPointHandle(uvSpline, spline, positions, m_SelectedIndex);
+        }
+
+        static void DrawMirroredSegments(UVSpline uvSpline, Vector3[] positions, int count)
+        {
+            Handles.color = new Color(1f, 0.15f, 0.8f, 0.95f);
+            for (int index = 0; index < count - 1; index++)
+            {
+                if (uvSpline.ControlPoints[index].mirrorSplitToNext)
+                    Handles.DrawAAPolyLine(6f, positions[index], positions[index + 1]);
+            }
+        }
+
+        void DrawSelectedSegmentMirrorHandle(UVSpline uvSpline, Vector3[] positions, int index)
+        {
+            if (index < 0 || index >= positions.Length - 1)
+                return;
+
+            UVSpline.ControlPoint point = uvSpline.ControlPoints[index];
+            Vector3 midpoint = Vector3.Lerp(positions[index], positions[index + 1], 0.5f);
+            Vector3 tangent = (positions[index + 1] - positions[index]).normalized;
+            Vector3 side = GetTrailSide(tangent);
+            Vector3 normal = Vector3.Cross(tangent, side).normalized;
+            if (normal.sqrMagnitude <= Mathf.Epsilon)
+                normal = Vector3.up;
+
+            float size = HandleUtility.GetHandleSize(midpoint) * 0.12f;
+            Vector3 handlePosition = midpoint + normal * size * 1.25f;
+            Handles.color = point.mirrorSplitToNext
+                ? new Color(1f, 0.15f, 0.8f, 1f)
+                : new Color(0.55f, 0.55f, 0.55f, 0.9f);
+            Handles.DrawDottedLine(midpoint, handlePosition, 3f);
+            if (Handles.Button(handlePosition, Quaternion.LookRotation(normal, tangent), size, size * 1.25f, Handles.CubeHandleCap))
+            {
+                Undo.RecordObject(uvSpline, "Toggle Mirrored UV Split");
+                point.mirrorSplitToNext = !point.mirrorSplitToNext;
+                EditorUtility.SetDirty(uvSpline);
+                RefreshPreviewImmediately(uvSpline);
+                Repaint();
+            }
+
+            Handles.Label(
+                handlePosition + normal * size,
+                point.mirrorSplitToNext ? "Mirrored UV Split: ON" : "Mirrored UV Split: OFF",
+                EditorStyles.whiteMiniLabel);
+
+            if (!point.mirrorSplitToNext)
+                return;
+
+            float segmentLength = Vector3.Distance(positions[index], positions[index + 1]);
+            if (segmentLength <= Mathf.Epsilon)
+                return;
+
+            float blendLength = Mathf.Clamp01(point.mirrorBlendLength);
+            Vector3 startBlendPosition = Vector3.Lerp(positions[index], positions[index + 1], blendLength);
+            Vector3 endBlendPosition = Vector3.Lerp(positions[index + 1], positions[index], blendLength);
+            Handles.color = new Color(1f, 0.65f, 0.1f, 1f);
+            EditorGUI.BeginChangeCheck();
+            Vector3 movedStart = Handles.Slider(startBlendPosition, tangent, size * 0.8f, Handles.CubeHandleCap, 0f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(uvSpline, "Adjust UV Split Blend Length");
+                point.mirrorBlendLength = Mathf.Clamp01(Vector3.Dot(movedStart - positions[index], tangent) / segmentLength);
+                EditorUtility.SetDirty(uvSpline);
+                RefreshPreviewImmediately(uvSpline);
+            }
+
+            Handles.DrawDottedLine(positions[index], startBlendPosition, 3f);
+            Handles.DrawDottedLine(positions[index + 1], endBlendPosition, 3f);
+            Handles.Label(startBlendPosition + normal * size * 0.5f, $"Blend {point.mirrorBlendLength:0.00}", EditorStyles.whiteMiniLabel);
+
+            if (uvSpline.Target != null && uvSpline.Target.GetComponent<MultiSplineLoft>() != null)
+                return;
+
+            float sensitivity = Mathf.Max(0.0001f, Mathf.Abs(uvSpline.SideUvPerWorldUnit));
+            Vector3 widthHandlePosition = midpoint + side * (point.mirrorBlendWidth / sensitivity);
+            Handles.color = new Color(0.3f, 1f, 0.85f, 1f);
+            EditorGUI.BeginChangeCheck();
+            Vector3 movedWidth = Handles.Slider(widthHandlePosition, side, size * 0.75f, Handles.ConeHandleCap, 0f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(uvSpline, "Adjust UV Split Blend Width");
+                point.mirrorBlendWidth = Mathf.Max(0f, Vector3.Dot(movedWidth - midpoint, side) * sensitivity);
+                EditorUtility.SetDirty(uvSpline);
+                RefreshPreviewImmediately(uvSpline);
+            }
+            Handles.DrawDottedLine(midpoint, widthHandlePosition, 3f);
+            Handles.Label(widthHandlePosition + normal * size * 0.5f, $"Width {point.mirrorBlendWidth:0.00}", EditorStyles.whiteMiniLabel);
+        }
+
+        void DrawSelectedSplitBranchHandles(UVSpline uvSpline, Vector3[] positions, int index)
+        {
+            bool splitToNext = index < positions.Length - 1 && uvSpline.ControlPoints[index].mirrorSplitToNext;
+            bool splitFromPrevious = index > 0 && uvSpline.ControlPoints[index - 1].mirrorSplitToNext;
+            if (!splitToNext && !splitFromPrevious)
+                return;
+
+            Vector3 position = positions[index];
+            Vector3 tangent = GetPointTangent(positions, index);
+            Vector3 side = GetTrailSide(tangent);
+            float sensitivity = Mathf.Max(0.0001f, Mathf.Abs(uvSpline.SideUvPerWorldUnit));
+            UVSpline.ControlPoint point = uvSpline.ControlPoints[index];
+            float size = HandleUtility.GetHandleSize(position) * 0.12f;
+            UVSpline.ControlPoint segmentPoint = splitToNext ? point : uvSpline.ControlPoints[index - 1];
+            bool flipLeft = segmentPoint.flipMirrorLeft;
+            bool flipRight = segmentPoint.flipMirrorRight;
+            float leftBranchUvDistance = 0.25f;
+            float rightBranchUvDistance = 0.25f;
+            if (uvSpline.TryGetCrossUvBounds(out float minCross, out float maxCross))
+            {
+                float range = Mathf.Max(0.0001f, maxCross - minCross);
+                float pivot = uvSpline.AutoCrossPivot ? (minCross + maxCross) * 0.5f : uvSpline.CrossPivot;
+                float leftBranchSpan = range
+                    * Mathf.Max(0.01f, segmentPoint.mirrorBranchUvWidth)
+                    * Mathf.Max(0.01f, segmentPoint.mirrorLeftScale);
+                float rightBranchSpan = range
+                    * Mathf.Max(0.01f, segmentPoint.mirrorBranchUvWidth)
+                    * Mathf.Max(0.01f, segmentPoint.mirrorRightScale);
+                float leftNormalizedDistance = flipLeft
+                    ? (maxCross - pivot) / leftBranchSpan
+                    : (pivot - minCross) / leftBranchSpan;
+                float rightNormalizedDistance = flipRight
+                    ? (maxCross - pivot) / rightBranchSpan
+                    : (pivot - minCross) / rightBranchSpan;
+                leftBranchUvDistance = Mathf.Max(0.0001f, leftNormalizedDistance * range * 0.5f);
+                rightBranchUvDistance = Mathf.Max(0.0001f, rightNormalizedDistance * range * 0.5f);
+            }
+
+            float leftOffsetDirection = flipLeft ? -1f : 1f;
+            float rightOffsetDirection = flipRight ? 1f : -1f;
+            float branchWidth = Mathf.Max(0.01f, segmentPoint.mirrorBranchUvWidth);
+            float leftBranchWidth = branchWidth * Mathf.Max(0.01f, segmentPoint.mirrorLeftScale);
+            float rightBranchWidth = branchWidth * Mathf.Max(0.01f, segmentPoint.mirrorRightScale);
+            Vector3 leftPosition = position + side * (-leftBranchUvDistance / sensitivity + point.mirrorLeftOffset * leftOffsetDirection / (2f * leftBranchWidth * sensitivity));
+            Vector3 rightPosition = position + side * (rightBranchUvDistance / sensitivity + point.mirrorRightOffset * rightOffsetDirection / (2f * rightBranchWidth * sensitivity));
+
+            Handles.color = new Color(0.2f, 0.8f, 1f, 1f);
+            EditorGUI.BeginChangeCheck();
+            Vector3 movedLeft = Handles.Slider(leftPosition, side, size, Handles.SphereHandleCap, 0f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(uvSpline, "Move Left UV Split Branch");
+                point.mirrorLeftOffset += Vector3.Dot(movedLeft - leftPosition, side) * 2f * leftBranchWidth * sensitivity * leftOffsetDirection;
+                EditorUtility.SetDirty(uvSpline);
+                RefreshPreviewImmediately(uvSpline);
+            }
+
+            Handles.color = new Color(1f, 0.3f, 0.75f, 1f);
+            EditorGUI.BeginChangeCheck();
+            Vector3 movedRight = Handles.Slider(rightPosition, side, size, Handles.SphereHandleCap, 0f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(uvSpline, "Move Right UV Split Branch");
+                point.mirrorRightOffset += Vector3.Dot(movedRight - rightPosition, side) * 2f * rightBranchWidth * sensitivity * rightOffsetDirection;
+                EditorUtility.SetDirty(uvSpline);
+                RefreshPreviewImmediately(uvSpline);
+            }
+
+            Handles.DrawDottedLine(leftPosition, rightPosition, 4f);
+            Handles.Label(
+                leftPosition + Vector3.up * size,
+                flipLeft ? "Split L (Flipped)" : "Split L",
+                EditorStyles.whiteMiniLabel);
+            Handles.Label(
+                rightPosition + Vector3.up * size,
+                flipRight ? "Split R (Flipped)" : "Split R",
+                EditorStyles.whiteMiniLabel);
         }
 
         void HandleSceneHotkeys(Event current)
