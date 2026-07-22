@@ -36,6 +36,7 @@ namespace MashBoxSDK.MapTools
         MeshCollider m_SculptPickingCollider;
         MeshFilter m_SculptPickingTarget;
         int m_SculptPickingGenerationVersion = -1;
+        bool m_ClearingVisualSelection;
 
         public static void ShowWindow() => GetWindow<MeshSculptWindow>("Mesh Sculpt");
 
@@ -63,6 +64,7 @@ namespace MashBoxSDK.MapTools
             Undo.undoRedoPerformed += OnUndoRedo;
             Selection.selectionChanged += OnSelectionChanged;
             UseSelection();
+            ClearVisualSelection();
         }
 
         public void DeactivateSceneTool()
@@ -181,18 +183,37 @@ namespace MashBoxSDK.MapTools
         void UseSelection()
         {
             GameObject selected = Selection.activeGameObject;
-            if (selected == null) return;
+            if (selected == null)
+                return;
+
             MeshSculptModifier selectedModifier = selected.GetComponent<MeshSculptModifier>() ?? selected.GetComponentInParent<MeshSculptModifier>();
             if (selectedModifier == null)
             {
-                MultiSplineLoft loft = selected.GetComponent<MultiSplineLoft>();
+                MultiSplineLoft loft = selected.GetComponent<MultiSplineLoft>() ?? selected.GetComponentInParent<MultiSplineLoft>();
                 if (loft != null) selectedModifier = loft.SculptModifier;
             }
-            if (selectedModifier == null) return;
+            if (selectedModifier == null)
+            {
+                ClearActiveModifier();
+                CreateOnSelection();
+                if (m_Modifier != null)
+                    m_Modifier.Rebuild();
+                return;
+            }
 
             m_Modifier = selectedModifier;
             EnsureSelectedModifierTargetsLoft(selected, selectedModifier);
             m_Modifier.Rebuild();
+        }
+
+        void ClearActiveModifier()
+        {
+            if (m_Modifier == null)
+                return;
+
+            StopStroke();
+            DestroySculptPickingCollider();
+            m_Modifier = null;
         }
 
         static void EnsureSelectedModifierTargetsLoft(GameObject selected, MeshSculptModifier modifier)
@@ -220,9 +241,23 @@ namespace MashBoxSDK.MapTools
 
         void OnSelectionChanged()
         {
+            if (m_ClearingVisualSelection)
+                return;
+
             UseSelection();
+            ClearVisualSelection();
             Repaint();
             SceneView.RepaintAll();
+        }
+
+        void ClearVisualSelection()
+        {
+            if (m_ClearingVisualSelection || Selection.objects == null || Selection.objects.Length == 0)
+                return;
+
+            m_ClearingVisualSelection = true;
+            Selection.objects = System.Array.Empty<UnityEngine.Object>();
+            m_ClearingVisualSelection = false;
         }
 
         void CreateOnSelection()

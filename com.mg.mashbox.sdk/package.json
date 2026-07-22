@@ -1,7 +1,7 @@
 {
   "name": "com.mg.mashbox.sdk",
   "displayName": "MashBox SDK",
-  "version": "0.14.11",
+  "version": "0.14.12",
   "unity": "2022.3",
   "description": "Public modding API for MashBox\n\nMashBox->SDK  to begin working with the item packing system.",
   "author": {

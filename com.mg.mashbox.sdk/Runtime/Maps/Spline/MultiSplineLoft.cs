@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using MashBoxSDK.Maps.Painting;
 using MashBoxSDK.Maps.Sculpting;
 using UnityEngine;
 using UnityEngine.Splines;
@@ -160,6 +161,9 @@ namespace MashBoxSDK.Maps.Spline
         MeshSculptModifier m_SculptModifier;
 
         [SerializeField]
+        VertexPaintModifier m_VertexPaintModifier;
+
+        [SerializeField]
         LoftShoulderModifier m_ShoulderModifier;
 
         [SerializeField]
@@ -221,6 +225,7 @@ namespace MashBoxSDK.Maps.Spline
         public int UvSplinePointCount { get => m_UvSplinePointCount; set => m_UvSplinePointCount = Mathf.Max(2, value); }
         public UVSpline GeneratedUvSpline => m_UvSpline;
         public MeshSculptModifier SculptModifier { get => m_SculptModifier; set => m_SculptModifier = value; }
+        public VertexPaintModifier VertexPaintModifier { get => ResolveVertexPaintModifier(); set => m_VertexPaintModifier = value; }
         public LoftShoulderModifier ShoulderModifier { get => ResolveShoulderModifier(); set => m_ShoulderModifier = value; }
         public Mesh GeneratedMesh => m_GeneratedMesh;
 
@@ -373,6 +378,8 @@ namespace MashBoxSDK.Maps.Spline
 
         public void Regenerate()
         {
+            m_RegenerateQueued = false;
+
             // Generated meshes and modifier children are allowed to change, but the
             // authored loft root is not. Preserve its transform defensively around
             // the entire regeneration pipeline, including callbacks and early exits.
@@ -439,6 +446,8 @@ namespace MashBoxSDK.Maps.Spline
 
             if (m_SculptModifier != null)
                 m_SculptModifier.ApplyToFreshMesh(m_GeneratedMesh);
+
+            ResolveVertexPaintModifier()?.ApplyToFreshMesh(m_GeneratedMesh);
 
             RebuildColliderChunks();
 
@@ -591,6 +600,20 @@ namespace MashBoxSDK.Maps.Spline
             if (m_ResolutionSpline == null)
                 m_ResolutionSpline = GetComponentInChildren<LoftResolutionSpline>(true);
             return m_ResolutionSpline;
+        }
+
+        VertexPaintModifier ResolveVertexPaintModifier()
+        {
+            if (m_VertexPaintModifier == null)
+                m_VertexPaintModifier = GetComponent<VertexPaintModifier>();
+
+            if (m_VertexPaintModifier != null
+                && (m_VertexPaintModifier.LinkedLoft != this || m_VertexPaintModifier.Target != GetComponent<MeshFilter>()))
+            {
+                m_VertexPaintModifier.LinkToLoft(this);
+            }
+
+            return m_VertexPaintModifier;
         }
 
         LoftShoulderModifier ResolveShoulderModifier()

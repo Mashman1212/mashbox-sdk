@@ -4,6 +4,8 @@ using UnityEditorInternal;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MashBoxSDK.Maps.Painting;
+using MashBoxSDK.Maps.Spline;
 using MashBoxSDK.SDKMain;
 
 namespace MashBoxSDK.MapTools
@@ -39,6 +41,7 @@ namespace MashBoxSDK.MapTools
         private UVChannel targetUVChannel = UVChannel.UV1;
         private Color paintColor = Color.white;
         private bool useFalloff = true;
+        [SerializeField, Range(0.05f, 1f)] private float vertexPaintSpacing = 0.2f;
         private bool painterBrushActive = true;
         private bool wPauseHeld;
         [SerializeField] private List<GameObject> paintTargets = new List<GameObject>();
@@ -74,6 +77,11 @@ namespace MashBoxSDK.MapTools
         private Vector3 brushAdjustHitNormal;
         private bool paintTargetCacheDirty = true;
         private int cachedValidPaintTargetCount;
+        private int paintUndoGroup = -1;
+        private bool hasLastLoftPaintPoint;
+        private Vector3 lastLoftPaintPoint;
+        private bool clearingVisualSelection;
+        private UnityEngine.Object[] lastVisualEditingSelection = System.Array.Empty<UnityEngine.Object>();
 
         public static void ShowWindow()
         {
@@ -110,10 +118,15 @@ namespace MashBoxSDK.MapTools
             SceneView.duringSceneGui += OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
+            Selection.selectionChanged -= OnVisualEditingSelectionChanged;
+            Selection.selectionChanged += OnVisualEditingSelectionChanged;
+            ClearSelectionForVertexPainting();
         }
 
         public void DeactivateSceneTool()
         {
+            FinishPaintUndoGroup();
+            hasLastLoftPaintPoint = false;
             EndBrushAdjustment();
             if (!sceneToolActive)
                 return;
@@ -123,6 +136,7 @@ namespace MashBoxSDK.MapTools
             wPauseHeld = false;
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
+            Selection.selectionChanged -= OnVisualEditingSelectionChanged;
             CleanupPreview();
         }
 
@@ -167,6 +181,8 @@ namespace MashBoxSDK.MapTools
             currentMode = mode;
             MBEditorToolState.BrushMode = (MBBrushMode)mode;
             isPainting = false;
+            FinishPaintUndoGroup();
+            hasLastLoftPaintPoint = false;
             EndBrushAdjustment();
             strokeMeshes.Clear();
             GUIUtility.hotControl = 0;
@@ -188,6 +204,29 @@ namespace MashBoxSDK.MapTools
             GUI.changed = true;
             EditorUtility.SetDirty(this);
             InternalEditorUtility.RepaintAllViews();
+            SceneView.RepaintAll();
+            ClearSelectionForVertexPainting();
+        }
+
+        private void OnVisualEditingSelectionChanged()
+        {
+            ClearSelectionForVertexPainting();
+        }
+
+        private void ClearSelectionForVertexPainting()
+        {
+            if (clearingVisualSelection
+                || currentMode != ToolMode.Painter
+                || Selection.objects == null
+                || Selection.objects.Length == 0)
+            {
+                return;
+            }
+
+            clearingVisualSelection = true;
+            lastVisualEditingSelection = Selection.objects;
+            Selection.objects = System.Array.Empty<UnityEngine.Object>();
+            clearingVisualSelection = false;
             SceneView.RepaintAll();
         }
 
@@ -256,6 +295,7 @@ namespace MashBoxSDK.MapTools
 
         private void OnUndoRedoPerformed()
         {
+            RebuildLoftVertexPaintModifiers();
             RefreshPaintTargetMeshes();
         }
 
@@ -353,15 +393,28 @@ namespace MashBoxSDK.MapTools
         private void DrawPainterSettings()
         {
             EditorGUILayout.LabelField("Vertex Color Settings", EditorStyles.boldLabel);
+            bool hasLoftTarget = HasLoftPaintTarget();
+            if (hasLoftTarget && painterEditMode != PainterEditMode.CloneOnTarget)
+            {
+                painterEditMode = PainterEditMode.CloneOnTarget;
+                ApplyProxyRendererVisibility();
+            }
+
             EditorGUI.BeginChangeCheck();
-            painterEditMode = (PainterEditMode)EditorGUILayout.EnumPopup("Edit Mode", painterEditMode);
+            using (new EditorGUI.DisabledScope(hasLoftTarget))
+                painterEditMode = (PainterEditMode)EditorGUILayout.EnumPopup("Edit Mode", painterEditMode);
             if (painterEditMode == PainterEditMode.ProxyCopy)
                 hideSourceRendererForProxy = EditorGUILayout.Toggle("Hide Source Renderer", hideSourceRendererForProxy);
             if (EditorGUI.EndChangeCheck())
                 ApplyProxyRendererVisibility();
 
+            if (hasLoftTarget)
+                EditorGUILayout.HelpBox("Loft painting uses Clone On Target. Brush strokes are stored locally and replayed after loft regeneration.", MessageType.Info);
+
             paintColor = EditorGUILayout.ColorField("Paint Color", paintColor);
             useFalloff = EditorGUILayout.Toggle("Use Falloff", useFalloff);
+            if (hasLoftTarget)
+                vertexPaintSpacing = EditorGUILayout.Slider("Stroke Spacing", vertexPaintSpacing, 0.05f, 1f);
 
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField("UV Generation", EditorStyles.boldLabel);
@@ -371,6 +424,8 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.HelpBox("Scene View: Ctrl+Middle-drag adjusts the brush horizontally for radius and vertically for strength.", MessageType.None);
 
             DrawPaintTargetSettings();
+            if (hasLoftTarget)
+                DrawLoftVertexPaintHistory();
 
             EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(GetValidPaintTargetCount() == 0))
@@ -386,6 +441,40 @@ namespace MashBoxSDK.MapTools
                 SaveSelectedMesh();
             }
             EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawLoftVertexPaintHistory()
+        {
+            MultiSplineLoft loft = GetFocusedPaintTargetLoft();
+            VertexPaintModifier modifier = loft != null ? loft.VertexPaintModifier : null;
+
+            EditorGUILayout.Space(5f);
+            EditorGUILayout.LabelField("Loft Paint History", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                loft != null
+                    ? $"{loft.gameObject.name}: {(modifier != null ? modifier.StrokeCount : 0)} recorded strokes"
+                    : "No loft target selected.",
+                EditorStyles.miniLabel);
+
+            using (new EditorGUI.DisabledScope(modifier == null || modifier.StrokeCount == 0))
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Remove Last"))
+                {
+                    Undo.RecordObject(modifier, "Remove Vertex Paint Stroke");
+                    modifier.RemoveLastStroke();
+                    modifier.Rebuild();
+                    EditorUtility.SetDirty(modifier);
+                }
+
+                if (GUILayout.Button("Clear Strokes"))
+                {
+                    Undo.RecordObject(modifier, "Clear Vertex Paint Strokes");
+                    modifier.ClearStrokes();
+                    modifier.Rebuild();
+                    EditorUtility.SetDirty(modifier);
+                }
+            }
         }
 
         private void DrawPaintTargetSettings()
@@ -447,7 +536,10 @@ namespace MashBoxSDK.MapTools
 
         private void AddSelectedPaintTargets()
         {
-            AddPaintTargets(Selection.objects);
+            UnityEngine.Object[] selectedObjects = Selection.objects != null && Selection.objects.Length > 0
+                ? Selection.objects
+                : lastVisualEditingSelection;
+            AddPaintTargets(selectedObjects);
         }
 
         private void AddPaintTargets(Object[] objects)
@@ -484,6 +576,11 @@ namespace MashBoxSDK.MapTools
                 return false;
 
             paintTargets.Add(gameObject);
+            if (ResolvePaintTargetLoft(gameObject) != null)
+            {
+                painterEditMode = PainterEditMode.CloneOnTarget;
+                ApplyProxyRendererVisibility();
+            }
             InvalidatePaintTargetCache();
             return true;
         }
@@ -578,6 +675,59 @@ namespace MashBoxSDK.MapTools
             return gameObject && gameObject.GetComponentInChildren<MeshFilter>() != null;
         }
 
+        private bool HasLoftPaintTarget()
+        {
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                if (ResolvePaintTargetLoft(paintTargets[i]) != null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private MultiSplineLoft GetFocusedPaintTargetLoft()
+        {
+            MultiSplineLoft selectedLoft = ResolvePaintTargetLoft(Selection.activeGameObject);
+            if (selectedLoft != null)
+            {
+                for (int i = 0; i < paintTargets.Count; i++)
+                {
+                    GameObject target = paintTargets[i];
+                    if (target && (selectedLoft.gameObject == target || selectedLoft.transform.IsChildOf(target.transform)))
+                        return selectedLoft;
+                }
+            }
+
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                MultiSplineLoft loft = ResolvePaintTargetLoft(paintTargets[i]);
+                if (loft != null)
+                    return loft;
+            }
+
+            return null;
+        }
+
+        private static MultiSplineLoft ResolvePaintTargetLoft(GameObject gameObject)
+        {
+            if (!gameObject)
+                return null;
+
+            return gameObject.GetComponent<MultiSplineLoft>()
+                ?? gameObject.GetComponentInParent<MultiSplineLoft>()
+                ?? gameObject.GetComponentInChildren<MultiSplineLoft>();
+        }
+
+        private static MultiSplineLoft ResolvePaintTargetLoft(MeshFilter meshFilter)
+        {
+            if (!meshFilter)
+                return null;
+
+            return meshFilter.GetComponent<MultiSplineLoft>()
+                ?? meshFilter.GetComponentInParent<MultiSplineLoft>();
+        }
+
         private bool IsPaintTarget(GameObject gameObject)
         {
             if (!gameObject)
@@ -653,6 +803,14 @@ namespace MashBoxSDK.MapTools
             editableMeshFilter = null;
             if (!meshFilter || !meshFilter.sharedMesh)
                 return null;
+
+            MultiSplineLoft loft = ResolvePaintTargetLoft(meshFilter);
+            if (loft != null)
+            {
+                painterEditMode = PainterEditMode.CloneOnTarget;
+                editableMeshFilter = loft.GetComponent<MeshFilter>();
+                return loft.GeneratedMesh;
+            }
 
             editableMeshFilter = painterEditMode == PainterEditMode.ProxyCopy
                 ? EnsurePaintProxyMeshFilter(meshFilter, undoName)
@@ -758,6 +916,10 @@ namespace MashBoxSDK.MapTools
                     if (!proxyTransform)
                         continue;
 
+                    Renderer proxyRenderer = proxyTransform.GetComponent<Renderer>();
+                    if (proxyRenderer)
+                        proxyRenderer.enabled = painterEditMode == PainterEditMode.ProxyCopy;
+
                     Renderer sourceRenderer = meshFilter.GetComponent<Renderer>();
                     if (sourceRenderer)
                         sourceRenderer.enabled = !(painterEditMode == PainterEditMode.ProxyCopy && hideSourceRendererForProxy);
@@ -808,6 +970,12 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
+            if (ResolvePaintTargetLoft(go) != null)
+            {
+                painterStatusMessage = $"Skipped '{go.name}'. Loft UVs are controlled by the loft generator.";
+                return;
+            }
+
             MeshFilter mf = go.GetComponent<MeshFilter>();
             if (mf == null || mf.sharedMesh == null) return;
 
@@ -847,6 +1015,19 @@ namespace MashBoxSDK.MapTools
 
             MeshFilter mf = go.GetComponent<MeshFilter>();
             if (mf == null || mf.sharedMesh == null) return;
+
+            MultiSplineLoft loft = ResolvePaintTargetLoft(mf);
+            if (loft != null)
+            {
+                VertexPaintModifier modifier = EnsureLoftVertexPaintModifier(loft);
+                if (modifier == null)
+                    return;
+
+                Undo.RecordObject(modifier, "Fill Loft Vertex Color");
+                modifier.AddStrokeAndApply(modifier.CreateFill(paintColor));
+                EditorUtility.SetDirty(modifier);
+                return;
+            }
 
             Mesh mesh = EnsureEditableMesh(mf, "Fill Vertex Color", out MeshFilter editableMeshFilter);
             if (mesh == null)
@@ -898,6 +1079,8 @@ namespace MashBoxSDK.MapTools
                 wPauseHeld = false;
                 painterBrushActive = true;
                 isPainting = false;
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
                 EndBrushAdjustment();
                 strokeMeshes.Clear();
                 GUIUtility.hotControl = 0;
@@ -908,6 +1091,8 @@ namespace MashBoxSDK.MapTools
                 isPainting = false;
                 splatUndoRegistered = false;
                 strokeMeshes.Clear();
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
                 GUIUtility.hotControl = 0;
                 if (currentMode == ToolMode.SplatMap && splatTextureDirty)
                     splatStatusMessage = "Splat map changed. Use Save Texture to write the pixels to the source asset.";
@@ -1018,7 +1203,7 @@ namespace MashBoxSDK.MapTools
             Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
             RaycastHit hit;
 
-            if (Physics.Raycast(ray, out hit))
+            if (TryGetBrushHit(ray, out hit))
             {
                 lastHitPoint = hit.point;
                 lastHitNormal = hit.normal;
@@ -1049,7 +1234,9 @@ namespace MashBoxSDK.MapTools
                     isPainting = true;
                     splatUndoRegistered = false;
                     strokeMeshes.Clear();
+                    hasLastLoftPaintPoint = false;
                     Undo.IncrementCurrentGroup();
+                    paintUndoGroup = Undo.GetCurrentGroup();
                     Undo.SetCurrentGroupName(currentMode == ToolMode.Decor
                         ? "Scatter Decor"
                         : currentMode == ToolMode.Painter ? "Paint Vertex Color" : "Paint Splat Map");
@@ -1075,6 +1262,8 @@ namespace MashBoxSDK.MapTools
             if (e.type == EventType.MouseDown && e.button == 2 && e.control && !e.alt)
             {
                 isPainting = false;
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
                 strokeMeshes.Clear();
                 isAdjustingBrush = true;
                 brushAdjustMousePosition = e.mousePosition;
@@ -1176,6 +1365,8 @@ namespace MashBoxSDK.MapTools
                 ActivateSceneTool();
                 GUIUtility.hotControl = 0;
                 isPainting = false;
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
                 EndBrushAdjustment();
                 splatUndoRegistered = false;
                 strokeMeshes.Clear();
@@ -1190,6 +1381,8 @@ namespace MashBoxSDK.MapTools
 
             painterBrushActive = false;
             isPainting = false;
+            FinishPaintUndoGroup();
+            hasLastLoftPaintPoint = false;
             EndBrushAdjustment();
             splatUndoRegistered = false;
             strokeMeshes.Clear();
@@ -1216,6 +1409,42 @@ namespace MashBoxSDK.MapTools
             {
                 PaintSplatTexture(hit, Event.current.shift);
             }
+        }
+
+        private bool TryGetBrushHit(Ray ray, out RaycastHit hit)
+        {
+            if (currentMode != ToolMode.SplatMap)
+                return Physics.Raycast(ray, out hit);
+
+            RaycastHit[] hits = Physics.RaycastAll(ray);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                if (!CanReadSplatUv(hits[i]))
+                    continue;
+
+                hit = hits[i];
+                return true;
+            }
+
+            hit = default;
+            return false;
+        }
+
+        private static bool CanReadSplatUv(RaycastHit hit)
+        {
+            if (hit.collider is TerrainCollider)
+                return true;
+
+            if (!(hit.collider is MeshCollider meshCollider))
+                return false;
+
+            Mesh mesh = meshCollider.sharedMesh;
+            return mesh != null
+                && mesh.isReadable
+                && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.TexCoord0)
+                && mesh.GetVertexAttributeDimension(UnityEngine.Rendering.VertexAttribute.TexCoord0) >= 2;
         }
 
         private void PlacePrefabs(RaycastHit hit)
@@ -1295,6 +1524,13 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
+            MultiSplineLoft loft = ResolvePaintTargetLoft(mf);
+            if (loft != null)
+            {
+                PaintLoftVertexColors(loft, hit);
+                return;
+            }
+
             Mesh mesh = EnsureEditableMesh(mf, "Clone Mesh for Painting", out MeshFilter editableMeshFilter);
             if (mesh == null)
                 return;
@@ -1338,6 +1574,85 @@ namespace MashBoxSDK.MapTools
             }
         }
 
+        private void PaintLoftVertexColors(MultiSplineLoft loft, RaycastHit hit)
+        {
+            if (hasLastLoftPaintPoint && Vector3.Distance(hit.point, lastLoftPaintPoint) < brushRadius * vertexPaintSpacing)
+                return;
+
+            VertexPaintModifier modifier = EnsureLoftVertexPaintModifier(loft);
+            if (modifier == null)
+                return;
+
+            Undo.RecordObject(modifier, "Paint Loft Vertex Color");
+            modifier.AddStrokeAndApply(modifier.CreateStroke(loft.GeneratedMesh, hit.point, paintColor, brushRadius, brushStrength, useFalloff));
+            EditorUtility.SetDirty(modifier);
+            lastLoftPaintPoint = hit.point;
+            hasLastLoftPaintPoint = true;
+            painterStatusMessage = $"Painting '{loft.gameObject.name}' non-destructively ({modifier.StrokeCount} recorded strokes).";
+        }
+
+        private void FinishPaintUndoGroup()
+        {
+            if (paintUndoGroup < 0)
+                return;
+
+            Undo.CollapseUndoOperations(paintUndoGroup);
+            paintUndoGroup = -1;
+        }
+
+        private static VertexPaintModifier EnsureLoftVertexPaintModifier(MultiSplineLoft loft)
+        {
+            if (loft == null)
+                return null;
+
+            VertexPaintModifier modifier = loft.VertexPaintModifier;
+            if (modifier == null)
+                modifier = loft.GetComponent<VertexPaintModifier>();
+
+            bool created = modifier == null;
+            if (created)
+                modifier = Undo.AddComponent<VertexPaintModifier>(loft.gameObject);
+
+            bool needsLink = modifier.LinkedLoft != loft || modifier.Target != loft.GetComponent<MeshFilter>();
+            if (needsLink)
+            {
+                Undo.RecordObject(modifier, "Link Vertex Paint Modifier To Loft");
+                modifier.LinkToLoft(loft);
+                EditorUtility.SetDirty(modifier);
+            }
+
+            if (loft.VertexPaintModifier != modifier)
+            {
+                Undo.RecordObject(loft, "Link Vertex Paint Modifier To Loft");
+                loft.VertexPaintModifier = modifier;
+                EditorUtility.SetDirty(loft);
+            }
+
+            if (created || needsLink)
+                loft.Regenerate();
+
+            return modifier;
+        }
+
+        private void RebuildLoftVertexPaintModifiers()
+        {
+            var rebuilt = new HashSet<VertexPaintModifier>();
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                MultiSplineLoft loft = ResolvePaintTargetLoft(paintTargets[i]);
+                if (loft == null)
+                    continue;
+
+                VertexPaintModifier modifier = loft.VertexPaintModifier != null
+                    ? loft.VertexPaintModifier
+                    : loft.GetComponent<VertexPaintModifier>();
+                if (modifier != null && rebuilt.Add(modifier))
+                    modifier.Rebuild();
+                else if (modifier == null)
+                    loft.Regenerate();
+            }
+        }
+
         private Color GetSplatChannelColor(bool erasing)
         {
             if (erasing)
@@ -1354,6 +1669,9 @@ namespace MashBoxSDK.MapTools
 
         private void DrawSplatHoverLabel(RaycastHit hit, bool erasing)
         {
+            if (!CanReadSplatUv(hit))
+                return;
+
             Handles.BeginGUI();
             Vector2 mouse = Event.current.mousePosition;
             var style = new GUIStyle(EditorStyles.helpBox);
@@ -1380,9 +1698,9 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            if (!(hit.collider is MeshCollider) && !(hit.collider is TerrainCollider))
+            if (!CanReadSplatUv(hit))
             {
-                splatStatusMessage = "The hit collider does not provide paintable UV coordinates. Add a MeshCollider to the rendered mesh.";
+                splatStatusMessage = "The hit collider does not provide readable UV0 coordinates.";
                 return;
             }
 

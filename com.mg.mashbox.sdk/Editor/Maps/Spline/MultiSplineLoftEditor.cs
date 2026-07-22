@@ -46,6 +46,7 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_UvSplinePointCount;
         SerializedProperty m_UvSpline;
         SerializedProperty m_SculptModifier;
+        SerializedProperty m_VertexPaintModifier;
         SerializedProperty m_ShoulderModifier;
         SerializedProperty m_GeneratedMesh;
 
@@ -82,6 +83,7 @@ namespace MashBoxSDK.Maps.Spline
             m_UvSplinePointCount = serializedObject.FindProperty("m_UvSplinePointCount");
             m_UvSpline = serializedObject.FindProperty("m_UvSpline");
             m_SculptModifier = serializedObject.FindProperty("m_SculptModifier");
+            m_VertexPaintModifier = serializedObject.FindProperty("m_VertexPaintModifier");
             m_ShoulderModifier = serializedObject.FindProperty("m_ShoulderModifier");
             m_GeneratedMesh = serializedObject.FindProperty("m_GeneratedMesh");
 
@@ -150,6 +152,7 @@ namespace MashBoxSDK.Maps.Spline
                 EditorGUILayout.PropertyField(m_ColliderChunkLength, new GUIContent("Collider Chopping Distance", "Creates a separate child MeshCollider for approximately this many meters of track."));
             EditorGUILayout.PropertyField(m_AutoRegenerate, new GUIContent("Live Regenerate"));
             EditorGUILayout.PropertyField(m_SculptModifier, new GUIContent("Sculpt Modifier", "Replays recorded sculpt strokes after every loft regeneration."));
+            EditorGUILayout.PropertyField(m_VertexPaintModifier, new GUIContent("Vertex Paint Modifier", "Replays recorded local vertex-paint strokes after every loft regeneration."));
             using (new EditorGUI.DisabledScope(true))
                 EditorGUILayout.PropertyField(m_ShoulderModifier, new GUIContent("Shoulder Modifier"));
             using (new EditorGUILayout.HorizontalScope())
