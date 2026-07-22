@@ -70,7 +70,7 @@ namespace MashBoxSDK.MapTools
 
         internal static bool ActiveEditing
         {
-            get => EditorPrefs.GetBool(ActiveEditingPreferenceKey, true);
+            get => EditorPrefs.GetBool(ActiveEditingPreferenceKey, false);
             set
             {
                 if (ActiveEditing == value)

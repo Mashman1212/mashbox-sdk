@@ -921,7 +921,7 @@ namespace MashBoxSDK.MapTools
             if (!MBEditorToolState.ActiveEditing)
             {
                 EditorGUILayout.HelpBox(
-                    "Active Editing is off. The selected authoring panel remains available, but automatic Scene tools and selection changes are paused. Enable it from the MashBox Editor Tools Scene overlay.",
+                    "Active Editing is off. The selected authoring panel remains available, but automatic Scene tools and selection changes are paused. Enable it from the MashBox Mappy Scene overlay.",
                     MessageType.Info);
                 GUILayout.Space(4f);
             }

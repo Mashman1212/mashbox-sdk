@@ -256,7 +256,7 @@ namespace MashBoxSDK.MapTools
         }
     }
 
-    [Overlay(typeof(SceneView), "MashBox Editor Tools", true)]
+    [Overlay(typeof(SceneView), "MashBox Mappy", true)]
     public sealed class MBGameplayGizmoOverlay : ToolbarOverlay
     {
         internal const float PanelWidth = 171f;
@@ -445,7 +445,7 @@ namespace MashBoxSDK.MapTools
             const int size = 32;
             s_CollapsedIcon = new Texture2D(size, size, TextureFormat.RGBA32, false)
             {
-                name = "MashBox Editor Tools MB Icon",
+                name = "MashBox Mappy MB Icon",
                 filterMode = FilterMode.Point,
                 hideFlags = HideFlags.HideAndDontSave
             };
