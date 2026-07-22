@@ -19,6 +19,7 @@ namespace MashBoxSDK.MapTools
 
         // --- Decor Settings ---
         [SerializeField] private List<GameObject> prefabPalette = new List<GameObject>();
+        [SerializeField] private bool prefabPaletteExpanded;
         private int selectedPrefabIndex = 0;
         private bool scatterMode = true;
         private bool alignToSurface = true;
@@ -39,6 +40,7 @@ namespace MashBoxSDK.MapTools
         private Color paintColor = Color.white;
         private bool useFalloff = true;
         private bool painterBrushActive = true;
+        private bool wPauseHeld;
         [SerializeField] private List<GameObject> paintTargets = new List<GameObject>();
         private string painterStatusMessage = "Add mesh objects here before painting. Only listed targets can be cloned or modified.";
 
@@ -64,8 +66,12 @@ namespace MashBoxSDK.MapTools
         private float lastScatterTime = 0f;
         private HashSet<Mesh> strokeMeshes = new HashSet<Mesh>();
         private bool sceneToolActive;
+        private bool sceneCameraRightMouseHeld;
         private bool isAdjustingBrush;
         private Vector2 brushAdjustMousePosition;
+        private bool hasBrushAdjustSurface;
+        private Vector3 brushAdjustHitPoint;
+        private Vector3 brushAdjustHitNormal;
         private bool paintTargetCacheDirty = true;
         private int cachedValidPaintTargetCount;
 
@@ -76,14 +82,21 @@ namespace MashBoxSDK.MapTools
 
         private void OnEnable()
         {
+            currentMode = (ToolMode)MBEditorToolState.BrushMode;
+            MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
+            MBEditorToolState.BrushModeChanged += OnSharedBrushModeChanged;
             EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
             EditorApplication.hierarchyChanged += InvalidatePaintTargetCache;
             InvalidatePaintTargetCache();
-            ActivateSceneTool();
+            if (MBEditorToolState.ActiveEditing)
+                ActivateSceneTool();
+            else
+                DeactivateSceneTool();
         }
 
         private void OnDisable()
         {
+            MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
             EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
             DeactivateSceneTool();
         }
@@ -101,10 +114,13 @@ namespace MashBoxSDK.MapTools
 
         public void DeactivateSceneTool()
         {
+            EndBrushAdjustment();
             if (!sceneToolActive)
                 return;
 
             sceneToolActive = false;
+            sceneCameraRightMouseHeld = false;
+            wPauseHeld = false;
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             CleanupPreview();
@@ -122,7 +138,7 @@ namespace MashBoxSDK.MapTools
 
             ToolMode requestedMode = (ToolMode)MashBoxTabDrawer.DrawTabs(
                 (int)currentMode,
-                new[] { "Decor (Scatter)", "Painter (Vertex)", "Splat Map" },
+                new[] { "Decor (Scatter)", "Vertex Painter", "Splat Map" },
                 MashBoxTabDrawer.TabVisualStyle.Secondary);
             if (requestedMode != currentMode)
                 SetToolMode(requestedMode);
@@ -149,25 +165,38 @@ namespace MashBoxSDK.MapTools
         private void SetToolMode(ToolMode mode)
         {
             currentMode = mode;
+            MBEditorToolState.BrushMode = (MBBrushMode)mode;
             isPainting = false;
-            isAdjustingBrush = false;
+            EndBrushAdjustment();
             strokeMeshes.Clear();
             GUIUtility.hotControl = 0;
 
             if (mode == ToolMode.Painter || mode == ToolMode.SplatMap)
             {
                 CleanupPreview();
+                wPauseHeld = false;
                 painterBrushActive = true;
                 if (mode == ToolMode.Painter)
                     painterStatusMessage = "Brush active. Paint listed targets, or Shift-click a mesh to add it.";
             }
 
-            ActivateSceneTool();
+            if (MBEditorToolState.ActiveEditing)
+                ActivateSceneTool();
+            else
+                DeactivateSceneTool();
             GUI.FocusControl(null);
             GUI.changed = true;
             EditorUtility.SetDirty(this);
             InternalEditorUtility.RepaintAllViews();
             SceneView.RepaintAll();
+        }
+
+        private void OnSharedBrushModeChanged()
+        {
+            ToolMode mode = (ToolMode)MBEditorToolState.BrushMode;
+            if (currentMode != mode)
+                SetToolMode(mode);
+            Repaint();
         }
 
         private void DrawSplatMapSettings()
@@ -251,8 +280,12 @@ namespace MashBoxSDK.MapTools
             
             SerializedObject so = new SerializedObject(this);
             SerializedProperty paletteProp = so.FindProperty("prefabPalette");
-            EditorGUILayout.PropertyField(paletteProp, true);
+            DrawPrefabPalette(paletteProp);
             so.ApplyModifiedProperties();
+
+            selectedPrefabIndex = prefabPalette.Count > 0
+                ? Mathf.Clamp(selectedPrefabIndex, 0, prefabPalette.Count - 1)
+                : 0;
 
             if (prefabPalette.Count > 0)
             {
@@ -263,6 +296,58 @@ namespace MashBoxSDK.MapTools
             {
                 SimulatePhysics();
             }
+        }
+
+        private void DrawPrefabPalette(SerializedProperty paletteProperty)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                prefabPaletteExpanded = EditorGUILayout.Foldout(
+                    prefabPaletteExpanded,
+                    "Prefab Palette",
+                    true);
+
+                int requestedSize = Mathf.Max(0, EditorGUILayout.IntField(
+                    paletteProperty.arraySize,
+                    GUILayout.Width(60f)));
+                if (requestedSize != paletteProperty.arraySize)
+                    paletteProperty.arraySize = requestedSize;
+            }
+
+            if (!prefabPaletteExpanded)
+                return;
+
+            EditorGUI.indentLevel++;
+            for (int index = 0; index < paletteProperty.arraySize; index++)
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.PropertyField(
+                        paletteProperty.GetArrayElementAtIndex(index),
+                        new GUIContent($"Prefab {index + 1}"));
+
+                    if (GUILayout.Button("−", GUILayout.Width(24f)))
+                    {
+                        int previousSize = paletteProperty.arraySize;
+                        paletteProperty.DeleteArrayElementAtIndex(index);
+                        if (paletteProperty.arraySize == previousSize)
+                            paletteProperty.DeleteArrayElementAtIndex(index);
+                        break;
+                    }
+                }
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Add Prefab", GUILayout.Width(110f)))
+                {
+                    int newIndex = paletteProperty.arraySize;
+                    paletteProperty.InsertArrayElementAtIndex(newIndex);
+                    paletteProperty.GetArrayElementAtIndex(newIndex).objectReferenceValue = null;
+                }
+            }
+            EditorGUI.indentLevel--;
         }
 
         private void DrawPainterSettings()
@@ -279,27 +364,11 @@ namespace MashBoxSDK.MapTools
             useFalloff = EditorGUILayout.Toggle("Use Falloff", useFalloff);
 
             EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField("Brush Control", EditorStyles.boldLabel);
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.LabelField(
-                    painterBrushActive ? "Status: Active" : "Status: Paused",
-                    GUILayout.Width(100f));
-
-                if (GUILayout.Button(
-                    painterBrushActive ? "Pause Brush (W)" : "Enable Brush (B)",
-                    GUILayout.Height(24f)))
-                {
-                    SetPainterBrushActive(!painterBrushActive);
-                }
-            }
-            
-            EditorGUILayout.Space(5);
             EditorGUILayout.LabelField("UV Generation", EditorStyles.boldLabel);
             targetUVChannel = (UVChannel)EditorGUILayout.EnumPopup("Target UV Channel", targetUVChannel);
 
             EditorGUILayout.HelpBox("Painting modifies vertex colors. Auto UV will generate unwrapped coordinates for the selected channel.", MessageType.Info);
-            EditorGUILayout.HelpBox("Scene View: B enables the paint brush. W pauses it. Ctrl+Middle-drag adjusts the brush: horizontal changes radius and vertical changes strength.", MessageType.None);
+            EditorGUILayout.HelpBox("Scene View: Ctrl+Middle-drag adjusts the brush horizontally for radius and vertically for strength.", MessageType.None);
 
             DrawPaintTargetSettings();
 
@@ -818,10 +887,18 @@ namespace MashBoxSDK.MapTools
         {
             Event e = Event.current;
 
+            if ((e.type == EventType.MouseDown || e.rawType == EventType.MouseDown) && e.button == 1)
+                sceneCameraRightMouseHeld = true;
+            else if ((e.type == EventType.MouseUp || e.rawType == EventType.MouseUp) && e.button == 1)
+                sceneCameraRightMouseHeld = false;
+
             if (e.type == EventType.MouseLeaveWindow || e.type == EventType.Ignore)
             {
+                sceneCameraRightMouseHeld = false;
+                wPauseHeld = false;
+                painterBrushActive = true;
                 isPainting = false;
-                isAdjustingBrush = false;
+                EndBrushAdjustment();
                 strokeMeshes.Clear();
                 GUIUtility.hotControl = 0;
             }
@@ -839,29 +916,69 @@ namespace MashBoxSDK.MapTools
                 sceneView.Repaint();
                 return;
             }
+
+            if (e.type == EventType.KeyDown
+                && e.keyCode == KeyCode.F
+                && !EditorGUIUtility.editingTextField
+                && !sceneCameraRightMouseHeld
+                && !Tools.viewToolActive
+                && !e.shift
+                && !e.alt
+                && !e.control
+                && !e.command)
+            {
+                Ray focusRay = HandleUtility.GUIPointToWorldRay(e.mousePosition);
+                if (Physics.Raycast(focusRay, out RaycastHit focusHit))
+                {
+                    sceneView.LookAt(
+                        focusHit.point,
+                        sceneView.rotation,
+                        Mathf.Max(0.5f, brushRadius * 2f));
+                    e.Use();
+                    sceneView.Repaint();
+                    return;
+                }
+            }
             
+            bool usesMomentaryPause = currentMode == ToolMode.Painter || currentMode == ToolMode.SplatMap;
+            if (usesMomentaryPause && !EditorGUIUtility.editingTextField
+                && e.keyCode == KeyCode.W)
+            {
+                if (e.type == EventType.KeyDown)
+                {
+                    bool cameraNavigation = sceneCameraRightMouseHeld
+                        || Tools.viewToolActive
+                        || e.shift
+                        || e.alt
+                        || e.control
+                        || e.command;
+                    if (cameraNavigation)
+                        return;
+
+                    if (!wPauseHeld)
+                    {
+                        wPauseHeld = true;
+                        SetPainterBrushActive(false);
+                        Tools.current = Tool.Move;
+                    }
+                    e.Use();
+                    sceneView.Repaint();
+                    return;
+                }
+
+                if (e.type == EventType.KeyUp && wPauseHeld)
+                {
+                    wPauseHeld = false;
+                    SetPainterBrushActive(true);
+                    e.Use();
+                    sceneView.Repaint();
+                    return;
+                }
+            }
+
             // Handle Hotkeys
             if (e.type == EventType.KeyDown)
             {
-                if ((currentMode == ToolMode.Painter || currentMode == ToolMode.SplatMap) && !EditorGUIUtility.editingTextField)
-                {
-                    if (e.keyCode == KeyCode.B)
-                    {
-                        SetPainterBrushActive(true);
-                        e.Use();
-                        sceneView.Repaint();
-                        return;
-                    }
-
-                    if (e.keyCode == KeyCode.W)
-                    {
-                        SetPainterBrushActive(false);
-                        Tools.current = Tool.Move;
-                        sceneView.Repaint();
-                        return;
-                    }
-                }
-
                 if (e.keyCode >= KeyCode.Alpha1 && e.keyCode <= KeyCode.Alpha9)
                 {
                     int index = e.keyCode - KeyCode.Alpha1;
@@ -883,9 +1000,12 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
-            if (currentMode == ToolMode.Painter || currentMode == ToolMode.SplatMap)
+            int brushAdjustControlId = GUIUtility.GetControlID("MGBrushAdjust".GetHashCode(), FocusType.Passive);
+            if (HandleBrushAdjustment(e, brushAdjustControlId, sceneView))
+                return;
+
+            if (usesMomentaryPause)
             {
-                DrawPainterSceneModeOverlay();
                 if (!painterBrushActive)
                 {
                     if (e.type == EventType.MouseMove)
@@ -893,10 +1013,6 @@ namespace MashBoxSDK.MapTools
 
                     return;
                 }
-
-                int brushAdjustControlId = GUIUtility.GetControlID("MGVertexBrushAdjust".GetHashCode(), FocusType.Passive);
-                if (HandlePainterBrushAdjustment(e, brushAdjustControlId, sceneView))
-                    return;
             }
 
             Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
@@ -954,7 +1070,7 @@ namespace MashBoxSDK.MapTools
             if (e.type == EventType.MouseMove) sceneView.Repaint();
         }
 
-        private bool HandlePainterBrushAdjustment(Event e, int controlId, SceneView sceneView)
+        private bool HandleBrushAdjustment(Event e, int controlId, SceneView sceneView)
         {
             if (e.type == EventType.MouseDown && e.button == 2 && e.control && !e.alt)
             {
@@ -962,21 +1078,22 @@ namespace MashBoxSDK.MapTools
                 strokeMeshes.Clear();
                 isAdjustingBrush = true;
                 brushAdjustMousePosition = e.mousePosition;
+                CaptureBrushAdjustmentSurface(e.mousePosition);
                 GUIUtility.hotControl = controlId;
+                EditorGUIUtility.SetWantsMouseJumping(1);
                 e.Use();
             }
             else if (isAdjustingBrush && e.type == EventType.MouseDrag && e.button == 2)
             {
                 brushRadius = Mathf.Clamp(brushRadius * Mathf.Exp(e.delta.x * 0.01f), 0.1f, 10f);
                 brushStrength = Mathf.Clamp(brushStrength - e.delta.y * 0.005f, 0.01f, 1f);
-                brushAdjustMousePosition = e.mousePosition;
                 e.Use();
                 Repaint();
                 sceneView.Repaint();
             }
             else if (isAdjustingBrush && e.type == EventType.MouseUp && e.button == 2)
             {
-                isAdjustingBrush = false;
+                EndBrushAdjustment();
                 GUIUtility.hotControl = 0;
                 e.Use();
                 Repaint();
@@ -987,11 +1104,69 @@ namespace MashBoxSDK.MapTools
             if (!isAdjustingBrush)
                 return false;
 
+            DrawBrushAdjustmentGizmo();
+
             Handles.BeginGUI();
-            GUI.Label(new Rect(brushAdjustMousePosition.x + 18f, brushAdjustMousePosition.y + 18f, 240f, 22f),
-                $"Radius {brushRadius:0.00}   Strength {brushStrength:0.00}", EditorStyles.helpBox);
+            Rect panelRect = new Rect(
+                brushAdjustMousePosition.x + 18f,
+                brushAdjustMousePosition.y + 18f,
+                250f,
+                50f);
+            GUI.Box(panelRect, GUIContent.none, EditorStyles.helpBox);
+            GUI.Label(
+                new Rect(panelRect.x + 8f, panelRect.y + 4f, panelRect.width - 16f, 18f),
+                $"Radius  {brushRadius:0.00}   (drag horizontally)",
+                EditorStyles.miniBoldLabel);
+            EditorGUI.ProgressBar(
+                new Rect(panelRect.x + 8f, panelRect.y + 27f, panelRect.width - 16f, 16f),
+                brushStrength,
+                $"Strength  {brushStrength:0.00}   (drag vertically)");
             Handles.EndGUI();
             return true;
+        }
+
+        private void CaptureBrushAdjustmentSurface(Vector2 mousePosition)
+        {
+            Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
+            hasBrushAdjustSurface = Physics.Raycast(ray, out RaycastHit hit);
+            if (!hasBrushAdjustSurface)
+                return;
+
+            brushAdjustHitPoint = hit.point;
+            brushAdjustHitNormal = hit.normal;
+            lastHitPoint = brushAdjustHitPoint;
+            lastHitNormal = brushAdjustHitNormal;
+        }
+
+        private void DrawBrushAdjustmentGizmo()
+        {
+            if (!hasBrushAdjustSurface)
+                return;
+
+            Handles.color = new Color(1f, 0.82f, 0.12f, 1f);
+            Handles.DrawWireDisc(brushAdjustHitPoint, brushAdjustHitNormal, brushRadius);
+
+            Color strengthColor = Color.Lerp(
+                new Color(1f, 0.25f, 0.12f, 0.9f),
+                new Color(0.2f, 1f, 0.35f, 0.95f),
+                brushStrength);
+            Handles.color = strengthColor;
+            Handles.DrawWireDisc(
+                brushAdjustHitPoint
+                    + brushAdjustHitNormal * HandleUtility.GetHandleSize(brushAdjustHitPoint) * 0.002f,
+                brushAdjustHitNormal,
+                brushRadius * brushStrength);
+        }
+
+        private void EndBrushAdjustment()
+        {
+            if (!isAdjustingBrush)
+                return;
+
+            isAdjustingBrush = false;
+            hasBrushAdjustSurface = false;
+            EditorGUIUtility.SetWantsMouseJumping(0);
+            GUIUtility.hotControl = 0;
         }
 
         private void SetPainterBrushActive(bool active)
@@ -1001,11 +1176,10 @@ namespace MashBoxSDK.MapTools
                 ActivateSceneTool();
                 GUIUtility.hotControl = 0;
                 isPainting = false;
-                isAdjustingBrush = false;
+                EndBrushAdjustment();
                 splatUndoRegistered = false;
                 strokeMeshes.Clear();
                 painterBrushActive = true;
-                painterStatusMessage = "Brush active. Paint listed targets, or Shift-click a mesh to add it.";
                 InternalEditorUtility.RepaintAllViews();
                 SceneView.RepaintAll();
                 return;
@@ -1016,59 +1190,13 @@ namespace MashBoxSDK.MapTools
 
             painterBrushActive = false;
             isPainting = false;
-            isAdjustingBrush = false;
+            EndBrushAdjustment();
             splatUndoRegistered = false;
             strokeMeshes.Clear();
             GUIUtility.hotControl = 0;
 
-            painterStatusMessage = "Brush paused. Select and move objects in the Scene View. Press B to paint.";
             Repaint();
             SceneView.RepaintAll();
-        }
-
-        private void DrawPainterSceneModeOverlay()
-        {
-            Handles.BeginGUI();
-
-            const float width = 330f;
-            const float height = 48f;
-            Rect rect = new Rect(12f, 12f, width, height);
-            Color bg = EditorGUIUtility.isProSkin
-                ? new Color(0.08f, 0.08f, 0.08f, 0.78f)
-                : new Color(1f, 1f, 1f, 0.82f);
-            Color accent = painterBrushActive
-                ? new Color(0.25f, 1f, 0.45f, 0.95f)
-                : new Color(0.2f, 0.75f, 1f, 0.95f);
-
-            EditorGUI.DrawRect(rect, bg);
-            EditorGUI.DrawRect(new Rect(rect.x, rect.y, 4f, rect.height), accent);
-
-            var titleStyle = new GUIStyle(EditorStyles.boldLabel)
-            {
-                normal = { textColor = accent }
-            };
-            var textStyle = new GUIStyle(EditorStyles.miniLabel)
-            {
-                normal =
-                {
-                    textColor = EditorGUIUtility.isProSkin
-                        ? new Color(0.86f, 0.86f, 0.86f, 1f)
-                        : new Color(0.18f, 0.18f, 0.18f, 1f)
-                }
-            };
-
-            string toolName = currentMode == ToolMode.SplatMap ? "Splat Painter" : "Vertex Painter";
-            GUI.Label(new Rect(rect.x + 12f, rect.y + 6f, rect.width - 20f, 18f),
-                painterBrushActive ? $"{toolName}: Brush" : $"{toolName}: Select / Move", titleStyle);
-            GUI.Label(new Rect(rect.x + 12f, rect.y + 26f, rect.width - 20f, 16f),
-                painterBrushActive
-                    ? currentMode == ToolMode.SplatMap
-                        ? "W: select/move    Shift: erase channel"
-                        : "W: select/move    Shift+Click: add target"
-                    : "B: brush    W: move tool",
-                textStyle);
-
-            Handles.EndGUI();
         }
 
         private void ExecuteAction(RaycastHit hit)
@@ -1105,10 +1233,13 @@ namespace MashBoxSDK.MapTools
             }
 
             // Scatter Mode: Drag support
-            if (Time.realtimeSinceStartup - lastScatterTime < 0.1f / scatterDensity) return;
+            float effectiveScatterDensity = Mathf.Max(
+                0.01f,
+                scatterDensity * Mathf.Lerp(0.2f, 1.8f, brushStrength));
+            if (Time.realtimeSinceStartup - lastScatterTime < 0.1f / effectiveScatterDensity) return;
             lastScatterTime = Time.realtimeSinceStartup;
 
-            int count = Mathf.Max(1, (int)(brushRadius * 2f * scatterDensity));
+            int count = Mathf.Max(1, (int)(brushRadius * 2f * effectiveScatterDensity));
             for (int i = 0; i < count; i++)
             {
                 Vector2 randomPoint = Random.insideUnitCircle * brushRadius;

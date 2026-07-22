@@ -1,5 +1,6 @@
 using System.IO;
 using MashBoxSDK.EditorResources;
+using MashBoxSDK.MapTools;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Splines;
@@ -36,6 +37,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnEnable()
         {
+            m_SceneHandleMode = (SceneHandleMode)MBEditorToolState.UvMode;
             m_Target = serializedObject.FindProperty("m_Target");
             m_UvChannel = serializedObject.FindProperty("m_UvChannel");
             m_LongitudinalAxis = serializedObject.FindProperty("m_LongitudinalAxis");
@@ -52,12 +54,14 @@ namespace MashBoxSDK.Maps.Spline
             m_ControlPoints = serializedObject.FindProperty("m_ControlPoints");
             UnitySpline.Changed += OnSplineChanged;
             Undo.undoRedoPerformed += OnUndoRedo;
+            MBEditorToolState.UvModeChanged += OnSharedUvModeChanged;
         }
 
         void OnDisable()
         {
             UnitySpline.Changed -= OnSplineChanged;
             Undo.undoRedoPerformed -= OnUndoRedo;
+            MBEditorToolState.UvModeChanged -= OnSharedUvModeChanged;
             EditorApplication.delayCall -= ProcessQueuedPreview;
         }
 
@@ -123,7 +127,12 @@ namespace MashBoxSDK.Maps.Spline
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(m_LivePreview, new GUIContent("Live Preview"));
             bool livePreviewChanged = EditorGUI.EndChangeCheck();
-            m_SceneHandleMode = (SceneHandleMode)GUILayout.Toolbar((int)m_SceneHandleMode, new[] { "Move + UV", "Side Offset", "UV Scale" });
+            var requestedHandleMode = (SceneHandleMode)GUILayout.Toolbar((int)m_SceneHandleMode, new[] { "Move + UV", "Side Offset", "UV Scale" });
+            if (requestedHandleMode != m_SceneHandleMode)
+            {
+                m_SceneHandleMode = requestedHandleMode;
+                MBEditorToolState.UvMode = (MBUvHandleMode)m_SceneHandleMode;
+            }
 
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(m_SmoothInterpolation);
@@ -473,6 +482,7 @@ namespace MashBoxSDK.Maps.Spline
             if (current.type != EventType.KeyDown || current.shift || current.alt || current.control || current.command || GUIUtility.hotControl != 0)
                 return;
 
+            bool modeChanged = true;
             if (current.keyCode == KeyCode.W)
                 m_SceneHandleMode = SceneHandleMode.MoveAndUv;
             else if (current.keyCode == KeyCode.E)
@@ -481,12 +491,16 @@ namespace MashBoxSDK.Maps.Spline
                 m_SceneHandleMode = SceneHandleMode.UvScale;
             else if (current.keyCode == KeyCode.F && m_SelectedIndex >= 0)
             {
+                modeChanged = false;
                 var uvSpline = (UVSpline)target;
                 Vector3 position = uvSpline.transform.TransformPoint((Vector3)uvSpline.Container.Spline[m_SelectedIndex].Position);
                 SceneView.lastActiveSceneView?.LookAt(position, SceneView.lastActiveSceneView.rotation, Mathf.Max(0.5f, HandleUtility.GetHandleSize(position) * 1.5f));
             }
             else
                 return;
+
+            if (modeChanged)
+                MBEditorToolState.UvMode = (MBUvHandleMode)m_SceneHandleMode;
 
             current.Use();
             Repaint();
@@ -591,6 +605,13 @@ namespace MashBoxSDK.Maps.Spline
             RequestPreview();
             SceneView.RepaintAll();
             Repaint();
+        }
+
+        void OnSharedUvModeChanged()
+        {
+            m_SceneHandleMode = (SceneHandleMode)MBEditorToolState.UvMode;
+            Repaint();
+            SceneView.RepaintAll();
         }
 
         void RequestPreview()

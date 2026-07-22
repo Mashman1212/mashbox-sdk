@@ -55,6 +55,8 @@ namespace MashBoxSDK.SDKMain
             _contentToolTab = EditorPrefs.GetInt(PREF_KEY_CONTENT_TOOL_TAB, 0);
             _headerTex = AssetDatabase.LoadAssetAtPath<Texture2D>(MashBoxEditorResources.HEADER);
             textureSizeReducerTool?.Initialize();
+            MBEditorToolState.ModeChanged -= ShowSelectedEditorMode;
+            MBEditorToolState.ModeChanged += ShowSelectedEditorMode;
         }
 
         private void OnGUI()
@@ -96,12 +98,20 @@ namespace MashBoxSDK.SDKMain
 
         private void OnDisable()
         {
+            MBEditorToolState.ModeChanged -= ShowSelectedEditorMode;
             DestroyTool(ref setupTool);
             DestroyTool(ref contentBuilderTool);
             DestroyTool(ref mapExporterTool);
             DestroyTool(ref machEquipManager);
             DestroyTool(ref photoBoothTool);
             textureSizeReducerTool = null;
+        }
+
+        private void ShowSelectedEditorMode()
+        {
+            _tab = (int)MainTab.MapTools;
+            EditorPrefs.SetInt(PREF_KEY_TAB, _tab);
+            Repaint();
         }
 
         private static T CreateHiddenToolWindow<T>() where T : ScriptableObject

@@ -20,16 +20,18 @@ namespace MashBoxSDK.MapTools
         [SerializeField] float m_Strength = 0.1f;
         [SerializeField] float m_Falloff = 2f;
         [SerializeField, Range(0.05f, 1f)] float m_Spacing = 0.2f;
-        [SerializeField] bool m_BrushActive = true;
-
         Vector2 m_Scroll;
         bool m_IsSculpting;
         bool m_HasLastStrokePosition;
         Vector3 m_LastStrokePosition;
         int m_UndoGroup = -1;
         bool m_SceneToolActive;
+        bool m_SceneCameraRightMouseHeld;
         bool m_IsAdjustingBrush;
         Vector2 m_BrushAdjustMousePosition;
+        bool m_HasBrushAdjustSurface;
+        Vector3 m_BrushAdjustHitPoint;
+        Vector3 m_BrushAdjustHitNormal;
         GameObject m_SculptPickingObject;
         MeshCollider m_SculptPickingCollider;
         MeshFilter m_SculptPickingTarget;
@@ -37,8 +39,20 @@ namespace MashBoxSDK.MapTools
 
         public static void ShowWindow() => GetWindow<MeshSculptWindow>("Mesh Sculpt");
 
-        void OnEnable() => ActivateSceneTool();
-        void OnDisable() => DeactivateSceneTool();
+        void OnEnable()
+        {
+            m_Mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
+            MBEditorToolState.SculptModeChanged -= OnSharedSculptModeChanged;
+            MBEditorToolState.SculptModeChanged += OnSharedSculptModeChanged;
+            if (MBEditorToolState.ActiveEditing)
+                ActivateSceneTool();
+        }
+
+        void OnDisable()
+        {
+            MBEditorToolState.SculptModeChanged -= OnSharedSculptModeChanged;
+            DeactivateSceneTool();
+        }
         void OnGUI() => Draw();
 
         public void ActivateSceneTool()
@@ -49,18 +63,21 @@ namespace MashBoxSDK.MapTools
             Undo.undoRedoPerformed += OnUndoRedo;
             Selection.selectionChanged += OnSelectionChanged;
             UseSelection();
-            SetBrushActive(true);
         }
 
         public void DeactivateSceneTool()
         {
-            if (m_SceneToolActive)
-            {
-                m_SceneToolActive = false;
-                SceneView.duringSceneGui -= OnSceneGUI;
-                Undo.undoRedoPerformed -= OnUndoRedo;
-                Selection.selectionChanged -= OnSelectionChanged;
-            }
+            // StopStroke releases Unity's global IMGUI hot control. Embedded hosts
+            // call this for every inactive authoring tool, so repeating cleanup
+            // here would cancel unrelated buttons between MouseDown and MouseUp.
+            if (!m_SceneToolActive)
+                return;
+
+            m_SceneToolActive = false;
+            m_SceneCameraRightMouseHeld = false;
+            SceneView.duringSceneGui -= OnSceneGUI;
+            Undo.undoRedoPerformed -= OnUndoRedo;
+            Selection.selectionChanged -= OnSelectionChanged;
             StopStroke();
             DestroySculptPickingCollider();
         }
@@ -72,10 +89,7 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.LabelField("Non-Destructive Mesh Sculpt", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Brush strokes are stored as instructions and replayed from the clean mesh. A linked loft replays them after every regeneration.", MessageType.Info);
 
-            EditorGUI.BeginChangeCheck();
             m_Modifier = (MeshSculptModifier)EditorGUILayout.ObjectField("Sculpt Modifier", m_Modifier, typeof(MeshSculptModifier), true);
-            if (EditorGUI.EndChangeCheck() && m_Modifier != null)
-                SetBrushActive(true);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Use Selection")) UseSelection();
@@ -109,7 +123,12 @@ namespace MashBoxSDK.MapTools
 
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Brush", EditorStyles.boldLabel);
-            m_Mode = (MeshSculptModifier.SculptMode)GUILayout.Toolbar((int)m_Mode, new[] { "Displace", "Smooth", "Flatten" });
+            var requestedMode = (MeshSculptModifier.SculptMode)GUILayout.Toolbar((int)m_Mode, new[] { "Displace", "Smooth", "Flatten" });
+            if (requestedMode != m_Mode)
+            {
+                m_Mode = requestedMode;
+                MBEditorToolState.SculptMode = (MBSculptMode)m_Mode;
+            }
             m_StrokeSpace = (MeshSculptModifier.StrokeSpace)EditorGUILayout.EnumPopup(new GUIContent("Memory Space", "World stays at the same scene position. Target Local follows the sculpted object."), m_StrokeSpace);
             m_Radius = EditorGUILayout.Slider("Radius", m_Radius, 0.01f, 20f);
             m_Strength = m_Mode == MeshSculptModifier.SculptMode.Displace
@@ -123,13 +142,6 @@ namespace MashBoxSDK.MapTools
                 m_DirectionMode = (DirectionMode)EditorGUILayout.EnumPopup("Direction", m_DirectionMode);
                 if (m_DirectionMode == DirectionMode.Custom)
                     m_CustomDirection = EditorGUILayout.Vector3Field("Custom World Direction", m_CustomDirection);
-            }
-
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.LabelField(m_BrushActive ? "Brush Active" : "Brush Paused");
-                if (GUILayout.Button(m_BrushActive ? "Pause" : "Enable", GUILayout.Width(90f)))
-                    SetBrushActive(!m_BrushActive);
             }
 
             EditorGUILayout.HelpBox("Drag to sculpt. Ctrl inverts the active brush, Shift temporarily smooths, and Ctrl+Shift temporarily adds deterministic noise. Ctrl+Middle-drag adjusts the brush: horizontal changes radius and vertical changes strength.", MessageType.None);
@@ -159,6 +171,13 @@ namespace MashBoxSDK.MapTools
             if (!embeddedInParentWindow) EditorGUILayout.EndScrollView();
         }
 
+        void OnSharedSculptModeChanged()
+        {
+            m_Mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
         void UseSelection()
         {
             GameObject selected = Selection.activeGameObject;
@@ -174,7 +193,6 @@ namespace MashBoxSDK.MapTools
             m_Modifier = selectedModifier;
             EnsureSelectedModifierTargetsLoft(selected, selectedModifier);
             m_Modifier.Rebuild();
-            SetBrushActive(true);
         }
 
         static void EnsureSelectedModifierTargetsLoft(GameObject selected, MeshSculptModifier modifier)
@@ -239,12 +257,27 @@ namespace MashBoxSDK.MapTools
         void OnSceneGUI(SceneView sceneView)
         {
             Event current = Event.current;
-            bool hasShortcutModifier = current.shift || current.alt || current.control || current.command;
-            if (current.type == EventType.KeyDown && !EditorGUIUtility.editingTextField && !hasShortcutModifier)
+            if (current.type == EventType.MouseDown && current.button == 1)
+                m_SceneCameraRightMouseHeld = true;
+            else if (current.type == EventType.MouseUp && current.button == 1)
+                m_SceneCameraRightMouseHeld = false;
+
+            if (current.type == EventType.MouseLeaveWindow || current.type == EventType.Ignore)
             {
-                if (current.keyCode == KeyCode.B) { SetBrushActive(true); current.Use(); }
+                m_SceneCameraRightMouseHeld = false;
+                StopStroke();
+                return;
             }
-            if (!m_BrushActive || m_Modifier == null || m_Modifier.Target == null) return;
+
+            bool cameraNavigation = m_SceneCameraRightMouseHeld || Tools.viewToolActive;
+            if (cameraNavigation)
+            {
+                if (m_IsSculpting || m_IsAdjustingBrush)
+                    StopStroke();
+                return;
+            }
+
+            if (m_Modifier == null || m_Modifier.Target == null) return;
 
             int controlId = GUIUtility.GetControlID("MeshSculptBrush".GetHashCode(), FocusType.Passive);
             if (HandleBrushAdjustment(current, controlId, sceneView))
@@ -311,7 +344,9 @@ namespace MashBoxSDK.MapTools
                 StopStroke();
                 m_IsAdjustingBrush = true;
                 m_BrushAdjustMousePosition = current.mousePosition;
+                CaptureBrushAdjustmentSurface(current.mousePosition);
                 GUIUtility.hotControl = controlId;
+                EditorGUIUtility.SetWantsMouseJumping(1);
                 current.Use();
             }
             else if (m_IsAdjustingBrush && current.type == EventType.MouseDrag && current.button == 2)
@@ -320,15 +355,13 @@ namespace MashBoxSDK.MapTools
                 float minimumStrength = m_Mode == MeshSculptModifier.SculptMode.Displace ? -2f : 0.01f;
                 float maximumStrength = m_Mode == MeshSculptModifier.SculptMode.Displace ? 2f : 1f;
                 m_Strength = Mathf.Clamp(m_Strength - current.delta.y * 0.01f, minimumStrength, maximumStrength);
-                m_BrushAdjustMousePosition = current.mousePosition;
                 current.Use();
                 Repaint();
                 sceneView.Repaint();
             }
             else if (m_IsAdjustingBrush && current.type == EventType.MouseUp && current.button == 2)
             {
-                m_IsAdjustingBrush = false;
-                GUIUtility.hotControl = 0;
+                EndBrushAdjustment();
                 current.Use();
                 Repaint();
                 sceneView.Repaint();
@@ -338,11 +371,74 @@ namespace MashBoxSDK.MapTools
             if (!m_IsAdjustingBrush)
                 return false;
 
+            DrawBrushAdjustmentGizmo();
+
             Handles.BeginGUI();
-            GUI.Label(new Rect(m_BrushAdjustMousePosition.x + 18f, m_BrushAdjustMousePosition.y + 18f, 240f, 22f),
-                $"Radius {m_Radius:0.00}   Strength {m_Strength:0.00}", EditorStyles.helpBox);
+            Rect panelRect = new Rect(
+                m_BrushAdjustMousePosition.x + 18f,
+                m_BrushAdjustMousePosition.y + 18f,
+                250f,
+                50f);
+            GUI.Box(panelRect, GUIContent.none, EditorStyles.helpBox);
+            GUI.Label(
+                new Rect(panelRect.x + 8f, panelRect.y + 4f, panelRect.width - 16f, 18f),
+                $"Radius  {m_Radius:0.00}   (drag horizontally)",
+                EditorStyles.miniBoldLabel);
+            EditorGUI.ProgressBar(
+                new Rect(panelRect.x + 8f, panelRect.y + 27f, panelRect.width - 16f, 16f),
+                GetNormalizedAdjustmentStrength(),
+                $"Strength  {m_Strength:0.00}   (drag vertically)");
             Handles.EndGUI();
             return true;
+        }
+
+        void CaptureBrushAdjustmentSurface(Vector2 mousePosition)
+        {
+            Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
+            m_HasBrushAdjustSurface = TryRaycastTarget(ray, out RaycastHit hit);
+            if (!m_HasBrushAdjustSurface)
+                return;
+
+            m_BrushAdjustHitPoint = hit.point;
+            m_BrushAdjustHitNormal = hit.normal;
+        }
+
+        void DrawBrushAdjustmentGizmo()
+        {
+            if (!m_HasBrushAdjustSurface)
+                return;
+
+            Color brushColor = new Color(1f, 0.82f, 0.12f, 1f);
+            DrawBrushFalloff(m_BrushAdjustHitPoint, m_BrushAdjustHitNormal, brushColor);
+
+            float normalizedStrength = GetNormalizedAdjustmentStrength();
+            Handles.color = Color.Lerp(
+                new Color(1f, 0.25f, 0.12f, 0.9f),
+                new Color(0.2f, 1f, 0.35f, 0.95f),
+                normalizedStrength);
+            Handles.DrawWireDisc(
+                m_BrushAdjustHitPoint
+                    + m_BrushAdjustHitNormal * HandleUtility.GetHandleSize(m_BrushAdjustHitPoint) * 0.002f,
+                m_BrushAdjustHitNormal,
+                m_Radius * normalizedStrength);
+        }
+
+        void EndBrushAdjustment()
+        {
+            if (!m_IsAdjustingBrush)
+                return;
+
+            m_IsAdjustingBrush = false;
+            m_HasBrushAdjustSurface = false;
+            EditorGUIUtility.SetWantsMouseJumping(0);
+            GUIUtility.hotControl = 0;
+        }
+
+        float GetNormalizedAdjustmentStrength()
+        {
+            return m_Mode == MeshSculptModifier.SculptMode.Displace
+                ? Mathf.Clamp01(Mathf.Abs(m_Strength) / 2f)
+                : Mathf.Clamp01(m_Strength);
         }
 
         bool TryRaycastTarget(Ray ray, out RaycastHit targetHit)
@@ -389,18 +485,6 @@ namespace MashBoxSDK.MapTools
             if (control && shift) return MeshSculptModifier.SculptMode.Noise;
             if (shift) return MeshSculptModifier.SculptMode.Smooth;
             return m_Mode;
-        }
-
-        void SetBrushActive(bool active)
-        {
-            m_BrushActive = active;
-            if (!active)
-            {
-                StopStroke();
-                DestroySculptPickingCollider();
-            }
-            SceneView.RepaintAll();
-            Repaint();
         }
 
         void EnsureSculptPickingCollider()
@@ -458,7 +542,7 @@ namespace MashBoxSDK.MapTools
         void StopStroke()
         {
             m_IsSculpting = false;
-            m_IsAdjustingBrush = false;
+            EndBrushAdjustment();
             m_HasLastStrokePosition = false;
             GUIUtility.hotControl = 0;
             if (m_UndoGroup >= 0) Undo.CollapseUndoOperations(m_UndoGroup);

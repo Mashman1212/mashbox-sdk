@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using MashBoxSDK.EditorResources;
+using MashBoxSDK.MapTools;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEditorInternal;
@@ -727,6 +728,26 @@ namespace MashBoxSDK.Maps.Spline
             QueueKnotPlacementTool(container);
         }
 
+        public void CreateLoftSplineFromOverlay()
+        {
+            MultiSplineLoft selectedLoft = Selection.activeGameObject != null
+                ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
+                : null;
+            if (selectedLoft != null)
+                m_ActiveLoft = selectedLoft;
+            CreateAndAddLoftSpline();
+        }
+
+        public void SelectMoveToolFromOverlay()
+        {
+            QueueSplineMoveTool();
+        }
+
+        public void SelectDrawToolFromOverlay()
+        {
+            QueueKnotPlacementTool();
+        }
+
         public void Draw(bool embeddedInParentWindow = false)
         {
             if (!embeddedInParentWindow)
@@ -749,14 +770,19 @@ namespace MashBoxSDK.Maps.Spline
                     MultiSplineLoftEditor.CreateLoftFromSelection();
             }
 
+            var selected = GetSelectedSplineContainersForWindow();
+
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Spline Editing", EditorStyles.boldLabel);
-            using (new EditorGUILayout.HorizontalScope())
+            using (new EditorGUI.DisabledScope(!MBEditorToolState.ActiveEditing || selected.Count == 0))
             {
-                if (GUILayout.Button("Move / Edit Knots"))
-                    QueueSplineMoveTool();
-                if (GUILayout.Button("Draw / Add Knots"))
-                    QueueKnotPlacementTool();
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Move / Edit Knots"))
+                        QueueSplineMoveTool();
+                    if (GUILayout.Button("Draw / Add Knots"))
+                        QueueKnotPlacementTool();
+                }
             }
             using (new EditorGUI.DisabledScope(m_ActiveLoft == null))
             {
@@ -767,7 +793,6 @@ namespace MashBoxSDK.Maps.Spline
 
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Selected Splines", EditorStyles.boldLabel);
-            var selected = GetSelectedSplineContainersForWindow();
             if (selected.Count == 0)
                 EditorGUILayout.HelpBox("Select three or more SplineContainer objects, then add them to a loft.", MessageType.Info);
             else

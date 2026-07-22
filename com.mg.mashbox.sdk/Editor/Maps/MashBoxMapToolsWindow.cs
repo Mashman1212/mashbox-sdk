@@ -27,9 +27,8 @@ namespace MashBoxSDK.MapTools
     public class MashBoxMapToolsWindow : EditorWindow
     {
         private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
-        private enum AuthoringToolTab { MGBrush, SplineLoft, MeshSculpt, UVSpline, Terrain }
+        private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
-        private const string PREF_KEY_AUTHORING_TOOL_TAB = "MashBoxSDK.SelectedMapAuthoringToolTab";
         private const string PREF_KEY_MAP_TOOL_TAB_ORDER = "MashBoxSDK.SelectedMapToolTab.Order";
         private ToolTab currentToolTab = ToolTab.ArtTools;
         private int authoringToolTab;
@@ -102,6 +101,7 @@ namespace MashBoxSDK.MapTools
         private bool initialized;
         [NonSerialized] private MGBrushWindow authoringBrushTool;
         [NonSerialized] private MultiSplineLoftWindow authoringLoftTool;
+        [NonSerialized] private SplineToolWindow authoringSplineTool;
         [NonSerialized] private MeshSculptWindow authoringSculptTool;
         [NonSerialized] private bool embeddedHostVisible;
         [SerializeField] private List<Terrain> terrainConversionSources = new();
@@ -151,8 +151,15 @@ namespace MashBoxSDK.MapTools
         public void OnEnable()
         {
             initialized = false;
-            authoringToolTab = EditorPrefs.GetInt(PREF_KEY_AUTHORING_TOOL_TAB, 0);
-            UVSplineEditor.SceneEditingEnabled = (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
+            authoringToolTab = GetSavedAuthoringToolTab();
+            UVSplineEditor.SceneEditingEnabled = MBEditorToolState.ActiveEditing
+                && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
+            MBEditorToolState.ModeChanged -= OnEditorToolModeChanged;
+            MBEditorToolState.ModeChanged += OnEditorToolModeChanged;
+            MBEditorToolState.ActiveEditingChanged -= OnActiveEditingChanged;
+            MBEditorToolState.ActiveEditingChanged += OnActiveEditingChanged;
+            MBEditorToolState.ActionRequested -= OnEditorToolActionRequested;
+            MBEditorToolState.ActionRequested += OnEditorToolActionRequested;
             Selection.selectionChanged -= OnAuthoringSelectionChanged;
             Selection.selectionChanged += OnAuthoringSelectionChanged;
         }
@@ -162,10 +169,14 @@ namespace MashBoxSDK.MapTools
             EditorApplication.hierarchyChanged -= MarkSceneToolCacheDirty;
             EditorSceneManager.activeSceneChangedInEditMode -= OnActiveSceneChangedInEditMode;
             Selection.selectionChanged -= OnAuthoringSelectionChanged;
+            MBEditorToolState.ModeChanged -= OnEditorToolModeChanged;
+            MBEditorToolState.ActiveEditingChanged -= OnActiveEditingChanged;
+            MBEditorToolState.ActionRequested -= OnEditorToolActionRequested;
             EditorApplication.delayCall -= ProcessQueuedUvSplineSelection;
             queuedUvSpline = null;
             uvSplineSelectionQueued = false;
-            UVSplineEditor.SceneEditingEnabled = true;
+            UVSplineEditor.SceneEditingEnabled = MBEditorToolState.ActiveEditing
+                && MBEditorToolState.Mode == MBEditorAuthoringMode.UVSpline;
             DestroyAuthoringToolInstances();
             initialized = false;
         }
@@ -196,14 +207,68 @@ namespace MashBoxSDK.MapTools
             return Enum.IsDefined(typeof(ToolTab), savedTab) ? (ToolTab)savedTab : ToolTab.ArtTools;
         }
 
+        private static int GetSavedAuthoringToolTab()
+        {
+            return (int)MBEditorToolState.Mode;
+        }
+
+        private void OnEditorToolModeChanged()
+        {
+            bool leavingUvSpline = (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline
+                && MBEditorToolState.Mode != MBEditorAuthoringMode.UVSpline;
+            authoringToolTab = (int)MBEditorToolState.Mode;
+            currentToolTab = ToolTab.ArtTools;
+            EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)currentToolTab);
+            EditorPrefs.SetString(PREF_KEY_MAP_TOOL_TAB_ORDER, "ArtToolsFirst");
+            UpdateAuthoringSceneToolState();
+            if (MBEditorToolState.ActiveEditing && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline)
+                SelectUvSplineForCurrentSelection();
+            else if (leavingUvSpline)
+                DeselectUvSplineForOtherTool();
+            Repaint();
+        }
+
+        private void OnActiveEditingChanged()
+        {
+            if (!MBEditorToolState.ActiveEditing)
+            {
+                EditorApplication.delayCall -= ProcessQueuedUvSplineSelection;
+                queuedUvSpline = null;
+                uvSplineSelectionQueued = false;
+            }
+            UpdateAuthoringSceneToolState();
+            if (MBEditorToolState.ActiveEditing && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline)
+                SelectUvSplineForCurrentSelection();
+            Repaint();
+        }
+
+        private void OnEditorToolActionRequested(MBEditorToolAction action)
+        {
+            if (!MBEditorToolState.ActiveEditing)
+                return;
+
+            EnsureAuthoringToolInstances();
+            switch (action)
+            {
+                case MBEditorToolAction.CreateSpline:
+                    authoringSplineTool?.CreateSplineFromOverlay();
+                    break;
+                case MBEditorToolAction.CreateLoftSpline:
+                    authoringLoftTool?.CreateLoftSplineFromOverlay();
+                    break;
+            }
+            Repaint();
+        }
+
         private void EnsureInitialized()
         {
             if (initialized)
                 return;
 
             currentToolTab = GetSavedMapToolTab();
-            authoringToolTab = EditorPrefs.GetInt(PREF_KEY_AUTHORING_TOOL_TAB, 0);
-            UVSplineEditor.SceneEditingEnabled = currentToolTab == ToolTab.ArtTools
+            authoringToolTab = GetSavedAuthoringToolTab();
+            UVSplineEditor.SceneEditingEnabled = MBEditorToolState.ActiveEditing
+                && currentToolTab == ToolTab.ArtTools
                 && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
             db = MapContentDatabase.GetOrCreate();
 
@@ -233,6 +298,7 @@ namespace MashBoxSDK.MapTools
         {
             if (!embeddedHostVisible
                 || currentToolTab != ToolTab.ArtTools
+                || !MBEditorToolState.ActiveEditing
                 || changingAuthoringSelection
                 || (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
                 return;
@@ -246,7 +312,6 @@ namespace MashBoxSDK.MapTools
             authoringToolTab = (int)AuthoringToolTab.UVSpline;
             EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)currentToolTab);
             EditorPrefs.SetString(PREF_KEY_MAP_TOOL_TAB_ORDER, "ArtToolsFirst");
-            EditorPrefs.SetInt(PREF_KEY_AUTHORING_TOOL_TAB, authoringToolTab);
             QueueUvSplineSelection(uvSpline);
             UpdateAuthoringSceneToolState();
             Repaint();
@@ -330,7 +395,10 @@ namespace MashBoxSDK.MapTools
             uvSplineSelectionQueued = false;
             UVSpline uvSpline = queuedUvSpline;
             queuedUvSpline = null;
-            if (this == null || uvSpline == null || (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
+            if (this == null
+                || uvSpline == null
+                || !MBEditorToolState.ActiveEditing
+                || (AuthoringToolTab)authoringToolTab != AuthoringToolTab.UVSpline)
                 return;
             SelectUvSpline(uvSpline);
             EditorApplication.QueuePlayerLoopUpdate();
@@ -808,60 +876,74 @@ namespace MashBoxSDK.MapTools
             EnsureAuthoringToolInstances();
 
 
-            int newTab = MashBoxTabDrawer.DrawTabs(authoringToolTab, new[]
-            {
-                "MG Brush",
-                "Spline Loft",
-                "Mesh Sculpt",
-                "UV Spline",
-                "Terrain"
-            }, MashBoxTabDrawer.TabVisualStyle.Secondary);
+            MBEditorAuthoringCategory category = MBEditorToolState.Category;
+            int newCategory = MashBoxTabDrawer.DrawTabs(
+                (int)category,
+                new[] { "Brush", "Spline", "Terrain" },
+                MashBoxTabDrawer.TabVisualStyle.Secondary);
+            if (newCategory != (int)category)
+                MBEditorToolState.RequestCategory((MBEditorAuthoringCategory)newCategory);
 
-            if (newTab != authoringToolTab)
+            if (MBEditorToolState.Category != MBEditorAuthoringCategory.Terrain)
             {
-                bool leavingUvSpline = (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline
-                    && (AuthoringToolTab)newTab != AuthoringToolTab.UVSpline;
-                authoringToolTab = newTab;
-                UVSplineEditor.SceneEditingEnabled = (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
-                EditorPrefs.SetInt(PREF_KEY_AUTHORING_TOOL_TAB, authoringToolTab);
-                if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline)
-                    SelectUvSplineForCurrentSelection();
-                else if (leavingUvSpline)
-                    DeselectUvSplineForOtherTool();
+                MBEditorAuthoringMode[] categoryModes;
+                string[] categoryModeLabels;
+                if (MBEditorToolState.Category == MBEditorAuthoringCategory.Brush)
+                {
+                    categoryModes = new[]
+                    {
+                        MBEditorAuthoringMode.Brush,
+                        MBEditorAuthoringMode.MeshSculpt
+                    };
+                    categoryModeLabels = new[] { "Paint & Scatter", "Sculpt" };
+                }
+                else
+                {
+                    categoryModes = new[]
+                    {
+                        MBEditorAuthoringMode.SplineLoft,
+                        MBEditorAuthoringMode.Spline,
+                        MBEditorAuthoringMode.UVSpline
+                    };
+                    categoryModeLabels = new[] { "Spline Loft", "Single Spline", "UV Spline" };
+                }
+
+                int selectedModeIndex = Mathf.Max(0, Array.IndexOf(categoryModes, MBEditorToolState.Mode));
+                int newModeIndex = MashBoxTabDrawer.DrawTabs(
+                    selectedModeIndex,
+                    categoryModeLabels,
+                    MashBoxTabDrawer.TabVisualStyle.Secondary);
+                if (newModeIndex != selectedModeIndex)
+                    MBEditorToolState.RequestMode(categoryModes[newModeIndex]);
             }
 
             GUILayout.Space(8f);
+            if (!MBEditorToolState.ActiveEditing)
+            {
+                EditorGUILayout.HelpBox(
+                    "Active Editing is off. The selected authoring panel remains available, but automatic Scene tools and selection changes are paused. Enable it from the MashBox Editor Tools Scene overlay.",
+                    MessageType.Info);
+                GUILayout.Space(4f);
+            }
 
             switch ((AuthoringToolTab)authoringToolTab)
             {
                 case AuthoringToolTab.MGBrush:
-                    authoringLoftTool?.DeactivateSceneTool();
-                    authoringSculptTool?.DeactivateSceneTool();
-                    authoringBrushTool?.ActivateSceneTool();
                     authoringBrushTool?.Draw(embeddedInParentWindow: true);
                     break;
                 case AuthoringToolTab.SplineLoft:
-                    authoringBrushTool?.DeactivateSceneTool();
-                    authoringSculptTool?.DeactivateSceneTool();
-                    authoringLoftTool?.ActivateSceneTool();
                     authoringLoftTool?.Draw(embeddedInParentWindow: true);
                     break;
+                case AuthoringToolTab.Spline:
+                    authoringSplineTool?.Draw(embeddedInParentWindow: true);
+                    break;
                 case AuthoringToolTab.MeshSculpt:
-                    authoringBrushTool?.DeactivateSceneTool();
-                    authoringLoftTool?.DeactivateSceneTool();
-                    authoringSculptTool?.ActivateSceneTool();
                     authoringSculptTool?.Draw(embeddedInParentWindow: true);
                     break;
                 case AuthoringToolTab.UVSpline:
-                    authoringBrushTool?.DeactivateSceneTool();
-                    authoringLoftTool?.DeactivateSceneTool();
-                    authoringSculptTool?.DeactivateSceneTool();
                     DrawUvSplineToolSection();
                     break;
                 case AuthoringToolTab.Terrain:
-                    authoringBrushTool?.DeactivateSceneTool();
-                    authoringLoftTool?.DeactivateSceneTool();
-                    authoringSculptTool?.DeactivateSceneTool();
                     DrawTerrainToolSection();
                     break;
             }
@@ -1095,8 +1177,8 @@ namespace MashBoxSDK.MapTools
         private void DrawUvSplineToolSection()
         {
             GameObject selected = Selection.activeGameObject;
-            UVSpline uvSpline = FindUvSpline(selected, true);
-            if (uvSpline != null && selected != uvSpline.gameObject)
+            UVSpline uvSpline = FindUvSpline(selected, MBEditorToolState.ActiveEditing);
+            if (MBEditorToolState.ActiveEditing && uvSpline != null && selected != uvSpline.gameObject)
                 SelectUvSpline(uvSpline);
 
             EditorGUILayout.LabelField("UV Spline", EditorStyles.boldLabel);
@@ -1134,6 +1216,13 @@ namespace MashBoxSDK.MapTools
             }
             authoringLoftTool.UvSplineGenerated = OnLoftUvSplineGenerated;
 
+            if (authoringSplineTool == null)
+            {
+                authoringSplineTool = CreateInstance<SplineToolWindow>();
+                authoringSplineTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
+                authoringSplineTool.DeactivateSceneTool();
+            }
+
             if (authoringSculptTool == null)
             {
                 authoringSculptTool = CreateInstance<MeshSculptWindow>();
@@ -1151,7 +1240,7 @@ namespace MashBoxSDK.MapTools
             authoringToolTab = (int)AuthoringToolTab.UVSpline;
             EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)currentToolTab);
             EditorPrefs.SetString(PREF_KEY_MAP_TOOL_TAB_ORDER, "ArtToolsFirst");
-            EditorPrefs.SetInt(PREF_KEY_AUTHORING_TOOL_TAB, authoringToolTab);
+            MBEditorToolState.Mode = MBEditorAuthoringMode.UVSpline;
             QueueUvSplineSelection(uvSpline);
             UpdateAuthoringSceneToolState();
             Repaint();
@@ -1171,6 +1260,13 @@ namespace MashBoxSDK.MapTools
                 authoringLoftTool.DeactivateSceneTool();
                 DestroyImmediate(authoringLoftTool);
                 authoringLoftTool = null;
+            }
+
+            if (authoringSplineTool != null)
+            {
+                authoringSplineTool.DeactivateSceneTool();
+                DestroyImmediate(authoringSplineTool);
+                authoringSplineTool = null;
             }
 
             if (authoringSculptTool != null)
@@ -1196,6 +1292,7 @@ namespace MashBoxSDK.MapTools
         {
             authoringBrushTool?.DeactivateSceneTool();
             authoringLoftTool?.DeactivateSceneTool();
+            authoringSplineTool?.DeactivateSceneTool();
             authoringSculptTool?.DeactivateSceneTool();
         }
 
@@ -1203,21 +1300,34 @@ namespace MashBoxSDK.MapTools
         {
             UVSplineEditor.SceneEditingEnabled = embeddedHostVisible
                 && currentToolTab == ToolTab.ArtTools
+                && MBEditorToolState.ActiveEditing
                 && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
-            if (embeddedHostVisible && currentToolTab == ToolTab.ArtTools)
+            if (embeddedHostVisible && currentToolTab == ToolTab.ArtTools && MBEditorToolState.ActiveEditing)
             {
                 if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.MGBrush)
                 {
                     authoringLoftTool?.DeactivateSceneTool();
+                    authoringSplineTool?.DeactivateSceneTool();
                     authoringSculptTool?.DeactivateSceneTool();
+                    authoringBrushTool?.ActivateSceneTool();
                     return;
                 }
 
                 if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.SplineLoft)
                 {
                     authoringBrushTool?.DeactivateSceneTool();
+                    authoringSplineTool?.DeactivateSceneTool();
                     authoringSculptTool?.DeactivateSceneTool();
                     authoringLoftTool?.ActivateSceneTool();
+                    return;
+                }
+
+                if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.Spline)
+                {
+                    authoringBrushTool?.DeactivateSceneTool();
+                    authoringLoftTool?.DeactivateSceneTool();
+                    authoringSculptTool?.DeactivateSceneTool();
+                    authoringSplineTool?.ActivateSceneTool();
                     return;
                 }
 
@@ -1225,6 +1335,8 @@ namespace MashBoxSDK.MapTools
                 {
                     authoringBrushTool?.DeactivateSceneTool();
                     authoringLoftTool?.DeactivateSceneTool();
+                    authoringSplineTool?.DeactivateSceneTool();
+                    authoringSculptTool?.ActivateSceneTool();
                     return;
                 }
             }

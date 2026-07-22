@@ -14,7 +14,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         protected virtual string InspectorNotice => null;
         protected abstract void Enforce(Material material);
 
-        protected MGLitAdvancedShaderGUIBase()
+        protected MGLitAdvancedShaderGUIBase(bool includeAdvancedLighting)
         {
             uiBlocks.RemoveAll(block => block is ShaderGraphUIBlock);
             uiBlocks.Insert(1, new MGLitAdvancedInputsUiBlock(MaterialUIBlock.ExpandableBit.Input, MGLitAdvancedInputsUiBlock.Section.Surface));
@@ -22,7 +22,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             uiBlocks.Insert(3, new MGLitAdvancedInputsUiBlock(MaterialUIBlock.ExpandableBit.Layer2, MGLitAdvancedInputsUiBlock.Section.Dirt));
             uiBlocks.Insert(4, new MGLitAdvancedInputsUiBlock(MaterialUIBlock.ExpandableBit.Detail, MGLitAdvancedInputsUiBlock.Section.Detail));
             uiBlocks.Insert(5, new MGLitAdvancedInputsUiBlock(MaterialUIBlock.ExpandableBit.Emissive, MGLitAdvancedInputsUiBlock.Section.Emissive));
-            uiBlocks.Insert(6, new MGLitAdvancedInputsUiBlock(MaterialUIBlock.ExpandableBit.User0, MGLitAdvancedInputsUiBlock.Section.AdvancedLighting));
+            if (includeAdvancedLighting)
+                uiBlocks.Insert(6, new MGLitAdvancedInputsUiBlock(MaterialUIBlock.ExpandableBit.User0, MGLitAdvancedInputsUiBlock.Section.AdvancedLighting));
             uiBlocks.RemoveAll(block => block is SurfaceOptionUIBlock);
             uiBlocks.RemoveAll(block => block is AdvancedOptionsUIBlock);
         }
@@ -70,12 +71,16 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
     public sealed class MGLitAdvancedShaderGUI : MGLitAdvancedShaderGUIBase
     {
+        public MGLitAdvancedShaderGUI() : base(false) { }
+
         protected override string BannerAssetName => "MGLitAdvancedShader_Banner.png";
         protected override void Enforce(Material material) => ShaderEnforcer.EnforceLitAdvancedShader(material);
     }
 
     public sealed class MGLitAdvancedMonoSHShaderGUI : MGLitAdvancedShaderGUIBase
     {
+        public MGLitAdvancedMonoSHShaderGUI() : base(true) { }
+
         protected override string BannerAssetName => "MGLitAdvancedMonoSHShader_Banner.png";
         protected override string InspectorNotice =>
             "This shader is designed for MonoSH lighting produced with the third-party Bakery lightmapper. " +
