@@ -1,6 +1,7 @@
 using System;
 using MashBoxSDK.Maps.Spline;
 using UnityEditor;
+using UnityEngine;
 
 namespace MashBoxSDK.MapTools
 {
@@ -28,6 +29,7 @@ namespace MashBoxSDK.MapTools
         const string ModeOrderPreferenceKey = "MashBoxSDK.SelectedMapAuthoringToolTab.Order";
         const string ActiveEditingPreferenceKey = "MashBoxSDK.EditorTools.ActiveEditing";
         const string BrushModePreferenceKey = "MashBoxSDK.EditorTools.BrushMode";
+        const string PaintColorPreferenceKey = "MashBoxSDK.EditorTools.PaintColor";
         const string SculptModePreferenceKey = "MashBoxSDK.EditorTools.SculptMode";
         const string UvModePreferenceKey = "MashBoxSDK.EditorTools.UvMode";
         const string LastBrushModePreferenceKey = "MashBoxSDK.EditorTools.LastBrushMode";
@@ -43,6 +45,7 @@ namespace MashBoxSDK.MapTools
         internal static event Action ModeChanged;
         internal static event Action ActiveEditingChanged;
         internal static event Action BrushModeChanged;
+        internal static event Action PaintColorChanged;
         internal static event Action SculptModeChanged;
         internal static event Action UvModeChanged;
         internal static event Action<MBEditorToolAction> ActionRequested;
@@ -150,6 +153,30 @@ namespace MashBoxSDK.MapTools
                 if (BrushMode == value) return;
                 EditorPrefs.SetInt(BrushModePreferenceKey, (int)value);
                 BrushModeChanged?.Invoke();
+            }
+        }
+
+        internal static Color PaintColor
+        {
+            get
+            {
+                string savedColor = EditorPrefs.GetString(PaintColorPreferenceKey, "#FFFFFFFF");
+                return ColorUtility.TryParseHtmlString(savedColor, out Color color)
+                    ? color
+                    : Color.white;
+            }
+            set
+            {
+                Color clamped = new Color(
+                    Mathf.Clamp01(value.r),
+                    Mathf.Clamp01(value.g),
+                    Mathf.Clamp01(value.b),
+                    Mathf.Clamp01(value.a));
+                if (PaintColor == clamped)
+                    return;
+
+                EditorPrefs.SetString(PaintColorPreferenceKey, "#" + ColorUtility.ToHtmlStringRGBA(clamped));
+                PaintColorChanged?.Invoke();
             }
         }
 

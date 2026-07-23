@@ -39,7 +39,11 @@ namespace MashBoxSDK.MapTools
         private PainterEditMode painterEditMode = PainterEditMode.ProxyCopy;
         private bool hideSourceRendererForProxy = true;
         private UVChannel targetUVChannel = UVChannel.UV1;
-        private Color paintColor = Color.white;
+        private Color paintColor
+        {
+            get => MBEditorToolState.PaintColor;
+            set => MBEditorToolState.PaintColor = value;
+        }
         private bool useFalloff = true;
         [SerializeField, Range(0.05f, 1f)] private float vertexPaintSpacing = 0.2f;
         private bool painterBrushActive = true;
@@ -93,6 +97,8 @@ namespace MashBoxSDK.MapTools
             currentMode = (ToolMode)MBEditorToolState.BrushMode;
             MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
             MBEditorToolState.BrushModeChanged += OnSharedBrushModeChanged;
+            MBEditorToolState.PaintColorChanged -= OnSharedPaintColorChanged;
+            MBEditorToolState.PaintColorChanged += OnSharedPaintColorChanged;
             EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
             EditorApplication.hierarchyChanged += InvalidatePaintTargetCache;
             InvalidatePaintTargetCache();
@@ -105,6 +111,7 @@ namespace MashBoxSDK.MapTools
         private void OnDisable()
         {
             MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
+            MBEditorToolState.PaintColorChanged -= OnSharedPaintColorChanged;
             EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
             DeactivateSceneTool();
         }
@@ -236,6 +243,12 @@ namespace MashBoxSDK.MapTools
             if (currentMode != mode)
                 SetToolMode(mode);
             Repaint();
+        }
+
+        private void OnSharedPaintColorChanged()
+        {
+            Repaint();
+            SceneView.RepaintAll();
         }
 
         private void DrawSplatMapSettings()

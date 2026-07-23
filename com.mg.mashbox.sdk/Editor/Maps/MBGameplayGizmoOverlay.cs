@@ -330,6 +330,10 @@ namespace MashBoxSDK.MapTools
             actionsContent.Add(new MBUvScaleToggle());
             root.Add(actionsRow);
 
+            var colorRow = CreateRow("Color", out VisualElement colorContent);
+            colorContent.Add(new MBPaintColorField());
+            root.Add(colorRow);
+
             System.Action syncActionsVisibility = () =>
             {
                 MBEditorAuthoringMode mode = MBEditorToolState.Mode;
@@ -356,18 +360,25 @@ namespace MashBoxSDK.MapTools
                     && MBEditorToolState.Mode != MBEditorAuthoringMode.Spline
                         ? DisplayStyle.Flex
                         : DisplayStyle.None;
+                colorRow.style.display = MBEditorToolState.ActiveEditing
+                    && MBEditorToolState.Mode == MBEditorAuthoringMode.Brush
+                    && MBEditorToolState.BrushMode == MBBrushMode.Painter
+                        ? DisplayStyle.Flex
+                        : DisplayStyle.None;
                 syncActionsVisibility();
             };
             root.RegisterCallback<AttachToPanelEvent>(_ =>
             {
                 MBEditorToolState.ModeChanged += syncEditingVisibility;
                 MBEditorToolState.ActiveEditingChanged += syncEditingVisibility;
+                MBEditorToolState.BrushModeChanged += syncEditingVisibility;
                 syncEditingVisibility();
             });
             root.RegisterCallback<DetachFromPanelEvent>(_ =>
             {
                 MBEditorToolState.ModeChanged -= syncEditingVisibility;
                 MBEditorToolState.ActiveEditingChanged -= syncEditingVisibility;
+                MBEditorToolState.BrushModeChanged -= syncEditingVisibility;
             });
             syncEditingVisibility();
 
@@ -499,6 +510,46 @@ namespace MashBoxSDK.MapTools
                     }
                 }
             }
+        }
+    }
+
+    public sealed class MBPaintColorField : ColorField
+    {
+        bool m_IsSyncing;
+
+        public MBPaintColorField()
+        {
+            label = string.Empty;
+            tooltip = "Vertex paint color. Click to open Unity's color picker.";
+            showAlpha = true;
+            hdr = false;
+            style.width = 72f;
+            style.minWidth = 72f;
+            style.height = 20f;
+            style.marginRight = 2f;
+            value = MBEditorToolState.PaintColor;
+
+            this.RegisterValueChangedCallback(OnColorChanged);
+            this.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.PaintColorChanged += Sync;
+                Sync();
+            });
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+                MBEditorToolState.PaintColorChanged -= Sync);
+        }
+
+        void OnColorChanged(ChangeEvent<Color> changeEvent)
+        {
+            if (!m_IsSyncing)
+                MBEditorToolState.PaintColor = changeEvent.newValue;
+        }
+
+        void Sync()
+        {
+            m_IsSyncing = true;
+            SetValueWithoutNotify(MBEditorToolState.PaintColor);
+            m_IsSyncing = false;
         }
     }
 
