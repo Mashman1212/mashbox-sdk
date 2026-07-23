@@ -13,6 +13,9 @@ namespace MashBoxSDK.Maps.Spline
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
     public sealed class MultiSplineLoft : MonoBehaviour
     {
+        const string GeneratedColliderTag = "dirt";
+        static bool s_HasWarnedAboutMissingColliderTag;
+
         public enum NormalMode
         {
             Recalculate,
@@ -1576,8 +1579,8 @@ namespace MashBoxSDK.Maps.Spline
             }
 
             chunksRoot.gameObject.isStatic = true;
-
             chunksRoot.gameObject.layer = gameObject.layer;
+            ApplyGeneratedColliderTag(chunksRoot.gameObject);
 
             Vector3[] sourceVertices = m_GeneratedMesh.vertices;
             Vector2[] sourceUvs = m_GeneratedMesh.uv;
@@ -1629,8 +1632,27 @@ namespace MashBoxSDK.Maps.Spline
                 var chunkObject = new GameObject($"Collider {chunkIndex + 1:000} [{startDistance:0}-{endDistance:0}m]");
                 chunkObject.layer = gameObject.layer;
                 chunkObject.isStatic = true;
+                ApplyGeneratedColliderTag(chunkObject);
                 chunkObject.transform.SetParent(chunksRoot, false);
                 chunkObject.AddComponent<MeshCollider>().sharedMesh = colliderMesh;
+            }
+        }
+
+        static void ApplyGeneratedColliderTag(GameObject target)
+        {
+            try
+            {
+                target.tag = GeneratedColliderTag;
+            }
+            catch (UnityException)
+            {
+                if (s_HasWarnedAboutMissingColliderTag)
+                    return;
+
+                s_HasWarnedAboutMissingColliderTag = true;
+                Debug.LogWarning(
+                    $"MultiSplineLoft could not tag generated collider objects as '{GeneratedColliderTag}' because that tag is not defined. " +
+                    "Add it in Project Settings > Tags and Layers to enable the default loft collider tag.");
             }
         }
 
