@@ -97,7 +97,7 @@ namespace MashBoxSDK.Maps.Sculpting
                     if (uvSpline != null && (m_LinkedLoft.GenerateUvSplineWithLoft || uvSpline.OutputMesh != null))
                     {
                         m_Target.sharedMesh = m_LinkedLoft.GeneratedMesh;
-                        uvSpline.RebuildOutputMesh();
+                        uvSpline.RebuildOutputMesh(forceSourceRefresh: true);
                     }
                 }
                 else

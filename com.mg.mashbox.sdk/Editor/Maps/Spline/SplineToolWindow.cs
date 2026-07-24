@@ -9,9 +9,20 @@ namespace MashBoxSDK.Maps.Spline
 {
     public sealed class SplineToolWindow : EditorWindow
     {
+        static SplineToolWindow s_ActiveSceneToolOwner;
+
         SplineContainer m_ActiveSpline;
         UnityEditor.Editor m_SplineInspector;
         bool m_SceneToolActive;
+        bool m_ChangingSelection;
+
+        internal static bool HasActiveSceneTool =>
+            s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.m_SceneToolActive;
+
+        internal static void DeactivateActiveSceneTool()
+        {
+            s_ActiveSceneToolOwner?.DeactivateSceneTool();
+        }
 
         public static void ShowWindow()
         {
@@ -32,20 +43,33 @@ namespace MashBoxSDK.Maps.Spline
 
         public void ActivateSceneTool()
         {
+            if (s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner != this)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+            s_ActiveSceneToolOwner = this;
+
             if (m_SceneToolActive)
+            {
+                UseSplineFromSelection(activateMoveTool: true, selectOnlyThisSpline: true);
                 return;
+            }
 
             m_SceneToolActive = true;
             Selection.selectionChanged += OnSelectionChanged;
-            UseSplineFromSelection();
+            UseSplineFromSelection(activateMoveTool: true, selectOnlyThisSpline: true);
         }
 
         public void DeactivateSceneTool()
         {
             if (!m_SceneToolActive)
+            {
+                if (s_ActiveSceneToolOwner == this)
+                    s_ActiveSceneToolOwner = null;
                 return;
+            }
 
             m_SceneToolActive = false;
+            if (s_ActiveSceneToolOwner == this)
+                s_ActiveSceneToolOwner = null;
             Selection.selectionChanged -= OnSelectionChanged;
             EditorApplication.delayCall -= ActivateMoveTool;
             EditorApplication.delayCall -= ActivateKnotPlacementTool;
@@ -129,20 +153,48 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnSelectionChanged()
         {
-            if (!m_SceneToolActive)
+            if (!m_SceneToolActive || m_ChangingSelection)
                 return;
 
             var selected = FindSplineInSelection();
             if (selected != null)
+            {
                 SetActiveSpline(selected, select: false);
+                SelectOnlySpline(selected);
+                QueueMoveTool();
+            }
             Repaint();
         }
 
-        void UseSplineFromSelection()
+        void UseSplineFromSelection(bool activateMoveTool = false, bool selectOnlyThisSpline = false)
         {
             var selected = FindSplineInSelection();
             if (selected != null)
+            {
                 SetActiveSpline(selected, select: false);
+                if (selectOnlyThisSpline)
+                    SelectOnlySpline(selected);
+                if (activateMoveTool)
+                    QueueMoveTool();
+            }
+        }
+
+        void SelectOnlySpline(SplineContainer spline)
+        {
+            if (spline == null)
+                return;
+
+            UnityEngine.Object[] selectedObjects = Selection.objects;
+            if (selectedObjects != null
+                && selectedObjects.Length == 1
+                && selectedObjects[0] == spline.gameObject)
+            {
+                return;
+            }
+
+            m_ChangingSelection = true;
+            Selection.objects = new UnityEngine.Object[] { spline.gameObject };
+            m_ChangingSelection = false;
         }
 
         static SplineContainer FindSplineInSelection()

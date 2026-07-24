@@ -530,11 +530,12 @@ namespace MashBoxSDK.Maps.Spline
             return Mathf.Max(8, Mathf.CeilToInt(Mathf.Sqrt(vertexCount)));
         }
 
-        public Mesh RebuildOutputMesh()
+        public Mesh RebuildOutputMesh(bool forceSourceRefresh = false)
         {
             Mesh previousOutput = m_OutputMesh;
             Mesh source = ResolveSourceMesh();
-            bool geometryIsUnchanged = previousOutput != null
+            bool geometryIsUnchanged = !forceSourceRefresh
+                && previousOutput != null
                 && m_Target != null
                 && m_Target.sharedMesh == previousOutput
                 && source != null

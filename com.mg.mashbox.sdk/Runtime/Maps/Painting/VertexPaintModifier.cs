@@ -31,6 +31,10 @@ namespace MashBoxSDK.Maps.Painting
 
         [NonSerialized] Mesh m_BaseMesh;
         [NonSerialized] Color[] m_BaseColors;
+        [NonSerialized] Mesh m_PrimarySpatialMesh;
+        [NonSerialized] WorldVertexGrid m_PrimarySpatialGrid;
+        [NonSerialized] Mesh m_SecondarySpatialMesh;
+        [NonSerialized] WorldVertexGrid m_SecondarySpatialGrid;
 
         public MeshFilter Target => m_Target;
         public MultiSplineLoft LinkedLoft => m_LinkedLoft;
@@ -59,23 +63,31 @@ namespace MashBoxSDK.Maps.Painting
         public Stroke CreateStroke(Mesh mesh, Vector3 worldPosition, Color color, float radius, float strength, bool useFalloff)
         {
             Transform targetTransform = m_Target != null ? m_Target.transform : transform;
+            radius = Mathf.Max(0.001f, radius);
             var stroke = new Stroke
             {
                 localPosition = targetTransform.InverseTransformPoint(worldPosition),
                 color = color,
-                radius = Mathf.Max(0.001f, radius),
+                radius = radius,
                 strength = Mathf.Clamp01(strength),
                 useFalloff = useFalloff
             };
 
-            if (TryFindClosestAnchor(mesh, worldPosition, targetTransform, out int vertexIndex, out Vector2 uvAnchor, out Vector3 localVertex))
+            WorldVertexGrid spatialGrid = GetSpatialGrid(mesh, targetTransform, radius);
+            if (spatialGrid != null
+                && spatialGrid.TryFindClosest(worldPosition, radius, out int vertexIndex))
             {
+                Vector3[] vertices = spatialGrid.LocalVertices;
+                Vector2[] uvs = mesh.uv;
                 stroke.hasTopologyAnchor = true;
                 stroke.anchorVertexIndex = vertexIndex;
                 stroke.anchorVertexCount = mesh.vertexCount;
-                stroke.localAnchorOffset = stroke.localPosition - localVertex;
-                stroke.hasUvAnchor = true;
-                stroke.uvAnchor = uvAnchor;
+                stroke.localAnchorOffset = stroke.localPosition - vertices[vertexIndex];
+                if (uvs.Length == vertices.Length)
+                {
+                    stroke.hasUvAnchor = true;
+                    stroke.uvAnchor = uvs[vertexIndex];
+                }
             }
 
             return stroke;
@@ -102,9 +114,14 @@ namespace MashBoxSDK.Maps.Painting
 
         public void AddStrokeAndApply(Stroke stroke)
         {
-            AddStroke(stroke);
-            if (stroke == null || m_LinkedLoft == null || m_Target == null)
+            if (stroke == null)
                 return;
+
+            if (m_LinkedLoft == null || m_Target == null)
+            {
+                AddStroke(stroke);
+                return;
+            }
 
             Mesh generatedMesh = m_LinkedLoft.GeneratedMesh;
             if (generatedMesh == null
@@ -112,9 +129,19 @@ namespace MashBoxSDK.Maps.Painting
                 || m_BaseColors == null
                 || m_BaseColors.Length != generatedMesh.vertexCount)
             {
-                Rebuild();
-                return;
+                // Restore the existing history first. Adding the new dab before
+                // regeneration used to replay the entire history again and made
+                // a large modifier appear to stop accepting paint.
+                m_LinkedLoft.Regenerate();
+                generatedMesh = m_LinkedLoft.GeneratedMesh;
             }
+
+            AddStroke(stroke);
+            if (generatedMesh == null
+                || m_BaseMesh != generatedMesh
+                || m_BaseColors == null
+                || m_BaseColors.Length != generatedMesh.vertexCount)
+                return;
 
             Vector3? worldCenter = null;
             if (!stroke.fill)
@@ -165,10 +192,16 @@ namespace MashBoxSDK.Maps.Painting
                 return;
 
             m_BaseMesh = mesh;
-            Color[] sourceColors = mesh.colors;
-            m_BaseColors = sourceColors.Length == mesh.vertexCount
-                ? (Color[])sourceColors.Clone()
-                : CreateWhiteColors(mesh.vertexCount);
+            m_PrimarySpatialMesh = null;
+            m_PrimarySpatialGrid = null;
+            m_SecondarySpatialMesh = null;
+            m_SecondarySpatialGrid = null;
+            // A generated loft has no authored color channel before this modifier.
+            // Mesh.Clear historically preserved the old Color layout as zeroes,
+            // so reading mesh.colors here could turn every unpainted vertex black
+            // after domain reload. Reconstruct the deterministic clean base and
+            // replay the complete recorded history onto it.
+            m_BaseColors = CreateWhiteColors(mesh.vertexCount);
             ApplyFromCachedBase(mesh);
         }
 
@@ -181,6 +214,7 @@ namespace MashBoxSDK.Maps.Painting
             Vector2[] uvs = mesh.uv;
             Color[] colors = (Color[])m_BaseColors.Clone();
             Transform targetTransform = m_Target.transform;
+            WorldVertexGrid spatialGrid = GetSpatialGrid(mesh, targetTransform, GetReplayCellSize());
 
             for (int strokeIndex = 0; strokeIndex < m_Strokes.Count; strokeIndex++)
             {
@@ -199,18 +233,16 @@ namespace MashBoxSDK.Maps.Painting
                     || stroke.anchorVertexCount != vertices.Length
                     || stroke.anchorVertexIndex < 0
                     || stroke.anchorVertexIndex >= vertices.Length)
-                    && TryFindClosestAnchor(
-                        mesh,
+                    && spatialGrid != null
+                    && spatialGrid.TryFindClosest(
                         targetTransform.TransformPoint(stroke.localPosition),
-                        targetTransform,
-                        out int migratedVertexIndex,
-                        out Vector2 migratedUvAnchor,
-                        out Vector3 migratedLocalVertex))
+                        stroke.radius,
+                        out int migratedVertexIndex))
                 {
                     stroke.hasTopologyAnchor = true;
                     stroke.anchorVertexIndex = migratedVertexIndex;
                     stroke.anchorVertexCount = vertices.Length;
-                    Vector3 candidateOffset = stroke.localPosition - migratedLocalVertex;
+                    Vector3 candidateOffset = stroke.localPosition - vertices[migratedVertexIndex];
                     float worldOffset = targetTransform.TransformVector(candidateOffset).magnitude;
                     // Preserve the exact hit point when it is still on this surface.
                     // If the loft moved farther than the brush radius, snap the old
@@ -218,8 +250,11 @@ namespace MashBoxSDK.Maps.Painting
                     stroke.localAnchorOffset = worldOffset < stroke.radius
                         ? candidateOffset
                         : Vector3.zero;
-                    stroke.hasUvAnchor = true;
-                    stroke.uvAnchor = migratedUvAnchor;
+                    if (uvs.Length == vertices.Length)
+                    {
+                        stroke.hasUvAnchor = true;
+                        stroke.uvAnchor = uvs[migratedVertexIndex];
+                    }
                 }
 
                 Vector3 center = TryResolveTopologyAnchor(vertices, stroke, targetTransform, out Vector3 topologyCenter)
@@ -227,16 +262,7 @@ namespace MashBoxSDK.Maps.Painting
                     : TryResolveUvAnchor(uvs, vertices, stroke, targetTransform, out Vector3 anchoredCenter)
                     ? anchoredCenter
                     : targetTransform.TransformPoint(stroke.localPosition);
-                for (int vertexIndex = 0; vertexIndex < vertices.Length; vertexIndex++)
-                {
-                    Vector3 worldVertex = targetTransform.TransformPoint(vertices[vertexIndex]);
-                    float distance = Vector3.Distance(worldVertex, center);
-                    if (distance >= stroke.radius)
-                        continue;
-
-                    float falloff = stroke.useFalloff ? Mathf.Clamp01(1f - distance / stroke.radius) : 1f;
-                    colors[vertexIndex] = Color.Lerp(colors[vertexIndex], stroke.color, stroke.strength * falloff);
-                }
+                spatialGrid?.ApplyStroke(colors, stroke, center);
             }
 
             mesh.colors = colors;
@@ -261,57 +287,52 @@ namespace MashBoxSDK.Maps.Painting
             else if (worldCenter.HasValue)
             {
                 Transform targetTransform = m_Target.transform;
-                Vector3 center = worldCenter.Value;
-                for (int i = 0; i < vertices.Length; i++)
-                {
-                    float distance = Vector3.Distance(targetTransform.TransformPoint(vertices[i]), center);
-                    if (distance >= stroke.radius)
-                        continue;
-
-                    float falloff = stroke.useFalloff ? Mathf.Clamp01(1f - distance / stroke.radius) : 1f;
-                    colors[i] = Color.Lerp(colors[i], stroke.color, stroke.strength * falloff);
-                }
+                GetSpatialGrid(mesh, targetTransform, stroke.radius)?.ApplyStroke(colors, stroke, worldCenter.Value);
             }
 
             mesh.colors = colors;
             mesh.UploadMeshData(false);
         }
 
-        static bool TryFindClosestAnchor(
-            Mesh mesh,
-            Vector3 worldPosition,
-            Transform targetTransform,
-            out int vertexIndex,
-            out Vector2 uvAnchor,
-            out Vector3 localVertex)
+        float GetReplayCellSize()
         {
-            vertexIndex = -1;
-            uvAnchor = default;
-            localVertex = default;
-            if (mesh == null || targetTransform == null)
-                return false;
-
-            Vector3[] vertices = mesh.vertices;
-            Vector2[] uvs = mesh.uv;
-            if (uvs.Length != vertices.Length || vertices.Length == 0)
-                return false;
-
-            int closestIndex = 0;
-            float closestDistance = float.MaxValue;
-            for (int i = 0; i < vertices.Length; i++)
+            for (int i = m_Strokes.Count - 1; i >= 0; i--)
             {
-                float distance = (targetTransform.TransformPoint(vertices[i]) - worldPosition).sqrMagnitude;
-                if (distance >= closestDistance)
-                    continue;
-
-                closestDistance = distance;
-                closestIndex = i;
+                Stroke stroke = m_Strokes[i];
+                if (stroke != null && !stroke.fill && stroke.radius > 0.001f)
+                    return stroke.radius;
             }
 
-            vertexIndex = closestIndex;
-            uvAnchor = uvs[closestIndex];
-            localVertex = vertices[closestIndex];
-            return true;
+            return 1f;
+        }
+
+        WorldVertexGrid GetSpatialGrid(Mesh mesh, Transform targetTransform, float preferredCellSize)
+        {
+            if (mesh == null || targetTransform == null || mesh.vertexCount == 0)
+                return null;
+
+            preferredCellSize = Mathf.Clamp(preferredCellSize, 0.05f, 25f);
+            Matrix4x4 localToWorld = targetTransform.localToWorldMatrix;
+            if (mesh == m_BaseMesh)
+            {
+                if (m_PrimarySpatialGrid == null
+                    || m_PrimarySpatialMesh != mesh
+                    || !m_PrimarySpatialGrid.Matches(localToWorld, preferredCellSize))
+                {
+                    m_PrimarySpatialMesh = mesh;
+                    m_PrimarySpatialGrid = new WorldVertexGrid(mesh.vertices, localToWorld, preferredCellSize);
+                }
+                return m_PrimarySpatialGrid;
+            }
+
+            if (m_SecondarySpatialGrid == null
+                || m_SecondarySpatialMesh != mesh
+                || !m_SecondarySpatialGrid.Matches(localToWorld, preferredCellSize))
+            {
+                m_SecondarySpatialMesh = mesh;
+                m_SecondarySpatialGrid = new WorldVertexGrid(mesh.vertices, localToWorld, preferredCellSize);
+            }
+            return m_SecondarySpatialGrid;
         }
 
         static bool TryResolveTopologyAnchor(Vector3[] vertices, Stroke stroke, Transform targetTransform, out Vector3 center)
@@ -362,7 +383,7 @@ namespace MashBoxSDK.Maps.Painting
                 return;
 
             m_Target.sharedMesh = m_LinkedLoft.GeneratedMesh;
-            uvSpline.RebuildOutputMesh();
+            uvSpline.RebuildOutputMesh(forceSourceRefresh: true);
         }
 
         static Color[] CreateWhiteColors(int count)
@@ -377,6 +398,129 @@ namespace MashBoxSDK.Maps.Painting
         {
             m_BaseMesh = null;
             m_BaseColors = null;
+            m_PrimarySpatialMesh = null;
+            m_PrimarySpatialGrid = null;
+            m_SecondarySpatialMesh = null;
+            m_SecondarySpatialGrid = null;
+        }
+
+        sealed class WorldVertexGrid
+        {
+            readonly float m_CellSize;
+            readonly Matrix4x4 m_LocalToWorld;
+            readonly Vector3[] m_LocalVertices;
+            readonly Vector3[] m_WorldVertices;
+            readonly Dictionary<Vector3Int, List<int>> m_Cells = new Dictionary<Vector3Int, List<int>>();
+
+            public Vector3[] LocalVertices => m_LocalVertices;
+
+            public WorldVertexGrid(Vector3[] localVertices, Matrix4x4 localToWorld, float cellSize)
+            {
+                m_CellSize = cellSize;
+                m_LocalToWorld = localToWorld;
+                m_LocalVertices = localVertices;
+                m_WorldVertices = new Vector3[localVertices.Length];
+                for (int i = 0; i < localVertices.Length; i++)
+                {
+                    Vector3 worldVertex = localToWorld.MultiplyPoint3x4(localVertices[i]);
+                    m_WorldVertices[i] = worldVertex;
+                    Vector3Int key = GetCell(worldVertex);
+                    if (!m_Cells.TryGetValue(key, out List<int> indices))
+                    {
+                        indices = new List<int>();
+                        m_Cells.Add(key, indices);
+                    }
+                    indices.Add(i);
+                }
+            }
+
+            public bool Matches(Matrix4x4 localToWorld, float cellSize)
+            {
+                return m_LocalToWorld == localToWorld
+                    && Mathf.Abs(m_CellSize - cellSize) <= Mathf.Max(0.01f, m_CellSize * 0.25f);
+            }
+
+            public bool TryFindClosest(Vector3 worldPosition, float searchRadius, out int closestIndex)
+            {
+                int foundIndex = -1;
+                float closestDistance = float.MaxValue;
+                VisitCells(worldPosition, Mathf.Max(searchRadius, m_CellSize), index =>
+                {
+                    float distance = (m_WorldVertices[index] - worldPosition).sqrMagnitude;
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        foundIndex = index;
+                    }
+                });
+
+                if (foundIndex >= 0)
+                {
+                    closestIndex = foundIndex;
+                    return true;
+                }
+
+                for (int i = 0; i < m_WorldVertices.Length; i++)
+                {
+                    float distance = (m_WorldVertices[i] - worldPosition).sqrMagnitude;
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        foundIndex = i;
+                    }
+                }
+                closestIndex = foundIndex;
+                return foundIndex >= 0;
+            }
+
+            public void ApplyStroke(Color[] colors, Stroke stroke, Vector3 worldCenter)
+            {
+                if (colors == null || stroke == null || stroke.radius <= Mathf.Epsilon)
+                    return;
+
+                float radiusSquared = stroke.radius * stroke.radius;
+                VisitCells(worldCenter, stroke.radius, index =>
+                {
+                    if (index < 0 || index >= colors.Length)
+                        return;
+
+                    float distanceSquared = (m_WorldVertices[index] - worldCenter).sqrMagnitude;
+                    if (distanceSquared >= radiusSquared)
+                        return;
+
+                    float falloff = stroke.useFalloff
+                        ? Mathf.Clamp01(1f - Mathf.Sqrt(distanceSquared) / stroke.radius)
+                        : 1f;
+                    colors[index] = Color.Lerp(colors[index], stroke.color, stroke.strength * falloff);
+                });
+            }
+
+            void VisitCells(Vector3 center, float radius, Action<int> visitor)
+            {
+                Vector3Int minimum = GetCell(center - Vector3.one * radius);
+                Vector3Int maximum = GetCell(center + Vector3.one * radius);
+                for (int x = minimum.x; x <= maximum.x; x++)
+                {
+                    for (int y = minimum.y; y <= maximum.y; y++)
+                    {
+                        for (int z = minimum.z; z <= maximum.z; z++)
+                        {
+                            if (!m_Cells.TryGetValue(new Vector3Int(x, y, z), out List<int> indices))
+                                continue;
+                            for (int i = 0; i < indices.Count; i++)
+                                visitor(indices[i]);
+                        }
+                    }
+                }
+            }
+
+            Vector3Int GetCell(Vector3 worldPosition)
+            {
+                return new Vector3Int(
+                    Mathf.FloorToInt(worldPosition.x / m_CellSize),
+                    Mathf.FloorToInt(worldPosition.y / m_CellSize),
+                    Mathf.FloorToInt(worldPosition.z / m_CellSize));
+            }
         }
     }
 }

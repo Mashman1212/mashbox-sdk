@@ -1292,6 +1292,7 @@ namespace MashBoxSDK.MapTools
                     break;
                 case MBEditorAuthoringMode.MeshSculpt:
                     AddShortcut("MashBox.Sculpt", "Sculpt", "LMB Drag");
+                    AddShortcut("d_ToolHandlePivot", "Make Sculptable", "Shift + Click");
                     AddShortcut("d_RotateTool", "Invert", "Ctrl");
                     AddShortcut("MashBox.Smooth", "Smooth", "Shift");
                     AddShortcut("d_PreMatCube", "Noise", "Ctrl + Shift");

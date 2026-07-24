@@ -476,7 +476,10 @@ namespace MashBoxSDK.Maps.Spline
             m_UvSpline.GeneratedPointCount = m_UvSplinePointCount;
             if (!m_UvSpline.GenerateFromTarget(out error))
                 return false;
-            m_UvSpline.RebuildOutputMesh();
+            // The generated loft reuses one Mesh instance. Vertex count equality
+            // therefore does not mean the UV output's geometry or colors are still
+            // current after regeneration.
+            m_UvSpline.RebuildOutputMesh(forceSourceRefresh: true);
             return true;
         }
 
@@ -741,7 +744,11 @@ namespace MashBoxSDK.Maps.Spline
 
         void ClearBuildBuffers()
         {
-            m_GeneratedMesh.Clear();
+            // Discard the previous vertex layout as well as its data. Keeping the
+            // layout preserves a zero-filled Color channel after vertex painting;
+            // paint replay can then mistake transparent black for the clean loft
+            // base after a reload or regeneration.
+            m_GeneratedMesh.Clear(false);
             m_Vertices.Clear();
             m_Normals.Clear();
             m_Uvs.Clear();

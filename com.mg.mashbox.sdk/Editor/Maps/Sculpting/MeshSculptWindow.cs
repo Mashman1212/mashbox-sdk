@@ -7,7 +7,9 @@ namespace MashBoxSDK.MapTools
 {
     public sealed class MeshSculptWindow : EditorWindow
     {
+        const string ActiveModifierSessionKey = "MashBoxSDK.MeshSculpt.ActiveModifier";
         static readonly float[] BrushInfluenceLevels = { 0.75f, 0.5f, 0.25f };
+        static MeshSculptWindow s_ActiveSceneToolOwner;
 
         enum DirectionMode { SurfaceNormal, WorldUp, Custom }
 
@@ -40,9 +42,19 @@ namespace MashBoxSDK.MapTools
 
         public static void ShowWindow() => GetWindow<MeshSculptWindow>("Mesh Sculpt");
 
+        internal static bool HasActiveSceneTool =>
+            s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.m_SceneToolActive;
+
+        internal static void DeactivateActiveSceneTool()
+        {
+            if (s_ActiveSceneToolOwner != null)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+        }
+
         void OnEnable()
         {
             m_Mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
+            RestoreActiveModifier();
             MBEditorToolState.SculptModeChanged -= OnSharedSculptModeChanged;
             MBEditorToolState.SculptModeChanged += OnSharedSculptModeChanged;
             if (MBEditorToolState.ActiveEditing)
@@ -58,6 +70,9 @@ namespace MashBoxSDK.MapTools
 
         public void ActivateSceneTool()
         {
+            if (s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner != this)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+            s_ActiveSceneToolOwner = this;
             if (m_SceneToolActive) return;
             m_SceneToolActive = true;
             SceneView.duringSceneGui += OnSceneGUI;
@@ -80,6 +95,8 @@ namespace MashBoxSDK.MapTools
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedo;
             Selection.selectionChanged -= OnSelectionChanged;
+            if (s_ActiveSceneToolOwner == this)
+                s_ActiveSceneToolOwner = null;
             StopStroke();
             DestroySculptPickingCollider();
         }
@@ -202,6 +219,7 @@ namespace MashBoxSDK.MapTools
             }
 
             m_Modifier = selectedModifier;
+            RememberActiveModifier();
             EnsureSelectedModifierTargetsLoft(selected, selectedModifier);
             m_Modifier.Rebuild();
         }
@@ -214,6 +232,7 @@ namespace MashBoxSDK.MapTools
             StopStroke();
             DestroySculptPickingCollider();
             m_Modifier = null;
+            SessionState.EraseString(ActiveModifierSessionKey);
         }
 
         static void EnsureSelectedModifierTargetsLoft(GameObject selected, MeshSculptModifier modifier)
@@ -265,28 +284,71 @@ namespace MashBoxSDK.MapTools
             GameObject selected = Selection.activeGameObject;
             if (selected == null) return;
             MultiSplineLoft loft = selected.GetComponent<MultiSplineLoft>() ?? selected.GetComponentInParent<MultiSplineLoft>();
-            GameObject targetObject = loft != null ? loft.gameObject : selected;
-            MeshFilter meshFilter = targetObject.GetComponent<MeshFilter>();
-            if (meshFilter == null) return;
+            MeshFilter meshFilter = (loft != null ? loft.gameObject : selected).GetComponent<MeshFilter>();
+            if (meshFilter != null)
+                CreateOrActivateModifier(meshFilter);
+        }
 
-            m_Modifier = targetObject.GetComponent<MeshSculptModifier>();
-            if (m_Modifier == null) m_Modifier = Undo.AddComponent<MeshSculptModifier>(targetObject);
-            Undo.RecordObject(m_Modifier, "Configure Sculpt Modifier");
-            m_Modifier.SetTarget(meshFilter);
-            if (loft != null)
+        void RememberActiveModifier()
+        {
+            if (m_Modifier == null)
             {
-                m_Modifier.LinkToLoft(loft);
-                Undo.RecordObject(loft, "Link Sculpt Modifier");
-                loft.SculptModifier = m_Modifier;
-                EditorUtility.SetDirty(loft);
+                SessionState.EraseString(ActiveModifierSessionKey);
+                return;
             }
 
-            if (loft == null && targetObject.GetComponent<Collider>() == null)
+            GlobalObjectId globalId = GlobalObjectId.GetGlobalObjectIdSlow(m_Modifier);
+            SessionState.SetString(ActiveModifierSessionKey, globalId.ToString());
+        }
+
+        void RestoreActiveModifier()
+        {
+            if (m_Modifier != null)
+                return;
+
+            string savedId = SessionState.GetString(ActiveModifierSessionKey, string.Empty);
+            if (!string.IsNullOrEmpty(savedId)
+                && GlobalObjectId.TryParse(savedId, out GlobalObjectId globalId))
             {
-                MeshCollider collider = Undo.AddComponent<MeshCollider>(targetObject);
-                collider.sharedMesh = meshFilter.sharedMesh;
+                MeshSculptModifier restored = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalId) as MeshSculptModifier;
+                if (IsUsableSceneModifier(restored))
+                {
+                    m_Modifier = restored;
+                    return;
+                }
             }
-            EditorUtility.SetDirty(m_Modifier);
+
+            SessionState.EraseString(ActiveModifierSessionKey);
+
+            // Older sessions did not remember a GlobalObjectId. Recover
+            // automatically when the loaded scenes contain one unambiguous
+            // sculpt target, which also repairs the first reload after upgrading.
+            MeshSculptModifier uniqueModifier = null;
+            MeshSculptModifier[] modifiers = Resources.FindObjectsOfTypeAll<MeshSculptModifier>();
+            for (int i = 0; i < modifiers.Length; i++)
+            {
+                MeshSculptModifier candidate = modifiers[i];
+                if (!IsUsableSceneModifier(candidate))
+                    continue;
+                if (uniqueModifier != null)
+                    return;
+                uniqueModifier = candidate;
+            }
+
+            if (uniqueModifier == null)
+                return;
+
+            m_Modifier = uniqueModifier;
+            RememberActiveModifier();
+        }
+
+        static bool IsUsableSceneModifier(MeshSculptModifier modifier)
+        {
+            return modifier != null
+                && modifier.gameObject != null
+                && modifier.gameObject.scene.IsValid()
+                && modifier.gameObject.scene.isLoaded
+                && modifier.Target != null;
         }
 
         void OnSceneGUI(SceneView sceneView)
@@ -312,14 +374,57 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            if (m_Modifier == null || m_Modifier.Target == null) return;
-
             int controlId = GUIUtility.GetControlID("MeshSculptBrush".GetHashCode(), FocusType.Passive);
-            if (HandleBrushAdjustment(current, controlId, sceneView))
+            if (m_Modifier != null && m_Modifier.Target != null
+                && HandleBrushAdjustment(current, controlId, sceneView))
                 return;
 
             Ray ray = HandleUtility.GUIPointToWorldRay(current.mousePosition);
-            if (!TryRaycastTarget(ray, out RaycastHit hit)) return;
+            RaycastHit hit;
+            MeshFilter hitMeshFilter;
+            if (m_IsSculpting)
+            {
+                if (!TryRaycastTarget(ray, out hit))
+                {
+                    if (current.type == EventType.MouseUp && current.button == 0)
+                    {
+                        StopStroke();
+                        current.Use();
+                    }
+                    return;
+                }
+                hitMeshFilter = m_Modifier != null ? m_Modifier.Target : null;
+            }
+            else if (!TryRaycastSculptSurface(ray, out hit, out hitMeshFilter))
+            {
+                return;
+            }
+
+            MeshSculptModifier hoveredModifier = ResolveSculptModifier(hitMeshFilter);
+            if (!m_IsSculpting && hoveredModifier != null && hoveredModifier != m_Modifier)
+                ActivateModifier(hoveredModifier);
+
+            bool canSculptHit = m_Modifier != null
+                && m_Modifier.Target != null
+                && hitMeshFilter == m_Modifier.Target;
+
+            if (!canSculptHit)
+            {
+                DrawBrushFalloff(hit.point, hit.normal, new Color(1f, 0.55f, 0.12f, 0.95f));
+                DrawActivationLabel(hit);
+                sceneView.Repaint();
+
+                if (current.type == EventType.MouseDown
+                    && current.button == 0
+                    && current.shift
+                    && !current.alt)
+                {
+                    CreateOrActivateModifier(hitMeshFilter);
+                    current.Use();
+                    sceneView.Repaint();
+                }
+                return;
+            }
 
             MeshSculptModifier.SculptMode previewMode = GetStrokeMode(current.control, current.shift);
             Color brushColor = previewMode == MeshSculptModifier.SculptMode.Smooth
@@ -352,6 +457,92 @@ namespace MashBoxSDK.MapTools
                 StopStroke();
                 current.Use();
             }
+        }
+
+        void DrawActivationLabel(RaycastHit hit)
+        {
+            var style = new GUIStyle(EditorStyles.boldLabel)
+            {
+                alignment = TextAnchor.MiddleCenter
+            };
+            style.normal.textColor = new Color(1f, 0.65f, 0.2f, 1f);
+            float handleSize = HandleUtility.GetHandleSize(hit.point);
+            Handles.Label(
+                hit.point + hit.normal * handleSize * 0.22f,
+                "Shift+Click Make Sculptable",
+                style);
+        }
+
+        void CreateOrActivateModifier(MeshFilter meshFilter)
+        {
+            if (meshFilter == null || meshFilter.sharedMesh == null)
+                return;
+
+            MultiSplineLoft loft = meshFilter.GetComponent<MultiSplineLoft>()
+                ?? meshFilter.GetComponentInParent<MultiSplineLoft>();
+            GameObject targetObject = loft != null ? loft.gameObject : meshFilter.gameObject;
+            MeshFilter targetMesh = loft != null ? loft.GetComponent<MeshFilter>() : meshFilter;
+            if (targetMesh == null || targetMesh.sharedMesh == null)
+                return;
+
+            MeshSculptModifier modifier = ResolveSculptModifier(targetMesh);
+            if (modifier == null)
+                modifier = Undo.AddComponent<MeshSculptModifier>(targetObject);
+
+            Undo.RecordObject(modifier, "Configure Sculpt Modifier");
+            if (loft != null)
+            {
+                modifier.LinkToLoft(loft);
+                if (loft.SculptModifier != modifier)
+                {
+                    Undo.RecordObject(loft, "Link Sculpt Modifier");
+                    loft.SculptModifier = modifier;
+                    EditorUtility.SetDirty(loft);
+                }
+            }
+            else
+            {
+                modifier.SetTarget(targetMesh);
+                if (targetObject.GetComponent<Collider>() == null)
+                {
+                    MeshCollider collider = Undo.AddComponent<MeshCollider>(targetObject);
+                    collider.sharedMesh = targetMesh.sharedMesh;
+                }
+            }
+
+            EditorUtility.SetDirty(modifier);
+            ActivateModifier(modifier);
+            modifier.Rebuild();
+            RefreshSculptPickingCollider();
+        }
+
+        void ActivateModifier(MeshSculptModifier modifier)
+        {
+            if (!IsUsableSceneModifier(modifier) || modifier == m_Modifier)
+                return;
+
+            StopStroke();
+            DestroySculptPickingCollider();
+            m_Modifier = modifier;
+            RememberActiveModifier();
+            EnsureSculptPickingCollider();
+            Repaint();
+        }
+
+        static MeshSculptModifier ResolveSculptModifier(MeshFilter meshFilter)
+        {
+            if (meshFilter == null)
+                return null;
+
+            MultiSplineLoft loft = meshFilter.GetComponent<MultiSplineLoft>()
+                ?? meshFilter.GetComponentInParent<MultiSplineLoft>();
+            if (loft != null)
+                return loft.SculptModifier != null
+                    ? loft.SculptModifier
+                    : loft.GetComponent<MeshSculptModifier>();
+
+            return meshFilter.GetComponent<MeshSculptModifier>()
+                ?? meshFilter.GetComponentInParent<MeshSculptModifier>();
         }
 
         void DrawBrushFalloff(Vector3 center, Vector3 normal, Color brushColor)
@@ -492,12 +683,68 @@ namespace MashBoxSDK.MapTools
             float closest = float.MaxValue;
             for (int i = 0; i < hits.Length; i++)
             {
-                MeshFilter meshFilter = hits[i].collider.GetComponent<MeshFilter>() ?? hits[i].collider.GetComponentInParent<MeshFilter>();
+                MeshFilter meshFilter = ResolveSculptMeshFilter(hits[i].collider);
                 if (meshFilter != m_Modifier.Target || hits[i].distance >= closest) continue;
                 closest = hits[i].distance;
                 targetHit = hits[i];
             }
             return closest < float.MaxValue;
+        }
+
+        bool TryRaycastSculptSurface(Ray ray, out RaycastHit surfaceHit, out MeshFilter meshFilter)
+        {
+            surfaceHit = default;
+            meshFilter = null;
+
+            // Loft gameplay collision is split into generated child chunks.
+            // Keep a hidden collider for the complete render mesh while sculpting
+            // so the brush can pick the editable surface independently of those
+            // regenerated chunks.
+            EnsureSculptPickingCollider();
+            Physics.SyncTransforms();
+
+            RaycastHit[] hits = Physics.RaycastAll(ray, float.MaxValue, ~0, QueryTriggerInteraction.Collide);
+            float closest = float.MaxValue;
+            for (int i = 0; i < hits.Length; i++)
+            {
+                MeshFilter candidate;
+                if (hits[i].collider == m_SculptPickingCollider)
+                {
+                    candidate = m_SculptPickingTarget;
+                }
+                else
+                {
+                    candidate = ResolveSculptMeshFilter(hits[i].collider);
+                }
+
+                if (candidate == null
+                    || candidate.sharedMesh == null
+                    || hits[i].distance >= closest)
+                {
+                    continue;
+                }
+
+                closest = hits[i].distance;
+                surfaceHit = hits[i];
+                meshFilter = candidate;
+            }
+
+            return meshFilter != null;
+        }
+
+        static MeshFilter ResolveSculptMeshFilter(Collider hitCollider)
+        {
+            if (hitCollider == null)
+                return null;
+
+            // Collider chunks deliberately have no MeshFilter of their own.
+            // Resolve them to the owning loft's full generated render mesh.
+            MultiSplineLoft loft = hitCollider.GetComponentInParent<MultiSplineLoft>();
+            if (loft != null)
+                return loft.GetComponent<MeshFilter>();
+
+            return hitCollider.GetComponent<MeshFilter>()
+                ?? hitCollider.GetComponentInParent<MeshFilter>();
         }
 
         void RecordStroke(RaycastHit hit, bool control, bool shift)

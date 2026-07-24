@@ -530,6 +530,8 @@ namespace MashBoxSDK.Maps.Spline
 
     public sealed class MultiSplineLoftWindow : EditorWindow
     {
+        static MultiSplineLoftWindow s_ActiveSceneToolOwner;
+
         public System.Action<UVSpline> UvSplineGenerated { get; set; }
 
         MultiSplineLoft m_ActiveLoft;
@@ -540,6 +542,15 @@ namespace MashBoxSDK.Maps.Spline
         UnityEngine.Object[] m_QueuedSplineTargets;
         int m_SplineToolActivationAttempts;
         SplineContainer m_QueuedKnotPlacementTarget;
+        GameObject m_QueuedExternalSelection;
+
+        internal static bool HasActiveSceneTool =>
+            s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.m_SceneToolActive;
+
+        internal static void DeactivateActiveSceneTool()
+        {
+            s_ActiveSceneToolOwner?.DeactivateSceneTool();
+        }
 
         public static void ShowWindow()
         {
@@ -559,11 +570,13 @@ namespace MashBoxSDK.Maps.Spline
 
         public void ActivateSceneTool()
         {
+            if (s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner != this)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+            s_ActiveSceneToolOwner = this;
+
             if (m_SceneToolActive)
             {
-                MultiSplineLoft selectedLoft = Selection.activeGameObject != null
-                    ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
-                    : null;
+                MultiSplineLoft selectedLoft = FindLoftInSelection();
                 if (selectedLoft != null)
                 {
                     m_ActiveLoft = selectedLoft;
@@ -573,20 +586,31 @@ namespace MashBoxSDK.Maps.Spline
             }
             m_SceneToolActive = true;
             Selection.selectionChanged += OnSelectionChanged;
+            SceneView.duringSceneGui += OnSceneGUI;
             UseSelectedLoftAndEditSplines();
         }
 
         public void DeactivateSceneTool()
         {
-            if (!m_SceneToolActive) return;
+            if (!m_SceneToolActive)
+            {
+                if (s_ActiveSceneToolOwner == this)
+                    s_ActiveSceneToolOwner = null;
+                return;
+            }
             m_SceneToolActive = false;
+            if (s_ActiveSceneToolOwner == this)
+                s_ActiveSceneToolOwner = null;
             Selection.selectionChanged -= OnSelectionChanged;
+            SceneView.duringSceneGui -= OnSceneGUI;
             EditorApplication.delayCall -= ApplyQueuedSplineSelection;
             EditorApplication.delayCall -= ActivateQueuedSplineTool;
             EditorApplication.delayCall -= ApplyQueuedKnotPlacementSelection;
             EditorApplication.delayCall -= ActivateKnotPlacementTool;
+            EditorApplication.delayCall -= ApplyQueuedExternalSelection;
             m_SplineEditActivationQueued = false;
             m_QueuedSplineTargets = null;
+            m_QueuedExternalSelection = null;
             if (ToolManager.activeContextType == typeof(SplineToolContext))
                 ToolManager.SetActiveContext<GameObjectToolContext>();
         }
@@ -594,25 +618,119 @@ namespace MashBoxSDK.Maps.Spline
         void OnSelectionChanged()
         {
             if (!m_SceneToolActive || m_ChangingSelection) return;
-            MultiSplineLoft selectedLoft = Selection.activeGameObject != null
-                ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
-                : null;
-            if (selectedLoft == null) return;
+            MultiSplineLoft selectedLoft = FindLoftInSelection();
+            if (selectedLoft == null)
+            {
+                if (Selection.activeGameObject != null && !IsSourceSplineObject(Selection.activeGameObject))
+                {
+                    EditorApplication.delayCall -= ActivateQueuedSplineTool;
+                    m_SplineEditActivationQueued = false;
+                    m_QueuedSplineTargets = null;
+                    if (ToolManager.activeContextType == typeof(SplineToolContext))
+                        ToolManager.SetActiveContext<GameObjectToolContext>();
+                }
+                return;
+            }
 
             m_ActiveLoft = selectedLoft;
             EnterUnitySplineEditMode(selectedLoft);
             Repaint();
         }
 
+        void OnSceneGUI(SceneView sceneView)
+        {
+            Event current = Event.current;
+            if (!m_SceneToolActive
+                || current.type != EventType.MouseDown
+                || current.button != 0
+                || current.alt
+                || current.control
+                || current.command
+                || current.shift)
+            {
+                return;
+            }
+
+            GameObject picked = HandleUtility.PickGameObject(current.mousePosition, false);
+            if (picked == null || IsSourceSplineObject(picked) || IsActiveLoftObject(picked))
+                return;
+
+            // Let Unity's spline handles claim their hot control first. If no
+            // handle claims the click, normal object selection wins on the next
+            // editor tick and the spline context releases its selection lock.
+            m_QueuedExternalSelection = picked;
+            EditorApplication.delayCall -= ApplyQueuedExternalSelection;
+            EditorApplication.delayCall += ApplyQueuedExternalSelection;
+        }
+
+        void ApplyQueuedExternalSelection()
+        {
+            EditorApplication.delayCall -= ApplyQueuedExternalSelection;
+            GameObject picked = m_QueuedExternalSelection;
+            m_QueuedExternalSelection = null;
+            if (!m_SceneToolActive || picked == null || GUIUtility.hotControl != 0)
+                return;
+
+            MultiSplineLoft pickedLoft = picked.GetComponent<MultiSplineLoft>()
+                ?? picked.GetComponentInParent<MultiSplineLoft>();
+            if (pickedLoft != null)
+            {
+                Selection.activeGameObject = pickedLoft.gameObject;
+                return;
+            }
+
+            m_ChangingSelection = true;
+            Selection.activeGameObject = picked;
+            m_ChangingSelection = false;
+            if (ToolManager.activeContextType == typeof(SplineToolContext))
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+            SceneView.RepaintAll();
+        }
+
+        bool IsSourceSplineObject(GameObject candidate)
+        {
+            if (candidate == null || m_ActiveLoft == null)
+                return false;
+
+            foreach (MultiSplineLoft.SplineSource source in m_ActiveLoft.Sources)
+            {
+                Transform sourceTransform = source?.container != null ? source.container.transform : null;
+                if (sourceTransform != null
+                    && (candidate.transform == sourceTransform || candidate.transform.IsChildOf(sourceTransform)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        bool IsActiveLoftObject(GameObject candidate)
+        {
+            if (candidate == null || m_ActiveLoft == null)
+                return false;
+
+            Transform loftTransform = m_ActiveLoft.transform;
+            return candidate.transform == loftTransform || candidate.transform.IsChildOf(loftTransform);
+        }
+
         void UseSelectedLoftAndEditSplines()
         {
-            MultiSplineLoft selectedLoft = Selection.activeGameObject != null
-                ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
-                : null;
+            MultiSplineLoft selectedLoft = FindLoftInSelection();
             if (selectedLoft != null)
                 m_ActiveLoft = selectedLoft;
             if (m_ActiveLoft != null)
                 EnterUnitySplineEditMode(m_ActiveLoft);
+        }
+
+        static MultiSplineLoft FindLoftInSelection()
+        {
+            GameObject selected = Selection.activeGameObject;
+            if (selected == null)
+                return null;
+
+            return selected.GetComponent<MultiSplineLoft>()
+                ?? selected.GetComponentInParent<MultiSplineLoft>();
         }
 
         void EnterUnitySplineEditMode(MultiSplineLoft loft)

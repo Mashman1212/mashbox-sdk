@@ -8,14 +8,16 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: MTB_Tire_Vanilla_Cream_Black_Mat
-  m_Shader: {fileID: -6465566751694194690, guid: 8b6d78198f70dc645a351d1484b06eb1, type: 3}
+  m_Shader: {fileID: -6465566751694194690, guid: 8b6d78198f70dc645a351d1484b06eb1,
+    type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
   - _DISABLE_DECALS
   - _DISABLE_SSR_TRANSPARENT
+  - _TESSELLATION_PHONG
   m_InvalidKeywords:
-  - EMISSIVEINTENSITYUNIT_NITS
+  - _EMISSIVE_COLOR_MAP
   - _MASKMAP
   - _NORMALMAP
   - _NORMALMAP_TANGENT_SPACE
@@ -489,7 +491,6 @@ Material:
     - _UVMappingMask: {r: 1, g: 0, b: 0, a: 0}
     - _UVMappingMaskEmissive: {r: 1, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
-  m_AllowLocking: 1
 --- !u!114 &9089912708599149171
 MonoBehaviour:
   m_ObjectHideFlags: 11

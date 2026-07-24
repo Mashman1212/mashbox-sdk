@@ -12,6 +12,8 @@ namespace MashBoxSDK.MapTools
 {
     public class MGBrushWindow : EditorWindow
     {
+        static MGBrushWindow s_ActiveSceneToolOwner;
+
         private enum ToolMode { Decor, Painter, SplatMap }
         [SerializeField] private ToolMode currentMode = ToolMode.Decor;
 
@@ -92,6 +94,15 @@ namespace MashBoxSDK.MapTools
             GetWindow<MGBrushWindow>("MG Brush");
         }
 
+        internal static bool HasActiveSceneTool =>
+            s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.sceneToolActive;
+
+        internal static void DeactivateActiveSceneTool()
+        {
+            if (s_ActiveSceneToolOwner != null)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+        }
+
         private void OnEnable()
         {
             currentMode = (ToolMode)MBEditorToolState.BrushMode;
@@ -118,6 +129,9 @@ namespace MashBoxSDK.MapTools
 
         public void ActivateSceneTool()
         {
+            if (s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner != this)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+            s_ActiveSceneToolOwner = this;
             sceneToolActive = true;
             // Re-register idempotently so B can recover after Unity drops a
             // Scene-view callback during a focus/tool-context transition.
@@ -144,6 +158,8 @@ namespace MashBoxSDK.MapTools
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             Selection.selectionChanged -= OnVisualEditingSelectionChanged;
+            if (s_ActiveSceneToolOwner == this)
+                s_ActiveSceneToolOwner = null;
             CleanupPreview();
         }
 
@@ -1426,6 +1442,11 @@ namespace MashBoxSDK.MapTools
 
         private bool TryGetBrushHit(Ray ray, out RaycastHit hit)
         {
+            // MappyX disables Physics.autoSyncTransforms. Loft collider chunks
+            // are regenerated in edit mode, so synchronize before every brush
+            // pick or all brush modes can temporarily lose their hover gizmo.
+            Physics.SyncTransforms();
+
             if (currentMode != ToolMode.SplatMap)
                 return Physics.Raycast(ray, out hit);
 
