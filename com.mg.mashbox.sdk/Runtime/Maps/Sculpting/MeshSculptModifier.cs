@@ -110,6 +110,54 @@ namespace MashBoxSDK.Maps.Sculpting
             ApplyFromCachedBase(m_OutputMesh);
         }
 
+        // Applies only the newest stroke to the current mesh.  The full replay is
+        // still used when the loft changes or when undo/redo needs to restore a
+        // deterministic result, but editor dragging must not replay every earlier
+        // stroke for each new brush sample.
+        public void ApplyLatestStrokePreview()
+        {
+            if (m_Strokes.Count == 0 || m_Target == null)
+                return;
+
+            Mesh mesh = m_LinkedLoft != null ? m_LinkedLoft.GeneratedMesh : m_OutputMesh;
+            if (mesh == null || m_BaseMesh != mesh || m_BaseVertices == null)
+            {
+                Rebuild();
+                return;
+            }
+
+            Vector3[] vertices = mesh.vertices;
+            ApplyStroke(vertices, mesh, m_Strokes[m_Strokes.Count - 1]);
+            mesh.vertices = vertices;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            if (mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) mesh.RecalculateTangents();
+            mesh.UploadMeshData(false);
+        }
+
+        // Expensive derived data is refreshed once after a drag, rather than for
+        // every sampled brush position.
+        public void FinalizeStrokePreview()
+        {
+            if (m_Target == null)
+                return;
+
+            if (m_UpdateMeshCollider && m_LinkedLoft != null)
+                m_LinkedLoft.RebuildColliderChunks();
+            else if (m_UpdateMeshCollider && m_Target.TryGetComponent(out MeshCollider collider))
+            {
+                collider.sharedMesh = null;
+                collider.sharedMesh = m_Target.sharedMesh;
+            }
+
+            UVSpline uvSpline = m_LinkedLoft != null ? m_LinkedLoft.GeneratedUvSpline : null;
+            if (uvSpline != null && (m_LinkedLoft.GenerateUvSplineWithLoft || uvSpline.OutputMesh != null))
+            {
+                m_Target.sharedMesh = m_LinkedLoft.GeneratedMesh;
+                uvSpline.RebuildOutputMesh(forceSourceRefresh: true);
+            }
+        }
+
         public void ApplyToFreshMesh(Mesh mesh)
         {
             if (mesh == null || m_Target == null) return;

@@ -9,6 +9,7 @@ namespace MashBoxSDK.Maps.Spline
 {
     public sealed class SplineToolWindow : EditorWindow
     {
+        const int ReducedHandleKnotThreshold = 64;
         static SplineToolWindow s_ActiveSceneToolOwner;
 
         SplineContainer m_ActiveSpline;
@@ -55,6 +56,7 @@ namespace MashBoxSDK.Maps.Spline
 
             m_SceneToolActive = true;
             Selection.selectionChanged += OnSelectionChanged;
+            SceneView.duringSceneGui += OnSceneGui;
             UseSplineFromSelection(activateMoveTool: true, selectOnlyThisSpline: true);
         }
 
@@ -71,6 +73,7 @@ namespace MashBoxSDK.Maps.Spline
             if (s_ActiveSceneToolOwner == this)
                 s_ActiveSceneToolOwner = null;
             Selection.selectionChanged -= OnSelectionChanged;
+            SceneView.duringSceneGui -= OnSceneGui;
             EditorApplication.delayCall -= ActivateMoveTool;
             EditorApplication.delayCall -= ActivateKnotPlacementTool;
             if (ToolManager.activeContextType == typeof(SplineToolContext))
@@ -164,6 +167,91 @@ namespace MashBoxSDK.Maps.Spline
                 QueueMoveTool();
             }
             Repaint();
+        }
+
+        // Single-spline editing should select visible spline curves, not the mesh
+        // collider behind them. Unity's default scene selection only knows about
+        // renderers and colliders, so provide a spline-first pick control here.
+        void OnSceneGui(SceneView sceneView)
+        {
+            if (!m_SceneToolActive || !MBEditorToolState.ActiveEditing || MBEditorToolState.Mode != MBEditorAuthoringMode.Spline)
+                return;
+
+            if (m_ActiveSpline != null
+                && UsesReducedHandles(m_ActiveSpline)
+                && ToolManager.activeContextType == typeof(SplineToolContext))
+            {
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+            }
+
+            Event current = Event.current;
+            if (current.alt || current.button != 0)
+                return;
+
+            int controlId = GUIUtility.GetControlID(FocusType.Passive);
+            if (current.type == EventType.Layout)
+            {
+                HandleUtility.AddDefaultControl(controlId);
+                return;
+            }
+
+            if (current.type != EventType.MouseDown || GUIUtility.hotControl != 0)
+                return;
+
+            if (!TryFindSplineAtMouse(current.mousePosition, out SplineContainer spline))
+                return;
+
+            SetActiveSpline(spline, select: false);
+            SelectOnlySpline(spline);
+            QueueMoveTool();
+            current.Use();
+        }
+
+        static bool TryFindSplineAtMouse(Vector2 mousePosition, out SplineContainer closestSpline)
+        {
+            const float pickRadius = 14f;
+            float closestDistance = pickRadius * pickRadius;
+            closestSpline = null;
+
+            foreach (SplineContainer container in Resources.FindObjectsOfTypeAll<SplineContainer>())
+            {
+                if (container == null || EditorUtility.IsPersistent(container) || !container.gameObject.scene.IsValid())
+                    continue;
+
+                for (int splineIndex = 0; splineIndex < container.Splines.Count; splineIndex++)
+                {
+                    var spline = container.Splines[splineIndex];
+                    if (spline == null || spline.Count == 0)
+                        continue;
+
+                    int sampleCount = Mathf.Max(16, spline.Count * 12);
+                    Vector2 previous = HandleUtility.WorldToGUIPoint(container.EvaluatePosition(splineIndex, 0f));
+                    for (int sample = 1; sample <= sampleCount; sample++)
+                    {
+                        Vector2 current = HandleUtility.WorldToGUIPoint(container.EvaluatePosition(splineIndex, sample / (float)sampleCount));
+                        float distance = DistanceToSegmentSquared(mousePosition, previous, current);
+                        if (distance < closestDistance)
+                        {
+                            closestDistance = distance;
+                            closestSpline = container;
+                        }
+                        previous = current;
+                    }
+                }
+            }
+
+            return closestSpline != null;
+        }
+
+        static float DistanceToSegmentSquared(Vector2 point, Vector2 start, Vector2 end)
+        {
+            Vector2 segment = end - start;
+            float lengthSquared = segment.sqrMagnitude;
+            if (lengthSquared <= Mathf.Epsilon)
+                return (point - start).sqrMagnitude;
+
+            float t = Mathf.Clamp01(Vector2.Dot(point - start, segment) / lengthSquared);
+            return (point - (start + segment * t)).sqrMagnitude;
         }
 
         void UseSplineFromSelection(bool activateMoveTool = false, bool selectOnlyThisSpline = false)
@@ -266,9 +354,36 @@ namespace MashBoxSDK.Maps.Spline
             if (!m_SceneToolActive || m_ActiveSpline == null)
                 return;
 
+            // Unity's SplineMoveTool renders a control for every knot and tangent.
+            // That becomes the dominant editor cost on long road splines. Selection
+            // still works through our lightweight curve picker, so skip those
+            // handles until the spline is back to a manageable size.
+            if (UsesReducedHandles(m_ActiveSpline))
+            {
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+                SceneView.RepaintAll();
+                return;
+            }
+
             ToolManager.SetActiveContext<SplineToolContext>();
             ToolManager.SetActiveTool<SplineMoveTool>();
             SceneView.RepaintAll();
+        }
+
+        static bool UsesReducedHandles(SplineContainer container)
+        {
+            if (container == null)
+                return false;
+
+            int knotCount = 0;
+            foreach (var spline in container.Splines)
+            {
+                knotCount += spline.Count;
+                if (knotCount > ReducedHandleKnotThreshold)
+                    return true;
+            }
+
+            return false;
         }
 
         void QueueKnotPlacementTool()

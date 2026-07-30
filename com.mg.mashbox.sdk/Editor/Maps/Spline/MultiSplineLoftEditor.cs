@@ -29,6 +29,7 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_ResolutionSplinePointCount;
         SerializedProperty m_ResolutionSpline;
         SerializedProperty m_AutoRegenerate;
+        SerializedProperty m_AutoRegenerateDelay;
         SerializedProperty m_CloseAlongClosedSplines;
         SerializedProperty m_CloseAcrossSplines;
         SerializedProperty m_CapStart;
@@ -66,6 +67,7 @@ namespace MashBoxSDK.Maps.Spline
             m_ResolutionSplinePointCount = serializedObject.FindProperty("m_ResolutionSplinePointCount");
             m_ResolutionSpline = serializedObject.FindProperty("m_ResolutionSpline");
             m_AutoRegenerate = serializedObject.FindProperty("m_AutoRegenerate");
+            m_AutoRegenerateDelay = serializedObject.FindProperty("m_AutoRegenerateDelay");
             m_CloseAlongClosedSplines = serializedObject.FindProperty("m_CloseAlongClosedSplines");
             m_CloseAcrossSplines = serializedObject.FindProperty("m_CloseAcrossSplines");
             m_CapStart = serializedObject.FindProperty("m_CapStart");
@@ -151,6 +153,8 @@ namespace MashBoxSDK.Maps.Spline
             using (new EditorGUI.DisabledScope(!m_UpdateMeshCollider.boolValue))
                 EditorGUILayout.PropertyField(m_ColliderChunkLength, new GUIContent("Collider Chopping Distance", "Creates a separate child MeshCollider for approximately this many meters of track."));
             EditorGUILayout.PropertyField(m_AutoRegenerate, new GUIContent("Live Regenerate"));
+            using (new EditorGUI.DisabledScope(!m_AutoRegenerate.boolValue))
+                EditorGUILayout.PropertyField(m_AutoRegenerateDelay, new GUIContent("Live Regenerate Delay", "Coalesces rapid spline edits before rebuilding the loft."));
             EditorGUILayout.PropertyField(m_SculptModifier, new GUIContent("Sculpt Modifier", "Replays recorded sculpt strokes after every loft regeneration."));
             EditorGUILayout.PropertyField(m_VertexPaintModifier, new GUIContent("Vertex Paint Modifier", "Replays recorded local vertex-paint strokes after every loft regeneration."));
             using (new EditorGUI.DisabledScope(true))
@@ -530,6 +534,8 @@ namespace MashBoxSDK.Maps.Spline
 
     public sealed class MultiSplineLoftWindow : EditorWindow
     {
+        const float ReducedHandleCameraDistance = 100f;
+        const float ReducedHandlePickRadius = 16f;
         static MultiSplineLoftWindow s_ActiveSceneToolOwner;
 
         public System.Action<UVSpline> UvSplineGenerated { get; set; }
@@ -542,7 +548,20 @@ namespace MashBoxSDK.Maps.Spline
         UnityEngine.Object[] m_QueuedSplineTargets;
         int m_SplineToolActivationAttempts;
         SplineContainer m_QueuedKnotPlacementTarget;
-        GameObject m_QueuedExternalSelection;
+        SplineContainer m_FocusedSpline;
+        int m_FocusedSplineIndex = -1;
+        int m_FocusedKnotIndex = -1;
+        int m_FocusedTangent = -1;
+        readonly List<ReducedSplineOverlayEntry> m_ReducedOverlayEntries = new List<ReducedSplineOverlayEntry>();
+        MultiSplineLoft m_ReducedOverlayLoft;
+        int m_ReducedOverlayGeneration = -1;
+
+        sealed class ReducedSplineOverlayEntry
+        {
+            public SplineContainer container;
+            public int splineIndex;
+            public Vector3[] points;
+        }
 
         internal static bool HasActiveSceneTool =>
             s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.m_SceneToolActive;
@@ -578,10 +597,7 @@ namespace MashBoxSDK.Maps.Spline
             {
                 MultiSplineLoft selectedLoft = FindLoftInSelection();
                 if (selectedLoft != null)
-                {
-                    m_ActiveLoft = selectedLoft;
                     EnterUnitySplineEditMode(selectedLoft);
-                }
                 return;
             }
             m_SceneToolActive = true;
@@ -607,10 +623,8 @@ namespace MashBoxSDK.Maps.Spline
             EditorApplication.delayCall -= ActivateQueuedSplineTool;
             EditorApplication.delayCall -= ApplyQueuedKnotPlacementSelection;
             EditorApplication.delayCall -= ActivateKnotPlacementTool;
-            EditorApplication.delayCall -= ApplyQueuedExternalSelection;
             m_SplineEditActivationQueued = false;
             m_QueuedSplineTargets = null;
-            m_QueuedExternalSelection = null;
             if (ToolManager.activeContextType == typeof(SplineToolContext))
                 ToolManager.SetActiveContext<GameObjectToolContext>();
         }
@@ -632,7 +646,6 @@ namespace MashBoxSDK.Maps.Spline
                 return;
             }
 
-            m_ActiveLoft = selectedLoft;
             EnterUnitySplineEditMode(selectedLoft);
             Repaint();
         }
@@ -640,6 +653,34 @@ namespace MashBoxSDK.Maps.Spline
         void OnSceneGUI(SceneView sceneView)
         {
             Event current = Event.current;
+            if (m_SceneToolActive && m_ActiveLoft != null && UsesReducedSplineHandles())
+            {
+                DrawReducedSplineOverlay(sceneView, m_ActiveLoft);
+                DrawFocusedKnot(sceneView);
+
+                if (current.type == EventType.KeyDown
+                    && current.keyCode == KeyCode.F
+                    && !current.alt
+                    && !current.control
+                    && !current.command
+                    && !current.shift
+                    && TryGetFocusedKnotWorldPosition(out Vector3 focusedPosition))
+                {
+                    float framingSize = Mathf.Max(
+                        1f,
+                        HandleUtility.GetHandleSize(focusedPosition) * 1.5f);
+                    sceneView.LookAt(focusedPosition, sceneView.rotation, framingSize);
+                    current.Use();
+                    return;
+                }
+            }
+
+            // While editing a loft, empty clicks belong to the spline tool. This
+            // prevents terrain and other scene meshes from stealing selection.
+            int controlId = GUIUtility.GetControlID(FocusType.Passive);
+            if (m_SceneToolActive && current.type == EventType.Layout)
+                HandleUtility.AddDefaultControl(controlId);
+
             if (!m_SceneToolActive
                 || current.type != EventType.MouseDown
                 || current.button != 0
@@ -651,40 +692,448 @@ namespace MashBoxSDK.Maps.Spline
                 return;
             }
 
-            GameObject picked = HandleUtility.PickGameObject(current.mousePosition, false);
-            if (picked == null || IsSourceSplineObject(picked) || IsActiveLoftObject(picked))
-                return;
-
-            // Let Unity's spline handles claim their hot control first. If no
-            // handle claims the click, normal object selection wins on the next
-            // editor tick and the spline context releases its selection lock.
-            m_QueuedExternalSelection = picked;
-            EditorApplication.delayCall -= ApplyQueuedExternalSelection;
-            EditorApplication.delayCall += ApplyQueuedExternalSelection;
-        }
-
-        void ApplyQueuedExternalSelection()
-        {
-            EditorApplication.delayCall -= ApplyQueuedExternalSelection;
-            GameObject picked = m_QueuedExternalSelection;
-            m_QueuedExternalSelection = null;
-            if (!m_SceneToolActive || picked == null || GUIUtility.hotControl != 0)
-                return;
-
-            MultiSplineLoft pickedLoft = picked.GetComponent<MultiSplineLoft>()
-                ?? picked.GetComponentInParent<MultiSplineLoft>();
-            if (pickedLoft != null)
+            if (UsesReducedSplineHandles() && TryFocusKnot(current.mousePosition))
             {
-                Selection.activeGameObject = pickedLoft.gameObject;
+                current.Use();
                 return;
             }
 
-            m_ChangingSelection = true;
-            Selection.activeGameObject = picked;
-            m_ChangingSelection = false;
-            if (ToolManager.activeContextType == typeof(SplineToolContext))
-                ToolManager.SetActiveContext<GameObjectToolContext>();
+            // Empty clicks remain owned by the spline editor. In particular, do
+            // not forward them to the terrain or ordinary meshes underneath the
+            // curve. Another loft is a valid editing target, however, so allow a
+            // direct click on its generated mesh to switch the active loft.
+            if (UsesReducedSplineHandles())
+            {
+                if (TryPickOtherLoft(current.mousePosition, out MultiSplineLoft pickedLoft))
+                {
+                    m_FocusedSpline = null;
+                    m_FocusedSplineIndex = -1;
+                    m_FocusedKnotIndex = -1;
+                    m_FocusedTangent = -1;
+                    Selection.activeGameObject = pickedLoft.gameObject;
+                    current.Use();
+                    return;
+                }
+
+                current.Use();
+            }
+        }
+
+        bool TryPickOtherLoft(Vector2 mousePosition, out MultiSplineLoft pickedLoft)
+        {
+            pickedLoft = null;
+            var loftObjects = new List<GameObject>();
+            foreach (MultiSplineLoft loft in Resources.FindObjectsOfTypeAll<MultiSplineLoft>())
+            {
+                if (loft == null
+                    || loft == m_ActiveLoft
+                    || EditorUtility.IsPersistent(loft)
+                    || !loft.gameObject.scene.IsValid()
+                    || !loft.gameObject.activeInHierarchy)
+                    continue;
+
+                foreach (Transform child in loft.GetComponentsInChildren<Transform>(true))
+                    loftObjects.Add(child.gameObject);
+            }
+
+            if (loftObjects.Count == 0)
+                return false;
+
+            // Restrict Unity's scene picker to other loft hierarchies. Terrain,
+            // vegetation, and the current loft can no longer hide the intended
+            // loft behind dozens of front-most pick results.
+            GameObject picked = HandleUtility.PickGameObject(
+                mousePosition,
+                false,
+                null,
+                loftObjects.ToArray());
+            if (picked == null)
+                return false;
+
+            pickedLoft = picked.GetComponent<MultiSplineLoft>()
+                ?? picked.GetComponentInParent<MultiSplineLoft>();
+            return pickedLoft != null && pickedLoft != m_ActiveLoft;
+        }
+
+        void DrawReducedSplineOverlay(SceneView sceneView, MultiSplineLoft loft)
+        {
+            RefreshReducedSplineOverlay(loft);
+            Vector3 cameraPosition = sceneView.camera != null
+                ? sceneView.camera.transform.position
+                : Vector3.zero;
+            float handleDistanceSquared = ReducedHandleCameraDistance * ReducedHandleCameraDistance;
+            Handles.color = new Color(0.05f, 0.9f, 1f, 0.9f);
+            foreach (ReducedSplineOverlayEntry entry in m_ReducedOverlayEntries)
+                Handles.DrawAAPolyLine(3f, entry.points);
+
+            foreach (MultiSplineLoft.SplineSource source in loft.Sources)
+            {
+                SplineContainer container = source?.container;
+                if (container == null || source.splineIndex < 0 || source.splineIndex >= container.Splines.Count)
+                    continue;
+
+                var spline = container.Splines[source.splineIndex];
+                // Keep the complete road visible, but only draw knot controls in
+                // the camera's local editing window. This avoids asking Unity to
+                // lay out thousands of distant handles on long multi-lofts.
+                for (int knotIndex = 0; knotIndex < spline.Count; knotIndex++)
+                {
+                    Vector3 knotPosition = container.transform.TransformPoint((Vector3)spline[knotIndex].Position);
+                    if ((knotPosition - cameraPosition).sqrMagnitude > handleDistanceSquared)
+                        continue;
+
+                    bool focused = container == m_FocusedSpline
+                        && source.splineIndex == m_FocusedSplineIndex
+                        && knotIndex == m_FocusedKnotIndex;
+                    float size = HandleUtility.GetHandleSize(knotPosition) * (focused ? 0.22f : 0.15f);
+                    Handles.color = focused
+                        ? new Color(1f, 0.88f, 0.15f, 1f)
+                        : new Color(1f, 0.38f, 0.06f, 0.95f);
+                    Handles.SphereHandleCap(0, knotPosition, Quaternion.identity, size, EventType.Repaint);
+                }
+            }
+        }
+
+        void RefreshReducedSplineOverlay(MultiSplineLoft loft)
+        {
+            if (m_ReducedOverlayLoft == loft
+                && m_ReducedOverlayGeneration == loft.GenerationVersion)
+                return;
+
+            m_ReducedOverlayLoft = loft;
+            m_ReducedOverlayGeneration = loft.GenerationVersion;
+            int entryIndex = 0;
+
+            foreach (MultiSplineLoft.SplineSource source in loft.Sources)
+            {
+                SplineContainer container = source?.container;
+                if (container == null
+                    || source.splineIndex < 0
+                    || source.splineIndex >= container.Splines.Count)
+                    continue;
+
+                var spline = container.Splines[source.splineIndex];
+                int curveCount = spline.Closed ? spline.Count : spline.Count - 1;
+                if (curveCount <= 0)
+                    continue;
+
+                int sampleCount = Mathf.Clamp(curveCount * 3, 16, 96);
+                ReducedSplineOverlayEntry entry;
+                if (entryIndex < m_ReducedOverlayEntries.Count)
+                    entry = m_ReducedOverlayEntries[entryIndex];
+                else
+                {
+                    entry = new ReducedSplineOverlayEntry();
+                    m_ReducedOverlayEntries.Add(entry);
+                }
+
+                entry.container = container;
+                entry.splineIndex = source.splineIndex;
+                if (entry.points == null || entry.points.Length != sampleCount + 1)
+                    entry.points = new Vector3[sampleCount + 1];
+
+                int cachedCurveIndex = -1;
+                BezierCurve curve = default;
+                for (int sample = 0; sample <= sampleCount; sample++)
+                {
+                    float curvePosition = sample == sampleCount
+                        ? curveCount
+                        : sample * curveCount / (float)sampleCount;
+                    int curveIndex = sample == sampleCount
+                        ? curveCount - 1
+                        : Mathf.Min(Mathf.FloorToInt(curvePosition), curveCount - 1);
+                    if (curveIndex != cachedCurveIndex)
+                    {
+                        cachedCurveIndex = curveIndex;
+                        curve = spline.GetCurve(curveIndex);
+                    }
+
+                    float curveT = sample == sampleCount ? 1f : curvePosition - curveIndex;
+                    entry.points[sample] = container.transform.TransformPoint(
+                        (Vector3)CurveUtility.EvaluatePosition(curve, curveT));
+                }
+
+                entryIndex++;
+            }
+
+            if (entryIndex < m_ReducedOverlayEntries.Count)
+                m_ReducedOverlayEntries.RemoveRange(entryIndex, m_ReducedOverlayEntries.Count - entryIndex);
+        }
+
+        bool TryFocusKnot(Vector2 mousePosition)
+        {
+            if (TryFocusVisibleKnot(mousePosition))
+                return true;
+
+            if (TryFocusTangent(mousePosition))
+                return true;
+
+            float bestCurveDistance = ReducedHandlePickRadius * ReducedHandlePickRadius;
+            SplineContainer bestContainer = null;
+            int bestSpline = -1;
+            RefreshReducedSplineOverlay(m_ActiveLoft);
+            foreach (ReducedSplineOverlayEntry entry in m_ReducedOverlayEntries)
+            {
+                Vector2 previous = HandleUtility.WorldToGUIPoint(entry.points[0]);
+                for (int sample = 1; sample < entry.points.Length; sample++)
+                {
+                    Vector2 point = HandleUtility.WorldToGUIPoint(entry.points[sample]);
+                    float distance = DistanceToSegmentSquared(mousePosition, previous, point);
+                    if (distance < bestCurveDistance)
+                    {
+                        bestCurveDistance = distance;
+                        bestContainer = entry.container;
+                        bestSpline = entry.splineIndex;
+                    }
+                    previous = point;
+                }
+            }
+
+            if (bestContainer == null)
+                return false;
+
+            // Clicking anywhere on a visible curve focuses its nearest authored
+            // knot; the user does not need to hit a tiny point exactly.
+            var bestSourceSpline = bestContainer.Splines[bestSpline];
+            float bestKnotDistance = float.PositiveInfinity;
+            int bestKnot = -1;
+            for (int knotIndex = 0; knotIndex < bestSourceSpline.Count; knotIndex++)
+            {
+                Vector3 world = bestContainer.transform.TransformPoint((Vector3)bestSourceSpline[knotIndex].Position);
+                float distance = (HandleUtility.WorldToGUIPoint(world) - mousePosition).sqrMagnitude;
+                if (distance < bestKnotDistance)
+                {
+                    bestKnotDistance = distance;
+                    bestKnot = knotIndex;
+                }
+            }
+
+            if (bestKnot < 0)
+                return false;
+
+            m_FocusedSpline = bestContainer;
+            m_FocusedSplineIndex = bestSpline;
+            m_FocusedKnotIndex = bestKnot;
+            m_FocusedTangent = -1;
             SceneView.RepaintAll();
+            return true;
+        }
+
+        bool TryFocusVisibleKnot(Vector2 mousePosition)
+        {
+            const float knotPickRadius = 24f;
+            float bestDistance = knotPickRadius * knotPickRadius;
+            SplineContainer bestContainer = null;
+            int bestSpline = -1;
+            int bestKnot = -1;
+
+            Camera sceneCamera = SceneView.lastActiveSceneView != null
+                ? SceneView.lastActiveSceneView.camera
+                : null;
+            Vector3 cameraPosition = sceneCamera != null
+                ? sceneCamera.transform.position
+                : Vector3.zero;
+            float handleDistanceSquared = ReducedHandleCameraDistance * ReducedHandleCameraDistance;
+
+            foreach (MultiSplineLoft.SplineSource source in m_ActiveLoft.Sources)
+            {
+                SplineContainer container = source?.container;
+                if (container == null
+                    || source.splineIndex < 0
+                    || source.splineIndex >= container.Splines.Count)
+                    continue;
+
+                var spline = container.Splines[source.splineIndex];
+                for (int knotIndex = 0; knotIndex < spline.Count; knotIndex++)
+                {
+                    Vector3 world = container.transform.TransformPoint((Vector3)spline[knotIndex].Position);
+                    if (sceneCamera != null
+                        && (world - cameraPosition).sqrMagnitude > handleDistanceSquared)
+                        continue;
+
+                    float distance = (HandleUtility.WorldToGUIPoint(world) - mousePosition).sqrMagnitude;
+                    if (distance >= bestDistance)
+                        continue;
+
+                    bestDistance = distance;
+                    bestContainer = container;
+                    bestSpline = source.splineIndex;
+                    bestKnot = knotIndex;
+                }
+            }
+
+            if (bestContainer == null)
+                return false;
+
+            m_FocusedSpline = bestContainer;
+            m_FocusedSplineIndex = bestSpline;
+            m_FocusedKnotIndex = bestKnot;
+            m_FocusedTangent = -1;
+            SceneView.RepaintAll();
+            return true;
+        }
+
+        bool TryFocusTangent(Vector2 mousePosition)
+        {
+            if (!TryGetFocusedTangentWorldPositions(out Vector3 tangentIn, out Vector3 tangentOut))
+                return false;
+
+            const float tangentPickRadius = 16f;
+            float inDistance = (HandleUtility.WorldToGUIPoint(tangentIn) - mousePosition).sqrMagnitude;
+            float outDistance = (HandleUtility.WorldToGUIPoint(tangentOut) - mousePosition).sqrMagnitude;
+            float maximumDistance = tangentPickRadius * tangentPickRadius;
+            if (inDistance > maximumDistance && outDistance > maximumDistance)
+                return false;
+
+            m_FocusedTangent = inDistance <= outDistance ? 0 : 1;
+            SceneView.RepaintAll();
+            return true;
+        }
+
+        void DrawFocusedKnot(SceneView sceneView)
+        {
+            if (!TryGetFocusedKnotWorldPosition(out Vector3 position))
+                return;
+
+            var spline = m_FocusedSpline.Splines[m_FocusedSplineIndex];
+            BezierKnot knot = spline[m_FocusedKnotIndex];
+            if (sceneView.camera != null
+                && Vector3.Distance(sceneView.camera.transform.position, position) > ReducedHandleCameraDistance)
+                return;
+
+            EditorGUI.BeginChangeCheck();
+            Vector3 moved = Handles.PositionHandle(position, Quaternion.identity);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(m_FocusedSpline, "Move Loft Spline Knot");
+                knot.Position = m_FocusedSpline.transform.InverseTransformPoint(moved);
+                spline.SetKnot(m_FocusedKnotIndex, knot);
+                EditorUtility.SetDirty(m_FocusedSpline);
+            }
+
+            DrawFocusedTangents(spline, ref knot, position);
+        }
+
+        bool TryGetFocusedKnotWorldPosition(out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (m_FocusedSpline == null
+                || m_FocusedSplineIndex < 0
+                || m_FocusedSplineIndex >= m_FocusedSpline.Splines.Count
+                || m_FocusedKnotIndex < 0)
+                return false;
+
+            var spline = m_FocusedSpline.Splines[m_FocusedSplineIndex];
+            if (m_FocusedKnotIndex >= spline.Count)
+                return false;
+
+            position = m_FocusedSpline.transform.TransformPoint(
+                (Vector3)spline[m_FocusedKnotIndex].Position);
+            return true;
+        }
+
+        void DrawFocusedTangents(UnityEngine.Splines.Spline spline, ref BezierKnot knot, Vector3 knotPosition)
+        {
+            TangentMode tangentMode = spline.GetTangentMode(m_FocusedKnotIndex);
+            if (tangentMode == TangentMode.Linear)
+                return;
+
+            Quaternion knotRotation = new Quaternion(
+                knot.Rotation.value.x,
+                knot.Rotation.value.y,
+                knot.Rotation.value.z,
+                knot.Rotation.value.w);
+            Vector3 localKnotPosition = knot.Position;
+            Vector3 tangentIn = m_FocusedSpline.transform.TransformPoint(
+                localKnotPosition + knotRotation * (Vector3)knot.TangentIn);
+            Vector3 tangentOut = m_FocusedSpline.transform.TransformPoint(
+                localKnotPosition + knotRotation * (Vector3)knot.TangentOut);
+
+            Handles.color = new Color(1f, 0.65f, 0.1f, 0.9f);
+            Handles.DrawLine(knotPosition, tangentIn, 2f);
+            Handles.DrawLine(knotPosition, tangentOut, 2f);
+            float tangentSphereSize = HandleUtility.GetHandleSize(knotPosition) * 0.065f;
+            Handles.color = m_FocusedTangent == 0
+                ? new Color(1f, 0.9f, 0.15f, 1f)
+                : new Color(0.95f, 0.2f, 0.7f, 0.95f);
+            Handles.SphereHandleCap(0, tangentIn, Quaternion.identity, tangentSphereSize, EventType.Repaint);
+            Handles.color = m_FocusedTangent == 1
+                ? new Color(1f, 0.9f, 0.15f, 1f)
+                : new Color(0.95f, 0.2f, 0.7f, 0.95f);
+            Handles.SphereHandleCap(0, tangentOut, Quaternion.identity, tangentSphereSize, EventType.Repaint);
+
+            if (m_FocusedTangent == 0)
+            {
+                EditorGUI.BeginChangeCheck();
+                Vector3 movedIn = Handles.PositionHandle(tangentIn, Quaternion.identity);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(m_FocusedSpline, "Move Loft Spline Tangent");
+                    if (tangentMode == TangentMode.AutoSmooth)
+                    {
+                        // Auto-smooth tangents are derived and cannot retain a manual
+                        // edit. Match Unity's spline workflow by converting only the
+                        // edited knot to independent tangents on the first drag.
+                        spline.SetTangentMode(m_FocusedKnotIndex, TangentMode.Broken);
+                    }
+                    Vector3 localEndpoint = m_FocusedSpline.transform.InverseTransformPoint(movedIn);
+                    knot.TangentIn = Quaternion.Inverse(knotRotation) * (localEndpoint - localKnotPosition);
+                    spline.SetKnot(m_FocusedKnotIndex, knot, BezierTangent.In);
+                    EditorUtility.SetDirty(m_FocusedSpline);
+                }
+            }
+
+            if (m_FocusedTangent == 1)
+            {
+                EditorGUI.BeginChangeCheck();
+                Vector3 movedOut = Handles.PositionHandle(tangentOut, Quaternion.identity);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(m_FocusedSpline, "Move Loft Spline Tangent");
+                    if (tangentMode == TangentMode.AutoSmooth)
+                        spline.SetTangentMode(m_FocusedKnotIndex, TangentMode.Broken);
+                    Vector3 localEndpoint = m_FocusedSpline.transform.InverseTransformPoint(movedOut);
+                    knot.TangentOut = Quaternion.Inverse(knotRotation) * (localEndpoint - localKnotPosition);
+                    spline.SetKnot(m_FocusedKnotIndex, knot, BezierTangent.Out);
+                    EditorUtility.SetDirty(m_FocusedSpline);
+                }
+            }
+        }
+
+        bool TryGetFocusedTangentWorldPositions(out Vector3 tangentIn, out Vector3 tangentOut)
+        {
+            tangentIn = Vector3.zero;
+            tangentOut = Vector3.zero;
+            if (!TryGetFocusedKnotWorldPosition(out _))
+                return false;
+
+            var spline = m_FocusedSpline.Splines[m_FocusedSplineIndex];
+            if (spline.GetTangentMode(m_FocusedKnotIndex) == TangentMode.Linear)
+                return false;
+
+            BezierKnot knot = spline[m_FocusedKnotIndex];
+            Quaternion knotRotation = new Quaternion(
+                knot.Rotation.value.x,
+                knot.Rotation.value.y,
+                knot.Rotation.value.z,
+                knot.Rotation.value.w);
+            Vector3 localKnotPosition = knot.Position;
+            tangentIn = m_FocusedSpline.transform.TransformPoint(
+                localKnotPosition + knotRotation * (Vector3)knot.TangentIn);
+            tangentOut = m_FocusedSpline.transform.TransformPoint(
+                localKnotPosition + knotRotation * (Vector3)knot.TangentOut);
+            return true;
+        }
+
+        static float DistanceToSegmentSquared(Vector2 point, Vector2 start, Vector2 end)
+        {
+            Vector2 segment = end - start;
+            float lengthSquared = segment.sqrMagnitude;
+            if (lengthSquared <= Mathf.Epsilon)
+                return (point - start).sqrMagnitude;
+
+            float t = Mathf.Clamp01(Vector2.Dot(point - start, segment) / lengthSquared);
+            return (point - (start + segment * t)).sqrMagnitude;
         }
 
         bool IsSourceSplineObject(GameObject candidate)
@@ -705,22 +1154,12 @@ namespace MashBoxSDK.Maps.Spline
             return false;
         }
 
-        bool IsActiveLoftObject(GameObject candidate)
-        {
-            if (candidate == null || m_ActiveLoft == null)
-                return false;
-
-            Transform loftTransform = m_ActiveLoft.transform;
-            return candidate.transform == loftTransform || candidate.transform.IsChildOf(loftTransform);
-        }
-
         void UseSelectedLoftAndEditSplines()
         {
             MultiSplineLoft selectedLoft = FindLoftInSelection();
-            if (selectedLoft != null)
-                m_ActiveLoft = selectedLoft;
-            if (m_ActiveLoft != null)
-                EnterUnitySplineEditMode(m_ActiveLoft);
+            MultiSplineLoft loft = selectedLoft != null ? selectedLoft : m_ActiveLoft;
+            if (loft != null)
+                EnterUnitySplineEditMode(loft);
         }
 
         static MultiSplineLoft FindLoftInSelection()
@@ -735,22 +1174,29 @@ namespace MashBoxSDK.Maps.Spline
 
         void EnterUnitySplineEditMode(MultiSplineLoft loft)
         {
-            if (loft == null) return;
-            var targets = new List<UnityEngine.Object>();
-            foreach (MultiSplineLoft.SplineSource source in loft.Sources)
-            {
-                GameObject splineObject = source?.container != null ? source.container.gameObject : null;
-                if (splineObject != null && !targets.Contains(splineObject))
-                    targets.Add(splineObject);
-            }
-            if (targets.Count == 0) return;
+            if (loft == null)
+                return;
 
-            m_QueuedSplineTargets = targets.ToArray();
-            m_SplineToolActivationAttempts = 0;
-            if (m_SplineEditActivationQueued) return;
-            m_SplineEditActivationQueued = true;
+            if (m_ActiveLoft != loft)
+            {
+                m_FocusedSpline = null;
+                m_FocusedSplineIndex = -1;
+                m_FocusedKnotIndex = -1;
+                m_FocusedTangent = -1;
+            }
+
+            m_ActiveLoft = loft;
             EditorApplication.delayCall -= ApplyQueuedSplineSelection;
-            EditorApplication.delayCall += ApplyQueuedSplineSelection;
+            EditorApplication.delayCall -= ActivateQueuedSplineTool;
+            m_SplineEditActivationQueued = false;
+            m_QueuedSplineTargets = null;
+
+            // Multi-loft mode always uses the lightweight custom knot editor.
+            // Keep the loft root as the authored selection instead of replacing
+            // it with every source SplineContainer.
+            if (ToolManager.activeContextType == typeof(SplineToolContext))
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+            SceneView.RepaintAll();
         }
 
         void ApplyQueuedSplineSelection()
@@ -777,6 +1223,16 @@ namespace MashBoxSDK.Maps.Spline
             if (!m_SceneToolActive || Selection.GetFiltered<SplineContainer>(SelectionMode.Editable | SelectionMode.Deep).Length == 0)
                 return;
 
+            // Multi-loft editing selects every source spline at once. Unity then
+            // renders a handle and tangent for every knot in every source, which
+            // makes a long road unusable even when no loft is rebuilding.
+            if (UsesReducedSplineHandles())
+            {
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+                SceneView.RepaintAll();
+                return;
+            }
+
             try
             {
                 ToolManager.SetActiveContext<SplineToolContext>();
@@ -798,6 +1254,14 @@ namespace MashBoxSDK.Maps.Spline
                 return;
             }
             SceneView.RepaintAll();
+        }
+
+        static bool UsesReducedSplineHandles()
+        {
+            // Multi-loft editing always uses our camera-distance knot renderer.
+            // This keeps selection and editing behavior consistent for short and
+            // long lofts and avoids Unity rendering every source handle at once.
+            return true;
         }
 
         void QueueSplineMoveTool()
@@ -882,9 +1346,11 @@ namespace MashBoxSDK.Maps.Spline
             {
                 if (GUILayout.Button("Use Selection"))
                 {
-                    m_ActiveLoft = Selection.activeGameObject != null ? Selection.activeGameObject.GetComponent<MultiSplineLoft>() : null;
-                    if (m_ActiveLoft != null)
-                        EnterUnitySplineEditMode(m_ActiveLoft);
+                    MultiSplineLoft selectedLoft = Selection.activeGameObject != null
+                        ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
+                        : null;
+                    if (selectedLoft != null)
+                        EnterUnitySplineEditMode(selectedLoft);
                 }
 
                 if (GUILayout.Button("Create From Splines"))
@@ -895,22 +1361,19 @@ namespace MashBoxSDK.Maps.Spline
 
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Spline Editing", EditorStyles.boldLabel);
-            using (new EditorGUI.DisabledScope(!MBEditorToolState.ActiveEditing || selected.Count == 0))
+            using (new EditorGUI.DisabledScope(!MBEditorToolState.ActiveEditing || m_ActiveLoft == null))
             {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    if (GUILayout.Button("Move / Edit Knots"))
-                        QueueSplineMoveTool();
-                    if (GUILayout.Button("Draw / Add Knots"))
-                        QueueKnotPlacementTool();
-                }
+                if (GUILayout.Button("Draw / Add Knots"))
+                    QueueKnotPlacementTool();
             }
             using (new EditorGUI.DisabledScope(m_ActiveLoft == null))
             {
                 if (GUILayout.Button("Create New Loft Spline", GUILayout.Height(24f)))
                     CreateAndAddLoftSpline();
             }
-            EditorGUILayout.HelpBox("Select knots with Unity's spline handles. Press Delete or Backspace to remove selected knots.", MessageType.None);
+            EditorGUILayout.HelpBox(
+                "Knots are directly editable in the Scene view. Long roads keep the full curves visible and show controls only within 100 m of the Scene camera.",
+                MessageType.None);
 
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Selected Splines", EditorStyles.boldLabel);

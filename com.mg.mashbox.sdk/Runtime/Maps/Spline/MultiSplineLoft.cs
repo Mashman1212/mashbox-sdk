@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using MashBoxSDK.Maps.Painting;
 using MashBoxSDK.Maps.Sculpting;
 using UnityEngine;
 using UnityEngine.Splines;
 using UnitySpline = UnityEngine.Splines.Spline;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace MashBoxSDK.Maps.Spline
 {
@@ -112,6 +116,9 @@ namespace MashBoxSDK.Maps.Spline
         [SerializeField]
         bool m_AutoRegenerate = true;
 
+        [SerializeField, Min(0f)]
+        float m_AutoRegenerateDelay = 1f / 60f;
+
         [SerializeField]
         bool m_CloseAlongClosedSplines = true;
 
@@ -190,13 +197,28 @@ namespace MashBoxSDK.Maps.Spline
         readonly List<Vector3> m_CurrentSourceSamples = new List<Vector3>();
         Vector3[,] m_SourcePoints;
         Vector3[,] m_SampledPoints;
+        Vector3[] m_GridNormals;
         int m_CrossSampleCount;
         int m_AlongSampleCount;
         int m_SurfaceVertexCount;
         int m_SurfaceTriangleCount;
         int m_PrimaryTriangleCount;
         bool m_RegenerateQueued;
+        float m_RegenerateAfterTime;
+        bool m_RegenerateAsLivePreview;
+        bool m_FinalRegenerateQueued;
+        float m_FinalRegenerateAfterTime;
+        bool m_UseFastSourceEvaluation;
+        int m_LastFullAlongSampleCount;
         int m_GenerationVersion;
+
+        const float LivePreviewFinalizeDelay = 0.12f;
+        const int LivePreviewMaxAlongSamples = 192;
+        static readonly List<MultiSplineLoft> s_RegenerationQueue = new List<MultiSplineLoft>();
+        static int s_LastRegenerationFrame = -1;
+#if UNITY_EDITOR
+        static bool s_EditorRegenerationHooked;
+#endif
 
         public List<SplineSource> Sources => m_Sources;
         public int SamplesAlong { get => m_SamplesAlong; set => m_SamplesAlong = Mathf.Max(2, value); }
@@ -213,6 +235,11 @@ namespace MashBoxSDK.Maps.Spline
         public int ResolutionSplinePointCount { get => m_ResolutionSplinePointCount; set => m_ResolutionSplinePointCount = Mathf.Max(2, value); }
         public LoftResolutionSpline GeneratedResolutionSpline => ResolveResolutionSpline();
         public bool AutoRegenerate { get => m_AutoRegenerate; set => m_AutoRegenerate = value; }
+        public float AutoRegenerateDelay
+        {
+            get => m_AutoRegenerateDelay;
+            set => m_AutoRegenerateDelay = Mathf.Clamp(value, 0f, 1f / 60f);
+        }
         public bool CloseAlongClosedSplines { get => m_CloseAlongClosedSplines; set => m_CloseAlongClosedSplines = value; }
         public bool CloseAcrossSplines { get => m_CloseAcrossSplines; set => m_CloseAcrossSplines = value; }
         public bool CapStart { get => m_CapStart; set => m_CapStart = value; }
@@ -286,6 +313,7 @@ namespace MashBoxSDK.Maps.Spline
             SplineContainer.SplineAdded -= OnSplineSetChanged;
             SplineContainer.SplineRemoved -= OnSplineSetChanged;
             SplineContainer.SplineReordered -= OnSplineReordered;
+            RemoveFromRegenerationQueue(this);
         }
 
         void OnValidate()
@@ -293,6 +321,9 @@ namespace MashBoxSDK.Maps.Spline
             m_SamplesAlong = Mathf.Max(2, m_SamplesAlong);
             m_SegmentsAcross = Mathf.Max(1, m_SegmentsAcross);
             m_TargetSegmentLength = Mathf.Max(0.01f, m_TargetSegmentLength);
+            // Live loft previews run at no less than 60 Hz. Clamping here also
+            // migrates lofts that serialized the previous 30 Hz default.
+            m_AutoRegenerateDelay = Mathf.Clamp(m_AutoRegenerateDelay, 0f, 1f / 60f);
             m_MaxDistanceSamples = Mathf.Max(2, m_MaxDistanceSamples);
             m_ResolutionSplinePointCount = Mathf.Max(2, m_ResolutionSplinePointCount);
             m_ColliderChunkLength = Mathf.Max(1f, m_ColliderChunkLength);
@@ -325,11 +356,8 @@ namespace MashBoxSDK.Maps.Spline
 
         void Update()
         {
-            if (!m_RegenerateQueued)
-                return;
-
-            m_RegenerateQueued = false;
-            Regenerate();
+            if (Application.isPlaying)
+                ProcessRegenerationQueue();
         }
 
         void OnSplineChanged(UnitySpline spline, int knotIndex, SplineModification modification)
@@ -342,7 +370,7 @@ namespace MashBoxSDK.Maps.Spline
                 var source = m_Sources[i];
                 if (source?.IsValid == true && source.container.Splines[source.splineIndex] == spline)
                 {
-                    QueueRegenerate();
+                    QueueLiveRegenerate();
                     return;
                 }
             }
@@ -376,12 +404,151 @@ namespace MashBoxSDK.Maps.Spline
 
         public void QueueRegenerate()
         {
+            m_FinalRegenerateQueued = false;
+            m_RegenerateAsLivePreview = false;
             m_RegenerateQueued = true;
+            // A long road can have several dependent lofts. Full mesh, modifier,
+            // and collider regeneration is too expensive at display frame rate,
+            // so defer repeated spline notifications into one preview rebuild.
+            m_RegenerateAfterTime = CurrentRegenerationTime() + m_AutoRegenerateDelay;
+            AddToRegenerationQueue(this);
+        }
+
+        void QueueLiveRegenerate()
+        {
+            float now = CurrentRegenerationTime();
+            m_FinalRegenerateQueued = true;
+            m_FinalRegenerateAfterTime = now + LivePreviewFinalizeDelay;
+            // A spline drag always takes precedence over an older full rebuild
+            // queued by validation or selection changes. The final pass below
+            // will restore all derived outputs after the handle is released.
+            m_RegenerateAsLivePreview = true;
+
+            if (!m_RegenerateQueued)
+            {
+                m_RegenerateQueued = true;
+                m_RegenerateAfterTime = now + m_AutoRegenerateDelay;
+            }
+
+            AddToRegenerationQueue(this);
+        }
+
+        static void AddToRegenerationQueue(MultiSplineLoft loft)
+        {
+            if (loft != null && !s_RegenerationQueue.Contains(loft))
+                s_RegenerationQueue.Add(loft);
+#if UNITY_EDITOR
+            if (!Application.isPlaying && !s_EditorRegenerationHooked)
+            {
+                EditorApplication.update += ProcessRegenerationQueue;
+                s_EditorRegenerationHooked = true;
+            }
+#endif
+        }
+
+        static void RemoveFromRegenerationQueue(MultiSplineLoft loft)
+        {
+            if (loft != null)
+                s_RegenerationQueue.Remove(loft);
+            StopEditorRegenerationUpdatesIfIdle();
+        }
+
+        static void ProcessRegenerationQueue()
+        {
+            if (s_RegenerationQueue.Count == 0)
+            {
+                StopEditorRegenerationUpdatesIfIdle();
+                return;
+            }
+
+            int frame = Time.frameCount;
+            if (Application.isPlaying && s_LastRegenerationFrame == frame)
+                return;
+
+            float now = CurrentRegenerationTime();
+            for (int index = 0; index < s_RegenerationQueue.Count; index++)
+            {
+                MultiSplineLoft loft = s_RegenerationQueue[index];
+                if (loft == null || !loft.isActiveAndEnabled)
+                {
+                    s_RegenerationQueue.RemoveAt(index--);
+                    continue;
+                }
+
+                bool runPreview = loft.m_RegenerateQueued && now >= loft.m_RegenerateAfterTime;
+                bool runFinal = !runPreview
+                    && loft.m_FinalRegenerateQueued
+                    && now >= loft.m_FinalRegenerateAfterTime
+                    && !IsEditorHandleDragging();
+                if (!runPreview && !runFinal)
+                    continue;
+
+                bool livePreview = runPreview && loft.m_RegenerateAsLivePreview;
+                if (runPreview)
+                {
+                    loft.m_RegenerateQueued = false;
+                    loft.m_RegenerateAsLivePreview = false;
+                }
+                else
+                {
+                    loft.m_FinalRegenerateQueued = false;
+                }
+
+                // Rotate processed lofts to the back so a frequently changing
+                // source cannot starve the other lofts that depend on it.
+                s_RegenerationQueue.RemoveAt(index);
+                if (loft.m_RegenerateQueued || loft.m_FinalRegenerateQueued)
+                    s_RegenerationQueue.Add(loft);
+
+                s_LastRegenerationFrame = frame;
+                loft.RegenerateScheduled(livePreview);
+                StopEditorRegenerationUpdatesIfIdle();
+                return;
+            }
+        }
+
+        static float CurrentRegenerationTime()
+        {
+            return Application.isPlaying
+                ? Time.realtimeSinceStartup
+#if UNITY_EDITOR
+                : (float)EditorApplication.timeSinceStartup;
+#else
+                : Time.realtimeSinceStartup;
+#endif
+        }
+
+        static bool IsEditorHandleDragging()
+        {
+#if UNITY_EDITOR
+            return !Application.isPlaying && GUIUtility.hotControl != 0;
+#else
+            return false;
+#endif
+        }
+
+        static void StopEditorRegenerationUpdatesIfIdle()
+        {
+#if UNITY_EDITOR
+            if (s_RegenerationQueue.Count == 0 && s_EditorRegenerationHooked)
+            {
+                EditorApplication.update -= ProcessRegenerationQueue;
+                s_EditorRegenerationHooked = false;
+            }
+#endif
         }
 
         public void Regenerate()
         {
             m_RegenerateQueued = false;
+            m_RegenerateAsLivePreview = false;
+            m_FinalRegenerateQueued = false;
+            RemoveFromRegenerationQueue(this);
+            RegenerateScheduled(false);
+        }
+
+        void RegenerateScheduled(bool livePreview)
+        {
 
             // Generated meshes and modifier children are allowed to change, but the
             // authored loft root is not. Preserve its transform defensively around
@@ -394,7 +561,7 @@ namespace MashBoxSDK.Maps.Spline
 
             try
             {
-                RegenerateInternal();
+                RegenerateInternal(livePreview);
             }
             finally
             {
@@ -408,7 +575,20 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
-        void RegenerateInternal()
+        void RegenerateInternal(bool livePreview)
+        {
+            m_UseFastSourceEvaluation = livePreview;
+            try
+            {
+                RegenerateInternalCore(livePreview);
+            }
+            finally
+            {
+                m_UseFastSourceEvaluation = false;
+            }
+        }
+
+        void RegenerateInternalCore(bool livePreview)
         {
             EnsureMesh();
             ClearBuildBuffers();
@@ -418,16 +598,21 @@ namespace MashBoxSDK.Maps.Spline
             if (m_ValidSourceIndices.Count < 2)
             {
                 ApplyMesh();
-                ResolveShoulderModifier()?.ClearGenerated();
-                RebuildColliderChunks();
+                if (!livePreview)
+                {
+                    ResolveShoulderModifier()?.ClearGenerated();
+                    RebuildColliderChunks();
+                }
                 unchecked { m_GenerationVersion++; }
                 return;
             }
 
-            if (ResolveResolutionSpline() != null || m_GenerateResolutionSplineWithLoft)
+            if (!livePreview && (ResolveResolutionSpline() != null || m_GenerateResolutionSplineWithLoft))
                 GenerateResolutionSpline(out _);
 
-            BuildSampleGrid();
+            BuildSampleGrid(livePreview);
+            if (!livePreview)
+                m_LastFullAlongSampleCount = m_AlongSampleCount;
             BuildVertices();
             BuildSurfaceTriangles();
             m_SurfaceTriangleCount = m_Triangles.Count;
@@ -444,6 +629,12 @@ namespace MashBoxSDK.Maps.Spline
                 DuplicateBackFaces();
 
             ApplyMesh();
+
+            if (livePreview)
+            {
+                unchecked { m_GenerationVersion++; }
+                return;
+            }
 
             ResolveShoulderModifier()?.RebuildFromLoft(this);
 
@@ -777,13 +968,16 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
-        void BuildSampleGrid()
+        void BuildSampleGrid(bool livePreview)
         {
             int sourceCount = m_ValidSourceIndices.Count;
             bool closedAlong = ShouldCloseAlong();
             int sourceSpans = m_CloseAcrossSplines ? sourceCount : sourceCount - 1;
             m_CrossSampleCount = m_CloseAcrossSplines ? sourceSpans * m_SegmentsAcross : sourceSpans * m_SegmentsAcross + 1;
-            BuildAlongParameters(sourceCount, closedAlong);
+            if (livePreview)
+                BuildLivePreviewAlongParameters(closedAlong);
+            else
+                BuildAlongParameters(sourceCount, closedAlong);
             m_AlongSampleCount = m_AlongParameters.Count;
 
             if (m_SourcePoints == null || m_SourcePoints.GetLength(0) != sourceCount || m_SourcePoints.GetLength(1) != m_AlongSampleCount)
@@ -793,7 +987,7 @@ namespace MashBoxSDK.Maps.Spline
                 m_SampledPoints = new Vector3[m_CrossSampleCount, m_AlongSampleCount];
 
             if (m_AlongAlignment == AlongAlignment.ReferencePerpendicular)
-                BuildReferenceAlignedSourcePoints(sourceCount, closedAlong);
+                BuildReferenceAlignedSourcePoints(sourceCount, closedAlong, livePreview);
             else
                 BuildParameterAlignedSourcePoints(sourceCount);
 
@@ -811,6 +1005,20 @@ namespace MashBoxSDK.Maps.Spline
             BuildDistanceTables(m_CrossSampleCount);
         }
 
+        void BuildLivePreviewAlongParameters(bool closedAlong)
+        {
+            m_AlongParameters.Clear();
+            int authoredCount = m_LastFullAlongSampleCount > 0
+                ? m_LastFullAlongSampleCount
+                : m_SamplesAlong;
+            int count = Mathf.Clamp(authoredCount, 2, LivePreviewMaxAlongSamples);
+            for (int along = 0; along < count; along++)
+            {
+                m_AlongParameters.Add(
+                    closedAlong ? along / (float)count : along / (float)(count - 1));
+            }
+        }
+
         void BuildParameterAlignedSourcePoints(int sourceCount)
         {
             for (int sourceIndex = 0; sourceIndex < sourceCount; sourceIndex++)
@@ -821,7 +1029,7 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
-        void BuildReferenceAlignedSourcePoints(int sourceCount, bool closedAlong)
+        void BuildReferenceAlignedSourcePoints(int sourceCount, bool closedAlong, bool livePreview)
         {
             int referenceIndex = ResolveAlignmentReference(sourceCount);
             var referenceSource = m_Sources[m_ValidSourceIndices[referenceIndex]];
@@ -869,7 +1077,8 @@ namespace MashBoxSDK.Maps.Spline
                             referenceTangent,
                             expectedParameter,
                             minimumParameter,
-                            maximumParameter);
+                            maximumParameter,
+                            livePreview);
 
                         if (along > 0)
                         {
@@ -928,6 +1137,22 @@ namespace MashBoxSDK.Maps.Spline
         Vector3 EvaluateSourcePosition(SplineSource source, float logicalParameter)
         {
             float t = source.reverse ? 1f - logicalParameter : logicalParameter;
+            if (m_UseFastSourceEvaluation)
+            {
+                var spline = source.container.Splines[source.splineIndex];
+                int curveCount = spline.Closed ? spline.Count : spline.Count - 1;
+                if (curveCount > 0)
+                {
+                    float curvePosition = Mathf.Clamp01(t) * curveCount;
+                    int curveIndex = curvePosition >= curveCount
+                        ? curveCount - 1
+                        : Mathf.Min(Mathf.FloorToInt(curvePosition), curveCount - 1);
+                    float curveT = curvePosition >= curveCount ? 1f : curvePosition - curveIndex;
+                    Vector3 localPoint = CurveUtility.EvaluatePosition(spline.GetCurve(curveIndex), curveT);
+                    return source.container.transform.TransformPoint(localPoint);
+                }
+            }
+
             var point = source.container.EvaluatePosition(source.splineIndex, Mathf.Clamp01(t));
             return new Vector3(point.x, point.y, point.z);
         }
@@ -962,10 +1187,11 @@ namespace MashBoxSDK.Maps.Spline
             Vector3 planeNormal,
             float preferredParameter,
             float minimumParameter,
-            float maximumParameter)
+            float maximumParameter,
+            bool livePreview)
         {
-            const int searchSteps = 48;
-            const int refinementSteps = 10;
+            int searchSteps = livePreview ? 12 : 48;
+            int refinementSteps = livePreview ? 5 : 10;
             float min = Mathf.Clamp01(minimumParameter);
             float max = Mathf.Clamp(maximumParameter, min, 1f);
             float bestParameter = Mathf.Clamp(preferredParameter, min, max);
@@ -1321,7 +1547,9 @@ namespace MashBoxSDK.Maps.Spline
                 for (int along = 0; along < m_AlongSampleCount; along++)
                 {
                     m_Vertices.Add(m_SampledPoints[cross, along]);
-                    m_Normals.Add(CalculateGridNormal(cross, along));
+                    // Smoothed and face normal modes replace these after triangle
+                    // construction, so avoid calculating the same grid normal twice.
+                    m_Normals.Add(m_NormalMode == NormalMode.LoftGrid ? CalculateGridNormal(cross, along) : Vector3.up);
                     float acrossUv = m_CrossDistances[cross] * inverseAcrossDistance * m_UvScaleAcross;
                     m_Uvs.Add(new Vector2(acrossUv, m_AlongDistances[along] * m_UvScaleAlong));
                 }
@@ -1332,9 +1560,14 @@ namespace MashBoxSDK.Maps.Spline
 
         Vector3 CalculateGridNormal(int cross, int along)
         {
+            return CalculateGridNormal(cross, along, ShouldCloseAlong());
+        }
+
+        Vector3 CalculateGridNormal(int cross, int along, bool closedAlong)
+        {
             int crossCount = m_CrossSampleCount;
             Vector3 across = DeltaAcross(cross, along, crossCount);
-            Vector3 forward = DeltaAlong(cross, along);
+            Vector3 forward = DeltaAlong(cross, along, closedAlong);
             Vector3 normal = Vector3.Cross(across, forward);
 
             if (!IsFinite(normal) || normal.sqrMagnitude < 0.000001f)
@@ -1362,9 +1595,8 @@ namespace MashBoxSDK.Maps.Spline
             return m_SampledPoints[cross + 1, along] - m_SampledPoints[cross - 1, along];
         }
 
-        Vector3 DeltaAlong(int cross, int along)
+        Vector3 DeltaAlong(int cross, int along, bool closedAlong)
         {
-            bool closedAlong = ShouldCloseAlong();
             if (closedAlong)
             {
                 int previous = (along - 1 + m_AlongSampleCount) % m_AlongSampleCount;
@@ -1381,12 +1613,24 @@ namespace MashBoxSDK.Maps.Spline
             return m_SampledPoints[cross, along + 1] - m_SampledPoints[cross, along - 1];
         }
 
+        void BuildGridNormalsInParallel(bool closedAlong)
+        {
+            if (m_GridNormals == null || m_GridNormals.Length < m_SurfaceVertexCount)
+                m_GridNormals = new Vector3[m_SurfaceVertexCount];
+
+            Parallel.For(0, m_SurfaceVertexCount, index =>
+            {
+                int cross = index / m_AlongSampleCount;
+                int along = index % m_AlongSampleCount;
+                m_GridNormals[index] = CalculateGridNormal(cross, along, closedAlong);
+            });
+        }
+
         void BuildSurfaceTriangles()
         {
             int crossCount = m_CrossSampleCount;
             int crossSegments = m_CloseAcrossSplines ? crossCount : crossCount - 1;
             int alongSegments = ShouldCloseAlong() ? m_AlongSampleCount : m_AlongSampleCount - 1;
-
             for (int cross = 0; cross < crossSegments; cross++)
             {
                 int nextCross = (cross + 1) % crossCount;
@@ -1579,11 +1823,6 @@ namespace MashBoxSDK.Maps.Spline
                 rootObject.transform.SetParent(transform, false);
                 chunksRoot = rootObject.transform;
             }
-            else
-            {
-                for (int index = chunksRoot.childCount - 1; index >= 0; index--)
-                    DestroyColliderChunkObject(chunksRoot.GetChild(index).gameObject);
-            }
 
             chunksRoot.gameObject.isStatic = true;
             chunksRoot.gameObject.layer = gameObject.layer;
@@ -1627,22 +1866,38 @@ namespace MashBoxSDK.Maps.Spline
                 chunkTriangleIndices[chunkIndex].Add(c);
             }
 
+            int builtChunkCount = 0;
             for (int chunkIndex = 0; chunkIndex < chunkTriangleIndices.Length; chunkIndex++)
             {
                 List<int> sourceIndices = chunkTriangleIndices[chunkIndex];
                 if (sourceIndices == null || sourceIndices.Count == 0)
                     continue;
 
-                Mesh colliderMesh = BuildColliderChunkMesh(sourceVertices, sourceIndices, chunkIndex);
+                Transform existingChunk = builtChunkCount < chunksRoot.childCount
+                    ? chunksRoot.GetChild(builtChunkCount)
+                    : null;
+                MeshCollider collider = existingChunk != null
+                    ? existingChunk.GetComponent<MeshCollider>()
+                    : null;
+                Mesh colliderMesh = BuildColliderChunkMesh(sourceVertices, sourceIndices, chunkIndex, collider != null ? collider.sharedMesh : null);
                 float startDistance = chunkIndex * chunkLength;
                 float endDistance = Mathf.Min(totalDistance, startDistance + chunkLength);
-                var chunkObject = new GameObject($"Collider {chunkIndex + 1:000} [{startDistance:0}-{endDistance:0}m]");
+                GameObject chunkObject = existingChunk != null
+                    ? existingChunk.gameObject
+                    : new GameObject();
+                chunkObject.name = $"Collider {chunkIndex + 1:000} [{startDistance:0}-{endDistance:0}m]";
                 chunkObject.layer = gameObject.layer;
                 chunkObject.isStatic = true;
                 ApplyGeneratedColliderTag(chunkObject);
                 chunkObject.transform.SetParent(chunksRoot, false);
-                chunkObject.AddComponent<MeshCollider>().sharedMesh = colliderMesh;
+                collider ??= chunkObject.AddComponent<MeshCollider>();
+                collider.sharedMesh = null;
+                collider.sharedMesh = colliderMesh;
+                builtChunkCount++;
             }
+
+            for (int index = chunksRoot.childCount - 1; index >= builtChunkCount; index--)
+                DestroyColliderChunkObject(chunksRoot.GetChild(index).gameObject);
         }
 
         static void ApplyGeneratedColliderTag(GameObject target)
@@ -1663,7 +1918,7 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
-        Mesh BuildColliderChunkMesh(Vector3[] sourceVertices, List<int> sourceIndices, int chunkIndex)
+        Mesh BuildColliderChunkMesh(Vector3[] sourceVertices, List<int> sourceIndices, int chunkIndex, Mesh reusableMesh)
         {
             var remappedIndices = new Dictionary<int, int>();
             var vertices = new List<Vector3>();
@@ -1679,14 +1934,16 @@ namespace MashBoxSDK.Maps.Spline
                 triangles.Add(remappedIndex);
             }
 
-            var mesh = new Mesh
+            Mesh mesh = reusableMesh != null ? reusableMesh : new Mesh
             {
                 name = $"{gameObject.name} Collider Chunk {chunkIndex + 1:000}",
-                hideFlags = HideFlags.DontSave,
-                indexFormat = vertices.Count > ushort.MaxValue
-                    ? UnityEngine.Rendering.IndexFormat.UInt32
-                    : UnityEngine.Rendering.IndexFormat.UInt16
+                hideFlags = HideFlags.DontSave
             };
+            mesh.name = $"{gameObject.name} Collider Chunk {chunkIndex + 1:000}";
+            mesh.Clear();
+            mesh.indexFormat = vertices.Count > ushort.MaxValue
+                ? UnityEngine.Rendering.IndexFormat.UInt32
+                : UnityEngine.Rendering.IndexFormat.UInt16;
             mesh.SetVertices(vertices);
             mesh.SetTriangles(triangles, 0, true);
             mesh.RecalculateBounds();
@@ -1777,11 +2034,12 @@ namespace MashBoxSDK.Maps.Spline
                 m_Normals[c] += faceNormal;
             }
 
+            BuildGridNormalsInParallel(ShouldCloseAlong());
             for (int i = 0; i < m_Normals.Count; i++)
             {
                 if (i < m_SurfaceVertexCount)
                 {
-                    Vector3 gridNormal = CalculateGridNormal(i / m_AlongSampleCount, i % m_AlongSampleCount);
+                    Vector3 gridNormal = m_GridNormals[i];
                     Vector3 faceNormal = m_Normals[i];
                     if (IsFinite(faceNormal) && faceNormal.sqrMagnitude > 0.000001f && Vector3.Dot(gridNormal, faceNormal) < 0f)
                         gridNormal = -gridNormal;
@@ -1799,8 +2057,9 @@ namespace MashBoxSDK.Maps.Spline
 
         void RebuildLoftGridNormals()
         {
+            BuildGridNormalsInParallel(ShouldCloseAlong());
             for (int i = 0; i < m_SurfaceVertexCount && i < m_Normals.Count; i++)
-                m_Normals[i] = CalculateGridNormal(i / m_AlongSampleCount, i % m_AlongSampleCount);
+                m_Normals[i] = m_GridNormals[i];
         }
 
         void ConvertToFlatFaces()
@@ -1869,5 +2128,6 @@ namespace MashBoxSDK.Maps.Spline
                     Gizmos.DrawLine(transform.TransformPoint(m_SampledPoints[cross, along]), transform.TransformPoint(m_SampledPoints[cross + 1, along]));
             }
         }
+
     }
 }

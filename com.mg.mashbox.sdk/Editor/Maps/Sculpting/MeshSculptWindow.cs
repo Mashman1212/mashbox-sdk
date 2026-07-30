@@ -754,8 +754,7 @@ namespace MashBoxSDK.MapTools
             float strength = control && !shift ? -m_Strength : m_Strength;
             Undo.RecordObject(m_Modifier, "Mesh Sculpt Stroke");
             m_Modifier.AddStroke(m_Modifier.CreateStroke(strokeMode, m_StrokeSpace, hit.point, direction, m_Radius, strength, m_Falloff));
-            m_Modifier.Rebuild();
-            RefreshSculptPickingCollider();
+            m_Modifier.ApplyLatestStrokePreview();
             EditorUtility.SetDirty(m_Modifier);
             m_LastStrokePosition = hit.point;
             m_HasLastStrokePosition = true;
@@ -823,6 +822,11 @@ namespace MashBoxSDK.MapTools
 
         void StopStroke()
         {
+            if (m_IsSculpting && m_Modifier != null)
+            {
+                m_Modifier.FinalizeStrokePreview();
+                RefreshSculptPickingCollider();
+            }
             m_IsSculpting = false;
             EndBrushAdjustment();
             m_HasLastStrokePosition = false;

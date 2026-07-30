@@ -73,6 +73,7 @@ namespace MashBoxSDK.Maps.Spline
         [NonSerialized] readonly List<Vector2> m_WorkingLeftSeamUvs = new List<Vector2>();
         [NonSerialized] readonly List<Vector2> m_WorkingRightSeamUvs = new List<Vector2>();
         [NonSerialized] readonly List<bool> m_WorkingSeamCandidates = new List<bool>();
+        [NonSerialized] readonly Dictionary<float, int> m_WorkingCrossUvCounts = new Dictionary<float, int>();
 
         public MeshFilter Target { get => m_Target; set => m_Target = value; }
         public int UvChannel { get => m_UvChannel; set => m_UvChannel = Mathf.Clamp(value, 0, 3); }
@@ -262,6 +263,9 @@ namespace MashBoxSDK.Maps.Spline
             BuildLongInterpolationCache(minLong, maxLong);
             float pivot = m_AutoCrossPivot ? (minCross + maxCross) * 0.5f : m_CrossPivot;
             bool supportsTopologySeam = m_Target.GetComponent<MultiSplineLoft>() != null;
+            float topologySeamCross = supportsTopologySeam
+                ? FindClosestLoftSeamCross(sourceUvs, longIsU, pivot, minCross, maxCross)
+                : pivot;
             m_WorkingOutputUvs.Clear();
             m_WorkingLeftSeamUvs.Clear();
             m_WorkingRightSeamUvs.Clear();
@@ -335,7 +339,7 @@ namespace MashBoxSDK.Maps.Spline
                     }
 
                     float sideBlend = supportsTopologySeam
-                        ? cross < pivot ? 0f : 1f
+                        ? cross < topologySeamCross ? 0f : 1f
                         : blendWidth > Mathf.Epsilon
                             ? Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(pivot - blendWidth, pivot + blendWidth, outputCross))
                             : crossDistance < 0f ? 0f : 1f;
@@ -374,7 +378,7 @@ namespace MashBoxSDK.Maps.Spline
                     leftSeamCross = Mathf.Lerp(outputCross, leftMirroredCross, alongBlend);
                     rightSeamCross = Mathf.Lerp(outputCross, rightMirroredCross, alongBlend);
                     outputCross = Mathf.Lerp(outputCross, mirroredCross, alongBlend);
-                    seamCandidate = Mathf.Abs(cross - pivot) <= seamTolerance && alongBlend > 0.0001f;
+                    seamCandidate = Mathf.Abs(cross - topologySeamCross) <= seamTolerance && alongBlend > 0.0001f;
                 }
 
                 m_WorkingOutputUvs.Add(longIsU ? new Vector2(outputLong, outputCross) : new Vector2(outputCross, outputLong));
@@ -390,11 +394,55 @@ namespace MashBoxSDK.Maps.Spline
                 result.name = source.name + "_UVSpline";
             result.SetUVs(m_UvChannel, m_WorkingOutputUvs);
             if (supportsTopologySeam)
-                SplitMirroredLoftUvSeams(result, sourceUvs, longIsU, pivot);
+                SplitMirroredLoftUvSeams(result, sourceUvs, longIsU, topologySeamCross);
             return result;
         }
 
-        void SplitMirroredLoftUvSeams(Mesh mesh, IReadOnlyList<Vector2> sourceUvs, bool longIsU, float pivot)
+        float FindClosestLoftSeamCross(
+            IReadOnlyList<Vector2> sourceUvs,
+            bool longIsU,
+            float pivot,
+            float minCross,
+            float maxCross)
+        {
+            m_WorkingCrossUvCounts.Clear();
+            int highestCount = 0;
+            for (int index = 0; index < sourceUvs.Count; index++)
+            {
+                float cross = longIsU ? sourceUvs[index].y : sourceUvs[index].x;
+                m_WorkingCrossUvCounts.TryGetValue(cross, out int count);
+                count++;
+                m_WorkingCrossUvCounts[cross] = count;
+                highestCount = Mathf.Max(highestCount, count);
+            }
+
+            // Loft surface rows repeat the same cross UV for every along sample.
+            // Caps and auxiliary geometry can contain isolated values near the
+            // requested pivot, so only consider values repeated like a real row.
+            int minimumRowCount = Mathf.Max(2, Mathf.CeilToInt(highestCount * 0.5f));
+            float edgeTolerance = Mathf.Max(0.00001f, (maxCross - minCross) * 0.0001f);
+            float closest = pivot;
+            float closestDistance = float.MaxValue;
+            foreach (KeyValuePair<float, int> pair in m_WorkingCrossUvCounts)
+            {
+                float cross = pair.Key;
+                if (pair.Value < minimumRowCount
+                    || cross <= minCross + edgeTolerance
+                    || cross >= maxCross - edgeTolerance)
+                    continue;
+
+                float distance = Mathf.Abs(cross - pivot);
+                if (distance < closestDistance)
+                {
+                    closest = cross;
+                    closestDistance = distance;
+                }
+            }
+
+            return closest;
+        }
+
+        void SplitMirroredLoftUvSeams(Mesh mesh, IReadOnlyList<Vector2> sourceUvs, bool longIsU, float seamCross)
         {
             int originalVertexCount = sourceUvs.Count;
             if (mesh == null
@@ -463,7 +511,7 @@ namespace MashBoxSDK.Maps.Spline
                         Vector2 sourceUv = sourceUvs[triangles[triangle + corner]];
                         averageCross += longIsU ? sourceUv.y : sourceUv.x;
                     }
-                    bool rightSide = averageCross / 3f >= pivot;
+                    bool rightSide = averageCross / 3f >= seamCross;
                     if (!rightSide)
                         continue;
 

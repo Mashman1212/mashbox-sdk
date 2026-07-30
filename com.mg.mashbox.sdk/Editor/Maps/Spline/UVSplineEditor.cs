@@ -1,4 +1,5 @@
 using System.IO;
+using System.Collections.Generic;
 using MashBoxSDK.EditorResources;
 using MashBoxSDK.MapTools;
 using UnityEditor;
@@ -697,6 +698,156 @@ namespace MashBoxSDK.Maps.Spline
             uvSpline.AdoptSourceMesh(mesh);
             EditorUtility.SetDirty(uvSpline);
             Selection.activeObject = mesh;
+        }
+    }
+
+    [InitializeOnLoad]
+    internal static class UVSplineSceneSelection
+    {
+        static UVSpline s_QueuedSelection;
+
+        static UVSplineSceneSelection()
+        {
+            SceneView.duringSceneGui -= OnSceneGUI;
+            SceneView.duringSceneGui += OnSceneGUI;
+            Selection.selectionChanged -= OnSelectionChanged;
+            Selection.selectionChanged += OnSelectionChanged;
+        }
+
+        static void OnSceneGUI(SceneView sceneView)
+        {
+            if (!MBEditorToolState.ActiveEditing
+                || MBEditorToolState.Mode != MBEditorAuthoringMode.UVSpline)
+                return;
+
+            Event current = Event.current;
+            if (current.type != EventType.MouseDown
+                || current.button != 0
+                || !current.shift
+                || current.alt
+                || current.control
+                || current.command
+                || GUIUtility.hotControl != 0)
+                return;
+
+            if (!TryPickLoftMesh(current.mousePosition, out MultiSplineLoft loft))
+                return;
+
+            UVSpline uvSpline = loft.GeneratedUvSpline != null
+                ? loft.GeneratedUvSpline
+                : loft.GetComponentInChildren<UVSpline>(true);
+            if (uvSpline != null)
+                return;
+
+            bool create = EditorUtility.DisplayDialog(
+                "Add UV Spline",
+                $"'{loft.name}' does not have a UV spline. Create and generate one now?",
+                "Create UV Spline",
+                "Cancel");
+            if (create)
+                MultiSplineLoftEditor.GenerateUvSpline(loft);
+
+            current.Use();
+            sceneView.Repaint();
+        }
+
+        static void OnSelectionChanged()
+        {
+            if (!MBEditorToolState.ActiveEditing
+                || MBEditorToolState.Mode != MBEditorAuthoringMode.UVSpline)
+                return;
+
+            UVSpline uvSpline = FindUvSplineForSelection(Selection.activeGameObject);
+            if (uvSpline == null || Selection.activeGameObject == uvSpline.gameObject)
+                return;
+
+            s_QueuedSelection = uvSpline;
+            EditorApplication.delayCall -= ApplyQueuedSelection;
+            EditorApplication.delayCall += ApplyQueuedSelection;
+        }
+
+        static void ApplyQueuedSelection()
+        {
+            EditorApplication.delayCall -= ApplyQueuedSelection;
+            UVSpline queued = s_QueuedSelection;
+            s_QueuedSelection = null;
+            if (queued == null
+                || !MBEditorToolState.ActiveEditing
+                || MBEditorToolState.Mode != MBEditorAuthoringMode.UVSpline
+                || FindUvSplineForSelection(Selection.activeGameObject) != queued)
+                return;
+
+            Selection.activeGameObject = queued.gameObject;
+            EditorGUIUtility.PingObject(queued.gameObject);
+            SceneView.RepaintAll();
+        }
+
+        static UVSpline FindUvSplineForSelection(GameObject selected)
+        {
+            if (selected == null)
+                return null;
+
+            UVSpline selectedUvSpline = selected.GetComponent<UVSpline>()
+                ?? selected.GetComponentInParent<UVSpline>();
+            if (selectedUvSpline != null)
+                return selectedUvSpline;
+
+            MultiSplineLoft loft = selected.GetComponent<MultiSplineLoft>()
+                ?? selected.GetComponentInParent<MultiSplineLoft>();
+            if (loft == null)
+                return null;
+
+            return loft.GeneratedUvSpline != null
+                ? loft.GeneratedUvSpline
+                : loft.GetComponentInChildren<UVSpline>(true);
+        }
+
+        static bool TryPickLoftMesh(Vector2 mousePosition, out MultiSplineLoft pickedLoft)
+        {
+            pickedLoft = null;
+            var loftMeshes = new List<GameObject>();
+            var seenObjects = new HashSet<GameObject>();
+
+            foreach (MultiSplineLoft loft in Resources.FindObjectsOfTypeAll<MultiSplineLoft>())
+            {
+                if (loft == null
+                    || EditorUtility.IsPersistent(loft)
+                    || !loft.gameObject.scene.IsValid()
+                    || !loft.gameObject.activeInHierarchy)
+                    continue;
+
+                foreach (MeshFilter meshFilter in loft.GetComponentsInChildren<MeshFilter>(true))
+                {
+                    if (meshFilter != null
+                        && meshFilter.sharedMesh != null
+                        && meshFilter.gameObject.activeInHierarchy
+                        && seenObjects.Add(meshFilter.gameObject))
+                        loftMeshes.Add(meshFilter.gameObject);
+                }
+
+                foreach (Renderer renderer in loft.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (renderer != null
+                        && renderer.gameObject.activeInHierarchy
+                        && seenObjects.Add(renderer.gameObject))
+                        loftMeshes.Add(renderer.gameObject);
+                }
+            }
+
+            if (loftMeshes.Count == 0)
+                return false;
+
+            GameObject picked = HandleUtility.PickGameObject(
+                mousePosition,
+                false,
+                null,
+                loftMeshes.ToArray());
+            if (picked == null)
+                return false;
+
+            pickedLoft = picked.GetComponent<MultiSplineLoft>()
+                ?? picked.GetComponentInParent<MultiSplineLoft>();
+            return pickedLoft != null;
         }
     }
 }

@@ -1009,9 +1009,12 @@ namespace MashBoxSDK.MapTools
 
         static bool IsAvailable()
         {
-            bool splineMode = MBEditorToolState.Mode == MBEditorAuthoringMode.Spline
-                || MBEditorToolState.Mode == MBEditorAuthoringMode.SplineLoft;
-            return MBEditorToolState.ActiveEditing && splineMode && FindSelectedSpline() != null;
+            // Multi-loft editing is always active and uses its camera-distance
+            // knot controls directly. The explicit Unity spline-edit toggle is
+            // only useful in the standalone single-spline mode.
+            return MBEditorToolState.ActiveEditing
+                && MBEditorToolState.Mode == MBEditorAuthoringMode.Spline
+                && FindSelectedSpline() != null;
         }
 
         static bool IsSplineEditModeActive()
