@@ -15,7 +15,9 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
     {
         private const int LayerCount = 8;
         private const string LayerDragDataKey = "MashBox.MGLitTrail.LayerDrag";
+        private const string TerrainLayerTagPrefix = "MashBox.MGLitTrail.TerrainLayer.";
         private static readonly Dictionary<Texture2D, TerrainLayer> TerrainLayersByDiffuse = new();
+        private static readonly List<TerrainLayer> CachedTerrainLayers = new();
         private static bool terrainLayerCacheBuilt;
 
         private sealed class LayerDragData
@@ -26,6 +28,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
         private struct LayerValues
         {
+            public string terrainLayerGuid;
             public Texture baseMap;
             public Vector2 baseScale;
             public Vector2 baseOffset;
@@ -51,6 +54,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         public override void ValidateMaterial(Material material)
         {
             SetDepthOffsetDisabled(material);
+            SynchronizeLayerTextureTransforms(material);
             base.ValidateMaterial(material);
         }
 
@@ -100,6 +104,45 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
             material.SetFloat("_DepthOffsetEnable", 0f);
             EditorUtility.SetDirty(material);
+        }
+
+        private static void SynchronizeLayerTextureTransforms(Material material)
+        {
+            if (material == null)
+                return;
+
+            bool changed = false;
+            for (int index = 0; index < LayerCount; index++)
+            {
+                string suffix = index.ToString("00");
+                string baseProperty = "_BaseMap" + suffix;
+                if (!material.HasProperty(baseProperty))
+                    continue;
+
+                Vector2 scale = material.GetTextureScale(baseProperty);
+                Vector2 offset = material.GetTextureOffset(baseProperty);
+                changed |= SetTextureTransformIfDifferent(material, "_NormalMap" + suffix, scale, offset);
+                changed |= SetTextureTransformIfDifferent(material, "_MaskMap" + suffix, scale, offset);
+            }
+
+            if (changed)
+                EditorUtility.SetDirty(material);
+        }
+
+        private static bool SetTextureTransformIfDifferent(
+            Material material,
+            string propertyName,
+            Vector2 scale,
+            Vector2 offset)
+        {
+            if (!material.HasProperty(propertyName) ||
+                (material.GetTextureScale(propertyName) == scale &&
+                 material.GetTextureOffset(propertyName) == offset))
+                return false;
+
+            material.SetTextureScale(propertyName, scale);
+            material.SetTextureOffset(propertyName, offset);
+            return true;
         }
 
         private static void DrawControlMaps(MaterialEditor materialEditor, MaterialProperty[] properties)
@@ -166,12 +209,16 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             {
                 string suffix = index.ToString("00");
                 MaterialProperty baseMap = FindOptionalProperty("_BaseMap" + suffix, properties);
+                MaterialProperty normalMap = FindOptionalProperty("_NormalMap" + suffix, properties);
+                MaterialProperty maskMap = FindOptionalProperty("_MaskMap" + suffix, properties);
                 MaterialProperty heightBlend = FindOptionalProperty("_HeightBlend" + suffix, properties);
                 MaterialProperty heightOffset = FindOptionalProperty("_HeightOffset" + suffix, properties);
                 MaterialProperty heightContrast = FindOptionalProperty("_HeightContrast" + suffix, properties);
                 MaterialProperty heightInfluence = FindOptionalProperty("_HeightInfluence" + suffix, properties);
                 Texture2D currentDiffuse = baseMap != null ? baseMap.textureValue as Texture2D : null;
-                TerrainLayer currentLayer = ResolveTerrainLayer(currentDiffuse);
+                TerrainLayer currentLayer = ResolveTerrainLayer(material, index, currentDiffuse);
+                if (currentLayer != null)
+                    SynchronizeTerrainLayerTextures(material, index, currentLayer);
 
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
@@ -224,6 +271,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         ? selectedLayer != null ? selectedLayer.diffuseTexture : null
                         : currentLayer != null ? currentLayer.diffuseTexture : currentDiffuse;
                     DrawDiffusePreview(diffusePreview);
+                    DrawLayerTilingAndOffset(materialEditor, baseMap, normalMap, maskMap);
                     DrawHeightControls(
                         materialEditor,
                         heightBlend,
@@ -349,6 +397,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
             return new LayerValues
             {
+                terrainLayerGuid = material.GetTag(GetTerrainLayerTag(index), false, string.Empty),
                 baseMap = GetTexture(material, baseProperty),
                 baseScale = GetTextureScale(material, baseProperty),
                 baseOffset = GetTextureOffset(material, baseProperty),
@@ -368,6 +417,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         private static void WriteLayerValues(Material material, int index, LayerValues values)
         {
             string suffix = index.ToString("00");
+            material.SetOverrideTag(GetTerrainLayerTag(index), values.terrainLayerGuid ?? string.Empty);
             SetTexture(
                 material,
                 "_BaseMap" + suffix,
@@ -378,14 +428,14 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 material,
                 "_NormalMap" + suffix,
                 values.normalMap,
-                values.normalScale,
-                values.normalOffset);
+                values.baseScale,
+                values.baseOffset);
             SetTexture(
                 material,
                 "_MaskMap" + suffix,
                 values.maskMap,
-                values.maskScale,
-                values.maskOffset);
+                values.baseScale,
+                values.baseOffset);
             SetFloat(material, "_HeightBlend" + suffix, values.heightBlend);
             SetFloat(material, "_HeightOffset" + suffix, values.heightOffset);
             SetFloat(material, "_HeightContrast" + suffix, values.heightContrast);
@@ -440,6 +490,39 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 ? material.name
                 : AssetDatabase.AssetPathToGUID(materialPath);
             return $"MashBox.MGLitTrail.LayerFoldout.{materialId}.{index}";
+        }
+
+        private static void DrawLayerTilingAndOffset(
+            MaterialEditor materialEditor,
+            MaterialProperty baseMap,
+            MaterialProperty normalMap,
+            MaterialProperty maskMap)
+        {
+            if (baseMap == null)
+                return;
+
+            Vector4 transform = baseMap.textureScaleAndOffset;
+            Vector2 tiling = new Vector2(transform.x, transform.y);
+            Vector2 offset = new Vector2(transform.z, transform.w);
+
+            GUILayout.Space(4f);
+            EditorGUILayout.LabelField("Tiling & Offset", EditorStyles.miniBoldLabel);
+            EditorGUI.showMixedValue = baseMap.hasMixedValue;
+            EditorGUI.BeginChangeCheck();
+            tiling = EditorGUILayout.Vector2Field("Tiling", tiling);
+            offset = EditorGUILayout.Vector2Field("Offset", offset);
+            if (EditorGUI.EndChangeCheck())
+            {
+                materialEditor.RegisterPropertyChangeUndo("Layer Tiling & Offset");
+                Vector4 sharedTransform = new Vector4(tiling.x, tiling.y, offset.x, offset.y);
+                baseMap.textureScaleAndOffset = sharedTransform;
+                if (normalMap != null)
+                    normalMap.textureScaleAndOffset = sharedTransform;
+                if (maskMap != null)
+                    maskMap.textureScaleAndOffset = sharedTransform;
+            }
+
+            EditorGUI.showMixedValue = false;
         }
 
         private static void DrawHeightControls(
@@ -543,12 +626,34 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 if (target is not Material material)
                     continue;
 
-                if (material.HasProperty(baseProperty))
-                    material.SetTexture(baseProperty, terrainLayer != null ? terrainLayer.diffuseTexture : null);
-                if (material.HasProperty(normalProperty))
-                    material.SetTexture(normalProperty, terrainLayer != null ? terrainLayer.normalMapTexture : null);
-                if (material.HasProperty(maskProperty))
-                    material.SetTexture(maskProperty, terrainLayer != null ? terrainLayer.maskMapTexture : null);
+                string terrainLayerPath = terrainLayer != null
+                    ? AssetDatabase.GetAssetPath(terrainLayer)
+                    : string.Empty;
+                string terrainLayerGuid = !string.IsNullOrEmpty(terrainLayerPath)
+                    ? AssetDatabase.AssetPathToGUID(terrainLayerPath)
+                    : string.Empty;
+                material.SetOverrideTag(GetTerrainLayerTag(index), terrainLayerGuid);
+
+                Vector2 sharedScale = GetTextureScale(material, baseProperty);
+                Vector2 sharedOffset = GetTextureOffset(material, baseProperty);
+                SetTexture(
+                    material,
+                    baseProperty,
+                    terrainLayer != null ? terrainLayer.diffuseTexture : null,
+                    sharedScale,
+                    sharedOffset);
+                SetTexture(
+                    material,
+                    normalProperty,
+                    terrainLayer != null ? terrainLayer.normalMapTexture : null,
+                    sharedScale,
+                    sharedOffset);
+                SetTexture(
+                    material,
+                    maskProperty,
+                    terrainLayer != null ? terrainLayer.maskMapTexture : null,
+                    sharedScale,
+                    sharedOffset);
 
                 EditorUtility.SetDirty(material);
             }
@@ -562,13 +667,96 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             return FindProperty(name, properties, false);
         }
 
-        private static TerrainLayer ResolveTerrainLayer(Texture2D diffuse)
+        private static string GetTerrainLayerTag(int index)
         {
-            if (diffuse == null)
-                return null;
+            return TerrainLayerTagPrefix + index.ToString("00");
+        }
 
-            TerrainLayersByDiffuse.TryGetValue(diffuse, out TerrainLayer terrainLayer);
+        private static TerrainLayer ResolveTerrainLayer(
+            Material material,
+            int index,
+            Texture2D diffuse)
+        {
+            string storedGuid = material.GetTag(GetTerrainLayerTag(index), false, string.Empty);
+            if (!string.IsNullOrEmpty(storedGuid))
+            {
+                string storedPath = AssetDatabase.GUIDToAssetPath(storedGuid);
+                TerrainLayer storedLayer = AssetDatabase.LoadAssetAtPath<TerrainLayer>(storedPath);
+                if (storedLayer != null)
+                    return storedLayer;
+            }
+
+            TerrainLayer terrainLayer = null;
+            if (diffuse != null)
+                TerrainLayersByDiffuse.TryGetValue(diffuse, out terrainLayer);
+
+            terrainLayer ??= FindTerrainLayerByAnyTexture(material, index);
+            if (terrainLayer != null)
+            {
+                string path = AssetDatabase.GetAssetPath(terrainLayer);
+                string guid = AssetDatabase.AssetPathToGUID(path);
+                material.SetOverrideTag(GetTerrainLayerTag(index), guid);
+                EditorUtility.SetDirty(material);
+            }
+
             return terrainLayer;
+        }
+
+        private static TerrainLayer FindTerrainLayerByAnyTexture(Material material, int index)
+        {
+            string suffix = index.ToString("00");
+            Texture baseMap = GetTexture(material, "_BaseMap" + suffix);
+            Texture normalMap = GetTexture(material, "_NormalMap" + suffix);
+            Texture maskMap = GetTexture(material, "_MaskMap" + suffix);
+
+            TerrainLayer bestLayer = null;
+            int bestMatchCount = 0;
+            foreach (TerrainLayer candidate in CachedTerrainLayers)
+            {
+                int matchCount = 0;
+                if (baseMap != null && candidate.diffuseTexture == baseMap)
+                    matchCount++;
+                if (normalMap != null && candidate.normalMapTexture == normalMap)
+                    matchCount++;
+                if (maskMap != null && candidate.maskMapTexture == maskMap)
+                    matchCount++;
+
+                if (matchCount > bestMatchCount)
+                {
+                    bestLayer = candidate;
+                    bestMatchCount = matchCount;
+                }
+            }
+
+            return bestLayer;
+        }
+
+        private static void SynchronizeTerrainLayerTextures(
+            Material material,
+            int index,
+            TerrainLayer terrainLayer)
+        {
+            string suffix = index.ToString("00");
+            string baseProperty = "_BaseMap" + suffix;
+            string normalProperty = "_NormalMap" + suffix;
+            string maskProperty = "_MaskMap" + suffix;
+            Texture diffuse = terrainLayer.diffuseTexture;
+            Texture normal = terrainLayer.normalMapTexture;
+            Texture mask = terrainLayer.maskMapTexture;
+
+            bool changed =
+                GetTexture(material, baseProperty) != diffuse ||
+                GetTexture(material, normalProperty) != normal ||
+                GetTexture(material, maskProperty) != mask;
+            if (!changed)
+                return;
+
+            Vector2 sharedScale = GetTextureScale(material, baseProperty);
+            Vector2 sharedOffset = GetTextureOffset(material, baseProperty);
+            SetTexture(material, baseProperty, diffuse, sharedScale, sharedOffset);
+            SetTexture(material, normalProperty, normal, sharedScale, sharedOffset);
+            SetTexture(material, maskProperty, mask, sharedScale, sharedOffset);
+            EditorUtility.SetDirty(material);
         }
 
         private static void EnsureTerrainLayerCache()
@@ -580,11 +768,16 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         private static void RebuildTerrainLayerCache()
         {
             TerrainLayersByDiffuse.Clear();
+            CachedTerrainLayers.Clear();
             foreach (string guid in AssetDatabase.FindAssets("t:TerrainLayer"))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 TerrainLayer terrainLayer = AssetDatabase.LoadAssetAtPath<TerrainLayer>(path);
-                if (terrainLayer != null && terrainLayer.diffuseTexture != null)
+                if (terrainLayer == null)
+                    continue;
+
+                CachedTerrainLayers.Add(terrainLayer);
+                if (terrainLayer.diffuseTexture != null)
                     TerrainLayersByDiffuse.TryAdd(terrainLayer.diffuseTexture, terrainLayer);
             }
 

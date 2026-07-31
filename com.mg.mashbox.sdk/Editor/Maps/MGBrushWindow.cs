@@ -416,7 +416,9 @@ namespace MashBoxSDK.MapTools
                     "Texture ID",
                     (SplatTextureId)splatTextureId);
                 EditorGUILayout.HelpBox(
-                    $"Texture {splatTextureId} writes {GetActiveControlMapPropertyName()} {GetActiveSplatChannelName()}.",
+                    $"Texture {splatTextureId} writes {GetActiveControlMapPropertyName()} " +
+                    $"{GetActiveSplatChannelName()}. Combined weights across both control maps " +
+                    "are normalized automatically.",
                     MessageType.None);
                 if (!splatAutoFindTexture)
                 {
@@ -2324,6 +2326,9 @@ namespace MashBoxSDK.MapTools
             int width = maxX - minX + 1;
             int height = maxY - minY + 1;
             Color[] pixels = splatMapTexture.GetPixels(minX, minY, width, height);
+            Color[] companionPixels = splatPaintMode == MBSplatPaintMode.TextureId
+                ? splatCompanionMapTexture.GetPixels(minX, minY, width, height)
+                : null;
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
@@ -2336,33 +2341,27 @@ namespace MashBoxSDK.MapTools
                     float influence = Mathf.Clamp01(brushStrength * falloff);
                     int pixelIndex = y * width + x;
                     Color color = pixels[pixelIndex];
-                    ApplySplatPaint(ref color, influence, erase);
+                    if (companionPixels != null)
+                    {
+                        Color companionColor = companionPixels[pixelIndex];
+                        ApplyTextureIdSplatPaint(
+                            ref color,
+                            ref companionColor,
+                            influence,
+                            erase);
+                        companionPixels[pixelIndex] = companionColor;
+                    }
+                    else
+                    {
+                        ApplySplatPaint(ref color, influence, erase);
+                    }
                     pixels[pixelIndex] = color;
                 }
             }
 
             splatMapTexture.SetPixels(minX, minY, width, height, pixels);
-            if (splatPaintMode == MBSplatPaintMode.TextureId)
+            if (companionPixels != null)
             {
-                Color[] companionPixels = splatCompanionMapTexture.GetPixels(minX, minY, width, height);
-                for (int y = 0; y < height; y++)
-                {
-                    for (int x = 0; x < width; x++)
-                    {
-                        float distance = Vector2.Distance(
-                            new Vector2(minX + x, minY + y),
-                            new Vector2(centerX, centerY));
-                        if (distance > radius)
-                            continue;
-
-                        float falloff = splatUseFalloff ? Mathf.Clamp01(1f - distance / radius) : 1f;
-                        float influence = Mathf.Clamp01(brushStrength * falloff);
-                        int pixelIndex = y * width + x;
-                        Color color = companionPixels[pixelIndex];
-                        ApplySplatPaint(ref color, influence, erase, true);
-                        companionPixels[pixelIndex] = color;
-                    }
-                }
                 splatCompanionMapTexture.SetPixels(minX, minY, width, height, companionPixels);
                 splatCompanionMapTexture.Apply(splatCompanionMapTexture.mipmapCount > 1, false);
                 EditorUtility.SetDirty(splatCompanionMapTexture);
@@ -2473,28 +2472,28 @@ namespace MashBoxSDK.MapTools
                 maxY = Mathf.Max(maxY, y);
             }
 
-            ApplySplatInfluencesToTexture(
-                splatMapTexture,
-                influences,
-                textureWidth,
-                minX,
-                minY,
-                maxX,
-                maxY,
-                erase,
-                false);
             if (splatPaintMode == MBSplatPaintMode.TextureId)
             {
-                ApplySplatInfluencesToTexture(
-                    splatCompanionMapTexture,
+                ApplyTextureIdSplatInfluences(
                     influences,
                     textureWidth,
                     minX,
                     minY,
                     maxX,
                     maxY,
-                    erase,
-                    true);
+                    erase);
+            }
+            else
+            {
+                ApplySplatInfluencesToTexture(
+                    splatMapTexture,
+                    influences,
+                    textureWidth,
+                    minX,
+                    minY,
+                    maxX,
+                    maxY,
+                    erase);
             }
             return true;
         }
@@ -2507,8 +2506,7 @@ namespace MashBoxSDK.MapTools
             int minY,
             int maxX,
             int maxY,
-            bool erase,
-            bool companionMap)
+            bool erase)
         {
             int blockWidth = maxX - minX + 1;
             int blockHeight = maxY - minY + 1;
@@ -2519,11 +2517,53 @@ namespace MashBoxSDK.MapTools
                 int y = pair.Key / textureWidth;
                 int localIndex = (y - minY) * blockWidth + (x - minX);
                 Color color = pixels[localIndex];
-                ApplySplatPaint(ref color, pair.Value, erase, companionMap);
+                ApplySplatPaint(ref color, pair.Value, erase);
                 pixels[localIndex] = color;
             }
 
             texture.SetPixels(minX, minY, blockWidth, blockHeight, pixels);
+        }
+
+        private void ApplyTextureIdSplatInfluences(
+            Dictionary<int, float> influences,
+            int textureWidth,
+            int minX,
+            int minY,
+            int maxX,
+            int maxY,
+            bool erase)
+        {
+            int blockWidth = maxX - minX + 1;
+            int blockHeight = maxY - minY + 1;
+            Color[] pixels = splatMapTexture.GetPixels(minX, minY, blockWidth, blockHeight);
+            Color[] companionPixels = splatCompanionMapTexture.GetPixels(
+                minX,
+                minY,
+                blockWidth,
+                blockHeight);
+            foreach (KeyValuePair<int, float> pair in influences)
+            {
+                int x = pair.Key % textureWidth;
+                int y = pair.Key / textureWidth;
+                int localIndex = (y - minY) * blockWidth + (x - minX);
+                Color color = pixels[localIndex];
+                Color companionColor = companionPixels[localIndex];
+                ApplyTextureIdSplatPaint(
+                    ref color,
+                    ref companionColor,
+                    pair.Value,
+                    erase);
+                pixels[localIndex] = color;
+                companionPixels[localIndex] = companionColor;
+            }
+
+            splatMapTexture.SetPixels(minX, minY, blockWidth, blockHeight, pixels);
+            splatCompanionMapTexture.SetPixels(
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                companionPixels);
         }
 
         private static void DilateSplatInfluences(
@@ -2710,8 +2750,7 @@ namespace MashBoxSDK.MapTools
         private void ApplySplatPaint(
             ref Color color,
             float influence,
-            bool erase,
-            bool companionMap = false)
+            bool erase)
         {
             if (splatPaintMode == MBSplatPaintMode.Color)
             {
@@ -2722,27 +2761,40 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            if (companionMap)
-            {
-                if (!erase)
-                    color = Color.Lerp(color, Color.clear, influence);
-                return;
-            }
-
             int channel = GetActiveSplatChannel();
+            float selectedWeight = erase
+                ? Mathf.Lerp(GetColorChannel(color, channel), 0f, influence)
+                : Mathf.Lerp(GetColorChannel(color, channel), 1f, influence);
+            SetColorChannel(ref color, channel, selectedWeight);
+        }
+
+        private void ApplyTextureIdSplatPaint(
+            ref Color activeColor,
+            ref Color companionColor,
+            float influence,
+            bool erase)
+        {
+            int selectedChannel = GetActiveSplatChannel();
             if (!erase)
             {
                 Color targetColor = Color.clear;
-                SetColorChannel(ref targetColor, channel, 1f);
-                color = Color.Lerp(color, targetColor, influence);
+                SetColorChannel(ref targetColor, selectedChannel, 1f);
+                activeColor = Color.Lerp(activeColor, targetColor, influence);
+                companionColor = Color.Lerp(companionColor, Color.clear, influence);
             }
             else
             {
-                float selectedWeight = Mathf.Lerp(GetColorChannel(color, channel), 0f, influence);
-                SetColorChannel(ref color, channel, selectedWeight);
+                float selectedWeight = Mathf.Lerp(
+                    GetColorChannel(activeColor, selectedChannel),
+                    0f,
+                    influence);
+                SetColorChannel(ref activeColor, selectedChannel, selectedWeight);
             }
-            if (normalizeSplatWeights && erase)
-                NormalizeSplatColor(ref color, channel);
+
+            NormalizeEightSplatChannels(
+                ref activeColor,
+                ref companionColor,
+                erase ? selectedChannel : -1);
         }
 
         private static Color GetSplatColorWeights(Color pickerColor)
@@ -2785,28 +2837,6 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        private static void NormalizeSplatColor(ref Color color, int selectedChannel)
-        {
-            float selected = GetColorChannel(color, selectedChannel);
-            float otherTotal = 0f;
-            for (int channel = 0; channel < 4; channel++)
-            {
-                if (channel != selectedChannel)
-                    otherTotal += GetColorChannel(color, channel);
-            }
-
-            float remaining = Mathf.Max(0f, 1f - selected);
-            for (int channel = 0; channel < 4; channel++)
-            {
-                if (channel == selectedChannel)
-                    continue;
-                float normalized = otherTotal > 0.00001f
-                    ? GetColorChannel(color, channel) / otherTotal * remaining
-                    : remaining / 3f;
-                SetColorChannel(ref color, channel, normalized);
-            }
-        }
-
         private static void NormalizeAllSplatChannels(ref Color color)
         {
             float total = color.r + color.g + color.b + color.a;
@@ -2817,6 +2847,39 @@ namespace MashBoxSDK.MapTools
             color.g /= total;
             color.b /= total;
             color.a /= total;
+        }
+
+        private static void NormalizeEightSplatChannels(
+            ref Color activeColor,
+            ref Color companionColor,
+            int excludedActiveChannel)
+        {
+            float total =
+                activeColor.r + activeColor.g + activeColor.b + activeColor.a +
+                companionColor.r + companionColor.g + companionColor.b + companionColor.a;
+            if (total > 0.00001f)
+            {
+                float inverseTotal = 1f / total;
+                activeColor *= inverseTotal;
+                companionColor *= inverseTotal;
+                return;
+            }
+
+            activeColor = Color.clear;
+            companionColor = Color.clear;
+            if (excludedActiveChannel < 0)
+            {
+                activeColor.r = 1f;
+                return;
+            }
+
+            const float fallbackWeight = 1f / 7f;
+            for (int channel = 0; channel < 4; channel++)
+            {
+                if (channel != excludedActiveChannel)
+                    SetColorChannel(ref activeColor, channel, fallbackWeight);
+                SetColorChannel(ref companionColor, channel, fallbackWeight);
+            }
         }
 
         private void MakeSplatTextureReadable()
