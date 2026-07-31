@@ -196,12 +196,13 @@ namespace MashBoxSDK.Maps.Painting
             m_PrimarySpatialGrid = null;
             m_SecondarySpatialMesh = null;
             m_SecondarySpatialGrid = null;
-            // A generated loft has no authored color channel before this modifier.
-            // Mesh.Clear historically preserved the old Color layout as zeroes,
-            // so reading mesh.colors here could turn every unpainted vertex black
-            // after domain reload. Reconstruct the deterministic clean base and
-            // replay the complete recorded history onto it.
-            m_BaseColors = CreateWhiteColors(mesh.vertexCount);
+            // Shoulder generation can author deterministic soil/rock/grass masks
+            // into vertex colors. Preserve those as the replay base; ordinary
+            // lofts still have no color channel after Mesh.Clear and use white.
+            Color[] generatedColors = mesh.colors;
+            m_BaseColors = generatedColors != null && generatedColors.Length == mesh.vertexCount
+                ? generatedColors
+                : CreateWhiteColors(mesh.vertexCount);
             ApplyFromCachedBase(mesh);
         }
 

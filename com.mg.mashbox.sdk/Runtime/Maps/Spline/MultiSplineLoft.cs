@@ -146,11 +146,32 @@ namespace MashBoxSDK.Maps.Spline
         [SerializeField]
         bool m_FlipNormals = true;
 
+        [SerializeField, Tooltip("Matches the loft's side-edge normals and any generated shoulders to the active Terrain underneath. This softens lighting seams without moving vertices.")]
+        bool m_MatchSideNormalsToTerrain;
+
+        [SerializeField, Tooltip("Also matches normals on loft and shoulder triangles that cross or closely touch the Terrain surface.")]
+        bool m_MatchTerrainIntersectingFaces = true;
+
+        [SerializeField, Min(0f), Tooltip("Triangles with a vertex this close to the Terrain are treated as touching it, even if they do not fully cross the Terrain surface.")]
+        float m_TerrainNormalContactDistance = 0.15f;
+
         [SerializeField, Min(0.0001f)]
         float m_UvScaleAlong = 1f;
 
         [SerializeField, Min(0.0001f)]
         float m_UvScaleAcross = 1f;
+
+        [SerializeField, Tooltip("Keeps the original normalized-width UV0 layout, but derives the along tiling from the loft's physical width so square textures are not stretched.")]
+        bool m_MatchUv0LengthToWidth = true;
+
+        [SerializeField, Min(0.0001f), Tooltip("Additional multiplier for the automatically matched along UV density. Leave at 1 for square texture coverage.")]
+        float m_Uv0AlongRatioMultiplier = 1f;
+
+        [SerializeField, Tooltip("Generates a packed shell UV set in UV2 / TEXCOORD2. UV1 / TEXCOORD1 remains free for lightmapping.")]
+        bool m_GeneratePackedUv2;
+
+        [SerializeField, Range(0f, 0.2f), Tooltip("Padding inside each packed UV2 grid cell, as a fraction of the cell size.")]
+        float m_PackedUv2Padding = 0.025f;
 
         [SerializeField]
         bool m_GenerateUvSplineWithLoft;
@@ -182,12 +203,19 @@ namespace MashBoxSDK.Maps.Spline
         readonly List<Vector3> m_Vertices = new List<Vector3>();
         readonly List<Vector3> m_Normals = new List<Vector3>();
         readonly List<Vector2> m_Uvs = new List<Vector2>();
+        readonly List<Vector2> m_PackedUv2s = new List<Vector2>();
         readonly List<int> m_Triangles = new List<int>();
         readonly List<int> m_ShoulderColliderSubmeshes = new List<int>();
         readonly List<Vector3> m_FlatVertices = new List<Vector3>();
         readonly List<Vector3> m_FlatNormals = new List<Vector3>();
         readonly List<Vector2> m_FlatUvs = new List<Vector2>();
+        readonly List<Vector2> m_FlatPackedUv2s = new List<Vector2>();
         readonly List<int> m_FlatTriangles = new List<int>();
+        readonly List<int> m_SurfaceSourceVertices = new List<int>();
+        readonly List<int> m_PackedUv2PrimaryShells = new List<int>();
+        readonly List<float> m_PackedUv2ShellStarts = new List<float>();
+        readonly List<float> m_PackedUv2ShellEnds = new List<float>();
+        readonly Dictionary<long, int> m_PackedUv2SeamVertices = new Dictionary<long, int>();
         readonly List<int> m_ValidSourceIndices = new List<int>();
         readonly List<float> m_CrossDistances = new List<float>();
         readonly List<float> m_AlongDistances = new List<float>();
@@ -201,6 +229,12 @@ namespace MashBoxSDK.Maps.Spline
         int m_CrossSampleCount;
         int m_AlongSampleCount;
         int m_SurfaceVertexCount;
+        int m_GridVertexCount;
+        int m_PackedUv2ShellCount;
+        int m_PackedUv2Columns;
+        float m_PackedUv2TotalDistance;
+        float m_PackedUv2LeftShoulderExtent;
+        float m_PackedUv2RightShoulderExtent;
         int m_SurfaceTriangleCount;
         int m_PrimaryTriangleCount;
         bool m_RegenerateQueued;
@@ -249,6 +283,43 @@ namespace MashBoxSDK.Maps.Spline
         public float ColliderChunkLength { get => m_ColliderChunkLength; set => m_ColliderChunkLength = Mathf.Max(1f, value); }
         public NormalMode SurfaceNormalMode { get => m_NormalMode; set => m_NormalMode = value; }
         public bool FlipNormals { get => m_FlipNormals; set => m_FlipNormals = value; }
+        public bool MatchSideNormalsToTerrain { get => m_MatchSideNormalsToTerrain; set => m_MatchSideNormalsToTerrain = value; }
+        public bool MatchTerrainIntersectingFaces { get => m_MatchTerrainIntersectingFaces; set => m_MatchTerrainIntersectingFaces = value; }
+        public float TerrainNormalContactDistance { get => m_TerrainNormalContactDistance; set => m_TerrainNormalContactDistance = Mathf.Max(0f, value); }
+        public float UvScaleAlong => m_UvScaleAlong;
+        public float UvScaleAcross => m_UvScaleAcross;
+        public bool MatchUv0LengthToWidth { get => m_MatchUv0LengthToWidth; set => m_MatchUv0LengthToWidth = value; }
+        public float Uv0AlongRatioMultiplier { get => m_Uv0AlongRatioMultiplier; set => m_Uv0AlongRatioMultiplier = Mathf.Max(0.0001f, value); }
+        public bool GeneratePackedUv2 { get => m_GeneratePackedUv2; set => m_GeneratePackedUv2 = value; }
+        public float PackedUv2Padding { get => m_PackedUv2Padding; set => m_PackedUv2Padding = Mathf.Clamp(value, 0f, 0.2f); }
+        public float CurrentUvAcrossPerMeter
+        {
+            get
+            {
+                float totalAcrossDistance = m_CrossDistances.Count > 1
+                    ? m_CrossDistances[m_CrossDistances.Count - 1]
+                    : 0f;
+                return totalAcrossDistance > Mathf.Epsilon
+                    ? m_UvScaleAcross / totalAcrossDistance
+                    : m_UvScaleAcross;
+            }
+        }
+        public float CurrentUvAlongPerMeter => m_MatchUv0LengthToWidth
+            ? CurrentUvAcrossPerMeter * m_Uv0AlongRatioMultiplier
+            : m_UvScaleAlong;
+        public float CurrentUvAcrossExtent
+        {
+            get
+            {
+                float totalAcrossDistance = m_CrossDistances.Count > 1
+                    ? m_CrossDistances[m_CrossDistances.Count - 1]
+                    : 0f;
+                return totalAcrossDistance * CurrentUvAcrossPerMeter;
+            }
+        }
+        public float CurrentAlongDistance => m_AlongDistances.Count > 1
+            ? m_AlongDistances[m_AlongDistances.Count - 1]
+            : 0f;
         public bool GenerateUvSplineWithLoft { get => m_GenerateUvSplineWithLoft; set => m_GenerateUvSplineWithLoft = value; }
         public int UvSplineChannel { get => m_UvSplineChannel; set => m_UvSplineChannel = Mathf.Clamp(value, 0, 3); }
         public UVSpline.LongitudinalAxis UvSplineDirection { get => m_UvSplineDirection; set => m_UvSplineDirection = value; }
@@ -329,6 +400,7 @@ namespace MashBoxSDK.Maps.Spline
             m_ColliderChunkLength = Mathf.Max(1f, m_ColliderChunkLength);
             m_UvScaleAlong = Mathf.Max(0.0001f, m_UvScaleAlong);
             m_UvScaleAcross = Mathf.Max(0.0001f, m_UvScaleAcross);
+            m_Uv0AlongRatioMultiplier = Mathf.Max(0.0001f, m_Uv0AlongRatioMultiplier);
             m_UvSplineChannel = Mathf.Clamp(m_UvSplineChannel, 0, 3);
             m_UvSplinePointCount = Mathf.Max(2, m_UvSplinePointCount);
 
@@ -632,16 +704,23 @@ namespace MashBoxSDK.Maps.Spline
 
             if (livePreview)
             {
+                // Keep spline dragging responsive; the full intersecting-face
+                // pass runs on the finalized regeneration immediately afterward.
+                if (ApplyTerrainMatchedSideNormals(includeIntersectingFaces: false))
+                    m_GeneratedMesh.RecalculateTangents();
                 unchecked { m_GenerationVersion++; }
                 return;
             }
 
-            ResolveShoulderModifier()?.RebuildFromLoft(this);
+            LoftShoulderModifier shoulderModifier = ResolveShoulderModifier();
+            shoulderModifier?.RebuildFromLoft(this);
 
             if (m_SculptModifier != null)
                 m_SculptModifier.ApplyToFreshMesh(m_GeneratedMesh);
 
             ResolveVertexPaintModifier()?.ApplyToFreshMesh(m_GeneratedMesh);
+
+            RefreshTerrainMatchedNormals();
 
             RebuildColliderChunks();
 
@@ -943,11 +1022,18 @@ namespace MashBoxSDK.Maps.Spline
             m_Vertices.Clear();
             m_Normals.Clear();
             m_Uvs.Clear();
+            m_PackedUv2s.Clear();
             m_Triangles.Clear();
             m_FlatVertices.Clear();
             m_FlatNormals.Clear();
             m_FlatUvs.Clear();
+            m_FlatPackedUv2s.Clear();
             m_FlatTriangles.Clear();
+            m_SurfaceSourceVertices.Clear();
+            m_PackedUv2PrimaryShells.Clear();
+            m_PackedUv2ShellStarts.Clear();
+            m_PackedUv2ShellEnds.Clear();
+            m_PackedUv2SeamVertices.Clear();
             m_ValidSourceIndices.Clear();
             m_CrossDistances.Clear();
             m_AlongDistances.Clear();
@@ -956,6 +1042,12 @@ namespace MashBoxSDK.Maps.Spline
             m_PrimaryTriangleCount = 0;
             m_SurfaceTriangleCount = 0;
             m_SurfaceVertexCount = 0;
+            m_GridVertexCount = 0;
+            m_PackedUv2ShellCount = 0;
+            m_PackedUv2Columns = 0;
+            m_PackedUv2TotalDistance = 0f;
+            m_PackedUv2LeftShoulderExtent = 0f;
+            m_PackedUv2RightShoulderExtent = 0f;
             m_AlongSampleCount = 0;
         }
 
@@ -1538,6 +1630,7 @@ namespace MashBoxSDK.Maps.Spline
             int vertexCount = crossCount * m_AlongSampleCount;
             float totalAcrossDistance = crossCount > 1 ? m_CrossDistances[crossCount - 1] : 0f;
             float inverseAcrossDistance = totalAcrossDistance > Mathf.Epsilon ? 1f / totalAcrossDistance : 0f;
+            float alongUvPerMeter = CurrentUvAlongPerMeter;
             m_Vertices.Capacity = Mathf.Max(m_Vertices.Capacity, vertexCount);
             m_Normals.Capacity = Mathf.Max(m_Normals.Capacity, vertexCount);
             m_Uvs.Capacity = Mathf.Max(m_Uvs.Capacity, vertexCount);
@@ -1551,11 +1644,14 @@ namespace MashBoxSDK.Maps.Spline
                     // construction, so avoid calculating the same grid normal twice.
                     m_Normals.Add(m_NormalMode == NormalMode.LoftGrid ? CalculateGridNormal(cross, along) : Vector3.up);
                     float acrossUv = m_CrossDistances[cross] * inverseAcrossDistance * m_UvScaleAcross;
-                    m_Uvs.Add(new Vector2(acrossUv, m_AlongDistances[along] * m_UvScaleAlong));
+                    m_Uvs.Add(new Vector2(acrossUv, m_AlongDistances[along] * alongUvPerMeter));
+                    m_PackedUv2s.Add(Vector2.zero);
+                    m_SurfaceSourceVertices.Add(m_Vertices.Count - 1);
+                    m_PackedUv2PrimaryShells.Add(-1);
                 }
             }
 
-            m_SurfaceVertexCount = m_Vertices.Count;
+            m_GridVertexCount = m_Vertices.Count;
         }
 
         Vector3 CalculateGridNormal(int cross, int along)
@@ -1620,8 +1716,11 @@ namespace MashBoxSDK.Maps.Spline
 
             Parallel.For(0, m_SurfaceVertexCount, index =>
             {
-                int cross = index / m_AlongSampleCount;
-                int along = index % m_AlongSampleCount;
+                int sourceIndex = index < m_SurfaceSourceVertices.Count
+                    ? m_SurfaceSourceVertices[index]
+                    : index;
+                int cross = sourceIndex / m_AlongSampleCount;
+                int along = sourceIndex % m_AlongSampleCount;
                 m_GridNormals[index] = CalculateGridNormal(cross, along, closedAlong);
             });
         }
@@ -1630,7 +1729,9 @@ namespace MashBoxSDK.Maps.Spline
         {
             int crossCount = m_CrossSampleCount;
             int crossSegments = m_CloseAcrossSplines ? crossCount : crossCount - 1;
-            int alongSegments = ShouldCloseAlong() ? m_AlongSampleCount : m_AlongSampleCount - 1;
+            bool closedAlong = ShouldCloseAlong();
+            int alongSegments = closedAlong ? m_AlongSampleCount : m_AlongSampleCount - 1;
+            PreparePackedUv2Shells(closedAlong, alongSegments);
             for (int cross = 0; cross < crossSegments; cross++)
             {
                 int nextCross = (cross + 1) % crossCount;
@@ -1638,14 +1739,193 @@ namespace MashBoxSDK.Maps.Spline
                 for (int along = 0; along < alongSegments; along++)
                 {
                     int nextAlong = (along + 1) % m_AlongSampleCount;
-                    int a = VertexIndex(cross, along);
-                    int b = VertexIndex(nextCross, along);
-                    int c = VertexIndex(cross, nextAlong);
-                    int d = VertexIndex(nextCross, nextAlong);
+                    int shell = GetPackedUv2ShellForSegment(along, closedAlong);
+                    float startDistance = m_AlongDistances[along];
+                    float endDistance = nextAlong == 0 && closedAlong
+                        ? m_PackedUv2TotalDistance
+                        : m_AlongDistances[nextAlong];
+                    int a = GetPackedUv2Vertex(VertexIndex(cross, along), cross, startDistance, shell);
+                    int b = GetPackedUv2Vertex(VertexIndex(nextCross, along), nextCross, startDistance, shell);
+                    int c = GetPackedUv2Vertex(VertexIndex(cross, nextAlong), cross, endDistance, shell);
+                    int d = GetPackedUv2Vertex(VertexIndex(nextCross, nextAlong), nextCross, endDistance, shell);
 
                     AddQuad(a, b, c, d);
                 }
             }
+
+            m_SurfaceVertexCount = m_Vertices.Count;
+        }
+
+        void PreparePackedUv2Shells(bool closedAlong, int alongSegments)
+        {
+            if (!m_GeneratePackedUv2 || alongSegments <= 0 || m_AlongDistances.Count == 0)
+                return;
+
+            float closingDistance = closedAlong
+                ? AverageDistanceBetweenColumns(m_AlongSampleCount - 1, 0)
+                : 0f;
+            m_PackedUv2TotalDistance = m_AlongDistances[m_AlongDistances.Count - 1] + closingDistance;
+            float loftWidth = m_CrossDistances.Count > 1
+                ? m_CrossDistances[m_CrossDistances.Count - 1]
+                : 0f;
+            LoftShoulderModifier shoulderModifier = ResolveShoulderModifier();
+            if (shoulderModifier != null)
+            {
+                m_PackedUv2LeftShoulderExtent =
+                    shoulderModifier.GetPackedUv2SideExtent(LoftShoulderModifier.Edge.Left);
+                m_PackedUv2RightShoulderExtent =
+                    shoulderModifier.GetPackedUv2SideExtent(LoftShoulderModifier.Edge.Right);
+            }
+            float packedWidth = Mathf.Max(
+                0.1f,
+                m_PackedUv2LeftShoulderExtent + loftWidth + m_PackedUv2RightShoulderExtent);
+            // Split the long strip into approximately square world-space islands.
+            // This maximizes useful atlas area and avoids tiny manually configured
+            // cells that a texture-space brush can easily spill across.
+            float automaticShellLength = packedWidth;
+            m_PackedUv2ShellCount = Mathf.Max(
+                1,
+                Mathf.CeilToInt(m_PackedUv2TotalDistance / automaticShellLength));
+            m_PackedUv2ShellCount = Mathf.Min(m_PackedUv2ShellCount, alongSegments);
+            m_PackedUv2Columns = Mathf.CeilToInt(Mathf.Sqrt(m_PackedUv2ShellCount));
+
+            for (int shell = 0; shell < m_PackedUv2ShellCount; shell++)
+            {
+                m_PackedUv2ShellStarts.Add(float.PositiveInfinity);
+                m_PackedUv2ShellEnds.Add(float.NegativeInfinity);
+            }
+
+            for (int along = 0; along < alongSegments; along++)
+            {
+                int nextAlong = (along + 1) % m_AlongSampleCount;
+                float startDistance = m_AlongDistances[along];
+                float endDistance = nextAlong == 0 && closedAlong
+                    ? m_PackedUv2TotalDistance
+                    : m_AlongDistances[nextAlong];
+                int shell = GetPackedUv2ShellForDistance((startDistance + endDistance) * 0.5f);
+                m_PackedUv2ShellStarts[shell] = Mathf.Min(m_PackedUv2ShellStarts[shell], startDistance);
+                m_PackedUv2ShellEnds[shell] = Mathf.Max(m_PackedUv2ShellEnds[shell], endDistance);
+            }
+
+            for (int shell = 0; shell < m_PackedUv2ShellCount; shell++)
+            {
+                if (float.IsInfinity(m_PackedUv2ShellStarts[shell]))
+                {
+                    float start = m_PackedUv2TotalDistance * shell / m_PackedUv2ShellCount;
+                    float end = m_PackedUv2TotalDistance * (shell + 1) / m_PackedUv2ShellCount;
+                    m_PackedUv2ShellStarts[shell] = start;
+                    m_PackedUv2ShellEnds[shell] = end;
+                }
+            }
+        }
+
+        int GetPackedUv2ShellForSegment(int along, bool closedAlong)
+        {
+            if (!m_GeneratePackedUv2 || m_PackedUv2ShellCount <= 1)
+                return 0;
+
+            int nextAlong = (along + 1) % m_AlongSampleCount;
+            float startDistance = m_AlongDistances[along];
+            float endDistance = nextAlong == 0 && closedAlong
+                ? m_PackedUv2TotalDistance
+                : m_AlongDistances[nextAlong];
+            return GetPackedUv2ShellForDistance((startDistance + endDistance) * 0.5f);
+        }
+
+        int GetPackedUv2ShellForDistance(float distance)
+        {
+            if (m_PackedUv2ShellCount <= 1 || m_PackedUv2TotalDistance <= Mathf.Epsilon)
+                return 0;
+
+            return Mathf.Clamp(
+                Mathf.FloorToInt(distance / m_PackedUv2TotalDistance * m_PackedUv2ShellCount),
+                0,
+                m_PackedUv2ShellCount - 1);
+        }
+
+        internal int GetPackedUv2ShellForDistanceRange(float startDistance, float endDistance)
+        {
+            return GetPackedUv2ShellForDistance((startDistance + endDistance) * 0.5f);
+        }
+
+        internal Vector2 CalculatePackedUv2ForSideShoulder(
+            LoftShoulderModifier.Edge edge,
+            float shoulderSurfaceDistance,
+            float alongDistance,
+            int shell)
+        {
+            float loftWidth = m_CrossDistances.Count > 1
+                ? m_CrossDistances[m_CrossDistances.Count - 1]
+                : 0f;
+            float totalPackedWidth = Mathf.Max(
+                0.1f,
+                m_PackedUv2LeftShoulderExtent + loftWidth + m_PackedUv2RightShoulderExtent);
+            float acrossDistance = edge == LoftShoulderModifier.Edge.Left
+                ? m_PackedUv2LeftShoulderExtent - shoulderSurfaceDistance
+                : m_PackedUv2LeftShoulderExtent + loftWidth + shoulderSurfaceDistance;
+            return CalculatePackedUv2Normalized(
+                Mathf.Clamp01(acrossDistance / totalPackedWidth),
+                alongDistance,
+                shell);
+        }
+
+        int GetPackedUv2Vertex(int sourceVertex, int cross, float alongDistance, int shell)
+        {
+            if (!m_GeneratePackedUv2 || m_PackedUv2ShellCount <= 0)
+                return sourceVertex;
+
+            long key = ((long)shell << 32) | (uint)sourceVertex;
+            if (m_PackedUv2SeamVertices.TryGetValue(key, out int existing))
+                return existing;
+
+            if (m_PackedUv2PrimaryShells[sourceVertex] < 0)
+            {
+                m_PackedUv2PrimaryShells[sourceVertex] = shell;
+                m_PackedUv2s[sourceVertex] = CalculatePackedUv2(cross, alongDistance, shell);
+                m_PackedUv2SeamVertices.Add(key, sourceVertex);
+                return sourceVertex;
+            }
+
+            int duplicate = m_Vertices.Count;
+            m_Vertices.Add(m_Vertices[sourceVertex]);
+            m_Normals.Add(m_Normals[sourceVertex]);
+            m_Uvs.Add(m_Uvs[sourceVertex]);
+            m_PackedUv2s.Add(CalculatePackedUv2(cross, alongDistance, shell));
+            m_SurfaceSourceVertices.Add(sourceVertex);
+            m_PackedUv2PrimaryShells.Add(shell);
+            m_PackedUv2SeamVertices.Add(key, duplicate);
+            return duplicate;
+        }
+
+        Vector2 CalculatePackedUv2(int cross, float alongDistance, int shell)
+        {
+            float loftWidth = m_CrossDistances.Count > 1
+                ? m_CrossDistances[m_CrossDistances.Count - 1]
+                : 0f;
+            float totalPackedWidth = Mathf.Max(
+                0.1f,
+                m_PackedUv2LeftShoulderExtent + loftWidth + m_PackedUv2RightShoulderExtent);
+            float across = loftWidth > Mathf.Epsilon
+                ? Mathf.Clamp01(
+                    (m_PackedUv2LeftShoulderExtent + m_CrossDistances[cross]) / totalPackedWidth)
+                : 0.5f;
+            return CalculatePackedUv2Normalized(across, alongDistance, shell);
+        }
+
+        Vector2 CalculatePackedUv2Normalized(float across, float alongDistance, int shell)
+        {
+            int columns = Mathf.Max(1, m_PackedUv2Columns);
+            int rows = Mathf.Max(1, Mathf.CeilToInt(m_PackedUv2ShellCount / (float)columns));
+            int column = shell % columns;
+            int row = shell / columns;
+            float shellStart = m_PackedUv2ShellStarts[shell];
+            float shellEnd = m_PackedUv2ShellEnds[shell];
+            float along = Mathf.InverseLerp(shellStart, shellEnd, alongDistance);
+            float padding = Mathf.Clamp(m_PackedUv2Padding, 0f, 0.2f);
+            float innerScale = 1f - padding * 2f;
+            return new Vector2(
+                (column + padding + across * innerScale) / columns,
+                (row + padding + along * innerScale) / rows);
         }
 
         bool ShouldCloseAlong()
@@ -1703,6 +1983,8 @@ namespace MashBoxSDK.Maps.Spline
             m_Vertices.Add(center);
             m_Normals.Add(capNormal);
             m_Uvs.Add(new Vector2(0.5f, 0.5f));
+            if (m_GeneratePackedUv2)
+                m_PackedUv2s.Add(Vector2.zero);
 
             int firstRimIndex = m_Vertices.Count;
             for (int cross = 0; cross < crossCount; cross++)
@@ -1711,6 +1993,8 @@ namespace MashBoxSDK.Maps.Spline
                 m_Vertices.Add(m_Vertices[sourceVertex]);
                 m_Normals.Add(capNormal);
                 m_Uvs.Add(m_Uvs[sourceVertex]);
+                if (m_GeneratePackedUv2)
+                    m_PackedUv2s.Add(sourceVertex < m_PackedUv2s.Count ? m_PackedUv2s[sourceVertex] : Vector2.zero);
             }
 
             int last = m_CloseAcrossSplines ? crossCount : crossCount - 1;
@@ -1791,12 +2075,17 @@ namespace MashBoxSDK.Maps.Spline
                 : UnityEngine.Rendering.IndexFormat.UInt16;
             m_GeneratedMesh.SetVertices(m_Vertices);
             m_GeneratedMesh.SetUVs(0, m_Uvs);
+            if (m_GeneratePackedUv2 && m_PackedUv2s.Count == m_Vertices.Count)
+                m_GeneratedMesh.SetUVs(2, m_PackedUv2s);
             m_GeneratedMesh.SetTriangles(m_Triangles, 0);
 
             if (m_NormalMode != NormalMode.Recalculate && m_Normals.Count == m_Vertices.Count)
                 m_GeneratedMesh.SetNormals(m_Normals);
             else
+            {
                 m_GeneratedMesh.RecalculateNormals();
+                SmoothPackedUv2SeamNormals();
+            }
 
             m_GeneratedMesh.RecalculateBounds();
             if (m_Vertices.Count > 0)
@@ -1804,6 +2093,139 @@ namespace MashBoxSDK.Maps.Spline
 
             var meshFilter = GetComponent<MeshFilter>();
             meshFilter.sharedMesh = m_GeneratedMesh;
+        }
+
+        void SmoothPackedUv2SeamNormals()
+        {
+            if (!m_GeneratePackedUv2 ||
+                m_SurfaceSourceVertices.Count <= m_GridVertexCount ||
+                m_GeneratedMesh == null)
+                return;
+
+            Vector3[] normals = m_GeneratedMesh.normals;
+            if (normals.Length != m_GeneratedMesh.vertexCount)
+                return;
+
+            var sums = new Dictionary<int, Vector3>();
+            var counts = new Dictionary<int, int>();
+            for (int index = 0; index < m_SurfaceVertexCount; index++)
+            {
+                int source = m_SurfaceSourceVertices[index];
+                sums[source] = sums.TryGetValue(source, out Vector3 sum)
+                    ? sum + normals[index]
+                    : normals[index];
+                counts[source] = counts.TryGetValue(source, out int count) ? count + 1 : 1;
+            }
+
+            for (int index = 0; index < m_SurfaceVertexCount; index++)
+            {
+                int source = m_SurfaceSourceVertices[index];
+                if (counts[source] <= 1)
+                    continue;
+
+                Vector3 average = sums[source];
+                if (average.sqrMagnitude > 0.000001f)
+                    normals[index] = average.normalized;
+            }
+
+            m_GeneratedMesh.normals = normals;
+        }
+
+        bool ApplyTerrainMatchedSideNormals(bool includeIntersectingFaces = true)
+        {
+            if (!m_MatchSideNormalsToTerrain ||
+                m_GeneratedMesh == null ||
+                m_GeneratedMesh.vertexCount == 0)
+                return false;
+
+            var normals = new List<Vector3>();
+            m_GeneratedMesh.GetNormals(normals);
+            if (normals.Count != m_GeneratedMesh.vertexCount)
+                return false;
+
+            Vector3[] vertices = m_GeneratedMesh.vertices;
+            Terrain[] terrains = Terrain.activeTerrains;
+            if (terrains == null || terrains.Length == 0)
+                return false;
+
+            var matchedVertices = new HashSet<int>();
+            bool canMatchGridSides = m_NormalMode != NormalMode.Face &&
+                                     !m_CloseAcrossSplines &&
+                                     m_CrossSampleCount >= 2 &&
+                                     m_AlongSampleCount >= 1;
+            if (canMatchGridSides)
+            {
+                int rightCross = m_CrossSampleCount - 1;
+                for (int along = 0; along < m_AlongSampleCount; along++)
+                {
+                    matchedVertices.Add(VertexIndex(0, along));
+                    matchedVertices.Add(VertexIndex(rightCross, along));
+                }
+                for (int vertex = m_GridVertexCount; vertex < m_SurfaceSourceVertices.Count; vertex++)
+                {
+                    int source = m_SurfaceSourceVertices[vertex];
+                    int cross = source / m_AlongSampleCount;
+                    if (cross == 0 || cross == rightCross)
+                        matchedVertices.Add(vertex);
+                }
+            }
+
+            if (includeIntersectingFaces && m_MatchTerrainIntersectingFaces && m_SurfaceTriangleCount > 0)
+            {
+                int[] triangles = m_GeneratedMesh.GetTriangles(0);
+                TerrainNormalUtility.AddIntersectingFaceVertices(
+                    transform,
+                    vertices,
+                    triangles,
+                    Mathf.Min(m_SurfaceTriangleCount, triangles.Length),
+                    m_TerrainNormalContactDistance,
+                    terrains,
+                    matchedVertices);
+            }
+
+            bool changed = false;
+            foreach (int vertexIndex in matchedVertices)
+                changed |= MatchTerrainNormalAtVertex(vertexIndex, vertices, normals, terrains);
+
+            if (changed)
+                m_GeneratedMesh.SetNormals(normals);
+            return changed;
+        }
+
+        internal bool RefreshTerrainMatchedNormals()
+        {
+            if (m_GeneratedMesh == null)
+                return false;
+
+            bool changed = ApplyTerrainMatchedSideNormals();
+            LoftShoulderModifier shoulderModifier = ResolveShoulderModifier();
+            if (shoulderModifier != null)
+                changed |= shoulderModifier.ApplyTerrainMatchedOuterNormals();
+
+            if (changed && m_GeneratedMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
+                m_GeneratedMesh.RecalculateTangents();
+            return changed;
+        }
+
+        bool MatchTerrainNormalAtVertex(
+            int index,
+            Vector3[] vertices,
+            List<Vector3> normals,
+            Terrain[] terrains)
+        {
+            if ((uint)index >= vertices.Length || (uint)index >= normals.Count)
+                return false;
+
+            if (!TerrainNormalUtility.TryGetLocalNormal(
+                    transform,
+                    vertices[index],
+                    normals[index],
+                    terrains,
+                    out Vector3 terrainNormal))
+                return false;
+
+            normals[index] = terrainNormal;
+            return true;
         }
 
         public void RebuildColliderChunks()
@@ -1830,6 +2252,12 @@ namespace MashBoxSDK.Maps.Spline
 
             Vector3[] sourceVertices = m_GeneratedMesh.vertices;
             Vector2[] sourceUvs = m_GeneratedMesh.uv;
+            var sourceUvChannels = new List<Vector4>[4];
+            for (int channel = 0; channel < sourceUvChannels.Length; channel++)
+            {
+                sourceUvChannels[channel] = new List<Vector4>();
+                m_GeneratedMesh.GetUVs(channel, sourceUvChannels[channel]);
+            }
             int[] baseTriangles = m_GeneratedMesh.GetTriangles(0);
             int surfaceIndexCount = Mathf.Min(m_SurfaceTriangleCount, baseTriangles.Length);
             var sourceTriangles = new List<int>(surfaceIndexCount);
@@ -1855,7 +2283,8 @@ namespace MashBoxSDK.Maps.Spline
 
                 float alongDistance;
                 if (sourceUvs.Length == sourceVertices.Length)
-                    alongDistance = (sourceUvs[a].y + sourceUvs[b].y + sourceUvs[c].y) / (3f * Mathf.Max(0.0001f, m_UvScaleAlong));
+                    alongDistance = (sourceUvs[a].y + sourceUvs[b].y + sourceUvs[c].y) /
+                        (3f * Mathf.Max(0.0001f, CurrentUvAlongPerMeter));
                 else
                     alongDistance = totalDistance * triangle / Mathf.Max(1f, sourceTriangles.Count);
 
@@ -1879,7 +2308,12 @@ namespace MashBoxSDK.Maps.Spline
                 MeshCollider collider = existingChunk != null
                     ? existingChunk.GetComponent<MeshCollider>()
                     : null;
-                Mesh colliderMesh = BuildColliderChunkMesh(sourceVertices, sourceIndices, chunkIndex, collider != null ? collider.sharedMesh : null);
+                Mesh colliderMesh = BuildColliderChunkMesh(
+                    sourceVertices,
+                    sourceUvChannels,
+                    sourceIndices,
+                    chunkIndex,
+                    collider != null ? collider.sharedMesh : null);
                 float startDistance = chunkIndex * chunkLength;
                 float endDistance = Mathf.Min(totalDistance, startDistance + chunkLength);
                 GameObject chunkObject = existingChunk != null
@@ -1918,10 +2352,18 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
-        Mesh BuildColliderChunkMesh(Vector3[] sourceVertices, List<int> sourceIndices, int chunkIndex, Mesh reusableMesh)
+        Mesh BuildColliderChunkMesh(
+            Vector3[] sourceVertices,
+            List<Vector4>[] sourceUvChannels,
+            List<int> sourceIndices,
+            int chunkIndex,
+            Mesh reusableMesh)
         {
             var remappedIndices = new Dictionary<int, int>();
             var vertices = new List<Vector3>();
+            var uvChannels = new List<Vector4>[sourceUvChannels.Length];
+            for (int channel = 0; channel < uvChannels.Length; channel++)
+                uvChannels[channel] = new List<Vector4>();
             var triangles = new List<int>(sourceIndices.Count);
             foreach (int sourceIndex in sourceIndices)
             {
@@ -1930,6 +2372,12 @@ namespace MashBoxSDK.Maps.Spline
                     remappedIndex = vertices.Count;
                     remappedIndices.Add(sourceIndex, remappedIndex);
                     vertices.Add(sourceVertices[sourceIndex]);
+                    for (int channel = 0; channel < uvChannels.Length; channel++)
+                    {
+                        List<Vector4> sourceChannel = sourceUvChannels[channel];
+                        if (sourceChannel.Count == sourceVertices.Length)
+                            uvChannels[channel].Add(sourceChannel[sourceIndex]);
+                    }
                 }
                 triangles.Add(remappedIndex);
             }
@@ -1945,6 +2393,11 @@ namespace MashBoxSDK.Maps.Spline
                 ? UnityEngine.Rendering.IndexFormat.UInt32
                 : UnityEngine.Rendering.IndexFormat.UInt16;
             mesh.SetVertices(vertices);
+            for (int channel = 0; channel < uvChannels.Length; channel++)
+            {
+                if (uvChannels[channel].Count == vertices.Count)
+                    mesh.SetUVs(channel, uvChannels[channel]);
+            }
             mesh.SetTriangles(triangles, 0, true);
             mesh.RecalculateBounds();
             return mesh;
@@ -2067,6 +2520,7 @@ namespace MashBoxSDK.Maps.Spline
             m_FlatVertices.Clear();
             m_FlatNormals.Clear();
             m_FlatUvs.Clear();
+            m_FlatPackedUv2s.Clear();
             m_FlatTriangles.Clear();
 
             for (int i = 0; i + 2 < m_Triangles.Count; i += 3)
@@ -2095,6 +2549,11 @@ namespace MashBoxSDK.Maps.Spline
             m_Normals.AddRange(m_FlatNormals);
             m_Uvs.Clear();
             m_Uvs.AddRange(m_FlatUvs);
+            if (m_GeneratePackedUv2)
+            {
+                m_PackedUv2s.Clear();
+                m_PackedUv2s.AddRange(m_FlatPackedUv2s);
+            }
             m_Triangles.Clear();
             m_Triangles.AddRange(m_FlatTriangles);
         }
@@ -2105,6 +2564,8 @@ namespace MashBoxSDK.Maps.Spline
             m_FlatVertices.Add(m_Vertices[sourceVertex]);
             m_FlatNormals.Add(faceNormal);
             m_FlatUvs.Add(sourceVertex < m_Uvs.Count ? m_Uvs[sourceVertex] : Vector2.zero);
+            if (m_GeneratePackedUv2)
+                m_FlatPackedUv2s.Add(sourceVertex < m_PackedUv2s.Count ? m_PackedUv2s[sourceVertex] : Vector2.zero);
             m_FlatTriangles.Add(flatIndex);
         }
 
@@ -2129,5 +2590,164 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
+    }
+
+    internal static class TerrainNormalUtility
+    {
+        public static bool TryGetLocalNormal(
+            Transform meshTransform,
+            Vector3 localPosition,
+            Vector3 referenceLocalNormal,
+            Terrain[] terrains,
+            out Vector3 localTerrainNormal)
+        {
+            localTerrainNormal = Vector3.up;
+            if (meshTransform == null)
+                return false;
+
+            Vector3 worldPosition = meshTransform.TransformPoint(localPosition);
+            if (!TryGetWorldSample(worldPosition, terrains, out Vector3 worldTerrainNormal, out _))
+                return false;
+
+            Vector3 referenceWorldNormal = TransformNormalToWorld(meshTransform, referenceLocalNormal);
+            if (referenceWorldNormal.sqrMagnitude > 0.000001f &&
+                Vector3.Dot(referenceWorldNormal, worldTerrainNormal) < 0f)
+                worldTerrainNormal = -worldTerrainNormal;
+
+            // A normal transforms to world space with the inverse-transpose
+            // matrix, so the inverse operation is the transpose of local-to-world.
+            localTerrainNormal = meshTransform.localToWorldMatrix.transpose
+                .MultiplyVector(worldTerrainNormal)
+                .normalized;
+            return IsFinite(localTerrainNormal) && localTerrainNormal.sqrMagnitude > 0.000001f;
+        }
+
+        public static void AddIntersectingFaceVertices(
+            Transform meshTransform,
+            Vector3[] vertices,
+            int[] triangles,
+            int triangleIndexLimit,
+            float contactDistance,
+            Terrain[] terrains,
+            HashSet<int> destination)
+        {
+            if (meshTransform == null || vertices == null || triangles == null ||
+                terrains == null || terrains.Length == 0 || destination == null)
+                return;
+
+            int limit = Mathf.Min(triangleIndexLimit, triangles.Length);
+            for (int index = 0; index + 2 < limit; index += 3)
+            {
+                int a = triangles[index];
+                int b = triangles[index + 1];
+                int c = triangles[index + 2];
+                if ((uint)a >= vertices.Length || (uint)b >= vertices.Length || (uint)c >= vertices.Length)
+                    continue;
+
+                if (!TryGetSignedHeight(meshTransform.TransformPoint(vertices[a]), terrains, out float heightA) ||
+                    !TryGetSignedHeight(meshTransform.TransformPoint(vertices[b]), terrains, out float heightB) ||
+                    !TryGetSignedHeight(meshTransform.TransformPoint(vertices[c]), terrains, out float heightC))
+                    continue;
+
+                Vector3 center = (vertices[a] + vertices[b] + vertices[c]) / 3f;
+                bool hasCenterHeight = TryGetSignedHeight(
+                    meshTransform.TransformPoint(center),
+                    terrains,
+                    out float centerHeight);
+                float minimum = Mathf.Min(heightA, Mathf.Min(heightB, heightC));
+                float maximum = Mathf.Max(heightA, Mathf.Max(heightB, heightC));
+                if (hasCenterHeight)
+                {
+                    minimum = Mathf.Min(minimum, centerHeight);
+                    maximum = Mathf.Max(maximum, centerHeight);
+                }
+                bool crossesTerrain = minimum <= 0f && maximum >= 0f;
+                bool touchesTerrain = Mathf.Abs(heightA) <= contactDistance ||
+                                      Mathf.Abs(heightB) <= contactDistance ||
+                                      Mathf.Abs(heightC) <= contactDistance ||
+                                      (hasCenterHeight && Mathf.Abs(centerHeight) <= contactDistance);
+                if (!crossesTerrain && !touchesTerrain)
+                    continue;
+
+                destination.Add(a);
+                destination.Add(b);
+                destination.Add(c);
+            }
+        }
+
+        static bool TryGetSignedHeight(
+            Vector3 worldPosition,
+            Terrain[] terrains,
+            out float signedHeight)
+        {
+            signedHeight = 0f;
+            if (!TryGetWorldSample(worldPosition, terrains, out _, out Vector3 surfaceWorld))
+                return false;
+
+            signedHeight = worldPosition.y - surfaceWorld.y;
+            return true;
+        }
+
+        static bool TryGetWorldSample(
+            Vector3 worldPosition,
+            Terrain[] terrains,
+            out Vector3 worldNormal,
+            out Vector3 surfaceWorld)
+        {
+            worldNormal = Vector3.up;
+            surfaceWorld = worldPosition;
+            if (terrains == null || terrains.Length == 0)
+                return false;
+
+            bool found = false;
+            float closestHeightDistance = float.PositiveInfinity;
+            for (int index = 0; index < terrains.Length; index++)
+            {
+                Terrain terrain = terrains[index];
+                TerrainData data = terrain != null ? terrain.terrainData : null;
+                if (data == null)
+                    continue;
+
+                Vector3 local = terrain.transform.InverseTransformPoint(worldPosition);
+                Vector3 size = data.size;
+                if (size.x <= Mathf.Epsilon || size.z <= Mathf.Epsilon ||
+                    local.x < 0f || local.z < 0f || local.x > size.x || local.z > size.z)
+                    continue;
+
+                float u = Mathf.Clamp01(local.x / size.x);
+                float v = Mathf.Clamp01(local.z / size.z);
+                float localHeight = data.GetInterpolatedHeight(u, v);
+                Vector3 candidateSurfaceWorld = terrain.transform.TransformPoint(
+                    new Vector3(local.x, localHeight, local.z));
+                float heightDistance = Mathf.Abs(worldPosition.y - candidateSurfaceWorld.y);
+                if (heightDistance >= closestHeightDistance)
+                    continue;
+
+                Vector3 terrainLocalNormal = data.GetInterpolatedNormal(u, v);
+                Vector3 candidate = TransformNormalToWorld(terrain.transform, terrainLocalNormal);
+                if (!IsFinite(candidate) || candidate.sqrMagnitude < 0.000001f)
+                    continue;
+
+                closestHeightDistance = heightDistance;
+                worldNormal = candidate;
+                surfaceWorld = candidateSurfaceWorld;
+                found = true;
+            }
+
+            return found;
+        }
+
+        static Vector3 TransformNormalToWorld(Transform source, Vector3 localNormal)
+        {
+            Vector3 result = source.worldToLocalMatrix.transpose.MultiplyVector(localNormal);
+            return result.sqrMagnitude > 0.000001f ? result.normalized : Vector3.up;
+        }
+
+        static bool IsFinite(Vector3 value)
+        {
+            return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+                   !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+                   !float.IsNaN(value.z) && !float.IsInfinity(value.z);
+        }
     }
 }

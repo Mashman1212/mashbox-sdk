@@ -39,8 +39,15 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_ColliderChunkLength;
         SerializedProperty m_NormalMode;
         SerializedProperty m_FlipNormals;
+        SerializedProperty m_MatchSideNormalsToTerrain;
+        SerializedProperty m_MatchTerrainIntersectingFaces;
+        SerializedProperty m_TerrainNormalContactDistance;
         SerializedProperty m_UvScaleAlong;
         SerializedProperty m_UvScaleAcross;
+        SerializedProperty m_MatchUv0LengthToWidth;
+        SerializedProperty m_Uv0AlongRatioMultiplier;
+        SerializedProperty m_GeneratePackedUv2;
+        SerializedProperty m_PackedUv2Padding;
         SerializedProperty m_GenerateUvSplineWithLoft;
         SerializedProperty m_UvSplineChannel;
         SerializedProperty m_UvSplineDirection;
@@ -77,8 +84,15 @@ namespace MashBoxSDK.Maps.Spline
             m_ColliderChunkLength = serializedObject.FindProperty("m_ColliderChunkLength");
             m_NormalMode = serializedObject.FindProperty("m_NormalMode");
             m_FlipNormals = serializedObject.FindProperty("m_FlipNormals");
+            m_MatchSideNormalsToTerrain = serializedObject.FindProperty("m_MatchSideNormalsToTerrain");
+            m_MatchTerrainIntersectingFaces = serializedObject.FindProperty("m_MatchTerrainIntersectingFaces");
+            m_TerrainNormalContactDistance = serializedObject.FindProperty("m_TerrainNormalContactDistance");
             m_UvScaleAlong = serializedObject.FindProperty("m_UvScaleAlong");
             m_UvScaleAcross = serializedObject.FindProperty("m_UvScaleAcross");
+            m_MatchUv0LengthToWidth = serializedObject.FindProperty("m_MatchUv0LengthToWidth");
+            m_Uv0AlongRatioMultiplier = serializedObject.FindProperty("m_Uv0AlongRatioMultiplier");
+            m_GeneratePackedUv2 = serializedObject.FindProperty("m_GeneratePackedUv2");
+            m_PackedUv2Padding = serializedObject.FindProperty("m_PackedUv2Padding");
             m_GenerateUvSplineWithLoft = serializedObject.FindProperty("m_GenerateUvSplineWithLoft");
             m_UvSplineChannel = serializedObject.FindProperty("m_UvSplineChannel");
             m_UvSplineDirection = serializedObject.FindProperty("m_UvSplineDirection");
@@ -147,8 +161,69 @@ namespace MashBoxSDK.Maps.Spline
             EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(m_NormalMode);
             EditorGUILayout.PropertyField(m_FlipNormals, new GUIContent("Flip Normals"));
-            EditorGUILayout.PropertyField(m_UvScaleAcross, new GUIContent("UV Across Scale", "1 maps the full left-to-right width to U 0-1. Higher values repeat across the width."));
-            EditorGUILayout.PropertyField(m_UvScaleAlong, new GUIContent("UV Along Scale"));
+            EditorGUILayout.PropertyField(
+                m_MatchSideNormalsToTerrain,
+                new GUIContent(
+                    "Match Terrain Contact Normals",
+                    "Matches the loft side edges and any generated shoulders to the Terrain underneath."));
+            using (new EditorGUI.DisabledScope(!m_MatchSideNormalsToTerrain.boolValue))
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(
+                    m_MatchTerrainIntersectingFaces,
+                    new GUIContent(
+                        "Include Intersecting Faces",
+                        "Also matches normals for loft and shoulder triangles that cross or closely touch the Terrain."));
+                using (new EditorGUI.DisabledScope(!m_MatchTerrainIntersectingFaces.boolValue))
+                    EditorGUILayout.PropertyField(
+                        m_TerrainNormalContactDistance,
+                        new GUIContent("Contact Distance", "How close a triangle vertex can be to the Terrain and still count as touching it."));
+                EditorGUI.indentLevel--;
+            }
+            if (m_MatchSideNormalsToTerrain.boolValue &&
+                m_NormalMode.enumValueIndex == (int)MultiSplineLoft.NormalMode.Face)
+                EditorGUILayout.HelpBox(
+                    "With Face normals, only intersecting faces can be matched; the shared side-edge vertices do not exist in this mode.",
+                    MessageType.None);
+            EditorGUILayout.PropertyField(
+                m_UvScaleAcross,
+                new GUIContent("UV Across Scale", "1 maps the full left-to-right loft width to U 0-1, preserving the original loft UV layout."));
+            EditorGUILayout.PropertyField(
+                m_MatchUv0LengthToWidth,
+                new GUIContent(
+                    "Match Length To Width",
+                    "Automatically derives the along tiling from the physical loft width so a square texture keeps square proportions."));
+            if (m_MatchUv0LengthToWidth.boolValue)
+            {
+                EditorGUILayout.PropertyField(
+                    m_Uv0AlongRatioMultiplier,
+                    new GUIContent("Along Ratio Multiplier", "Leave at 1 for square proportions. Use this only for intentional stretching or non-square source textures."));
+                EditorGUILayout.HelpBox(
+                    "The loft still maps its complete width to UV0 U. The V scale is calculated from that physical width, so the same texture footprint is used along the loft without squishing.",
+                    MessageType.None);
+            }
+            else
+            {
+                EditorGUILayout.PropertyField(
+                    m_UvScaleAlong,
+                    new GUIContent("UV Along Scale", "Manual UV repeats per metre along the loft."));
+            }
+            EditorGUILayout.PropertyField(
+                m_GeneratePackedUv2,
+                new GUIContent(
+                    "Generate Packed UV2",
+                    "Creates paintable road-strip shells in UV2 / TEXCOORD2 while leaving UV1 / TEXCOORD1 free for lightmaps."));
+            using (new EditorGUI.DisabledScope(!m_GeneratePackedUv2.boolValue))
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(
+                    m_PackedUv2Padding,
+                    new GUIContent("Shell Padding", "Empty border inside every packed shell cell."));
+                EditorGUI.indentLevel--;
+                EditorGUILayout.HelpBox(
+                    "Packed UV2 writes TEXCOORD2 (Unity's mesh.uv3), leaving TEXCOORD1 / the lightmap UV channel untouched. The loft is automatically chopped into roughly square world-space islands and packed into 0-1 with duplicated seam vertices.",
+                    MessageType.None);
+            }
             EditorGUILayout.PropertyField(m_UpdateMeshCollider, new GUIContent("Generate Collider Chunks"));
             using (new EditorGUI.DisabledScope(!m_UpdateMeshCollider.boolValue))
                 EditorGUILayout.PropertyField(m_ColliderChunkLength, new GUIContent("Collider Chopping Distance", "Creates a separate child MeshCollider for approximately this many meters of track."));
@@ -169,6 +244,8 @@ namespace MashBoxSDK.Maps.Spline
                         Selection.activeGameObject = loft.ShoulderModifier.gameObject;
                 }
             }
+            if (GUILayout.Button("Apply Eroded Trail Banks Preset"))
+                CreateOrRebuildShoulders(loft, applyErodedTrailPreset: true);
 
             EditorGUILayout.Space(6f);
             EditorGUILayout.LabelField("Resolution Spline", EditorStyles.boldLabel);
@@ -289,7 +366,7 @@ namespace MashBoxSDK.Maps.Spline
             SceneView.RepaintAll();
         }
 
-        internal static void CreateOrRebuildShoulders(MultiSplineLoft loft)
+        internal static void CreateOrRebuildShoulders(MultiSplineLoft loft, bool applyErodedTrailPreset = false)
         {
             Transform shouldersRoot = loft.transform.Find("Shoulders");
             if (shouldersRoot == null)
@@ -320,6 +397,11 @@ namespace MashBoxSDK.Maps.Spline
             Undo.RecordObject(loft, "Assign Loft Shoulder Profiles");
             modifier.Loft = loft;
             loft.ShoulderModifier = modifier;
+            if (applyErodedTrailPreset)
+            {
+                Undo.RecordObject(modifier, "Apply Eroded Trail Banks");
+                modifier.ApplyErodedTrailPreset();
+            }
 
             loft.Regenerate();
             EditorUtility.SetDirty(loft);
@@ -1401,6 +1483,8 @@ namespace MashBoxSDK.Maps.Spline
                 EditorGUILayout.HelpBox("Add independent AnimationCurve profiles to the left, right, start, or finish edge for verges, ditches, banks, and berms.", MessageType.None);
                 if (GUILayout.Button(m_ActiveLoft != null && m_ActiveLoft.ShoulderModifier != null ? "Rebuild And Select Shoulder Profiles" : "Add Shoulder Profiles", GUILayout.Height(26f)))
                     MultiSplineLoftEditor.CreateOrRebuildShoulders(m_ActiveLoft);
+                if (GUILayout.Button("Apply Eroded Trail Banks Preset", GUILayout.Height(26f)))
+                    MultiSplineLoftEditor.CreateOrRebuildShoulders(m_ActiveLoft, applyErodedTrailPreset: true);
 
                 EditorGUILayout.Space(8f);
                 EditorGUILayout.LabelField("Collider Chunks", EditorStyles.boldLabel);

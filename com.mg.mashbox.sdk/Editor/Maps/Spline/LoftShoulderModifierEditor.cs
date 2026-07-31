@@ -8,6 +8,10 @@ namespace MashBoxSDK.Maps.Spline
     public sealed class LoftShoulderModifierEditor : Editor
     {
         SerializedProperty m_Loft;
+        SerializedProperty m_LayeredBankMaterial;
+        SerializedProperty m_UseSharedSideProfile;
+        SerializedProperty m_MatchOuterNormalsToTerrain;
+        SerializedProperty m_SharedSideProfile;
         SerializedProperty m_Left;
         SerializedProperty m_Right;
         SerializedProperty m_Start;
@@ -16,6 +20,10 @@ namespace MashBoxSDK.Maps.Spline
         void OnEnable()
         {
             m_Loft = serializedObject.FindProperty("m_Loft");
+            m_LayeredBankMaterial = serializedObject.FindProperty("m_LayeredBankMaterial");
+            m_UseSharedSideProfile = serializedObject.FindProperty("m_UseSharedSideProfile");
+            m_MatchOuterNormalsToTerrain = serializedObject.FindProperty("m_MatchOuterNormalsToTerrain");
+            m_SharedSideProfile = serializedObject.FindProperty("m_SharedSideProfile");
             m_Left = serializedObject.FindProperty("m_Left");
             m_Right = serializedObject.FindProperty("m_Right");
             m_Start = serializedObject.FindProperty("m_Start");
@@ -39,9 +47,48 @@ namespace MashBoxSDK.Maps.Spline
             EditorGUILayout.HelpBox(
                 "Each Animation Curve describes vertical offset in meters across that edge's normalized shoulder width: curve time 0 is the loft edge and time 1 is the outside edge. Use negative values for ditches and positive values for banks or berms.",
                 MessageType.Info);
+            EditorGUILayout.HelpBox(
+                "Trail masks match MG_Lit_Blend: Layer 1/base = soil, red = exposed rock (Layer 2), green = grass (Layer 3), and blue is reserved for puddles. Assign the layered material below or override it per edge.",
+                MessageType.None);
             EditorGUILayout.PropertyField(m_Loft, new GUIContent("Loft"));
-            DrawProfile(m_Left, "Left Edge");
-            DrawProfile(m_Right, "Right Edge");
+            EditorGUILayout.PropertyField(
+                m_LayeredBankMaterial,
+                new GUIContent("Layered Bank Material", "Shared soil/rock/grass material used by every enabled edge unless that edge supplies its own Material Override."));
+            EditorGUILayout.PropertyField(
+                m_MatchOuterNormalsToTerrain,
+                new GUIContent(
+                    "Match Outer Normals To Terrain",
+                    "Optional shoulder-only override. The parent loft's Match Terrain Contact Normals setting automatically includes these shoulders."));
+            if (modifier.Loft != null && modifier.Loft.MatchSideNormalsToTerrain)
+                EditorGUILayout.HelpBox(
+                    "Terrain-normal matching is inherited from the parent loft. Its Intersecting Faces and Contact Distance settings also apply here.",
+                    MessageType.None);
+
+            using (new EditorGUI.DisabledScope(modifier.Loft == null))
+            {
+                if (GUILayout.Button("Apply Eroded Trail Banks Preset", GUILayout.Height(28f)))
+                {
+                    Undo.RecordObject(modifier, "Apply Eroded Trail Banks");
+                    modifier.ApplyErodedTrailPreset();
+                    modifier.Loft.Regenerate();
+                    EditorUtility.SetDirty(modifier);
+                    EditorUtility.SetDirty(modifier.Loft);
+                    serializedObject.Update();
+                    SceneView.RepaintAll();
+                }
+            }
+
+            EditorGUILayout.Space(5f);
+            EditorGUILayout.PropertyField(
+                m_UseSharedSideProfile,
+                new GUIContent("Shared Left + Right Tuning", "Uses one shoulder profile for both trail sides while keeping their erosion noise patterns different."));
+            if (m_UseSharedSideProfile.boolValue)
+                DrawProfile(m_SharedSideProfile, "Global Left + Right Profile");
+            else
+            {
+                DrawProfile(m_Left, "Left Edge");
+                DrawProfile(m_Right, "Right Edge");
+            }
             DrawProfile(m_Start, "Start Edge");
             DrawProfile(m_Finish, "Finish Edge");
 

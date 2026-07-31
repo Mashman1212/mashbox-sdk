@@ -12,15 +12,17 @@ namespace MashBoxSDK.MapTools
         Spline,
         MeshSculpt,
         UVSpline,
-        Terrain
+        Terrain,
+        UVInspector
     }
 
-    public enum MBEditorAuthoringCategory { Brush, Spline, Terrain }
+    public enum MBEditorAuthoringCategory { Brush, Spline, Terrain, UVInspector }
 
     public enum MBBrushMode { Decor, Painter, SplatMap }
     public enum MBSculptMode { Displace, Smooth, Flatten }
     public enum MBUvHandleMode { MoveAndUv, SideOffset, UvScale }
     public enum MBEditorToolAction { CreateSpline, CreateLoftSpline }
+    public enum MBSplatPaintMode { Color, TextureId }
 
     [InitializeOnLoad]
     internal static class MBEditorToolState
@@ -29,7 +31,12 @@ namespace MashBoxSDK.MapTools
         const string ModeOrderPreferenceKey = "MashBoxSDK.SelectedMapAuthoringToolTab.Order";
         const string ActiveEditingPreferenceKey = "MashBoxSDK.EditorTools.ActiveEditing";
         const string BrushModePreferenceKey = "MashBoxSDK.EditorTools.BrushMode";
+        const string BrushRadiusPreferenceKey = "MashBoxSDK.EditorTools.BrushRadius";
+        const string BrushStrengthPreferenceKey = "MashBoxSDK.EditorTools.BrushStrength";
         const string PaintColorPreferenceKey = "MashBoxSDK.EditorTools.PaintColor";
+        const string SplatUvChannelPreferenceKey = "MashBoxSDK.EditorTools.SplatUvChannel";
+        const string SplatPaintModePreferenceKey = "MashBoxSDK.EditorTools.SplatPaintMode";
+        const string SplatTextureIdPreferenceKey = "MashBoxSDK.EditorTools.SplatTextureId";
         const string SculptModePreferenceKey = "MashBoxSDK.EditorTools.SculptMode";
         const string UvModePreferenceKey = "MashBoxSDK.EditorTools.UvMode";
         const string LastBrushModePreferenceKey = "MashBoxSDK.EditorTools.LastBrushMode";
@@ -45,7 +52,10 @@ namespace MashBoxSDK.MapTools
         internal static event Action ModeChanged;
         internal static event Action ActiveEditingChanged;
         internal static event Action BrushModeChanged;
+        internal static event Action BrushSettingsChanged;
         internal static event Action PaintColorChanged;
+        internal static event Action SplatUvChannelChanged;
+        internal static event Action SplatPaintSettingsChanged;
         internal static event Action SculptModeChanged;
         internal static event Action UvModeChanged;
         internal static event Action<MBEditorToolAction> ActionRequested;
@@ -68,6 +78,7 @@ namespace MashBoxSDK.MapTools
             MBEditorAuthoringMode.SplineLoft => MBEditorAuthoringCategory.Spline,
             MBEditorAuthoringMode.Spline => MBEditorAuthoringCategory.Spline,
             MBEditorAuthoringMode.UVSpline => MBEditorAuthoringCategory.Spline,
+            MBEditorAuthoringMode.UVInspector => MBEditorAuthoringCategory.UVInspector,
             _ => MBEditorAuthoringCategory.Brush
         };
 
@@ -116,6 +127,11 @@ namespace MashBoxSDK.MapTools
                 RequestMode(MBEditorAuthoringMode.Terrain);
                 return;
             }
+            if (category == MBEditorAuthoringCategory.UVInspector)
+            {
+                RequestMode(MBEditorAuthoringMode.UVInspector);
+                return;
+            }
 
             bool splineCategory = category == MBEditorAuthoringCategory.Spline;
             string preferenceKey = splineCategory ? LastSplineModePreferenceKey : LastBrushModePreferenceKey;
@@ -156,6 +172,34 @@ namespace MashBoxSDK.MapTools
             }
         }
 
+        internal static float BrushRadius
+        {
+            get => Mathf.Clamp(EditorPrefs.GetFloat(BrushRadiusPreferenceKey, 2f), 0.1f, 10f);
+            set
+            {
+                float clamped = Mathf.Clamp(value, 0.1f, 10f);
+                if (Mathf.Approximately(BrushRadius, clamped))
+                    return;
+
+                EditorPrefs.SetFloat(BrushRadiusPreferenceKey, clamped);
+                BrushSettingsChanged?.Invoke();
+            }
+        }
+
+        internal static float BrushStrength
+        {
+            get => Mathf.Clamp(EditorPrefs.GetFloat(BrushStrengthPreferenceKey, 0.5f), 0.01f, 1f);
+            set
+            {
+                float clamped = Mathf.Clamp(value, 0.01f, 1f);
+                if (Mathf.Approximately(BrushStrength, clamped))
+                    return;
+
+                EditorPrefs.SetFloat(BrushStrengthPreferenceKey, clamped);
+                BrushSettingsChanged?.Invoke();
+            }
+        }
+
         internal static Color PaintColor
         {
             get
@@ -177,6 +221,55 @@ namespace MashBoxSDK.MapTools
 
                 EditorPrefs.SetString(PaintColorPreferenceKey, "#" + ColorUtility.ToHtmlStringRGBA(clamped));
                 PaintColorChanged?.Invoke();
+            }
+        }
+
+        internal static int SplatUvChannel
+        {
+            get => Mathf.Clamp(EditorPrefs.GetInt(SplatUvChannelPreferenceKey, 2), 0, 3);
+            set
+            {
+                int clamped = Mathf.Clamp(value, 0, 3);
+                if (SplatUvChannel == clamped)
+                    return;
+
+                EditorPrefs.SetInt(SplatUvChannelPreferenceKey, clamped);
+                SplatUvChannelChanged?.Invoke();
+            }
+        }
+
+        internal static MBSplatPaintMode SplatPaintMode
+        {
+            get
+            {
+                int savedMode = EditorPrefs.GetInt(
+                    SplatPaintModePreferenceKey,
+                    (int)MBSplatPaintMode.Color);
+                return Enum.IsDefined(typeof(MBSplatPaintMode), savedMode)
+                    ? (MBSplatPaintMode)savedMode
+                    : MBSplatPaintMode.Color;
+            }
+            set
+            {
+                if (SplatPaintMode == value)
+                    return;
+
+                EditorPrefs.SetInt(SplatPaintModePreferenceKey, (int)value);
+                SplatPaintSettingsChanged?.Invoke();
+            }
+        }
+
+        internal static int SplatTextureId
+        {
+            get => Mathf.Clamp(EditorPrefs.GetInt(SplatTextureIdPreferenceKey, 0), 0, 7);
+            set
+            {
+                int clamped = Mathf.Clamp(value, 0, 7);
+                if (SplatTextureId == clamped)
+                    return;
+
+                EditorPrefs.SetInt(SplatTextureIdPreferenceKey, clamped);
+                SplatPaintSettingsChanged?.Invoke();
             }
         }
 

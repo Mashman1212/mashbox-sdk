@@ -21,6 +21,7 @@ namespace MashBoxSDK.SDKMain
         {
             ContentBuilder,
             TextureReducer,
+            UVInspector,
             PhotoBooth,
             MachEquipManager
         }
@@ -33,9 +34,11 @@ namespace MashBoxSDK.SDKMain
         private MashBoxSetupWindow setupTool;
         private PhotoBoothWindow photoBoothTool;
         private TextureSizeReducerTool textureSizeReducerTool;
+        private UVInspectorTool uvInspectorTool;
         
         private const string PREF_KEY_TAB = "MashBoxSDK.SelectedTab";
         private const string PREF_KEY_CONTENT_TOOL_TAB = "MashBoxSDK.SelectedContentToolTab";
+        private const string PREF_KEY_CONTENT_TOOL_TAB_UV_LAYOUT = "MashBoxSDK.ContentToolTabUVLayout";
 
         // Header
         private Texture2D _headerTex;
@@ -53,6 +56,16 @@ namespace MashBoxSDK.SDKMain
         {
             _tab = EditorPrefs.GetInt(PREF_KEY_TAB, 0);
             _contentToolTab = EditorPrefs.GetInt(PREF_KEY_CONTENT_TOOL_TAB, 0);
+            if (!EditorPrefs.GetBool(PREF_KEY_CONTENT_TOOL_TAB_UV_LAYOUT, false))
+            {
+                // UV Inspector was inserted before the existing Photo Booth and
+                // Mach Equip tabs. Preserve each user's previously selected tab.
+                if (_contentToolTab >= (int)ContentToolTab.PhotoBooth - 1)
+                    _contentToolTab++;
+
+                EditorPrefs.SetInt(PREF_KEY_CONTENT_TOOL_TAB, _contentToolTab);
+                EditorPrefs.SetBool(PREF_KEY_CONTENT_TOOL_TAB_UV_LAYOUT, true);
+            }
             _headerTex = AssetDatabase.LoadAssetAtPath<Texture2D>(MashBoxEditorResources.HEADER);
             textureSizeReducerTool?.Initialize();
             MBEditorToolState.ModeChanged -= ShowSelectedEditorMode;
@@ -105,6 +118,12 @@ namespace MashBoxSDK.SDKMain
             DestroyTool(ref machEquipManager);
             DestroyTool(ref photoBoothTool);
             textureSizeReducerTool = null;
+            uvInspectorTool = null;
+        }
+
+        private void OnSelectionChange()
+        {
+            Repaint();
         }
 
         private void ShowSelectedEditorMode()
@@ -140,6 +159,11 @@ namespace MashBoxSDK.SDKMain
         private TextureSizeReducerTool EnsureTextureSizeReducerTool()
         {
             return textureSizeReducerTool ?? (textureSizeReducerTool = new TextureSizeReducerTool());
+        }
+
+        private UVInspectorTool EnsureUVInspectorTool()
+        {
+            return uvInspectorTool ?? (uvInspectorTool = new UVInspectorTool());
         }
 
         // --------------------------------------------------
@@ -275,6 +299,7 @@ namespace MashBoxSDK.SDKMain
             {
                 "Content Builder",
                 "Texture Reducer",
+                "UV Inspector",
                 "Photo Booth",
                 "Mach Equip Manager"
             }, MashBoxTabDrawer.TabVisualStyle.Secondary);
@@ -294,6 +319,9 @@ namespace MashBoxSDK.SDKMain
                     break;
                 case ContentToolTab.TextureReducer:
                     EnsureTextureSizeReducerTool().Draw();
+                    break;
+                case ContentToolTab.UVInspector:
+                    EnsureUVInspectorTool().Draw();
                     break;
                 case ContentToolTab.PhotoBooth:
                     DrawPhotoBoothTab();

@@ -334,6 +334,18 @@ namespace MashBoxSDK.MapTools
             colorContent.Add(new MBPaintColorField());
             root.Add(colorRow);
 
+            var splatUvRow = CreateRow("Splat UV", out VisualElement splatUvContent);
+            splatUvContent.Add(new MBSplatUvChannelField());
+            root.Add(splatUvRow);
+
+            var splatPaintModeRow = CreateRow("Splat Paint", out VisualElement splatPaintModeContent);
+            splatPaintModeContent.Add(new MBSplatPaintModeField());
+            root.Add(splatPaintModeRow);
+
+            var splatTextureIdRow = CreateRow("Texture ID", out VisualElement splatTextureIdContent);
+            splatTextureIdContent.Add(new MBSplatTextureIdField());
+            root.Add(splatTextureIdRow);
+
             System.Action syncActionsVisibility = () =>
             {
                 MBEditorAuthoringMode mode = MBEditorToolState.Mode;
@@ -362,7 +374,18 @@ namespace MashBoxSDK.MapTools
                         : DisplayStyle.None;
                 colorRow.style.display = MBEditorToolState.ActiveEditing
                     && MBEditorToolState.Mode == MBEditorAuthoringMode.Brush
-                    && MBEditorToolState.BrushMode == MBBrushMode.Painter
+                    && (MBEditorToolState.BrushMode == MBBrushMode.Painter
+                        || (MBEditorToolState.BrushMode == MBBrushMode.SplatMap
+                            && MBEditorToolState.SplatPaintMode == MBSplatPaintMode.Color))
+                        ? DisplayStyle.Flex
+                        : DisplayStyle.None;
+                bool splatVisible = MBEditorToolState.ActiveEditing
+                    && MBEditorToolState.Mode == MBEditorAuthoringMode.Brush
+                    && MBEditorToolState.BrushMode == MBBrushMode.SplatMap;
+                splatUvRow.style.display = splatVisible ? DisplayStyle.Flex : DisplayStyle.None;
+                splatPaintModeRow.style.display = splatVisible ? DisplayStyle.Flex : DisplayStyle.None;
+                splatTextureIdRow.style.display = splatVisible
+                    && MBEditorToolState.SplatPaintMode == MBSplatPaintMode.TextureId
                         ? DisplayStyle.Flex
                         : DisplayStyle.None;
                 syncActionsVisibility();
@@ -372,6 +395,7 @@ namespace MashBoxSDK.MapTools
                 MBEditorToolState.ModeChanged += syncEditingVisibility;
                 MBEditorToolState.ActiveEditingChanged += syncEditingVisibility;
                 MBEditorToolState.BrushModeChanged += syncEditingVisibility;
+                MBEditorToolState.SplatPaintSettingsChanged += syncEditingVisibility;
                 syncEditingVisibility();
             });
             root.RegisterCallback<DetachFromPanelEvent>(_ =>
@@ -379,6 +403,7 @@ namespace MashBoxSDK.MapTools
                 MBEditorToolState.ModeChanged -= syncEditingVisibility;
                 MBEditorToolState.ActiveEditingChanged -= syncEditingVisibility;
                 MBEditorToolState.BrushModeChanged -= syncEditingVisibility;
+                MBEditorToolState.SplatPaintSettingsChanged -= syncEditingVisibility;
             });
             syncEditingVisibility();
 
@@ -520,7 +545,7 @@ namespace MashBoxSDK.MapTools
         public MBPaintColorField()
         {
             label = string.Empty;
-            tooltip = "Vertex paint color. Click to open Unity's color picker.";
+            tooltip = "Vertex or splat paint color. Click to open Unity's color picker.";
             showAlpha = true;
             hdr = false;
             style.width = 72f;
@@ -549,6 +574,140 @@ namespace MashBoxSDK.MapTools
         {
             m_IsSyncing = true;
             SetValueWithoutNotify(MBEditorToolState.PaintColor);
+            m_IsSyncing = false;
+        }
+    }
+
+    public sealed class MBSplatUvChannelField : DropdownField
+    {
+        bool m_IsSyncing;
+
+        public MBSplatUvChannelField()
+        {
+            label = string.Empty;
+            tooltip = "UV channel used to project the Scene brush hit into the splat-map texture.";
+            choices = new System.Collections.Generic.List<string> { "UV0", "UV1", "UV2", "UV3" };
+            style.width = 72f;
+            style.minWidth = 72f;
+            style.height = 20f;
+            style.marginRight = 2f;
+
+            this.RegisterValueChangedCallback(OnValueChanged);
+            this.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.SplatUvChannelChanged += Sync;
+                Sync();
+            });
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+                MBEditorToolState.SplatUvChannelChanged -= Sync);
+            Sync();
+        }
+
+        void OnValueChanged(ChangeEvent<string> changeEvent)
+        {
+            if (!m_IsSyncing)
+                MBEditorToolState.SplatUvChannel = Mathf.Max(0, choices.IndexOf(changeEvent.newValue));
+        }
+
+        void Sync()
+        {
+            m_IsSyncing = true;
+            int channel = Mathf.Clamp(MBEditorToolState.SplatUvChannel, 0, choices.Count - 1);
+            SetValueWithoutNotify(choices[channel]);
+            m_IsSyncing = false;
+        }
+    }
+
+    public sealed class MBSplatPaintModeField : DropdownField
+    {
+        bool m_IsSyncing;
+
+        public MBSplatPaintModeField()
+        {
+            label = string.Empty;
+            tooltip = "Paint with the shared RGB color or select one of the eight texture IDs.";
+            choices = new System.Collections.Generic.List<string> { "Color", "Texture ID" };
+            style.width = 96f;
+            style.minWidth = 96f;
+            style.height = 20f;
+            style.marginRight = 2f;
+
+            this.RegisterValueChangedCallback(OnValueChanged);
+            this.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.SplatPaintSettingsChanged += Sync;
+                Sync();
+            });
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+                MBEditorToolState.SplatPaintSettingsChanged -= Sync);
+            Sync();
+        }
+
+        void OnValueChanged(ChangeEvent<string> changeEvent)
+        {
+            if (!m_IsSyncing)
+            {
+                MBEditorToolState.SplatPaintMode = choices.IndexOf(changeEvent.newValue) == 1
+                    ? MBSplatPaintMode.TextureId
+                    : MBSplatPaintMode.Color;
+            }
+        }
+
+        void Sync()
+        {
+            m_IsSyncing = true;
+            int index = MBEditorToolState.SplatPaintMode == MBSplatPaintMode.TextureId ? 1 : 0;
+            SetValueWithoutNotify(choices[index]);
+            m_IsSyncing = false;
+        }
+    }
+
+    public sealed class MBSplatTextureIdField : DropdownField
+    {
+        bool m_IsSyncing;
+
+        public MBSplatTextureIdField()
+        {
+            label = string.Empty;
+            tooltip = "Texture IDs 0-3 use Control Map 1 RGBA; IDs 4-7 use Control Map 2 RGBA.";
+            choices = new System.Collections.Generic.List<string>
+            {
+                "Texture 0",
+                "Texture 1",
+                "Texture 2",
+                "Texture 3",
+                "Texture 4",
+                "Texture 5",
+                "Texture 6",
+                "Texture 7"
+            };
+            style.width = 96f;
+            style.minWidth = 96f;
+            style.height = 20f;
+            style.marginRight = 2f;
+
+            this.RegisterValueChangedCallback(OnValueChanged);
+            this.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.SplatPaintSettingsChanged += Sync;
+                Sync();
+            });
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+                MBEditorToolState.SplatPaintSettingsChanged -= Sync);
+            Sync();
+        }
+
+        void OnValueChanged(ChangeEvent<string> changeEvent)
+        {
+            if (!m_IsSyncing)
+                MBEditorToolState.SplatTextureId = Mathf.Max(0, choices.IndexOf(changeEvent.newValue));
+        }
+
+        void Sync()
+        {
+            m_IsSyncing = true;
+            int textureId = Mathf.Clamp(MBEditorToolState.SplatTextureId, 0, choices.Count - 1);
+            SetValueWithoutNotify(choices[textureId]);
             m_IsSyncing = false;
         }
     }

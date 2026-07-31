@@ -131,7 +131,9 @@ namespace MashBoxSDK.Maps.Sculpting
             mesh.vertices = vertices;
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
-            if (mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) mesh.RecalculateTangents();
+            bool matchedTerrainNormals = m_LinkedLoft != null && m_LinkedLoft.RefreshTerrainMatchedNormals();
+            if (!matchedTerrainNormals && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
+                mesh.RecalculateTangents();
             mesh.UploadMeshData(false);
         }
 
@@ -199,7 +201,9 @@ namespace MashBoxSDK.Maps.Sculpting
             mesh.vertices = vertices;
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
-            if (mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) mesh.RecalculateTangents();
+            bool matchedTerrainNormals = m_LinkedLoft != null && m_LinkedLoft.RefreshTerrainMatchedNormals();
+            if (!matchedTerrainNormals && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
+                mesh.RecalculateTangents();
             mesh.UploadMeshData(false);
 
             if (m_UpdateMeshCollider && updateCollider && m_LinkedLoft != null)

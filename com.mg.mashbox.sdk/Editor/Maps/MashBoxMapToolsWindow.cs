@@ -27,7 +27,7 @@ namespace MashBoxSDK.MapTools
     public class MashBoxMapToolsWindow : EditorWindow
     {
         private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
-        private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain }
+        private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
         private const string PREF_KEY_MAP_TOOL_TAB_ORDER = "MashBoxSDK.SelectedMapToolTab.Order";
         private ToolTab currentToolTab = ToolTab.ArtTools;
@@ -103,6 +103,7 @@ namespace MashBoxSDK.MapTools
         [NonSerialized] private MultiSplineLoftWindow authoringLoftTool;
         [NonSerialized] private SplineToolWindow authoringSplineTool;
         [NonSerialized] private MeshSculptWindow authoringSculptTool;
+        [NonSerialized] private UVInspectorTool authoringUvInspectorTool;
         [NonSerialized] private bool embeddedHostVisible;
         [SerializeField] private List<Terrain> terrainConversionSources = new();
         [SerializeField] private bool terrainConvertMesh = true;
@@ -879,12 +880,13 @@ namespace MashBoxSDK.MapTools
             MBEditorAuthoringCategory category = MBEditorToolState.Category;
             int newCategory = MashBoxTabDrawer.DrawTabs(
                 (int)category,
-                new[] { "Brush", "Spline", "Terrain" },
+                new[] { "Brush", "Spline", "Terrain", "UV Inspector" },
                 MashBoxTabDrawer.TabVisualStyle.Secondary);
             if (newCategory != (int)category)
                 MBEditorToolState.RequestCategory((MBEditorAuthoringCategory)newCategory);
 
-            if (MBEditorToolState.Category != MBEditorAuthoringCategory.Terrain)
+            if (MBEditorToolState.Category != MBEditorAuthoringCategory.Terrain
+                && MBEditorToolState.Category != MBEditorAuthoringCategory.UVInspector)
             {
                 MBEditorAuthoringMode[] categoryModes;
                 string[] categoryModeLabels;
@@ -918,7 +920,8 @@ namespace MashBoxSDK.MapTools
             }
 
             GUILayout.Space(8f);
-            if (!MBEditorToolState.ActiveEditing)
+            if (!MBEditorToolState.ActiveEditing
+                && MBEditorToolState.Mode != MBEditorAuthoringMode.UVInspector)
             {
                 EditorGUILayout.HelpBox(
                     "Active Editing is off. The selected authoring panel remains available, but automatic Scene tools and selection changes are paused. Enable it from the MashBox Mappy Scene overlay.",
@@ -945,6 +948,9 @@ namespace MashBoxSDK.MapTools
                     break;
                 case AuthoringToolTab.Terrain:
                     DrawTerrainToolSection();
+                    break;
+                case AuthoringToolTab.UVInspector:
+                    authoringUvInspectorTool?.Draw(embeddedInParentWindow: true);
                     break;
             }
         }
@@ -1229,6 +1235,8 @@ namespace MashBoxSDK.MapTools
                 authoringSculptTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
                 authoringSculptTool.DeactivateSceneTool();
             }
+
+            authoringUvInspectorTool ??= new UVInspectorTool();
         }
 
         private void OnLoftUvSplineGenerated(UVSpline uvSpline)
@@ -1275,6 +1283,8 @@ namespace MashBoxSDK.MapTools
                 DestroyImmediate(authoringSculptTool);
                 authoringSculptTool = null;
             }
+
+            authoringUvInspectorTool = null;
         }
 
         public void DeactivateEmbeddedSceneTools()
