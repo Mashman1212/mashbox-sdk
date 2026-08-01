@@ -42,6 +42,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             public float heightOffset;
             public float heightContrast;
             public float heightInfluence;
+            public float planarMap;
         }
 
         public MGLitTrailShaderGUI()
@@ -215,6 +216,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 MaterialProperty heightOffset = FindOptionalProperty("_HeightOffset" + suffix, properties);
                 MaterialProperty heightContrast = FindOptionalProperty("_HeightContrast" + suffix, properties);
                 MaterialProperty heightInfluence = FindOptionalProperty("_HeightInfluence" + suffix, properties);
+                MaterialProperty planarMap = FindOptionalProperty("_PlanarMap" + suffix, properties);
                 Texture2D currentDiffuse = baseMap != null ? baseMap.textureValue as Texture2D : null;
                 TerrainLayer currentLayer = ResolveTerrainLayer(material, index, currentDiffuse);
                 if (currentLayer != null)
@@ -271,7 +273,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         ? selectedLayer != null ? selectedLayer.diffuseTexture : null
                         : currentLayer != null ? currentLayer.diffuseTexture : currentDiffuse;
                     DrawDiffusePreview(diffusePreview);
-                    DrawLayerTilingAndOffset(materialEditor, baseMap, normalMap, maskMap);
+                    DrawLayerMappingControls(
+                        materialEditor,
+                        baseMap,
+                        normalMap,
+                        maskMap,
+                        planarMap);
                     DrawHeightControls(
                         materialEditor,
                         heightBlend,
@@ -394,6 +401,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             string heightOffsetProperty = "_HeightOffset" + suffix;
             string heightContrastProperty = "_HeightContrast" + suffix;
             string heightInfluenceProperty = "_HeightInfluence" + suffix;
+            string planarMapProperty = "_PlanarMap" + suffix;
 
             return new LayerValues
             {
@@ -410,7 +418,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 heightBlend = GetFloat(material, heightBlendProperty),
                 heightOffset = GetFloat(material, heightOffsetProperty),
                 heightContrast = GetFloat(material, heightContrastProperty),
-                heightInfluence = GetFloat(material, heightInfluenceProperty)
+                heightInfluence = GetFloat(material, heightInfluenceProperty),
+                planarMap = GetFloat(material, planarMapProperty)
             };
         }
 
@@ -440,6 +449,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             SetFloat(material, "_HeightOffset" + suffix, values.heightOffset);
             SetFloat(material, "_HeightContrast" + suffix, values.heightContrast);
             SetFloat(material, "_HeightInfluence" + suffix, values.heightInfluence);
+            SetFloat(material, "_PlanarMap" + suffix, values.planarMap);
         }
 
         private static Texture GetTexture(Material material, string propertyName)
@@ -492,21 +502,33 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             return $"MashBox.MGLitTrail.LayerFoldout.{materialId}.{index}";
         }
 
-        private static void DrawLayerTilingAndOffset(
+        private static void DrawLayerMappingControls(
             MaterialEditor materialEditor,
             MaterialProperty baseMap,
             MaterialProperty normalMap,
-            MaterialProperty maskMap)
+            MaterialProperty maskMap,
+            MaterialProperty planarMap)
         {
+            if (baseMap == null && planarMap == null)
+                return;
+
+            GUILayout.Space(4f);
+            EditorGUILayout.LabelField("Mapping", EditorStyles.miniBoldLabel);
+            if (planarMap != null)
+            {
+                materialEditor.ShaderProperty(
+                    planarMap,
+                    new GUIContent(
+                        "Planar Mapping",
+                        "Uses the shader's planar projection for this texture layer."));
+            }
+
             if (baseMap == null)
                 return;
 
             Vector4 transform = baseMap.textureScaleAndOffset;
             Vector2 tiling = new Vector2(transform.x, transform.y);
             Vector2 offset = new Vector2(transform.z, transform.w);
-
-            GUILayout.Space(4f);
-            EditorGUILayout.LabelField("Tiling & Offset", EditorStyles.miniBoldLabel);
             EditorGUI.showMixedValue = baseMap.hasMixedValue;
             EditorGUI.BeginChangeCheck();
             tiling = EditorGUILayout.Vector2Field("Tiling", tiling);
