@@ -292,24 +292,7 @@ public class MapPerformanceScanner : EditorWindow
 
     List<Texture> GetTextures(Material mat)
     {
-        List<Texture> textures = new();
-
-        var shader = mat.shader;
-        int count = shader.GetPropertyCount();
-
-        for (int i = 0; i < count; i++)
-        {
-            if (shader.GetPropertyType(i) == ShaderPropertyType.Texture)
-            {
-                string name = shader.GetPropertyName(i);
-                var tex = mat.GetTexture(name);
-
-                if (tex != null)
-                    textures.Add(tex);
-            }
-        }
-
-        return textures;
+        return MapPerformanceMaterialTextureCollector.GetTextures(mat);
     }
 
     // =========================

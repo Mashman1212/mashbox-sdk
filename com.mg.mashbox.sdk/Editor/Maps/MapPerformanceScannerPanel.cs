@@ -12,6 +12,63 @@ using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.Profiling;
 using UnityEngine.SceneManagement;
 
+internal static class MapPerformanceMaterialTextureCollector
+{
+    private const int MgLitTrailLayerCount = 8;
+    private const string MgLitTrailShaderNameFragment = "MG_Lit_Trail";
+    private const string MgLitTrailTerrainLayerTagPrefix = "MashBox.MGLitTrail.TerrainLayer.";
+
+    public static List<Texture> GetTextures(Material material)
+    {
+        var textures = new HashSet<Texture>();
+        if (material == null || material.shader == null)
+            return textures.ToList();
+
+        Shader shader = material.shader;
+        int propertyCount = shader.GetPropertyCount();
+        for (int propertyIndex = 0; propertyIndex < propertyCount; propertyIndex++)
+        {
+            if (shader.GetPropertyType(propertyIndex) != ShaderPropertyType.Texture)
+                continue;
+
+            Texture texture = material.GetTexture(shader.GetPropertyName(propertyIndex));
+            if (texture != null)
+                textures.Add(texture);
+        }
+
+        // MG_Lit_Trail stores its TerrainLayer selections as GUIDs in material tags.
+        // Read the source assets as well as the resolved material properties so a scan
+        // remains complete if the layer asset changed since the inspector last synced it.
+        if (shader.name.IndexOf(MgLitTrailShaderNameFragment, StringComparison.OrdinalIgnoreCase) >= 0)
+            AddMgLitTrailTerrainLayerTextures(material, textures);
+
+        return textures.ToList();
+    }
+
+    private static void AddMgLitTrailTerrainLayerTextures(Material material, HashSet<Texture> textures)
+    {
+        for (int layerIndex = 0; layerIndex < MgLitTrailLayerCount; layerIndex++)
+        {
+            string tagName = MgLitTrailTerrainLayerTagPrefix + layerIndex.ToString("00");
+            string terrainLayerGuid = material.GetTag(tagName, false, string.Empty);
+            if (string.IsNullOrEmpty(terrainLayerGuid))
+                continue;
+
+            string terrainLayerPath = AssetDatabase.GUIDToAssetPath(terrainLayerGuid);
+            TerrainLayer terrainLayer = AssetDatabase.LoadAssetAtPath<TerrainLayer>(terrainLayerPath);
+            if (terrainLayer == null)
+                continue;
+
+            if (terrainLayer.diffuseTexture != null)
+                textures.Add(terrainLayer.diffuseTexture);
+            if (terrainLayer.normalMapTexture != null)
+                textures.Add(terrainLayer.normalMapTexture);
+            if (terrainLayer.maskMapTexture != null)
+                textures.Add(terrainLayer.maskMapTexture);
+        }
+    }
+}
+
 [Serializable]
 public sealed class MapPerformanceScanResult
 {
@@ -1949,23 +2006,7 @@ public class MapPerformanceScannerPanel
 
     private List<Texture> GetTextures(Material mat)
     {
-        var textures = new List<Texture>();
-        var shader = mat.shader;
-        var count = shader.GetPropertyCount();
-
-        for (var i = 0; i < count; i++)
-        {
-            if (shader.GetPropertyType(i) != ShaderPropertyType.Texture)
-                continue;
-
-            var name = shader.GetPropertyName(i);
-            var tex = mat.GetTexture(name);
-
-            if (tex != null)
-                textures.Add(tex);
-        }
-
-        return textures;
+        return MapPerformanceMaterialTextureCollector.GetTextures(mat);
     }
 
     private string GetVariantKey(Material mat)

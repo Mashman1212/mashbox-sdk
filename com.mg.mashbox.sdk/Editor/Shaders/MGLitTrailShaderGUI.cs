@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
 using UnityEditor.Rendering.HighDefinition;
 using UnityEngine;
@@ -16,14 +17,72 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         private const int LayerCount = 8;
         private const string LayerDragDataKey = "MashBox.MGLitTrail.LayerDrag";
         private const string TerrainLayerTagPrefix = "MashBox.MGLitTrail.TerrainLayer.";
+        private const string ControlMap1PropertyName = "_ControlMap1";
+        private const string ControlMap2PropertyName = "_ControlMap2";
         private static readonly Dictionary<Texture2D, TerrainLayer> TerrainLayersByDiffuse = new();
         private static readonly List<TerrainLayer> CachedTerrainLayers = new();
+        private static readonly int[] ControlTextureResolutions = { 256, 512, 1024, 2048, 4096 };
+        private static readonly string[] ControlTextureResolutionLabels =
+        {
+            "256 x 256",
+            "512 x 512",
+            "1024 x 1024",
+            "2048 x 2048",
+            "4096 x 4096"
+        };
         private static bool terrainLayerCacheBuilt;
+        private static int selectedControlTextureResolutionIndex = 2;
 
         private sealed class LayerDragData
         {
             public Material material;
             public int sourceIndex;
+        }
+
+        private sealed class ControlTextureGenerationPopup : PopupWindowContent
+        {
+            private readonly Material material;
+            private readonly MaterialEditor materialEditor;
+            private int resolutionIndex;
+
+            public ControlTextureGenerationPopup(Material material, MaterialEditor materialEditor)
+            {
+                this.material = material;
+                this.materialEditor = materialEditor;
+                resolutionIndex = selectedControlTextureResolutionIndex;
+            }
+
+            public override Vector2 GetWindowSize()
+            {
+                return new Vector2(340f, 126f);
+            }
+
+            public override void OnGUI(Rect rect)
+            {
+                EditorGUILayout.LabelField("Generate Trail Control Textures", EditorStyles.boldLabel);
+                EditorGUILayout.Space(3f);
+                resolutionIndex = EditorGUILayout.Popup(
+                    new GUIContent("Resolution"),
+                    resolutionIndex,
+                    ControlTextureResolutionLabels);
+                EditorGUILayout.HelpBox(
+                    "Creates Control Map 1 and 2 beside the material. Layer 0 starts at full weight.",
+                    MessageType.Info);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("Cancel", GUILayout.Width(80f)))
+                        editorWindow.Close();
+                    if (GUILayout.Button("Generate", GUILayout.Width(90f)))
+                    {
+                        selectedControlTextureResolutionIndex = resolutionIndex;
+                        GenerateControlTextures(material, ControlTextureResolutions[resolutionIndex]);
+                        materialEditor?.Repaint();
+                        editorWindow.Close();
+                    }
+                }
+            }
         }
 
         private struct LayerValues
@@ -40,6 +99,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             public Vector2 maskOffset;
             public float heightBlend;
             public float heightOffset;
+            public float heightAmplitude;
             public float heightContrast;
             public float heightInfluence;
             public float planarMap;
@@ -155,8 +215,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
         private static void DrawControlMaps(MaterialEditor materialEditor, MaterialProperty[] properties)
         {
-            MaterialProperty controlMap1 = FindOptionalProperty("_ControlMap1", properties);
-            MaterialProperty controlMap2 = FindOptionalProperty("_ControlMap2", properties);
+            MaterialProperty controlMap1 = FindOptionalProperty(ControlMap1PropertyName, properties);
+            MaterialProperty controlMap2 = FindOptionalProperty(ControlMap2PropertyName, properties);
             if (controlMap1 == null && controlMap2 == null)
                 return;
 
@@ -166,6 +226,129 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 materialEditor.TexturePropertySingleLine(new GUIContent("Control Map 1 (IDs 0–3)"), controlMap1);
             if (controlMap2 != null)
                 materialEditor.TexturePropertySingleLine(new GUIContent("Control Map 2 (IDs 4–7)"), controlMap2);
+
+            Material material = materialEditor.target as Material;
+            string materialPath = material != null ? AssetDatabase.GetAssetPath(material) : string.Empty;
+            using (new EditorGUI.DisabledScope(
+                       material == null ||
+                       materialEditor.targets.Length != 1 ||
+                       string.IsNullOrEmpty(materialPath)))
+            {
+                if (GUILayout.Button(
+                        new GUIContent(
+                            "Generate Control Textures...",
+                            "Create and assign two paintable control-map textures beside this material.")))
+                {
+                    Rect buttonRect = GUILayoutUtility.GetLastRect();
+                    PopupWindow.Show(buttonRect, new ControlTextureGenerationPopup(material, materialEditor));
+                }
+            }
+
+            if (string.IsNullOrEmpty(materialPath))
+                EditorGUILayout.HelpBox("Save this material as an asset before generating control textures.", MessageType.None);
+        }
+
+        private static void GenerateControlTextures(Material material, int resolution)
+        {
+            if (material == null)
+                return;
+
+            string materialPath = AssetDatabase.GetAssetPath(material);
+            string materialDirectory = Path.GetDirectoryName(materialPath)?.Replace('\\', '/');
+            if (string.IsNullOrEmpty(materialDirectory))
+            {
+                EditorUtility.DisplayDialog(
+                    "Generate Control Textures",
+                    "Save this material as an asset before generating its control textures.",
+                    "OK");
+                return;
+            }
+
+            string materialName = Path.GetFileNameWithoutExtension(materialPath);
+            string controlMap1Path = $"{materialDirectory}/{materialName}_ControlMap1.png";
+            string controlMap2Path = $"{materialDirectory}/{materialName}_ControlMap2.png";
+            bool replacesExistingAssets = File.Exists(Path.GetFullPath(controlMap1Path)) ||
+                                          File.Exists(Path.GetFullPath(controlMap2Path));
+            if (replacesExistingAssets &&
+                !EditorUtility.DisplayDialog(
+                    "Replace Control Textures?",
+                    "One or both generated control textures already exist beside this material. Replace them?",
+                    "Replace",
+                    "Cancel"))
+                return;
+
+            if ((File.Exists(Path.GetFullPath(controlMap1Path)) && !AssetDatabase.MakeEditable(controlMap1Path)) ||
+                (File.Exists(Path.GetFullPath(controlMap2Path)) && !AssetDatabase.MakeEditable(controlMap2Path)))
+            {
+                EditorUtility.DisplayDialog(
+                    "Control Textures Are Read-Only",
+                    "The existing control textures could not be checked out or made editable.",
+                    "OK");
+                return;
+            }
+
+            try
+            {
+                WriteControlTexture(controlMap1Path, resolution, new Color32(255, 0, 0, 0));
+                WriteControlTexture(controlMap2Path, resolution, new Color32(0, 0, 0, 0));
+
+                Texture2D controlMap1 = ImportControlTexture(controlMap1Path);
+                Texture2D controlMap2 = ImportControlTexture(controlMap2Path);
+                Undo.RecordObject(material, "Generate Trail Control Textures");
+                material.SetTexture(ControlMap1PropertyName, controlMap1);
+                material.SetTexture(ControlMap2PropertyName, controlMap2);
+                EditorUtility.SetDirty(material);
+                AssetDatabase.SaveAssets();
+                Selection.activeObject = material;
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception);
+                EditorUtility.DisplayDialog(
+                    "Control Texture Generation Failed",
+                    exception.Message,
+                    "OK");
+            }
+        }
+
+        private static void WriteControlTexture(string assetPath, int resolution, Color32 initialColor)
+        {
+            var texture = new Texture2D(resolution, resolution, TextureFormat.RGBA32, false, true);
+            try
+            {
+                var pixels = new Color32[resolution * resolution];
+                for (int pixelIndex = 0; pixelIndex < pixels.Length; pixelIndex++)
+                    pixels[pixelIndex] = initialColor;
+
+                texture.SetPixels32(pixels);
+                texture.Apply(false, false);
+                File.WriteAllBytes(Path.GetFullPath(assetPath), texture.EncodeToPNG());
+            }
+            finally
+            {
+                Object.DestroyImmediate(texture);
+            }
+
+            AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+        }
+
+        private static Texture2D ImportControlTexture(string assetPath)
+        {
+            if (AssetImporter.GetAtPath(assetPath) is TextureImporter importer)
+            {
+                importer.textureType = TextureImporterType.Default;
+                importer.sRGBTexture = false;
+                importer.alphaSource = TextureImporterAlphaSource.FromInput;
+                importer.alphaIsTransparency = false;
+                importer.isReadable = true;
+                importer.mipmapEnabled = true;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.wrapMode = TextureWrapMode.Repeat;
+                importer.filterMode = FilterMode.Bilinear;
+                importer.SaveAndReimport();
+            }
+
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
         }
 
         private static void DrawPuddleControls(MaterialEditor materialEditor, MaterialProperty[] properties)
@@ -221,6 +404,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 MaterialProperty maskMap = FindOptionalProperty("_MaskMap" + suffix, properties);
                 MaterialProperty heightBlend = FindOptionalProperty("_HeightBlend" + suffix, properties);
                 MaterialProperty heightOffset = FindOptionalProperty("_HeightOffset" + suffix, properties);
+                MaterialProperty heightAmplitude = FindOptionalProperty("_HeightAmplitude" + suffix, properties);
                 MaterialProperty heightContrast = FindOptionalProperty("_HeightContrast" + suffix, properties);
                 MaterialProperty heightInfluence = FindOptionalProperty("_HeightInfluence" + suffix, properties);
                 MaterialProperty planarMap = FindOptionalProperty("_PlanarMap" + suffix, properties);
@@ -306,6 +490,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         materialEditor,
                         heightBlend,
                         heightOffset,
+                        heightAmplitude,
                         heightContrast,
                         heightInfluence);
                 }
@@ -422,6 +607,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             string maskProperty = "_MaskMap" + suffix;
             string heightBlendProperty = "_HeightBlend" + suffix;
             string heightOffsetProperty = "_HeightOffset" + suffix;
+            string heightAmplitudeProperty = "_HeightAmplitude" + suffix;
             string heightContrastProperty = "_HeightContrast" + suffix;
             string heightInfluenceProperty = "_HeightInfluence" + suffix;
             string planarMapProperty = "_PlanarMap" + suffix;
@@ -440,6 +626,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 maskOffset = GetTextureOffset(material, maskProperty),
                 heightBlend = GetFloat(material, heightBlendProperty),
                 heightOffset = GetFloat(material, heightOffsetProperty),
+                heightAmplitude = GetFloat(material, heightAmplitudeProperty),
                 heightContrast = GetFloat(material, heightContrastProperty),
                 heightInfluence = GetFloat(material, heightInfluenceProperty),
                 planarMap = GetFloat(material, planarMapProperty),
@@ -477,6 +664,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 values.baseOffset);
             SetFloat(material, "_HeightBlend" + suffix, values.heightBlend);
             SetFloat(material, "_HeightOffset" + suffix, values.heightOffset);
+            SetFloat(material, "_HeightAmplitude" + suffix, values.heightAmplitude);
             SetFloat(material, "_HeightContrast" + suffix, values.heightContrast);
             SetFloat(material, "_HeightInfluence" + suffix, values.heightInfluence);
             SetFloat(material, "_PlanarMap" + suffix, values.planarMap);
@@ -636,11 +824,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             MaterialEditor materialEditor,
             MaterialProperty heightBlend,
             MaterialProperty heightOffset,
+            MaterialProperty heightAmplitude,
             MaterialProperty heightContrast,
             MaterialProperty heightInfluence)
         {
             if (heightBlend == null &&
                 heightOffset == null &&
+                heightAmplitude == null &&
                 heightContrast == null &&
                 heightInfluence == null)
                 return;
@@ -666,6 +856,15 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     new GUIContent("Height Offset", "Raises or lowers this layer's sampled height before blending."),
                     -1f,
                     1f);
+            }
+
+            if (heightAmplitude != null)
+            {
+                materialEditor.ShaderProperty(
+                    heightAmplitude,
+                    new GUIContent(
+                        "Height Amplitude",
+                        "Scales the amount of sampled height variation used for this layer's blending."));
             }
 
             if (heightContrast != null)
