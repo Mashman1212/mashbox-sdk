@@ -43,6 +43,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             public float heightContrast;
             public float heightInfluence;
             public float planarMap;
+            public float temperature;
+            public float saturation;
+            public float contrast;
+            public float darken;
+            public float lighten;
+            public Color color;
+            public float whiteBalance;
         }
 
         public MGLitTrailShaderGUI()
@@ -217,6 +224,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 MaterialProperty heightContrast = FindOptionalProperty("_HeightContrast" + suffix, properties);
                 MaterialProperty heightInfluence = FindOptionalProperty("_HeightInfluence" + suffix, properties);
                 MaterialProperty planarMap = FindOptionalProperty("_PlanarMap" + suffix, properties);
+                MaterialProperty temperature = FindOptionalProperty("_Temperature" + suffix, properties);
+                MaterialProperty saturation = FindOptionalProperty("_Saturation" + suffix, properties);
+                MaterialProperty contrast = FindOptionalProperty("_Contrast" + suffix, properties);
+                MaterialProperty darken = FindOptionalProperty("_Darken" + suffix, properties);
+                MaterialProperty lighten = FindOptionalProperty("_Lighten" + suffix, properties);
+                MaterialProperty color = FindOptionalProperty("_Color" + suffix, properties);
+                MaterialProperty whiteBalance = FindOptionalProperty("_WhiteBalance" + suffix, properties);
                 Texture2D currentDiffuse = baseMap != null ? baseMap.textureValue as Texture2D : null;
                 TerrainLayer currentLayer = ResolveTerrainLayer(material, index, currentDiffuse);
                 if (currentLayer != null)
@@ -279,6 +293,15 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         normalMap,
                         maskMap,
                         planarMap);
+                    DrawLayerColorControls(
+                        materialEditor,
+                        temperature,
+                        saturation,
+                        contrast,
+                        darken,
+                        lighten,
+                        color,
+                        whiteBalance);
                     DrawHeightControls(
                         materialEditor,
                         heightBlend,
@@ -419,7 +442,14 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 heightOffset = GetFloat(material, heightOffsetProperty),
                 heightContrast = GetFloat(material, heightContrastProperty),
                 heightInfluence = GetFloat(material, heightInfluenceProperty),
-                planarMap = GetFloat(material, planarMapProperty)
+                planarMap = GetFloat(material, planarMapProperty),
+                temperature = GetFloat(material, "_Temperature" + suffix),
+                saturation = GetFloat(material, "_Saturation" + suffix),
+                contrast = GetFloat(material, "_Contrast" + suffix),
+                darken = GetFloat(material, "_Darken" + suffix),
+                lighten = GetFloat(material, "_Lighten" + suffix),
+                color = GetColor(material, "_Color" + suffix),
+                whiteBalance = GetFloat(material, "_WhiteBalance" + suffix)
             };
         }
 
@@ -450,6 +480,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             SetFloat(material, "_HeightContrast" + suffix, values.heightContrast);
             SetFloat(material, "_HeightInfluence" + suffix, values.heightInfluence);
             SetFloat(material, "_PlanarMap" + suffix, values.planarMap);
+            SetFloat(material, "_Temperature" + suffix, values.temperature);
+            SetFloat(material, "_Saturation" + suffix, values.saturation);
+            SetFloat(material, "_Contrast" + suffix, values.contrast);
+            SetFloat(material, "_Darken" + suffix, values.darken);
+            SetFloat(material, "_Lighten" + suffix, values.lighten);
+            SetColor(material, "_Color" + suffix, values.color);
+            SetFloat(material, "_WhiteBalance" + suffix, values.whiteBalance);
         }
 
         private static Texture GetTexture(Material material, string propertyName)
@@ -472,6 +509,11 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             return material.HasProperty(propertyName) ? material.GetFloat(propertyName) : 0f;
         }
 
+        private static Color GetColor(Material material, string propertyName)
+        {
+            return material.HasProperty(propertyName) ? material.GetColor(propertyName) : Color.white;
+        }
+
         private static void SetTexture(
             Material material,
             string propertyName,
@@ -491,6 +533,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         {
             if (material.HasProperty(propertyName))
                 material.SetFloat(propertyName, value);
+        }
+
+        private static void SetColor(Material material, string propertyName, Color value)
+        {
+            if (material.HasProperty(propertyName))
+                material.SetColor(propertyName, value);
         }
 
         private static string GetLayerFoldoutKey(Material material, int index)
@@ -545,6 +593,43 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             }
 
             EditorGUI.showMixedValue = false;
+        }
+
+        private static void DrawLayerColorControls(
+            MaterialEditor materialEditor,
+            MaterialProperty temperature,
+            MaterialProperty saturation,
+            MaterialProperty contrast,
+            MaterialProperty darken,
+            MaterialProperty lighten,
+            MaterialProperty color,
+            MaterialProperty whiteBalance)
+        {
+            if (temperature == null &&
+                saturation == null &&
+                contrast == null &&
+                darken == null &&
+                lighten == null &&
+                color == null &&
+                whiteBalance == null)
+                return;
+
+            GUILayout.Space(4f);
+            EditorGUILayout.LabelField("Color Adjustments", EditorStyles.miniBoldLabel);
+            if (temperature != null)
+                materialEditor.ShaderProperty(temperature, new GUIContent("Temperature"));
+            if (saturation != null)
+                materialEditor.ShaderProperty(saturation, new GUIContent("Saturation"));
+            if (contrast != null)
+                materialEditor.ShaderProperty(contrast, new GUIContent("Contrast"));
+            if (darken != null)
+                materialEditor.ShaderProperty(darken, new GUIContent("Darken"));
+            if (lighten != null)
+                materialEditor.ShaderProperty(lighten, new GUIContent("Lighten"));
+            if (color != null)
+                materialEditor.ShaderProperty(color, new GUIContent("Color"));
+            if (whiteBalance != null)
+                materialEditor.ShaderProperty(whiteBalance, new GUIContent("White Balance"));
         }
 
         private static void DrawHeightControls(
