@@ -198,6 +198,9 @@ namespace MashBoxSDK.Maps.Spline
         LoftShoulderModifier m_ShoulderModifier;
 
         [SerializeField]
+        LoftHeightOverlayModifier m_HeightOverlayModifier;
+
+        [SerializeField]
         Mesh m_GeneratedMesh;
 
         readonly List<Vector3> m_Vertices = new List<Vector3>();
@@ -328,6 +331,7 @@ namespace MashBoxSDK.Maps.Spline
         public MeshSculptModifier SculptModifier { get => m_SculptModifier; set => m_SculptModifier = value; }
         public VertexPaintModifier VertexPaintModifier { get => ResolveVertexPaintModifier(); set => m_VertexPaintModifier = value; }
         public LoftShoulderModifier ShoulderModifier { get => ResolveShoulderModifier(); set => m_ShoulderModifier = value; }
+        public LoftHeightOverlayModifier HeightOverlayModifier { get => ResolveHeightOverlayModifier(); set => m_HeightOverlayModifier = value; }
         public Mesh GeneratedMesh => m_GeneratedMesh;
 
         public bool SynchronizeUvSplineSettings(UVSpline uvSpline)
@@ -897,6 +901,17 @@ namespace MashBoxSDK.Maps.Spline
             if (m_ShoulderModifier == null)
                 m_ShoulderModifier = GetComponentInChildren<LoftShoulderModifier>(true);
             return m_ShoulderModifier;
+        }
+
+        LoftHeightOverlayModifier ResolveHeightOverlayModifier()
+        {
+            if (m_HeightOverlayModifier == null)
+                m_HeightOverlayModifier = GetComponentInChildren<LoftHeightOverlayModifier>(true);
+
+            if (m_HeightOverlayModifier != null && m_HeightOverlayModifier.Loft != this)
+                m_HeightOverlayModifier.LinkToLoft(this);
+
+            return m_HeightOverlayModifier;
         }
 
         public bool TryGetShoulderEdge(

@@ -56,6 +56,7 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_SculptModifier;
         SerializedProperty m_VertexPaintModifier;
         SerializedProperty m_ShoulderModifier;
+        SerializedProperty m_HeightOverlayModifier;
         SerializedProperty m_GeneratedMesh;
 
         void OnEnable()
@@ -101,6 +102,7 @@ namespace MashBoxSDK.Maps.Spline
             m_SculptModifier = serializedObject.FindProperty("m_SculptModifier");
             m_VertexPaintModifier = serializedObject.FindProperty("m_VertexPaintModifier");
             m_ShoulderModifier = serializedObject.FindProperty("m_ShoulderModifier");
+            m_HeightOverlayModifier = serializedObject.FindProperty("m_HeightOverlayModifier");
             m_GeneratedMesh = serializedObject.FindProperty("m_GeneratedMesh");
 
             m_SourceList = new ReorderableList(serializedObject, m_Sources, true, true, true, true)
@@ -246,6 +248,22 @@ namespace MashBoxSDK.Maps.Spline
             }
             if (GUILayout.Button("Apply Eroded Trail Banks Preset"))
                 CreateOrRebuildShoulders(loft, applyErodedTrailPreset: true);
+
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.PropertyField(m_HeightOverlayModifier, new GUIContent("MicroBump Layer Modifier"));
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(loft.HeightOverlayModifier == null ? "Add MicroBump Layer" : "Rebuild MicroBump Layer"))
+                    CreateOrRebuildHeightOverlay(loft);
+                using (new EditorGUI.DisabledScope(loft.HeightOverlayModifier == null))
+                {
+                    if (GUILayout.Button("Select MicroBump Layer"))
+                        Selection.activeGameObject = loft.HeightOverlayModifier.gameObject;
+                }
+            }
+            EditorGUILayout.HelpBox(
+                "Creates a separate visual mesh. UV2 remains the splat-paint channel; UV3/TEXCOORD3 is generated privately for the height bake. The original loft and collider chunks are unchanged.",
+                MessageType.None);
 
             EditorGUILayout.Space(6f);
             EditorGUILayout.LabelField("Resolution Spline", EditorStyles.boldLabel);
@@ -404,6 +422,52 @@ namespace MashBoxSDK.Maps.Spline
             }
 
             loft.Regenerate();
+            EditorUtility.SetDirty(loft);
+            EditorUtility.SetDirty(modifier);
+            Selection.activeGameObject = modifier.gameObject;
+            SceneView.RepaintAll();
+        }
+
+        internal static void CreateOrRebuildHeightOverlay(MultiSplineLoft loft)
+        {
+            if (loft == null)
+                return;
+
+            Transform overlayRoot = loft.transform.Find(LoftHeightOverlayModifier.GeneratedObjectName);
+            if (overlayRoot == null)
+                overlayRoot = loft.transform.Find(LoftHeightOverlayModifier.LegacyGeneratedObjectName);
+            if (overlayRoot == null)
+            {
+                var overlayObject = new GameObject(LoftHeightOverlayModifier.GeneratedObjectName);
+                Undo.RegisterCreatedObjectUndo(overlayObject, "Create Loft MicroBump Layer");
+                Undo.SetTransformParent(overlayObject.transform, loft.transform, "Parent Loft MicroBump Layer");
+                overlayObject.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                overlayObject.transform.localScale = Vector3.one;
+                overlayRoot = overlayObject.transform;
+            }
+
+            overlayRoot.gameObject.name = LoftHeightOverlayModifier.GeneratedObjectName;
+            overlayRoot.gameObject.isStatic = loft.gameObject.isStatic;
+            LoftHeightOverlayModifier.ApplyGeneratedIdentity(overlayRoot.gameObject);
+            LoftHeightOverlayModifier previousModifier = loft.HeightOverlayModifier;
+            LoftHeightOverlayModifier modifier = overlayRoot.GetComponent<LoftHeightOverlayModifier>();
+            if (modifier == null)
+                modifier = Undo.AddComponent<LoftHeightOverlayModifier>(overlayRoot.gameObject);
+
+            if (previousModifier != null && previousModifier != modifier)
+            {
+                Undo.RecordObject(modifier, "Move Loft MicroBump Layer");
+                EditorUtility.CopySerialized(previousModifier, modifier);
+                Undo.DestroyObjectImmediate(previousModifier);
+            }
+
+            Undo.RecordObject(loft, "Assign Loft MicroBump Layer");
+            Undo.RecordObject(modifier, "Rebuild Loft MicroBump Layer");
+            modifier.LinkToLoft(loft);
+            loft.HeightOverlayModifier = modifier;
+            if (!modifier.Rebuild())
+                EditorUtility.DisplayDialog("Loft MicroBump Layer", modifier.LastError, "OK");
+
             EditorUtility.SetDirty(loft);
             EditorUtility.SetDirty(modifier);
             Selection.activeGameObject = modifier.gameObject;

@@ -474,8 +474,10 @@ namespace MashBoxSDK.MapTools
 
             EditorGUILayout.HelpBox(splatStatusMessage, splatTextureDirty ? MessageType.Warning : MessageType.Info);
             EditorGUILayout.HelpBox(
-                "Scene View: paint with Left Mouse. Hold Shift to erase. Mesh hits are projected through the selected UV channel using the hit triangle; Terrain supports UV0 only.",
+                "Scene View: Shift-click an unlisted loft or mesh to add it as a Splat Paint Target. On an active target, Left Mouse paints and Shift erases. Mesh hits are projected through the selected UV channel; Terrain supports UV0 only.",
                 MessageType.None);
+
+            DrawPaintTargetSettings(splatMode: true);
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -695,11 +697,13 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        private void DrawPaintTargetSettings()
+        private void DrawPaintTargetSettings(bool splatMode = false)
         {
             EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField("Paint Targets", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox(painterStatusMessage, MessageType.None);
+            EditorGUILayout.LabelField(splatMode ? "Splat Paint Targets" : "Paint Targets", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(splatMode
+                ? "Only listed meshes can be splat-painted. Hover another loft and Shift-click to add it."
+                : painterStatusMessage, MessageType.None);
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -717,6 +721,8 @@ namespace MashBoxSDK.MapTools
                         paintTargets.Clear();
                         InvalidatePaintTargetCache();
                         painterStatusMessage = "Paint target list cleared.";
+                        if (splatMode)
+                            splatStatusMessage = "Splat paint target list cleared.";
                     }
                 }
             }
@@ -813,6 +819,58 @@ namespace MashBoxSDK.MapTools
                 painterStatusMessage = $"Added '{meshFilter.gameObject.name}' to Paint Targets.";
             else
                 painterStatusMessage = $"'{meshFilter.gameObject.name}' is already in Paint Targets.";
+        }
+
+        private GameObject ResolveSplatPaintTarget(RaycastHit hit)
+        {
+            if (!hit.collider)
+                return null;
+
+            MultiSplineLoft loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
+            if (loft != null)
+                return loft.gameObject;
+
+            if (hit.collider is TerrainCollider)
+            {
+                Terrain terrain = hit.collider.GetComponent<Terrain>();
+                return terrain != null ? terrain.gameObject : hit.collider.gameObject;
+            }
+
+            MeshFilter meshFilter = GetPaintMeshFilter(hit);
+            return meshFilter != null ? meshFilter.gameObject : null;
+        }
+
+        private void AddSplatPaintTarget(GameObject target)
+        {
+            if (!target)
+                return;
+
+            Undo.RecordObject(this, "Add Splat Paint Target");
+            bool added = TryAddPaintTarget(target);
+            MultiSplineLoft loft = ResolvePaintTargetLoft(target);
+            if (loft != null)
+            {
+                if (!loft.UpdateMeshCollider)
+                {
+                    Undo.RecordObject(loft, "Enable Loft Collider Chunks For Splat Painting");
+                    loft.UpdateMeshCollider = true;
+                    EditorUtility.SetDirty(loft);
+                }
+                loft.RebuildColliderChunks();
+            }
+
+            splatStatusMessage = added
+                ? $"Added '{target.name}' as a Splat Paint Target."
+                : $"'{target.name}' is already a Splat Paint Target.";
+            InvalidatePaintTargetCache();
+            EditorUtility.SetDirty(this);
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private void AddSplatPaintTargetFromHit(RaycastHit hit)
+        {
+            AddSplatPaintTarget(ResolveSplatPaintTarget(hit));
         }
 
         private Color GetPainterBrushColor(RaycastHit hit, bool shiftPressed)
@@ -1432,7 +1490,7 @@ namespace MashBoxSDK.MapTools
                 // Draw Brush Disc
                 Handles.color = currentMode == ToolMode.Decor
                     ? Color.cyan
-                    : currentMode == ToolMode.SplatMap ? GetSplatChannelColor(e.shift) : GetPainterBrushColor(hit, e.shift);
+                    : currentMode == ToolMode.SplatMap ? GetSplatBrushColor(hit, e.shift) : GetPainterBrushColor(hit, e.shift);
                 Handles.DrawWireDisc(hit.point, hit.normal, brushRadius);
                 if (currentMode == ToolMode.Painter)
                     DrawPainterHoverLabel(hit, e.shift);
@@ -1450,6 +1508,21 @@ namespace MashBoxSDK.MapTools
                         e.Use();
                         sceneView.Repaint();
                         return;
+                    }
+
+                    if (currentMode == ToolMode.SplatMap)
+                    {
+                        GameObject splatTarget = ResolveSplatPaintTarget(hit);
+                        if (splatTarget != null && !IsPaintTarget(splatTarget))
+                        {
+                            if (e.shift)
+                                AddSplatPaintTargetFromHit(hit);
+                            else
+                                SetSplatStatus($"'{splatTarget.name}' is not a Splat Paint Target. Shift-click to add it.");
+                            e.Use();
+                            sceneView.Repaint();
+                            return;
+                        }
                     }
 
                     isPainting = true;
@@ -1473,6 +1546,21 @@ namespace MashBoxSDK.MapTools
                     e.Use();
                 }
 
+            }
+            else if (currentMode == ToolMode.SplatMap
+                && TryGetSplatHoverCandidate(e.mousePosition, out GameObject hoverTarget))
+            {
+                DrawSplatActivationPreview(hoverTarget, e.shift);
+                if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+                {
+                    if (e.shift)
+                        AddSplatPaintTarget(hoverTarget);
+                    else
+                        SetSplatStatus($"'{hoverTarget.name}' has no active paint collider. Shift-click to add it and build collider chunks.");
+                    e.Use();
+                    sceneView.Repaint();
+                    return;
+                }
             }
             
             if (e.type == EventType.MouseMove) sceneView.Repaint();
@@ -1645,22 +1733,57 @@ namespace MashBoxSDK.MapTools
             // pick or all brush modes can temporarily lose their hover gizmo.
             Physics.SyncTransforms();
 
-            if (currentMode != ToolMode.SplatMap)
+            if (currentMode == ToolMode.Decor)
                 return Physics.Raycast(ray, out hit);
 
-            RaycastHit[] hits = Physics.RaycastAll(ray);
+            if (currentMode == ToolMode.Painter)
+            {
+                RaycastHit[] painterHits = Physics.RaycastAll(
+                    ray,
+                    float.MaxValue,
+                    GetPaintRaycastLayerMask(),
+                    QueryTriggerInteraction.Ignore);
+                System.Array.Sort(painterHits, (a, b) => a.distance.CompareTo(b.distance));
+                for (int index = 0; index < painterHits.Length; index++)
+                {
+                    if (IsMicroBumpPaintCollider(painterHits[index].collider))
+                        continue;
+                    hit = painterHits[index];
+                    return true;
+                }
+
+                hit = default;
+                return false;
+            }
+
+            RaycastHit[] hits = Physics.RaycastAll(
+                ray,
+                float.MaxValue,
+                GetPaintRaycastLayerMask(),
+                QueryTriggerInteraction.Ignore);
             System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
             string firstUvError = null;
 
             for (int i = 0; i < hits.Length; i++)
             {
-                if (!TryGetSplatUv(hits[i], out _, out string uvError))
+                if (IsMicroBumpPaintCollider(hits[i].collider))
+                    continue;
+
+                GameObject target = ResolveSplatPaintTarget(hits[i]);
+                if (target == null)
+                    continue;
+
+                bool hasUv = TryGetSplatUv(hits[i], out _, out string uvError);
+                if (!hasUv)
                 {
                     firstUvError ??= uvError;
-                    continue;
                 }
 
-                TryAutoAssignSplatTexture(hits[i], out _);
+                // Return eligible splat surfaces even before registration or
+                // when their collider is missing the selected UV. This keeps
+                // the hover preview visible and lets its label explain the fix.
+                if (hasUv && IsPaintTarget(target))
+                    TryAutoAssignSplatTexture(hits[i], out _);
                 hit = hits[i];
                 return true;
             }
@@ -1673,6 +1796,25 @@ namespace MashBoxSDK.MapTools
 
             hit = default;
             return false;
+        }
+
+        private static bool IsMicroBumpPaintCollider(Collider collider)
+        {
+            if (collider == null)
+                return false;
+
+            int microBumpLayer = LayerMask.NameToLayer("MicroBump");
+            return (microBumpLayer >= 0 && collider.gameObject.layer == microBumpLayer)
+                || collider.GetComponentInParent<LoftHeightOverlayModifier>() != null;
+        }
+
+        private static int GetPaintRaycastLayerMask()
+        {
+            int layerMask = Physics.DefaultRaycastLayers;
+            int microBumpLayer = LayerMask.NameToLayer("MicroBump");
+            if (microBumpLayer >= 0)
+                layerMask &= ~(1 << microBumpLayer);
+            return layerMask;
         }
 
         private bool TryGetSplatUv(RaycastHit hit, out Vector2 uv, out string error)
@@ -2235,29 +2377,138 @@ namespace MashBoxSDK.MapTools
             };
         }
 
-        private void DrawSplatHoverLabel(RaycastHit hit, bool erasing)
+        private Color GetSplatBrushColor(RaycastHit hit, bool shiftPressed)
         {
-            if (!TryGetSplatUv(hit, out Vector2 uv, out _))
-                return;
+            GameObject target = ResolveSplatPaintTarget(hit);
+            if (target != null && !IsPaintTarget(target))
+            {
+                return shiftPressed
+                    ? new Color(0.2f, 0.75f, 1f, 1f)
+                    : new Color(1f, 0.55f, 0.15f, 0.95f);
+            }
 
+            return TryGetSplatUv(hit, out _, out _)
+                ? GetSplatChannelColor(shiftPressed)
+                : new Color(1f, 0.7f, 0.1f, 1f);
+        }
+
+        private void DrawSplatHoverLabel(RaycastHit hit, bool shiftPressed)
+        {
             Handles.BeginGUI();
             Vector2 mouse = Event.current.mousePosition;
             var style = new GUIStyle(EditorStyles.helpBox);
-            style.normal.textColor = GetSplatChannelColor(erasing);
-            string action = erasing ? "Erase" : "Paint";
-            Color colorWeights = GetSplatColorWeights(paintColor);
-            string paintTarget = splatPaintMode == MBSplatPaintMode.Color
-                ? $"Weights R {colorWeights.r:0.##}  G {colorWeights.g:0.##}  B {colorWeights.b:0.##}"
-                : $"Texture {splatTextureId}  {GetActiveControlMapPropertyName()} {GetActiveSplatChannelName()}";
+            style.normal.textColor = GetSplatBrushColor(hit, shiftPressed);
+            GameObject target = ResolveSplatPaintTarget(hit);
+            string label;
+            if (target != null && !IsPaintTarget(target))
+            {
+                label = shiftPressed
+                    ? $"Click to Add Splat Target: {target.name}"
+                    : $"Shift+Click Add Splat Target: {target.name}";
+            }
+            else if (!TryGetSplatUv(hit, out Vector2 uv, out string uvError))
+            {
+                label = uvError ?? "Selected projection UV is unavailable.";
+            }
+            else
+            {
+                string action = shiftPressed ? "Erase" : "Paint";
+                Color colorWeights = GetSplatColorWeights(paintColor);
+                string paintTarget = splatPaintMode == MBSplatPaintMode.Color
+                    ? $"Weights R {colorWeights.r:0.##}  G {colorWeights.g:0.##}  B {colorWeights.b:0.##}"
+                    : $"Texture {splatTextureId}  {GetActiveControlMapPropertyName()} {GetActiveSplatChannelName()}";
+                label = $"{action} {paintTarget}   {splatUVChannel} {uv.x:0.000}, {uv.y:0.000}";
+            }
             GUI.Label(
                 new Rect(mouse.x + 18f, mouse.y + 18f, 340f, 38f),
-                $"{action} {paintTarget}   {splatUVChannel} {uv.x:0.000}, {uv.y:0.000}",
+                label,
                 style);
+            Handles.EndGUI();
+        }
+
+        private bool TryGetSplatHoverCandidate(Vector2 mousePosition, out GameObject target)
+        {
+            target = null;
+            MultiSplineLoft[] lofts = Object.FindObjectsByType<MultiSplineLoft>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+            if (lofts == null || lofts.Length == 0)
+                return false;
+
+            var candidates = new List<GameObject>();
+            var seen = new HashSet<GameObject>();
+            for (int index = 0; index < lofts.Length; index++)
+            {
+                MultiSplineLoft loft = lofts[index];
+                if (loft == null || !loft.gameObject.scene.IsValid())
+                    continue;
+                Renderer[] renderers = loft.GetComponentsInChildren<Renderer>(true);
+                for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
+                {
+                    Renderer renderer = renderers[rendererIndex];
+                    if (renderer != null
+                        && renderer.gameObject.activeInHierarchy
+                        && renderer.enabled
+                        && seen.Add(renderer.gameObject))
+                    {
+                        candidates.Add(renderer.gameObject);
+                    }
+                }
+            }
+
+            if (candidates.Count == 0)
+                return false;
+            GameObject picked = HandleUtility.PickGameObject(
+                mousePosition,
+                false,
+                null,
+                candidates.ToArray());
+            MultiSplineLoft pickedLoft = picked != null
+                ? picked.GetComponent<MultiSplineLoft>() ?? picked.GetComponentInParent<MultiSplineLoft>()
+                : null;
+            if (pickedLoft == null)
+                return false;
+            target = pickedLoft.gameObject;
+            return true;
+        }
+
+        private void DrawSplatActivationPreview(GameObject target, bool shiftPressed)
+        {
+            if (!target)
+                return;
+            bool active = IsPaintTarget(target);
+            Color previewColor = shiftPressed
+                ? new Color(0.2f, 0.75f, 1f, 1f)
+                : new Color(1f, 0.55f, 0.15f, 0.95f);
+            Renderer renderer = target.GetComponent<Renderer>() ?? target.GetComponentInChildren<Renderer>();
+            if (renderer != null)
+            {
+                Handles.color = previewColor;
+                Handles.DrawWireCube(renderer.bounds.center, renderer.bounds.size);
+            }
+
+            Handles.BeginGUI();
+            var style = new GUIStyle(EditorStyles.helpBox);
+            style.normal.textColor = previewColor;
+            string label = active
+                ? $"{target.name}: no active paint collider. Shift+Click rebuilds collider chunks."
+                : shiftPressed
+                    ? $"Click to Add Splat Target: {target.name}"
+                    : $"Shift+Click Add Splat Target: {target.name}";
+            Vector2 mouse = Event.current.mousePosition;
+            GUI.Label(new Rect(mouse.x + 18f, mouse.y + 18f, 380f, 38f), label, style);
             Handles.EndGUI();
         }
 
         private void PaintSplatTexture(RaycastHit hit, bool erase)
         {
+            GameObject target = ResolveSplatPaintTarget(hit);
+            if (target != null && !IsPaintTarget(target))
+            {
+                SetSplatStatus($"'{target.name}' is not a Splat Paint Target. Shift-click it before painting.");
+                return;
+            }
+
             if (!TryAutoAssignSplatTexture(hit, out _))
                 return;
 
@@ -2427,6 +2678,7 @@ namespace MashBoxSDK.MapTools
                     if (collider != null
                         && collider.enabled
                         && collider.sharedMesh != null
+                        && !IsMicroBumpPaintCollider(collider)
                         && collider.bounds.SqrDistance(hit.point) <= brushRadius * brushRadius
                         && uniqueColliders.Add(collider))
                     {
