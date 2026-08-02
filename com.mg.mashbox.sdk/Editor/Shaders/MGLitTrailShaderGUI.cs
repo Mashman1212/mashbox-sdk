@@ -97,6 +97,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             public Texture maskMap;
             public Vector2 maskScale;
             public Vector2 maskOffset;
+            public Vector4 mappingTiling;
+            public Vector4 mappingOffset;
             public float heightBlend;
             public float heightOffset;
             public float heightAmplitude;
@@ -185,6 +187,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 string suffix = index.ToString("00");
                 string baseProperty = "_BaseMap" + suffix;
                 if (!material.HasProperty(baseProperty))
+                    continue;
+
+                // New trail shaders sample all three layer textures through explicit
+                // Vector2 mapping properties instead of Unity texture transforms.
+                if (material.HasProperty("_Tiling" + suffix) ||
+                    material.HasProperty("_Offset" + suffix))
                     continue;
 
                 Vector2 scale = material.GetTextureScale(baseProperty);
@@ -402,6 +410,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 MaterialProperty baseMap = FindOptionalProperty("_BaseMap" + suffix, properties);
                 MaterialProperty normalMap = FindOptionalProperty("_NormalMap" + suffix, properties);
                 MaterialProperty maskMap = FindOptionalProperty("_MaskMap" + suffix, properties);
+                MaterialProperty mappingTiling = FindOptionalProperty("_Tiling" + suffix, properties);
+                MaterialProperty mappingOffset = FindOptionalProperty("_Offset" + suffix, properties);
                 MaterialProperty heightBlend = FindOptionalProperty("_HeightBlend" + suffix, properties);
                 MaterialProperty heightOffset = FindOptionalProperty("_HeightOffset" + suffix, properties);
                 MaterialProperty heightAmplitude = FindOptionalProperty("_HeightAmplitude" + suffix, properties);
@@ -476,6 +486,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         baseMap,
                         normalMap,
                         maskMap,
+                        mappingTiling,
+                        mappingOffset,
                         planarMap);
                     DrawLayerColorControls(
                         materialEditor,
@@ -605,6 +617,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             string baseProperty = "_BaseMap" + suffix;
             string normalProperty = "_NormalMap" + suffix;
             string maskProperty = "_MaskMap" + suffix;
+            string mappingTilingProperty = "_Tiling" + suffix;
+            string mappingOffsetProperty = "_Offset" + suffix;
             string heightBlendProperty = "_HeightBlend" + suffix;
             string heightOffsetProperty = "_HeightOffset" + suffix;
             string heightAmplitudeProperty = "_HeightAmplitude" + suffix;
@@ -624,6 +638,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 maskMap = GetTexture(material, maskProperty),
                 maskScale = GetTextureScale(material, maskProperty),
                 maskOffset = GetTextureOffset(material, maskProperty),
+                mappingTiling = GetVector(material, mappingTilingProperty, new Vector4(1f, 1f, 0f, 0f)),
+                mappingOffset = GetVector(material, mappingOffsetProperty, Vector4.zero),
                 heightBlend = GetFloat(material, heightBlendProperty),
                 heightOffset = GetFloat(material, heightOffsetProperty),
                 heightAmplitude = GetFloat(material, heightAmplitudeProperty),
@@ -662,6 +678,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 values.maskMap,
                 values.baseScale,
                 values.baseOffset);
+            SetVector(material, "_Tiling" + suffix, values.mappingTiling);
+            SetVector(material, "_Offset" + suffix, values.mappingOffset);
             SetFloat(material, "_HeightBlend" + suffix, values.heightBlend);
             SetFloat(material, "_HeightOffset" + suffix, values.heightOffset);
             SetFloat(material, "_HeightAmplitude" + suffix, values.heightAmplitude);
@@ -697,6 +715,11 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             return material.HasProperty(propertyName) ? material.GetFloat(propertyName) : 0f;
         }
 
+        private static Vector4 GetVector(Material material, string propertyName, Vector4 fallback)
+        {
+            return material.HasProperty(propertyName) ? material.GetVector(propertyName) : fallback;
+        }
+
         private static Color GetColor(Material material, string propertyName)
         {
             return material.HasProperty(propertyName) ? material.GetColor(propertyName) : Color.white;
@@ -723,6 +746,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 material.SetFloat(propertyName, value);
         }
 
+        private static void SetVector(Material material, string propertyName, Vector4 value)
+        {
+            if (material.HasProperty(propertyName))
+                material.SetVector(propertyName, value);
+        }
+
         private static void SetColor(Material material, string propertyName, Color value)
         {
             if (material.HasProperty(propertyName))
@@ -743,9 +772,14 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             MaterialProperty baseMap,
             MaterialProperty normalMap,
             MaterialProperty maskMap,
+            MaterialProperty mappingTiling,
+            MaterialProperty mappingOffset,
             MaterialProperty planarMap)
         {
-            if (baseMap == null && planarMap == null)
+            if (baseMap == null &&
+                mappingTiling == null &&
+                mappingOffset == null &&
+                planarMap == null)
                 return;
 
             GUILayout.Space(4f);
@@ -757,6 +791,25 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     new GUIContent(
                         "Planar Mapping",
                         "Uses the shader's planar projection for this texture layer."));
+            }
+
+            if (mappingTiling != null || mappingOffset != null)
+            {
+                if (mappingTiling != null)
+                {
+                    materialEditor.ShaderProperty(
+                        mappingTiling,
+                        new GUIContent("Tiling", "UV tiling shared by this layer's base, normal, and mask maps."));
+                }
+
+                if (mappingOffset != null)
+                {
+                    materialEditor.ShaderProperty(
+                        mappingOffset,
+                        new GUIContent("Offset", "UV offset shared by this layer's base, normal, and mask maps."));
+                }
+
+                return;
             }
 
             if (baseMap == null)

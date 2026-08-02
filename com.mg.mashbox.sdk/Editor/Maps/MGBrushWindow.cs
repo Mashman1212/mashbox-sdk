@@ -100,9 +100,14 @@ namespace MashBoxSDK.MapTools
         [SerializeField] private bool normalizeSplatWeights = true;
         [SerializeField] private bool splatUseFalloff = true;
         [SerializeField] private int newSplatResolution = 1024;
+        [SerializeField] private bool splatAutoSaveAfterStroke = true;
         private string splatStatusMessage = "Assign a splat-map texture, then paint through a MeshCollider's selected UV channel.";
         private bool splatTextureDirty;
+        private bool splatCompanionTextureDirty;
         private bool splatUndoRegistered;
+        private bool splatAutoSaveScheduled;
+        private double splatAutoSaveDueTime;
+        private const double SplatAutoSaveDelaySeconds = 0.5d;
         private readonly Dictionary<SplatIslandCacheKey, Rect[]> splatIslandBoundsCache =
             new Dictionary<SplatIslandCacheKey, Rect[]>();
 
@@ -204,6 +209,10 @@ namespace MashBoxSDK.MapTools
 
         private void OnDisable()
         {
+            CancelScheduledSplatAutoSave();
+            if (splatAutoSaveAfterStroke && splatTextureDirty)
+                TrySaveSplatTexture(false, false, false);
+
             MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
             MBEditorToolState.BrushSettingsChanged -= OnSharedBrushSettingsChanged;
             MBEditorToolState.PaintColorChanged -= OnSharedPaintColorChanged;
@@ -287,6 +296,9 @@ namespace MashBoxSDK.MapTools
 
         private void SetToolMode(ToolMode mode)
         {
+            if (isPainting && currentMode == ToolMode.SplatMap)
+                FinishSplatPaintStroke();
+
             currentMode = mode;
             MBEditorToolState.BrushMode = (MBBrushMode)mode;
             isPainting = false;
@@ -367,6 +379,8 @@ namespace MashBoxSDK.MapTools
 
         private void OnSharedSplatPaintSettingsChanged()
         {
+            if (splatAutoSaveAfterStroke && splatTextureDirty && !isPainting)
+                TrySaveSplatTexture(false, false, false);
             splatUndoRegistered = false;
             Repaint();
             SceneView.RepaintAll();
@@ -391,6 +405,7 @@ namespace MashBoxSDK.MapTools
             {
                 splatSourceMaterial = null;
                 splatTextureDirty = false;
+                splatCompanionTextureDirty = false;
                 splatStatusMessage = splatMapTexture != null
                     ? "Texture assigned. Paint in the Scene view through a MeshCollider."
                     : "Assign a splat-map texture, then paint through a MeshCollider's selected UV channel.";
@@ -437,6 +452,19 @@ namespace MashBoxSDK.MapTools
                 1,
                 512);
             splatUseFalloff = EditorGUILayout.Toggle("Use Falloff", splatUseFalloff);
+            EditorGUI.BeginChangeCheck();
+            splatAutoSaveAfterStroke = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Auto-Save After Stroke",
+                    "Writes changed control maps to their source assets after painting pauses, rather than during every brush dab."),
+                splatAutoSaveAfterStroke);
+            if (EditorGUI.EndChangeCheck())
+            {
+                if (splatAutoSaveAfterStroke && splatTextureDirty)
+                    ScheduleSplatAutoSave();
+                else if (!splatAutoSaveAfterStroke)
+                    CancelScheduledSplatAutoSave();
+            }
             if (splatPaintMode == MBSplatPaintMode.Color)
             {
                 normalizeSplatWeights = EditorGUILayout.Toggle(
@@ -459,9 +487,9 @@ namespace MashBoxSDK.MapTools
                             splatPaintMode == MBSplatPaintMode.TextureId
                                 ? "Save Control Maps"
                                 : "Save Texture"))
-                        SaveSplatTexture(false);
+                        TrySaveSplatTexture(false);
                     if (GUILayout.Button("Save As PNG"))
-                        SaveSplatTexture(true);
+                        TrySaveSplatTexture(true);
                 }
             }
 
@@ -1265,6 +1293,7 @@ namespace MashBoxSDK.MapTools
 
             if (e.type == EventType.MouseLeaveWindow || e.type == EventType.Ignore)
             {
+                bool interruptedSplatStroke = isPainting && currentMode == ToolMode.SplatMap;
                 sceneCameraRightMouseHeld = false;
                 wPauseHeld = false;
                 painterBrushActive = true;
@@ -1274,6 +1303,8 @@ namespace MashBoxSDK.MapTools
                 EndBrushAdjustment();
                 strokeMeshes.Clear();
                 GUIUtility.hotControl = 0;
+                if (interruptedSplatStroke)
+                    FinishSplatPaintStroke();
             }
 
             if (isPainting && e.button == 0 && (e.type == EventType.MouseUp || e.rawType == EventType.MouseUp))
@@ -1284,10 +1315,8 @@ namespace MashBoxSDK.MapTools
                 FinishPaintUndoGroup();
                 hasLastLoftPaintPoint = false;
                 GUIUtility.hotControl = 0;
-                if (currentMode == ToolMode.SplatMap && splatTextureDirty)
-                    splatStatusMessage = splatPaintMode == MBSplatPaintMode.TextureId
-                        ? "Control maps changed. Use Save Control Maps to write both textures to their source assets."
-                        : "Splat map changed. Use Save Texture to write the pixels to the source asset.";
+                if (currentMode == ToolMode.SplatMap)
+                    FinishSplatPaintStroke();
                 if (e.type != EventType.Used)
                     e.Use();
                 sceneView.Repaint();
@@ -1453,6 +1482,8 @@ namespace MashBoxSDK.MapTools
         {
             if (e.type == EventType.MouseDown && e.button == 2 && e.control && !e.alt)
             {
+                if (isPainting && currentMode == ToolMode.SplatMap)
+                    FinishSplatPaintStroke();
                 isPainting = false;
                 FinishPaintUndoGroup();
                 hasLastLoftPaintPoint = false;
@@ -1556,6 +1587,8 @@ namespace MashBoxSDK.MapTools
             {
                 ActivateSceneTool();
                 GUIUtility.hotControl = 0;
+                if (isPainting && currentMode == ToolMode.SplatMap)
+                    FinishSplatPaintStroke();
                 isPainting = false;
                 FinishPaintUndoGroup();
                 hasLastLoftPaintPoint = false;
@@ -1572,6 +1605,8 @@ namespace MashBoxSDK.MapTools
                 return;
 
             painterBrushActive = false;
+            if (isPainting && currentMode == ToolMode.SplatMap)
+                FinishSplatPaintStroke();
             isPainting = false;
             FinishPaintUndoGroup();
             hasLastLoftPaintPoint = false;
@@ -1923,7 +1958,10 @@ namespace MashBoxSDK.MapTools
             splatMapTexture = detectedTexture;
             splatSourceMaterial = material;
             if (!switchingWithinSameMaterial)
+            {
                 splatTextureDirty = false;
+                splatCompanionTextureDirty = false;
+            }
             splatUndoRegistered = false;
             SetSplatStatus(
                 $"Using {propertyName} '{detectedTexture.name}' from material '{material.name}'.");
@@ -2291,6 +2329,7 @@ namespace MashBoxSDK.MapTools
                 {
                     splatCompanionMapTexture.Apply(splatCompanionMapTexture.mipmapCount > 1, false);
                     EditorUtility.SetDirty(splatCompanionMapTexture);
+                    splatCompanionTextureDirty = true;
                 }
                 splatTextureDirty = true;
                 SceneView.RepaintAll();
@@ -2365,6 +2404,7 @@ namespace MashBoxSDK.MapTools
                 splatCompanionMapTexture.SetPixels(minX, minY, width, height, companionPixels);
                 splatCompanionMapTexture.Apply(splatCompanionMapTexture.mipmapCount > 1, false);
                 EditorUtility.SetDirty(splatCompanionMapTexture);
+                splatCompanionTextureDirty = true;
             }
             splatMapTexture.Apply(splatMapTexture.mipmapCount > 1, false);
             EditorUtility.SetDirty(splatMapTexture);
@@ -2882,6 +2922,60 @@ namespace MashBoxSDK.MapTools
             }
         }
 
+        private void FinishSplatPaintStroke()
+        {
+            if (!splatTextureDirty)
+                return;
+
+            if (splatAutoSaveAfterStroke)
+            {
+                ScheduleSplatAutoSave();
+                splatStatusMessage = splatCompanionTextureDirty
+                    ? "Control maps changed. Auto-save queued."
+                    : "Splat map changed. Auto-save queued.";
+            }
+            else
+            {
+                splatStatusMessage = splatCompanionTextureDirty
+                    ? "Control maps changed. Use Save Control Maps to write both textures to their source assets."
+                    : "Splat map changed. Use Save Texture to write the pixels to the source asset.";
+            }
+
+            Repaint();
+        }
+
+        private void ScheduleSplatAutoSave()
+        {
+            if (!splatAutoSaveAfterStroke || !splatTextureDirty)
+                return;
+
+            splatAutoSaveDueTime = EditorApplication.timeSinceStartup + SplatAutoSaveDelaySeconds;
+            if (splatAutoSaveScheduled)
+                return;
+
+            splatAutoSaveScheduled = true;
+            EditorApplication.update -= ProcessScheduledSplatAutoSave;
+            EditorApplication.update += ProcessScheduledSplatAutoSave;
+        }
+
+        private void ProcessScheduledSplatAutoSave()
+        {
+            if (!splatAutoSaveScheduled ||
+                isPainting ||
+                EditorApplication.timeSinceStartup < splatAutoSaveDueTime)
+                return;
+
+            CancelScheduledSplatAutoSave();
+            if (splatTextureDirty)
+                TrySaveSplatTexture(false, false, false);
+        }
+
+        private void CancelScheduledSplatAutoSave()
+        {
+            splatAutoSaveScheduled = false;
+            EditorApplication.update -= ProcessScheduledSplatAutoSave;
+        }
+
         private void MakeSplatTextureReadable()
         {
             if (splatMapTexture == null)
@@ -2902,10 +2996,25 @@ namespace MashBoxSDK.MapTools
             if (string.IsNullOrEmpty(path) || !(AssetImporter.GetAtPath(path) is TextureImporter importer))
                 return texture;
 
-            importer.isReadable = true;
-            importer.sRGBTexture = false;
-            importer.textureCompression = TextureImporterCompression.Uncompressed;
-            importer.SaveAndReimport();
+            bool importerChanged = false;
+            if (!importer.isReadable)
+            {
+                importer.isReadable = true;
+                importerChanged = true;
+            }
+            if (importer.sRGBTexture)
+            {
+                importer.sRGBTexture = false;
+                importerChanged = true;
+            }
+            if (importer.textureCompression != TextureImporterCompression.Uncompressed)
+            {
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importerChanged = true;
+            }
+            if (importerChanged)
+                importer.SaveAndReimport();
+
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
@@ -2932,23 +3041,60 @@ namespace MashBoxSDK.MapTools
             splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
             MakeSplatTextureReadable();
             splatTextureDirty = false;
+            splatCompanionTextureDirty = false;
             splatStatusMessage = $"Created {resolution} x {resolution} splat map. Red is the initial full-weight layer.";
         }
 
-        private void SaveSplatTexture(bool saveAs)
+        private void TrySaveSplatTexture(
+            bool saveAs,
+            bool allowSaveAsPrompt = true,
+            bool reimportAssets = true)
+        {
+            try
+            {
+                SaveSplatTexture(saveAs, allowSaveAsPrompt, reimportAssets);
+            }
+            catch (System.Exception exception)
+            {
+                splatStatusMessage = $"Control map save failed: {exception.Message}";
+                Debug.LogException(exception);
+                Repaint();
+            }
+        }
+
+        private void SaveSplatTexture(
+            bool saveAs,
+            bool allowSaveAsPrompt = true,
+            bool reimportAssets = true)
         {
             if (splatMapTexture == null)
                 return;
 
+            if (!saveAs)
+                CancelScheduledSplatAutoSave();
+
             string companionPath = string.Empty;
             string companionExtension = string.Empty;
             byte[] companionBytes = null;
+            bool companionIsAsset = false;
+            if (!saveAs && splatCompanionTextureDirty && splatCompanionMapTexture == null)
+            {
+                splatStatusMessage = "The modified companion control map is no longer assigned; it was not saved.";
+                return;
+            }
+
             if (!saveAs
-                && splatPaintMode == MBSplatPaintMode.TextureId
+                && splatCompanionTextureDirty
                 && splatCompanionMapTexture != null)
             {
                 companionPath = AssetDatabase.GetAssetPath(splatCompanionMapTexture);
                 companionExtension = Path.GetExtension(companionPath).ToLowerInvariant();
+                if (string.IsNullOrEmpty(companionPath))
+                {
+                    splatStatusMessage = "The companion control map is not a saved asset.";
+                    return;
+                }
+
                 if (companionExtension == ".png" || companionExtension == ".tga")
                 {
                     if (!AssetDatabase.MakeEditable(companionPath))
@@ -2960,12 +3106,30 @@ namespace MashBoxSDK.MapTools
                         ? splatCompanionMapTexture.EncodeToTGA()
                         : splatCompanionMapTexture.EncodeToPNG();
                 }
+                else if (companionExtension == ".asset")
+                {
+                    companionIsAsset = true;
+                }
+                else
+                {
+                    splatStatusMessage =
+                        $"Companion control map '{companionPath}' must be a PNG, TGA, or Texture2D asset.";
+                    return;
+                }
             }
 
             string path = saveAs ? string.Empty : AssetDatabase.GetAssetPath(splatMapTexture);
             string extension = Path.GetExtension(path).ToLowerInvariant();
             if (saveAs || (extension != ".png" && extension != ".tga" && extension != ".asset"))
             {
+                if (!allowSaveAsPrompt)
+                {
+                    splatStatusMessage =
+                        "Auto-save needs a PNG, TGA, or Texture2D asset. Use Save As PNG for this texture.";
+                    Repaint();
+                    return;
+                }
+
                 path = EditorUtility.SaveFilePanelInProject(
                     "Save Splat Map",
                     splatMapTexture.name + "_Painted",
@@ -2991,23 +3155,36 @@ namespace MashBoxSDK.MapTools
 
                 byte[] bytes = extension == ".tga" ? splatMapTexture.EncodeToTGA() : splatMapTexture.EncodeToPNG();
                 File.WriteAllBytes(Path.GetFullPath(path), bytes);
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
-                splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                MakeSplatTextureReadable();
+                if (reimportAssets)
+                {
+                    AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                    splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                    MakeSplatTextureReadable();
+                }
             }
 
             if (companionBytes != null)
             {
                 File.WriteAllBytes(Path.GetFullPath(companionPath), companionBytes);
-                AssetDatabase.ImportAsset(companionPath, ImportAssetOptions.ForceUpdate);
-                splatCompanionMapTexture = ConfigureSplatTextureForPainting(
-                    AssetDatabase.LoadAssetAtPath<Texture2D>(companionPath));
+                if (reimportAssets)
+                {
+                    AssetDatabase.ImportAsset(companionPath, ImportAssetOptions.ForceUpdate);
+                    splatCompanionMapTexture = ConfigureSplatTextureForPainting(
+                        AssetDatabase.LoadAssetAtPath<Texture2D>(companionPath));
+                }
+            }
+            else if (companionIsAsset)
+            {
+                EditorUtility.SetDirty(splatCompanionMapTexture);
+                AssetDatabase.SaveAssets();
             }
 
             splatTextureDirty = false;
-            splatStatusMessage = companionBytes != null
+            splatCompanionTextureDirty = false;
+            splatStatusMessage = companionBytes != null || companionIsAsset
                 ? $"Saved both control maps: {path} and {companionPath}."
                 : $"Saved splat map to {path}.";
+            Repaint();
         }
 
         private void SimulatePhysics()
