@@ -27,6 +27,7 @@ namespace MashBoxSDK.Shaders
         {
             Vehicle,
             Clothing,
+            Flags,
             Hair,
             Tire,
             Skin,
@@ -181,6 +182,10 @@ namespace MashBoxSDK.Shaders
             "_DetailSmoothnessScale",
             "_DetailNormalScale"
         };
+
+        // Flags intentionally share clothing's texture/control contract, but use their own
+        // template because their Shader Graph lighting model and keyword state are different.
+        private static readonly string[] MGFlagsPreservedProperties = MGClothingPreservedProperties;
 
         private static readonly string[] MGLitBasicPreservedProperties =
         {
@@ -418,6 +423,21 @@ namespace MashBoxSDK.Shaders
             }
         }
 
+        private static readonly Shader FlagsShader = Shader.Find("MGShaders/HDRP/Lit/MG_Flags");
+        private static Material _flagsTemplateMat;
+        private static Material FlagsTemplateMat
+        {
+            get
+            {
+                if (!_flagsTemplateMat)
+                {
+                    _flagsTemplateMat = Resources.Load<Material>("MG_Flags_Template");
+                }
+
+                return _flagsTemplateMat;
+            }
+        }
+
         private static readonly Shader LitBasicShader = Shader.Find("MGShaders/HDRP/Lit/MG_Lit_Basic");
         private static Material _litBasicTemplateMat;
         private static Material LitBasicTemplateMat
@@ -579,6 +599,9 @@ namespace MashBoxSDK.Shaders
                         case ShaderType.Clothing:
                             EnforceClothingShader(materials[i]);
                             break;
+                        case ShaderType.Flags:
+                            EnforceFlagsShader(materials[i]);
+                            break;
                         case ShaderType.LitBasic:
                             EnforceLitBasicShader(materials[i]);
                             break;
@@ -669,6 +692,37 @@ namespace MashBoxSDK.Shaders
             }
             
             mat.shaderKeywords = ClothingTemplateMat.shaderKeywords;
+        }
+
+        public static void EnforceFlagsShader(Material mat)
+        {
+            if (mat == FlagsTemplateMat)
+                return;
+
+            Texture originalDetail = null;
+            if (mat != null && mat.HasProperty("_DetailMap"))
+                originalDetail = mat.GetTexture("_DetailMap");
+
+            if (!PrepareMaterialForShaderEnforcement(mat, FlagsShader))
+                return;
+
+            ApplyTemplateWithPreserve(mat, FlagsTemplateMat, MGFlagsPreservedProperties);
+
+            if (originalDetail == null || originalDetail.name == "DefaultNormal" ||
+                originalDetail.name.Contains("DefaultTexture2D"))
+            {
+                if (mat.HasProperty("_DetailNormalScale"))
+                    mat.SetFloat("_DetailNormalScale", 0.0f);
+                if (mat.HasProperty("_DetailSmoothnessScale"))
+                    mat.SetFloat("_DetailSmoothnessScale", 0.0f);
+                if (mat.HasProperty("_DetailAlbedoScale"))
+                    mat.SetFloat("_DetailAlbedoScale", 0.0f);
+            }
+
+            if (FlagsTemplateMat != null)
+                mat.shaderKeywords = FlagsTemplateMat.shaderKeywords;
+
+            EnforceDoubleSided(mat);
         }
 
         public static void EnforceLitBasicShader(Material mat)
@@ -829,10 +883,16 @@ namespace MashBoxSDK.Shaders
             var enforceSurfaceReception = false;
             var enforceAlphaTest = false;
             var enforceHdrpDecalAffects = false;
+            var enforceDoubleSided = false;
             if (UsesTemplateShader(mat, VehicleTemplateMat))
                 template = VehicleTemplateMat;
             else if (UsesTemplateShader(mat, ClothingTemplateMat))
                 template = ClothingTemplateMat;
+            else if (UsesTemplateShader(mat, FlagsTemplateMat))
+            {
+                template = FlagsTemplateMat;
+                enforceDoubleSided = true;
+            }
             else if (UsesTemplateShader(mat, LitBasicTemplateMat))
             {
                 template = LitBasicTemplateMat;
@@ -891,6 +951,8 @@ namespace MashBoxSDK.Shaders
             }
             if (enforceAlphaTest)
                 expectedKeywords.Add("_ALPHATEST_ON");
+            if (enforceDoubleSided)
+                expectedKeywords.Add("_DOUBLESIDED_ON");
 
             var needsKeywordSync = !KeywordSetsMatch(mat.shaderKeywords, expectedKeywords);
             var needsDecalSync = enforceSurfaceReception &&
@@ -902,6 +964,16 @@ namespace MashBoxSDK.Shaders
             var needsAlphaSync = enforceAlphaTest &&
                                  mat.HasProperty("_AlphaCutoffEnable") &&
                                  mat.GetFloat("_AlphaCutoffEnable") < 0.5f;
+            var needsDoubleSidedSync = enforceDoubleSided &&
+                                       (!mat.doubleSidedGI ||
+                                        (mat.HasProperty("_DoubleSidedEnable") &&
+                                         mat.GetFloat("_DoubleSidedEnable") < 0.5f) ||
+                                        (mat.HasProperty("_CullMode") &&
+                                         !Mathf.Approximately(mat.GetFloat("_CullMode"),
+                                             (float)CullMode.Off)) ||
+                                        (mat.HasProperty("_CullModeForward") &&
+                                         !Mathf.Approximately(mat.GetFloat("_CullModeForward"),
+                                             (float)CullMode.Off)));
             var needsHdrpDecalAffectSync = false;
             var needsHdrpDecalTextureSync = false;
             if (enforceHdrpDecalAffects)
@@ -928,6 +1000,7 @@ namespace MashBoxSDK.Shaders
             }
 
             if (!needsKeywordSync && !needsDecalSync && !needsSsrSync && !needsAlphaSync &&
+                !needsDoubleSidedSync &&
                 !needsHdrpDecalAffectSync && !needsHdrpDecalTextureSync)
                 return false;
 
@@ -955,6 +1028,9 @@ namespace MashBoxSDK.Shaders
                     mat.SetFloat("_AlphaCutoffEnable", 1.0f);
                 mat.EnableKeyword("_ALPHATEST_ON");
             }
+
+            if (enforceDoubleSided)
+                EnforceDoubleSided(mat);
 
             if (enforceHdrpDecalAffects)
             {
@@ -986,6 +1062,24 @@ namespace MashBoxSDK.Shaders
             UnityEditor.EditorUtility.SetDirty(mat);
 #endif
             return true;
+        }
+
+        private static void EnforceDoubleSided(Material mat)
+        {
+            if (mat == null)
+                return;
+
+            mat.EnableKeyword("_DOUBLESIDED_ON");
+            mat.doubleSidedGI = true;
+
+            if (mat.HasProperty("_DoubleSidedEnable"))
+                mat.SetFloat("_DoubleSidedEnable", 1.0f);
+            if (mat.HasProperty("_CullMode"))
+                mat.SetFloat("_CullMode", (float)CullMode.Off);
+            if (mat.HasProperty("_CullModeForward"))
+                mat.SetFloat("_CullModeForward", (float)CullMode.Off);
+            if (mat.HasProperty("_DoubleSidedConstants"))
+                mat.SetVector("_DoubleSidedConstants", new Vector4(1.0f, 1.0f, -1.0f, 0.0f));
         }
 
         private static bool UsesTemplateShader(Material material, Material template)

@@ -265,6 +265,10 @@ namespace MashBoxSDK.MapTools
                 normals = normals,
                 uv = uvs
             };
+            // Keep UV1 free for Unity lightmapping. MashBox splat painting uses
+            // TEXCOORD2 (shown as UV2 in the SDK), so terrain conversions start
+            // with a paintable copy of the terrain's normalized UV0 layout.
+            mesh.SetUVs(2, new List<Vector2>(uvs));
             mesh.SetTriangles(triangles, 0, true);
             mesh.RecalculateBounds();
             return mesh;

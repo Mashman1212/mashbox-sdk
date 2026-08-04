@@ -1,9 +1,9 @@
 using UnityEngine;
 using UnityEditor;
-using UnityEditorInternal;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MashBoxSDK.Maps;
 using MashBoxSDK.Maps.Painting;
 using MashBoxSDK.Maps.Spline;
 using MashBoxSDK.SDKMain;
@@ -104,12 +104,225 @@ namespace MashBoxSDK.MapTools
         private string splatStatusMessage = "Assign a splat-map texture, then paint through a MeshCollider's selected UV channel.";
         private bool splatTextureDirty;
         private bool splatCompanionTextureDirty;
+        private bool splatTextureUploadPending;
+        private Texture2D splatPreviewUploadTexture;
+        private Texture2D splatCompanionPreviewUploadTexture;
+        private bool splatPartialPreviewUploadUnavailable;
+        private readonly HashSet<Texture2D> splatStrokeModifiedTextures = new HashSet<Texture2D>();
+        private readonly HashSet<Texture2D> splatTexturesPendingSave = new HashSet<Texture2D>();
+        private readonly HashSet<Texture2D> splatStrokeUndoTextures = new HashSet<Texture2D>();
+        private readonly Dictionary<Texture2D, float> splatPreviewMipBiases =
+            new Dictionary<Texture2D, float>();
         private bool splatUndoRegistered;
-        private bool splatAutoSaveScheduled;
-        private double splatAutoSaveDueTime;
-        private const double SplatAutoSaveDelaySeconds = 0.5d;
         private readonly Dictionary<SplatIslandCacheKey, Rect[]> splatIslandBoundsCache =
             new Dictionary<SplatIslandCacheKey, Rect[]>();
+        private readonly Dictionary<SplatIslandCacheKey, SplatMeshData> splatMeshDataCache =
+            new Dictionary<SplatIslandCacheKey, SplatMeshData>();
+        private readonly List<Material> hitMaterialBuffer = new List<Material>(4);
+        private readonly List<int> splatTriangleCandidates = new List<int>(256);
+        private readonly HashSet<int> splatTriangleCandidateSet = new HashSet<int>();
+
+        private sealed class SplatMeshData
+        {
+            private readonly Mesh mesh;
+            internal readonly int[] triangles;
+            internal readonly List<Vector4> uvs;
+            private Vector3[] cachedVertices;
+            private SplatTriangleGrid triangleGrid;
+            private bool? normalizedPlanarXZUvs;
+
+            internal SplatMeshData(Mesh mesh, int channel)
+            {
+                this.mesh = mesh;
+                // Unity returns copies for both APIs. Keep one copy while the
+                // brush is active instead of copying an entire terrain mesh for
+                // every hover event (and several times within that event).
+                triangles = mesh.triangles;
+                uvs = new List<Vector4>(mesh.vertexCount);
+                mesh.GetUVs(channel, uvs);
+            }
+
+            internal Vector3[] GetVertices()
+            {
+                // Hover picking does not need positions. Defer this additional
+                // large allocation until an actual world-footprint stroke.
+                return cachedVertices ??= mesh.vertices;
+            }
+
+            internal void GetTrianglesNear(
+                Vector3 localCenter,
+                float localRadius,
+                List<int> results,
+                HashSet<int> seen)
+            {
+                triangleGrid ??= new SplatTriangleGrid(GetVertices(), triangles, mesh.bounds);
+                triangleGrid.Query(localCenter, localRadius, results, seen);
+            }
+
+            internal bool HasNormalizedPlanarXZUvs()
+            {
+                if (normalizedPlanarXZUvs.HasValue)
+                    return normalizedPlanarXZUvs.Value;
+
+                Vector3[] vertices = GetVertices();
+                if (vertices.Length == 0 || uvs.Count != vertices.Length)
+                    return false;
+
+                Bounds localBounds = mesh.bounds;
+                if (localBounds.size.x <= 0.0001f || localBounds.size.z <= 0.0001f)
+                    return false;
+
+                int sampleCount = Mathf.Min(vertices.Length, 128);
+                int stride = Mathf.Max(1, vertices.Length / sampleCount);
+                for (int index = 0; index < vertices.Length; index += stride)
+                {
+                    float expectedU = (vertices[index].x - localBounds.min.x) / localBounds.size.x;
+                    float expectedV = (vertices[index].z - localBounds.min.z) / localBounds.size.z;
+                    if (Mathf.Abs(uvs[index].x - expectedU) > 0.0001f
+                        || Mathf.Abs(uvs[index].y - expectedV) > 0.0001f)
+                    {
+                        normalizedPlanarXZUvs = false;
+                        return false;
+                    }
+                }
+
+                normalizedPlanarXZUvs = true;
+                return true;
+            }
+        }
+
+        private sealed class SplatTriangleGrid
+        {
+            private const int TargetTrianglesPerCell = 64;
+            private const int MaximumCellsPerTriangle = 64;
+            private readonly Bounds bounds;
+            private readonly int cellsX;
+            private readonly int cellsY;
+            private readonly int cellsZ;
+            private readonly Dictionary<int, List<int>> trianglesByCell =
+                new Dictionary<int, List<int>>();
+            private readonly List<int> largeTriangles = new List<int>();
+
+            internal SplatTriangleGrid(Vector3[] vertices, int[] triangles, Bounds meshBounds)
+            {
+                bounds = meshBounds;
+                Vector3 size = bounds.size;
+                float largestExtent = Mathf.Max(size.x, size.y, size.z);
+                float minimumExtent = Mathf.Max(largestExtent * 0.0001f, 0.0001f);
+                int targetCells = Mathf.Max(1, triangles.Length / 3 / TargetTrianglesPerCell);
+                int dimensions = (size.x > minimumExtent ? 1 : 0)
+                    + (size.y > minimumExtent ? 1 : 0)
+                    + (size.z > minimumExtent ? 1 : 0);
+                dimensions = Mathf.Max(1, dimensions);
+
+                float activeExtentProduct = 1f;
+                if (size.x > minimumExtent) activeExtentProduct *= size.x;
+                if (size.y > minimumExtent) activeExtentProduct *= size.y;
+                if (size.z > minimumExtent) activeExtentProduct *= size.z;
+                float cellsPerUnit = Mathf.Pow(targetCells / activeExtentProduct, 1f / dimensions);
+                cellsX = GetCellCount(size.x, minimumExtent, cellsPerUnit);
+                cellsY = GetCellCount(size.y, minimumExtent, cellsPerUnit);
+                cellsZ = GetCellCount(size.z, minimumExtent, cellsPerUnit);
+
+                for (int triangleStart = 0; triangleStart + 2 < triangles.Length; triangleStart += 3)
+                {
+                    int a = triangles[triangleStart];
+                    int b = triangles[triangleStart + 1];
+                    int c = triangles[triangleStart + 2];
+                    if ((uint)a >= vertices.Length || (uint)b >= vertices.Length || (uint)c >= vertices.Length)
+                        continue;
+
+                    Vector3 minimum = Vector3.Min(vertices[a], Vector3.Min(vertices[b], vertices[c]));
+                    Vector3 maximum = Vector3.Max(vertices[a], Vector3.Max(vertices[b], vertices[c]));
+                    GetCellRange(minimum, maximum, out Vector3Int minCell, out Vector3Int maxCell);
+                    int coveredCells = (maxCell.x - minCell.x + 1)
+                        * (maxCell.y - minCell.y + 1)
+                        * (maxCell.z - minCell.z + 1);
+                    int triangleIndex = triangleStart / 3;
+                    if (coveredCells > MaximumCellsPerTriangle)
+                    {
+                        largeTriangles.Add(triangleIndex);
+                        continue;
+                    }
+
+                    for (int z = minCell.z; z <= maxCell.z; z++)
+                    for (int y = minCell.y; y <= maxCell.y; y++)
+                    for (int x = minCell.x; x <= maxCell.x; x++)
+                    {
+                        int key = GetCellKey(x, y, z);
+                        if (!trianglesByCell.TryGetValue(key, out List<int> cellTriangles))
+                        {
+                            cellTriangles = new List<int>(TargetTrianglesPerCell);
+                            trianglesByCell.Add(key, cellTriangles);
+                        }
+                        cellTriangles.Add(triangleIndex);
+                    }
+                }
+            }
+
+            internal void Query(
+                Vector3 center,
+                float radius,
+                List<int> results,
+                HashSet<int> seen)
+            {
+                results.Clear();
+                seen.Clear();
+                Vector3 radiusVector = Vector3.one * radius;
+                GetCellRange(center - radiusVector, center + radiusVector, out Vector3Int minCell, out Vector3Int maxCell);
+                for (int z = minCell.z; z <= maxCell.z; z++)
+                for (int y = minCell.y; y <= maxCell.y; y++)
+                for (int x = minCell.x; x <= maxCell.x; x++)
+                {
+                    if (!trianglesByCell.TryGetValue(GetCellKey(x, y, z), out List<int> cellTriangles))
+                        continue;
+                    for (int index = 0; index < cellTriangles.Count; index++)
+                    {
+                        int triangle = cellTriangles[index];
+                        if (seen.Add(triangle))
+                            results.Add(triangle);
+                    }
+                }
+
+                for (int index = 0; index < largeTriangles.Count; index++)
+                {
+                    int triangle = largeTriangles[index];
+                    if (seen.Add(triangle))
+                        results.Add(triangle);
+                }
+            }
+
+            private static int GetCellCount(float extent, float minimumExtent, float cellsPerUnit)
+            {
+                return extent > minimumExtent
+                    ? Mathf.Clamp(Mathf.CeilToInt(extent * cellsPerUnit), 1, 512)
+                    : 1;
+            }
+
+            private void GetCellRange(Vector3 minimum, Vector3 maximum, out Vector3Int minCell, out Vector3Int maxCell)
+            {
+                minCell = new Vector3Int(
+                    GetCellCoordinate(minimum.x, bounds.min.x, bounds.size.x, cellsX),
+                    GetCellCoordinate(minimum.y, bounds.min.y, bounds.size.y, cellsY),
+                    GetCellCoordinate(minimum.z, bounds.min.z, bounds.size.z, cellsZ));
+                maxCell = new Vector3Int(
+                    GetCellCoordinate(maximum.x, bounds.min.x, bounds.size.x, cellsX),
+                    GetCellCoordinate(maximum.y, bounds.min.y, bounds.size.y, cellsY),
+                    GetCellCoordinate(maximum.z, bounds.min.z, bounds.size.z, cellsZ));
+            }
+
+            private static int GetCellCoordinate(float value, float minimum, float extent, int cellCount)
+            {
+                if (cellCount <= 1 || extent <= 0.000001f)
+                    return 0;
+                return Mathf.Clamp(Mathf.FloorToInt((value - minimum) / extent * cellCount), 0, cellCount - 1);
+            }
+
+            private int GetCellKey(int x, int y, int z)
+            {
+                return x + cellsX * (y + cellsY * z);
+            }
+        }
 
         private readonly struct SplatIslandCacheKey : System.IEquatable<SplatIslandCacheKey>
         {
@@ -170,6 +383,7 @@ namespace MashBoxSDK.MapTools
         private Vector3 lastLoftPaintPoint;
         private bool clearingVisualSelection;
         private UnityEngine.Object[] lastVisualEditingSelection = System.Array.Empty<UnityEngine.Object>();
+        private GameObject splatHoverCandidate;
 
         public static void ShowWindow()
         {
@@ -187,7 +401,9 @@ namespace MashBoxSDK.MapTools
 
         private void OnEnable()
         {
+            splatPartialPreviewUploadUnavailable = false;
             currentMode = (ToolMode)MBEditorToolState.BrushMode;
+            ClearPaintTargetsForModeExit();
             MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
             MBEditorToolState.BrushModeChanged += OnSharedBrushModeChanged;
             MBEditorToolState.BrushSettingsChanged -= OnSharedBrushSettingsChanged;
@@ -209,9 +425,8 @@ namespace MashBoxSDK.MapTools
 
         private void OnDisable()
         {
-            CancelScheduledSplatAutoSave();
-            if (splatAutoSaveAfterStroke && splatTextureDirty)
-                TrySaveSplatTexture(false, false, false);
+            CommitSplatSessionOnExit();
+            ClearPaintTargetsForModeExit();
 
             MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
             MBEditorToolState.BrushSettingsChanged -= OnSharedBrushSettingsChanged;
@@ -219,6 +434,9 @@ namespace MashBoxSDK.MapTools
             MBEditorToolState.SplatUvChannelChanged -= OnSharedSplatUvChannelChanged;
             MBEditorToolState.SplatPaintSettingsChanged -= OnSharedSplatPaintSettingsChanged;
             EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
+            RestoreSplatPreviewMipBias();
+            DestroySplatPreviewUploadTextures();
+            ClearSplatMeshCaches();
             DeactivateSceneTool();
         }
 
@@ -241,15 +459,19 @@ namespace MashBoxSDK.MapTools
 
         public void DeactivateSceneTool()
         {
+            if (currentMode == ToolMode.SplatMap)
+                CommitSplatSessionOnExit();
             FinishPaintUndoGroup();
             hasLastLoftPaintPoint = false;
             EndBrushAdjustment();
+            ClearPaintTargetsForModeExit();
             if (!sceneToolActive)
                 return;
 
             sceneToolActive = false;
             sceneCameraRightMouseHeld = false;
             wPauseHeld = false;
+            splatHoverCandidate = null;
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             Selection.selectionChanged -= OnVisualEditingSelectionChanged;
@@ -296,8 +518,13 @@ namespace MashBoxSDK.MapTools
 
         private void SetToolMode(ToolMode mode)
         {
+            bool leavingSplatMode = currentMode == ToolMode.SplatMap && mode != ToolMode.SplatMap;
             if (isPainting && currentMode == ToolMode.SplatMap)
                 FinishSplatPaintStroke();
+            if (leavingSplatMode)
+                CommitSplatSessionOnExit();
+
+            ClearPaintTargetsForModeExit();
 
             currentMode = mode;
             MBEditorToolState.BrushMode = (MBBrushMode)mode;
@@ -306,6 +533,7 @@ namespace MashBoxSDK.MapTools
             hasLastLoftPaintPoint = false;
             EndBrushAdjustment();
             strokeMeshes.Clear();
+            splatHoverCandidate = null;
             GUIUtility.hotControl = 0;
 
             if (mode == ToolMode.Painter || mode == ToolMode.SplatMap)
@@ -324,9 +552,34 @@ namespace MashBoxSDK.MapTools
             GUI.FocusControl(null);
             GUI.changed = true;
             EditorUtility.SetDirty(this);
-            InternalEditorUtility.RepaintAllViews();
+            Repaint();
             SceneView.RepaintAll();
             ClearSelectionForVertexPainting();
+        }
+
+        private void ClearPaintTargetsForModeExit()
+        {
+            if (paintTargets.Count == 0)
+                return;
+
+            paintTargets.Clear();
+            InvalidatePaintTargetCache();
+            painterStatusMessage = "Add mesh objects here before painting. Only listed targets can be cloned or modified.";
+            splatStatusMessage = "Add a Splat Paint Target before painting.";
+            EditorUtility.SetDirty(this);
+        }
+
+        private void CommitSplatSessionOnExit()
+        {
+            if (isPainting)
+                FinishSplatPaintStroke();
+            if (!splatTextureDirty)
+                return;
+
+            if (splatAutoSaveAfterStroke)
+                TrySaveAllDirtySplatTextures();
+            else
+                FlushPendingSplatTextureUploads();
         }
 
         private void OnVisualEditingSelectionChanged()
@@ -373,14 +626,13 @@ namespace MashBoxSDK.MapTools
 
         private void OnSharedSplatUvChannelChanged()
         {
+            ClearSplatMeshCaches();
             Repaint();
             SceneView.RepaintAll();
         }
 
         private void OnSharedSplatPaintSettingsChanged()
         {
-            if (splatAutoSaveAfterStroke && splatTextureDirty && !isPainting)
-                TrySaveSplatTexture(false, false, false);
             splatUndoRegistered = false;
             Repaint();
             SceneView.RepaintAll();
@@ -406,6 +658,7 @@ namespace MashBoxSDK.MapTools
                 splatSourceMaterial = null;
                 splatTextureDirty = false;
                 splatCompanionTextureDirty = false;
+                splatTextureUploadPending = false;
                 splatStatusMessage = splatMapTexture != null
                     ? "Texture assigned. Paint in the Scene view through a MeshCollider."
                     : "Assign a splat-map texture, then paint through a MeshCollider's selected UV channel.";
@@ -452,19 +705,11 @@ namespace MashBoxSDK.MapTools
                 1,
                 512);
             splatUseFalloff = EditorGUILayout.Toggle("Use Falloff", splatUseFalloff);
-            EditorGUI.BeginChangeCheck();
             splatAutoSaveAfterStroke = EditorGUILayout.Toggle(
                 new GUIContent(
-                    "Auto-Save After Stroke",
-                    "Writes changed control maps to their source assets after painting pauses, rather than during every brush dab."),
+                    "Save When Leaving Splat Mode",
+                    "Keeps strokes in memory while painting, then writes all changed control maps when you leave Splat mode or deactivate the brush tool."),
                 splatAutoSaveAfterStroke);
-            if (EditorGUI.EndChangeCheck())
-            {
-                if (splatAutoSaveAfterStroke && splatTextureDirty)
-                    ScheduleSplatAutoSave();
-                else if (!splatAutoSaveAfterStroke)
-                    CancelScheduledSplatAutoSave();
-            }
             if (splatPaintMode == MBSplatPaintMode.Color)
             {
                 normalizeSplatWeights = EditorGUILayout.Toggle(
@@ -515,6 +760,7 @@ namespace MashBoxSDK.MapTools
 
         private void OnUndoRedoPerformed()
         {
+            ClearSplatMeshCaches();
             RebuildLoftVertexPaintModifiers();
             RefreshPaintTargetMeshes();
         }
@@ -944,6 +1190,119 @@ namespace MashBoxSDK.MapTools
         private void InvalidatePaintTargetCache()
         {
             paintTargetCacheDirty = true;
+            ClearSplatMeshCaches();
+        }
+
+        private void ClearSplatMeshCaches()
+        {
+            splatMeshDataCache.Clear();
+            splatIslandBoundsCache.Clear();
+        }
+
+        private void DestroySplatPreviewUploadTextures()
+        {
+            if (splatPreviewUploadTexture != null)
+                DestroyImmediate(splatPreviewUploadTexture);
+            if (splatCompanionPreviewUploadTexture != null)
+                DestroyImmediate(splatCompanionPreviewUploadTexture);
+            splatPreviewUploadTexture = null;
+            splatCompanionPreviewUploadTexture = null;
+        }
+
+        private void UseBaseMipForSplatPreview(Texture2D texture, bool companion)
+        {
+            if (texture == null || texture.mipmapCount <= 1)
+                return;
+            if (splatPreviewMipBiases.ContainsKey(texture))
+                return;
+            splatPreviewMipBiases.Add(texture, texture.mipMapBias);
+            texture.mipMapBias = -10f;
+        }
+
+        private void RestoreSplatPreviewMipBias()
+        {
+            foreach (KeyValuePair<Texture2D, float> pair in splatPreviewMipBiases)
+            {
+                if (pair.Key != null)
+                    pair.Key.mipMapBias = pair.Value;
+            }
+            splatPreviewMipBiases.Clear();
+        }
+
+        private void UploadSplatPreviewRegion(
+            Texture2D destination,
+            Color[] pixels,
+            int destinationX,
+            int destinationY,
+            int width,
+            int height,
+            bool companion)
+        {
+            if (splatPartialPreviewUploadUnavailable
+                || destination == null
+                || pixels == null
+                || width <= 0
+                || height <= 0
+                || SystemInfo.copyTextureSupport == UnityEngine.Rendering.CopyTextureSupport.None)
+            {
+                return;
+            }
+
+            Texture2D uploadTexture = companion
+                ? splatCompanionPreviewUploadTexture
+                : splatPreviewUploadTexture;
+            if (uploadTexture == null
+                || uploadTexture.width < width
+                || uploadTexture.height < height)
+            {
+                if (uploadTexture != null)
+                    DestroyImmediate(uploadTexture);
+                int uploadWidth = Mathf.NextPowerOfTwo(width);
+                int uploadHeight = Mathf.NextPowerOfTwo(height);
+                uploadTexture = new Texture2D(
+                    uploadWidth,
+                    uploadHeight,
+                    TextureFormat.RGBA32,
+                    false,
+                    true)
+                {
+                    name = companion ? "Splat Companion Preview Upload" : "Splat Preview Upload",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                if (companion)
+                    splatCompanionPreviewUploadTexture = uploadTexture;
+                else
+                    splatPreviewUploadTexture = uploadTexture;
+            }
+
+            try
+            {
+                UseBaseMipForSplatPreview(destination, companion);
+                uploadTexture.SetPixels(0, 0, width, height, pixels);
+                uploadTexture.Apply(false, false);
+                Graphics.CopyTexture(
+                    uploadTexture,
+                    0,
+                    0,
+                    0,
+                    0,
+                    width,
+                    height,
+                    destination,
+                    0,
+                    0,
+                    destinationX,
+                    destinationY);
+            }
+            catch (System.Exception exception)
+            {
+                splatPartialPreviewUploadUnavailable = true;
+                DestroySplatPreviewUploadTextures();
+                Debug.LogWarning(
+                    $"Splat live preview fell back to stroke-end updates because partial texture uploads are unavailable: {exception.Message}");
+            }
         }
 
         private static bool HasPaintableMesh(GameObject gameObject)
@@ -1034,7 +1393,9 @@ namespace MashBoxSDK.MapTools
                 MeshFilter[] meshFilters = target.GetComponentsInChildren<MeshFilter>();
                 for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
                 {
-                    if (meshFilters[meshIndex] && !IsPaintProxyMeshFilter(meshFilters[meshIndex]))
+                    if (meshFilters[meshIndex]
+                        && !IsPaintProxyMeshFilter(meshFilters[meshIndex])
+                        && !IsGeneratedMeshMicroBumpFilter(meshFilters[meshIndex]))
                     {
                         FillMesh(meshFilters[meshIndex].gameObject);
                         floodedMeshes++;
@@ -1059,7 +1420,9 @@ namespace MashBoxSDK.MapTools
                 MeshFilter[] meshFilters = target.GetComponentsInChildren<MeshFilter>();
                 for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
                 {
-                    if (meshFilters[meshIndex] && !IsPaintProxyMeshFilter(meshFilters[meshIndex]))
+                    if (meshFilters[meshIndex]
+                        && !IsPaintProxyMeshFilter(meshFilters[meshIndex])
+                        && !IsGeneratedMeshMicroBumpFilter(meshFilters[meshIndex]))
                         GenerateAutoUVs(meshFilters[meshIndex].gameObject);
                 }
             }
@@ -1070,8 +1433,22 @@ namespace MashBoxSDK.MapTools
             if (!hit.collider)
                 return null;
 
+            if (TryGetMeshMicroBumpGenerator(hit.collider, out MicroBumpMeshColliderGenerator microBumpGenerator))
+                return microBumpGenerator.GetComponent<MeshFilter>();
+
             MeshFilter meshFilter = hit.collider.GetComponent<MeshFilter>();
             return meshFilter ? meshFilter : hit.collider.GetComponentInParent<MeshFilter>();
+        }
+
+        private static bool IsGeneratedMeshMicroBumpFilter(MeshFilter meshFilter)
+        {
+            if (meshFilter == null)
+                return false;
+            MicroBumpMeshColliderGenerator generator =
+                meshFilter.GetComponentInParent<MicroBumpMeshColliderGenerator>();
+            return generator != null
+                && generator.GeneratedRoot != null
+                && meshFilter.transform.IsChildOf(generator.GeneratedRoot.transform);
         }
 
         private Mesh EnsureEditableMesh(MeshFilter meshFilter, string undoName, out MeshFilter editableMeshFilter)
@@ -1185,7 +1562,9 @@ namespace MashBoxSDK.MapTools
                 for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
                 {
                     MeshFilter meshFilter = meshFilters[meshIndex];
-                    if (!meshFilter || IsPaintProxyMeshFilter(meshFilter))
+                    if (!meshFilter
+                        || IsPaintProxyMeshFilter(meshFilter)
+                        || IsGeneratedMeshMicroBumpFilter(meshFilter))
                         continue;
 
                     Transform proxyTransform = meshFilter.transform.Find(PaintProxyName);
@@ -1218,7 +1597,10 @@ namespace MashBoxSDK.MapTools
 
                 MeshFilter[] meshFilters = target.GetComponentsInChildren<MeshFilter>(true);
                 for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
-                    RefreshPaintMesh(meshFilters[meshIndex]);
+                {
+                    if (!IsGeneratedMeshMicroBumpFilter(meshFilters[meshIndex]))
+                        RefreshPaintMesh(meshFilters[meshIndex]);
+                }
             }
 
             SceneView.RepaintAll();
@@ -1356,6 +1738,7 @@ namespace MashBoxSDK.MapTools
                 wPauseHeld = false;
                 painterBrushActive = true;
                 isPainting = false;
+                splatHoverCandidate = null;
                 FinishPaintUndoGroup();
                 hasLastLoftPaintPoint = false;
                 EndBrushAdjustment();
@@ -1440,6 +1823,12 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
+            if (sceneCameraRightMouseHeld || Tools.viewToolActive)
+            {
+                splatHoverCandidate = null;
+                return;
+            }
+
             // Handle Hotkeys
             if (e.type == EventType.KeyDown)
             {
@@ -1488,14 +1877,15 @@ namespace MashBoxSDK.MapTools
                 lastHitNormal = hit.normal;
                 
                 // Draw Brush Disc
-                Handles.color = currentMode == ToolMode.Decor
+                Color brushColor = currentMode == ToolMode.Decor
                     ? Color.cyan
                     : currentMode == ToolMode.SplatMap ? GetSplatBrushColor(hit, e.shift) : GetPainterBrushColor(hit, e.shift);
+                Handles.color = brushColor;
                 Handles.DrawWireDisc(hit.point, hit.normal, brushRadius);
                 if (currentMode == ToolMode.Painter)
                     DrawPainterHoverLabel(hit, e.shift);
                 else if (currentMode == ToolMode.SplatMap)
-                    DrawSplatHoverLabel(hit, e.shift);
+                    DrawSplatHoverLabel(hit, e.shift, brushColor);
 
                 // Handle Input
                 int controlID = GUIUtility.GetControlID(FocusType.Passive);
@@ -1527,6 +1917,11 @@ namespace MashBoxSDK.MapTools
 
                     isPainting = true;
                     splatUndoRegistered = false;
+                    if (currentMode == ToolMode.SplatMap)
+                    {
+                        splatStrokeModifiedTextures.Clear();
+                        splatStrokeUndoTextures.Clear();
+                    }
                     strokeMeshes.Clear();
                     hasLastLoftPaintPoint = false;
                     Undo.IncrementCurrentGroup();
@@ -1547,19 +1942,28 @@ namespace MashBoxSDK.MapTools
                 }
 
             }
-            else if (currentMode == ToolMode.SplatMap
-                && TryGetSplatHoverCandidate(e.mousePosition, out GameObject hoverTarget))
+            else if (currentMode == ToolMode.SplatMap)
             {
-                DrawSplatActivationPreview(hoverTarget, e.shift);
-                if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+                // PickGameObject is not safe during Layout/Repaint. Cache its
+                // result from input events and use that cache while drawing.
+                if (e.type == EventType.MouseMove || e.type == EventType.MouseDown)
                 {
-                    if (e.shift)
-                        AddSplatPaintTarget(hoverTarget);
-                    else
-                        SetSplatStatus($"'{hoverTarget.name}' has no active paint collider. Shift-click to add it and build collider chunks.");
-                    e.Use();
-                    sceneView.Repaint();
-                    return;
+                    TryGetSplatHoverCandidate(e.mousePosition, out splatHoverCandidate);
+                }
+
+                if (splatHoverCandidate != null)
+                {
+                    DrawSplatActivationPreview(splatHoverCandidate, e.shift);
+                    if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+                    {
+                        if (e.shift)
+                            AddSplatPaintTarget(splatHoverCandidate);
+                        else
+                            SetSplatStatus($"'{splatHoverCandidate.name}' has no active paint collider. Shift-click to add it and build collider chunks.");
+                        e.Use();
+                        sceneView.Repaint();
+                        return;
+                    }
                 }
             }
             
@@ -1684,7 +2088,7 @@ namespace MashBoxSDK.MapTools
                 splatUndoRegistered = false;
                 strokeMeshes.Clear();
                 painterBrushActive = true;
-                InternalEditorUtility.RepaintAllViews();
+                Repaint();
                 SceneView.RepaintAll();
                 return;
             }
@@ -1748,6 +2152,12 @@ namespace MashBoxSDK.MapTools
                 {
                     if (IsMicroBumpPaintCollider(painterHits[index].collider))
                         continue;
+                    if (isPainting)
+                    {
+                        MeshFilter candidate = GetPaintMeshFilter(painterHits[index]);
+                        if (candidate == null || !IsPaintTarget(candidate.gameObject))
+                            continue;
+                    }
                     hit = painterHits[index];
                     return true;
                 }
@@ -1771,6 +2181,8 @@ namespace MashBoxSDK.MapTools
 
                 GameObject target = ResolveSplatPaintTarget(hits[i]);
                 if (target == null)
+                    continue;
+                if (isPainting && !IsPaintTarget(target))
                     continue;
 
                 bool hasUv = TryGetSplatUv(hits[i], out _, out string uvError);
@@ -1803,17 +2215,35 @@ namespace MashBoxSDK.MapTools
             if (collider == null)
                 return false;
 
+            // Loft MicroBump meshes remain visual/paint-opaque. Terrain-mesh
+            // MicroBump chunks carry source UVs and deliberately participate in
+            // brush picking, resolving back to their owning source mesh.
+            if (TryGetMeshMicroBumpGenerator(collider, out _))
+                return false;
+            if (collider.GetComponentInParent<LoftHeightOverlayModifier>() != null)
+                return true;
             int microBumpLayer = LayerMask.NameToLayer("MicroBump");
-            return (microBumpLayer >= 0 && collider.gameObject.layer == microBumpLayer)
-                || collider.GetComponentInParent<LoftHeightOverlayModifier>() != null;
+            return microBumpLayer >= 0 && collider.gameObject.layer == microBumpLayer;
+        }
+
+        private static bool TryGetMeshMicroBumpGenerator(
+            Collider collider,
+            out MicroBumpMeshColliderGenerator generator)
+        {
+            generator = collider != null
+                ? collider.GetComponentInParent<MicroBumpMeshColliderGenerator>()
+                : null;
+            return generator != null
+                && generator.GeneratedRoot != null
+                && collider.transform.IsChildOf(generator.GeneratedRoot.transform);
         }
 
         private static int GetPaintRaycastLayerMask()
         {
-            int layerMask = Physics.DefaultRaycastLayers;
-            int microBumpLayer = LayerMask.NameToLayer("MicroBump");
-            if (microBumpLayer >= 0)
-                layerMask &= ~(1 << microBumpLayer);
+            int layerMask = Physics.AllLayers;
+            int ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
+            if (ignoreRaycastLayer >= 0)
+                layerMask &= ~(1 << ignoreRaycastLayer);
             return layerMask;
         }
 
@@ -1856,16 +2286,21 @@ namespace MashBoxSDK.MapTools
                 return false;
             }
 
+            if (!TryGetSplatMeshData(hit, channel, out SplatMeshData meshData))
+            {
+                error = $"{splatUVChannel} does not contain coordinates for every collider vertex.";
+                return false;
+            }
+
             int triangleStart = hit.triangleIndex * 3;
-            int[] triangles = mesh.triangles;
+            int[] triangles = meshData.triangles;
             if (triangleStart < 0 || triangleStart + 2 >= triangles.Length)
             {
                 error = "The hit triangle could not be resolved on the collider mesh.";
                 return false;
             }
 
-            var uvs = new List<Vector4>();
-            mesh.GetUVs(channel, uvs);
+            List<Vector4> uvs = meshData.uvs;
             int a = triangles[triangleStart];
             int b = triangles[triangleStart + 1];
             int c = triangles[triangleStart + 2];
@@ -1883,24 +2318,71 @@ namespace MashBoxSDK.MapTools
             return true;
         }
 
+        private bool TryGetSplatMeshData(
+            RaycastHit hit,
+            int channel,
+            out SplatMeshData meshData)
+        {
+            if (!(hit.collider is MeshCollider meshCollider))
+            {
+                meshData = null;
+                return false;
+            }
+
+            return TryGetSplatMeshData(meshCollider, channel, out meshData);
+        }
+
+        private bool TryGetSplatMeshData(
+            MeshCollider meshCollider,
+            int channel,
+            out SplatMeshData meshData)
+        {
+            meshData = null;
+            Mesh mesh = meshCollider.sharedMesh;
+            if (mesh == null || !mesh.isReadable)
+                return false;
+
+            MultiSplineLoft loft = meshCollider.GetComponentInParent<MultiSplineLoft>();
+            int generationVersion = loft != null ? loft.GenerationVersion : 0;
+            var key = new SplatIslandCacheKey(mesh, channel, generationVersion);
+            if (!splatMeshDataCache.TryGetValue(key, out meshData))
+            {
+                meshData = new SplatMeshData(mesh, channel);
+                if (meshData.uvs.Count != mesh.vertexCount)
+                {
+                    meshData = null;
+                    return false;
+                }
+
+                splatMeshDataCache.Add(key, meshData);
+            }
+
+            return true;
+        }
+
         private bool TryGetSplatUvIslandBounds(RaycastHit hit, out Rect bounds)
         {
             bounds = default;
             if (!(hit.collider is MeshCollider meshCollider) || meshCollider.sharedMesh == null)
                 return false;
 
-            Mesh mesh = meshCollider.sharedMesh;
             int channel = (int)splatUVChannel;
             int triangleIndex = hit.triangleIndex;
             if (triangleIndex < 0)
                 return false;
 
+            if (!TryGetSplatMeshData(hit, channel, out SplatMeshData meshData))
+                return false;
+
+            Mesh mesh = meshCollider.sharedMesh;
             MultiSplineLoft loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
-            int generationVersion = loft != null ? loft.GenerationVersion : 0;
-            var key = new SplatIslandCacheKey(mesh, channel, generationVersion);
+            var key = new SplatIslandCacheKey(
+                mesh,
+                channel,
+                loft != null ? loft.GenerationVersion : 0);
             if (!splatIslandBoundsCache.TryGetValue(key, out Rect[] triangleBounds))
             {
-                triangleBounds = BuildSplatUvIslandBounds(mesh, channel);
+                triangleBounds = BuildSplatUvIslandBounds(meshData);
                 if (triangleBounds == null)
                     return false;
                 splatIslandBoundsCache[key] = triangleBounds;
@@ -1913,17 +2395,14 @@ namespace MashBoxSDK.MapTools
             return bounds.width >= 0f && bounds.height >= 0f;
         }
 
-        private static Rect[] BuildSplatUvIslandBounds(Mesh mesh, int channel)
+        private static Rect[] BuildSplatUvIslandBounds(SplatMeshData meshData)
         {
-            int[] triangles = mesh.triangles;
+            int[] triangles = meshData.triangles;
             int triangleCount = triangles.Length / 3;
             if (triangleCount == 0)
                 return null;
 
-            var uvs = new List<Vector4>();
-            mesh.GetUVs(channel, uvs);
-            if (uvs.Count != mesh.vertexCount)
-                return null;
+            List<Vector4> uvs = meshData.uvs;
 
             var parents = new int[triangleCount];
             var firstTriangleByVertex = new Dictionary<int, int>();
@@ -2090,7 +2569,10 @@ namespace MashBoxSDK.MapTools
             }
 
             bool switchingWithinSameMaterial = splatSourceMaterial == material;
-            if (splatTextureDirty && splatMapTexture != null && !switchingWithinSameMaterial)
+            if (splatTextureDirty
+                && splatMapTexture != null
+                && !switchingWithinSameMaterial
+                && !isPainting)
             {
                 error = $"Save '{splatMapTexture.name}' before switching automatically to '{detectedTexture.name}'.";
                 SetSplatStatus(error);
@@ -2099,10 +2581,11 @@ namespace MashBoxSDK.MapTools
 
             splatMapTexture = detectedTexture;
             splatSourceMaterial = material;
-            if (!switchingWithinSameMaterial)
+            if (!switchingWithinSameMaterial && !isPainting)
             {
                 splatTextureDirty = false;
                 splatCompanionTextureDirty = false;
+                splatTextureUploadPending = false;
             }
             splatUndoRegistered = false;
             SetSplatStatus(
@@ -2111,7 +2594,7 @@ namespace MashBoxSDK.MapTools
             return true;
         }
 
-        private static Material ResolveHitMaterial(RaycastHit hit, int controlMapPropertyId)
+        private Material ResolveHitMaterial(RaycastHit hit, int controlMapPropertyId)
         {
             if (hit.collider == null)
                 return null;
@@ -2128,11 +2611,12 @@ namespace MashBoxSDK.MapTools
             if (renderer == null)
                 return null;
 
-            Material[] materials = renderer.sharedMaterials;
+            hitMaterialBuffer.Clear();
+            renderer.GetSharedMaterials(hitMaterialBuffer);
             Material firstMaterial = null;
-            for (int index = 0; index < materials.Length; index++)
+            for (int index = 0; index < hitMaterialBuffer.Count; index++)
             {
-                Material material = materials[index];
+                Material material = hitMaterialBuffer[index];
                 if (material == null)
                     continue;
 
@@ -2392,12 +2876,12 @@ namespace MashBoxSDK.MapTools
                 : new Color(1f, 0.7f, 0.1f, 1f);
         }
 
-        private void DrawSplatHoverLabel(RaycastHit hit, bool shiftPressed)
+        private void DrawSplatHoverLabel(RaycastHit hit, bool shiftPressed, Color brushColor)
         {
             Handles.BeginGUI();
             Vector2 mouse = Event.current.mousePosition;
             var style = new GUIStyle(EditorStyles.helpBox);
-            style.normal.textColor = GetSplatBrushColor(hit, shiftPressed);
+            style.normal.textColor = brushColor;
             GameObject target = ResolveSplatPaintTarget(hit);
             string label;
             if (target != null && !IsPaintTarget(target))
@@ -2429,6 +2913,14 @@ namespace MashBoxSDK.MapTools
         private bool TryGetSplatHoverCandidate(Vector2 mousePosition, out GameObject target)
         {
             target = null;
+            Event current = Event.current;
+            if (current == null
+                || current.type == EventType.Layout
+                || current.type == EventType.Repaint)
+            {
+                return false;
+            }
+
             MultiSplineLoft[] lofts = Object.FindObjectsByType<MultiSplineLoft>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None);
@@ -2564,26 +3056,29 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            if (!splatUndoRegistered)
-            {
+            if (splatStrokeUndoTextures.Add(splatMapTexture))
                 Undo.RegisterCompleteObjectUndo(splatMapTexture, "Paint Splat Map");
-                if (splatPaintMode == MBSplatPaintMode.TextureId)
-                    Undo.RegisterCompleteObjectUndo(splatCompanionMapTexture, "Paint Splat Map");
-                splatUndoRegistered = true;
+            if (splatPaintMode == MBSplatPaintMode.TextureId
+                && splatStrokeUndoTextures.Add(splatCompanionMapTexture))
+            {
+                Undo.RegisterCompleteObjectUndo(splatCompanionMapTexture, "Paint Splat Map");
+            }
+            splatUndoRegistered = true;
+
+            if (TryPaintStaticPlanarSplat(hit, uv, erase))
+            {
+                MarkCurrentSplatTexturesModified();
+                return;
             }
 
             if (hit.collider is MeshCollider && PaintSplatTextureFromWorldFootprint(hit, erase))
             {
-                splatMapTexture.Apply(splatMapTexture.mipmapCount > 1, false);
-                EditorUtility.SetDirty(splatMapTexture);
                 if (splatPaintMode == MBSplatPaintMode.TextureId)
                 {
-                    splatCompanionMapTexture.Apply(splatCompanionMapTexture.mipmapCount > 1, false);
-                    EditorUtility.SetDirty(splatCompanionMapTexture);
                     splatCompanionTextureDirty = true;
                 }
-                splatTextureDirty = true;
-                SceneView.RepaintAll();
+                splatTextureUploadPending = true;
+                MarkCurrentSplatTexturesModified();
                 return;
             }
 
@@ -2650,17 +3145,135 @@ namespace MashBoxSDK.MapTools
             }
 
             splatMapTexture.SetPixels(minX, minY, width, height, pixels);
+            UploadSplatPreviewRegion(
+                splatMapTexture,
+                pixels,
+                minX,
+                minY,
+                width,
+                height,
+                false);
             if (companionPixels != null)
             {
                 splatCompanionMapTexture.SetPixels(minX, minY, width, height, companionPixels);
-                splatCompanionMapTexture.Apply(splatCompanionMapTexture.mipmapCount > 1, false);
-                EditorUtility.SetDirty(splatCompanionMapTexture);
+                UploadSplatPreviewRegion(
+                    splatCompanionMapTexture,
+                    companionPixels,
+                    minX,
+                    minY,
+                    width,
+                    height,
+                    true);
                 splatCompanionTextureDirty = true;
             }
-            splatMapTexture.Apply(splatMapTexture.mipmapCount > 1, false);
-            EditorUtility.SetDirty(splatMapTexture);
-            splatTextureDirty = true;
-            SceneView.RepaintAll();
+            splatTextureUploadPending = true;
+            MarkCurrentSplatTexturesModified();
+        }
+
+        private void MarkCurrentSplatTexturesModified()
+        {
+            if (splatMapTexture != null)
+                splatStrokeModifiedTextures.Add(splatMapTexture);
+            if (splatPaintMode == MBSplatPaintMode.TextureId && splatCompanionMapTexture != null)
+                splatStrokeModifiedTextures.Add(splatCompanionMapTexture);
+            splatTextureDirty = splatStrokeModifiedTextures.Count > 0
+                || splatTexturesPendingSave.Count > 0;
+        }
+
+        private bool TryPaintStaticPlanarSplat(RaycastHit hit, Vector2 uv, bool erase)
+        {
+            if (!(hit.collider is MeshCollider meshCollider)
+                || hit.collider.GetComponentInParent<MultiSplineLoft>() != null
+                || TryGetMeshMicroBumpGenerator(hit.collider, out _)
+                || !TryGetSplatMeshData(meshCollider, (int)splatUVChannel, out SplatMeshData meshData)
+                || !meshData.HasNormalizedPlanarXZUvs())
+            {
+                return false;
+            }
+
+            Bounds meshBounds = meshCollider.sharedMesh.bounds;
+            float worldWidth = meshCollider.transform.TransformVector(
+                Vector3.right * meshBounds.size.x).magnitude;
+            float worldDepth = meshCollider.transform.TransformVector(
+                Vector3.forward * meshBounds.size.z).magnitude;
+            if (worldWidth <= 0.0001f || worldDepth <= 0.0001f)
+                return false;
+
+            int textureWidth = splatMapTexture.width;
+            int textureHeight = splatMapTexture.height;
+            float radiusPixelsX = Mathf.Max(1f, brushRadius / worldWidth * (textureWidth - 1));
+            float radiusPixelsY = Mathf.Max(1f, brushRadius / worldDepth * (textureHeight - 1));
+            float centerX = uv.x * (textureWidth - 1);
+            float centerY = uv.y * (textureHeight - 1);
+            int minX = Mathf.Max(0, Mathf.FloorToInt(centerX - radiusPixelsX));
+            int minY = Mathf.Max(0, Mathf.FloorToInt(centerY - radiusPixelsY));
+            int maxX = Mathf.Min(textureWidth - 1, Mathf.CeilToInt(centerX + radiusPixelsX));
+            int maxY = Mathf.Min(textureHeight - 1, Mathf.CeilToInt(centerY + radiusPixelsY));
+            if (minX > maxX || minY > maxY)
+                return true;
+
+            int width = maxX - minX + 1;
+            int height = maxY - minY + 1;
+            Color[] pixels = splatMapTexture.GetPixels(minX, minY, width, height);
+            Color[] companionPixels = splatPaintMode == MBSplatPaintMode.TextureId
+                ? splatCompanionMapTexture.GetPixels(minX, minY, width, height)
+                : null;
+            float inverseRadiusX = 1f / radiusPixelsX;
+            float inverseRadiusY = 1f / radiusPixelsY;
+            for (int y = 0; y < height; y++)
+            {
+                float normalizedY = (minY + y + 0.5f - centerY) * inverseRadiusY;
+                float normalizedYSquared = normalizedY * normalizedY;
+                for (int x = 0; x < width; x++)
+                {
+                    float normalizedX = (minX + x + 0.5f - centerX) * inverseRadiusX;
+                    float distanceSquared = normalizedX * normalizedX + normalizedYSquared;
+                    if (distanceSquared > 1f)
+                        continue;
+
+                    float distance = Mathf.Sqrt(distanceSquared);
+                    float falloff = splatUseFalloff ? 1f - distance : 1f;
+                    float influence = Mathf.Clamp01(brushStrength * falloff);
+                    int pixelIndex = y * width + x;
+                    Color color = pixels[pixelIndex];
+                    if (companionPixels != null)
+                    {
+                        Color companionColor = companionPixels[pixelIndex];
+                        ApplyTextureIdSplatPaint(ref color, ref companionColor, influence, erase);
+                        companionPixels[pixelIndex] = companionColor;
+                    }
+                    else
+                    {
+                        ApplySplatPaint(ref color, influence, erase);
+                    }
+                    pixels[pixelIndex] = color;
+                }
+            }
+
+            splatMapTexture.SetPixels(minX, minY, width, height, pixels);
+            UploadSplatPreviewRegion(
+                splatMapTexture,
+                pixels,
+                minX,
+                minY,
+                width,
+                height,
+                false);
+            if (companionPixels != null)
+            {
+                splatCompanionMapTexture.SetPixels(minX, minY, width, height, companionPixels);
+                UploadSplatPreviewRegion(
+                    splatCompanionMapTexture,
+                    companionPixels,
+                    minX,
+                    minY,
+                    width,
+                    height,
+                    true);
+                splatCompanionTextureDirty = true;
+            }
+            splatTextureUploadPending = true;
+            return true;
         }
 
         private bool PaintSplatTextureFromWorldFootprint(RaycastHit hit, bool erase)
@@ -2686,6 +3299,27 @@ namespace MashBoxSDK.MapTools
                     }
                 }
             }
+            else if (TryGetMeshMicroBumpGenerator(hit.collider, out MicroBumpMeshColliderGenerator microBumpGenerator))
+            {
+                GameObject generatedRoot = microBumpGenerator.GeneratedRoot;
+                if (generatedRoot != null)
+                {
+                    MeshCollider[] microBumpColliders =
+                        generatedRoot.GetComponentsInChildren<MeshCollider>(true);
+                    for (int index = 0; index < microBumpColliders.Length; index++)
+                    {
+                        MeshCollider collider = microBumpColliders[index];
+                        if (collider != null
+                            && collider.enabled
+                            && collider.sharedMesh != null
+                            && collider.bounds.SqrDistance(hit.point) <= brushRadius * brushRadius
+                            && uniqueColliders.Add(collider))
+                        {
+                            colliders.Add(collider);
+                        }
+                    }
+                }
+            }
             else if (hit.collider is MeshCollider hitCollider)
             {
                 colliders.Add(hitCollider);
@@ -2698,20 +3332,40 @@ namespace MashBoxSDK.MapTools
             for (int colliderIndex = 0; colliderIndex < colliders.Count; colliderIndex++)
             {
                 MeshCollider collider = colliders[colliderIndex];
-                Mesh mesh = collider.sharedMesh;
-                if (mesh == null || !mesh.isReadable)
+                if (!TryGetSplatMeshData(collider, uvChannel, out SplatMeshData meshData))
                     continue;
 
-                var uvs = new List<Vector4>();
-                mesh.GetUVs(uvChannel, uvs);
-                if (uvs.Count != mesh.vertexCount)
-                    continue;
-
-                Vector3[] vertices = mesh.vertices;
-                int[] triangles = mesh.triangles;
+                List<Vector4> uvs = meshData.uvs;
+                Vector3[] vertices = meshData.GetVertices();
+                int[] triangles = meshData.triangles;
                 Matrix4x4 localToWorld = collider.transform.localToWorldMatrix;
-                for (int triangle = 0; triangle + 2 < triangles.Length; triangle += 3)
+                bool staticMesh = loft == null;
+                if (staticMesh)
                 {
+                    Vector3 scale = collider.transform.lossyScale;
+                    float minimumScale = Mathf.Min(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+                    if (minimumScale > 0.00001f)
+                    {
+                        meshData.GetTrianglesNear(
+                            collider.transform.InverseTransformPoint(hit.point),
+                            radius / minimumScale,
+                            splatTriangleCandidates,
+                            splatTriangleCandidateSet);
+                    }
+                    else
+                    {
+                        splatTriangleCandidates.Clear();
+                        for (int triangleIndex = 0; triangleIndex < triangles.Length / 3; triangleIndex++)
+                            splatTriangleCandidates.Add(triangleIndex);
+                    }
+                }
+
+                int triangleIterations = staticMesh
+                    ? splatTriangleCandidates.Count
+                    : triangles.Length / 3;
+                for (int iteration = 0; iteration < triangleIterations; iteration++)
+                {
+                    int triangle = (staticMesh ? splatTriangleCandidates[iteration] : iteration) * 3;
                     int indexA = triangles[triangle];
                     int indexB = triangles[triangle + 1];
                     int indexC = triangles[triangle + 2];
@@ -2814,6 +3468,14 @@ namespace MashBoxSDK.MapTools
             }
 
             texture.SetPixels(minX, minY, blockWidth, blockHeight, pixels);
+            UploadSplatPreviewRegion(
+                texture,
+                pixels,
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                false);
         }
 
         private void ApplyTextureIdSplatInfluences(
@@ -2856,6 +3518,22 @@ namespace MashBoxSDK.MapTools
                 blockWidth,
                 blockHeight,
                 companionPixels);
+            UploadSplatPreviewRegion(
+                splatMapTexture,
+                pixels,
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                false);
+            UploadSplatPreviewRegion(
+                splatCompanionMapTexture,
+                companionPixels,
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                true);
         }
 
         private static void DilateSplatInfluences(
@@ -3176,56 +3854,94 @@ namespace MashBoxSDK.MapTools
 
         private void FinishSplatPaintStroke()
         {
-            if (!splatTextureDirty)
+            if (splatStrokeModifiedTextures.Count == 0)
                 return;
 
-            if (splatAutoSaveAfterStroke)
+            foreach (Texture2D texture in splatStrokeModifiedTextures)
             {
-                ScheduleSplatAutoSave();
-                splatStatusMessage = splatCompanionTextureDirty
-                    ? "Control maps changed. Auto-save queued."
-                    : "Splat map changed. Auto-save queued.";
+                if (texture == null)
+                    continue;
+                splatTexturesPendingSave.Add(texture);
             }
-            else
-            {
-                splatStatusMessage = splatCompanionTextureDirty
-                    ? "Control maps changed. Use Save Control Maps to write both textures to their source assets."
-                    : "Splat map changed. Use Save Texture to write the pixels to the source asset.";
-            }
+            splatStrokeModifiedTextures.Clear();
+            splatStrokeUndoTextures.Clear();
+            splatTextureDirty = splatTexturesPendingSave.Count > 0;
+            splatStatusMessage = splatAutoSaveAfterStroke
+                ? "Splat changes are held in memory and will save when you leave Splat mode."
+                : "Splat changes are held in memory. Use Save before leaving if you want them written to disk.";
 
             Repaint();
         }
 
-        private void ScheduleSplatAutoSave()
+        private void FlushPendingSplatTextureUploads()
         {
-            if (!splatAutoSaveAfterStroke || !splatTextureDirty)
+            if (!splatTextureUploadPending && splatPreviewMipBiases.Count == 0)
                 return;
 
-            splatAutoSaveDueTime = EditorApplication.timeSinceStartup + SplatAutoSaveDelaySeconds;
-            if (splatAutoSaveScheduled)
-                return;
-
-            splatAutoSaveScheduled = true;
-            EditorApplication.update -= ProcessScheduledSplatAutoSave;
-            EditorApplication.update += ProcessScheduledSplatAutoSave;
+            foreach (Texture2D texture in splatTexturesPendingSave)
+            {
+                if (texture == null)
+                    continue;
+                texture.Apply(texture.mipmapCount > 1, false);
+                EditorUtility.SetDirty(texture);
+            }
+            splatTextureUploadPending = false;
+            RestoreSplatPreviewMipBias();
         }
 
-        private void ProcessScheduledSplatAutoSave()
+        private void TrySaveAllDirtySplatTextures()
         {
-            if (!splatAutoSaveScheduled ||
-                isPainting ||
-                EditorApplication.timeSinceStartup < splatAutoSaveDueTime)
-                return;
-
-            CancelScheduledSplatAutoSave();
-            if (splatTextureDirty)
+            FlushPendingSplatTextureUploads();
+            if (splatTexturesPendingSave.Count == 0)
+            {
                 TrySaveSplatTexture(false, false, false);
-        }
+                return;
+            }
 
-        private void CancelScheduledSplatAutoSave()
-        {
-            splatAutoSaveScheduled = false;
-            EditorApplication.update -= ProcessScheduledSplatAutoSave;
+            var savedTextures = new List<Texture2D>();
+            var importPaths = new List<string>();
+            bool saveAssetDatabase = false;
+            foreach (Texture2D texture in splatTexturesPendingSave)
+            {
+                if (texture == null)
+                    continue;
+                string path = AssetDatabase.GetAssetPath(texture);
+                string extension = Path.GetExtension(path).ToLowerInvariant();
+                if (string.IsNullOrEmpty(path)
+                    || (extension != ".png" && extension != ".tga" && extension != ".asset"))
+                {
+                    continue;
+                }
+
+                if (extension == ".asset")
+                {
+                    EditorUtility.SetDirty(texture);
+                    saveAssetDatabase = true;
+                    savedTextures.Add(texture);
+                    continue;
+                }
+
+                if (!AssetDatabase.MakeEditable(path))
+                    continue;
+                byte[] bytes = extension == ".tga" ? texture.EncodeToTGA() : texture.EncodeToPNG();
+                File.WriteAllBytes(Path.GetFullPath(path), bytes);
+                importPaths.Add(path);
+                savedTextures.Add(texture);
+            }
+
+            if (saveAssetDatabase)
+                AssetDatabase.SaveAssets();
+            for (int index = 0; index < importPaths.Count; index++)
+                AssetDatabase.ImportAsset(importPaths[index], ImportAssetOptions.ForceUpdate);
+            for (int index = 0; index < savedTextures.Count; index++)
+                splatTexturesPendingSave.Remove(savedTextures[index]);
+
+            splatTextureDirty = splatTexturesPendingSave.Count > 0;
+            splatCompanionTextureDirty = false;
+            splatStatusMessage = splatTextureDirty
+                ? "Some painted control maps could not be auto-saved. Check that they are editable PNG, TGA, or Texture2D assets."
+                : $"Saved {savedTextures.Count} painted control map{(savedTextures.Count == 1 ? string.Empty : "s")}.";
+            Repaint();
         }
 
         private void MakeSplatTextureReadable()
@@ -3294,6 +4010,7 @@ namespace MashBoxSDK.MapTools
             MakeSplatTextureReadable();
             splatTextureDirty = false;
             splatCompanionTextureDirty = false;
+            splatTextureUploadPending = false;
             splatStatusMessage = $"Created {resolution} x {resolution} splat map. Red is the initial full-weight layer.";
         }
 
@@ -3322,8 +4039,9 @@ namespace MashBoxSDK.MapTools
             if (splatMapTexture == null)
                 return;
 
-            if (!saveAs)
-                CancelScheduledSplatAutoSave();
+            FlushPendingSplatTextureUploads();
+            Texture2D savedPrimaryTexture = splatMapTexture;
+            Texture2D savedCompanionTexture = splatCompanionMapTexture;
 
             string companionPath = string.Empty;
             string companionExtension = string.Empty;
@@ -3431,8 +4149,12 @@ namespace MashBoxSDK.MapTools
                 AssetDatabase.SaveAssets();
             }
 
-            splatTextureDirty = false;
+            splatTexturesPendingSave.Remove(savedPrimaryTexture);
+            if (savedCompanionTexture != null)
+                splatTexturesPendingSave.Remove(savedCompanionTexture);
+            splatTextureDirty = splatTexturesPendingSave.Count > 0;
             splatCompanionTextureDirty = false;
+            splatTextureUploadPending = false;
             splatStatusMessage = companionBytes != null || companionIsAsset
                 ? $"Saved both control maps: {path} and {companionPath}."
                 : $"Saved splat map to {path}.";

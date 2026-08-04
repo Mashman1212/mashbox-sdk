@@ -1,5 +1,6 @@
 using MashBoxSDK.Maps.Sculpting;
 using MashBoxSDK.Maps.Spline;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -39,6 +40,7 @@ namespace MashBoxSDK.MapTools
         MeshFilter m_SculptPickingTarget;
         int m_SculptPickingGenerationVersion = -1;
         bool m_ClearingVisualSelection;
+        readonly HashSet<MeshSculptModifier> m_StrokeModifiers = new HashSet<MeshSculptModifier>();
 
         public static void ShowWindow() => GetWindow<MeshSculptWindow>("Mesh Sculpt");
 
@@ -54,7 +56,7 @@ namespace MashBoxSDK.MapTools
         void OnEnable()
         {
             m_Mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
-            RestoreActiveModifier();
+            ClearActiveModifier();
             MBEditorToolState.SculptModeChanged -= OnSharedSculptModeChanged;
             MBEditorToolState.SculptModeChanged += OnSharedSculptModeChanged;
             if (MBEditorToolState.ActiveEditing)
@@ -65,6 +67,7 @@ namespace MashBoxSDK.MapTools
         {
             MBEditorToolState.SculptModeChanged -= OnSharedSculptModeChanged;
             DeactivateSceneTool();
+            ClearActiveModifier();
         }
         void OnGUI() => Draw();
 
@@ -78,8 +81,6 @@ namespace MashBoxSDK.MapTools
             SceneView.duringSceneGui += OnSceneGUI;
             Undo.undoRedoPerformed += OnUndoRedo;
             Selection.selectionChanged += OnSelectionChanged;
-            UseSelection();
-            ClearVisualSelection();
         }
 
         public void DeactivateSceneTool()
@@ -88,7 +89,10 @@ namespace MashBoxSDK.MapTools
             // call this for every inactive authoring tool, so repeating cleanup
             // here would cancel unrelated buttons between MouseDown and MouseUp.
             if (!m_SceneToolActive)
+            {
+                ClearActiveModifier();
                 return;
+            }
 
             m_SceneToolActive = false;
             m_SceneCameraRightMouseHeld = false;
@@ -99,6 +103,7 @@ namespace MashBoxSDK.MapTools
                 s_ActiveSceneToolOwner = null;
             StopStroke();
             DestroySculptPickingCollider();
+            ClearActiveModifier();
         }
 
         public void Draw(bool embeddedInParentWindow = false)
@@ -145,6 +150,7 @@ namespace MashBoxSDK.MapTools
             var requestedMode = (MeshSculptModifier.SculptMode)GUILayout.Toolbar((int)m_Mode, new[] { "Displace", "Smooth", "Flatten" });
             if (requestedMode != m_Mode)
             {
+                ClearActiveModifier();
                 m_Mode = requestedMode;
                 MBEditorToolState.SculptMode = (MBSculptMode)m_Mode;
             }
@@ -192,7 +198,10 @@ namespace MashBoxSDK.MapTools
 
         void OnSharedSculptModeChanged()
         {
-            m_Mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
+            MeshSculptModifier.SculptMode mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
+            if (m_Mode != mode)
+                ClearActiveModifier();
+            m_Mode = mode;
             Repaint();
             SceneView.RepaintAll();
         }
@@ -219,19 +228,20 @@ namespace MashBoxSDK.MapTools
             }
 
             m_Modifier = selectedModifier;
-            RememberActiveModifier();
             EnsureSelectedModifierTargetsLoft(selected, selectedModifier);
             m_Modifier.Rebuild();
         }
 
         void ClearActiveModifier()
         {
-            if (m_Modifier == null)
-                return;
-
-            StopStroke();
-            DestroySculptPickingCollider();
+            if (m_Modifier != null)
+            {
+                if (m_SceneToolActive)
+                    StopStroke();
+                DestroySculptPickingCollider();
+            }
             m_Modifier = null;
+            m_StrokeModifiers.Clear();
             SessionState.EraseString(ActiveModifierSessionKey);
         }
 
@@ -289,59 +299,6 @@ namespace MashBoxSDK.MapTools
                 CreateOrActivateModifier(meshFilter);
         }
 
-        void RememberActiveModifier()
-        {
-            if (m_Modifier == null)
-            {
-                SessionState.EraseString(ActiveModifierSessionKey);
-                return;
-            }
-
-            GlobalObjectId globalId = GlobalObjectId.GetGlobalObjectIdSlow(m_Modifier);
-            SessionState.SetString(ActiveModifierSessionKey, globalId.ToString());
-        }
-
-        void RestoreActiveModifier()
-        {
-            if (m_Modifier != null)
-                return;
-
-            string savedId = SessionState.GetString(ActiveModifierSessionKey, string.Empty);
-            if (!string.IsNullOrEmpty(savedId)
-                && GlobalObjectId.TryParse(savedId, out GlobalObjectId globalId))
-            {
-                MeshSculptModifier restored = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalId) as MeshSculptModifier;
-                if (IsUsableSceneModifier(restored))
-                {
-                    m_Modifier = restored;
-                    return;
-                }
-            }
-
-            SessionState.EraseString(ActiveModifierSessionKey);
-
-            // Older sessions did not remember a GlobalObjectId. Recover
-            // automatically when the loaded scenes contain one unambiguous
-            // sculpt target, which also repairs the first reload after upgrading.
-            MeshSculptModifier uniqueModifier = null;
-            MeshSculptModifier[] modifiers = Resources.FindObjectsOfTypeAll<MeshSculptModifier>();
-            for (int i = 0; i < modifiers.Length; i++)
-            {
-                MeshSculptModifier candidate = modifiers[i];
-                if (!IsUsableSceneModifier(candidate))
-                    continue;
-                if (uniqueModifier != null)
-                    return;
-                uniqueModifier = candidate;
-            }
-
-            if (uniqueModifier == null)
-                return;
-
-            m_Modifier = uniqueModifier;
-            RememberActiveModifier();
-        }
-
         static bool IsUsableSceneModifier(MeshSculptModifier modifier)
         {
             return modifier != null
@@ -384,7 +341,7 @@ namespace MashBoxSDK.MapTools
             MeshFilter hitMeshFilter;
             if (m_IsSculpting)
             {
-                if (!TryRaycastTarget(ray, out hit))
+                if (!TryRaycastSculptSurface(ray, out hit, out hitMeshFilter))
                 {
                     if (current.type == EventType.MouseUp && current.button == 0)
                     {
@@ -393,7 +350,6 @@ namespace MashBoxSDK.MapTools
                     }
                     return;
                 }
-                hitMeshFilter = m_Modifier != null ? m_Modifier.Target : null;
             }
             else if (!TryRaycastSculptSurface(ray, out hit, out hitMeshFilter))
             {
@@ -401,8 +357,8 @@ namespace MashBoxSDK.MapTools
             }
 
             MeshSculptModifier hoveredModifier = ResolveSculptModifier(hitMeshFilter);
-            if (!m_IsSculpting && hoveredModifier != null && hoveredModifier != m_Modifier)
-                ActivateModifier(hoveredModifier);
+            if (m_IsSculpting && hoveredModifier != null && hoveredModifier != m_Modifier)
+                SwitchModifierDuringStroke(hoveredModifier);
 
             bool canSculptHit = m_Modifier != null
                 && m_Modifier.Target != null
@@ -524,8 +480,21 @@ namespace MashBoxSDK.MapTools
             StopStroke();
             DestroySculptPickingCollider();
             m_Modifier = modifier;
-            RememberActiveModifier();
             EnsureSculptPickingCollider();
+            Repaint();
+        }
+
+        void SwitchModifierDuringStroke(MeshSculptModifier modifier)
+        {
+            if (!m_IsSculpting || !IsUsableSceneModifier(modifier) || modifier == m_Modifier)
+                return;
+
+            if (m_Modifier != null)
+                m_Modifier.FinalizeStrokePreview();
+            DestroySculptPickingCollider();
+            m_Modifier = modifier;
+            EnsureSculptPickingCollider();
+            m_HasLastStrokePosition = false;
             Repaint();
         }
 
@@ -753,6 +722,7 @@ namespace MashBoxSDK.MapTools
             Vector3 direction = m_DirectionMode == DirectionMode.WorldUp ? Vector3.up : m_DirectionMode == DirectionMode.Custom ? m_CustomDirection.normalized : hit.normal;
             float strength = control && !shift ? -m_Strength : m_Strength;
             Undo.RecordObject(m_Modifier, "Mesh Sculpt Stroke");
+            m_StrokeModifiers.Add(m_Modifier);
             m_Modifier.AddStroke(m_Modifier.CreateStroke(strokeMode, m_StrokeSpace, hit.point, direction, m_Radius, strength, m_Falloff));
             m_Modifier.ApplyLatestStrokePreview();
             EditorUtility.SetDirty(m_Modifier);
@@ -837,11 +807,19 @@ namespace MashBoxSDK.MapTools
 
         void OnUndoRedo()
         {
-            if (m_Modifier != null)
+            if (m_StrokeModifiers.Count > 0)
+            {
+                foreach (MeshSculptModifier modifier in m_StrokeModifiers)
+                {
+                    if (modifier != null)
+                        modifier.Rebuild();
+                }
+            }
+            else if (m_Modifier != null)
             {
                 m_Modifier.Rebuild();
-                RefreshSculptPickingCollider();
             }
+            RefreshSculptPickingCollider();
             SceneView.RepaintAll();
             Repaint();
         }

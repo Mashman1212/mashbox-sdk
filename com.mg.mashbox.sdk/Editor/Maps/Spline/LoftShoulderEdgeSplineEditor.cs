@@ -64,6 +64,20 @@ namespace MashBoxSDK.Maps.Spline
                 SceneView.RepaintAll();
             }
 
+            EditorGUILayout.Space(5f);
+            EditorGUILayout.LabelField("Selected Knot Profile", EditorStyles.boldLabel);
+            if (m_SelectedIndex >= 0 && m_SelectedIndex < edgeSpline.Container.Spline.Count)
+            {
+                EditorGUILayout.HelpBox(
+                    "Enable a custom vertical profile for this knot. The shoulder blends between this curve and the effective profiles on its neighboring knots.",
+                    MessageType.None);
+                DrawKnotProfileControls(edgeSpline, m_SelectedIndex, false);
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("Select a cyan shoulder knot in the Scene view to edit its profile.", MessageType.Info);
+            }
+
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Reset Bend"))
@@ -113,6 +127,8 @@ namespace MashBoxSDK.Maps.Spline
             if (m_SelectedIndex < 0 || m_SelectedIndex >= spline.Count)
                 return;
 
+            DrawSceneProfilePanel(edgeSpline, positions[m_SelectedIndex]);
+
             EditorGUI.BeginChangeCheck();
             Vector3 newWorldPosition = Handles.PositionHandle(positions[m_SelectedIndex], edgeSpline.transform.rotation);
             if (EditorGUI.EndChangeCheck())
@@ -130,6 +146,78 @@ namespace MashBoxSDK.Maps.Spline
                 newWorldPosition + Vector3.up * HandleUtility.GetHandleSize(newWorldPosition) * 0.2f,
                 $"{edgeSpline.Edge} shoulder bend {m_SelectedIndex + 1}/{spline.Count}",
                 EditorStyles.whiteMiniLabel);
+        }
+
+        void DrawSceneProfilePanel(LoftShoulderEdgeSpline edgeSpline, Vector3 worldPosition)
+        {
+            SceneView sceneView = SceneView.currentDrawingSceneView;
+            if (sceneView == null || sceneView.camera.WorldToScreenPoint(worldPosition).z <= 0f)
+                return;
+
+            Vector2 guiPosition = HandleUtility.WorldToGUIPoint(worldPosition);
+            bool enabled = edgeSpline.IsKnotProfileEnabled(m_SelectedIndex);
+            const float width = 250f;
+            float height = enabled ? 126f : 76f;
+            float x = Mathf.Clamp(guiPosition.x + 20f, 4f, Mathf.Max(4f, sceneView.position.width - width - 4f));
+            float y = Mathf.Clamp(guiPosition.y - height * 0.5f, 4f, Mathf.Max(4f, sceneView.position.height - height - 24f));
+
+            Handles.BeginGUI();
+            GUILayout.BeginArea(new Rect(x, y, width, height), "Knot Shoulder Profile", GUI.skin.window);
+            DrawKnotProfileControls(edgeSpline, m_SelectedIndex, true);
+            GUILayout.EndArea();
+            Handles.EndGUI();
+        }
+
+        void DrawKnotProfileControls(LoftShoulderEdgeSpline edgeSpline, int knotIndex, bool compact)
+        {
+            LoftShoulderModifier.ShoulderProfile edgeProfile = edgeSpline.Modifier?.GetEffectiveProfile(edgeSpline.Edge);
+            AnimationCurve baseCurve = edgeProfile?.height;
+            bool enabled = edgeSpline.IsKnotProfileEnabled(knotIndex);
+            bool newEnabled = EditorGUILayout.ToggleLeft(
+                compact ? $"Custom profile (knot {knotIndex + 1})" : "Enable Custom Profile",
+                enabled);
+            if (newEnabled != enabled)
+            {
+                Undo.RecordObject(edgeSpline, newEnabled ? "Enable Shoulder Knot Profile" : "Disable Shoulder Knot Profile");
+                edgeSpline.SetKnotProfileEnabled(knotIndex, newEnabled, baseCurve);
+                EditorUtility.SetDirty(edgeSpline);
+                enabled = newEnabled;
+                RepaintAfterProfileChange();
+            }
+
+            if (!enabled)
+            {
+                if (compact)
+                    EditorGUILayout.LabelField("Uses the edge profile", EditorStyles.miniLabel);
+                return;
+            }
+
+            AnimationCurve currentCurve = edgeSpline.GetKnotProfileCurve(knotIndex);
+            EditorGUI.BeginChangeCheck();
+            AnimationCurve newCurve = compact
+                ? EditorGUILayout.CurveField(GUIContent.none, currentCurve, GUILayout.Height(38f))
+                : EditorGUILayout.CurveField(new GUIContent("Height Curve", "Time 0 is the loft edge and time 1 is the outside shoulder edge."), currentCurve);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(edgeSpline, "Edit Shoulder Knot Profile");
+                edgeSpline.SetKnotProfileCurve(knotIndex, newCurve);
+                EditorUtility.SetDirty(edgeSpline);
+                RepaintAfterProfileChange();
+            }
+
+            if (GUILayout.Button("Copy Edge Profile", EditorStyles.miniButton))
+            {
+                Undo.RecordObject(edgeSpline, "Reset Shoulder Knot Profile");
+                edgeSpline.SetKnotProfileCurve(knotIndex, baseCurve);
+                EditorUtility.SetDirty(edgeSpline);
+                RepaintAfterProfileChange();
+            }
+        }
+
+        void RepaintAfterProfileChange()
+        {
+            Repaint();
+            SceneView.RepaintAll();
         }
 
         void OnUndoRedo()

@@ -87,6 +87,20 @@ namespace MashBoxSDK.Maps.Spline
         public ShoulderProfile Start => m_Start;
         public ShoulderProfile Finish => m_Finish;
 
+        public ShoulderProfile GetEffectiveProfile(Edge edge)
+        {
+            if (m_UseSharedSideProfile && (edge == Edge.Left || edge == Edge.Right))
+                return m_SharedSideProfile;
+
+            return edge switch
+            {
+                Edge.Left => m_Left,
+                Edge.Right => m_Right,
+                Edge.Start => m_Start,
+                _ => m_Finish
+            };
+        }
+
         internal float GetPackedUv2SideExtent(Edge edge)
         {
             if (edge != Edge.Left && edge != Edge.Right)
@@ -388,9 +402,10 @@ namespace MashBoxSDK.Maps.Spline
                 for (int across = 0; across < profilePoints; across++)
                 {
                     float t = across / (float)profileSegments;
-                    float height = profile.height != null
-                        ? profile.height.Evaluate(t) * profile.verticalScale * highSideBlend
-                        : 0f;
+                    float profileHeight = edgeSpline != null
+                        ? edgeSpline.EvaluateProfileHeight(pathT, t, profile.height)
+                        : profile.height != null ? profile.height.Evaluate(t) : 0f;
+                    float height = profileHeight * profile.verticalScale * highSideBlend;
                     float bendInfluence = edgeSpline != null ? edgeSpline.EvaluateInfluence(t) : 0f;
                     float erosionMask = Mathf.Sin(t * Mathf.PI);
                     erosionMask *= erosionMask;

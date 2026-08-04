@@ -13,10 +13,11 @@ namespace MashBoxSDK.MapTools
         MeshSculpt,
         UVSpline,
         Terrain,
-        UVInspector
+        UVInspector,
+        Mesh
     }
 
-    public enum MBEditorAuthoringCategory { Brush, Spline, Terrain, UVInspector }
+    public enum MBEditorAuthoringCategory { Brush, Spline, Terrain, Mesh, UVInspector }
 
     public enum MBBrushMode { Decor, Painter, SplatMap }
     public enum MBSculptMode { Displace, Smooth, Flatten }
@@ -79,6 +80,7 @@ namespace MashBoxSDK.MapTools
             MBEditorAuthoringMode.Spline => MBEditorAuthoringCategory.Spline,
             MBEditorAuthoringMode.UVSpline => MBEditorAuthoringCategory.Spline,
             MBEditorAuthoringMode.UVInspector => MBEditorAuthoringCategory.UVInspector,
+            MBEditorAuthoringMode.Mesh => MBEditorAuthoringCategory.Mesh,
             _ => MBEditorAuthoringCategory.Brush
         };
 
@@ -130,6 +132,11 @@ namespace MashBoxSDK.MapTools
             if (category == MBEditorAuthoringCategory.UVInspector)
             {
                 RequestMode(MBEditorAuthoringMode.UVInspector);
+                return;
+            }
+            if (category == MBEditorAuthoringCategory.Mesh)
+            {
+                RequestMode(MBEditorAuthoringMode.Mesh);
                 return;
             }
 

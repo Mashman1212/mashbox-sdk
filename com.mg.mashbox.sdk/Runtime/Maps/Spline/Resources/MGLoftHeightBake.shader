@@ -179,7 +179,10 @@ Shader "Hidden/MashBox/LoftHeightBake"
             float AdjustHeight(float value, float offset, float contrast, float influence)
             {
                 float contrasted = saturate((value - 0.5) * max(contrast, 0.0001) + 0.5 + offset);
-                return lerp(0.5, contrasted, max(influence, 0.0));
+                // Influence is exposed up to 2. Values above 1 intentionally
+                // strengthen the height response, but must not turn a black
+                // sample into negative geometric displacement.
+                return saturate(lerp(0.5, contrasted, max(influence, 0.0)));
             }
 
             float4 Frag(Varyings input) : SV_Target
@@ -211,7 +214,7 @@ Shader "Hidden/MashBox/LoftHeightBake"
                 blendedA /= max(blendedSum, 0.0001);
                 blendedB /= max(blendedSum, 0.0001);
 
-                float height = dot(blendedA, float4(h0, h1, h2, h3)) + dot(blendedB, float4(h4, h5, h6, h7));
+                float height = saturate(dot(blendedA, float4(h0, h1, h2, h3)) + dot(blendedB, float4(h4, h5, h6, h7)));
                 return float4(height, height, height, 1.0);
             }
             ENDCG

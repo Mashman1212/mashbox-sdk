@@ -27,7 +27,7 @@ namespace MashBoxSDK.MapTools
     public class MashBoxMapToolsWindow : EditorWindow
     {
         private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
-        private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector }
+        private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector, Mesh }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
         private const string PREF_KEY_MAP_TOOL_TAB_ORDER = "MashBoxSDK.SelectedMapToolTab.Order";
         private ToolTab currentToolTab = ToolTab.ArtTools;
@@ -114,6 +114,14 @@ namespace MashBoxSDK.MapTools
         [SerializeField] private bool terrainDisableSource = true;
         [SerializeField] private int terrainMeshResolution = 513;
         [NonSerialized] private TerrainConversionSummary terrainConversionSummary;
+        [SerializeField] private UnityEngine.Object meshUvTarget;
+        [SerializeField] private int meshUvSourceChannel;
+        [SerializeField] private int meshUvTargetChannel = 2;
+
+        private static readonly string[] MeshUvChannelLabels =
+        {
+            "UV0", "UV1", "UV2", "UV3", "UV4", "UV5", "UV6", "UV7"
+        };
 
         private const string UGC_REQUEST_PATH =
             "https://ugc-remote-cook-func-node-fecqe4asaabhcddn.centralus-01.azurewebsites.net/api/request-upload";
@@ -880,12 +888,13 @@ namespace MashBoxSDK.MapTools
             MBEditorAuthoringCategory category = MBEditorToolState.Category;
             int newCategory = MashBoxTabDrawer.DrawTabs(
                 (int)category,
-                new[] { "Brush", "Spline", "Terrain", "UV Inspector" },
+                new[] { "Brush", "Spline", "Terrain", "Mesh", "UV Inspector" },
                 MashBoxTabDrawer.TabVisualStyle.Secondary);
             if (newCategory != (int)category)
                 MBEditorToolState.RequestCategory((MBEditorAuthoringCategory)newCategory);
 
             if (MBEditorToolState.Category != MBEditorAuthoringCategory.Terrain
+                && MBEditorToolState.Category != MBEditorAuthoringCategory.Mesh
                 && MBEditorToolState.Category != MBEditorAuthoringCategory.UVInspector)
             {
                 MBEditorAuthoringMode[] categoryModes;
@@ -949,10 +958,111 @@ namespace MashBoxSDK.MapTools
                 case AuthoringToolTab.Terrain:
                     DrawTerrainToolSection();
                     break;
+                case AuthoringToolTab.Mesh:
+                    DrawMeshToolSection();
+                    break;
                 case AuthoringToolTab.UVInspector:
                     authoringUvInspectorTool?.Draw(embeddedInParentWindow: true);
                     break;
             }
+        }
+
+        private void DrawMeshToolSection()
+        {
+            EditorGUILayout.LabelField("Mesh UV Channels", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Copy any populated UV channel into another channel on a selected mesh. This preserves the source coordinates exactly; it does not create a new unwrap. UV2/TEXCOORD2 is the default MashBox splat-paint channel.",
+                MessageType.Info);
+
+            meshUvTarget = EditorGUILayout.ObjectField(
+                "Mesh Source",
+                meshUvTarget,
+                typeof(UnityEngine.Object),
+                true);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Use Current Selection"))
+                    meshUvTarget = Selection.activeGameObject != null
+                        ? Selection.activeGameObject
+                        : Selection.activeObject;
+
+                Mesh selectedMesh = ResolveUvMesh(meshUvTarget);
+                using (new EditorGUI.DisabledScope(selectedMesh == null))
+                {
+                    if (GUILayout.Button("Ping Mesh", GUILayout.Width(90f)))
+                        EditorGUIUtility.PingObject(selectedMesh);
+                }
+            }
+
+            Mesh mesh = ResolveUvMesh(meshUvTarget);
+            if (mesh == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "Select a Mesh asset or a GameObject containing a Mesh Filter or Skinned Mesh Renderer.",
+                    MessageType.None);
+                return;
+            }
+
+            EditorGUILayout.ObjectField("Resolved Mesh", mesh, typeof(Mesh), false);
+            EditorGUILayout.LabelField("Vertices", mesh.vertexCount.ToString("N0"));
+            meshUvSourceChannel = EditorGUILayout.Popup("Source Channel", Mathf.Clamp(meshUvSourceChannel, 0, 7), MeshUvChannelLabels);
+            meshUvTargetChannel = EditorGUILayout.Popup("Target Channel", Mathf.Clamp(meshUvTargetChannel, 0, 7), MeshUvChannelLabels);
+
+            var sourceUvs = new List<Vector4>();
+            var targetUvs = new List<Vector4>();
+            mesh.GetUVs(meshUvSourceChannel, sourceUvs);
+            mesh.GetUVs(meshUvTargetChannel, targetUvs);
+            bool validSource = sourceUvs.Count == mesh.vertexCount && mesh.vertexCount > 0;
+            EditorGUILayout.LabelField(
+                "Source Data",
+                validSource ? $"{sourceUvs.Count:N0} coordinates" : "Channel is empty or incomplete");
+            EditorGUILayout.LabelField(
+                "Target Data",
+                targetUvs.Count == mesh.vertexCount ? $"{targetUvs.Count:N0} coordinates (will be replaced)" : "Empty");
+
+            bool sameChannel = meshUvSourceChannel == meshUvTargetChannel;
+            using (new EditorGUI.DisabledScope(!validSource || sameChannel))
+            {
+                if (GUILayout.Button(
+                        $"Generate {MeshUvChannelLabels[meshUvTargetChannel]} from {MeshUvChannelLabels[meshUvSourceChannel]}",
+                        GUILayout.Height(34f)))
+                {
+                    Undo.RegisterCompleteObjectUndo(mesh, "Copy Mesh UV Channel");
+                    mesh.SetUVs(meshUvTargetChannel, sourceUvs);
+                    EditorUtility.SetDirty(mesh);
+                    if (AssetDatabase.Contains(mesh))
+                        AssetDatabase.SaveAssetIfDirty(mesh);
+                    else if (Selection.activeGameObject != null && Selection.activeGameObject.scene.IsValid())
+                        EditorSceneManager.MarkSceneDirty(Selection.activeGameObject.scene);
+
+                    Debug.Log(
+                        $"Copied {MeshUvChannelLabels[meshUvSourceChannel]} to {MeshUvChannelLabels[meshUvTargetChannel]} on mesh '{mesh.name}'.",
+                        mesh);
+                }
+            }
+
+            if (sameChannel)
+                EditorGUILayout.HelpBox("Choose different source and target channels.", MessageType.None);
+            else if (!validSource)
+                EditorGUILayout.HelpBox("The selected source UV channel has no complete vertex data to copy.", MessageType.Warning);
+        }
+
+        private static Mesh ResolveUvMesh(UnityEngine.Object source)
+        {
+            if (source is Mesh mesh)
+                return mesh;
+
+            GameObject gameObject = source as GameObject;
+            if (gameObject == null && source is Component component)
+                gameObject = component.gameObject;
+            if (gameObject == null)
+                return null;
+
+            MeshFilter filter = gameObject.GetComponent<MeshFilter>();
+            if (filter != null && filter.sharedMesh != null)
+                return filter.sharedMesh;
+            SkinnedMeshRenderer skinnedRenderer = gameObject.GetComponent<SkinnedMeshRenderer>();
+            return skinnedRenderer != null ? skinnedRenderer.sharedMesh : null;
         }
 
         private void DrawTerrainToolSection()

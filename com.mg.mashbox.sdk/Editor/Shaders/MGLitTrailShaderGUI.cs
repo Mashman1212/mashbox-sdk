@@ -226,7 +226,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         {
             MaterialProperty controlMap1 = FindOptionalProperty(ControlMap1PropertyName, properties);
             MaterialProperty controlMap2 = FindOptionalProperty(ControlMap2PropertyName, properties);
-            if (controlMap1 == null && controlMap2 == null)
+            MaterialProperty controlUv2 = FindOptionalProperty("_ControlUV2", properties);
+            if (controlMap1 == null && controlMap2 == null && controlUv2 == null)
                 return;
 
             GUILayout.Space(4f);
@@ -235,6 +236,15 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 materialEditor.TexturePropertySingleLine(new GUIContent("Control Map 1 (IDs 0–3)"), controlMap1);
             if (controlMap2 != null)
                 materialEditor.TexturePropertySingleLine(new GUIContent("Control Map 2 (IDs 4–7)"), controlMap2);
+
+            if (controlUv2 != null)
+            {
+                materialEditor.ShaderProperty(
+                    controlUv2,
+                    new GUIContent(
+                        "Use UV2",
+                        "Sample both control maps from UV2 instead of the shader's alternate control UV channel."));
+            }
 
             Material material = materialEditor.target as Material;
             string materialPath = material != null ? AssetDatabase.GetAssetPath(material) : string.Empty;

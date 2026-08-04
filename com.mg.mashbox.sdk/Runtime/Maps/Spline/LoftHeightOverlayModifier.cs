@@ -387,9 +387,9 @@ namespace MashBoxSDK.Maps.Spline
             for (int index = 0; index < vertices.Count; index++)
             {
                 Vector4 packedUv = uvChannels[3][index];
-                float height = bakedHeight.GetPixelBilinear(
+                float height = Mathf.Clamp01(bakedHeight.GetPixelBilinear(
                     Mathf.Clamp01(packedUv.x),
-                    Mathf.Clamp01(packedUv.y)).r;
+                    Mathf.Clamp01(packedUv.y)).r);
                 float displacement = (height - m_HeightCenter) * m_DisplacementScale + m_SurfaceOffset;
                 if (boundaryVertices != null && boundaryVertices.Contains(index))
                     displacement = m_SurfaceOffset;
