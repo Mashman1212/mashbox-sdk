@@ -154,15 +154,15 @@ namespace MashBoxSDK.Maps.Spline
             if (sceneView == null || sceneView.camera.WorldToScreenPoint(worldPosition).z <= 0f)
                 return;
 
-            Vector2 guiPosition = HandleUtility.WorldToGUIPoint(worldPosition);
             bool enabled = edgeSpline.IsKnotProfileEnabled(m_SelectedIndex);
             const float width = 250f;
             float height = enabled ? 126f : 76f;
-            float x = Mathf.Clamp(guiPosition.x + 20f, 4f, Mathf.Max(4f, sceneView.position.width - width - 4f));
-            float y = Mathf.Clamp(guiPosition.y - height * 0.5f, 4f, Mathf.Max(4f, sceneView.position.height - height - 24f));
+            const float horizontalMargin = 12f;
+            const float topMargin = 42f;
+            float x = Mathf.Max(horizontalMargin, sceneView.position.width - width - horizontalMargin);
 
             Handles.BeginGUI();
-            GUILayout.BeginArea(new Rect(x, y, width, height), "Knot Shoulder Profile", GUI.skin.window);
+            GUILayout.BeginArea(new Rect(x, topMargin, width, height), "Knot Shoulder Profile", GUI.skin.window);
             DrawKnotProfileControls(edgeSpline, m_SelectedIndex, true);
             GUILayout.EndArea();
             Handles.EndGUI();
