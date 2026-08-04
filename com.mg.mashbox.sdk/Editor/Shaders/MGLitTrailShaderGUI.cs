@@ -147,6 +147,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             DrawControlMaps(materialEditor, properties);
             DrawPuddleControls(materialEditor, properties);
             DrawGlobalHeightControls(materialEditor, properties);
+            DrawAuxiliaryNormals(materialEditor, properties);
             DrawTerrainLayers(materialEditor, properties, material);
 
             GUILayout.Space(6f);
@@ -392,6 +393,96 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 new GUIContent(
                     "Height Transition",
                     "Controls the width of the transition between height-blended terrain layers."));
+        }
+
+        private static void DrawAuxiliaryNormals(
+            MaterialEditor materialEditor,
+            MaterialProperty[] properties)
+        {
+            MaterialProperty auxiliaryNormal00 = FindOptionalProperty("_AuxNormalMap00", properties);
+            MaterialProperty auxiliaryNormal01 = FindOptionalProperty("_AuxNormalMap01", properties);
+            MaterialProperty auxiliaryDisplacement00 = FindOptionalProperty("_AuxNormalDisplacementMap00", properties);
+            MaterialProperty auxiliaryDisplacement01 = FindOptionalProperty("_AuxNormalDisplacementMap01", properties);
+            MaterialProperty auxiliaryDisplacementStrength00 = FindOptionalProperty("_AuxNormalDisplacementStrength00", properties);
+            MaterialProperty auxiliaryDisplacementStrength01 = FindOptionalProperty("_AuxNormalDisplacementStrength01", properties);
+            MaterialProperty auxiliaryNormalTiling00 = FindOptionalProperty("_AuxNormalTiling00", properties);
+            MaterialProperty auxiliaryNormalTiling01 = FindOptionalProperty("_AuxNormalTiling01", properties);
+            MaterialProperty auxiliaryNormalStrength00 = FindOptionalProperty("_AuxNormalStrength00", properties);
+            MaterialProperty auxiliaryNormalStrength01 = FindOptionalProperty("_AuxNormalStrength01", properties);
+            if (auxiliaryNormal00 == null &&
+                auxiliaryNormal01 == null &&
+                auxiliaryDisplacement00 == null &&
+                auxiliaryDisplacement01 == null &&
+                auxiliaryDisplacementStrength00 == null &&
+                auxiliaryDisplacementStrength01 == null &&
+                auxiliaryNormalTiling00 == null &&
+                auxiliaryNormalTiling01 == null &&
+                auxiliaryNormalStrength00 == null &&
+                auxiliaryNormalStrength01 == null)
+                return;
+
+            GUILayout.Space(8f);
+            EditorGUILayout.LabelField("Auxiliary Normals", EditorStyles.boldLabel);
+            if (auxiliaryNormal00 != null)
+            {
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Aux Normal Map 0"),
+                    auxiliaryNormal00);
+            }
+            if (auxiliaryNormalStrength00 != null)
+            {
+                materialEditor.ShaderProperty(
+                    auxiliaryNormalStrength00,
+                    new GUIContent("Normal Strength 0"));
+            }
+            if (auxiliaryDisplacement00 != null)
+            {
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Displacement Map 0"),
+                    auxiliaryDisplacement00);
+            }
+            if (auxiliaryDisplacementStrength00 != null)
+            {
+                materialEditor.ShaderProperty(
+                    auxiliaryDisplacementStrength00,
+                    new GUIContent("Displacement Strength 0"));
+            }
+            if (auxiliaryNormalTiling00 != null)
+            {
+                materialEditor.ShaderProperty(
+                    auxiliaryNormalTiling00,
+                    new GUIContent("Normal Tiling 0"));
+            }
+            if (auxiliaryNormal01 != null)
+            {
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Aux Normal Map 1"),
+                    auxiliaryNormal01);
+            }
+            if (auxiliaryNormalStrength01 != null)
+            {
+                materialEditor.ShaderProperty(
+                    auxiliaryNormalStrength01,
+                    new GUIContent("Normal Strength 1"));
+            }
+            if (auxiliaryDisplacement01 != null)
+            {
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Displacement Map 1"),
+                    auxiliaryDisplacement01);
+            }
+            if (auxiliaryDisplacementStrength01 != null)
+            {
+                materialEditor.ShaderProperty(
+                    auxiliaryDisplacementStrength01,
+                    new GUIContent("Displacement Strength 1"));
+            }
+            if (auxiliaryNormalTiling01 != null)
+            {
+                materialEditor.ShaderProperty(
+                    auxiliaryNormalTiling01,
+                    new GUIContent("Normal Tiling 1"));
+            }
         }
 
         private static void DrawTerrainLayers(
