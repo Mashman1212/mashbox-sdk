@@ -97,20 +97,6 @@
         {
             "m_OutputSlot": {
                 "m_Node": {
-                    "m_Id": "1b22ff970d8c45ceb23466d646e8e315"
-                },
-                "m_SlotId": 2
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "5ac84249983802868fe94287021fda90"
-                },
-                "m_SlotId": 1
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
                     "m_Id": "307860e864fe4ab29a30fee267077f3d"
                 },
                 "m_SlotId": 2
@@ -302,6 +288,20 @@
                     "m_Id": "fb9001bc777140879c882d29d68598eb"
                 },
                 "m_SlotId": 0
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "fb9001bc777140879c882d29d68598eb"
+                },
+                "m_SlotId": 2
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "5ac84249983802868fe94287021fda90"
+                },
+                "m_SlotId": 1
             }
         }
     ],
@@ -1936,8 +1936,8 @@
     "m_ObjectId": "f1dd022f8dee432aa26b44a70a87f7c3",
     "m_Title": "Adjusted Height",
     "m_Position": {
-        "x": -567.199951171875,
-        "y": -981.5999755859375
+        "x": -567.2000122070313,
+        "y": -981.60009765625
     }
 }
 

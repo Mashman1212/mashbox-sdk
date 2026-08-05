@@ -3,6 +3,7 @@
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
+using UnityEditor.Rendering;
 using UnityEditor.Rendering.HighDefinition;
 using UnityEngine;
 
@@ -100,6 +101,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             public Vector4 mappingTiling;
             public Vector4 mappingOffset;
             public float heightBlend;
+            public float heightRemapMin;
+            public float heightRemapMax;
+            public float tessellationRemapMin;
+            public float tessellationRemapMax;
             public float heightOffset;
             public float heightAmplitude;
             public float heightContrast;
@@ -393,16 +398,44 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             MaterialProperty[] properties)
         {
             MaterialProperty heightTransition = FindOptionalProperty("_HeightTransition", properties);
-            if (heightTransition == null)
+            MaterialProperty tessellationAmplitudeMaster =
+                FindOptionalProperty("_TesselationAmplitudeMaster", properties);
+            MaterialProperty pomAmplitudeMaster =
+                FindOptionalProperty("_POMAmplitudeMaster", properties);
+            if (heightTransition == null &&
+                tessellationAmplitudeMaster == null &&
+                pomAmplitudeMaster == null)
                 return;
 
             GUILayout.Space(8f);
-            EditorGUILayout.LabelField("Height Blending", EditorStyles.boldLabel);
-            materialEditor.ShaderProperty(
-                heightTransition,
-                new GUIContent(
-                    "Height Transition",
-                    "Controls the width of the transition between height-blended terrain layers."));
+            EditorGUILayout.LabelField("Height & Displacement", EditorStyles.boldLabel);
+
+            if (heightTransition != null)
+            {
+                materialEditor.ShaderProperty(
+                    heightTransition,
+                    new GUIContent(
+                        "Height Transition",
+                        "Controls the width of the transition between height-blended terrain layers."));
+            }
+
+            if (tessellationAmplitudeMaster != null)
+            {
+                materialEditor.ShaderProperty(
+                    tessellationAmplitudeMaster,
+                    new GUIContent(
+                        "Tessellation Amplitude Master",
+                        "Globally scales the tessellation displacement amplitude for all trail layers."));
+            }
+
+            if (pomAmplitudeMaster != null)
+            {
+                materialEditor.ShaderProperty(
+                    pomAmplitudeMaster,
+                    new GUIContent(
+                        "POM Amplitude Master",
+                        "Globally scales the parallax occlusion mapping amplitude for all trail layers."));
+            }
         }
 
         private static void DrawAuxiliaryNormals(
@@ -433,65 +466,73 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
             GUILayout.Space(8f);
             EditorGUILayout.LabelField("Auxiliary Normals", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Vertex color masks: Red (R) drives Auxiliary Normal 1. " +
+                "Green (G) drives Auxiliary Normal 2.",
+                MessageType.Info);
             if (auxiliaryNormal00 != null)
             {
                 materialEditor.TexturePropertySingleLine(
-                    new GUIContent("Aux Normal Map 0"),
+                    new GUIContent(
+                        "Aux Normal Map 1",
+                        "Blended by the mesh vertex-color Red (R) channel."),
                     auxiliaryNormal00);
             }
             if (auxiliaryNormalStrength00 != null)
             {
                 materialEditor.ShaderProperty(
                     auxiliaryNormalStrength00,
-                    new GUIContent("Normal Strength 0"));
+                    new GUIContent("Normal Strength 1"));
             }
             if (auxiliaryDisplacement00 != null)
             {
                 materialEditor.TexturePropertySingleLine(
-                    new GUIContent("Displacement Map 0"),
+                    new GUIContent("Displacement Map 1"),
                     auxiliaryDisplacement00);
             }
             if (auxiliaryDisplacementStrength00 != null)
             {
                 materialEditor.ShaderProperty(
                     auxiliaryDisplacementStrength00,
-                    new GUIContent("Displacement Strength 0"));
+                    new GUIContent("Displacement Strength 1"));
             }
             if (auxiliaryNormalTiling00 != null)
             {
                 materialEditor.ShaderProperty(
                     auxiliaryNormalTiling00,
-                    new GUIContent("Normal Tiling 0"));
+                    new GUIContent("Normal Tiling 1"));
             }
             if (auxiliaryNormal01 != null)
             {
                 materialEditor.TexturePropertySingleLine(
-                    new GUIContent("Aux Normal Map 1"),
+                    new GUIContent(
+                        "Aux Normal Map 2",
+                        "Blended by the mesh vertex-color Green (G) channel."),
                     auxiliaryNormal01);
             }
             if (auxiliaryNormalStrength01 != null)
             {
                 materialEditor.ShaderProperty(
                     auxiliaryNormalStrength01,
-                    new GUIContent("Normal Strength 1"));
+                    new GUIContent("Normal Strength 2"));
             }
             if (auxiliaryDisplacement01 != null)
             {
                 materialEditor.TexturePropertySingleLine(
-                    new GUIContent("Displacement Map 1"),
+                    new GUIContent("Displacement Map 2"),
                     auxiliaryDisplacement01);
             }
             if (auxiliaryDisplacementStrength01 != null)
             {
                 materialEditor.ShaderProperty(
                     auxiliaryDisplacementStrength01,
-                    new GUIContent("Displacement Strength 1"));
+                    new GUIContent("Displacement Strength 2"));
             }
             if (auxiliaryNormalTiling01 != null)
             {
                 materialEditor.ShaderProperty(
                     auxiliaryNormalTiling01,
-                    new GUIContent("Normal Tiling 1"));
+                    new GUIContent("Normal Tiling 2"));
             }
         }
 
@@ -514,6 +555,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 MaterialProperty mappingTiling = FindOptionalProperty("_Tiling" + suffix, properties);
                 MaterialProperty mappingOffset = FindOptionalProperty("_Offset" + suffix, properties);
                 MaterialProperty heightBlend = FindOptionalProperty("_HeightBlend" + suffix, properties);
+                MaterialProperty heightRemapMin = FindOptionalProperty("_HeightRemapMin" + suffix, properties);
+                MaterialProperty heightRemapMax = FindOptionalProperty("_HeightRemapMax" + suffix, properties);
+                MaterialProperty tessellationRemapMin =
+                    FindOptionalProperty("_TesselationRemapMin" + suffix, properties);
+                MaterialProperty tessellationRemapMax =
+                    FindOptionalProperty("_TesselationRemapMax" + suffix, properties);
                 MaterialProperty heightOffset = FindOptionalProperty("_HeightOffset" + suffix, properties);
                 MaterialProperty heightAmplitude = FindOptionalProperty("_HeightAmplitude" + suffix, properties);
                 MaterialProperty heightContrast = FindOptionalProperty("_HeightContrast" + suffix, properties);
@@ -602,6 +649,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     DrawHeightControls(
                         materialEditor,
                         heightBlend,
+                        heightRemapMin,
+                        heightRemapMax,
+                        tessellationRemapMin,
+                        tessellationRemapMax,
                         heightOffset,
                         heightAmplitude,
                         heightContrast,
@@ -721,6 +772,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             string mappingTilingProperty = "_Tiling" + suffix;
             string mappingOffsetProperty = "_Offset" + suffix;
             string heightBlendProperty = "_HeightBlend" + suffix;
+            string heightRemapMinProperty = "_HeightRemapMin" + suffix;
+            string heightRemapMaxProperty = "_HeightRemapMax" + suffix;
+            string tessellationRemapMinProperty = "_TesselationRemapMin" + suffix;
+            string tessellationRemapMaxProperty = "_TesselationRemapMax" + suffix;
             string heightOffsetProperty = "_HeightOffset" + suffix;
             string heightAmplitudeProperty = "_HeightAmplitude" + suffix;
             string heightContrastProperty = "_HeightContrast" + suffix;
@@ -742,6 +797,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 mappingTiling = GetVector(material, mappingTilingProperty, new Vector4(1f, 1f, 0f, 0f)),
                 mappingOffset = GetVector(material, mappingOffsetProperty, Vector4.zero),
                 heightBlend = GetFloat(material, heightBlendProperty),
+                heightRemapMin = GetFloat(material, heightRemapMinProperty),
+                heightRemapMax = GetFloat(material, heightRemapMaxProperty, 1f),
+                tessellationRemapMin = GetFloat(material, tessellationRemapMinProperty),
+                tessellationRemapMax = GetFloat(material, tessellationRemapMaxProperty, 1f),
                 heightOffset = GetFloat(material, heightOffsetProperty),
                 heightAmplitude = GetFloat(material, heightAmplitudeProperty),
                 heightContrast = GetFloat(material, heightContrastProperty),
@@ -782,6 +841,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             SetVector(material, "_Tiling" + suffix, values.mappingTiling);
             SetVector(material, "_Offset" + suffix, values.mappingOffset);
             SetFloat(material, "_HeightBlend" + suffix, values.heightBlend);
+            SetFloat(material, "_HeightRemapMin" + suffix, values.heightRemapMin);
+            SetFloat(material, "_HeightRemapMax" + suffix, values.heightRemapMax);
+            SetFloat(material, "_TesselationRemapMin" + suffix, values.tessellationRemapMin);
+            SetFloat(material, "_TesselationRemapMax" + suffix, values.tessellationRemapMax);
             SetFloat(material, "_HeightOffset" + suffix, values.heightOffset);
             SetFloat(material, "_HeightAmplitude" + suffix, values.heightAmplitude);
             SetFloat(material, "_HeightContrast" + suffix, values.heightContrast);
@@ -811,9 +874,9 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             return material.HasProperty(propertyName) ? material.GetTextureOffset(propertyName) : Vector2.zero;
         }
 
-        private static float GetFloat(Material material, string propertyName)
+        private static float GetFloat(Material material, string propertyName, float fallback = 0f)
         {
-            return material.HasProperty(propertyName) ? material.GetFloat(propertyName) : 0f;
+            return material.HasProperty(propertyName) ? material.GetFloat(propertyName) : fallback;
         }
 
         private static Vector4 GetVector(Material material, string propertyName, Vector4 fallback)
@@ -977,12 +1040,20 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         private static void DrawHeightControls(
             MaterialEditor materialEditor,
             MaterialProperty heightBlend,
+            MaterialProperty heightRemapMin,
+            MaterialProperty heightRemapMax,
+            MaterialProperty tessellationRemapMin,
+            MaterialProperty tessellationRemapMax,
             MaterialProperty heightOffset,
             MaterialProperty heightAmplitude,
             MaterialProperty heightContrast,
             MaterialProperty heightInfluence)
         {
             if (heightBlend == null &&
+                heightRemapMin == null &&
+                heightRemapMax == null &&
+                tessellationRemapMin == null &&
+                tessellationRemapMax == null &&
                 heightOffset == null &&
                 heightAmplitude == null &&
                 heightContrast == null &&
@@ -1000,6 +1071,50 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     new GUIContent("Height Blend", "Enables or disables sampled-height blending for this layer."),
                     0f,
                     1f);
+            }
+
+            if (heightRemapMin != null && heightRemapMax != null)
+            {
+                materialEditor.MinMaxShaderProperty(
+                    heightRemapMin,
+                    heightRemapMax,
+                    0f,
+                    1f,
+                    new GUIContent(
+                        "Height Remapping",
+                        "Sets the minimum and maximum bounds used to remap this layer's sampled mask-map height."));
+            }
+            else if (heightRemapMin != null)
+            {
+                materialEditor.ShaderProperty(heightRemapMin, new GUIContent("Height Remap Min"));
+            }
+            else if (heightRemapMax != null)
+            {
+                materialEditor.ShaderProperty(heightRemapMax, new GUIContent("Height Remap Max"));
+            }
+
+            if (tessellationRemapMin != null && tessellationRemapMax != null)
+            {
+                materialEditor.MinMaxShaderProperty(
+                    tessellationRemapMin,
+                    tessellationRemapMax,
+                    0f,
+                    1f,
+                    new GUIContent(
+                        "Tessellation Remapping",
+                        "Sets the minimum and maximum sampled-height range used for this layer's tessellation displacement."));
+            }
+            else if (tessellationRemapMin != null)
+            {
+                materialEditor.ShaderProperty(
+                    tessellationRemapMin,
+                    new GUIContent("Tessellation Remap Min"));
+            }
+            else if (tessellationRemapMax != null)
+            {
+                materialEditor.ShaderProperty(
+                    tessellationRemapMax,
+                    new GUIContent("Tessellation Remap Max"));
             }
 
             if (heightOffset != null)
