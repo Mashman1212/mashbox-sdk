@@ -9,7 +9,6 @@ namespace MashBoxSDK.Maps
 {
     [AddComponentMenu("")]
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(BoxCollider))]
     public class MBRaceGate : MonoBehaviour
     {
         private const float MinimumGateAxisScale = 0.01f;
@@ -51,6 +50,7 @@ namespace MashBoxSDK.Maps
 
         private bool armed;
         private bool passed;
+        private bool triggerShapeIsExternallyManaged;
 
         private void Reset()
         {
@@ -179,6 +179,25 @@ namespace MashBoxSDK.Maps
             onResetUnity?.Invoke();
         }
 
+        public void SetTriggerCollider(BoxCollider collider)
+        {
+            if (triggerCollider != null && triggerCollider != collider)
+                triggerCollider.enabled = false;
+
+            triggerCollider = collider;
+            if (triggerCollider == null)
+            {
+                triggerShapeIsExternallyManaged = false;
+                return;
+            }
+
+            triggerShapeIsExternallyManaged = triggerCollider.transform != transform;
+            triggerCollider.isTrigger = true;
+            if (!triggerShapeIsExternallyManaged)
+                SyncTriggerColliderShape();
+            triggerCollider.enabled = armed;
+        }
+
         public bool CanBePassedBy(Collider other)
         {
             if (other == null)
@@ -192,6 +211,12 @@ namespace MashBoxSDK.Maps
 
         public void EnforceValidScale()
         {
+            // Scale is an authoring control only. At runtime ChallengeSystemManager
+            // caches its dimensions, then normalizes this root so spawned physics
+            // objects and trigger children live beneath a (1,1,1) transform.
+            if (Application.isPlaying)
+                return;
+
             var localScale = transform.localScale;
             var minimumXScale = GetMinimumRequiredXScale();
             var minimumYScale = GetMinimumRequiredYScale();
@@ -283,11 +308,17 @@ namespace MashBoxSDK.Maps
 
         private void EnsureTriggerCollider()
         {
-            if (triggerCollider == null)
-                triggerCollider = GetComponent<BoxCollider>();
+            // Runtime race gates bind this to the CheckPointTriggerZone child.
+            // Never create a second trigger on the authoring/root MBRaceGate.
+            if (triggerCollider != null && triggerCollider.transform == transform)
+            {
+                triggerCollider.enabled = false;
+                triggerCollider = null;
+                triggerShapeIsExternallyManaged = false;
+            }
 
             if (triggerCollider == null)
-                triggerCollider = gameObject.AddComponent<BoxCollider>();
+                return;
 
             triggerCollider.isTrigger = true;
             SyncTriggerColliderShape();
@@ -296,7 +327,7 @@ namespace MashBoxSDK.Maps
 
         private void SyncTriggerColliderShape()
         {
-            if (triggerCollider == null)
+            if (triggerCollider == null || triggerShapeIsExternallyManaged)
                 return;
 
             triggerCollider.isTrigger = true;
