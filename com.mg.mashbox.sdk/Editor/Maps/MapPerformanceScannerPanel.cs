@@ -17,6 +17,12 @@ internal static class MapPerformanceMaterialTextureCollector
     private const int MgLitTrailLayerCount = 8;
     private const string MgLitTrailShaderNameFragment = "MG_Lit_Trail";
     private const string MgLitTrailTerrainLayerTagPrefix = "MashBox.MGLitTrail.TerrainLayer.";
+    private static readonly string[] MgLitTrailBaseMapArrayProperties =
+        { "_BaseMapArray", "_TrailAlbedoArray", "_AlbedoArray" };
+    private static readonly string[] MgLitTrailHeightArrayProperties =
+        { "_HeightMapArray", "_TrailHeightArray", "_HeightArray" };
+    private static readonly string[] MgLitTrailSurfaceArrayProperties =
+        { "_SurfaceMapArray", "_TrailSurfaceArray", "_SurfaceArray" };
 
     public static List<Texture> GetTextures(Material material)
     {
@@ -36,10 +42,11 @@ internal static class MapPerformanceMaterialTextureCollector
                 textures.Add(texture);
         }
 
-        // MG_Lit_Trail stores its TerrainLayer selections as GUIDs in material tags.
-        // Read the source assets as well as the resolved material properties so a scan
-        // remains complete if the layer asset changed since the inspector last synced it.
-        if (shader.name.IndexOf(MgLitTrailShaderNameFragment, StringComparison.OrdinalIgnoreCase) >= 0)
+        // Before array migration, MG_Lit_Trail stored resolved source textures on the
+        // material. Once all generated arrays are assigned, TerrainLayer GUID tags are
+        // editor-only authoring metadata and must not be counted as runtime textures.
+        if (shader.name.IndexOf(MgLitTrailShaderNameFragment, StringComparison.OrdinalIgnoreCase) >= 0 &&
+            !HasGeneratedTrailArrays(material))
             AddMgLitTrailTerrainLayerTextures(material, textures);
 
         return textures.ToList();
@@ -66,6 +73,25 @@ internal static class MapPerformanceMaterialTextureCollector
             if (terrainLayer.maskMapTexture != null)
                 textures.Add(terrainLayer.maskMapTexture);
         }
+    }
+
+    private static bool HasGeneratedTrailArrays(Material material)
+    {
+        return HasTextureArray(material, MgLitTrailBaseMapArrayProperties) &&
+               HasTextureArray(material, MgLitTrailHeightArrayProperties) &&
+               HasTextureArray(material, MgLitTrailSurfaceArrayProperties);
+    }
+
+    private static bool HasTextureArray(Material material, string[] propertyNames)
+    {
+        foreach (string propertyName in propertyNames)
+        {
+            if (material.HasProperty(propertyName) &&
+                material.GetTexture(propertyName) is Texture2DArray)
+                return true;
+        }
+
+        return false;
     }
 }
 

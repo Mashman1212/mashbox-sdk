@@ -3,12 +3,288 @@
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
 using UnityEditor.Rendering;
 using UnityEditor.Rendering.HighDefinition;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 {
+    internal static class MGLitTrailLinkedMaterialUtility
+    {
+        private const int LayerCount = 8;
+        private const string UseLinkedMaterialTag = "MashBox.MGLitTrail.UseLinkedMaterial";
+        private const string LinkedMaterialTag = "MashBox.MGLitTrail.LinkedMaterial";
+        private const string TerrainLayerTagPrefix = "MashBox.MGLitTrail.TerrainLayer.";
+
+        internal static bool UsesLinkedMaterial(Material material)
+        {
+            return material != null &&
+                   string.Equals(
+                       material.GetTag(UseLinkedMaterialTag, false, string.Empty),
+                       "True",
+                       System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static Material GetLinkedMaterial(Material material)
+        {
+            if (material == null)
+                return null;
+
+            string guid = material.GetTag(LinkedMaterialTag, false, string.Empty);
+            return string.IsNullOrEmpty(guid)
+                ? null
+                : AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
+        }
+
+        internal static void SetUsesLinkedMaterial(Material material, bool enabled)
+        {
+            if (material == null || UsesLinkedMaterial(material) == enabled)
+                return;
+
+            material.SetOverrideTag(UseLinkedMaterialTag, enabled ? "True" : string.Empty);
+            if (enabled)
+                material.SetOverrideTag("MashBox.MGLitTrail.UseSharedArrays", string.Empty);
+            EditorUtility.SetDirty(material);
+
+            if (enabled)
+                Synchronize(material);
+            else
+                MGLitTrailTextureArrayBuilder.AssignExistingArrays(material);
+        }
+
+        internal static bool SetLinkedMaterial(Material material, Material linkedMaterial)
+        {
+            if (material == null || linkedMaterial == material)
+                return false;
+
+            string path = linkedMaterial != null ? AssetDatabase.GetAssetPath(linkedMaterial) : string.Empty;
+            material.SetOverrideTag(
+                LinkedMaterialTag,
+                !string.IsNullOrEmpty(path) ? AssetDatabase.AssetPathToGUID(path) : string.Empty);
+            EditorUtility.SetDirty(material);
+            return linkedMaterial == null || Synchronize(material);
+        }
+
+        internal static bool Synchronize(Material material)
+        {
+            return Synchronize(material, new HashSet<Material>());
+        }
+
+        private static bool Synchronize(Material material, HashSet<Material> stack)
+        {
+            if (!UsesLinkedMaterial(material))
+                return true;
+
+            Material source = GetLinkedMaterial(material);
+            if (source == null || source == material || !stack.Add(material))
+                return false;
+
+            try
+            {
+                if (UsesLinkedMaterial(source) && !Synchronize(source, stack))
+                    return false;
+                if (source.shader == null || material.shader != source.shader)
+                    return false;
+
+                bool changed = CopyShaderProperties(source, material);
+                changed |= CopyTerrainLayerTags(source, material);
+                if (changed)
+                    EditorUtility.SetDirty(material);
+                return true;
+            }
+            finally
+            {
+                stack.Remove(material);
+            }
+        }
+
+        private static bool CopyShaderProperties(Material source, Material destination)
+        {
+            Shader shader = source.shader;
+            bool changed = false;
+            for (int index = 0; index < shader.GetPropertyCount(); index++)
+            {
+                string propertyName = shader.GetPropertyName(index);
+                if (IsLocalControlProperty(propertyName))
+                    continue;
+
+                switch (shader.GetPropertyType(index))
+                {
+                    case ShaderPropertyType.Color:
+                        changed |= SetColor(destination, propertyName, source.GetColor(propertyName));
+                        break;
+                    case ShaderPropertyType.Vector:
+                        changed |= SetVector(destination, propertyName, source.GetVector(propertyName));
+                        break;
+                    case ShaderPropertyType.Float:
+                    case ShaderPropertyType.Range:
+                    case ShaderPropertyType.Int:
+                        changed |= SetFloat(destination, propertyName, source.GetFloat(propertyName));
+                        break;
+                    case ShaderPropertyType.Texture:
+                        changed |= SetTexture(destination, propertyName, source.GetTexture(propertyName));
+                        if (shader.GetPropertyTextureDimension(index) == TextureDimension.Tex2D)
+                        {
+                            changed |= SetTextureScale(destination, propertyName, source.GetTextureScale(propertyName));
+                            changed |= SetTextureOffset(destination, propertyName, source.GetTextureOffset(propertyName));
+                        }
+                        break;
+                }
+            }
+
+            return changed;
+        }
+
+        private static bool SetColor(Material material, string name, Color value)
+        {
+            if (material.GetColor(name) == value)
+                return false;
+            material.SetColor(name, value);
+            return true;
+        }
+
+        private static bool SetVector(Material material, string name, Vector4 value)
+        {
+            if (material.GetVector(name) == value)
+                return false;
+            material.SetVector(name, value);
+            return true;
+        }
+
+        private static bool SetFloat(Material material, string name, float value)
+        {
+            if (Mathf.Approximately(material.GetFloat(name), value))
+                return false;
+            material.SetFloat(name, value);
+            return true;
+        }
+
+        private static bool SetTexture(Material material, string name, Texture value)
+        {
+            if (material.GetTexture(name) == value)
+                return false;
+            material.SetTexture(name, value);
+            return true;
+        }
+
+        private static bool SetTextureScale(Material material, string name, Vector2 value)
+        {
+            if (material.GetTextureScale(name) == value)
+                return false;
+            material.SetTextureScale(name, value);
+            return true;
+        }
+
+        private static bool SetTextureOffset(Material material, string name, Vector2 value)
+        {
+            if (material.GetTextureOffset(name) == value)
+                return false;
+            material.SetTextureOffset(name, value);
+            return true;
+        }
+
+        private static bool CopyTerrainLayerTags(Material source, Material destination)
+        {
+            bool changed = false;
+            for (int index = 0; index < LayerCount; index++)
+            {
+                string tagName = TerrainLayerTagPrefix + index.ToString("00");
+                string value = source.GetTag(tagName, false, string.Empty);
+                if (destination.GetTag(tagName, false, string.Empty) == value)
+                    continue;
+
+                destination.SetOverrideTag(tagName, value);
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        private static bool IsLocalControlProperty(string propertyName)
+        {
+            return propertyName == "_ControlMap1" ||
+                   propertyName == "_ControlMap2" ||
+                   propertyName == "_ControlUV2";
+        }
+    }
+
+    [InitializeOnLoad]
+    internal static class MGLitTrailLinkedMaterialSynchronizer
+    {
+        private static bool synchronizationQueued;
+        private static bool isSynchronizing;
+
+        static MGLitTrailLinkedMaterialSynchronizer()
+        {
+            EditorApplication.projectChanged += QueueSynchronization;
+            Undo.postprocessModifications += OnPostprocessModifications;
+        }
+
+        internal static void SynchronizeAll()
+        {
+            if (isSynchronizing)
+                return;
+
+            isSynchronizing = true;
+            try
+            {
+                foreach (string guid in AssetDatabase.FindAssets("t:Material"))
+                {
+                    Material material = AssetDatabase.LoadAssetAtPath<Material>(
+                        AssetDatabase.GUIDToAssetPath(guid));
+                    if (MGLitTrailLinkedMaterialUtility.UsesLinkedMaterial(material))
+                        MGLitTrailLinkedMaterialUtility.Synchronize(material);
+                }
+            }
+            finally
+            {
+                isSynchronizing = false;
+            }
+        }
+
+        private static UndoPropertyModification[] OnPostprocessModifications(
+            UndoPropertyModification[] modifications)
+        {
+            foreach (UndoPropertyModification modification in modifications)
+            {
+                if (modification.currentValue?.target is Material)
+                {
+                    QueueSynchronization();
+                    break;
+                }
+            }
+
+            return modifications;
+        }
+
+        private static void QueueSynchronization()
+        {
+            if (synchronizationQueued || isSynchronizing)
+                return;
+
+            synchronizationQueued = true;
+            EditorApplication.delayCall += () =>
+            {
+                synchronizationQueued = false;
+                SynchronizeAll();
+            };
+        }
+    }
+
+    internal sealed class MGLitTrailLinkedMaterialBuildProcessor : IPreprocessBuildWithReport
+    {
+        public int callbackOrder => 0;
+
+        public void OnPreprocessBuild(BuildReport report)
+        {
+            MGLitTrailLinkedMaterialSynchronizer.SynchronizeAll();
+            AssetDatabase.SaveAssets();
+        }
+    }
+
     /// <summary>
     /// Material inspector for MG_Lit_Trail. Terrain layers are used as convenient
     /// import sources; the material itself stores the resolved texture references.
@@ -20,6 +296,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         private const string TerrainLayerTagPrefix = "MashBox.MGLitTrail.TerrainLayer.";
         private const string ControlMap1PropertyName = "_ControlMap1";
         private const string ControlMap2PropertyName = "_ControlMap2";
+        private const string ArrayResolutionTagName = "MashBox.MGLitTrail.ArrayResolution";
         private static readonly Dictionary<Texture2D, TerrainLayer> TerrainLayersByDiffuse = new();
         private static readonly List<TerrainLayer> CachedTerrainLayers = new();
         private static readonly int[] ControlTextureResolutions = { 256, 512, 1024, 2048, 4096 };
@@ -33,6 +310,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         };
         private static bool terrainLayerCacheBuilt;
         private static int selectedControlTextureResolutionIndex = 2;
+        private static int selectedArrayTextureResolutionIndex = 2;
 
         private sealed class LayerDragData
         {
@@ -44,30 +322,44 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         {
             private readonly Material material;
             private readonly MaterialEditor materialEditor;
-            private int resolutionIndex;
+            private int controlResolutionIndex;
+            private int arrayResolutionIndex;
 
             public ControlTextureGenerationPopup(Material material, MaterialEditor materialEditor)
             {
                 this.material = material;
                 this.materialEditor = materialEditor;
-                resolutionIndex = selectedControlTextureResolutionIndex;
+                controlResolutionIndex = selectedControlTextureResolutionIndex;
+                arrayResolutionIndex = GetArrayResolutionIndex(material);
             }
 
             public override Vector2 GetWindowSize()
             {
-                return new Vector2(340f, 126f);
+                return new Vector2(360f, 168f);
             }
 
             public override void OnGUI(Rect rect)
             {
-                EditorGUILayout.LabelField("Generate Trail Control Textures", EditorStyles.boldLabel);
+                bool usesExternalArrays = MGLitTrailTextureArrayBuilder.UsesExternalArraySource(material);
+                EditorGUILayout.LabelField(
+                    usesExternalArrays ? "Generate Trail Control Textures" : "Generate Trail Texture Assets",
+                    EditorStyles.boldLabel);
                 EditorGUILayout.Space(3f);
-                resolutionIndex = EditorGUILayout.Popup(
-                    new GUIContent("Resolution"),
-                    resolutionIndex,
+                controlResolutionIndex = EditorGUILayout.Popup(
+                    new GUIContent("Control Resolution"),
+                    controlResolutionIndex,
                     ControlTextureResolutionLabels);
+                if (!usesExternalArrays)
+                {
+                    arrayResolutionIndex = EditorGUILayout.Popup(
+                        new GUIContent("Array Resolution"),
+                        arrayResolutionIndex,
+                        ControlTextureResolutionLabels);
+                }
                 EditorGUILayout.HelpBox(
-                    "Creates Control Map 1 and 2 beside the material. Layer 0 starts at full weight.",
+                    usesExternalArrays
+                        ? "Creates both control maps beside the material. Linked texture arrays are left unchanged. Layer 0 starts at full weight."
+                        : "Creates both control maps plus the Base Map, Height, and packed Surface texture arrays beside the material. Layer 0 starts at full weight.",
                     MessageType.Info);
 
                 using (new EditorGUILayout.HorizontalScope())
@@ -77,8 +369,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         editorWindow.Close();
                     if (GUILayout.Button("Generate", GUILayout.Width(90f)))
                     {
-                        selectedControlTextureResolutionIndex = resolutionIndex;
-                        GenerateControlTextures(material, ControlTextureResolutions[resolutionIndex]);
+                        selectedControlTextureResolutionIndex = controlResolutionIndex;
+                        selectedArrayTextureResolutionIndex = arrayResolutionIndex;
+                        int arrayResolution = ControlTextureResolutions[arrayResolutionIndex];
+                        material.SetOverrideTag(ArrayResolutionTagName, arrayResolution.ToString());
+                        if (GenerateControlTextures(material, ControlTextureResolutions[controlResolutionIndex]) &&
+                            !usesExternalArrays)
+                            MGLitTrailTextureArrayBuilder.Build(material, arrayResolution, true);
                         materialEditor?.Repaint();
                         editorWindow.Close();
                     }
@@ -95,6 +392,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             public Texture normalMap;
             public Vector2 normalScale;
             public Vector2 normalOffset;
+            public float normalStrength;
             public Texture maskMap;
             public Vector2 maskScale;
             public Vector2 maskOffset;
@@ -129,7 +427,9 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         public override void ValidateMaterial(Material material)
         {
             SetDepthOffsetDisabled(material);
+            MGLitTrailLinkedMaterialUtility.Synchronize(material);
             SynchronizeLayerTextureTransforms(material);
+            MGLitTrailTextureArrayBuilder.AssignExistingArrays(material);
             base.ValidateMaterial(material);
         }
 
@@ -142,21 +442,32 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             // Set this before HDRP draws/validates the material so its keywords and passes
             // are synchronized against the enforced value during the same inspector event.
             EnforceDepthOffsetDisabled(materialEditor.targets);
+            MGLitTrailLinkedMaterialUtility.Synchronize(material);
 
             EditorGUILayout.LabelField("MASHBOX • MG LIT TRAIL", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Assign a Terrain Layer to import its diffuse, normal, and mask textures into a trail layer. " +
-                "The imported texture references are saved on the material.",
+                "Terrain Layers are editor-only authoring inputs. Their diffuse data becomes the Base Map array, while normal and mask data is packed into the Height and Surface arrays. Linked materials can share those arrays, layers, and shader values while retaining independent control maps.",
                 MessageType.Info);
 
             DrawControlMaps(materialEditor, properties);
-            DrawPuddleControls(materialEditor, properties);
-            DrawGlobalHeightControls(materialEditor, properties);
-            DrawAuxiliaryNormals(materialEditor, properties);
-            DrawTerrainLayers(materialEditor, properties, material);
+            bool usesLinkedMaterial = MGLitTrailLinkedMaterialUtility.UsesLinkedMaterial(material);
+            using (new EditorGUI.DisabledScope(usesLinkedMaterial))
+            {
+                DrawPuddleControls(materialEditor, properties);
+                DrawGlobalHeightControls(materialEditor, properties);
+                DrawAuxiliaryNormals(materialEditor, properties);
+                DrawTerrainLayers(materialEditor, properties, material);
 
-            GUILayout.Space(6f);
-            base.OnMaterialGUI(materialEditor, properties);
+                GUILayout.Space(6f);
+                base.OnMaterialGUI(materialEditor, properties);
+            }
+
+            if (usesLinkedMaterial)
+            {
+                EditorGUILayout.HelpBox(
+                    "Linked values and Terrain Layers are read-only here. Edit the linked material to update them; this material keeps its own control maps and Use UV2 setting.",
+                    MessageType.Info);
+            }
 
             // Keep the trail contract intact if HDRP's hidden surface UI changes the value.
             EnforceDepthOffsetDisabled(materialEditor.targets);
@@ -253,6 +564,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
             Material material = materialEditor.target as Material;
             string materialPath = material != null ? AssetDatabase.GetAssetPath(material) : string.Empty;
+            bool usesLinkedMaterial = DrawTextureArraySources(materialEditor, material);
             using (new EditorGUI.DisabledScope(
                        material == null ||
                        materialEditor.targets.Length != 1 ||
@@ -260,22 +572,200 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             {
                 if (GUILayout.Button(
                         new GUIContent(
-                            "Generate Control Textures...",
-                            "Create and assign two paintable control-map textures beside this material.")))
+                            usesLinkedMaterial ? "Generate Control Textures..." : "Generate Trail Texture Assets...",
+                            usesLinkedMaterial
+                                ? "Create and assign two paintable control maps without changing the linked texture arrays."
+                                : "Create and assign two paintable control maps plus the Base Map, Height, and packed Surface arrays beside this material.")))
                 {
                     Rect buttonRect = GUILayoutUtility.GetLastRect();
                     PopupWindow.Show(buttonRect, new ControlTextureGenerationPopup(material, materialEditor));
                 }
+
+                using (new EditorGUI.DisabledScope(usesLinkedMaterial))
+                {
+                    if (GUILayout.Button(
+                            new GUIContent(
+                                "Rebuild Texture Arrays",
+                                "Rebuild only the Base Map, Height, and packed Surface arrays. Existing painted control maps are not changed.")))
+                    {
+                        MGLitTrailTextureArrayBuilder.Build(material, GetArrayResolution(material), true);
+                        materialEditor?.Repaint();
+                    }
+                }
+
+                bool hasAssignedControlMap =
+                    controlMap1 != null && controlMap1.textureValue is Texture2D ||
+                    controlMap2 != null && controlMap2.textureValue is Texture2D;
+                using (new EditorGUI.DisabledScope(!hasAssignedControlMap))
+                {
+                    if (GUILayout.Button(
+                            new GUIContent(
+                                "Apply BC7 to Control Maps",
+                                "Apply linear BC7 Standalone import settings without changing the painted PNG pixels.")))
+                    {
+                        ApplyControlMapCompression(controlMap1, controlMap2);
+                        materialEditor?.Repaint();
+                    }
+                }
             }
 
             if (string.IsNullOrEmpty(materialPath))
-                EditorGUILayout.HelpBox("Save this material as an asset before generating control textures.", MessageType.None);
+                EditorGUILayout.HelpBox("Save this material as an asset before generating trail texture assets.", MessageType.None);
+
+            DrawGeneratedArrays(material, usesLinkedMaterial);
         }
 
-        private static void GenerateControlTextures(Material material, int resolution)
+        private static bool DrawTextureArraySources(
+            MaterialEditor materialEditor,
+            Material material)
+        {
+            if (material == null)
+                return false;
+
+            GUILayout.Space(5f);
+            EditorGUILayout.LabelField("Material Linking", EditorStyles.boldLabel);
+
+            bool usesLinkedMaterial = MGLitTrailLinkedMaterialUtility.UsesLinkedMaterial(material);
+            using (new EditorGUI.DisabledScope(materialEditor.targets.Length != 1))
+            {
+                EditorGUI.BeginChangeCheck();
+                bool requestedLinkedMaterial = EditorGUILayout.Toggle(
+                    new GUIContent(
+                        "Use Linked Material",
+                        "Inherit texture arrays, Terrain Layers, and shader values from another trail material while keeping local control maps."),
+                    usesLinkedMaterial);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(material, "Change Linked Trail Material");
+                    MGLitTrailLinkedMaterialUtility.SetUsesLinkedMaterial(material, requestedLinkedMaterial);
+                    usesLinkedMaterial = requestedLinkedMaterial;
+                }
+            }
+
+            if (!usesLinkedMaterial)
+            {
+                EditorGUILayout.LabelField("Texture Arrays", EditorStyles.boldLabel);
+                int resolutionIndex = GetArrayResolutionIndex(material);
+                EditorGUI.BeginChangeCheck();
+                resolutionIndex = EditorGUILayout.Popup(
+                    new GUIContent(
+                        "Generated Resolution",
+                        "Resolution used for the Base Map, Height, and Surface arrays on the next rebuild."),
+                    resolutionIndex,
+                    ControlTextureResolutionLabels);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(material, "Change Trail Array Resolution");
+                    selectedArrayTextureResolutionIndex = resolutionIndex;
+                    material.SetOverrideTag(
+                        ArrayResolutionTagName,
+                        ControlTextureResolutions[resolutionIndex].ToString());
+                    EditorUtility.SetDirty(material);
+                }
+                return false;
+            }
+
+            Material linkedMaterial = MGLitTrailLinkedMaterialUtility.GetLinkedMaterial(material);
+            using (new EditorGUI.DisabledScope(materialEditor.targets.Length != 1))
+            {
+                EditorGUI.BeginChangeCheck();
+                Material requestedMaterial = EditorGUILayout.ObjectField(
+                    new GUIContent("Linked Material", "Material whose arrays, layers, and shader values this material inherits."),
+                    linkedMaterial,
+                    typeof(Material),
+                    false) as Material;
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(material, "Set Linked Trail Material");
+                    MGLitTrailLinkedMaterialUtility.SetLinkedMaterial(material, requestedMaterial);
+                    linkedMaterial = requestedMaterial;
+                }
+            }
+
+            if (linkedMaterial == null)
+                EditorGUILayout.HelpBox("Assign a trail material to link.", MessageType.Warning);
+            else if (linkedMaterial == material)
+                EditorGUILayout.HelpBox("A material cannot link to itself.", MessageType.Error);
+            else if (linkedMaterial.shader != material.shader)
+                EditorGUILayout.HelpBox("The linked material must use the same shader.", MessageType.Error);
+            else if (!MGLitTrailLinkedMaterialUtility.Synchronize(material))
+                EditorGUILayout.HelpBox("The material link is circular or otherwise invalid.", MessageType.Error);
+            else if (MGLitTrailTextureArrayBuilder.GetAssignedArray(
+                         material, MGLitTrailTextureArrayBuilder.BaseMapArrayPropertyNames) == null ||
+                     MGLitTrailTextureArrayBuilder.GetAssignedArray(
+                         material, MGLitTrailTextureArrayBuilder.HeightArrayPropertyNames) == null ||
+                     MGLitTrailTextureArrayBuilder.GetAssignedArray(
+                         material, MGLitTrailTextureArrayBuilder.SurfaceArrayPropertyNames) == null)
+                EditorGUILayout.HelpBox(
+                    "The linked material does not currently provide all three texture arrays.",
+                    MessageType.Warning);
+
+            return true;
+        }
+
+        private static void DrawGeneratedArrays(Material material, bool linked)
         {
             if (material == null)
                 return;
+
+            Texture2DArray baseMapArray = MGLitTrailTextureArrayBuilder.GetAssignedArray(
+                material, MGLitTrailTextureArrayBuilder.BaseMapArrayPropertyNames);
+            if (!linked)
+                baseMapArray ??=
+                MGLitTrailTextureArrayBuilder.LoadGeneratedArray(
+                    material, MGLitTrailTextureArrayBuilder.ArrayKind.BaseMap);
+            Texture2DArray heightArray = MGLitTrailTextureArrayBuilder.GetAssignedArray(
+                material, MGLitTrailTextureArrayBuilder.HeightArrayPropertyNames);
+            if (!linked)
+                heightArray ??=
+                MGLitTrailTextureArrayBuilder.LoadGeneratedArray(
+                    material, MGLitTrailTextureArrayBuilder.ArrayKind.Height);
+            Texture2DArray surfaceArray = MGLitTrailTextureArrayBuilder.GetAssignedArray(
+                material, MGLitTrailTextureArrayBuilder.SurfaceArrayPropertyNames);
+            if (!linked)
+                surfaceArray ??=
+                MGLitTrailTextureArrayBuilder.LoadGeneratedArray(
+                    material, MGLitTrailTextureArrayBuilder.ArrayKind.Surface);
+
+            if (baseMapArray == null && heightArray == null && surfaceArray == null)
+                return;
+
+            GUILayout.Space(3f);
+            EditorGUILayout.LabelField(linked ? "Linked Texture Arrays" : "Generated Texture Arrays", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField("Base Map Array (BC7 sRGB)", baseMapArray, typeof(Texture2DArray), false);
+                EditorGUILayout.ObjectField("Height Array (BC4 Linear)", heightArray, typeof(Texture2DArray), false);
+                EditorGUILayout.ObjectField("Surface Array (BC7 Linear)", surfaceArray, typeof(Texture2DArray), false);
+            }
+
+            if (!MGLitTrailTextureArrayBuilder.HasAnyArrayProperty(material))
+            {
+                EditorGUILayout.HelpBox(
+                    "The arrays are generated and ready. Add Texture2DArray properties named _BaseMapArray (sRGB), _HeightMapArray (linear), and _SurfaceMapArray (linear) to the Shader Graph to bind them automatically.",
+                    MessageType.Info);
+            }
+        }
+
+        private static int GetArrayResolutionIndex(Material material)
+        {
+            string stored = material != null
+                ? material.GetTag(ArrayResolutionTagName, false, string.Empty)
+                : string.Empty;
+            if (int.TryParse(stored, out int resolution))
+            {
+                int index = System.Array.IndexOf(ControlTextureResolutions, resolution);
+                if (index >= 0)
+                    return index;
+            }
+
+            return selectedArrayTextureResolutionIndex;
+        }
+
+        private static bool GenerateControlTextures(Material material, int resolution)
+        {
+            if (material == null)
+                return false;
 
             string materialPath = AssetDatabase.GetAssetPath(material);
             string materialDirectory = Path.GetDirectoryName(materialPath)?.Replace('\\', '/');
@@ -285,7 +775,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     "Generate Control Textures",
                     "Save this material as an asset before generating its control textures.",
                     "OK");
-                return;
+                return false;
             }
 
             string materialName = Path.GetFileNameWithoutExtension(materialPath);
@@ -299,7 +789,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     "One or both generated control textures already exist beside this material. Replace them?",
                     "Replace",
                     "Cancel"))
-                return;
+                return false;
 
             if ((File.Exists(Path.GetFullPath(controlMap1Path)) && !AssetDatabase.MakeEditable(controlMap1Path)) ||
                 (File.Exists(Path.GetFullPath(controlMap2Path)) && !AssetDatabase.MakeEditable(controlMap2Path)))
@@ -308,7 +798,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     "Control Textures Are Read-Only",
                     "The existing control textures could not be checked out or made editable.",
                     "OK");
-                return;
+                return false;
             }
 
             try
@@ -324,6 +814,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 EditorUtility.SetDirty(material);
                 AssetDatabase.SaveAssets();
                 Selection.activeObject = material;
+                return true;
             }
             catch (System.Exception exception)
             {
@@ -332,6 +823,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     "Control Texture Generation Failed",
                     exception.Message,
                     "OK");
+                return false;
             }
         }
 
@@ -366,13 +858,51 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 importer.alphaIsTransparency = false;
                 importer.isReadable = true;
                 importer.mipmapEnabled = true;
-                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.npotScale = TextureImporterNPOTScale.None;
+                importer.textureCompression = TextureImporterCompression.CompressedHQ;
+                importer.compressionQuality = 100;
+                importer.crunchedCompression = false;
                 importer.wrapMode = TextureWrapMode.Repeat;
                 importer.filterMode = FilterMode.Bilinear;
+
+                TextureImporterPlatformSettings standaloneSettings =
+                    importer.GetPlatformTextureSettings("Standalone");
+                standaloneSettings.name = "Standalone";
+                standaloneSettings.overridden = true;
+                standaloneSettings.maxTextureSize = 8192;
+                standaloneSettings.format = TextureImporterFormat.BC7;
+                standaloneSettings.textureCompression = TextureImporterCompression.CompressedHQ;
+                standaloneSettings.compressionQuality = 100;
+                standaloneSettings.crunchedCompression = false;
+                importer.SetPlatformTextureSettings(standaloneSettings);
                 importer.SaveAndReimport();
             }
 
             return AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+        }
+
+        private static void ApplyControlMapCompression(
+            MaterialProperty controlMap1,
+            MaterialProperty controlMap2)
+        {
+            var paths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            AddControlMapPath(controlMap1, paths);
+            AddControlMapPath(controlMap2, paths);
+
+            foreach (string path in paths)
+                ImportControlTexture(path);
+        }
+
+        private static void AddControlMapPath(
+            MaterialProperty property,
+            HashSet<string> paths)
+        {
+            if (property?.textureValue is not Texture2D texture)
+                return;
+
+            string path = AssetDatabase.GetAssetPath(texture);
+            if (!string.IsNullOrEmpty(path))
+                paths.Add(path);
         }
 
         private static void DrawPuddleControls(MaterialEditor materialEditor, MaterialProperty[] properties)
@@ -551,6 +1081,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 string suffix = index.ToString("00");
                 MaterialProperty baseMap = FindOptionalProperty("_BaseMap" + suffix, properties);
                 MaterialProperty normalMap = FindOptionalProperty("_NormalMap" + suffix, properties);
+                MaterialProperty normalStrength = FindOptionalProperty("_NormalStrength" + suffix, properties);
                 MaterialProperty maskMap = FindOptionalProperty("_MaskMap" + suffix, properties);
                 MaterialProperty mappingTiling = FindOptionalProperty("_Tiling" + suffix, properties);
                 MaterialProperty mappingOffset = FindOptionalProperty("_Offset" + suffix, properties);
@@ -633,6 +1164,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         materialEditor,
                         baseMap,
                         normalMap,
+                        normalStrength,
                         maskMap,
                         mappingTiling,
                         mappingOffset,
@@ -760,6 +1292,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
                 WriteLayerValues(material, destinationIndex, movedValues);
                 EditorUtility.SetDirty(material);
+                MGLitTrailTextureArrayBuilder.QueueBuild(material, GetArrayResolution(material));
             }
         }
 
@@ -791,6 +1324,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 normalMap = GetTexture(material, normalProperty),
                 normalScale = GetTextureScale(material, normalProperty),
                 normalOffset = GetTextureOffset(material, normalProperty),
+                normalStrength = GetFloat(material, "_NormalStrength" + suffix, 1f),
                 maskMap = GetTexture(material, maskProperty),
                 maskScale = GetTextureScale(material, maskProperty),
                 maskOffset = GetTextureOffset(material, maskProperty),
@@ -832,6 +1366,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 values.normalMap,
                 values.baseScale,
                 values.baseOffset);
+            SetFloat(material, "_NormalStrength" + suffix, values.normalStrength);
             SetTexture(
                 material,
                 "_MaskMap" + suffix,
@@ -935,12 +1470,14 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             MaterialEditor materialEditor,
             MaterialProperty baseMap,
             MaterialProperty normalMap,
+            MaterialProperty normalStrength,
             MaterialProperty maskMap,
             MaterialProperty mappingTiling,
             MaterialProperty mappingOffset,
             MaterialProperty planarMap)
         {
             if (baseMap == null &&
+                normalStrength == null &&
                 mappingTiling == null &&
                 mappingOffset == null &&
                 planarMap == null)
@@ -948,6 +1485,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
             GUILayout.Space(4f);
             EditorGUILayout.LabelField("Mapping", EditorStyles.miniBoldLabel);
+            if (normalStrength != null)
+            {
+                materialEditor.ShaderProperty(
+                    normalStrength,
+                    new GUIContent("Normal Strength", "Scales the tangent-space normal intensity for this layer."));
+            }
             if (planarMap != null)
             {
                 materialEditor.ShaderProperty(
@@ -1231,15 +1774,36 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     sharedOffset);
 
                 EditorUtility.SetDirty(material);
+                MGLitTrailTextureArrayBuilder.QueueBuild(material, GetArrayResolution(material));
             }
 
             if (terrainLayer != null && terrainLayer.diffuseTexture != null)
                 TerrainLayersByDiffuse[terrainLayer.diffuseTexture] = terrainLayer;
         }
 
+        private static int GetArrayResolution(Material material)
+        {
+            int index = GetArrayResolutionIndex(material);
+            return ControlTextureResolutions[Mathf.Clamp(index, 0, ControlTextureResolutions.Length - 1)];
+        }
+
         private static MaterialProperty FindOptionalProperty(string name, MaterialProperty[] properties)
         {
             return FindProperty(name, properties, false);
+        }
+
+        private static MaterialProperty FindFirstOptionalProperty(
+            string[] names,
+            MaterialProperty[] properties)
+        {
+            foreach (string name in names)
+            {
+                MaterialProperty property = FindOptionalProperty(name, properties);
+                if (property != null)
+                    return property;
+            }
+
+            return null;
         }
 
         private static string GetTerrainLayerTag(int index)
@@ -1319,10 +1883,16 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             Texture normal = terrainLayer.normalMapTexture;
             Texture mask = terrainLayer.maskMapTexture;
 
+            bool hasBaseProperty = material.HasProperty(baseProperty);
+            bool hasNormalProperty = material.HasProperty(normalProperty);
+            bool hasMaskProperty = material.HasProperty(maskProperty);
+            if (!hasBaseProperty && !hasNormalProperty && !hasMaskProperty)
+                return;
+
             bool changed =
-                GetTexture(material, baseProperty) != diffuse ||
-                GetTexture(material, normalProperty) != normal ||
-                GetTexture(material, maskProperty) != mask;
+                (hasBaseProperty && GetTexture(material, baseProperty) != diffuse) ||
+                (hasNormalProperty && GetTexture(material, normalProperty) != normal) ||
+                (hasMaskProperty && GetTexture(material, maskProperty) != mask);
             if (!changed)
                 return;
 
