@@ -10,6 +10,7 @@ using UnityEditor.AddressableAssets;
 using UnityEditor.AddressableAssets.Build;
 using UnityEditor.AddressableAssets.Settings;
 using UnityEditor.AddressableAssets.Settings.GroupSchemas;
+using UnityEditor.Compilation;
 using UnityEngine;
 
 namespace MashBoxSDK.ContentTools
@@ -29,6 +30,7 @@ namespace MashBoxSDK.ContentTools
     public static class AddressablesPackBuilder
     {
         private const string JsonCatalogScriptingDefine = "ENABLE_JSON_CATALOG";
+        private const string PendingBuildQueueKey = "MashBoxSDK.PendingJsonCatalogPackBuilds";
 
         [InitializeOnLoadMethod]
         private static void ConfigureJsonCatalogOnEditorLoad()
@@ -43,7 +45,22 @@ namespace MashBoxSDK.ContentTools
                     EnsureJsonCatalogEnabled(settings);
                 else if (typeof(AddressableAssetSettings).GetProperty("EnableJsonCatalog") != null)
                     EnsureJsonCatalogScriptingDefine();
+
+                ResumePendingBuildsIfReady(settings);
             };
+        }
+
+        [Serializable]
+        private class PendingPackBuildRequest
+        {
+            public string definitionGuid;
+            public BuildOptions options;
+        }
+
+        [Serializable]
+        private class PendingPackBuildQueue
+        {
+            public List<PendingPackBuildRequest> requests = new List<PendingPackBuildRequest>();
         }
 
         [System.Serializable]
@@ -82,6 +99,7 @@ namespace MashBoxSDK.ContentTools
             public Material[] originalMaterials;
         }
 
+        [Serializable]
         public struct BuildOptions
         {
             public string profileId;                       // Addressables profile to build with
@@ -155,6 +173,11 @@ namespace MashBoxSDK.ContentTools
             // defaults new projects to binary catalogs, so enforce the required format at
             // the SDK build boundary instead of relying on each creator's project setting.
             EnsureJsonCatalogEnabled(settings);
+            if (!IsJsonCatalogSerializerActive(settings))
+            {
+                QueueBuildAfterJsonCatalogRecompile(def, opts);
+                return;
+            }
 
             if (opts.enableRemoteCatalog) settings.BuildRemoteCatalog = true;
             if (opts.setPlayerVersionOverride) settings.OverridePlayerVersion = $"{def.PackName}";
@@ -454,6 +477,85 @@ namespace MashBoxSDK.ContentTools
 #pragma warning restore 618
 
             return true;
+        }
+
+        private static bool IsJsonCatalogSerializerActive(AddressableAssetSettings settings)
+        {
+            if (settings == null)
+                return false;
+
+            // This value is compiled inside the Addressables editor assembly and therefore
+            // tells us what serializer the next build will actually use.
+            var input = new AddressablesDataBuilderInput(settings);
+            return string.Equals(
+                Path.GetExtension(input.RuntimeCatalogFilename),
+                ".json",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void QueueBuildAfterJsonCatalogRecompile(ContentPackDefinition def, BuildOptions opts)
+        {
+            string assetPath = AssetDatabase.GetAssetPath(def);
+            string definitionGuid = AssetDatabase.AssetPathToGUID(assetPath);
+            if (string.IsNullOrEmpty(definitionGuid))
+            {
+                throw new InvalidOperationException(
+                    $"Pack '{def.PackName}' cannot be resumed after the JSON catalog recompile because its definition is not a saved asset.");
+            }
+
+            var queue = LoadPendingBuildQueue();
+            queue.requests.RemoveAll(request => request == null || request.definitionGuid == definitionGuid);
+            queue.requests.Add(new PendingPackBuildRequest
+            {
+                definitionGuid = definitionGuid,
+                options = opts
+            });
+
+            SessionState.SetString(PendingBuildQueueKey, JsonUtility.ToJson(queue));
+            CompilationPipeline.RequestScriptCompilation();
+            Debug.Log(
+                $"[AddressablesPackBuilder] Pack '{def.PackName}' is queued. Unity is recompiling the JSON catalog serializer; the build will resume automatically.");
+        }
+
+        private static PendingPackBuildQueue LoadPendingBuildQueue()
+        {
+            string json = SessionState.GetString(PendingBuildQueueKey, string.Empty);
+            if (string.IsNullOrEmpty(json))
+                return new PendingPackBuildQueue();
+
+            var queue = JsonUtility.FromJson<PendingPackBuildQueue>(json);
+            return queue ?? new PendingPackBuildQueue();
+        }
+
+        private static void ResumePendingBuildsIfReady(AddressableAssetSettings settings)
+        {
+            string json = SessionState.GetString(PendingBuildQueueKey, string.Empty);
+            if (string.IsNullOrEmpty(json) || settings == null || EditorApplication.isCompiling)
+                return;
+
+            if (!IsJsonCatalogSerializerActive(settings))
+                return;
+
+            var queue = LoadPendingBuildQueue();
+            SessionState.EraseString(PendingBuildQueueKey);
+
+            foreach (var request in queue.requests)
+            {
+                if (request == null || string.IsNullOrEmpty(request.definitionGuid))
+                    continue;
+
+                string assetPath = AssetDatabase.GUIDToAssetPath(request.definitionGuid);
+                var definition = AssetDatabase.LoadAssetAtPath<ContentPackDefinition>(assetPath);
+                if (definition == null)
+                {
+                    Debug.LogError(
+                        $"[AddressablesPackBuilder] Could not resume queued build; content pack GUID '{request.definitionGuid}' no longer exists.");
+                    continue;
+                }
+
+                Debug.Log($"[AddressablesPackBuilder] JSON catalog serializer is active. Resuming '{definition.PackName}'.");
+                BuildPack(definition, request.options);
+            }
         }
 
         private static void RemoveCoreBundlesFromOutput(string folder, string coreGroupName)
