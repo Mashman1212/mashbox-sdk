@@ -28,6 +28,24 @@ namespace MashBoxSDK.ContentTools
     /// </summary>
     public static class AddressablesPackBuilder
     {
+        private const string JsonCatalogScriptingDefine = "ENABLE_JSON_CATALOG";
+
+        [InitializeOnLoadMethod]
+        private static void ConfigureJsonCatalogOnEditorLoad()
+        {
+            // Addressables 2.x selects its serializer at compile time. Run after every
+            // domain reload so importing the SDK or switching build targets configures
+            // the project and lets Unity recompile before a creator can start a build.
+            EditorApplication.delayCall += () =>
+            {
+                var settings = AddressableAssetSettingsDefaultObject.Settings;
+                if (settings != null)
+                    EnsureJsonCatalogEnabled(settings);
+                else if (typeof(AddressableAssetSettings).GetProperty("EnableJsonCatalog") != null)
+                    EnsureJsonCatalogScriptingDefine();
+            };
+        }
+
         [System.Serializable]
         private class PackBuildManifest
         {
@@ -394,12 +412,48 @@ namespace MashBoxSDK.ContentTools
             if (property == null || property.PropertyType != typeof(bool) || !property.CanWrite)
                 return;
 
-            if ((bool)property.GetValue(settings))
-                return;
+            bool changedSetting = !(bool)property.GetValue(settings);
+            if (changedSetting)
+            {
+                property.SetValue(settings, true);
+                EditorUtility.SetDirty(settings);
+                AssetDatabase.SaveAssets();
+            }
 
-            property.SetValue(settings, true);
-            EditorUtility.SetDirty(settings);
-            Debug.Log("[AddressablesPackBuilder] Enabled JSON catalog output for MashBox content packs.");
+            bool changedDefine = EnsureJsonCatalogScriptingDefine();
+
+            if (changedSetting || changedDefine)
+            {
+                Debug.Log(
+                    "[AddressablesPackBuilder] Enabled JSON catalog output for MashBox content packs." +
+                    (changedDefine ? " Unity will recompile scripts to activate the JSON catalog serializer." : ""));
+            }
+        }
+
+        private static bool EnsureJsonCatalogScriptingDefine()
+        {
+            var buildTargetGroup = BuildPipeline.GetBuildTargetGroup(EditorUserBuildSettings.activeBuildTarget);
+            if (buildTargetGroup == BuildTargetGroup.Unknown)
+                return false;
+
+#pragma warning disable 618
+            string symbols = PlayerSettings.GetScriptingDefineSymbolsForGroup(buildTargetGroup);
+            var definedSymbols = symbols
+                .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(symbol => symbol.Trim())
+                .Where(symbol => !string.IsNullOrEmpty(symbol))
+                .ToList();
+
+            if (definedSymbols.Contains(JsonCatalogScriptingDefine, StringComparer.Ordinal))
+                return false;
+
+            definedSymbols.Add(JsonCatalogScriptingDefine);
+            PlayerSettings.SetScriptingDefineSymbolsForGroup(
+                buildTargetGroup,
+                string.Join(";", definedSymbols));
+#pragma warning restore 618
+
+            return true;
         }
 
         private static void RemoveCoreBundlesFromOutput(string folder, string coreGroupName)
