@@ -1,4 +1,5 @@
 #if UNITY_EDITOR_WIN
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -149,6 +150,10 @@ namespace MashBoxSDK.ContentTools.Editor
             var previousRemoteCatalogBuildVarId = settings.RemoteCatalogBuildPath?.Id;
             var previousRemoteCatalogLoadVarId = settings.RemoteCatalogLoadPath?.Id;
 
+            // Map catalogs use the same JSON-only loading path as customization packs.
+            // Enforce this here because Addressables 2.x defaults new projects to binary.
+            EnsureJsonCatalogEnabled(settings);
+
             if (options.EnableRemoteCatalog)
                 settings.BuildRemoteCatalog = true;
 
@@ -172,7 +177,10 @@ namespace MashBoxSDK.ContentTools.Editor
             {
                 EnsureBuildTargetIsValid();
                 EditorBuildSettings.scenes = new EditorBuildSettingsScene[0];
-                AddressableAssetSettings.BuildPlayerContent(out AddressablesPlayerBuildResult _);
+                AddressableAssetSettings.BuildPlayerContent(out AddressablesPlayerBuildResult buildResult);
+                if (!string.IsNullOrEmpty(buildResult.Error))
+                    throw new InvalidOperationException($"Addressables build failed for map pack '{pack.PackName}': {buildResult.Error}");
+
                 RewriteCatalogForStreamingAssets(packBuildFolder, pack.PackName, pack.BuildToCustomFolder);
             }
             finally
@@ -206,7 +214,17 @@ namespace MashBoxSDK.ContentTools.Editor
         {
             var catalogs = Directory.GetFiles(packBuildFolder, "catalog_*.json", SearchOption.AllDirectories);
             if (catalogs.Length == 0)
-                return;
+            {
+                var binaryCatalog = Directory
+                    .GetFiles(packBuildFolder, "catalog_*.bin", SearchOption.AllDirectories)
+                    .FirstOrDefault();
+                var detail = string.IsNullOrEmpty(binaryCatalog)
+                    ? "No catalog file was produced."
+                    : $"A binary catalog was produced instead: {binaryCatalog}";
+
+                throw new InvalidOperationException(
+                    $"Map pack '{packName}' requires a JSON Addressables catalog, but catalog_*.json was not found. {detail}");
+            }
 
             var catalogPath = catalogs[0];
             var json = File.ReadAllText(catalogPath, Encoding.UTF8);
@@ -224,6 +242,22 @@ namespace MashBoxSDK.ContentTools.Editor
             var hashPath = Path.Combine(Path.GetDirectoryName(catalogPath) ?? packBuildFolder,
                 Path.GetFileNameWithoutExtension(catalogPath) + ".hash");
             File.WriteAllText(hashPath, ComputeMd5(json), Encoding.UTF8);
+        }
+
+        private static void EnsureJsonCatalogEnabled(AddressableAssetSettings settings)
+        {
+            // EnableJsonCatalog was added in Addressables 2.x. Addressables 1.x already
+            // emits JSON and remains the minimum package version declared by this SDK.
+            var property = settings.GetType().GetProperty("EnableJsonCatalog");
+            if (property == null || property.PropertyType != typeof(bool) || !property.CanWrite)
+                return;
+
+            if ((bool)property.GetValue(settings))
+                return;
+
+            property.SetValue(settings, true);
+            EditorUtility.SetDirty(settings);
+            Debug.Log("[MapAddressablesPackBuilder] Enabled JSON catalog output for MashBox map packs.");
         }
 
         private static void SimplifyAddressesForSelectedGroups(IEnumerable<UnityEditor.AddressableAssets.Settings.AddressableAssetGroup> groups)

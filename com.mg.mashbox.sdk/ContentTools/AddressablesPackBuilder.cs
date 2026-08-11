@@ -133,6 +133,11 @@ namespace MashBoxSDK.ContentTools
             // Build only the selected groups: the pack group and the icon group
             bool isolate = opts.disableOtherGroups;
 
+            // MashBox's content loader consumes and patches JSON catalogs. Addressables 2.x
+            // defaults new projects to binary catalogs, so enforce the required format at
+            // the SDK build boundary instead of relying on each creator's project setting.
+            EnsureJsonCatalogEnabled(settings);
+
             if (opts.enableRemoteCatalog) settings.BuildRemoteCatalog = true;
             if (opts.setPlayerVersionOverride) settings.OverridePlayerVersion = $"{def.PackName}";
 
@@ -275,6 +280,9 @@ namespace MashBoxSDK.ContentTools
                 strippedProxyMaterials = StripScooterDeckProxyMaterials(def);
                 
                 AddressableAssetSettings.BuildPlayerContent(out AddressablesPlayerBuildResult buildResult);
+                if (!string.IsNullOrEmpty(buildResult.Error))
+                    throw new InvalidOperationException($"Addressables build failed for pack '{def.PackName}': {buildResult.Error}");
+
                 if (!def.IsCorePack)
                 {
                     RemoveCoreBundlesFromOutput(packBuildFolder, "MashBoxCustomizationCore");
@@ -285,7 +293,20 @@ namespace MashBoxSDK.ContentTools
                 bool underSA = TryGetRelativeUnderStreamingAssets(serverData, out var relAfterSA);
                 string[] catalogs = Directory.GetFiles(packBuildFolder, "catalog_*.json", SearchOption.AllDirectories);
 
-                if (catalogs != null && catalogs.Length > 0)
+                if (catalogs.Length == 0)
+                {
+                    string binaryCatalog = Directory
+                        .GetFiles(packBuildFolder, "catalog_*.bin", SearchOption.AllDirectories)
+                        .FirstOrDefault();
+                    string detail = string.IsNullOrEmpty(binaryCatalog)
+                        ? "No catalog file was produced."
+                        : $"A binary catalog was produced instead: {binaryCatalog}";
+
+                    throw new InvalidOperationException(
+                        $"Pack '{def.PackName}' requires a JSON Addressables catalog, but catalog_*.json was not found. {detail}");
+                }
+
+                if (catalogs.Length > 0)
                 {
                     string catalogLocal = catalogs[0];
                     string catalogRemoteUrl = GuessCatalogRemoteUrl(loadPathValue, catalogLocal);
@@ -326,12 +347,6 @@ namespace MashBoxSDK.ContentTools
                         Debug.Log($"Pack '{def.PackName}' built.\nCatalog: {catalogLocal}");
                     }
 
-                    else
-                    {
-                        Debug.LogWarning(
-                            $"Build finished but no catalog*.json was found under: {serverData}\n" +
-                            $"Check that 'Build Remote Catalog' is enabled and paths are bound.");
-                    }
                 }
             }
             finally
@@ -370,6 +385,22 @@ namespace MashBoxSDK.ContentTools
         // =========================
         // Helpers
         // =========================
+
+        private static void EnsureJsonCatalogEnabled(AddressableAssetSettings settings)
+        {
+            // EnableJsonCatalog was added in Addressables 2.x. Addressables 1.x already
+            // emits JSON and remains the minimum package version declared by this SDK.
+            var property = settings.GetType().GetProperty("EnableJsonCatalog");
+            if (property == null || property.PropertyType != typeof(bool) || !property.CanWrite)
+                return;
+
+            if ((bool)property.GetValue(settings))
+                return;
+
+            property.SetValue(settings, true);
+            EditorUtility.SetDirty(settings);
+            Debug.Log("[AddressablesPackBuilder] Enabled JSON catalog output for MashBox content packs.");
+        }
 
         private static void RemoveCoreBundlesFromOutput(string folder, string coreGroupName)
         {
