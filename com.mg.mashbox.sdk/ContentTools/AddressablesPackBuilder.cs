@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.AddressableAssets;
 using UnityEditor.AddressableAssets.Build;
@@ -363,6 +364,17 @@ namespace MashBoxSDK.ContentTools
                         string dynamicPerPackJson = dynamicPerPackRaw.Replace("\\", "\\\\");
 
                         string json = File.ReadAllText(catalogLocal, Encoding.UTF8);
+
+                        // Addressables can emit its generated MonoScripts bundle into
+                        // Library/com.unity.addressables even though all selected content
+                        // groups and the catalog build into the pack folder. The catalog
+                        // still records that Library path as a required prefab dependency.
+                        // Ship the dependency with the pack and make its ID portable before
+                        // the creator project's Library cache disappears.
+                        json = CopyMonoScriptDependenciesIntoPackAndRebase(
+                            json,
+                            packBuildFolder,
+                            dynamicPerPackJson);
 
                         json = json.Replace(physicalPrefixFwd, dynamicPerPackJson);
                         json = json.Replace(physicalPrefixBwd, dynamicPerPackJson);
@@ -770,6 +782,62 @@ namespace MashBoxSDK.ContentTools
                 foreach (var b in hashBytes) sb.Append(b.ToString("x2"));
                 return sb.ToString();
             }
+        }
+
+        private static string CopyMonoScriptDependenciesIntoPackAndRebase(
+            string catalogJson,
+            string packBuildFolder,
+            string dynamicPerPackJsonPrefix)
+        {
+            if (string.IsNullOrEmpty(catalogJson) ||
+                catalogJson.IndexOf("_monoscripts_", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return catalogJson;
+            }
+
+            const string bundleStringPattern = "\"((?:\\\\.|[^\"])*?_monoscripts_(?:\\\\.|[^\"])*?\\.bundle)\"";
+            var copiedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            return Regex.Replace(
+                catalogJson,
+                bundleStringPattern,
+                match =>
+                {
+                    string escapedId = match.Groups[1].Value;
+                    string internalId = escapedId
+                        .Replace("\\\\", "\\")
+                        .Replace("\\/", "/");
+                    string fileName = Path.GetFileName(internalId.Replace('\\', '/'));
+                    if (string.IsNullOrWhiteSpace(fileName))
+                        return match.Value;
+
+                    string destinationPath = Path.Combine(packBuildFolder, fileName);
+                    if (!File.Exists(destinationPath))
+                    {
+                        string sourcePath = internalId;
+                        if (Uri.TryCreate(internalId, UriKind.Absolute, out Uri uri) && uri.IsFile)
+                            sourcePath = uri.LocalPath;
+                        else if (!Path.IsPathRooted(sourcePath))
+                            sourcePath = Path.GetFullPath(sourcePath);
+
+                        if (!File.Exists(sourcePath))
+                        {
+                            throw new FileNotFoundException(
+                                "Addressables catalog references a generated MonoScripts bundle that was not produced. " +
+                                "The content pack would load icons but fail when its prefab is previewed.",
+                                sourcePath);
+                        }
+
+                        Directory.CreateDirectory(packBuildFolder);
+                        File.Copy(sourcePath, destinationPath, true);
+                    }
+
+                    if (copiedFiles.Add(fileName))
+                        Debug.Log($"[Addressables] Included MonoScripts dependency: {destinationPath}");
+
+                    return $"\"{dynamicPerPackJsonPrefix}{fileName}\"";
+                },
+                RegexOptions.IgnoreCase);
         }
     }
 }
