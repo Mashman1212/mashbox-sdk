@@ -359,7 +359,7 @@ namespace MashBoxSDK.ContentTools
                         string physicalPrefixFwd = (serverData + "/").Replace("\\", "/");
                         string physicalPrefixBwd = (serverData + "\\").Replace("/", "\\");
 
-                        string dynamicPerPackRaw = "{Application.streamingAssetsPath}\\Addressables\\Customization\\Local Custom\\" + sub + "\\";
+                        string dynamicPerPackRaw = loadPathValue.Replace("/", "\\").TrimEnd('\\') + "\\";
 
                         string dynamicPerPackJson = dynamicPerPackRaw.Replace("\\", "\\\\");
 
@@ -814,18 +814,14 @@ namespace MashBoxSDK.ContentTools
                     string destinationPath = Path.Combine(packBuildFolder, fileName);
                     if (!File.Exists(destinationPath))
                     {
-                        string sourcePath = internalId;
-                        if (Uri.TryCreate(internalId, UriKind.Absolute, out Uri uri) && uri.IsFile)
-                            sourcePath = uri.LocalPath;
-                        else if (!Path.IsPathRooted(sourcePath))
-                            sourcePath = Path.GetFullPath(sourcePath);
-
-                        if (!File.Exists(sourcePath))
+                        string sourcePath = ResolveGeneratedBundleSourcePath(internalId, fileName, packBuildFolder);
+                        if (string.IsNullOrEmpty(sourcePath))
                         {
                             throw new FileNotFoundException(
-                                "Addressables catalog references a generated MonoScripts bundle that was not produced. " +
+                                $"Addressables catalog references generated MonoScripts bundle '{fileName}', but the SDK " +
+                                "could not locate it in the pack output or the project's Addressables build outputs. " +
                                 "The content pack would load icons but fail when its prefab is previewed.",
-                                sourcePath);
+                                internalId);
                         }
 
                         Directory.CreateDirectory(packBuildFolder);
@@ -838,6 +834,54 @@ namespace MashBoxSDK.ContentTools
                     return $"\"{dynamicPerPackJsonPrefix}{fileName}\"";
                 },
                 RegexOptions.IgnoreCase);
+        }
+
+        private static string ResolveGeneratedBundleSourcePath(
+            string internalId,
+            string fileName,
+            string packBuildFolder)
+        {
+            string directPath = internalId;
+            if (Uri.TryCreate(internalId, UriKind.Absolute, out Uri uri) && uri.IsFile)
+                directPath = uri.LocalPath;
+
+            // Runtime tokens such as {Application.streamingAssetsPath} are load IDs, not
+            // physical build paths. Only test the catalog ID directly when it is rooted.
+            if (Path.IsPathRooted(directPath) && File.Exists(directPath))
+                return directPath;
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            var searchRoots = new[]
+            {
+                packBuildFolder,
+                Path.Combine(projectRoot, "Content"),
+                Path.Combine(projectRoot, "ServerData"),
+                Path.Combine(projectRoot, "Library", "com.unity.addressables")
+            };
+
+            var candidates = new List<FileInfo>();
+            foreach (string root in searchRoots.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+                    continue;
+
+                try
+                {
+                    candidates.AddRange(
+                        Directory.GetFiles(root, fileName, SearchOption.AllDirectories)
+                            .Select(path => new FileInfo(path)));
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning($"[Addressables] Could not search generated bundle folder '{root}': {exception.Message}");
+                }
+            }
+
+            return candidates
+                .Where(candidate => candidate.Exists)
+                .OrderByDescending(candidate => candidate.LastWriteTimeUtc)
+                .Select(candidate => candidate.FullName)
+                .FirstOrDefault();
         }
     }
 }
