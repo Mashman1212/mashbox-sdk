@@ -1245,6 +1245,124 @@ namespace MashBoxSDK.MapTools
             ValidateChallengeGroupScript<MBExpertLine>("Expert Line", scene, issues);
             ValidateChallengeGroupScript<MBExpertLine>("Expert Lines", scene, issues);
             ValidateChallengeGroupScript<MBCollectLetter>("Collect Letters", scene, issues);
+            ValidateDualSlaloms(scene, issues);
+            ValidateFourCrossCourses(scene, issues);
+        }
+
+        private static void ValidateDualSlaloms(Scene scene, List<MapValidationIssue> issues)
+        {
+            var slaloms = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<MBDualSlalom>(true))
+                .ToList();
+            if (slaloms.Count == 0)
+                return;
+
+            foreach (IGrouping<int, MBDualSlalom> duplicate in slaloms.GroupBy(slalom => slalom.CourseId).Where(group => group.Count() > 1))
+            {
+                issues.Add(new MapValidationIssue(
+                    MapValidationSeverity.Error,
+                    $"Dual Slalom names must be unique. Course ID {duplicate.Key} is shared by: {string.Join(", ", duplicate.Select(slalom => slalom.SlalomName))}."));
+            }
+
+            foreach (MBDualSlalom slalom in slaloms)
+            {
+                string name = string.IsNullOrWhiteSpace(slalom.SlalomName) ? slalom.gameObject.name : slalom.SlalomName;
+                List<MBDualSlalomLane> lanes = slalom.GetOrderedLanes();
+                if (lanes.Count != 2)
+                {
+                    issues.Add(new MapValidationIssue(
+                        MapValidationSeverity.Error,
+                        $"Dual Slalom '{name}' must contain exactly two direct lane hierarchies. Found {lanes.Count}."));
+                    continue;
+                }
+
+                int[] laneNumbers = lanes.Select(lane => lane.LaneNumber).OrderBy(number => number).ToArray();
+                if (laneNumbers[0] != 1 || laneNumbers[1] != 2)
+                {
+                    issues.Add(new MapValidationIssue(
+                        MapValidationSeverity.Error,
+                        $"Dual Slalom '{name}' lanes must be uniquely numbered 1 and 2."));
+                }
+
+                foreach (MBDualSlalomLane lane in lanes)
+                {
+                    if (lane.Race == null)
+                    {
+                        issues.Add(new MapValidationIssue(
+                            MapValidationSeverity.Error,
+                            $"Dual Slalom '{name}' Lane {lane.LaneNumber} is missing its race path component."));
+                        continue;
+                    }
+
+                    List<MBRaceGate> gates = lane.Race.GetOrderedGates();
+                    if (gates.Count < 4)
+                    {
+                        issues.Add(new MapValidationIssue(
+                            MapValidationSeverity.Error,
+                            $"Dual Slalom '{name}' Lane {lane.LaneNumber} needs at least four sequentially numbered gates so the one-third and two-thirds timing points can be calculated."));
+                    }
+
+                    MBDualSlalomStartZone startZone = lane.StartZone;
+                    if (startZone == null || startZone.TriggerCollider == null || !startZone.TriggerCollider.isTrigger)
+                    {
+                        issues.Add(new MapValidationIssue(
+                            MapValidationSeverity.Error,
+                            $"Dual Slalom '{name}' Lane {lane.LaneNumber} start gate needs a spherical Ready Zone trigger."));
+                    }
+                }
+            }
+        }
+
+        private static void ValidateFourCrossCourses(Scene scene, List<MapValidationIssue> issues)
+        {
+            var courses = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<MBFourCross>(true))
+                .ToList();
+            if (courses.Count == 0)
+                return;
+
+            foreach (IGrouping<int, MBFourCross> duplicate in courses.GroupBy(course => course.CourseId).Where(group => group.Count() > 1))
+            {
+                issues.Add(new MapValidationIssue(
+                    MapValidationSeverity.Error,
+                    $"4 Cross names must be unique. Course ID {duplicate.Key} is shared by: {string.Join(", ", duplicate.Select(course => course.FourCrossName))}."));
+            }
+
+            foreach (MBFourCross course in courses)
+            {
+                string name = string.IsNullOrWhiteSpace(course.FourCrossName) ? course.gameObject.name : course.FourCrossName;
+                MBRace race = course.Race;
+                if (race == null)
+                {
+                    issues.Add(new MapValidationIssue(
+                        MapValidationSeverity.Error,
+                        $"4 Cross '{name}' is missing its shared race path component."));
+                    continue;
+                }
+
+                List<MBRaceGate> gates = race.GetOrderedGates();
+                if (gates.Count < 4)
+                {
+                    issues.Add(new MapValidationIssue(
+                        MapValidationSeverity.Error,
+                        $"4 Cross '{name}' needs at least four sequentially numbered gates so the one-third and two-thirds timing points can be calculated."));
+                }
+
+                MBDualSlalomStartZone startZone = course.StartZone;
+                if (startZone == null || startZone.TriggerCollider == null || !startZone.TriggerCollider.isTrigger)
+                {
+                    issues.Add(new MapValidationIssue(
+                        MapValidationSeverity.Error,
+                        $"4 Cross '{name}' needs one spherical Ready Zone beneath Gate 01."));
+                }
+
+                if (course.MaximumRiders > 4 || course.MinimumRiders < 1 || course.MinimumRiders > course.MaximumRiders)
+                {
+                    issues.Add(new MapValidationIssue(
+                        MapValidationSeverity.Error,
+                        $"4 Cross '{name}' must allow between one and four riders, with minimum riders no greater than maximum riders."));
+                }
+            }
         }
 
         private static void ValidateRaceGateHeight(Scene scene, List<MapValidationIssue> issues)

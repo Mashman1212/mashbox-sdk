@@ -82,6 +82,8 @@ namespace MashBoxSDK.MapTools
         private MBMapTaskList cachedMapTaskList;
         private GameObject cachedPhotoSpotGroupRoot;
         private GameObject cachedRaceGroupRoot;
+        private GameObject cachedDualSlalomGroupRoot;
+        private GameObject cachedFourCrossGroupRoot;
         private GameObject cachedSecretGapGroupRoot;
         private GameObject cachedSideHitGroupRoot;
         private GameObject cachedExpertLineGroupRoot;
@@ -90,6 +92,8 @@ namespace MashBoxSDK.MapTools
         private readonly List<GameObject> cachedFlyCameraObjects = new();
         private readonly List<MBPhotoSpot> cachedPhotoSpots = new();
         private readonly List<MBRace> cachedRaces = new();
+        private readonly List<MBDualSlalom> cachedDualSlaloms = new();
+        private readonly List<MBFourCross> cachedFourCrossCourses = new();
         private readonly List<MBSecretGap> cachedSecretGaps = new();
         private readonly List<MBSideHit> cachedSideHits = new();
         private readonly List<MBExpertLine> cachedExpertLines = new();
@@ -464,6 +468,8 @@ namespace MashBoxSDK.MapTools
             cachedFlyCameraObjects.Clear();
             cachedPhotoSpots.Clear();
             cachedRaces.Clear();
+            cachedDualSlaloms.Clear();
+            cachedFourCrossCourses.Clear();
             cachedSecretGaps.Clear();
             cachedSideHits.Clear();
             cachedExpertLines.Clear();
@@ -477,6 +483,8 @@ namespace MashBoxSDK.MapTools
                 cachedMapTaskList = null;
                 cachedPhotoSpotGroupRoot = null;
                 cachedRaceGroupRoot = null;
+                cachedDualSlalomGroupRoot = null;
+                cachedFourCrossGroupRoot = null;
                 cachedSecretGapGroupRoot = null;
                 cachedSideHitGroupRoot = null;
                 cachedExpertLineGroupRoot = null;
@@ -493,6 +501,8 @@ namespace MashBoxSDK.MapTools
             cachedMapTaskList = MBMapTaskList.FindInScene(activeScene);
             cachedPhotoSpotGroupRoot = FindChallengeTypeRootInScene("Photo Spots", activeScene);
             cachedRaceGroupRoot = FindChallengeTypeRootInScene("Races", activeScene);
+            cachedDualSlalomGroupRoot = FindChallengeTypeRootInScene("Dual Slaloms", activeScene);
+            cachedFourCrossGroupRoot = FindChallengeTypeRootInScene("4 Cross", activeScene);
             cachedSecretGapGroupRoot = FindChallengeTypeRootInScene("Secret Gap", activeScene);
             cachedSideHitGroupRoot = FindChallengeTypeRootInScene("Side Hit", activeScene)
                                      ?? FindChallengeTypeRootInScene("Side Hits", activeScene);
@@ -507,8 +517,16 @@ namespace MashBoxSDK.MapTools
                 .Where(photoSpot => photoSpot != null && photoSpot.gameObject.scene == activeScene)
                 .OrderBy(photoSpot => photoSpot.transform.GetSiblingIndex()));
             cachedRaces.AddRange(Resources.FindObjectsOfTypeAll<MBRace>()
-                .Where(race => race != null && race.gameObject.scene == activeScene)
+                .Where(race => race != null && race.gameObject.scene == activeScene &&
+                               race.GetComponent<MBDualSlalomLane>() == null &&
+                               race.GetComponent<MBFourCross>() == null)
                 .OrderBy(race => race.transform.GetSiblingIndex()));
+            cachedDualSlaloms.AddRange(Resources.FindObjectsOfTypeAll<MBDualSlalom>()
+                .Where(slalom => slalom != null && slalom.gameObject.scene == activeScene)
+                .OrderBy(slalom => slalom.transform.GetSiblingIndex()));
+            cachedFourCrossCourses.AddRange(Resources.FindObjectsOfTypeAll<MBFourCross>()
+                .Where(course => course != null && course.gameObject.scene == activeScene)
+                .OrderBy(course => course.transform.GetSiblingIndex()));
             cachedSecretGaps.AddRange(Resources.FindObjectsOfTypeAll<MBSecretGap>()
                 .Where(gap => gap != null && gap.gameObject.scene == activeScene)
                 .OrderBy(gap => gap.transform.GetSiblingIndex()));
@@ -1493,6 +1511,8 @@ namespace MashBoxSDK.MapTools
                 GUILayout.Space(8f);
                 DrawChallengeTypeSection("PhotoSpots", "Photo Spots", cachedPhotoSpots.Count, DrawPhotoSpotsSection);
                 DrawChallengeTypeSection("Races", "Races", cachedRaces.Count, DrawRacesSection);
+                DrawChallengeTypeSection("DualSlaloms", "Dual Slaloms", cachedDualSlaloms.Count, DrawDualSlalomsSection);
+                DrawChallengeTypeSection("FourCross", "4 Cross", cachedFourCrossCourses.Count, DrawFourCrossSection);
                 DrawChallengeTypeSection("SecretGaps", "Secret Gaps", cachedSecretGaps.Count, DrawSecretGapsSection);
                 DrawChallengeTypeSection("SideHits", "Side Hits", cachedSideHits.Count, DrawSideHitsSection);
                 DrawChallengeTypeSection("ExpertLines", "Expert Lines", cachedExpertLines.Count, DrawExpertLinesSection);
@@ -2682,6 +2702,179 @@ namespace MashBoxSDK.MapTools
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
         }
 
+        private static void CreateDualSlalomChallenge()
+        {
+            FindOrCreateChallengeTypeRoot("Dual Slaloms");
+            GameObject slalomObject = CreateChallengeMarker("Dual Slaloms", "New Dual Slalom");
+            MBDualSlalom slalom = Undo.AddComponent<MBDualSlalom>(slalomObject);
+            slalom.SlalomName = slalomObject.name;
+
+            CreateDualSlalomLane(slalom, 1, -2f);
+            CreateDualSlalomLane(slalom, 2, 2f);
+            SyncDualSlalomLaneRaceNames(slalom);
+
+            Selection.activeGameObject = slalomObject;
+            EditorGUIUtility.PingObject(slalomObject);
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+        }
+
+        private static void CreateFourCrossChallenge()
+        {
+            FindOrCreateChallengeTypeRoot("4 Cross");
+            GameObject courseObject = CreateChallengeMarker("4 Cross", "New 4 Cross");
+            string courseName = courseObject.name;
+            MBRace race = Undo.AddComponent<MBRace>(courseObject);
+            MBFourCross fourCross = Undo.AddComponent<MBFourCross>(courseObject);
+            fourCross.FourCrossName = courseName;
+            race.RaceName = courseName;
+
+            GameObject startGate = CreateRaceGate(race, Vector3.zero, false);
+            CreateRaceGate(race, new Vector3(0f, 0f, 8f), false);
+            CreateRaceGate(race, new Vector3(0f, 0f, 16f), false);
+            CreateRaceGate(race, new Vector3(0f, 0f, 24f), false);
+            MBDualSlalomStartZone startZone = EnsureDualSlalomStartZone(startGate);
+            startZone?.SetRadius(4f);
+            NormalizeRaceGates(race);
+
+            Selection.activeGameObject = courseObject;
+            EditorGUIUtility.PingObject(courseObject);
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+        }
+
+        private static MBDualSlalomLane CreateDualSlalomLane(MBDualSlalom slalom, int laneNumber, float localX)
+        {
+            if (slalom == null)
+                return null;
+
+            GameObject laneObject = CreateChildObject(slalom.transform, $"Lane {laneNumber}");
+            laneObject.transform.localPosition = new Vector3(localX, 0f, 0f);
+            laneObject.transform.localRotation = Quaternion.identity;
+            laneObject.transform.localScale = Vector3.one;
+
+            MBRace race = Undo.AddComponent<MBRace>(laneObject);
+            MBDualSlalomLane lane = Undo.AddComponent<MBDualSlalomLane>(laneObject);
+            lane.LaneNumber = laneNumber;
+            race.RaceName = GetDualSlalomLaneRaceName(laneNumber);
+
+            GameObject startGate = CreateRaceGate(race, Vector3.zero, false);
+            CreateRaceGate(race, new Vector3(0f, 0f, 8f), false);
+            CreateRaceGate(race, new Vector3(0f, 0f, 16f), false);
+            CreateRaceGate(race, new Vector3(0f, 0f, 24f), false);
+            EnsureDualSlalomStartZone(startGate);
+            NormalizeDualSlalomLaneGates(lane);
+            return lane;
+        }
+
+        private static void RepairDualSlalomLanes(MBDualSlalom slalom)
+        {
+            if (slalom == null)
+                return;
+
+            List<MBDualSlalomLane> lanes = slalom.GetOrderedLanes();
+            for (int index = lanes.Count - 1; index >= 2; index--)
+            {
+                if (lanes[index] != null)
+                    Undo.DestroyObjectImmediate(lanes[index].gameObject);
+                lanes.RemoveAt(index);
+            }
+
+            for (int index = 0; index < lanes.Count; index++)
+            {
+                MBDualSlalomLane lane = lanes[index];
+                lane.LaneNumber = index + 1;
+                EnsureDualSlalomLaneComponents(lane);
+                NormalizeDualSlalomLaneGates(lane);
+            }
+
+            while (lanes.Count < 2)
+            {
+                int laneNumber = lanes.Count + 1;
+                lanes.Add(CreateDualSlalomLane(slalom, laneNumber, laneNumber == 1 ? -2f : 2f));
+            }
+
+            SyncDualSlalomLaneRaceNames(slalom);
+            EditorUtility.SetDirty(slalom);
+            EditorSceneManager.MarkSceneDirty(slalom.gameObject.scene);
+        }
+
+        private static void EnsureDualSlalomLaneComponents(MBDualSlalomLane lane)
+        {
+            if (lane == null)
+                return;
+
+            MBRace race = lane.GetComponent<MBRace>();
+            if (race == null)
+                race = Undo.AddComponent<MBRace>(lane.gameObject);
+
+            List<Transform> gates = GetOrderedRaceGates(race.transform);
+            while (gates.Count < 4)
+            {
+                CreateRaceGate(race, new Vector3(0f, 0f, gates.Count * 8f), false);
+                gates = GetOrderedRaceGates(race.transform);
+            }
+
+            EnsureDualSlalomStartZone(gates[0].gameObject);
+        }
+
+        private static MBDualSlalomStartZone EnsureDualSlalomStartZone(GameObject startGate)
+        {
+            if (startGate == null)
+                return null;
+
+            MBDualSlalomStartZone existing = startGate.GetComponentInChildren<MBDualSlalomStartZone>(true);
+            if (existing != null)
+                return existing;
+
+            GameObject zoneObject = CreateChildObject(startGate.transform, "Ready Zone");
+            zoneObject.transform.localPosition = Vector3.zero;
+            zoneObject.transform.localRotation = Quaternion.identity;
+            zoneObject.transform.localScale = Vector3.one;
+            Undo.AddComponent<SphereCollider>(zoneObject);
+            return Undo.AddComponent<MBDualSlalomStartZone>(zoneObject);
+        }
+
+        private static void NormalizeDualSlalomLaneGates(MBDualSlalomLane lane)
+        {
+            if (lane == null || lane.Race == null)
+                return;
+
+            List<Transform> gates = GetOrderedRaceGates(lane.Race.transform);
+            if (gates.Count == 0)
+                return;
+
+            Undo.RecordObjects(gates.Select(gate => gate.gameObject).ToArray(), "Normalize Dual Slalom Gates");
+            for (int index = 0; index < gates.Count; index++)
+            {
+                gates[index].name = $"Gate {index + 1:00}";
+                EnsureRaceGateComponent(gates[index].gameObject);
+                EditorUtility.SetDirty(gates[index].gameObject);
+            }
+
+            EnsureDualSlalomStartZone(gates[0].gameObject);
+            EditorUtility.SetDirty(lane.Race);
+            EditorSceneManager.MarkSceneDirty(lane.gameObject.scene);
+        }
+
+        private static void SyncDualSlalomLaneRaceNames(MBDualSlalom slalom)
+        {
+            if (slalom == null)
+                return;
+
+            foreach (MBDualSlalomLane lane in slalom.GetOrderedLanes())
+            {
+                if (lane == null || lane.Race == null)
+                    continue;
+
+                lane.Race.RaceName = GetDualSlalomLaneRaceName(lane.LaneNumber);
+                EditorUtility.SetDirty(lane.Race);
+            }
+        }
+
+        private static string GetDualSlalomLaneRaceName(int laneNumber)
+        {
+            return $"Lane {laneNumber}";
+        }
+
         private static void CreateExpertLineChallenge()
         {
             var expertLineRoot = FindOrCreateChallengeTypeRoot("Expert Line");
@@ -3867,6 +4060,236 @@ namespace MashBoxSDK.MapTools
                         string.Empty,
                         createdId => ApplyCreatedMapModId(selected, game.DisplayName, createdId),
                         this);
+                }
+            }
+        }
+
+        private void DrawDualSlalomsSection()
+        {
+            EditorGUILayout.LabelField("Dual Slaloms", EditorStyles.boldLabel);
+            if (DrawAddButton("Add Dual Slalom", "Create a named two-lane slalom with sequentially numbered gates and ready zones.", 32f))
+                CreateDualSlalomChallenge();
+
+            EditorGUILayout.HelpBox(
+                "Each Dual Slalom owns two independent race lanes. Gates stay sequentially numbered; runtime timing uses the gates nearest one-third and two-thirds of the ordered path. Riders must remain inside a lane's spherical Ready Zone to register and ready up.",
+                MessageType.None);
+
+            if (cachedDualSlaloms.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No dual slaloms are in the active scene yet.", MessageType.None);
+                return;
+            }
+
+            if (cachedDualSlalomGroupRoot != null && GUILayout.Button("Select Challenge Group", GUILayout.Height(26f)))
+            {
+                Selection.activeGameObject = cachedDualSlalomGroupRoot;
+                EditorGUIUtility.PingObject(cachedDualSlalomGroupRoot);
+            }
+
+            foreach (MBDualSlalom slalom in cachedDualSlaloms)
+            {
+                if (slalom == null)
+                    continue;
+
+                List<MBDualSlalomLane> lanes = slalom.GetOrderedLanes();
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    if (!DrawChallengeItemFoldout("Dual Slalom", slalom, slalom.SlalomName, $"{lanes.Count:00} lanes"))
+                        continue;
+
+                    GUI.SetNextControlName($"DualSlalomName_{GetObjectStableId(slalom)}");
+                    EditorGUI.BeginChangeCheck();
+                    string updatedName = EditorGUILayout.TextField("Slalom Name", slalom.SlalomName);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(slalom, "Rename Dual Slalom");
+                        slalom.SlalomName = updatedName;
+                        SyncDualSlalomLaneRaceNames(slalom);
+                        EditorUtility.SetDirty(slalom);
+                        EditorSceneManager.MarkSceneDirty(slalom.gameObject.scene);
+                    }
+
+                    EditorGUILayout.ObjectField("Slalom Root", slalom, typeof(MBDualSlalom), true);
+                    EditorGUILayout.LabelField("Course ID", slalom.CourseId.ToString(CultureInfo.InvariantCulture));
+
+                    for (int laneIndex = 0; laneIndex < lanes.Count; laneIndex++)
+                        DrawDualSlalomLane(lanes[laneIndex]);
+
+                    if (lanes.Count != 2)
+                    {
+                        EditorGUILayout.HelpBox("A Dual Slalom must contain exactly two lane hierarchies.", MessageType.Warning);
+                        if (GUILayout.Button("Repair Lane Hierarchies", GUILayout.Height(26f)))
+                        {
+                            RepairDualSlalomLanes(slalom);
+                            GUIUtility.ExitGUI();
+                        }
+                    }
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("Select", GUILayout.Height(26f)))
+                        {
+                            Selection.activeGameObject = slalom.gameObject;
+                            EditorGUIUtility.PingObject(slalom.gameObject);
+                        }
+
+                        if (GUILayout.Button("Remove", GUILayout.Height(26f)))
+                        {
+                            Undo.DestroyObjectImmediate(slalom.gameObject);
+                            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+                            MarkSceneToolCacheDirty();
+                            GUIUtility.ExitGUI();
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DrawFourCrossSection()
+        {
+            EditorGUILayout.LabelField("4 Cross", EditorStyles.boldLabel);
+            if (DrawAddButton("Add 4 Cross", "Create one shared race path and a staging zone for up to four riders.", 32f))
+                CreateFourCrossChallenge();
+
+            EditorGUILayout.HelpBox(
+                "4 Cross uses one shared ordered gate path. Two to four riders can register while inside the shared spherical Ready Zone, then all registered riders must ready up before the countdown.",
+                MessageType.None);
+
+            if (cachedFourCrossCourses.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No 4 Cross courses are in the active scene yet.", MessageType.None);
+                return;
+            }
+
+            if (cachedFourCrossGroupRoot != null && GUILayout.Button("Select Challenge Group", GUILayout.Height(26f)))
+            {
+                Selection.activeGameObject = cachedFourCrossGroupRoot;
+                EditorGUIUtility.PingObject(cachedFourCrossGroupRoot);
+            }
+
+            foreach (MBFourCross fourCross in cachedFourCrossCourses)
+            {
+                if (fourCross == null)
+                    continue;
+
+                MBRace race = fourCross.Race;
+                List<Transform> gates = race != null ? GetOrderedRaceGates(race.transform) : new List<Transform>();
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    if (!DrawChallengeItemFoldout("4 Cross", fourCross, fourCross.FourCrossName, $"{gates.Count:00} gates"))
+                        continue;
+
+                    GUI.SetNextControlName($"FourCrossName_{GetObjectStableId(fourCross)}");
+                    EditorGUI.BeginChangeCheck();
+                    string updatedName = EditorGUILayout.TextField("Course Name", fourCross.FourCrossName);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(fourCross, "Rename 4 Cross");
+                        if (race != null)
+                            Undo.RecordObject(race, "Rename 4 Cross");
+                        fourCross.FourCrossName = updatedName;
+                        if (race != null)
+                            race.RaceName = fourCross.FourCrossName;
+                        EditorUtility.SetDirty(fourCross);
+                        EditorSceneManager.MarkSceneDirty(fourCross.gameObject.scene);
+                    }
+
+                    EditorGUILayout.ObjectField("Course Root", fourCross, typeof(MBFourCross), true);
+                    EditorGUILayout.ObjectField("Ready Zone", fourCross.StartZone, typeof(MBDualSlalomStartZone), true);
+                    EditorGUILayout.LabelField("Riders", $"{fourCross.MinimumRiders}–{fourCross.MaximumRiders}");
+                    EditorGUILayout.LabelField("Gate Count", gates.Count.ToString("00"));
+                    EditorGUILayout.LabelField("Path Distance", race != null ? $"{race.GetTotalGatePathDistance():0.0} m" : "Missing Race");
+                    EditorGUILayout.LabelField("Course ID", fourCross.CourseId.ToString(CultureInfo.InvariantCulture));
+
+                    if (race == null || gates.Count < 4 || fourCross.StartZone == null)
+                    {
+                        EditorGUILayout.HelpBox("4 Cross needs a race path with at least four gates and a Ready Zone beneath Gate 01.", MessageType.Warning);
+                    }
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("Select", GUILayout.Height(26f)))
+                        {
+                            Selection.activeGameObject = fourCross.gameObject;
+                            EditorGUIUtility.PingObject(fourCross.gameObject);
+                        }
+
+                        using (new EditorGUI.DisabledScope(race == null))
+                        {
+                            if (GUILayout.Button("Add Gate", GUILayout.Height(26f)))
+                            {
+                                CreateRaceGate(race);
+                                GUIUtility.ExitGUI();
+                            }
+
+                            if (GUILayout.Button("Renumber Gates", GUILayout.Height(26f)))
+                            {
+                                NormalizeRaceGates(race);
+                                GUIUtility.ExitGUI();
+                            }
+                        }
+                    }
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (fourCross.StartZone != null && GUILayout.Button("Select Ready Zone", GUILayout.Height(26f)))
+                        {
+                            Selection.activeGameObject = fourCross.StartZone.gameObject;
+                            EditorGUIUtility.PingObject(fourCross.StartZone.gameObject);
+                        }
+
+                        if (GUILayout.Button("Remove", GUILayout.Height(26f)))
+                        {
+                            Undo.DestroyObjectImmediate(fourCross.gameObject);
+                            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+                            MarkSceneToolCacheDirty();
+                            GUIUtility.ExitGUI();
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void DrawDualSlalomLane(MBDualSlalomLane lane)
+        {
+            if (lane == null)
+                return;
+
+            MBRace race = lane.Race;
+            List<Transform> gates = race != null ? GetOrderedRaceGates(race.transform) : new List<Transform>();
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUILayout.LabelField($"Lane {lane.LaneNumber}", EditorStyles.miniBoldLabel);
+                EditorGUILayout.LabelField("Gate Count", gates.Count.ToString("00"));
+                EditorGUILayout.LabelField("Path Distance", race != null ? $"{race.GetTotalGatePathDistance():0.0} m" : "Missing Race");
+                EditorGUILayout.ObjectField("Ready Zone", lane.StartZone, typeof(MBDualSlalomStartZone), true);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Select Lane", GUILayout.Height(24f)))
+                    {
+                        Selection.activeGameObject = lane.gameObject;
+                        EditorGUIUtility.PingObject(lane.gameObject);
+                    }
+
+                    using (new EditorGUI.DisabledScope(race == null))
+                    {
+                        if (GUILayout.Button("Add Gate", GUILayout.Height(24f)))
+                        {
+                            CreateRaceGate(race, selectCreatedGate: false);
+                            NormalizeDualSlalomLaneGates(lane);
+                            GUIUtility.ExitGUI();
+                        }
+                    }
+
+                    using (new EditorGUI.DisabledScope(lane.StartZone == null))
+                    {
+                        if (GUILayout.Button("Select Ready Zone", GUILayout.Height(24f)))
+                        {
+                            Selection.activeGameObject = lane.StartZone.gameObject;
+                            EditorGUIUtility.PingObject(lane.StartZone.gameObject);
+                        }
+                    }
                 }
             }
         }

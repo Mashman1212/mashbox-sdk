@@ -1,5 +1,16 @@
 # MashBox SDK Patch Notes
 
+## [0.14.13] - 2026-08-18
+
+### Added
+
+- Added a MashBox developer-only Leaderboard Generator for producing Daily, Weekly, Monthly, and All-Time UGS `.lb` deployment configurations.
+- Added companion MashBox leaderboard manifests describing score direction, update strategy, score units, activity type, and map/level/PvP availability metadata.
+
+### Changed
+
+- Bumped MashBox SDK package version from 0.14.12 to 0.14.13.
+
 ## [0.5.60] - 2026-05-22
 
 ### Added
