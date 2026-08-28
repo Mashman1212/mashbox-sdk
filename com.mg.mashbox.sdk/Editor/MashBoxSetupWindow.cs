@@ -1178,17 +1178,28 @@ namespace MashBoxSDK.SDKMain
                 }
 #endif
                 
-                if (!string.IsNullOrEmpty(_buildLocation))
+                var activeGame = _installedGames.FirstOrDefault(g =>
+                    g.Definition.SteamAppId == _lastChosenAppId);
+
+                if (activeGame != null || !string.IsNullOrEmpty(_buildLocation))
                 {
-                    var activeGame = _installedGames.FirstOrDefault(g => g.Definition.SteamAppId == _lastChosenAppId);
                     if (activeGame != null)
-                        EditorGUILayout.LabelField("Unity Editor:", FormatUnityEditorVersion(activeGame.Definition.UnityEditorVersion), EditorStyles.miniLabel);
-
-                    EditorGUILayout.LabelField("Active Target:", _buildLocation, EditorStyles.miniLabel);
-
-                    if (GUILayout.Button("Open Folder", GUILayout.Width(110)))
                     {
-                        OpenBuildOutputFolder(_buildLocation);
+                        EditorGUILayout.LabelField("Active Game:", activeGame.Definition.DisplayName, EditorStyles.miniLabel);
+                        EditorGUILayout.LabelField("Unity Editor:", FormatUnityEditorVersion(activeGame.Definition.UnityEditorVersion), EditorStyles.miniLabel);
+                    }
+
+                    EditorGUILayout.LabelField(
+                        "Build Folder:",
+                        string.IsNullOrEmpty(_buildLocation) ? "Unavailable (install not detected or not ready)" : _buildLocation,
+                        EditorStyles.miniLabel);
+
+                    using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(_buildLocation)))
+                    {
+                        if (GUILayout.Button("Open Folder", GUILayout.Width(110)))
+                        {
+                            OpenBuildOutputFolder(_buildLocation);
+                        }
                     }
                 }
 
@@ -1259,52 +1270,25 @@ namespace MashBoxSDK.SDKMain
 
                             if (!detected)
                             {
-                                if (GUILayout.Button("Locate Install", GUILayout.Width(120)))
+                                using (new EditorGUILayout.VerticalScope(GUILayout.Width(120)))
                                 {
-                                    var path = EditorUtility.OpenFolderPanel("Select Game Install Folder", "", "");
-                                    if (!string.IsNullOrEmpty(path))
+                                    if (GUILayout.Button("Locate Install"))
                                     {
-                                        game.InstallPath = path;
+                                        var path = EditorUtility.OpenFolderPanel("Select Game Install Folder", "", "");
+                                        if (!string.IsNullOrEmpty(path))
+                                        {
+                                            game.InstallPath = path;
+                                        }
                                     }
+
+                                    if (GUILayout.Button("Set Target"))
+                                        SetGameTarget(game);
                                 }
                             }
                             else
                             {
                                 if (GUILayout.Button("Set Target", GUILayout.Width(120)))
-                                {
-                                    string previousGame = EditorPrefs.GetString("ModIo.CurrentGame", "");
-                                    bool gameChanged = !string.Equals(previousGame, game.Definition.DisplayName,
-                                        StringComparison.OrdinalIgnoreCase);
-
-                                    var sa = StreamingAssetsResolver.TryResolve(install);
-
-                                    if (string.IsNullOrEmpty(sa))
-                                    {
-                                        EditorUtility.DisplayDialog("Error",
-                                            "Could not find StreamingAssets. Launch game once.",
-                                            "OK");
-                                    }
-                                    else
-                                    {
-                                        var final = StreamingAssetsResolver.AppendSubfolder(sa, STREAMING_SUBPATH);
-
-                                        _buildLocation = final;
-                                        _lastChosenAppId = game.Definition.SteamAppId;
-
-                                        EditorPrefs.SetString("BuildLocation", _buildLocation);
-                                        EditorPrefs.SetString(PREF_KEY_LAST_APP, _lastChosenAppId.ToString());
-                                        EditorPrefs.SetString("ModIo.ApiBase", game.Definition.ModIoApiBase ?? string.Empty);
-                                        EditorPrefs.SetString("ModIo.CurrentGame", game.Definition.DisplayName);
-
-                                        if (gameChanged)
-                                        {
-                                            ModIoAuth.ClearForCurrentGame();
-                                            _statusMsg = $"Switched to {game.Definition.DisplayName}. Please log in again.";
-                                        }
-
-                                        Repaint();
-                                    }
-                                }
+                                    SetGameTarget(game);
                             }
 
                             using (new EditorGUI.DisabledScope(!detected))
@@ -1322,6 +1306,40 @@ namespace MashBoxSDK.SDKMain
                     }
                 }
             }
+        }
+
+        private void SetGameTarget(GameTarget game)
+        {
+            if (game?.Definition == null)
+                return;
+
+            string previousGame = EditorPrefs.GetString("ModIo.CurrentGame", "");
+            bool gameChanged = !string.Equals(
+                previousGame,
+                game.Definition.DisplayName,
+                StringComparison.OrdinalIgnoreCase);
+
+            var streamingAssets = string.IsNullOrEmpty(game.InstallPath)
+                ? null
+                : StreamingAssetsResolver.TryResolve(game.InstallPath);
+
+            _buildLocation = string.IsNullOrEmpty(streamingAssets)
+                ? string.Empty
+                : StreamingAssetsResolver.AppendSubfolder(streamingAssets, STREAMING_SUBPATH);
+            _lastChosenAppId = game.Definition.SteamAppId;
+
+            EditorPrefs.SetString("BuildLocation", _buildLocation);
+            EditorPrefs.SetString(PREF_KEY_LAST_APP, _lastChosenAppId.ToString());
+            EditorPrefs.SetString("ModIo.ApiBase", game.Definition.ModIoApiBase ?? string.Empty);
+            EditorPrefs.SetString("ModIo.CurrentGame", game.Definition.DisplayName);
+
+            if (gameChanged)
+            {
+                ModIoAuth.ClearForCurrentGame();
+                _statusMsg = $"Switched to {game.Definition.DisplayName}. Please log in again.";
+            }
+
+            Repaint();
         }
 
         private static string FormatUnityEditorVersion(string unityEditorVersion)

@@ -201,11 +201,16 @@ namespace MashBoxSDK.ContentTools.Editor
         private void RefreshBuildLocation()
         {
             var latest = EditorPrefs.GetString(PREF_KEY_BUILD_LOCATION, "");
-
             if (!string.IsNullOrEmpty(latest))
             {
                 _buildLocation = latest.Replace("\\", "/");
+                return;
             }
+
+            var currentGame = EditorPrefs.GetString("ModIo.CurrentGame", "");
+            _buildLocation = GameRegistry.Find(currentGame) == null
+                ? DefaultBuildFolderRel
+                : string.Empty;
         }
         
         private void OnDisable()
@@ -1137,6 +1142,7 @@ namespace MashBoxSDK.ContentTools.Editor
             int selectedCount = selectedPacks.Count;
             string currentGame = EditorPrefs.GetString("ModIo.CurrentGame", "Unknown");
             bool hasSelection = selectedCount > 0;
+            bool hasBuildTarget = !string.IsNullOrWhiteSpace(_buildLocation);
             bool canPublish = hasSelection &&
                               ModIoAuth.IsAuthorizedForCurrentGame() &&
                               !string.Equals(currentGame, "Custom Folder", StringComparison.OrdinalIgnoreCase);
@@ -1159,7 +1165,7 @@ namespace MashBoxSDK.ContentTools.Editor
 
                 GUILayout.FlexibleSpace();
 
-                using (new EditorGUI.DisabledScope(!hasSelection))
+                using (new EditorGUI.DisabledScope(!hasSelection || !hasBuildTarget))
                 {
                     if (GUILayout.Button($"Build Selected To {currentGame} ({selectedCount})", GUILayout.Width(230)))
                         BuildBatchSelectedPacks(selectedPacks);
@@ -1794,8 +1800,11 @@ namespace MashBoxSDK.ContentTools.Editor
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Build To " + _currentGameName, GUILayout.Height(24)))
-                    BuildSinglePack(p);
+                using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_buildLocation)))
+                {
+                    if (GUILayout.Button("Build To " + _currentGameName, GUILayout.Height(24)))
+                        BuildSinglePack(p);
+                }
 
                 if (GUILayout.Button("Validate", GUILayout.Width(90), GUILayout.Height(24)))
                     ValidateSelectedPack(p);
@@ -2128,6 +2137,9 @@ namespace MashBoxSDK.ContentTools.Editor
             if (!EnsureCorrectUnityVersionForPublishing(currentGame))
                 return;
 
+            if (!GameTargetPublishWarning.ConfirmIfGameIsNotInstalled(currentGame))
+                return;
+
             bool cookerOk = MashBoxSDKState.Cooker == MashBoxSDKState.CookerStatus.Online;
 #if MashBoxDev
             cookerOk = true;
@@ -2273,6 +2285,9 @@ namespace MashBoxSDK.ContentTools.Editor
         private void PublishSelectedPack(ContentPackDefinition p, string currentGame, bool cookerOk)
         {
             if (!EnsureCorrectUnityVersionForPublishing(currentGame))
+                return;
+
+            if (!GameTargetPublishWarning.ConfirmIfGameIsNotInstalled(currentGame))
                 return;
 
             if (!MashBoxSDK.ContentTools.Editor.ModIoAuth.IsAuthorizedForCurrentGame())

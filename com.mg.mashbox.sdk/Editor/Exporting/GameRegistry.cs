@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 
 namespace MashBoxSDK.Exporting
@@ -99,6 +100,24 @@ namespace MashBoxSDK.Exporting
         {
             if (!IsValidForPublishing(gameName, out var message))
                 throw new InvalidOperationException(message);
+        }
+    }
+
+    public static class GameTargetPublishWarning
+    {
+        public static bool ConfirmIfGameIsNotInstalled(string gameName)
+        {
+            var game = GameRegistry.Find(gameName);
+            if (game == null || !string.IsNullOrEmpty(SteamLocator.TryGetGameInstallPath(game.SteamAppId)))
+                return true;
+
+            return EditorUtility.DisplayDialog(
+                "Game Not Installed",
+                $"MashBox could not detect an installed copy of {game.DisplayName}.\n\n" +
+                "You can still publish this content to mod.io, but you may not be able to test it in the target game first. " +
+                "Make sure you selected the intended game before continuing.",
+                "Publish Anyway",
+                "Cancel");
         }
     }
 }
