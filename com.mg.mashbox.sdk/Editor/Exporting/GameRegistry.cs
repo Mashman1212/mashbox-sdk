@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using UnityEngine;
 
 namespace MashBoxSDK.Exporting
@@ -103,6 +105,7 @@ namespace MashBoxSDK.Exporting
         }
     }
 
+#if UNITY_EDITOR
     public static class GameTargetPublishWarning
     {
         public static bool ConfirmIfGameIsNotInstalled(string gameName)
@@ -120,4 +123,5 @@ namespace MashBoxSDK.Exporting
                 "Cancel");
         }
     }
+#endif
 }
