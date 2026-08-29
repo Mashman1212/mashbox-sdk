@@ -31,6 +31,8 @@ namespace MashBoxSDK.ContentTools.Editor
     public class ContentPackGroupInfo
     {
         public string Name = "Ungrouped";
+        [Tooltip("Optional parent group used by the Content Builder hierarchy.")]
+        public string ParentName = string.Empty;
         public Color Color = new Color(0f, 0f, 0f, 0.35f);
     }
 
@@ -1246,8 +1248,18 @@ namespace MashBoxSDK.ContentTools.Editor
                 EditorGUILayout.LabelField("Groups", EditorStyles.boldLabel, GUILayout.Width(70));
                 GUILayout.FlexibleSpace();
 
+                var prefixCandidates = GetCommonPrefixCandidates();
+                using (new EditorGUI.DisabledScope(prefixCandidates.Count == 0))
+                {
+                    var autoNest = new GUIContent(
+                        "Auto Nest",
+                        "Create parent groups for repeated prefixes (for example, BMX Bars and BMX Forks become children of BMX).");
+                    if (GUILayout.Button(autoNest, GUILayout.Width(90)))
+                        AutoNestCommonPrefixes(prefixCandidates);
+                }
+
                 if (GUILayout.Button("Create Group", GUILayout.Width(110)))
-                    ShowCreateGroupDialog();
+                    ShowCreateGroupDialog(string.Empty);
             }
         }
 
@@ -1261,19 +1273,32 @@ namespace MashBoxSDK.ContentTools.Editor
                 .GroupBy(GetPackGroup)
                 .ToDictionary(group => group.Key, group => group.OrderBy(pack => pack.name, StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.OrdinalIgnoreCase);
 
-            foreach (var group in GetOrderedGroupInfos())
-            {
-                var groupName = NormalizePackGroup(group.Name);
-                packsByGroup.TryGetValue(groupName, out var packs);
-                if (packs == null)
-                    packs = new List<ContentPackDefinition>();
+            foreach (var group in GetChildGroupInfos(string.Empty))
+                DrawPackGroup(group, packsByGroup, 0);
+        }
 
-                string foldoutKey = "pack_group_" + groupName;
-                if (!_packGroupFoldouts.TryGetValue(foldoutKey, out var expanded))
-                {
-                    expanded = false;
-                    _packGroupFoldouts[foldoutKey] = expanded;
-                }
+        private void DrawPackGroup(
+            ContentPackGroupInfo group,
+            IReadOnlyDictionary<string, List<ContentPackDefinition>> packsByGroup,
+            int depth)
+        {
+            var groupName = NormalizePackGroup(group.Name);
+            packsByGroup.TryGetValue(groupName, out var directPacks);
+            if (directPacks == null)
+                directPacks = new List<ContentPackDefinition>();
+
+            var childGroups = GetChildGroupInfos(groupName);
+            var allPacks = GetPacksInGroupTree(groupName, packsByGroup);
+            string foldoutKey = "pack_group_" + groupName;
+            if (!_packGroupFoldouts.TryGetValue(foldoutKey, out var expanded))
+            {
+                expanded = false;
+                _packGroupFoldouts[foldoutKey] = expanded;
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Space(depth * 18f);
 
                 var groupRect = EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 if (Event.current.type == EventType.Repaint)
@@ -1287,10 +1312,19 @@ namespace MashBoxSDK.ContentTools.Editor
                 {
                     using (new EditorGUILayout.HorizontalScope())
                     {
-                        _packGroupFoldouts[foldoutKey] = EditorGUILayout.Foldout(expanded, $"{groupName} ({packs.Count})", true);
+                        string displayName = GetGroupDisplayName(group);
+                        _packGroupFoldouts[foldoutKey] = EditorGUILayout.Foldout(expanded, $"{displayName} ({allPacks.Count})", true);
                         GUILayout.FlexibleSpace();
                         DrawPackGroupColor(group);
-                        DrawPackGroupStatus(packs);
+                        DrawPackGroupStatus(allPacks);
+
+                        if (!string.Equals(groupName, DefaultPackGroup, StringComparison.OrdinalIgnoreCase) &&
+                            GUILayout.Button(new GUIContent("+ Subgroup", "Create a child group inside this group."), GUILayout.Width(82)))
+                            ShowCreateGroupDialog(groupName);
+
+                        if (!string.Equals(groupName, DefaultPackGroup, StringComparison.OrdinalIgnoreCase) &&
+                            GUILayout.Button(new GUIContent("Move", "Move this group under another group."), GUILayout.Width(48)))
+                            ShowMoveGroupMenu(group);
 
                         if (GUILayout.Button("Rename", GUILayout.Width(70)))
                             ShowRenameGroupDialog(groupName);
@@ -1304,8 +1338,11 @@ namespace MashBoxSDK.ContentTools.Editor
 
                     if (_packGroupFoldouts[foldoutKey])
                     {
-                        GUILayout.Space(4);
-                        DrawPackTiles(packs);
+                        if (directPacks.Count > 0)
+                        {
+                            GUILayout.Space(4);
+                            DrawPackTiles(directPacks);
+                        }
                     }
                 }
                 finally
@@ -1313,6 +1350,12 @@ namespace MashBoxSDK.ContentTools.Editor
                     EditorGUILayout.EndVertical();
                 }
             }
+
+            if (!_packGroupFoldouts[foldoutKey])
+                return;
+
+            foreach (var childGroup in childGroups)
+                DrawPackGroup(childGroup, packsByGroup, depth + 1);
         }
 
         private void DrawPackGroupColor(ContentPackGroupInfo group)
@@ -1463,12 +1506,18 @@ namespace MashBoxSDK.ContentTools.Editor
             return string.IsNullOrWhiteSpace(group) ? DefaultPackGroup : group.Trim();
         }
 
-        private void ShowCreateGroupDialog()
+        private void ShowCreateGroupDialog(string parentName)
         {
+            parentName = NormalizeParentGroup(parentName);
+            string title = string.IsNullOrEmpty(parentName) ? "Create Content Pack Group" : "Create Content Pack Subgroup";
+            string message = string.IsNullOrEmpty(parentName)
+                ? "Enter a name for the new group:"
+                : $"Enter a name for the subgroup inside '{parentName}':";
+
             RenameDialog.Show(
-                "Create Content Pack Group",
-                "Enter a name for the new group:",
-                "New Group",
+                title,
+                message,
+                string.IsNullOrEmpty(parentName) ? "New Group" : "New Subgroup",
                 (newName) =>
                 {
                     var normalized = NormalizePackGroup(newName);
@@ -1478,8 +1527,10 @@ namespace MashBoxSDK.ContentTools.Editor
                         return;
                     }
 
-                    AddPackGroup(normalized);
+                    AddPackGroup(normalized, true, parentName);
                     _packGroupFoldouts["pack_group_" + normalized] = true;
+                    if (!string.IsNullOrEmpty(parentName))
+                        _packGroupFoldouts["pack_group_" + parentName] = true;
 
                     Repaint();
                 });
@@ -1522,6 +1573,11 @@ namespace MashBoxSDK.ContentTools.Editor
             {
                 Undo.RecordObject(_groupSettings, "Rename Content Pack Group");
                 groupInfo.Name = newGroup;
+
+                foreach (var child in _groupSettings.Groups.Where(info => info != null &&
+                             string.Equals(NormalizeParentGroup(info.ParentName), oldGroup, StringComparison.OrdinalIgnoreCase)))
+                    child.ParentName = newGroup;
+
                 EditorUtility.SetDirty(_groupSettings);
             }
 
@@ -1546,9 +1602,14 @@ namespace MashBoxSDK.ContentTools.Editor
             if (string.Equals(groupName, DefaultPackGroup, StringComparison.OrdinalIgnoreCase))
                 return;
 
+            var groupInfo = GetGroupInfo(groupName);
+            string parentName = groupInfo != null ? NormalizeParentGroup(groupInfo.ParentName) : string.Empty;
+            int childCount = GetChildGroupInfos(groupName).Count;
+
             if (!EditorUtility.DisplayDialog(
                     "Delete Content Pack Group",
-                    $"Delete group '{groupName}'?\n\nPacks in this group will move to '{DefaultPackGroup}'.",
+                    $"Delete group '{groupName}'?\n\nPacks directly in this group will move to '{DefaultPackGroup}'." +
+                    (childCount > 0 ? $" Its {childCount} subgroup{(childCount == 1 ? "" : "s")} will move up one level." : string.Empty),
                     "Delete",
                     "Cancel"))
                 return;
@@ -1567,6 +1628,10 @@ namespace MashBoxSDK.ContentTools.Editor
             }
 
             Undo.RecordObject(_groupSettings, "Delete Content Pack Group");
+            foreach (var child in _groupSettings.Groups.Where(info => info != null &&
+                         string.Equals(NormalizeParentGroup(info.ParentName), groupName, StringComparison.OrdinalIgnoreCase)))
+                child.ParentName = parentName;
+
             _groupSettings.Groups.RemoveAll(info => string.Equals(NormalizePackGroup(info.Name), groupName, StringComparison.OrdinalIgnoreCase));
             EnsureDefaultPackGroup();
             EditorUtility.SetDirty(_groupSettings);
@@ -1595,6 +1660,7 @@ namespace MashBoxSDK.ContentTools.Editor
             }
 
             EnsureDefaultPackGroup();
+            EnsureValidPackGroupHierarchy();
             return _groupSettings;
         }
 
@@ -1612,6 +1678,7 @@ namespace MashBoxSDK.ContentTools.Editor
             _groupSettings.Groups.Insert(0, new ContentPackGroupInfo
             {
                 Name = DefaultPackGroup,
+                ParentName = string.Empty,
                 Color = new Color(0f, 0f, 0f, 0.35f)
             });
             EditorUtility.SetDirty(_groupSettings);
@@ -1630,7 +1697,7 @@ namespace MashBoxSDK.ContentTools.Editor
             }
         }
 
-        private ContentPackGroupInfo AddPackGroup(string groupName, bool recordUndo = true)
+        private ContentPackGroupInfo AddPackGroup(string groupName, bool recordUndo = true, string parentName = null)
         {
             EnsurePackGroupSettings();
 
@@ -1645,6 +1712,9 @@ namespace MashBoxSDK.ContentTools.Editor
             var info = new ContentPackGroupInfo
             {
                 Name = normalized,
+                ParentName = string.Equals(normalized, DefaultPackGroup, StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty
+                    : NormalizeParentGroup(parentName),
                 Color = GetDefaultPackGroupColor()
             };
             _groupSettings.Groups.Add(info);
@@ -1665,13 +1735,279 @@ namespace MashBoxSDK.ContentTools.Editor
         {
             EnsurePackGroupSettings();
 
+            var ordered = new List<ContentPackGroupInfo>();
+            foreach (var root in GetChildGroupInfos(string.Empty))
+                AppendGroupDepthFirst(root, ordered);
+
+            return ordered;
+        }
+
+        private void AppendGroupDepthFirst(ContentPackGroupInfo group, ICollection<ContentPackGroupInfo> destination)
+        {
+            destination.Add(group);
+            foreach (var child in GetChildGroupInfos(NormalizePackGroup(group.Name)))
+                AppendGroupDepthFirst(child, destination);
+        }
+
+        private List<ContentPackGroupInfo> GetChildGroupInfos(string parentName)
+        {
+            if (_groupSettings == null || _groupSettings.Groups == null)
+                return new List<ContentPackGroupInfo>();
+
+            string normalizedParent = NormalizeParentGroup(parentName);
             return _groupSettings.Groups
-                .Where(info => info != null)
+                .Where(info => info != null && string.Equals(
+                    NormalizeParentGroup(info.ParentName), normalizedParent, StringComparison.OrdinalIgnoreCase))
                 .GroupBy(info => NormalizePackGroup(info.Name), StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .OrderBy(info => string.Equals(NormalizePackGroup(info.Name), DefaultPackGroup, StringComparison.OrdinalIgnoreCase) ? 1 : 0)
                 .ThenBy(info => NormalizePackGroup(info.Name), StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        private static string NormalizeParentGroup(string parentName)
+        {
+            return string.IsNullOrWhiteSpace(parentName) ? string.Empty : parentName.Trim();
+        }
+
+        private string GetGroupDisplayName(ContentPackGroupInfo group)
+        {
+            string groupName = NormalizePackGroup(group != null ? group.Name : null);
+            string parentName = NormalizeParentGroup(group != null ? group.ParentName : null);
+            string repeatedPrefix = parentName + " ";
+            return !string.IsNullOrEmpty(parentName) && groupName.StartsWith(repeatedPrefix, StringComparison.OrdinalIgnoreCase)
+                ? groupName.Substring(repeatedPrefix.Length)
+                : groupName;
+        }
+
+        private string GetGroupPath(ContentPackGroupInfo group)
+        {
+            if (group == null)
+                return string.Empty;
+
+            var segments = new List<string>();
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var current = group;
+            while (current != null)
+            {
+                string currentName = NormalizePackGroup(current.Name);
+                if (!visited.Add(currentName))
+                    break;
+
+                segments.Add(GetGroupDisplayName(current));
+                string parentName = NormalizeParentGroup(current.ParentName);
+                current = string.IsNullOrEmpty(parentName) ? null : GetGroupInfo(parentName);
+            }
+
+            segments.Reverse();
+            return string.Join(" / ", segments);
+        }
+
+        private List<ContentPackDefinition> GetPacksInGroupTree(
+            string groupName,
+            IReadOnlyDictionary<string, List<ContentPackDefinition>> packsByGroup)
+        {
+            var packs = new List<ContentPackDefinition>();
+            CollectPacksInGroupTree(groupName, packsByGroup, packs, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            return packs;
+        }
+
+        private void CollectPacksInGroupTree(
+            string groupName,
+            IReadOnlyDictionary<string, List<ContentPackDefinition>> packsByGroup,
+            ICollection<ContentPackDefinition> destination,
+            ISet<string> visited)
+        {
+            if (!visited.Add(groupName))
+                return;
+
+            if (packsByGroup.TryGetValue(groupName, out var directPacks))
+            {
+                foreach (var pack in directPacks)
+                    destination.Add(pack);
+            }
+
+            foreach (var child in GetChildGroupInfos(groupName))
+                CollectPacksInGroupTree(NormalizePackGroup(child.Name), packsByGroup, destination, visited);
+        }
+
+        private void ShowMoveGroupMenu(ContentPackGroupInfo group)
+        {
+            if (group == null)
+                return;
+
+            string groupName = NormalizePackGroup(group.Name);
+            string currentParent = NormalizeParentGroup(group.ParentName);
+            var descendants = GetDescendantGroupNames(groupName);
+            var menu = new GenericMenu();
+
+            menu.AddItem(new GUIContent("Top Level"), string.IsNullOrEmpty(currentParent), () => SetGroupParent(group, string.Empty));
+            menu.AddSeparator(string.Empty);
+
+            foreach (var possibleParent in GetOrderedGroupInfos())
+            {
+                string possibleParentName = NormalizePackGroup(possibleParent.Name);
+                if (string.Equals(possibleParentName, groupName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(possibleParentName, DefaultPackGroup, StringComparison.OrdinalIgnoreCase) ||
+                    descendants.Contains(possibleParentName))
+                    continue;
+
+                string capturedParent = possibleParentName;
+                menu.AddItem(
+                    new GUIContent(GetGroupPath(possibleParent)),
+                    string.Equals(currentParent, capturedParent, StringComparison.OrdinalIgnoreCase),
+                    () => SetGroupParent(group, capturedParent));
+            }
+
+            menu.ShowAsContext();
+        }
+
+        private void SetGroupParent(ContentPackGroupInfo group, string parentName)
+        {
+            if (group == null)
+                return;
+
+            string normalizedParent = NormalizeParentGroup(parentName);
+            if (string.Equals(NormalizeParentGroup(group.ParentName), normalizedParent, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            Undo.RecordObject(_groupSettings, "Move Content Pack Group");
+            group.ParentName = normalizedParent;
+            EditorUtility.SetDirty(_groupSettings);
+
+            _packGroupFoldouts["pack_group_" + NormalizePackGroup(group.Name)] = true;
+            if (!string.IsNullOrEmpty(normalizedParent))
+                _packGroupFoldouts["pack_group_" + normalizedParent] = true;
+            Repaint();
+        }
+
+        private HashSet<string> GetDescendantGroupNames(string groupName)
+        {
+            var descendants = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            CollectDescendantGroupNames(groupName, descendants);
+            return descendants;
+        }
+
+        private void CollectDescendantGroupNames(string groupName, ISet<string> destination)
+        {
+            foreach (var child in GetChildGroupInfos(groupName))
+            {
+                string childName = NormalizePackGroup(child.Name);
+                if (!destination.Add(childName))
+                    continue;
+
+                CollectDescendantGroupNames(childName, destination);
+            }
+        }
+
+        private Dictionary<string, List<ContentPackGroupInfo>> GetCommonPrefixCandidates()
+        {
+            EnsurePackGroupSettings();
+
+            return GetChildGroupInfos(string.Empty)
+                .Where(info => !string.Equals(NormalizePackGroup(info.Name), DefaultPackGroup, StringComparison.OrdinalIgnoreCase))
+                .Select(info => new
+                {
+                    Info = info,
+                    Name = NormalizePackGroup(info.Name),
+                    Separator = NormalizePackGroup(info.Name).IndexOf(' ')
+                })
+                .Where(candidate => candidate.Separator > 1 && candidate.Separator < candidate.Name.Length - 1)
+                .GroupBy(candidate => candidate.Name.Substring(0, candidate.Separator), StringComparer.OrdinalIgnoreCase)
+                .Where(group =>
+                {
+                    var existingParent = GetGroupInfo(group.Key);
+                    return group.Count() >= 2 &&
+                           (existingParent == null || string.IsNullOrEmpty(NormalizeParentGroup(existingParent.ParentName)));
+                })
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(candidate => candidate.Info).ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        private void AutoNestCommonPrefixes(IReadOnlyDictionary<string, List<ContentPackGroupInfo>> candidates)
+        {
+            if (candidates == null || candidates.Count == 0)
+                return;
+
+            string summary = string.Join("\n", candidates
+                .OrderBy(candidate => candidate.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(candidate => $"• {candidate.Key} ({candidate.Value.Count} groups)"));
+            if (!EditorUtility.DisplayDialog(
+                    "Auto Nest Content Pack Groups",
+                    "Create parent groups for these repeated prefixes?\n\n" + summary +
+                    "\n\nOnly Content Builder organization metadata will change.",
+                    "Auto Nest",
+                    "Cancel"))
+                return;
+
+            Undo.RecordObject(_groupSettings, "Auto Nest Content Pack Groups");
+            foreach (var candidate in candidates)
+            {
+                string parentName = candidate.Key;
+                var parent = AddPackGroup(parentName, false);
+                parent.ParentName = string.Empty;
+
+                foreach (var child in candidate.Value)
+                {
+                    if (!string.Equals(NormalizePackGroup(child.Name), parentName, StringComparison.OrdinalIgnoreCase))
+                        child.ParentName = parentName;
+                }
+
+                _packGroupFoldouts["pack_group_" + parentName] = true;
+            }
+
+            EnsureValidPackGroupHierarchy();
+            EditorUtility.SetDirty(_groupSettings);
+            Repaint();
+        }
+
+        private void EnsureValidPackGroupHierarchy()
+        {
+            if (_groupSettings == null || _groupSettings.Groups == null)
+                return;
+
+            var names = new HashSet<string>(
+                _groupSettings.Groups.Where(info => info != null).Select(info => NormalizePackGroup(info.Name)),
+                StringComparer.OrdinalIgnoreCase);
+            bool changed = false;
+
+            foreach (var group in _groupSettings.Groups.Where(info => info != null))
+            {
+                string groupName = NormalizePackGroup(group.Name);
+                string parentName = NormalizeParentGroup(group.ParentName);
+                bool invalid = string.Equals(groupName, DefaultPackGroup, StringComparison.OrdinalIgnoreCase) ||
+                               string.Equals(groupName, parentName, StringComparison.OrdinalIgnoreCase) ||
+                               (!string.IsNullOrEmpty(parentName) && !names.Contains(parentName));
+
+                if (!invalid && !string.IsNullOrEmpty(parentName))
+                {
+                    var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { groupName };
+                    string ancestorName = parentName;
+                    while (!string.IsNullOrEmpty(ancestorName))
+                    {
+                        if (!visited.Add(ancestorName))
+                        {
+                            invalid = true;
+                            break;
+                        }
+
+                        var ancestor = GetGroupInfo(ancestorName);
+                        ancestorName = ancestor != null ? NormalizeParentGroup(ancestor.ParentName) : string.Empty;
+                    }
+                }
+
+                string validParent = invalid ? string.Empty : parentName;
+                if (string.Equals(NormalizeParentGroup(group.ParentName), validParent, StringComparison.Ordinal))
+                    continue;
+
+                group.ParentName = validParent;
+                changed = true;
+            }
+
+            if (changed)
+                EditorUtility.SetDirty(_groupSettings);
         }
 
         private static Color GetDefaultPackGroupColor()
@@ -1750,28 +2086,20 @@ namespace MashBoxSDK.ContentTools.Editor
                 EditorGUILayout.LabelField("Group", GUILayout.Width(45));
                 EditorGUILayout.LabelField(GetPackGroup(p), EditorStyles.miniLabel);
 
-                var groups = GetExistingPackGroups();
+                var groupInfos = GetOrderedGroupInfos();
+                var groups = groupInfos.Select(info => NormalizePackGroup(info.Name)).ToList();
+                var groupLabels = groupInfos.Select(GetGroupPath).ToArray();
                 int currentIndex = groups.FindIndex(group => string.Equals(group, GetPackGroup(p), StringComparison.OrdinalIgnoreCase));
                 if (currentIndex < 0)
                     currentIndex = 0;
 
                 using (new EditorGUI.DisabledScope(groups.Count <= 1))
                 {
-                    int nextIndex = EditorGUILayout.Popup(currentIndex, groups.ToArray(), GUILayout.Width(160));
+                    int nextIndex = EditorGUILayout.Popup(currentIndex, groupLabels, GUILayout.Width(190));
                     if (nextIndex != currentIndex && nextIndex >= 0 && nextIndex < groups.Count)
                         SetPackGroup(p, groups[nextIndex]);
                 }
             }
-        }
-
-        private List<string> GetExistingPackGroups()
-        {
-            EnsurePackGroupSettings();
-            EnsureGroupsForPacks();
-
-            return GetOrderedGroupInfos()
-                .Select(info => NormalizePackGroup(info.Name))
-                .ToList();
         }
 
         private void SetPackGroup(ContentPackDefinition p, string group)
