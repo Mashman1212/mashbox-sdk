@@ -52,6 +52,7 @@ namespace MashBoxSDK.Dev
         }
 
         private const string DefaultOutputFolder = "Assets/UGS/Leaderboards";
+        private const string RuntimeCatalogFileName = "ProjectXLeaderboardCatalog.json";
         private const string SchemaUrl = "https://ugs-config-schemas.unity3d.com/v1/leaderboards.schema.json";
         private static readonly UTF8Encoding Utf8WithoutBom = new UTF8Encoding(false);
 
@@ -71,6 +72,7 @@ namespace MashBoxSDK.Dev
         [SerializeField] private bool _weekly = true;
         [SerializeField] private bool _monthly = true;
         [SerializeField] private bool _allTime = true;
+        [SerializeField] private bool _duos;
         [SerializeField] private bool _archiveResetPeriods = true;
         [SerializeField] private int _bucketSize;
         [SerializeField] private string _outputFolder = DefaultOutputFolder;
@@ -164,6 +166,14 @@ namespace MashBoxSDK.Dev
             if (_activityType == ActivityType.PvpMatch)
                 _pvpModeId = EditorGUILayout.TextField("PvP Mode ID", _pvpModeId);
 
+            if (_activityType == ActivityType.Race)
+            {
+                _duos = EditorGUILayout.Toggle("Generate Duos", _duos);
+                EditorGUILayout.HelpBox(
+                    "Creates a second leaderboard family for two-rider team times. " +
+                    "Each selected period is generated for both Solo and Duos.", MessageType.None);
+            }
+
             EditorGUILayout.LabelField("Description");
             _description = EditorGUILayout.TextArea(_description, GUILayout.MinHeight(52.0f));
         }
@@ -211,7 +221,13 @@ namespace MashBoxSDK.Dev
 
             string id = MakeIdentifier(_baseId);
             for (int i = 0; i < periods.Count; i++)
-                EditorGUILayout.LabelField("• " + id + "_" + PeriodSuffix(periods[i]) + ".lb");
+                EditorGUILayout.LabelField("• " + LeaderboardId(id, periods[i]) + ".lb");
+            if (ShouldGenerateDuos())
+            {
+                string duoId = id + "_Duos";
+                for (int i = 0; i < periods.Count; i++)
+                    EditorGUILayout.LabelField("• " + LeaderboardId(duoId, periods[i]) + ".lb");
+            }
             EditorGUILayout.LabelField("• " + id + ".mashbox-leaderboards.json");
         }
 
@@ -249,9 +265,22 @@ namespace MashBoxSDK.Dev
             for (int i = 0; i < periods.Count; i++)
             {
                 Period period = periods[i];
-                string leaderboardId = baseId + "_" + PeriodSuffix(period);
+                string leaderboardId = LeaderboardId(baseId, period);
                 string assetPath = outputAssetFolder + "/" + leaderboardId + ".lb";
                 files.Add(new GeneratedFile(assetPath, BuildLeaderboardJson(leaderboardId, period, utcNow)));
+            }
+
+            if (ShouldGenerateDuos())
+            {
+                string duoBaseId = baseId + "_Duos";
+                for (int i = 0; i < periods.Count; i++)
+                {
+                    Period period = periods[i];
+                    string leaderboardId = LeaderboardId(duoBaseId, period);
+                    string assetPath = outputAssetFolder + "/" + leaderboardId + ".lb";
+                    files.Add(new GeneratedFile(assetPath,
+                        BuildLeaderboardJson(leaderboardId, period, utcNow, true)));
+                }
             }
 
             string manifestPath = outputAssetFolder + "/" + baseId + ".mashbox-leaderboards.json";
@@ -279,6 +308,7 @@ namespace MashBoxSDK.Dev
                 AssetDatabase.StartAssetEditing();
                 for (int i = 0; i < files.Count; i++)
                     File.WriteAllText(AssetPathToAbsolute(files[i].AssetPath), files[i].Contents, Utf8WithoutBom);
+                SyncRuntimeLeaderboardCatalog(baseId, periods);
             }
             finally
             {
@@ -292,12 +322,115 @@ namespace MashBoxSDK.Dev
                       ". Deploy the .lb assets with the Unity Deployment window.");
             EditorUtility.DisplayDialog(
                 "Leaderboards Generated",
-                "Created " + periods.Count + " leaderboard configuration(s) and one MashBox metadata manifest.\n\n" +
+                "Created " + (periods.Count * (ShouldGenerateDuos() ? 2 : 1)) +
+                " leaderboard configuration(s), one MashBox metadata manifest, and synchronized the runtime browser catalog.\n\n" +
                 outputAssetFolder,
                 "OK");
         }
 
-        private string BuildLeaderboardJson(string leaderboardId, Period period, DateTime utcNow)
+        private void SyncRuntimeLeaderboardCatalog(string baseId, List<Period> periods)
+        {
+            string[] catalogGuids = AssetDatabase.FindAssets(
+                Path.GetFileNameWithoutExtension(RuntimeCatalogFileName) + " t:TextAsset");
+            string catalogAssetPath = string.Empty;
+            for (int i = 0; i < catalogGuids.Length; i++)
+            {
+                string candidate = AssetDatabase.GUIDToAssetPath(catalogGuids[i]);
+                if (string.Equals(Path.GetFileName(candidate), RuntimeCatalogFileName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    catalogAssetPath = candidate;
+                    break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(catalogAssetPath))
+            {
+                Debug.LogWarning("[MashBox Leaderboards] Runtime browser catalog was not found; " +
+                                 "UGS configs and the manifest were still generated.");
+                return;
+            }
+
+            string catalogAbsolutePath = AssetPathToAbsolute(catalogAssetPath);
+            RuntimeCatalog catalog = JsonUtility.FromJson<RuntimeCatalog>(File.ReadAllText(catalogAbsolutePath));
+            var boards = catalog?.boards != null
+                ? new List<RuntimeCatalogBoard>(catalog.boards)
+                : new List<RuntimeCatalogBoard>();
+            string duoBaseId = baseId + "_Duos";
+            int insertionIndex = boards.FindIndex(board => board != null &&
+                (string.Equals(board.id, baseId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(board.id, duoBaseId, StringComparison.OrdinalIgnoreCase)));
+            if (insertionIndex < 0)
+                insertionIndex = boards.Count;
+            boards.RemoveAll(board => board != null &&
+                (string.Equals(board.id, baseId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(board.id, duoBaseId, StringComparison.OrdinalIgnoreCase)));
+
+            boards.Insert(insertionIndex, BuildRuntimeCatalogBoard(baseId, periods, false));
+            if (ShouldGenerateDuos())
+                boards.Insert(insertionIndex + 1, BuildRuntimeCatalogBoard(duoBaseId, periods, true));
+
+            if (catalog == null)
+                catalog = new RuntimeCatalog();
+            catalog.boards = boards.ToArray();
+            File.WriteAllText(catalogAbsolutePath, JsonUtility.ToJson(catalog, true) + Environment.NewLine,
+                Utf8WithoutBom);
+            Debug.Log("[MashBox Leaderboards] Synchronized runtime browser metadata in " + catalogAssetPath + ".");
+        }
+
+        private RuntimeCatalogBoard BuildRuntimeCatalogBoard(string id, List<Period> periods, bool duos)
+        {
+            var runtimePeriods = new RuntimeCatalogPeriod[periods.Count];
+            for (int i = 0; i < periods.Count; i++)
+            {
+                runtimePeriods[i] = new RuntimeCatalogPeriod
+                {
+                    range = EnumToken(periods[i]),
+                    id = LeaderboardId(id, periods[i])
+                };
+            }
+
+            string mapLabel = UsesMap()
+                ? (!string.IsNullOrWhiteSpace(_mapName) ? _mapName.Trim() : _mapId.Trim())
+                : "GLOBAL";
+            return new RuntimeCatalogBoard
+            {
+                id = id,
+                displayName = _displayName.Trim(),
+                location = mapLabel,
+                mapId = UsesMap() ? _mapId.Trim() : string.Empty,
+                mapName = UsesMap() ? _mapName.Trim() : string.Empty,
+                activityId = _activityId.Trim(),
+                description = _description.Trim(),
+                scoreFormat = _scoreType == ScoreType.RaceTimeLowestWins ? "time" : "points",
+                category = RuntimeCategory(),
+                metric = _scoreType == ScoreType.RaceTimeLowestWins ? "Best Time" : "Highest Score",
+                mode = duos ? "Duos" : "Solo",
+                defaultPeriod = DefaultRuntimePeriod(periods),
+                periods = runtimePeriods,
+                audiences = new[] { "global", "friends", "clanTag", "aroundMe" }
+            };
+        }
+
+        private string RuntimeCategory()
+        {
+            switch (_activityType)
+            {
+                case ActivityType.Race: return "Races";
+                case ActivityType.ScoreChallenge: return "Challenges";
+                case ActivityType.PvpMatch: return "PvP";
+                default: return "Other";
+            }
+        }
+
+        private static string DefaultRuntimePeriod(List<Period> periods)
+        {
+            if (periods.Contains(Period.Weekly)) return "weekly";
+            if (periods.Contains(Period.AllTime)) return "allTime";
+            return periods.Count > 0 ? EnumToken(periods[0]) : "allTime";
+        }
+
+        private string BuildLeaderboardJson(string leaderboardId, Period period, DateTime utcNow, bool duos = false)
         {
             var json = new StringBuilder(512);
             json.AppendLine("{");
@@ -317,7 +450,7 @@ namespace MashBoxSDK.Dev
                 json.AppendLine("  },");
             }
 
-            AppendJsonProperty(json, "Name", DisplayNameForPeriod(period), true, 2);
+            AppendJsonProperty(json, "Name", DisplayNameForPeriod(period, duos), true, 2);
             AppendJsonProperty(json, "Id", leaderboardId, false, 2);
             json.AppendLine("}");
             return json.ToString();
@@ -327,7 +460,7 @@ namespace MashBoxSDK.Dev
         {
             var json = new StringBuilder(2048);
             json.AppendLine("{");
-            AppendJsonNumber(json, "schemaVersion", 1, true, 2);
+            AppendJsonNumber(json, "schemaVersion", 2, true, 2);
             AppendJsonProperty(json, "baseId", baseId, true, 2);
             AppendJsonProperty(json, "displayName", _displayName.Trim(), true, 2);
             AppendJsonProperty(json, "scoreType", ScoreTypeValue(), true, 2);
@@ -341,21 +474,31 @@ namespace MashBoxSDK.Dev
             AppendJsonProperty(json, "mapName", UsesMap() ? _mapName.Trim() : string.Empty, true, 2);
             AppendJsonProperty(json, "pvpModeId", _activityType == ActivityType.PvpMatch ? _pvpModeId.Trim() : string.Empty, true, 2);
             AppendJsonProperty(json, "description", _description.Trim(), true, 2);
+            AppendJsonBoolean(json, "duosEnabled", ShouldGenerateDuos(), true, 2);
             AppendJsonProperty(json, "generatedUtc", utcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), true, 2);
             json.AppendLine("  \"leaderboards\": [");
-            for (int i = 0; i < periods.Count; i++)
+            int leaderboardCount = periods.Count * (ShouldGenerateDuos() ? 2 : 1);
+            int leaderboardIndex = 0;
+            for (int formatIndex = 0; formatIndex < (ShouldGenerateDuos() ? 2 : 1); formatIndex++)
             {
-                Period period = periods[i];
-                string id = baseId + "_" + PeriodSuffix(period);
-                json.AppendLine("    {");
-                AppendJsonProperty(json, "id", id, true, 6);
-                AppendJsonProperty(json, "name", DisplayNameForPeriod(period), true, 6);
-                AppendJsonProperty(json, "period", EnumToken(period), true, 6);
-                AppendJsonProperty(json, "configAsset", NormalizeAssetPath(_outputFolder) + "/" + id + ".lb", true, 6);
-                AppendJsonBoolean(json, "resets", period != Period.AllTime, true, 6);
-                AppendJsonBoolean(json, "archives", period != Period.AllTime && _archiveResetPeriods, false, 6);
-                json.Append("    }");
-                json.AppendLine(i < periods.Count - 1 ? "," : string.Empty);
+                bool duos = formatIndex == 1;
+                for (int i = 0; i < periods.Count; i++)
+                {
+                    Period period = periods[i];
+                    string id = LeaderboardId(baseId + (duos ? "_Duos" : string.Empty), period);
+                    json.AppendLine("    {");
+                    AppendJsonProperty(json, "id", id, true, 6);
+                    AppendJsonProperty(json, "name", DisplayNameForPeriod(period, duos), true, 6);
+                    AppendJsonProperty(json, "period", EnumToken(period), true, 6);
+                    AppendJsonProperty(json, "format", duos ? "duos" : "solo", true, 6);
+                    AppendJsonNumber(json, "teamSize", duos ? 2 : 1, true, 6);
+                    AppendJsonProperty(json, "configAsset", NormalizeAssetPath(_outputFolder) + "/" + id + ".lb", true, 6);
+                    AppendJsonBoolean(json, "resets", period != Period.AllTime, true, 6);
+                    AppendJsonBoolean(json, "archives", period != Period.AllTime && _archiveResetPeriods, false, 6);
+                    json.Append("    }");
+                    leaderboardIndex++;
+                    json.AppendLine(leaderboardIndex < leaderboardCount ? "," : string.Empty);
+                }
             }
             json.AppendLine("  ]");
             json.AppendLine("}");
@@ -447,9 +590,14 @@ namespace MashBoxSDK.Dev
             }
         }
 
-        private string DisplayNameForPeriod(Period period)
+        private bool ShouldGenerateDuos()
         {
-            return _displayName.Trim() + " " + PeriodDisplayName(period);
+            return _activityType == ActivityType.Race && _duos;
+        }
+
+        private string DisplayNameForPeriod(Period period, bool duos = false)
+        {
+            return _displayName.Trim() + (duos ? " - Duos " : " ") + PeriodDisplayName(period);
         }
 
         private static string PeriodDisplayName(Period period)
@@ -460,6 +608,11 @@ namespace MashBoxSDK.Dev
         private static string PeriodSuffix(Period period)
         {
             return period == Period.AllTime ? "AllTime" : period.ToString();
+        }
+
+        private static string LeaderboardId(string baseId, Period period)
+        {
+            return period == Period.AllTime ? baseId : baseId + "_" + PeriodSuffix(period);
         }
 
         private static DateTime GetNextResetStart(Period period, DateTime utcNow)
@@ -572,6 +725,39 @@ namespace MashBoxSDK.Dev
                 .Replace("\r", "\\r")
                 .Replace("\n", "\\n")
                 .Replace("\t", "\\t");
+        }
+
+        [Serializable]
+        private sealed class RuntimeCatalog
+        {
+            public RuntimeCatalogBoard[] boards;
+        }
+
+        [Serializable]
+        private sealed class RuntimeCatalogBoard
+        {
+            public string id;
+            public string displayName;
+            public string location;
+            public string mapId;
+            public string mapName;
+            public string activityId;
+            public string description;
+            public string scoreFormat;
+            public string category;
+            public string metric;
+            public string mode;
+            public string defaultPeriod;
+            public RuntimeCatalogPeriod[] periods;
+            public string[] audiences;
+            public bool favoriteByDefault;
+        }
+
+        [Serializable]
+        private sealed class RuntimeCatalogPeriod
+        {
+            public string range;
+            public string id;
         }
 
         private readonly struct GeneratedFile

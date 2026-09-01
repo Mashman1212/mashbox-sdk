@@ -21,7 +21,7 @@ Material:
   - _MASKMAP
   - _NORMALMAP
   - _NORMALMAP_TANGENT_SPACE
-  m_LightmapFlags: 4
+  m_LightmapFlags: 0
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: 2000
@@ -31,7 +31,6 @@ Material:
   - TransparentDepthPrepass
   - TransparentDepthPostpass
   - TransparentBackface
-  - RayTracingPrepass
   - MOTIONVECTORS
   m_LockedProperties: 
   m_SavedProperties:
@@ -42,7 +41,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BaseColorMap:
-        m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
+        m_Texture: {fileID: 2800000, guid: 1d18666b35b49384eb5af4db1b0f43e3, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BentNormalMap:
@@ -51,10 +50,6 @@ Material:
         m_Offset: {x: 0, y: 0}
     - _BentNormalMapOS:
         m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _BrandingMap:
-        m_Texture: {fileID: 2800000, guid: 3b0f41348b1db874097592fd51e7789d, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _CoatMaskMap:
@@ -67,14 +62,6 @@ Material:
         m_Offset: {x: 0, y: 0}
     - _EmissiveColorMap:
         m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _EmissiveMap:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _GrungeMap:
-        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _HeightMap:
@@ -90,27 +77,23 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
+        m_Texture: {fileID: 2800000, guid: 1d18666b35b49384eb5af4db1b0f43e3, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MaskMap:
-        m_Texture: {fileID: 2800000, guid: 94edd900387c4ed4bafa7aa516efe915, type: 3}
+        m_Texture: {fileID: 2800000, guid: caec3a40fb90b074e988fc119eefade3, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MudBaseMap:
         m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
-        m_Scale: {x: 8, y: 8}
-        m_Offset: {x: 0, y: 0}
-    - _MudGrungeMap:
-        m_Texture: {fileID: 2800000, guid: 194cf8ba28f1c2349a029fb39d0ca837, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MudNormalMap:
         m_Texture: {fileID: 2800000, guid: 32fd326733980104f95733da824d7359, type: 3}
-        m_Scale: {x: 8, y: 8}
+        m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _NormalMap:
-        m_Texture: {fileID: 2800000, guid: 32fd326733980104f95733da824d7359, type: 3}
+        m_Texture: {fileID: 2800000, guid: 99070c71bd32e0a49a5ea3c92efb601a, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _NormalMapOS:
@@ -118,55 +101,23 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _PatternOverlayMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 121850c026e28fe41af22c370c4755f2, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2DLOD_4ba588d9d33245e7a4fa6a024af2fd3e_Texture_1_Texture2D:
         m_Texture: {fileID: 2800000, guid: fdcaedbcc93318542b6951bc7ac571ab, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
-    - _SampleTexture2D_090f8cdd8b3b45cc94e5724d7e99f96c_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: 49883abd4e7bdb34e988383427a6910b, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _SampleTexture2D_13b347d8e184474e9d7225b63ae8f920_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: 0f288251aac55b345997da7e101d14c8, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_14a884bb3e5344a5894956de750dfc64_Texture_1_Texture2D:
         m_Texture: {fileID: 2800000, guid: 5a5262d6a23ebb8468c610a5cc0b404b, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _SampleTexture2D_21e580dc17424bf592167d9815488c34_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: 49883abd4e7bdb34e988383427a6910b, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _SampleTexture2D_45dc076796594b218d1781cd146de755_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: 49883abd4e7bdb34e988383427a6910b, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _SampleTexture2D_4bca60b30ac543deb96a20f36bbdde31_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: 49883abd4e7bdb34e988383427a6910b, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_68469cf257504c78ba2f4c2fdebf2a47_Texture_1_Texture2D:
         m_Texture: {fileID: 2800000, guid: 95b4da793fcd67f4e9f6ffb85c967072, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
-    - _SampleTexture2D_6d577a544c464465847a13b42ed84ab6_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: 194cf8ba28f1c2349a029fb39d0ca837, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _SampleTexture2D_ad5567ac959e4198b00cb9bda9f0ce0c_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: c1b601b1d0c47f745a3a407d00c0cb6d, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
     - _SidewallMaskMap:
-        m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _SidewallNormalMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: c324271d7a680db43a90c386aead0974, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SpecularColorMap:
@@ -174,7 +125,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _StickerMap:
-        m_Texture: {fileID: 2800000, guid: 87aca531fe523054fa55fcc470d974a5, type: 3}
+        m_Texture: {fileID: 2800000, guid: 30e64bb667a341d4295287d472f98666, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SubsurfaceMaskMap:
@@ -215,10 +166,9 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - EMISSIVEINTENSITYUNIT: 0
-    - _AOBaseMapBlendContrast: 0.42
-    - _AOBaseMapBlendMultiplier: 0.82
-    - _AORemapMax: 1
+    - _AOBaseMapBlendContrast: 0
+    - _AOBaseMapBlendMultiplier: 1
+    - _AORemapMax: 0.7649939
     - _AORemapMin: 0
     - _ATDistance: 1
     - _AddPrecomputedVelocity: 0
@@ -233,17 +183,7 @@ Material:
     - _AlphaRemapMin: 0
     - _AlphaSrcBlend: 1
     - _Anisotropy: 0
-    - _BandCenter: 10.84
-    - _BandWidth: 11.2
-    - _BaseRadius: 0
     - _BlendMode: 0
-    - _BlendWidth: 0
-    - _Boolean: 0
-    - _BrandingEdge1: -0.3
-    - _BrandingEdge2: 1
-    - _BrandingMetallic: 0.1
-    - _BrandingSmoothness: 0.45
-    - _BrandingThickness: 0.82
     - _CoatMask: 0
     - _ConservativeDepthOffsetEnable: 0
     - _CullMode: 2
@@ -257,21 +197,16 @@ Material:
     - _DiffusionProfileHash: 0
     - _DisplacementLockObjectScale: 1
     - _DisplacementLockTilingScale: 1
-    - _DisplacementMode: 0
+    - _DisplacementMode: 3
     - _DoubleSidedEnable: 0
     - _DoubleSidedGIMode: 0
     - _DoubleSidedNormalMode: 1
     - _DstBlend: 0
     - _DstBlend2: 0
-    - _EdgeDetectPower: 0.158
     - _EmissiveColorMode: 1
     - _EmissiveExposureWeight: 1
-    - _EmissiveHeightMapMaskStrength: 0
     - _EmissiveIntensity: 1
     - _EmissiveIntensityUnit: 0
-    - _EmissiveMapMaskStrength: 0
-    - _EmissivePatternMapMaskStrength: 0
-    - _EmissiveStickerMapMaskStrength: 0
     - _EmissiveUseUV1: 0
     - _EmissiveUseUV2: 0
     - _EmissiveUseUV3: 0
@@ -280,23 +215,15 @@ Material:
     - _EnableGeometricSpecularAA: 0
     - _EnergyConservingSpecularColor: 1
     - _ExcludeFromTUAndAA: 0
-    - _Float: -0.5
-    - _Float_1: 0
-    - _Float_2: 1.07
-    - _GrungeStrength: 0
     - _HeightAmplitude: 0.02
     - _HeightCenter: 0.5
     - _HeightMapParametrization: 0
-    - _HeightMapStepEdge: 0.43
-    - _HeightMapStrength: 1
     - _HeightMax: 1
     - _HeightMin: -1
     - _HeightOffset: 0
     - _HeightPoMAmplitude: 2
     - _HeightTessAmplitude: 2
     - _HeightTessCenter: 0.5
-    - _InnerRadius: 3.58
-    - _IntersectionPower: 0
     - _InvTilingScale: 1
     - _Ior: 1.5
     - _IridescenceMask: 1
@@ -307,35 +234,17 @@ Material:
     - _Metallic: 0
     - _MetallicRemapMax: 1
     - _MetallicRemapMin: 0
-    - _MudBuildColorMult: 19.1
     - _MudBuildColorMultRate: 2
-    - _MudBuildUp: 0
-    - _MudBuildup: 1.13
-    - _MudBuildupAdjust: 3.03
-    - _MudBuildupInvert: 0.073
+    - _MudBuildup: 0
+    - _MudBuildupInvert: -0.012
     - _MudBuildupMeshMaskMax: 4.6008973
     - _MudBuildupMeshMaskMin: 0
     - _MudGrungeScale: 10
-    - _MudLevel: 0
-    - _MudMaskEdge: 0.573
     - _MudMaskEdge1: 0.255
-    - _MudMaskEdge2: 0.996
-    - _MudMaskMax: 0.726
-    - _MudMaskMin: 0.353
-    - _MudMeshMaskMax: 5
-    - _MudMeshMaskMin: 0.11
-    - _MudMeshScaleMax: 5.23
-    - _MudMeshScaleMin: 0
+    - _MudMaskEdge2: 0.371
     - _MudMetallic: 0.529
-    - _MudNoiseEdge1: -0.51
-    - _MudNoiseEdge2: 2.09
     - _MudNormalStrength: 0.74
-    - _MudScale: 6.26
     - _MudSmoothness: 0.35
-    - _MudTessellationMaskMax: 0.49
-    - _MudTessellationMaskMin: 0.18
-    - _MudUVMaskMax: 0.49
-    - _MudUVMaskMin: 0.24
     - _NormalMapSpace: 0
     - _NormalScale: 1
     - _NormalStrength: 1
@@ -347,24 +256,19 @@ Material:
     - _PPDMinSamples: 5
     - _PPDPrimitiveLength: 1
     - _PPDPrimitiveWidth: 1
-    - _PatternOverlayPolarity: 1
-    - _PatternOverlayStrength: 0
     - _PerPixelSorting: 0
-    - _RayTracing: 0
+    - _RayTracing: 1
     - _ReceivesSSR: 1
     - _ReceivesSSRTransparent: 0
     - _RefractionModel: 0
     - _RenderQueueType: 1
     - _RequireSplitLighting: 0
-    - _RingWidth: -10.74
     - _SidewallMaskBlend: 0
     - _SidewallMetallic: 0.128
-    - _SidewallNormalStrength: 1
     - _SidewallSmoothness: 0.666
-    - _SidewallStrength: 0
     - _Smoothness: 0.5
     - _SmoothnessRemapMax: 1
-    - _SmoothnessRemapMin: 0
+    - _SmoothnessRemapMin: 0.41860473
     - _SpecularAAScreenSpaceVariance: 0.1
     - _SpecularAAThreshold: 0.2
     - _SpecularOcclusionMode: 1
@@ -380,11 +284,8 @@ Material:
     - _StencilWriteMaskGBuffer: 15
     - _StencilWriteMaskMV: 41
     - _StickerBlend: 1
-    - _StickerCoatMask: 0
-    - _StickerDamage: 0
     - _StickerMetallic: 0.1
     - _StickerRGBBlend: 1
-    - _StickerRoughness: 0
     - _StickerSmoothness: 0.378
     - _StickerThickness: 1
     - _StickerUseUV1: 1
@@ -392,26 +293,24 @@ Material:
     - _StickerUseUV3: 0
     - _StickerWear: 0.19
     - _StickerWearScale: 50
-    - _StickerWhiteBoost: 0
-    - _Strength: 0
+    - _StickerWhiteBoost: 1
     - _SubsurfaceMask: 1
     - _SupportDecals: 0
     - _SurfaceType: 0
-    - _Tessellation: 0
-    - _TessellationBackFaceCullEpsilon: -0.262
-    - _TessellationFactor: 0
+    - _TessellationBackFaceCullEpsilon: -1
+    - _TessellationFactor: 50
     - _TessellationFactorMaxDistance: 1
     - _TessellationFactorMinDistance: 0
-    - _TessellationFactorTriangleSize: 100
+    - _TessellationFactorTriangleSize: 1
     - _TessellationHeight: 1
     - _TessellationMaxDisplacement: 0.01
-    - _TessellationMode: 0
-    - _TessellationShapeFactor: 0.75
+    - _TessellationMode: 1
+    - _TessellationObjectScale: 1
+    - _TessellationShapeFactor: 1
+    - _TessellationTilingScale: 1
     - _TexWorldScale: 1
     - _TexWorldScaleEmissive: 1
-    - _Thickness: -0.04
-    - _ThicknessPower: 0.8
-    - _TireTiling: 1
+    - _Thickness: 1
     - _TransmissionEnable: 1
     - _TransmissionMask: 1
     - _TransparentBackfaceEnable: 0
@@ -422,8 +321,7 @@ Material:
     - _TransparentWritingMotionVec: 0
     - _TransparentZWrite: 0
     - _TreadTiling: 1
-    - _TreadWear: 0
-    - _TreadWearStrength: 0.182
+    - _TreadWear: 0.982
     - _UVBase: 0
     - _UVDetail: 0
     - _UVEmissive: 0
@@ -435,62 +333,31 @@ Material:
     - _ZTestGBuffer: 4
     - _ZTestTransparent: 4
     - _ZWrite: 1
-    - _a: -0.4
-    - _b: 1
-    - _bandWidth: 1
-    - _dirt_radius: 8.85
-    - _edge1: -1.51
-    - _edge2: -1.54
-    - _fade: 0
-    - _inner: 0
-    - _outer: 0
-    - _radscale: -0.3
-    - _ste: 0.88
-    - _testFloat1: 0.11
-    - _treadinner: 0
-    - _treadouter: 0
     m_Colors:
-    - _AORemap: {r: 0, g: 1, b: 0, a: 0}
-    - _AccentColor: {r: 1, g: 1, b: 1, a: 0}
-    - _BaseColor: {r: 0.26415092, g: 0.26415092, b: 0.26415092, a: 1}
+    - _BaseColor: {r: 0.41885525, g: 0.41885525, b: 0.41885525, a: 1}
     - _BaseColorMap_MipInfo: {r: 0, g: 0, b: 0, a: 0}
-    - _BrandingColor: {r: 0, g: 0.017612565, b: 0.3962264, a: 1}
-    - _BrandingMetallicRemap: {r: 0, g: 1, b: 0, a: 0}
-    - _BrandingSmoothnessRemap: {r: 0, g: 1, b: 0, a: 0}
-    - _Color: {r: 0.2641509, g: 0.2641509, b: 0.2641509, a: 1}
+    - _Color: {r: 0.41885522, g: 0.41885522, b: 0.41885522, a: 1}
     - _DiffusionProfileAsset: {r: 0, g: 0, b: 0, a: 0}
     - _DoubleSidedConstants: {r: 1, g: 1, b: -1, a: 0}
     - _EmissionColor: {r: 1, g: 1, b: 1, a: 1}
     - _EmissiveColor: {r: 0, g: 0, b: 0, a: 0}
     - _EmissiveColorLDR: {r: 0, g: 0, b: 0, a: 1}
-    - _EmissiveHeightMapColor: {r: 0, g: 0, b: 0, a: 0}
-    - _EmissivePatternMapColor: {r: 0, g: 0, b: 0, a: 0}
-    - _EmissiveStickerMapColor: {r: 0, g: 0, b: 0, a: 0}
-    - _GrungeColor: {r: 0, g: 0, b: 0, a: 0}
-    - _GrungeOffset: {r: 0, g: 0, b: 0, a: 0}
-    - _GrungeTiling: {r: 1, g: 1, b: 0, a: 0}
     - _InvPrimScale: {r: 1, g: 1, b: 0, a: 0}
     - _IridescenceThicknessRemap: {r: 0, g: 1, b: 0, a: 0}
-    - _MetallicRemap: {r: 0, g: 1, b: 0, a: 0}
-    - _MudColor: {r: 0.566, g: 0.43334374, b: 0.3360625, a: 1}
+    - _MudColor: {r: 0.5659999, g: 0.43328974, b: 0.33600852, a: 1}
     - _PatternOverlayColor: {r: 1, g: 1, b: 1, a: 0}
-    - _PatternOverlayOffset: {r: 0, g: 0, b: 0, a: 0}
-    - _PatternOverlayTiling: {r: 1, g: 1, b: 0, a: 0}
-    - _SideWallColor: {r: 0, g: 0, b: 0, a: 0}
-    - _SidewallColor: {r: 0.61134267, g: 0.6320754, b: 0.45020467, a: 1}
-    - _SidewallNormalTiling: {r: 1, g: 1, b: 0, a: 0}
-    - _SmoothnessRemap: {r: 0, g: 1.2, b: 0, a: 0}
+    - _SidewallColor: {r: 0.6113426, g: 0.6320754, b: 0.45020467, a: 1}
     - _SpecularColor: {r: 1, g: 1, b: 1, a: 1}
-    - _StickerColor: {r: 0.13397168, g: 0.13397168, b: 0.13397168, a: 1}
+    - _StickerColor: {r: 0.8415094, g: 0.8415094, b: 0.8415094, a: 1}
     - _StickerOffset: {r: 0, g: 0, b: 0, a: 0}
     - _ThicknessRemap: {r: 0, g: 1, b: 0, a: 0}
     - _TransmittanceColor: {r: 1, g: 1, b: 1, a: 1}
-    - _TreadColor: {r: 0, g: 0, b: 0, a: 0}
-    - _TreadWearColor: {r: 0.7924528, g: 0.5258294, b: 0.16073336, a: 0}
+    - _TreadWearColor: {r: 0.7509433, g: 0.7509433, b: 0.7509433, a: 0}
     - _UVDetailsMappingMask: {r: 1, g: 0, b: 0, a: 0}
     - _UVMappingMask: {r: 1, g: 0, b: 0, a: 0}
     - _UVMappingMaskEmissive: {r: 1, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!114 &9089912708599149171
 MonoBehaviour:
   m_ObjectHideFlags: 11

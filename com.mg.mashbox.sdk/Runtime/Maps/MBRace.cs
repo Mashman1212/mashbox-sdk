@@ -152,6 +152,28 @@ namespace MashBoxSDK.Maps
             onStarted?.Invoke();
         }
 
+        /// <summary>
+        /// Starts the timed portion of this race without consuming its first gate.
+        /// Multiplayer activities use this to synchronize a teammate to a race
+        /// that another rider has just initiated.
+        /// </summary>
+        public bool InitiateRace()
+        {
+            if (!MBGameplayStateGuard.IsGameplayActive || completed || isRaceTimerStarted)
+                return false;
+
+            isRaceTimerStarted = true;
+            StartRace();
+            // A synchronized team-race start activates this rider's course without
+            // consuming their start gate. Refresh visibility from the initiated
+            // state; gate progression still advances only through HandleGatePassed.
+            UpdateGateVisibility(GetOrderedGates());
+            Initiated?.Invoke();
+            OnInitiated?.Invoke();
+            onInitiated?.Invoke();
+            return true;
+        }
+
         public void Stage()
         {
             activeGateIndex = 0;
@@ -303,13 +325,7 @@ namespace MashBoxSDK.Maps
                 return;
 
             if (!isRaceTimerStarted)
-            {
-                isRaceTimerStarted = true;
-                StartRace();
-                Initiated?.Invoke();
-                OnInitiated?.Invoke();
-                onInitiated?.Invoke();
-            }
+                InitiateRace();
 
             activeGateIndex = Mathf.Min(activeGateIndex + 1, gates.Count);
 

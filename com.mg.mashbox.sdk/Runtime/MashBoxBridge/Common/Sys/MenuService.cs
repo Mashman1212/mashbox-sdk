@@ -361,9 +361,17 @@ namespace MashBoxBridge.Common.Sys
             }
         }
 
-        public static void TryCloseGameplay(IMenu menu)
+        public static bool IsGameplayMenuOnStack(IMenu menu)
         {
-            if (BlockUndo || menu == null) return;
+            if (menu == null) return false;
+            CleanupDeadEntries();
+            return stack_GameplayMenus != null &&
+                   stack_GameplayMenus.Any(candidate => ReferenceEquals(candidate, menu));
+        }
+
+        public static bool TryCloseGameplay(IMenu menu, bool undoCommandStack = true)
+        {
+            if (BlockUndo || menu == null) return false;
             CleanupDeadEntries();
 
             if (stack_GameplayMenus != null && stack_GameplayMenus.Count > 0)
@@ -371,10 +379,15 @@ namespace MashBoxBridge.Common.Sys
                 if (ReferenceEquals(stack_GameplayMenus.Peek(), menu))
                 {
                     CloseMenuGameplay();
-                    Debug.Log("[MenuService] CommandSystemServiceHandler.UndoGameplayStack()");
-                    CommandSystemServiceHandler.UndoGameplayStack();
+                    if (undoCommandStack)
+                    {
+                        Debug.Log("[MenuService] CommandSystemServiceHandler.UndoGameplayStack()");
+                        CommandSystemServiceHandler.UndoGameplayStack();
+                    }
+                    return true;
                 }
             }
+            return false;
         }
 
         // ---------- Reset / Force close ----------
