@@ -4775,6 +4775,9 @@ namespace MashBoxSDK.MapTools
             if (!EnsureCorrectUnityVersionForPublishing(currentGame))
                 return;
 
+            if (!GameTargetPublishWarning.ConfirmIfGameIsNotInstalled(currentGame))
+                return;
+
             PublishPlatformSelectionPopup.Show(
                 this,
                 currentGame,
