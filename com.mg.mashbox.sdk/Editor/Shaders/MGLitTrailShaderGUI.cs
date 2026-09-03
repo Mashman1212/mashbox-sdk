@@ -39,6 +39,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 : AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
         }
 
+        internal static string GetLinkedMaterialGuid(Material material)
+        {
+            return material != null
+                ? material.GetTag(LinkedMaterialTag, false, string.Empty)
+                : string.Empty;
+        }
+
         internal static void SetUsesLinkedMaterial(Material material, bool enabled)
         {
             if (material == null || UsesLinkedMaterial(material) == enabled)
@@ -48,6 +55,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             if (enabled)
                 material.SetOverrideTag("MashBox.MGLitTrail.UseSharedArrays", string.Empty);
             EditorUtility.SetDirty(material);
+
+            MGLitTrailLinkedMaterialSynchronizer.Track(material);
 
             if (enabled)
                 Synchronize(material);
@@ -65,6 +74,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 LinkedMaterialTag,
                 !string.IsNullOrEmpty(path) ? AssetDatabase.AssetPathToGUID(path) : string.Empty);
             EditorUtility.SetDirty(material);
+            MGLitTrailLinkedMaterialSynchronizer.Track(material);
             return linkedMaterial == null || Synchronize(material);
         }
 
@@ -214,13 +224,51 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
     [InitializeOnLoad]
     internal static class MGLitTrailLinkedMaterialSynchronizer
     {
+        private static readonly HashSet<Material> PendingMaterials = new();
+        private static readonly Dictionary<string, HashSet<Material>> DependentsBySourceGuid =
+            new(System.StringComparer.Ordinal);
+        private static readonly Dictionary<Material, string> SourceGuidByDependent = new();
         private static bool synchronizationQueued;
         private static bool isSynchronizing;
 
         static MGLitTrailLinkedMaterialSynchronizer()
         {
-            EditorApplication.projectChanged += QueueSynchronization;
             Undo.postprocessModifications += OnPostprocessModifications;
+            EditorApplication.delayCall += IndexLoadedMaterials;
+        }
+
+        internal static void Track(Material material)
+        {
+            if (material == null)
+                return;
+
+            if (SourceGuidByDependent.TryGetValue(material, out string previousSourceGuid))
+            {
+                if (DependentsBySourceGuid.TryGetValue(previousSourceGuid, out HashSet<Material> previousDependents))
+                {
+                    previousDependents.Remove(material);
+                    if (previousDependents.Count == 0)
+                        DependentsBySourceGuid.Remove(previousSourceGuid);
+                }
+
+                SourceGuidByDependent.Remove(material);
+            }
+
+            if (!MGLitTrailLinkedMaterialUtility.UsesLinkedMaterial(material))
+                return;
+
+            string sourceGuid = MGLitTrailLinkedMaterialUtility.GetLinkedMaterialGuid(material);
+            if (string.IsNullOrEmpty(sourceGuid))
+                return;
+
+            if (!DependentsBySourceGuid.TryGetValue(sourceGuid, out HashSet<Material> dependents))
+            {
+                dependents = new HashSet<Material>();
+                DependentsBySourceGuid.Add(sourceGuid, dependents);
+            }
+
+            dependents.Add(material);
+            SourceGuidByDependent.Add(material, sourceGuid);
         }
 
         internal static void SynchronizeAll()
@@ -236,7 +284,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     Material material = AssetDatabase.LoadAssetAtPath<Material>(
                         AssetDatabase.GUIDToAssetPath(guid));
                     if (MGLitTrailLinkedMaterialUtility.UsesLinkedMaterial(material))
+                    {
+                        Track(material);
                         MGLitTrailLinkedMaterialUtility.Synchronize(material);
+                    }
                 }
             }
             finally
@@ -250,27 +301,119 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         {
             foreach (UndoPropertyModification modification in modifications)
             {
-                if (modification.currentValue?.target is Material)
-                {
-                    QueueSynchronization();
-                    break;
-                }
+                if (modification.currentValue?.target is Material material)
+                    QueueSynchronization(material);
             }
 
             return modifications;
         }
 
-        private static void QueueSynchronization()
+        internal static void QueueSynchronization(Material material)
         {
-            if (synchronizationQueued || isSynchronizing)
+            if (material == null || isSynchronizing)
+                return;
+
+            PendingMaterials.Add(material);
+            if (synchronizationQueued)
                 return;
 
             synchronizationQueued = true;
-            EditorApplication.delayCall += () =>
+            EditorApplication.delayCall += SynchronizePending;
+        }
+
+        private static void SynchronizePending()
+        {
+            synchronizationQueued = false;
+            if (isSynchronizing || PendingMaterials.Count == 0)
+                return;
+
+            var changedMaterials = new List<Material>(PendingMaterials);
+            PendingMaterials.Clear();
+
+            isSynchronizing = true;
+            try
             {
-                synchronizationQueued = false;
-                SynchronizeAll();
-            };
+                var changedGuids = new Queue<string>();
+                var visitedGuids = new HashSet<string>(System.StringComparer.Ordinal);
+
+                foreach (Material material in changedMaterials)
+                {
+                    if (material == null)
+                        continue;
+
+                    Track(material);
+                    if (MGLitTrailLinkedMaterialUtility.UsesLinkedMaterial(material))
+                        MGLitTrailLinkedMaterialUtility.Synchronize(material);
+
+                    EnqueueAssetGuid(material, changedGuids, visitedGuids);
+                }
+
+                while (changedGuids.Count > 0)
+                {
+                    string changedGuid = changedGuids.Dequeue();
+                    if (!DependentsBySourceGuid.TryGetValue(changedGuid, out HashSet<Material> dependents))
+                        continue;
+
+                    // Synchronization and inspector changes can update the index, so iterate a snapshot.
+                    var dependentSnapshot = new List<Material>(dependents);
+                    foreach (Material dependent in dependentSnapshot)
+                    {
+                        if (dependent == null)
+                            continue;
+
+                        Track(dependent);
+                        MGLitTrailLinkedMaterialUtility.Synchronize(dependent);
+                        EnqueueAssetGuid(dependent, changedGuids, visitedGuids);
+                    }
+                }
+            }
+            finally
+            {
+                isSynchronizing = false;
+            }
+        }
+
+        private static void EnqueueAssetGuid(
+            Material material,
+            Queue<string> changedGuids,
+            HashSet<string> visitedGuids)
+        {
+            string path = AssetDatabase.GetAssetPath(material);
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            string guid = AssetDatabase.AssetPathToGUID(path);
+            if (!string.IsNullOrEmpty(guid) && visitedGuids.Add(guid))
+                changedGuids.Enqueue(guid);
+        }
+
+        private static void IndexLoadedMaterials()
+        {
+            foreach (Material material in Resources.FindObjectsOfTypeAll<Material>())
+                Track(material);
+        }
+    }
+
+    internal sealed class MGLitTrailLinkedMaterialPostprocessor : AssetPostprocessor
+    {
+        private static void OnPostprocessAllAssets(
+            string[] importedAssets,
+            string[] deletedAssets,
+            string[] movedAssets,
+            string[] movedFromAssetPaths)
+        {
+            if (importedAssets == null)
+                return;
+
+            foreach (string path in importedAssets)
+            {
+                if (!path.EndsWith(".mat", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (material != null)
+                    MGLitTrailLinkedMaterialSynchronizer.QueueSynchronization(material);
+            }
         }
     }
 
@@ -427,7 +570,9 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         public override void ValidateMaterial(Material material)
         {
             SetDepthOffsetDisabled(material);
+            MGLitTrailLinkedMaterialSynchronizer.Track(material);
             MGLitTrailLinkedMaterialUtility.Synchronize(material);
+            MGLitTrailLinkedMaterialSynchronizer.QueueSynchronization(material);
             SynchronizeLayerTextureTransforms(material);
             MGLitTrailTextureArrayBuilder.AssignExistingArrays(material);
             base.ValidateMaterial(material);
@@ -442,7 +587,6 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             // Set this before HDRP draws/validates the material so its keywords and passes
             // are synchronized against the enforced value during the same inspector event.
             EnforceDepthOffsetDisabled(materialEditor.targets);
-            MGLitTrailLinkedMaterialUtility.Synchronize(material);
 
             EditorGUILayout.LabelField("MASHBOX • MG LIT TRAIL", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
