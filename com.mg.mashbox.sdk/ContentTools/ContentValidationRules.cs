@@ -21,7 +21,8 @@ namespace MashBoxSDK.ContentTools
             MG_Clothing,
             Griptape,
             MG_Tire,
-            MG_Chain
+            MG_Chain,
+            Grip
         }
         
         [Serializable]
@@ -192,6 +193,8 @@ namespace MashBoxSDK.ContentTools
                     return "MGShaders/HDRP/Lit/MG_Tire";
                 case ShaderType.MG_Chain:
                     return "MGShaders/HDRP/Lit/MG_Chain";
+                case ShaderType.Grip:
+                    return "MGShaders/HDRP/Lit/Grip";
                 case ShaderType.Null:
                     return null;
                 default:

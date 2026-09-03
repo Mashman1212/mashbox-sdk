@@ -38,7 +38,8 @@ namespace MashBoxSDK.Shaders
             LitBasicTriplane,
             LitAdvanced,
             LitAdvancedMonoSH,
-            EightBittPaintMaskAdvanced
+            EightBittPaintMaskAdvanced,
+            Grip
         }
 
         
@@ -577,6 +578,8 @@ namespace MashBoxSDK.Shaders
             }
         }
 
+        private static readonly Shader GripShader = Shader.Find("MGShaders/HDRP/Lit/Grip");
+
         
         public static void EnforceShaderOnChildren(ShaderType shaderType, GameObject go)
         {
@@ -628,6 +631,9 @@ namespace MashBoxSDK.Shaders
                             break;
                         case ShaderType.Griptape:
                             EnforceGriptapeShader(materials[i]);
+                            break;
+                        case ShaderType.Grip:
+                            EnforceGripShader(materials[i]);
                             break;
                     }
                 }
@@ -1172,6 +1178,11 @@ namespace MashBoxSDK.Shaders
             ApplyTemplateWithPreserve(mat, GriptapeTemplateMat, GriptapePreservedProperties);
             
             mat.shaderKeywords = GriptapeTemplateMat.shaderKeywords;
+        }
+
+        public static void EnforceGripShader(Material mat)
+        {
+            PrepareMaterialForShaderEnforcement(mat, GripShader);
         }
         
         private struct TextureData
