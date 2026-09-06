@@ -113,8 +113,8 @@ namespace MashBoxSDK.MapTools
         [SerializeField] private bool terrainConvertMesh = true;
         [SerializeField] private bool terrainAddMeshCollider = true;
         [SerializeField] private bool terrainExportSplatMaps = true;
-        [SerializeField] private bool terrainConvertTrees;
-        [SerializeField] private bool terrainConvertDetails;
+        [SerializeField] private bool terrainConvertTrees = true;
+        [SerializeField] private bool terrainConvertDetails = true;
         [SerializeField] private bool terrainDisableSource = true;
         [SerializeField] private int terrainMeshResolution = 513;
         [NonSerialized] private TerrainConversionSummary terrainConversionSummary;
@@ -137,6 +137,29 @@ namespace MashBoxSDK.MapTools
         public static void Open()
         {
             GetWindow<MashBoxMapToolsWindow>("MashBox Map Tools");
+        }
+
+        internal static void OpenAuthoringTool(MBEditorAuthoringMode mode)
+        {
+            MBEditorToolState.RequestMode(mode);
+            MBEditorToolState.ActiveEditing = true;
+
+            MashBoxMapToolsWindow window = GetWindow<MashBoxMapToolsWindow>("MashBox Map Tools");
+            window.EnsureInitialized();
+            window.currentToolTab = ToolTab.ArtTools;
+            window.authoringToolTab = (int)mode;
+            window.embeddedHostVisible = true;
+            EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)ToolTab.ArtTools);
+            EditorPrefs.SetString(PREF_KEY_MAP_TOOL_TAB_ORDER, "ArtToolsFirst");
+            window.UpdateAuthoringSceneToolState();
+
+            if (mode == MBEditorAuthoringMode.MeshSculpt)
+                window.authoringSculptTool?.UseSelection();
+
+            window.Show();
+            window.Focus();
+            window.Repaint();
+            SceneView.RepaintAll();
         }
 
         private static string GetObjectStableId(UnityEngine.Object obj)
@@ -1085,9 +1108,9 @@ namespace MashBoxSDK.MapTools
 
         private void DrawTerrainToolSection()
         {
-            EditorGUILayout.LabelField("Terrain to Mesh", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Unity Terrain to MG Terrain", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Create mesh-backed copies of one or more Unity Terrains and optionally export their splat weights, trees, and painted details. Source Terrains are never deleted.",
+                "Create shader-independent mesh terrains that use the MG Brush for vertex/control-map painting and GPU-instanced details and trees. Source Terrains are never deleted.",
                 MessageType.Info);
 
             terrainConversionSources ??= new List<Terrain>();
@@ -1152,25 +1175,23 @@ namespace MashBoxSDK.MapTools
             terrainConversionSummary ??= TerrainToMeshConverter.Analyze(targets);
             EditorGUILayout.Space(5f);
             EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
-            terrainConvertMesh = EditorGUILayout.ToggleLeft("Convert height field to mesh", terrainConvertMesh);
-            using (new EditorGUI.DisabledScope(!terrainConvertMesh))
-            {
-                int[] resolutionValues = { 129, 257, 513, 1025 };
-                string[] resolutionLabels = { "Up to 129 x 129", "Up to 257 x 257", "Up to 513 x 513", "Up to 1025 x 1025" };
-                int resolutionIndex = Mathf.Max(0, Array.IndexOf(resolutionValues, terrainMeshResolution));
-                resolutionIndex = EditorGUILayout.Popup(new GUIContent("Mesh Resolution", "Maximum samples on either terrain axis. The outer terrain edge is always retained."), resolutionIndex, resolutionLabels);
-                terrainMeshResolution = resolutionValues[resolutionIndex];
-                terrainAddMeshCollider = EditorGUILayout.ToggleLeft("Add Mesh Collider", terrainAddMeshCollider);
-            }
+            terrainConvertMesh = true;
+            terrainAddMeshCollider = true;
+            int[] resolutionValues = { 129, 257, 513, 1025 };
+            string[] resolutionLabels = { "Up to 129 x 129", "Up to 257 x 257", "Up to 513 x 513", "Up to 1025 x 1025" };
+            int resolutionIndex = Mathf.Max(0, Array.IndexOf(resolutionValues, terrainMeshResolution));
+            resolutionIndex = EditorGUILayout.Popup(new GUIContent("Mesh Resolution", "Maximum samples on either terrain axis. The outer terrain edge is always retained."), resolutionIndex, resolutionLabels);
+            terrainMeshResolution = resolutionValues[resolutionIndex];
+            EditorGUILayout.LabelField("Geometry", "MeshFilter + MeshRenderer + MeshCollider");
 
             terrainExportSplatMaps = EditorGUILayout.ToggleLeft(
                 $"Export splat maps ({terrainConversionSummary.SplatMapCount:N0} PNG{(terrainConversionSummary.SplatMapCount == 1 ? string.Empty : "s")})",
                 terrainExportSplatMaps);
             terrainConvertTrees = EditorGUILayout.ToggleLeft(
-                $"Convert painted trees to GameObjects ({terrainConversionSummary.TreeCount:N0})",
+                $"Transfer painted trees as GPU instances ({terrainConversionSummary.TreeCount:N0})",
                 terrainConvertTrees);
             terrainConvertDetails = EditorGUILayout.ToggleLeft(
-                $"Convert painted details to GameObjects ({terrainConversionSummary.DetailCount:N0})",
+                $"Transfer painted details as GPU instances ({terrainConversionSummary.DetailCount:N0})",
                 terrainConvertDetails);
             using (new EditorGUI.DisabledScope(!terrainConvertMesh))
                 terrainDisableSource = EditorGUILayout.ToggleLeft("Disable source Terrain after successful conversion", terrainDisableSource);
@@ -1182,29 +1203,23 @@ namespace MashBoxSDK.MapTools
                     : MessageType.Warning;
                 EditorGUILayout.HelpBox(
                     terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects
-                        ? $"Tree conversion is blocked above the {TerrainToMeshConverter.MaxTreeGameObjects:N0} GameObject safety cap."
-                        : "Trees become individual GameObjects. This can make the scene and Editor substantially slower.",
+                        ? $"Tree conversion is blocked above the {TerrainToMeshConverter.MaxTreeGameObjects:N0} serialized-instance safety cap."
+                        : "Trees are stored as lightweight MG Terrain instances and drawn in batches of up to 1,023 per draw call.",
                     type);
             }
 
             if (terrainConvertDetails)
             {
-                MessageType type = terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects
-                    ? MessageType.Error
-                    : MessageType.Warning;
                 EditorGUILayout.HelpBox(
-                    terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects
-                        ? $"Detail conversion is blocked above the {TerrainToMeshConverter.MaxDetailGameObjects:N0} GameObject safety cap."
-                        : "Painted details become individual GameObjects. Texture details use shared crossed-quad meshes; a future instancing system should replace these for production-scale grass.",
-                    type);
+                    "Painted details are preserved as compact density maps and expanded into GPU-instanced, camera-local chunks while rendering.",
+                    MessageType.Info);
             }
 
             bool hasOutput = terrainConvertMesh || terrainExportSplatMaps || terrainConvertTrees || terrainConvertDetails;
-            bool overCap = (terrainConvertTrees && terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects)
-                           || (terrainConvertDetails && terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects);
+            bool overCap = terrainConvertTrees && terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects;
             using (new EditorGUI.DisabledScope(!hasOutput || overCap))
             {
-                if (GUILayout.Button(targets.Count == 1 ? "Convert Terrain..." : $"Convert {targets.Count:N0} Terrains...", GUILayout.Height(38f)))
+                if (GUILayout.Button(targets.Count == 1 ? "Convert to MG Terrain..." : $"Convert {targets.Count:N0} to MG Terrains...", GUILayout.Height(38f)))
                     ConvertSelectedTerrains(targets);
             }
         }
@@ -1223,8 +1238,7 @@ namespace MashBoxSDK.MapTools
                 MaximumMeshResolution = terrainMeshResolution
             };
 
-            if ((options.ConvertTrees && terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects)
-                || (options.ConvertDetails && terrainConversionSummary.DetailCount > TerrainToMeshConverter.MaxDetailGameObjects))
+            if (options.ConvertTrees && terrainConversionSummary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects)
             {
                 EditorUtility.DisplayDialog(
                     "Terrain Conversion Safety Cap",
@@ -1236,8 +1250,8 @@ namespace MashBoxSDK.MapTools
             if (!TerrainToMeshConverter.ConfirmLargeGameObjectConversions(terrainConversionSummary, options))
                 return;
 
-            string defaultFolderName = targets.Count == 1 ? targets[0].name + "_Converted" : "Terrain_Conversions";
-            string absoluteFolder = EditorUtility.SaveFolderPanel("Choose Terrain Conversion Asset Folder", "Assets", defaultFolderName);
+            string defaultFolderName = targets.Count == 1 ? targets[0].name + "_MGTerrain" : "MG_Terrains";
+            string absoluteFolder = EditorUtility.SaveFolderPanel("Choose MG Terrain Asset Folder", "Assets", defaultFolderName);
             if (string.IsNullOrEmpty(absoluteFolder))
                 return;
 
@@ -6827,6 +6841,80 @@ namespace MashBoxSDK.MapTools
                 }
 
                 GUI.enabled = true;
+            }
+        }
+    }
+}
+
+namespace MashBoxSDK.MapTools
+{
+    /// <summary>
+    /// Unity 6 can leave an unlocked Inspector window's private tracker stale
+    /// after embedded Scene authoring tools handle a selection notification.
+    /// Rebuild the tracker owned by each real Inspector window on the following
+    /// editor tick. Switching Debug/Normal does the same rebuild manually.
+    /// </summary>
+    [InitializeOnLoad]
+    internal static class MBInspectorSelectionRefresh
+    {
+        private static readonly Type InspectorWindowType =
+            typeof(EditorWindow).Assembly.GetType("UnityEditor.InspectorWindow");
+        private static readonly System.Reflection.BindingFlags TrackerBindingFlags =
+            System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.Public
+            | System.Reflection.BindingFlags.NonPublic;
+        private static readonly System.Reflection.PropertyInfo TrackerProperty =
+            InspectorWindowType?.GetProperty("tracker", TrackerBindingFlags);
+        private static readonly System.Reflection.FieldInfo TrackerField =
+            InspectorWindowType?.GetField("m_Tracker", TrackerBindingFlags);
+        private static readonly System.Reflection.MethodInfo SelectionChangeMethod =
+            InspectorWindowType?.GetMethod("OnSelectionChange", TrackerBindingFlags);
+        private static bool refreshQueued;
+
+        static MBInspectorSelectionRefresh()
+        {
+            Selection.selectionChanged -= QueueRefresh;
+            Selection.selectionChanged += QueueRefresh;
+        }
+
+        private static void QueueRefresh()
+        {
+            if (refreshQueued)
+                return;
+
+            refreshQueued = true;
+            EditorApplication.delayCall += RefreshUnlockedInspectors;
+        }
+
+        private static void RefreshUnlockedInspectors()
+        {
+            EditorApplication.delayCall -= RefreshUnlockedInspectors;
+            refreshQueued = false;
+            if (InspectorWindowType == null)
+                return;
+
+            UnityEngine.Object[] inspectorWindows = Resources.FindObjectsOfTypeAll(InspectorWindowType);
+            for (int index = 0; index < inspectorWindows.Length; index++)
+            {
+                UnityEngine.Object inspectorWindow = inspectorWindows[index];
+                try
+                {
+                    // Replay the EditorWindow selection message after every
+                    // authoring callback has completed, then rebuild that
+                    // window's tracker (not ActiveEditorTracker.sharedTracker).
+                    SelectionChangeMethod?.Invoke(inspectorWindow, null);
+                    ActiveEditorTracker tracker = TrackerProperty?.GetValue(inspectorWindow) as ActiveEditorTracker
+                        ?? TrackerField?.GetValue(inspectorWindow) as ActiveEditorTracker;
+                    if (tracker != null && !tracker.isLocked)
+                        tracker.ForceRebuild();
+                    if (inspectorWindow is EditorWindow editorWindow)
+                        editorWindow.Repaint();
+                }
+                catch (System.Reflection.TargetInvocationException)
+                {
+                    // A closing Inspector can disappear between discovery and
+                    // the delayed callback. The next selection will retry it.
+                }
             }
         }
     }

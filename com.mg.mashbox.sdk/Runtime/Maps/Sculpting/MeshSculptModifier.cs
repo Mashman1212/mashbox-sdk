@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using MashBoxSDK.Maps.Spline;
+using MashBoxSDK.Maps.TerrainSystem;
 using UnityEngine;
 
 namespace MashBoxSDK.Maps.Sculpting
@@ -152,6 +153,8 @@ namespace MashBoxSDK.Maps.Sculpting
                 collider.sharedMesh = m_Target.sharedMesh;
             }
 
+            ConformTerrainInstancesForLatestStroke();
+
             UVSpline uvSpline = m_LinkedLoft != null ? m_LinkedLoft.GeneratedUvSpline : null;
             if (uvSpline != null && (m_LinkedLoft.GenerateUvSplineWithLoft || uvSpline.OutputMesh != null))
             {
@@ -215,12 +218,22 @@ namespace MashBoxSDK.Maps.Sculpting
                 collider.sharedMesh = null;
                 collider.sharedMesh = mesh;
             }
+
+            if (updateCollider)
+                ConformTerrainInstances();
         }
 
         void ApplyStroke(Vector3[] vertices, Mesh mesh, Stroke stroke)
         {
             if (stroke == null || stroke.radius <= Mathf.Epsilon) return;
             Transform targetTransform = m_Target.transform;
+            MGTerrain terrain = m_Target.GetComponent<MGTerrain>()
+                ?? m_Target.GetComponentInParent<MGTerrain>();
+            if (terrain != null && terrain.HeightOnlySculpt)
+            {
+                ApplyHeightOnlyStroke(vertices, mesh, stroke, targetTransform);
+                return;
+            }
             Vector3 center = stroke.space == StrokeSpace.World ? stroke.position : targetTransform.TransformPoint(stroke.position);
             Vector3 direction = stroke.space == StrokeSpace.World ? stroke.direction.normalized : targetTransform.TransformDirection(stroke.direction).normalized;
             Vector3[] before = stroke.mode == SculptMode.Smooth ? (Vector3[])vertices.Clone() : null;
@@ -249,6 +262,74 @@ namespace MashBoxSDK.Maps.Sculpting
 
                 vertices[i] = targetTransform.InverseTransformPoint(world);
             }
+        }
+
+        void ApplyHeightOnlyStroke(Vector3[] vertices, Mesh mesh, Stroke stroke, Transform targetTransform)
+        {
+            Vector3 worldCenter = stroke.space == StrokeSpace.World
+                ? stroke.position
+                : targetTransform.TransformPoint(stroke.position);
+            Vector3 localCenter = targetTransform.InverseTransformPoint(worldCenter);
+            Vector3[] before = stroke.mode == SculptMode.Smooth ? (Vector3[])vertices.Clone() : null;
+            if (stroke.mode == SculptMode.Smooth && m_Neighbours == null)
+                BuildNeighbours(mesh);
+
+            float worldUnitsPerLocalY = targetTransform.TransformVector(Vector3.up).magnitude;
+            float localStrength = stroke.strength / Mathf.Max(0.00001f, worldUnitsPerLocalY);
+            for (int index = 0; index < vertices.Length; index++)
+            {
+                Vector3 planarDelta = vertices[index] - localCenter;
+                planarDelta.y = 0f;
+                float distance = targetTransform.TransformVector(planarDelta).magnitude;
+                if (distance >= stroke.radius)
+                    continue;
+                float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff);
+                Vector3 vertex = vertices[index];
+
+                if (stroke.mode == SculptMode.Displace)
+                    vertex.y += localStrength * influence;
+                else if (stroke.mode == SculptMode.Noise)
+                    vertex.y += SignedNoise(stroke.noiseSeed, index) * Mathf.Abs(localStrength) * influence;
+                else if (stroke.mode == SculptMode.Flatten)
+                    vertex.y = Mathf.Lerp(vertex.y, localCenter.y, Mathf.Clamp01(Mathf.Abs(stroke.strength) * influence));
+                else if (m_Neighbours != null && m_Neighbours[index].Count > 0)
+                {
+                    float averageHeight = 0f;
+                    for (int neighbour = 0; neighbour < m_Neighbours[index].Count; neighbour++)
+                        averageHeight += before[m_Neighbours[index][neighbour]].y;
+                    averageHeight /= m_Neighbours[index].Count;
+                    vertex.y = Mathf.Lerp(vertex.y, averageHeight, Mathf.Clamp01(Mathf.Abs(stroke.strength) * influence));
+                }
+
+                // X/Z intentionally remain untouched: an MG Terrain is always a
+                // height field even when the shared sculpt tool is used on it.
+                vertices[index] = vertex;
+            }
+        }
+
+        void ConformTerrainInstances()
+        {
+            if (m_Target == null)
+                return;
+            MGTerrain terrain = m_Target.GetComponent<MGTerrain>()
+                ?? m_Target.GetComponentInParent<MGTerrain>();
+            if (terrain != null)
+                terrain.ConformInstancesToSurface();
+        }
+
+        void ConformTerrainInstancesForLatestStroke()
+        {
+            if (m_Target == null || m_Strokes.Count == 0)
+                return;
+            MGTerrain terrain = m_Target.GetComponent<MGTerrain>()
+                ?? m_Target.GetComponentInParent<MGTerrain>();
+            if (terrain == null)
+                return;
+            Stroke stroke = m_Strokes[m_Strokes.Count - 1];
+            Vector3 center = stroke.space == StrokeSpace.World
+                ? stroke.position
+                : m_Target.transform.TransformPoint(stroke.position);
+            terrain.ConformInstancesToSurface(center, stroke.radius);
         }
 
         static float SignedNoise(int seed, int vertexIndex)

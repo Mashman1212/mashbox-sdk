@@ -259,8 +259,8 @@ namespace MashBoxSDK.MapTools
     [Overlay(typeof(SceneView), "MashBox Mappy", true)]
     public sealed class MBGameplayGizmoOverlay : ToolbarOverlay
     {
-        internal const float PanelWidth = 171f;
-        internal const float RowHeadingWidth = 54f;
+        internal const float PanelWidth = 220f;
+        internal const float RowHeadingWidth = 72f;
 
         static Texture2D s_CollapsedIcon;
 
@@ -299,6 +299,17 @@ namespace MashBoxSDK.MapTools
             var displayRow = CreateRow("Display", out VisualElement displayContent);
             displayContent.Add(new MBGameplayGizmoToggle());
             root.Add(displayRow);
+
+            var timeOfDayRow = CreateRow("Time of Day", out VisualElement timeOfDayContent);
+            timeOfDayContent.Add(new MBTimeOfDaySlider());
+            root.Add(timeOfDayRow);
+
+            var sunAzimuthRow = CreateRow("Sun Azimuth", out VisualElement sunAzimuthContent);
+            sunAzimuthContent.Add(new MBSunAzimuthSlider());
+            root.Add(sunAzimuthRow);
+            var sunLightRow = CreateRow("Sun Light", out VisualElement sunLightContent);
+            sunLightContent.Add(new MBSunLightToggle());
+            root.Add(sunLightRow);
 
             var editingRow = CreateRow("Editing", out VisualElement editingContent);
             editingContent.Add(new MBActiveEditingToggle());
@@ -535,6 +546,253 @@ namespace MashBoxSDK.MapTools
                     }
                 }
             }
+        }
+    }
+
+    internal static class MBSunLightUtility
+    {
+        internal static Light FindSun()
+        {
+            if (IsDirectional(RenderSettings.sun))
+                return RenderSettings.sun;
+
+            GameObject selected = Selection.activeGameObject;
+            if (selected != null)
+            {
+                Light selectedLight = selected.GetComponent<Light>();
+                if (IsDirectional(selectedLight))
+                    return selectedLight;
+            }
+
+            Light bestMatch = null;
+            foreach (Light light in Object.FindObjectsByType<Light>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (!IsDirectional(light))
+                    continue;
+
+                if (light.name.IndexOf("[BAKERY] Directional Light", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return light;
+
+                if (bestMatch == null || light.intensity > bestMatch.intensity)
+                    bestMatch = light;
+            }
+
+            return bestMatch;
+        }
+
+        internal static void SetRotation(Light light, float pitch, float yaw, string undoName)
+        {
+            if (light == null)
+                return;
+
+            Undo.RecordObject(light.transform, undoName);
+            light.transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
+            EditorUtility.SetDirty(light.transform);
+            SceneView.RepaintAll();
+        }
+
+        internal static float GetPitch(Light light)
+        {
+            Vector3 forward = light.transform.forward;
+            Vector3 up = light.transform.up;
+            return Mathf.Atan2(-forward.y, up.y) * Mathf.Rad2Deg;
+        }
+
+        internal static float GetAzimuth(Light light)
+        {
+            Vector3 right = light.transform.right;
+            return Mathf.Repeat(Mathf.Atan2(-right.z, right.x) * Mathf.Rad2Deg, 360f);
+        }
+
+        static bool IsDirectional(Light light)
+        {
+            return light != null && light.type == LightType.Directional && light.gameObject.scene.IsValid();
+        }
+    }
+
+    public sealed class MBSunLightToggle : Toggle
+    {
+        public MBSunLightToggle()
+        {
+            tooltip = "Enable or disable the same directional light controlled by Time of Day and Sun Azimuth. Does not remove baked lighting.";
+            this.RegisterValueChangedCallback(evt =>
+            {
+                Light sun = MBSunLightUtility.FindSun();
+                if (sun == null) { Sync(); return; }
+                Undo.RecordObject(sun, "Toggle Sun Light");
+                sun.enabled = evt.newValue;
+                PrefabUtility.RecordPrefabInstancePropertyModifications(sun);
+                EditorUtility.SetDirty(sun);
+                if (!Application.isPlaying && sun.gameObject.scene.IsValid())
+                    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(sun.gameObject.scene);
+                SceneView.RepaintAll();
+                Sync();
+            });
+            RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                Selection.selectionChanged += Sync;
+                EditorApplication.hierarchyChanged += Sync;
+                Undo.undoRedoPerformed += Sync;
+                Sync();
+            });
+            RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                Selection.selectionChanged -= Sync;
+                EditorApplication.hierarchyChanged -= Sync;
+                Undo.undoRedoPerformed -= Sync;
+            });
+            schedule.Execute(Sync).Every(500);
+            Sync();
+        }
+
+        void Sync()
+        {
+            Light sun = MBSunLightUtility.FindSun();
+            SetEnabled(sun != null);
+            SetValueWithoutNotify(sun != null && sun.enabled);
+            text = sun == null ? "No sun" : sun.enabled ? "On" : "Off";
+        }
+    }
+
+    public abstract class MBSunRotationSlider : VisualElement
+    {
+        readonly SliderInt m_Slider;
+        readonly Label m_ValueLabel;
+        bool m_IsSyncing;
+
+        protected MBSunRotationSlider(int minimum, int maximum, string tooltipText)
+        {
+            tooltip = tooltipText;
+            style.flexDirection = FlexDirection.Row;
+            style.alignItems = Align.Center;
+            style.flexGrow = 1f;
+            style.minWidth = 0f;
+            style.marginRight = 2f;
+
+            m_Slider = new SliderInt(minimum, maximum);
+            m_Slider.style.flexGrow = 1f;
+            m_Slider.style.minWidth = 50f;
+            m_Slider.RegisterValueChangedCallback(OnSliderChanged);
+            Add(m_Slider);
+
+            m_ValueLabel = new Label();
+            m_ValueLabel.style.width = 42f;
+            m_ValueLabel.style.minWidth = 42f;
+            m_ValueLabel.style.marginLeft = 4f;
+            m_ValueLabel.style.unityTextAlign = TextAnchor.MiddleRight;
+            Add(m_ValueLabel);
+
+            RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                Selection.selectionChanged += Sync;
+                EditorApplication.hierarchyChanged += Sync;
+                Undo.undoRedoPerformed += Sync;
+                Sync();
+            });
+            RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                Selection.selectionChanged -= Sync;
+                EditorApplication.hierarchyChanged -= Sync;
+                Undo.undoRedoPerformed -= Sync;
+            });
+            Sync();
+        }
+
+        protected abstract int ReadValue(Light light);
+        protected abstract void ApplyValue(Light light, int value);
+        protected abstract string FormatValue(int value);
+
+        void OnSliderChanged(ChangeEvent<int> changeEvent)
+        {
+            if (m_IsSyncing)
+                return;
+
+            Light light = MBSunLightUtility.FindSun();
+            if (light == null)
+            {
+                Sync();
+                return;
+            }
+
+            ApplyValue(light, changeEvent.newValue);
+            m_ValueLabel.text = FormatValue(changeEvent.newValue);
+        }
+
+        void Sync()
+        {
+            Light light = MBSunLightUtility.FindSun();
+            bool foundLight = light != null;
+            SetEnabled(foundLight);
+
+            m_IsSyncing = true;
+            int value = foundLight ? ReadValue(light) : 0;
+            m_Slider.SetValueWithoutNotify(value);
+            m_ValueLabel.text = foundLight ? FormatValue(value) : "No sun";
+            m_IsSyncing = false;
+        }
+    }
+
+    public sealed class MBTimeOfDaySlider : MBSunRotationSlider
+    {
+        const int StepsPerDay = 96;
+        const float DegreesPerStep = 360f / StepsPerDay;
+
+        public MBTimeOfDaySlider() : base(
+            0,
+            StepsPerDay - 1,
+            "Rotate the scene's directional light through a 24-hour day in 15-minute steps.")
+        {
+        }
+
+        protected override int ReadValue(Light light)
+        {
+            float timeDegrees = Mathf.Repeat(MBSunLightUtility.GetPitch(light) + 90f, 360f);
+            return Mathf.RoundToInt(timeDegrees / DegreesPerStep) % StepsPerDay;
+        }
+
+        protected override void ApplyValue(Light light, int value)
+        {
+            float pitch = value * DegreesPerStep - 90f;
+            MBSunLightUtility.SetRotation(
+                light,
+                pitch,
+                MBSunLightUtility.GetAzimuth(light),
+                "Change Sun Time of Day");
+        }
+
+        protected override string FormatValue(int value)
+        {
+            int totalMinutes = value * 15;
+            return string.Format("{0:00}:{1:00}", totalMinutes / 60, totalMinutes % 60);
+        }
+    }
+
+    public sealed class MBSunAzimuthSlider : MBSunRotationSlider
+    {
+        public MBSunAzimuthSlider() : base(
+            0,
+            359,
+            "Set the sun azimuth: its horizontal compass direction (the directional light's Y rotation).")
+        {
+        }
+
+        protected override int ReadValue(Light light)
+        {
+            return Mathf.RoundToInt(MBSunLightUtility.GetAzimuth(light)) % 360;
+        }
+
+        protected override void ApplyValue(Light light, int value)
+        {
+            MBSunLightUtility.SetRotation(
+                light,
+                MBSunLightUtility.GetPitch(light),
+                value,
+                "Change Sun Azimuth");
+        }
+
+        protected override string FormatValue(int value)
+        {
+            return value + "\u00b0";
         }
     }
 

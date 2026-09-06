@@ -6,6 +6,7 @@ using System.Linq;
 using MashBoxSDK.Maps;
 using MashBoxSDK.Maps.Painting;
 using MashBoxSDK.Maps.Spline;
+using MashBoxSDK.Maps.TerrainSystem;
 using MashBoxSDK.SDKMain;
 
 namespace MashBoxSDK.MapTools
@@ -41,6 +42,9 @@ namespace MashBoxSDK.MapTools
         private bool randomizeRotationY = true;
         private float scatterDensity = 0.5f;
         private float yOffset = 0f;
+        [SerializeField] private MGTerrain.InstanceKind mgTerrainInstanceKind = MGTerrain.InstanceKind.Detail;
+        [SerializeField] private bool paintMGTerrainDensityDetails;
+        [SerializeField] private int mgTerrainDensityLayerIndex;
 
         // --- Painter Settings ---
         private enum UVChannel { UV0 = 0, UV1 = 1, UV2 = 2, UV3 = 3 }
@@ -381,7 +385,6 @@ namespace MashBoxSDK.MapTools
         private int paintUndoGroup = -1;
         private bool hasLastLoftPaintPoint;
         private Vector3 lastLoftPaintPoint;
-        private bool clearingVisualSelection;
         private UnityEngine.Object[] lastVisualEditingSelection = System.Array.Empty<UnityEngine.Object>();
         private GameObject splatHoverCandidate;
 
@@ -454,7 +457,7 @@ namespace MashBoxSDK.MapTools
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
             Selection.selectionChanged -= OnVisualEditingSelectionChanged;
             Selection.selectionChanged += OnVisualEditingSelectionChanged;
-            ClearSelectionForVertexPainting();
+            RememberVertexPaintSelection();
         }
 
         public void DeactivateSceneTool()
@@ -554,7 +557,7 @@ namespace MashBoxSDK.MapTools
             EditorUtility.SetDirty(this);
             Repaint();
             SceneView.RepaintAll();
-            ClearSelectionForVertexPainting();
+            RememberVertexPaintSelection();
         }
 
         private void ClearPaintTargetsForModeExit()
@@ -584,24 +587,19 @@ namespace MashBoxSDK.MapTools
 
         private void OnVisualEditingSelectionChanged()
         {
-            ClearSelectionForVertexPainting();
+            RememberVertexPaintSelection();
         }
 
-        private void ClearSelectionForVertexPainting()
+        private void RememberVertexPaintSelection()
         {
-            if (clearingVisualSelection
-                || currentMode != ToolMode.Painter
+            if (currentMode != ToolMode.Painter
                 || Selection.objects == null
                 || Selection.objects.Length == 0)
             {
                 return;
             }
 
-            clearingVisualSelection = true;
             lastVisualEditingSelection = Selection.objects;
-            Selection.objects = System.Array.Empty<UnityEngine.Object>();
-            clearingVisualSelection = false;
-            SceneView.RepaintAll();
         }
 
         private void OnSharedBrushModeChanged()
@@ -780,6 +778,54 @@ namespace MashBoxSDK.MapTools
             randomizeRotationY = EditorGUILayout.Toggle("Randomize Rotation (Y)", randomizeRotationY);
             scaleRange = EditorGUILayout.Vector2Field("Scale Range (Min/Max)", scaleRange);
             if (scatterMode) scatterDensity = EditorGUILayout.Slider("Scatter Density", scatterDensity, 0.01f, 1f);
+            mgTerrainInstanceKind = (MGTerrain.InstanceKind)EditorGUILayout.EnumPopup(
+                new GUIContent(
+                    "MG Terrain Instance",
+                    "When the brush hits an MG Terrain, store the palette prefab as an instanced Detail or Tree instead of creating a GameObject."),
+                mgTerrainInstanceKind);
+
+            if (mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail)
+            {
+                paintMGTerrainDensityDetails = EditorGUILayout.Toggle(
+                    new GUIContent("Paint Density Layer", "Paint compact high-density grass data instead of adding individually serialized instances."),
+                    paintMGTerrainDensityDetails);
+                if (paintMGTerrainDensityDetails)
+                {
+                    MGTerrain selectedTerrain = Selection.activeGameObject != null
+                        ? Selection.activeGameObject.GetComponentInParent<MGTerrain>()
+                        : null;
+                    if (selectedTerrain != null && selectedTerrain.DensityDetailLayerCount > 0)
+                    {
+                        var layerNames = new string[selectedTerrain.DensityDetailLayerCount];
+                        for (int layerIndex = 0; layerIndex < layerNames.Length; layerIndex++)
+                        {
+                            MGTerrain.DensityDetailLayer layer = selectedTerrain.DensityDetailLayers[layerIndex];
+                            MGTerrain.Prototype prototype = layer != null && (uint)layer.PrototypeIndex < selectedTerrain.Prototypes.Count
+                                ? selectedTerrain.Prototypes[layer.PrototypeIndex]
+                                : null;
+                            string prototypeName = prototype != null && prototype.Prefab != null
+                                ? prototype.Prefab.name
+                                : prototype != null && prototype.Material != null ? prototype.Material.name : "Missing Prototype";
+                            layerNames[layerIndex] = $"{layerIndex}: {prototypeName}";
+                        }
+                        mgTerrainDensityLayerIndex = EditorGUILayout.Popup(
+                            "Density Layer",
+                            Mathf.Clamp(mgTerrainDensityLayerIndex, 0, layerNames.Length - 1),
+                            layerNames);
+                    }
+                    else
+                    {
+                        mgTerrainDensityLayerIndex = Mathf.Max(0, EditorGUILayout.IntField("Density Layer", mgTerrainDensityLayerIndex));
+                        EditorGUILayout.HelpBox("Select an MG Terrain to choose one of its imported density layers.", MessageType.None);
+                    }
+                }
+            }
+
+            EditorGUILayout.HelpBox(
+                paintMGTerrainDensityDetails && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail
+                    ? "The same Scene brush now adds grass density to the selected layer. Shift-drag removes density. No individual grass objects are serialized."
+                    : "On an MG Terrain this brush writes lightweight GPU instances. Shift-drag erases the selected palette prefab. Other surfaces keep the normal GameObject placement workflow.",
+                MessageType.None);
 
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField("Prefab Palette", EditorStyles.boldLabel);
@@ -1071,6 +1117,9 @@ namespace MashBoxSDK.MapTools
         {
             if (!hit.collider)
                 return null;
+
+            var mgTerrain = hit.collider.GetComponentInParent<MGTerrain>();
+            if (mgTerrain != null) return mgTerrain.MeshFilter != null ? mgTerrain.MeshFilter.gameObject : mgTerrain.gameObject;
 
             MultiSplineLoft loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
             if (loft != null)
@@ -1368,6 +1417,13 @@ namespace MashBoxSDK.MapTools
             if (!gameObject)
                 return false;
 
+            // MG Terrain is intrinsically paintable. It should work with the
+            // shared vertex/splat brush without a separate terrain paint mode or
+            // the Shift-click target-registration step used by arbitrary meshes.
+            if (gameObject.GetComponent<MGTerrain>() != null
+                || gameObject.GetComponentInParent<MGTerrain>() != null)
+                return true;
+
             for (int i = 0; i < paintTargets.Count; i++)
             {
                 GameObject target = paintTargets[i];
@@ -1433,6 +1489,9 @@ namespace MashBoxSDK.MapTools
             if (!hit.collider)
                 return null;
 
+            var terrain = hit.collider.GetComponentInParent<MGTerrain>();
+            if (terrain != null) return terrain.MeshFilter;
+
             if (TryGetMeshMicroBumpGenerator(hit.collider, out MicroBumpMeshColliderGenerator microBumpGenerator))
                 return microBumpGenerator.GetComponent<MeshFilter>();
 
@@ -1465,7 +1524,15 @@ namespace MashBoxSDK.MapTools
                 return loft.GeneratedMesh;
             }
 
-            editableMeshFilter = painterEditMode == PainterEditMode.ProxyCopy
+            MGTerrain terrain = meshFilter.GetComponent<MGTerrain>()
+                ?? meshFilter.GetComponentInParent<MGTerrain>();
+            bool isMGTerrain = terrain != null;
+            if (isMGTerrain && terrain.MeshFilter != null)
+                meshFilter = terrain.MeshFilter;
+
+            // MG Terrain's render mesh is its paint surface. A proxy would hide
+            // the painted data from its collider and from the terrain material.
+            editableMeshFilter = !isMGTerrain && painterEditMode == PainterEditMode.ProxyCopy
                 ? EnsurePaintProxyMeshFilter(meshFilter, undoName)
                 : meshFilter;
 
@@ -1480,9 +1547,16 @@ namespace MashBoxSDK.MapTools
                 mesh = Instantiate(editableMeshFilter.sharedMesh);
                 mesh.name = editableMeshFilter.sharedMesh.name + " (Clone)";
                 editableMeshFilter.sharedMesh = mesh;
-                painterStatusMessage = painterEditMode == PainterEditMode.ProxyCopy
+                painterStatusMessage = !isMGTerrain && painterEditMode == PainterEditMode.ProxyCopy
                     ? $"Created paint proxy mesh for '{meshFilter.gameObject.name}'."
                     : $"Created editable mesh clone for '{meshFilter.gameObject.name}'.";
+            }
+
+            if (isMGTerrain && terrain.MeshCollider != null && terrain.MeshCollider.sharedMesh != mesh)
+            {
+                Undo.RecordObject(terrain.MeshCollider, undoName);
+                terrain.MeshCollider.sharedMesh = mesh;
+                EditorUtility.SetDirty(terrain.MeshCollider);
             }
 
             return mesh;
@@ -1906,11 +1980,13 @@ namespace MashBoxSDK.MapTools
                         if (splatTarget != null && !IsPaintTarget(splatTarget))
                         {
                             if (e.shift)
+                            {
                                 AddSplatPaintTargetFromHit(hit);
+                                e.Use();
+                                sceneView.Repaint();
+                            }
                             else
                                 SetSplatStatus($"'{splatTarget.name}' is not a Splat Paint Target. Shift-click to add it.");
-                            e.Use();
-                            sceneView.Repaint();
                             return;
                         }
                     }
@@ -1957,11 +2033,13 @@ namespace MashBoxSDK.MapTools
                     if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
                     {
                         if (e.shift)
+                        {
                             AddSplatPaintTarget(splatHoverCandidate);
+                            e.Use();
+                            sceneView.Repaint();
+                        }
                         else
                             SetSplatStatus($"'{splatHoverCandidate.name}' has no active paint collider. Shift-click to add it and build collider chunks.");
-                        e.Use();
-                        sceneView.Repaint();
                         return;
                     }
                 }
@@ -2640,6 +2718,14 @@ namespace MashBoxSDK.MapTools
 
         private void PlacePrefabs(RaycastHit hit)
         {
+            MGTerrain hitTerrain = hit.collider != null
+                ? hit.collider.GetComponentInParent<MGTerrain>()
+                : null;
+            if (hitTerrain != null && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails)
+            {
+                PaintMGTerrainDensity(hitTerrain, hit, false);
+                return;
+            }
             if (prefabPalette.Count == 0 || prefabPalette.All(p => p == null)) return;
 
             if (!scatterMode)
@@ -2647,7 +2733,7 @@ namespace MashBoxSDK.MapTools
                 // Single Place: Only on MouseDown
                 if (Event.current.type == EventType.MouseDown)
                 {
-                    SpawnPrefab(hit.point, hit.normal, prefabPalette[selectedPrefabIndex]);
+                    SpawnPrefab(hit, prefabPalette[selectedPrefabIndex]);
                 }
                 return;
             }
@@ -2670,31 +2756,89 @@ namespace MashBoxSDK.MapTools
                 if (Physics.Raycast(scatterRay, out scatterHit, 20f))
                 {
                     GameObject prefab = prefabPalette[Random.Range(0, prefabPalette.Count)];
-                    if (prefab != null) SpawnPrefab(scatterHit.point, scatterHit.normal, prefab);
+                    if (prefab != null) SpawnPrefab(scatterHit, prefab);
                 }
             }
         }
 
-        private void SpawnPrefab(Vector3 position, Vector3 normal, GameObject prefab)
+        private void SpawnPrefab(RaycastHit hit, GameObject prefab)
         {
-            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-            Undo.RegisterCreatedObjectUndo(instance, "Place Prefab");
+            if (prefab == null)
+                return;
 
-            Vector3 pos = position;
+            Vector3 pos = hit.point;
             if (gridSnapping)
             {
                 pos.x = Mathf.Round(pos.x / gridSize) * gridSize;
                 pos.z = Mathf.Round(pos.z / gridSize) * gridSize;
             }
-            instance.transform.position = pos + normal * yOffset;
+            Vector3 position = pos + hit.normal * yOffset;
+            Quaternion rotation = alignToSurface
+                ? Quaternion.FromToRotation(Vector3.up, hit.normal)
+                : Quaternion.identity;
+            if (randomizeRotationY)
+                rotation *= Quaternion.AngleAxis(Random.Range(0f, 360f), Vector3.up);
+            Vector3 scale = Vector3.one * Random.Range(
+                Mathf.Min(scaleRange.x, scaleRange.y),
+                Mathf.Max(scaleRange.x, scaleRange.y));
 
-            if (alignToSurface) instance.transform.up = normal;
-            if (randomizeRotationY) instance.transform.Rotate(Vector3.up, Random.Range(0f, 360f), Space.Self);
-            instance.transform.localScale = Vector3.one * Random.Range(scaleRange.x, scaleRange.y);
+            MGTerrain terrain = hit.collider != null
+                ? hit.collider.GetComponentInParent<MGTerrain>()
+                : null;
+            if (terrain != null)
+            {
+                Undo.RecordObject(terrain, "Paint MG Terrain Instance");
+                float localSurfaceOffset = terrain.transform
+                    .InverseTransformVector(hit.normal * yOffset).y;
+                terrain.AddInstance(
+                    prefab,
+                    mgTerrainInstanceKind,
+                    position,
+                    rotation,
+                    scale,
+                    localSurfaceOffset);
+                EditorUtility.SetDirty(terrain);
+                SceneView.RepaintAll();
+                return;
+            }
+
+            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            if (instance == null)
+                return;
+            Undo.RegisterCreatedObjectUndo(instance, "Place Prefab");
+            instance.transform.SetPositionAndRotation(position, rotation);
+            instance.transform.localScale = scale;
         }
 
         private void ErasePrefabs(RaycastHit hit)
         {
+            MGTerrain terrain = hit.collider != null
+                ? hit.collider.GetComponentInParent<MGTerrain>()
+                : null;
+            if (terrain != null)
+            {
+                if (mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails)
+                {
+                    PaintMGTerrainDensity(terrain, hit, true);
+                    return;
+                }
+                GameObject selectedPrefab = selectedPrefabIndex >= 0 && selectedPrefabIndex < prefabPalette.Count
+                    ? prefabPalette[selectedPrefabIndex]
+                    : null;
+                Undo.RecordObject(terrain, "Erase MG Terrain Instances");
+                int removed = terrain.RemoveInstances(
+                    hit.point,
+                    brushRadius,
+                    selectedPrefab,
+                    mgTerrainInstanceKind);
+                if (removed > 0)
+                {
+                    EditorUtility.SetDirty(terrain);
+                    SceneView.RepaintAll();
+                }
+                return;
+            }
+
             Collider[] colliders = Physics.OverlapSphere(hit.point, brushRadius);
             foreach (var col in colliders)
             {
@@ -2703,6 +2847,37 @@ namespace MashBoxSDK.MapTools
                     Undo.DestroyObjectImmediate(col.gameObject);
                 }
             }
+        }
+
+        private void PaintMGTerrainDensity(MGTerrain terrain, RaycastHit hit, bool erase)
+        {
+            if (terrain == null || terrain.DensityDetailLayerCount == 0)
+                return;
+            if (!scatterMode && Event.current.type != EventType.MouseDown)
+                return;
+            float interval = 0.05f / Mathf.Max(0.05f, scatterDensity);
+            if (scatterMode && Time.realtimeSinceStartup - lastScatterTime < interval)
+                return;
+            lastScatterTime = Time.realtimeSinceStartup;
+
+            int layerIndex = Mathf.Clamp(mgTerrainDensityLayerIndex, 0, terrain.DensityDetailLayerCount - 1);
+            Texture2D densityMap = terrain.DensityDetailLayers[layerIndex].DensityMap;
+            if (densityMap == null)
+                return;
+            Undo.RecordObject(terrain, erase ? "Erase MG Terrain Detail Density" : "Paint MG Terrain Detail Density");
+            Undo.RecordObject(densityMap, erase ? "Erase MG Terrain Detail Density" : "Paint MG Terrain Detail Density");
+            int magnitude = Mathf.Max(1, Mathf.RoundToInt(Mathf.Lerp(1f, 32f, scatterDensity) * Mathf.Clamp01(brushStrength)));
+            int changedCells = terrain.PaintDensityDetailLayer(
+                layerIndex,
+                hit.point,
+                brushRadius,
+                erase ? -magnitude : magnitude,
+                1.5f);
+            if (changedCells <= 0)
+                return;
+            EditorUtility.SetDirty(densityMap);
+            EditorUtility.SetDirty(terrain);
+            SceneView.RepaintAll();
         }
 
         private void PaintVertexColors(RaycastHit hit)
@@ -3004,17 +3179,18 @@ namespace MashBoxSDK.MapTools
             if (!TryAutoAssignSplatTexture(hit, out _))
                 return;
 
-            if (splatAutoFindTexture)
+            // Texture2D.isReadable is not enough here. A BC-compressed texture can
+            // be readable, but Unity still rejects SetPixels on it. Control maps
+            // are authoring data, so transparently restore an editable import
+            // format before a stroke regardless of how the map was assigned.
+            if (splatMapTexture != null && !IsSplatTextureCpuWritable(splatMapTexture))
+                splatMapTexture = ConfigureSplatTextureForPainting(splatMapTexture);
+            if (splatPaintMode == MBSplatPaintMode.TextureId
+                && splatCompanionMapTexture != null
+                && !IsSplatTextureCpuWritable(splatCompanionMapTexture))
             {
-                if (splatMapTexture != null && !splatMapTexture.isReadable)
-                    splatMapTexture = ConfigureSplatTextureForPainting(splatMapTexture);
-                if (splatPaintMode == MBSplatPaintMode.TextureId
-                    && splatCompanionMapTexture != null
-                    && !splatCompanionMapTexture.isReadable)
-                {
-                    splatCompanionMapTexture =
-                        ConfigureSplatTextureForPainting(splatCompanionMapTexture);
-                }
+                splatCompanionMapTexture =
+                    ConfigureSplatTextureForPainting(splatCompanionMapTexture);
             }
 
             if (splatMapTexture == null)
@@ -3025,9 +3201,10 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            if (!splatMapTexture.isReadable)
+            if (!IsSplatTextureCpuWritable(splatMapTexture))
             {
-                splatStatusMessage = "The assigned texture is not readable. Click Make Readable before painting.";
+                splatStatusMessage =
+                    $"'{splatMapTexture.name}' cannot be edited with SetPixels. Use an imported, readable, uncompressed RGBA control map.";
                 return;
             }
             if (splatPaintMode == MBSplatPaintMode.TextureId)
@@ -3037,9 +3214,10 @@ namespace MashBoxSDK.MapTools
                     splatStatusMessage = "Texture ID mode requires both _ControlMap1 and _ControlMap2 on the hit material.";
                     return;
                 }
-                if (!splatCompanionMapTexture.isReadable)
+                if (!IsSplatTextureCpuWritable(splatCompanionMapTexture))
                 {
-                    splatStatusMessage = $"Companion map '{splatCompanionMapTexture.name}' is not readable. Make both control maps readable before painting Texture IDs.";
+                    splatStatusMessage =
+                        $"Companion map '{splatCompanionMapTexture.name}' cannot be edited with SetPixels. Use an imported, readable, uncompressed RGBA control map.";
                     return;
                 }
                 if (splatCompanionMapTexture.width != splatMapTexture.width
@@ -3319,6 +3497,14 @@ namespace MashBoxSDK.MapTools
                         }
                     }
                 }
+            }
+            else if (hit.collider.GetComponentInParent<MGTerrain>() is MGTerrain terrain)
+            {
+                foreach (var chunk in terrain.SurfaceColliderChunks)
+                    if (chunk != null && chunk.enabled && chunk.gameObject.activeInHierarchy && chunk.sharedMesh != null
+                        && chunk.bounds.SqrDistance(hit.point) <= brushRadius * brushRadius && uniqueColliders.Add(chunk))
+                        colliders.Add(chunk);
+                if (hit.collider is MeshCollider terrainHit && uniqueColliders.Add(terrainHit)) colliders.Add(terrainHit);
             }
             else if (hit.collider is MeshCollider hitCollider)
             {
@@ -3980,10 +4166,42 @@ namespace MashBoxSDK.MapTools
                 importer.textureCompression = TextureImporterCompression.Uncompressed;
                 importerChanged = true;
             }
+
+            // "Apply BC7 to Control Maps" uses a Standalone override. Changing
+            // only the default compression above leaves that override in force,
+            // producing a readable BC7 texture that still cannot use SetPixels.
+            TextureImporterPlatformSettings standaloneSettings =
+                importer.GetPlatformTextureSettings("Standalone");
+            if (standaloneSettings.overridden)
+            {
+                standaloneSettings.overridden = false;
+                importer.SetPlatformTextureSettings(standaloneSettings);
+                importerChanged = true;
+            }
             if (importerChanged)
                 importer.SaveAndReimport();
 
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        private static bool IsSplatTextureCpuWritable(Texture2D texture)
+        {
+            if (texture == null || !texture.isReadable)
+                return false;
+
+            // Texture2D.SetPixels supports this set of CPU-side formats. In
+            // particular, compressed formats such as BC7 are deliberately not
+            // included even when the importer exposes readable pixel data.
+            switch (texture.format)
+            {
+                case TextureFormat.RGBA32:
+                case TextureFormat.ARGB32:
+                case TextureFormat.RGB24:
+                case TextureFormat.Alpha8:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private void CreateSplatTexture()

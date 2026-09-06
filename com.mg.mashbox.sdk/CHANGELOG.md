@@ -1,5 +1,11 @@
 # MashBox SDK Patch Notes
 
+## [Unreleased]
+
+### Fixed
+
+- Ported the Project X U6 HDRP color-grading LUT refresh workaround to the shared SDK. Unity 6 editor and player cameras invalidate the cached LUT before rendering so tonemapping and volume color adjustments refresh. This rebuilds the LUT per camera render; Unity 2022 projects are unaffected.
+
 ## [0.14.13] - 2026-08-18
 
 ### Added

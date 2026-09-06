@@ -1,5 +1,6 @@
 using MashBoxSDK.Maps.Sculpting;
 using MashBoxSDK.Maps.Spline;
+using MashBoxSDK.Maps.TerrainSystem;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -39,7 +40,6 @@ namespace MashBoxSDK.MapTools
         MeshCollider m_SculptPickingCollider;
         MeshFilter m_SculptPickingTarget;
         int m_SculptPickingGenerationVersion = -1;
-        bool m_ClearingVisualSelection;
         readonly HashSet<MeshSculptModifier> m_StrokeModifiers = new HashSet<MeshSculptModifier>();
 
         public static void ShowWindow() => GetWindow<MeshSculptWindow>("Mesh Sculpt");
@@ -80,7 +80,6 @@ namespace MashBoxSDK.MapTools
             m_SceneToolActive = true;
             SceneView.duringSceneGui += OnSceneGUI;
             Undo.undoRedoPerformed += OnUndoRedo;
-            Selection.selectionChanged += OnSelectionChanged;
         }
 
         public void DeactivateSceneTool()
@@ -98,7 +97,6 @@ namespace MashBoxSDK.MapTools
             m_SceneCameraRightMouseHeld = false;
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedo;
-            Selection.selectionChanged -= OnSelectionChanged;
             if (s_ActiveSceneToolOwner == this)
                 s_ActiveSceneToolOwner = null;
             StopStroke();
@@ -206,7 +204,7 @@ namespace MashBoxSDK.MapTools
             SceneView.RepaintAll();
         }
 
-        void UseSelection()
+        internal void UseSelection()
         {
             GameObject selected = Selection.activeGameObject;
             if (selected == null)
@@ -266,27 +264,6 @@ namespace MashBoxSDK.MapTools
                 loft.SculptModifier = modifier;
                 EditorUtility.SetDirty(loft);
             }
-        }
-
-        void OnSelectionChanged()
-        {
-            if (m_ClearingVisualSelection)
-                return;
-
-            UseSelection();
-            ClearVisualSelection();
-            Repaint();
-            SceneView.RepaintAll();
-        }
-
-        void ClearVisualSelection()
-        {
-            if (m_ClearingVisualSelection || Selection.objects == null || Selection.objects.Length == 0)
-                return;
-
-            m_ClearingVisualSelection = true;
-            Selection.objects = System.Array.Empty<UnityEngine.Object>();
-            m_ClearingVisualSelection = false;
         }
 
         void CreateOnSelection()
@@ -722,6 +699,10 @@ namespace MashBoxSDK.MapTools
             Vector3 direction = m_DirectionMode == DirectionMode.WorldUp ? Vector3.up : m_DirectionMode == DirectionMode.Custom ? m_CustomDirection.normalized : hit.normal;
             float strength = control && !shift ? -m_Strength : m_Strength;
             Undo.RecordObject(m_Modifier, "Mesh Sculpt Stroke");
+            MGTerrain terrain = m_Modifier.Target.GetComponent<MGTerrain>()
+                ?? m_Modifier.Target.GetComponentInParent<MGTerrain>();
+            if (terrain != null)
+                Undo.RecordObject(terrain, "Mesh Sculpt Stroke");
             m_StrokeModifiers.Add(m_Modifier);
             m_Modifier.AddStroke(m_Modifier.CreateStroke(strokeMode, m_StrokeSpace, hit.point, direction, m_Radius, strength, m_Falloff));
             m_Modifier.ApplyLatestStrokePreview();

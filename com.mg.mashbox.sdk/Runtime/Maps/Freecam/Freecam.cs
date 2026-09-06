@@ -15,6 +15,8 @@ namespace MashBoxSDK.Maps
     public class Freecam : MonoBehaviour
     {
         [SerializeField] private float lookSpeed = 120f;
+        [SerializeField, Tooltip("Show the FPS monitor and crosshair. Does not affect camera controls.")]
+        private bool showUI = true;
         [SerializeField] private float maxMoveSpeed = 10f;
         [SerializeField] private float moveForce = 100f;
         [SerializeField] private float turboMultiplier = 3f;
@@ -23,11 +25,20 @@ namespace MashBoxSDK.Maps
         [SerializeField] private SphereCollider sphereCollider;
 
         private Vector2 rotationInput;
+        private float fpsElapsed;
+        private int fpsFrames;
+        private string fpsText = "FPS: --";
         private Vector3 movementInput;
         private Vector3 finalMoveForce;
 
         private void Awake()
         {
+            if (Application.productName == "ProjectX")
+            {
+                Destroy(this.gameObject);
+            }
+            
+            
             SceneManager.sceneLoaded += OnSceneLoaded;
             EnsureComponents();
             EnsureOptionalFmodListener();
@@ -36,6 +47,9 @@ namespace MashBoxSDK.Maps
 
         private void OnEnable()
         {
+            fpsElapsed = 0f;
+            fpsFrames = 0;
+            fpsText = "FPS: --";
             EnsureComponents();
 
             var mainCamera = Camera.main;
@@ -100,6 +114,15 @@ namespace MashBoxSDK.Maps
 
         private void Update()
         {
+            // Sample rendered frames, independently of time scale and physics ticks.
+            fpsElapsed += Time.unscaledDeltaTime;
+            fpsFrames++;
+            if (fpsElapsed >= 0.5f)
+            {
+                fpsText = $"FPS: {fpsFrames / fpsElapsed:0}  ({fpsElapsed * 1000f / fpsFrames:0.0} ms)";
+                fpsElapsed = 0f;
+                fpsFrames = 0;
+            }
             if (rotationTransform == null)
                 return;
 
@@ -111,17 +134,10 @@ namespace MashBoxSDK.Maps
 
         private void OnGUI()
         {
+            if (!showUI) return;
             var scale = Mathf.Clamp(Screen.height / 1080f, 0.7f, 1.15f);
             var margin = 12f * scale;
             var panelWidth = 240f * scale;
-
-            var titleStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.UpperLeft,
-                fontSize = Mathf.RoundToInt(24f * scale),
-                fontStyle = FontStyle.Bold,
-                normal = { textColor = new Color(1f, 0.95f, 0.95f, 1f) }
-            };
 
             var instructionsStyle = new GUIStyle(GUI.skin.label)
             {
@@ -131,10 +147,8 @@ namespace MashBoxSDK.Maps
                 normal = { textColor = new Color(1f, 1f, 1f, 0.95f) }
             };
 
-            const string instructionsText = "Left Stick: Move\nRight Stick: Look\nLB / RB: Move Down / Up\nL3: Turbo\nRT: Fire";
-            var titleHeight = titleStyle.CalcHeight(new GUIContent("Free Cam"), panelWidth - (24f * scale));
-            var instructionsHeight = instructionsStyle.CalcHeight(new GUIContent(instructionsText), panelWidth - (24f * scale));
-            var panelHeight = titleHeight + instructionsHeight + (30f * scale);
+            var fpsHeight = 22f * scale;
+            var panelHeight = fpsHeight + (16f * scale);
             var panelRect = new Rect(margin, Screen.height - panelHeight - margin, panelWidth, panelHeight);
 
             var previousColor = GUI.color;
@@ -142,11 +156,8 @@ namespace MashBoxSDK.Maps
             GUI.DrawTexture(panelRect, Texture2D.whiteTexture);
             GUI.color = previousColor;
 
-            GUI.Label(new Rect(panelRect.x + 12f, panelRect.y + 8f, panelRect.width - 24f, 28f), "Free Cam", titleStyle);
-            GUI.Label(
-                new Rect(panelRect.x + (12f * scale), panelRect.y + titleHeight + (12f * scale), panelRect.width - (24f * scale), instructionsHeight + (4f * scale)),
-                instructionsText,
-                instructionsStyle);
+            GUI.Label(new Rect(panelRect.x + 12f * scale, panelRect.yMax - fpsHeight - 8f * scale,
+                panelRect.width - 24f * scale, fpsHeight), fpsText, instructionsStyle);
 
             DrawCrosshair();
         }

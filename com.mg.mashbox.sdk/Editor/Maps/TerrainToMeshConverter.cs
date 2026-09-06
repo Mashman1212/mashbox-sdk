@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MashBoxSDK.Maps.TerrainSystem;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -33,8 +34,7 @@ namespace MashBoxSDK.MapTools
 
     internal static class TerrainToMeshConverter
     {
-        public const int MaxTreeGameObjects = 20000;
-        public const int MaxDetailGameObjects = 100000;
+        public const int MaxTreeGameObjects = 1000000;
 
         public static TerrainConversionSummary Analyze(Terrain terrain)
         {
@@ -83,16 +83,16 @@ namespace MashBoxSDK.MapTools
             if (options.ConvertTrees && summary.TreeCount > 0 &&
                 !EditorUtility.DisplayDialog(
                     "Convert Painted Trees?",
-                    $"This will instantiate {summary.TreeCount:N0} tree GameObjects. Large GameObject counts can make the Editor and scene very slow.\n\nContinue?",
-                    "Convert Trees",
+                    $"This will serialize {summary.TreeCount:N0} GPU-instanced trees into MG Terrain. Very large instance sets increase scene size and conversion time.\n\nContinue?",
+                    "Convert Tree Instances",
                     "Cancel"))
                 return false;
 
             if (options.ConvertDetails && summary.DetailCount > 0 &&
                 !EditorUtility.DisplayDialog(
                     "Convert Painted Details?",
-                    $"This will instantiate {summary.DetailCount:N0} detail GameObjects. This is intended as a temporary workflow until a dedicated instancing system is available.\n\nContinue?",
-                    "Convert Details",
+                    $"This will preserve {summary.DetailCount:N0} painted details as compact density maps. Only nearby chunks are expanded into GPU-instanced grass while rendering.\n\nContinue?",
+                    "Convert Density Layers",
                     "Cancel"))
                 return false;
 
@@ -108,14 +108,12 @@ namespace MashBoxSDK.MapTools
 
             TerrainConversionSummary summary = Analyze(terrain);
             if (options.ConvertTrees && summary.TreeCount > MaxTreeGameObjects)
-                throw new InvalidOperationException($"Tree conversion is limited to {MaxTreeGameObjects:N0} instances; this terrain contains {summary.TreeCount:N0}.");
-            if (options.ConvertDetails && summary.DetailCount > MaxDetailGameObjects)
-                throw new InvalidOperationException($"Detail conversion is limited to {MaxDetailGameObjects:N0} instances; this terrain contains {summary.DetailCount:N0}.");
+                throw new InvalidOperationException($"Tree conversion is limited to {MaxTreeGameObjects:N0} serialized instances; this terrain contains {summary.TreeCount:N0}.");
 
             EnsureAssetFolder(assetFolder);
             TerrainData data = terrain.terrainData;
             string safeTerrainName = SanitizeName(terrain.name);
-            var root = new GameObject(terrain.name + "_Converted");
+            var root = new GameObject(terrain.name + "_MGTerrain");
             Undo.RegisterCreatedObjectUndo(root, "Convert Terrain");
             SceneManager.MoveGameObjectToScene(root, terrain.gameObject.scene);
             CopyTransformAndParent(terrain.transform, root.transform);
@@ -123,6 +121,7 @@ namespace MashBoxSDK.MapTools
             int skippedTrees = 0;
             long skippedDetails = 0;
             var createdAssets = new List<string>();
+            MGTerrain mgTerrain = null;
             bool sourceTerrainWasEnabled = terrain.enabled;
             TerrainCollider sourceTerrainCollider = terrain.GetComponent<TerrainCollider>();
             bool sourceColliderWasEnabled = sourceTerrainCollider != null && sourceTerrainCollider.enabled;
@@ -140,22 +139,57 @@ namespace MashBoxSDK.MapTools
                     MeshFilter filter = root.AddComponent<MeshFilter>();
                     MeshRenderer renderer = root.AddComponent<MeshRenderer>();
                     filter.sharedMesh = mesh;
-                    renderer.sharedMaterial = terrain.materialTemplate;
-                    if (options.AddMeshCollider)
-                        root.AddComponent<MeshCollider>().sharedMesh = mesh;
+                    if (terrain.materialTemplate != null)
+                    {
+                        var material = new Material(terrain.materialTemplate)
+                        {
+                            name = safeTerrainName + "_Material"
+                        };
+                        string materialPath = AssetDatabase.GenerateUniqueAssetPath($"{assetFolder}/{material.name}.mat");
+                        AssetDatabase.CreateAsset(material, materialPath);
+                        createdAssets.Add(materialPath);
+                        renderer.sharedMaterial = material;
+                    }
+                    MeshCollider meshCollider = root.AddComponent<MeshCollider>();
+                    meshCollider.sharedMesh = mesh;
+                    mgTerrain = root.AddComponent<MGTerrain>();
+                    mgTerrain.Configure(filter, renderer, meshCollider);
+                    int surfaceGridSize = Mathf.RoundToInt(Mathf.Sqrt(mesh.vertexCount));
+                    mgTerrain.ConfigureSurfaceGrid(surfaceGridSize, surfaceGridSize);
                 }
 
+                List<Texture2D> controlMaps = null;
                 if (options.ExportSplatMaps)
                 {
                     EditorUtility.DisplayProgressBar("Converting Terrain", "Exporting splat maps...", 0.15f);
-                    ExportSplatMaps(data, assetFolder, safeTerrainName, createdAssets);
+                    controlMaps = ExportSplatMaps(data, assetFolder, safeTerrainName, createdAssets);
+                    if (mgTerrain != null)
+                    {
+                        mgTerrain.SetControlMaps(
+                            controlMaps.Count > 0 ? controlMaps[0] : null,
+                            controlMaps.Count > 1 ? controlMaps[1] : null);
+                    }
                 }
 
                 if (options.ConvertTrees)
-                    skippedTrees = ConvertTrees(terrain, root.transform, summary.TreeCount);
+                {
+                    if (mgTerrain == null)
+                        throw new InvalidOperationException("Tree conversion requires the MG Terrain mesh output.");
+                    skippedTrees = ConvertTrees(terrain, mgTerrain, summary.TreeCount);
+                }
 
                 if (options.ConvertDetails)
-                    skippedDetails = ConvertDetails(terrain, root.transform, assetFolder, summary.DetailCount, createdAssets);
+                {
+                    if (mgTerrain == null)
+                        throw new InvalidOperationException("Detail conversion requires the MG Terrain mesh output.");
+                    skippedDetails = ConvertDetails(terrain, mgTerrain, assetFolder, summary.DetailCount, createdAssets);
+                }
+
+                if (mgTerrain != null)
+                {
+                    mgTerrain.InvalidateRenderCache();
+                    EditorUtility.SetDirty(mgTerrain);
+                }
 
                 if (options.DisableSourceTerrain)
                 {
@@ -192,7 +226,7 @@ namespace MashBoxSDK.MapTools
             if (skippedTrees > 0 || skippedDetails > 0)
                 Debug.LogWarning($"Terrain conversion skipped {skippedTrees:N0} trees and {skippedDetails:N0} details whose prototypes were missing or unsupported.", terrain);
 
-            Debug.Log($"Converted terrain '{terrain.name}' beneath '{root.name}'. Assets were written to {assetFolder}.", root);
+            Debug.Log($"Converted Unity Terrain '{terrain.name}' to MG Terrain '{root.name}'. Assets were written to {assetFolder}.", root);
             return root;
         }
 
@@ -293,10 +327,11 @@ namespace MashBoxSDK.MapTools
             return data.IsHole(x, z);
         }
 
-        private static void ExportSplatMaps(TerrainData data, string assetFolder, string terrainName, ICollection<string> createdAssets)
+        private static List<Texture2D> ExportSplatMaps(TerrainData data, string assetFolder, string terrainName, ICollection<string> createdAssets)
         {
+            var exported = new List<Texture2D>();
             if (data.alphamapLayers == 0)
-                return;
+                return exported;
 
             float[,,] weights = data.GetAlphamaps(0, 0, data.alphamapWidth, data.alphamapHeight);
             int mapCount = Mathf.CeilToInt(data.alphamapLayers / 4f);
@@ -319,7 +354,8 @@ namespace MashBoxSDK.MapTools
                 var texture = new Texture2D(data.alphamapWidth, data.alphamapHeight, TextureFormat.RGBA32, false, true);
                 texture.SetPixels(colors);
                 texture.Apply(false, false);
-                string path = AssetDatabase.GenerateUniqueAssetPath($"{assetFolder}/{terrainName}_Splat{map}.png");
+                string mapName = map == 0 ? "ControlMap1" : map == 1 ? "ControlMap2" : $"ControlMap{map + 1}";
+                string path = AssetDatabase.GenerateUniqueAssetPath($"{assetFolder}/{terrainName}_{mapName}.png");
                 File.WriteAllBytes(Path.GetFullPath(path), texture.EncodeToPNG());
                 UnityEngine.Object.DestroyImmediate(texture);
                 AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
@@ -329,10 +365,15 @@ namespace MashBoxSDK.MapTools
                     importer.sRGBTexture = false;
                     importer.wrapMode = TextureWrapMode.Clamp;
                     importer.mipmapEnabled = false;
+                    importer.isReadable = true;
                     importer.textureCompression = TextureImporterCompression.Uncompressed;
                     importer.SaveAndReimport();
                 }
+                Texture2D imported = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                if (imported != null)
+                    exported.Add(imported);
             }
+            return exported;
         }
 
         private static float GetWeight(float[,,] weights, int y, int x, int layer)
@@ -340,12 +381,11 @@ namespace MashBoxSDK.MapTools
             return layer < weights.GetLength(2) ? weights[y, x, layer] : 0f;
         }
 
-        private static int ConvertTrees(Terrain terrain, Transform convertedRoot, long totalCount)
+        private static int ConvertTrees(Terrain terrain, MGTerrain convertedTerrain, long totalCount)
         {
             TerrainData data = terrain.terrainData;
             TreePrototype[] prototypes = data.treePrototypes;
-            Transform treesRoot = CreateChildRoot("Trees", convertedRoot);
-            var prototypeRoots = new Dictionary<int, Transform>();
+            var convertedPrototypes = new Dictionary<int, int>();
             int skipped = 0;
             TreeInstance[] instances = data.treeInstances;
 
@@ -359,43 +399,42 @@ namespace MashBoxSDK.MapTools
                 }
 
                 GameObject prefab = prototypes[tree.prototypeIndex].prefab;
-                if (!prototypeRoots.TryGetValue(tree.prototypeIndex, out Transform prototypeRoot))
+                if (!convertedPrototypes.TryGetValue(tree.prototypeIndex, out int prototypeIndex))
                 {
-                    prototypeRoot = CreateChildRoot(SanitizeName(prefab.name), treesRoot);
-                    prototypeRoots.Add(tree.prototypeIndex, prototypeRoot);
+                    prototypeIndex = convertedTerrain.FindOrAddPrototype(prefab, MGTerrain.InstanceKind.Tree);
+                    convertedPrototypes.Add(tree.prototypeIndex, prototypeIndex);
                 }
-
-                GameObject instance = PrefabUtility.InstantiatePrefab(prefab, terrain.gameObject.scene) as GameObject;
-                if (instance == null)
+                if (prototypeIndex < 0)
                 {
                     skipped++;
                     continue;
                 }
-
-                instance.name = prefab.name;
-                instance.transform.SetParent(prototypeRoot, false);
                 Vector3 normalizedPosition = tree.position;
-                instance.transform.localPosition = Vector3.Scale(normalizedPosition, data.size);
-                instance.transform.localRotation = Quaternion.Euler(0f, tree.rotation * Mathf.Rad2Deg, 0f) * prefab.transform.localRotation;
-                instance.transform.localScale = Vector3.Scale(prefab.transform.localScale, new Vector3(tree.widthScale, tree.heightScale, tree.widthScale));
+                convertedTerrain.AddInstanceLocal(
+                    prototypeIndex,
+                    Vector3.Scale(normalizedPosition, data.size),
+                    Quaternion.Euler(0f, tree.rotation * Mathf.Rad2Deg, 0f),
+                    new Vector3(tree.widthScale, tree.heightScale, tree.widthScale));
 
                 if ((index & 127) == 0)
-                    EditorUtility.DisplayProgressBar("Converting Terrain", $"Instantiating trees ({index:N0} / {totalCount:N0})...", 0.2f + 0.3f * index / Mathf.Max(1f, instances.Length));
+                    EditorUtility.DisplayProgressBar("Converting Terrain", $"Recording tree instances ({index:N0} / {totalCount:N0})...", 0.2f + 0.3f * index / Mathf.Max(1f, instances.Length));
             }
 
             return skipped;
         }
 
-        private static long ConvertDetails(Terrain terrain, Transform convertedRoot, string assetFolder, long totalCount, ICollection<string> createdAssets)
+        private static long ConvertDetails(Terrain terrain, MGTerrain convertedTerrain, string assetFolder, long totalCount, ICollection<string> createdAssets)
         {
             TerrainData data = terrain.terrainData;
             DetailPrototype[] prototypes = data.detailPrototypes;
-            Transform detailsRoot = CreateChildRoot("Details", convertedRoot);
-            long completed = 0;
             long skipped = 0;
 
             for (int layer = 0; layer < prototypes.Length; layer++)
             {
+                EditorUtility.DisplayProgressBar(
+                    "Converting Terrain",
+                    $"Encoding compact detail density layer {layer + 1:N0} / {prototypes.Length:N0}...",
+                    0.5f + 0.48f * layer / Mathf.Max(1f, prototypes.Length));
                 DetailPrototype prototype = prototypes[layer];
                 int[,] density = data.GetDetailLayer(0, 0, data.detailWidth, data.detailHeight, layer);
                 GameObject prefab = prototype.prototype;
@@ -404,64 +443,45 @@ namespace MashBoxSDK.MapTools
                 if (prefab == null && prototype.prototypeTexture != null)
                     CreateTextureDetailAssets(prototype, layer, assetFolder, createdAssets, out textureMesh, out textureMaterial);
 
-                string prototypeName = prefab != null ? prefab.name : prototype.prototypeTexture != null ? prototype.prototypeTexture.name : $"Detail {layer}";
-                Transform prototypeRoot = CreateChildRoot(SanitizeName(prototypeName), detailsRoot);
-                var random = new System.Random(unchecked(GetStableSeed(data) * 397 ^ layer));
-
+                int prototypeIndex = prefab != null
+                    ? convertedTerrain.FindOrAddPrototype(prefab, MGTerrain.InstanceKind.Detail)
+                    : convertedTerrain.FindOrAddPrototype(textureMesh, textureMaterial, MGTerrain.InstanceKind.Detail);
+                var densityValues = new ushort[data.detailWidth * data.detailHeight];
+                long layerCount = 0;
                 for (int z = 0; z < data.detailHeight; z++)
                 {
                     for (int x = 0; x < data.detailWidth; x++)
                     {
                         int count = density[z, x];
-                        if (prefab == null && textureMesh == null)
-                        {
-                            skipped += count;
-                            completed += count;
-                            continue;
-                        }
-
-                        for (int item = 0; item < count; item++)
-                        {
-                            float nx = (x + (float)random.NextDouble()) / data.detailWidth;
-                            float nz = (z + (float)random.NextDouble()) / data.detailHeight;
-                            float width = Mathf.Lerp(prototype.minWidth, prototype.maxWidth, (float)random.NextDouble());
-                            float height = Mathf.Lerp(prototype.minHeight, prototype.maxHeight, (float)random.NextDouble());
-                            GameObject instance;
-                            Quaternion baseRotation;
-                            Vector3 baseScale;
-                            if (prefab != null)
-                            {
-                                instance = PrefabUtility.InstantiatePrefab(prefab, terrain.gameObject.scene) as GameObject;
-                                if (instance == null)
-                                {
-                                    skipped++;
-                                    completed++;
-                                    continue;
-                                }
-                                baseRotation = prefab.transform.localRotation;
-                                baseScale = prefab.transform.localScale;
-                            }
-                            else
-                            {
-                                instance = new GameObject(prototypeName);
-                                instance.AddComponent<MeshFilter>().sharedMesh = textureMesh;
-                                instance.AddComponent<MeshRenderer>().sharedMaterial = textureMaterial;
-                                baseRotation = Quaternion.identity;
-                                baseScale = Vector3.one;
-                            }
-
-                            instance.name = prototypeName;
-                            instance.transform.SetParent(prototypeRoot, false);
-                            instance.transform.localPosition = new Vector3(nx * data.size.x, data.GetInterpolatedHeight(nx, nz), nz * data.size.z);
-                            instance.transform.localRotation = Quaternion.Euler(0f, (float)random.NextDouble() * 360f, 0f) * baseRotation;
-                            instance.transform.localScale = Vector3.Scale(baseScale, new Vector3(width, height, width));
-                            completed++;
-
-                            if ((completed & 127) == 0)
-                                EditorUtility.DisplayProgressBar("Converting Terrain", $"Instantiating details ({completed:N0} / {totalCount:N0})...", 0.5f + 0.48f * completed / Mathf.Max(1f, totalCount));
-                        }
+                        layerCount += count;
+                        densityValues[z * data.detailWidth + x] = (ushort)Mathf.Clamp(count, 0, ushort.MaxValue);
                     }
                 }
+
+                if (prototypeIndex < 0)
+                {
+                    skipped += layerCount;
+                    continue;
+                }
+
+                var densityTexture = new Texture2D(data.detailWidth, data.detailHeight, TextureFormat.R16, false, true)
+                {
+                    name = $"{SanitizeName(terrain.name)}_DetailDensity_{layer}"
+                };
+                densityTexture.SetPixelData(densityValues, 0);
+                densityTexture.Apply(false, false);
+                string densityPath = AssetDatabase.GenerateUniqueAssetPath($"{assetFolder}/{densityTexture.name}.asset");
+                AssetDatabase.CreateAsset(densityTexture, densityPath);
+                createdAssets.Add(densityPath);
+                convertedTerrain.AddDensityDetailLayer(
+                    prototypeIndex,
+                    densityTexture,
+                    prototype.minWidth,
+                    prototype.maxWidth,
+                    prototype.minHeight,
+                    prototype.maxHeight,
+                    unchecked(GetStableSeed(data) * 397 ^ layer),
+                    layerCount);
             }
 
             return skipped;
@@ -517,13 +537,6 @@ namespace MashBoxSDK.MapTools
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
             return mesh;
-        }
-
-        private static Transform CreateChildRoot(string name, Transform parent)
-        {
-            var child = new GameObject(name);
-            child.transform.SetParent(parent, false);
-            return child.transform;
         }
 
         private static void CopyTransformAndParent(Transform source, Transform destination)

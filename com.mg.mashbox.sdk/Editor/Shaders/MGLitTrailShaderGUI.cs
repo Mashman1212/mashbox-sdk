@@ -217,6 +217,11 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         {
             return propertyName == "_ControlMap1" ||
                    propertyName == "_ControlMap2" ||
+                   propertyName == "_FarRangeAppearanceMap" ||
+                   propertyName == "_FarRangeAppearnceMapBlend" ||
+                   propertyName == "_FarRangeAppearanceMapBlend" ||
+                   propertyName == "_FarRangeAppearnceMapLighten" ||
+                   propertyName == "_FarRangeAppearanceMapLighten" ||
                    propertyName == "_ControlUV2";
         }
     }
@@ -454,6 +459,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         private static bool terrainLayerCacheBuilt;
         private static int selectedControlTextureResolutionIndex = 2;
         private static int selectedArrayTextureResolutionIndex = 2;
+        private static int selectedControlFillLayerId;
 
         private sealed class LayerDragData
         {
@@ -687,7 +693,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             MaterialProperty controlMap1 = FindOptionalProperty(ControlMap1PropertyName, properties);
             MaterialProperty controlMap2 = FindOptionalProperty(ControlMap2PropertyName, properties);
             MaterialProperty controlUv2 = FindOptionalProperty("_ControlUV2", properties);
-            if (controlMap1 == null && controlMap2 == null && controlUv2 == null)
+            MaterialProperty farRangeAppearanceMap = FindOptionalProperty("_FarRangeAppearanceMap", properties);
+            MaterialProperty farRangeAppearanceBlend = FindOptionalProperty("_FarRangeAppearanceMapBlend", properties)
+                ?? FindOptionalProperty("_FarRangeAppearnceMapBlend", properties);
+            MaterialProperty farRangeAppearanceLighten = FindOptionalProperty("_FarRangeAppearanceMapLighten", properties)
+                ?? FindOptionalProperty("_FarRangeAppearnceMapLighten", properties);
+            if (controlMap1 == null && controlMap2 == null && controlUv2 == null && farRangeAppearanceMap == null && farRangeAppearanceBlend == null && farRangeAppearanceLighten == null)
                 return;
 
             GUILayout.Space(4f);
@@ -696,6 +707,16 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 materialEditor.TexturePropertySingleLine(new GUIContent("Control Map 1 (IDs 0–3)"), controlMap1);
             if (controlMap2 != null)
                 materialEditor.TexturePropertySingleLine(new GUIContent("Control Map 2 (IDs 4–7)"), controlMap2);
+            if (farRangeAppearanceMap != null)
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Far Range Appearance Map", "Terrain appearance capture. Kept local to this material, independent of the linked material."),
+                    farRangeAppearanceMap);
+            if (farRangeAppearanceBlend != null)
+                materialEditor.ShaderProperty(farRangeAppearanceBlend,
+                    new GUIContent("Far Range Appearance Map Blend", "Blend value for this material's appearance map. Kept independent of the linked material."));
+            if (farRangeAppearanceLighten != null)
+                materialEditor.ShaderProperty(farRangeAppearanceLighten,
+                    new GUIContent("Far Range Appearance Map Lighten", "Lighten value for this material's appearance map. Kept independent of the linked material."));
 
             if (controlUv2 != null)
             {
@@ -708,6 +729,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
             Material material = materialEditor.target as Material;
             string materialPath = material != null ? AssetDatabase.GetAssetPath(material) : string.Empty;
+            DrawControlMapFill(materialEditor, material, controlMap1, controlMap2);
             bool usesLinkedMaterial = DrawTextureArraySources(materialEditor, material);
             using (new EditorGUI.DisabledScope(
                        material == null ||
@@ -757,6 +779,163 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 EditorGUILayout.HelpBox("Save this material as an asset before generating trail texture assets.", MessageType.None);
 
             DrawGeneratedArrays(material, usesLinkedMaterial);
+        }
+
+        private static void DrawControlMapFill(
+            MaterialEditor materialEditor,
+            Material material,
+            MaterialProperty controlMap1,
+            MaterialProperty controlMap2)
+        {
+            GUILayout.Space(5f);
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUILayout.LabelField("Fill Control Maps", EditorStyles.boldLabel);
+                selectedControlFillLayerId = EditorGUILayout.IntSlider(
+                    new GUIContent(
+                        "Layer ID",
+                        "Fill every control-map pixel with one terrain layer ID. IDs 0–3 use Control Map 1; IDs 4–7 use Control Map 2."),
+                    selectedControlFillLayerId,
+                    0,
+                    LayerCount - 1);
+
+                Texture2D first = controlMap1?.textureValue as Texture2D;
+                Texture2D second = controlMap2?.textureValue as Texture2D;
+                bool canFill = material != null
+                    && materialEditor.targets.Length == 1
+                    && first != null
+                    && second != null
+                    && first != second
+                    && !string.IsNullOrEmpty(AssetDatabase.GetAssetPath(first))
+                    && !string.IsNullOrEmpty(AssetDatabase.GetAssetPath(second));
+                using (new EditorGUI.DisabledScope(!canFill))
+                {
+                    if (GUILayout.Button(
+                            new GUIContent(
+                                $"Fill Everything With Layer {selectedControlFillLayerId}...",
+                                "Overwrite both control textures with a one-hot value for the selected layer.")))
+                    {
+                        FillControlMaps(materialEditor, material, first, second, selectedControlFillLayerId);
+                    }
+                }
+
+                if (!canFill)
+                    EditorGUILayout.HelpBox("Assign two different control-map texture assets to enable filling.", MessageType.None);
+            }
+        }
+
+        private static void FillControlMaps(
+            MaterialEditor materialEditor,
+            Material material,
+            Texture2D controlMap1,
+            Texture2D controlMap2,
+            int layerId)
+        {
+            string controlMap1Path = AssetDatabase.GetAssetPath(controlMap1);
+            string controlMap2Path = AssetDatabase.GetAssetPath(controlMap2);
+            string activeMapName = layerId < 4 ? controlMap1.name : controlMap2.name;
+            string activeChannel = new[] { "Red", "Green", "Blue", "Alpha" }[layerId & 3];
+            if (!EditorUtility.DisplayDialog(
+                    "Fill Trail Control Maps?",
+                    $"Fill every pixel used by '{material.name}' with Layer {layerId}?\n\n" +
+                    $"{activeMapName} will be filled through its {activeChannel} channel and every other control channel will be cleared. " +
+                    "This overwrites the painted control-map texture files.",
+                    $"Fill With Layer {layerId}",
+                    "Cancel"))
+                return;
+
+            bool canWriteFirst = CanWriteControlTexture(controlMap1Path, out string firstError);
+            bool canWriteSecond = CanWriteControlTexture(controlMap2Path, out string secondError);
+            if (!canWriteFirst || !canWriteSecond)
+            {
+                EditorUtility.DisplayDialog(
+                    "Cannot Fill Control Maps",
+                    !string.IsNullOrEmpty(firstError) ? firstError : secondError,
+                    "OK");
+                return;
+            }
+            if (!AssetDatabase.MakeEditable(new[] { controlMap1Path, controlMap2Path }))
+            {
+                EditorUtility.DisplayDialog(
+                    "Control Maps Are Read-Only",
+                    "The control textures could not be checked out or made editable.",
+                    "OK");
+                return;
+            }
+
+            Color32 zero = new Color32(0, 0, 0, 0);
+            Color32 firstColor = layerId < 4 ? GetOneHotControlColor(layerId) : zero;
+            Color32 secondColor = layerId >= 4 ? GetOneHotControlColor(layerId - 4) : zero;
+            try
+            {
+                WriteFilledControlTexture(controlMap1, controlMap1Path, firstColor);
+                WriteFilledControlTexture(controlMap2, controlMap2Path, secondColor);
+                AssetDatabase.ImportAsset(controlMap1Path, ImportAssetOptions.ForceUpdate);
+                AssetDatabase.ImportAsset(controlMap2Path, ImportAssetOptions.ForceUpdate);
+                ImportControlTexture(controlMap1Path);
+                ImportControlTexture(controlMap2Path);
+                AssetDatabase.SaveAssets();
+                materialEditor.Repaint();
+                SceneView.RepaintAll();
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception);
+                EditorUtility.DisplayDialog("Control Map Fill Failed", exception.Message, "OK");
+            }
+        }
+
+        private static Color32 GetOneHotControlColor(int channel)
+        {
+            return channel switch
+            {
+                0 => new Color32(255, 0, 0, 0),
+                1 => new Color32(0, 255, 0, 0),
+                2 => new Color32(0, 0, 255, 0),
+                _ => new Color32(0, 0, 0, 255)
+            };
+        }
+
+        private static bool CanWriteControlTexture(string assetPath, out string error)
+        {
+            string extension = Path.GetExtension(assetPath).ToLowerInvariant();
+            if (extension == ".png" || extension == ".tga" || extension == ".asset")
+            {
+                error = null;
+                return true;
+            }
+            error = $"'{assetPath}' uses the unsupported '{extension}' format. Control maps must be PNG, TGA, or Texture2D .asset files.";
+            return false;
+        }
+
+        private static void WriteFilledControlTexture(Texture2D source, string assetPath, Color32 color)
+        {
+            var pixels = new Color32[source.width * source.height];
+            for (int pixelIndex = 0; pixelIndex < pixels.Length; pixelIndex++)
+                pixels[pixelIndex] = color;
+
+            string extension = Path.GetExtension(assetPath).ToLowerInvariant();
+            if (extension == ".asset")
+            {
+                Undo.RecordObject(source, "Fill Trail Control Map");
+                source.SetPixels32(pixels);
+                source.Apply(false, false);
+                EditorUtility.SetDirty(source);
+                return;
+            }
+
+            var output = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false, true);
+            try
+            {
+                output.SetPixels32(pixels);
+                output.Apply(false, false);
+                byte[] bytes = extension == ".tga" ? output.EncodeToTGA() : output.EncodeToPNG();
+                File.WriteAllBytes(Path.GetFullPath(assetPath), bytes);
+            }
+            finally
+            {
+                Object.DestroyImmediate(output);
+            }
         }
 
         private static bool DrawTextureArraySources(

@@ -1,0 +1,12 @@
+{
+  "name": "MashBoxSDK.Rendering",
+  "rootNamespace": "MashBoxSDK.Rendering",
+  "references": [
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.RenderPipelines.HighDefinition.Runtime"
+  ],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "UNITY_6000_0_OR_NEWER"
+  ]
+}

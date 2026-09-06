@@ -1,0 +1,152 @@
+#pragma kernel GenerateDetailInstances
+#pragma target 5.0
+
+struct SpawnCommand
+{
+    uint x;
+    uint z;
+    uint count;
+    uint outputStart;
+    uint layerIndex;
+    uint padding0;
+    uint padding1;
+    uint padding2;
+    float4 sizes;
+};
+
+struct LayerParameters
+{
+    uint width;
+    uint height;
+    uint seed;
+    uint padding0;
+    float minWidth;
+    float maxWidth;
+    float minHeight;
+    float maxHeight;
+    float yOffset;
+    float padding1;
+    float padding2;
+    float padding3;
+};
+
+StructuredBuffer<SpawnCommand> _Commands;
+StructuredBuffer<LayerParameters> _Layers;
+StructuredBuffer<float> _SurfaceHeights;
+RWByteAddressBuffer _InstanceData;
+
+uint _CommandOffset;
+uint _GroupOutputBase;
+uint _ObjectToWorldAddress;
+uint _WorldToObjectAddress;
+uint _DetailDataAddress;
+uint _SurfaceGridWidth;
+uint _SurfaceGridHeight;
+float4 _SurfaceMinMax;
+float4x4 _TerrainLocalToWorld;
+float4x4 _PartRelative;
+
+uint Hash(uint value)
+{
+    value ^= value >> 16;
+    value *= 0x7FEB352D;
+    value ^= value >> 15;
+    value *= 0x846CA68B;
+    value ^= value >> 16;
+    return value;
+}
+
+float Hash01(uint value)
+{
+    return (value & 0x00FFFFFF) * (1.0 / 16777216.0);
+}
+
+float SampleSurfaceHeight(float2 normalizedPosition)
+{
+    float2 grid = saturate(normalizedPosition) * float2(_SurfaceGridWidth - 1, _SurfaceGridHeight - 1);
+    uint x0 = min((uint)floor(grid.x), _SurfaceGridWidth - 2);
+    uint z0 = min((uint)floor(grid.y), _SurfaceGridHeight - 2);
+    float2 blend = grid - float2(x0, z0);
+    uint bottomIndex = z0 * _SurfaceGridWidth + x0;
+    uint topIndex = (z0 + 1) * _SurfaceGridWidth + x0;
+    float bottom = lerp(_SurfaceHeights[bottomIndex], _SurfaceHeights[bottomIndex + 1], blend.x);
+    float top = lerp(_SurfaceHeights[topIndex], _SurfaceHeights[topIndex + 1], blend.x);
+    return lerp(bottom, top, blend.y);
+}
+
+void StorePackedMatrix(uint baseAddress, uint instanceIndex, float4x4 value)
+{
+    uint address = baseAddress + instanceIndex * 48;
+    uint3 column0 = uint3(asuint(value[0][0]), asuint(value[1][0]), asuint(value[2][0]));
+    uint3 column1 = uint3(asuint(value[0][1]), asuint(value[1][1]), asuint(value[2][1]));
+    uint3 column2 = uint3(asuint(value[0][2]), asuint(value[1][2]), asuint(value[2][2]));
+    uint3 column3 = uint3(asuint(value[0][3]), asuint(value[1][3]), asuint(value[2][3]));
+    _InstanceData.Store3(address + 0, column0);
+    _InstanceData.Store3(address + 12, column1);
+    _InstanceData.Store3(address + 24, column2);
+    _InstanceData.Store3(address + 36, column3);
+}
+
+float4x4 InverseAffine(float4x4 value)
+{
+    float3 column0 = float3(value[0][0], value[1][0], value[2][0]);
+    float3 column1 = float3(value[0][1], value[1][1], value[2][1]);
+    float3 column2 = float3(value[0][2], value[1][2], value[2][2]);
+    float determinant = dot(column0, cross(column1, column2));
+    float inverseDeterminant = rcp(determinant);
+    float3 row0 = cross(column1, column2) * inverseDeterminant;
+    float3 row1 = cross(column2, column0) * inverseDeterminant;
+    float3 row2 = cross(column0, column1) * inverseDeterminant;
+    float3 translation = float3(value[0][3], value[1][3], value[2][3]);
+    float3 inverseTranslation = -float3(
+        dot(row0, translation),
+        dot(row1, translation),
+        dot(row2, translation));
+    return float4x4(
+        row0.x, row0.y, row0.z, inverseTranslation.x,
+        row1.x, row1.y, row1.z, inverseTranslation.y,
+        row2.x, row2.y, row2.z, inverseTranslation.z,
+        0, 0, 0, 1);
+}
+
+[numthreads(64, 1, 1)]
+void GenerateDetailInstances(uint3 groupId : SV_GroupID, uint3 groupThreadId : SV_GroupThreadID)
+{
+    SpawnCommand command = _Commands[_CommandOffset + groupId.x];
+    LayerParameters layer = _Layers[command.layerIndex];
+    uint cellHash = Hash(layer.seed ^ (command.x * 73856093) ^ (command.z * 19349663));
+
+    for (uint item = groupThreadId.x; item < command.count; item += 64)
+    {
+        uint hash = Hash(cellHash ^ (item * 83492791));
+        float jitterX = Hash01(hash);
+        float jitterZ = Hash01(Hash(hash + 0x9E3779B9));
+        float widthScale = lerp(layer.minWidth, layer.maxWidth, Hash01(Hash(hash + 0x85EBCA6B)));
+        float heightScale = lerp(layer.minHeight, layer.maxHeight, Hash01(Hash(hash + 0xC2B2AE35)));
+        float paintedSize = lerp(lerp(command.sizes.x, command.sizes.y, jitterX), lerp(command.sizes.z, command.sizes.w, jitterX), jitterZ);
+        widthScale *= paintedSize;
+        heightScale *= paintedSize;
+        float angle = Hash01(Hash(hash + 0x27D4EB2F)) * 6.28318530718;
+        float2 normalizedPosition = float2(
+            (command.x + jitterX) / max(1.0, (float)layer.width),
+            (command.z + jitterZ) / max(1.0, (float)layer.height));
+        float localX = lerp(_SurfaceMinMax.x, _SurfaceMinMax.z, normalizedPosition.x);
+        float localZ = lerp(_SurfaceMinMax.y, _SurfaceMinMax.w, normalizedPosition.y);
+        float localY = SampleSurfaceHeight(normalizedPosition) + layer.yOffset;
+        float sine;
+        float cosine;
+        sincos(angle, sine, cosine);
+        float4x4 localMatrix = float4x4(
+            cosine * widthScale, 0, sine * widthScale, localX,
+            0, heightScale, 0, localY,
+            -sine * widthScale, 0, cosine * widthScale, localZ,
+            0, 0, 0, 1);
+        float4x4 objectToWorld = mul(_TerrainLocalToWorld, mul(localMatrix, _PartRelative));
+        float4x4 worldToObject = InverseAffine(objectToWorld);
+        uint destination = _GroupOutputBase + command.outputStart + item;
+        _InstanceData.Store4(_DetailDataAddress + destination * 16,
+            asuint(float4(command.layerIndex, Hash01(Hash(hash + 0x165667B1)), 0, 0)));
+        StorePackedMatrix(_ObjectToWorldAddress, destination, objectToWorld);
+        StorePackedMatrix(_WorldToObjectAddress, destination, worldToObject);
+    }
+}
