@@ -25,11 +25,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             var data = new Vector4[1 + m_DensityDetailLayers.Count * 2];
             data[0] = new Vector4(m_DensityDetailLayers.Count, 0, 0, 0);
+            Vector4 fadeRanges = DetailFadeRanges;
+            data[0] = new Vector4(m_DensityDetailLayers.Count, fadeRanges.x, fadeRanges.y, fadeRanges.z);
             for (int i = 0; i < m_DensityDetailLayers.Count; i++)
             {
                 var layer = m_DensityDetailLayers[i];
                 data[1 + i * 2] = layer != null ? (Vector4)layer.ShaderTint : Vector4.one;
                 data[2 + i * 2] = layer != null ? layer.ShaderDefinition : new Vector4(0, 1, 0, 0);
+                data[2 + i * 2].z = m_MidDetailDensity;
+                data[2 + i * 2].w = m_FarDetailDensity;
             }
             m_DetailBrgInstanceBuffer.SetData(data, 0, DetailTableAddress / 16, data.Length);
         }
@@ -312,7 +316,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     ? visible.prototype.ShadowCasting
                     : ShadowCastingMode.Off;
                 for (int batchIndex = 0; batchIndex < visible.chunk.batches.Count; batchIndex++)
-                    AppendBrgMatrices(visible.chunk.batches[batchIndex], shadowCasting, allowed, visible.chunk.layerIndex);
+                    AppendBrgMatrices(visible.chunk.batches[batchIndex], shadowCasting, allowed, visible.chunk.layerIndex, visible.chunk.instanceCount, CanFadeDetail(visible.prototype));
                 remaining -= allowed;
             }
 
@@ -674,6 +678,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         count = (uint)count,
                         outputStart = (uint)(outputStart + selectedCursor),
                         layerIndex = (uint)chunk.layerIndex,
+                        padding0 = (uint)spawn.count,
                         sizes = spawn.sizes
                     });
                 }
@@ -725,7 +730,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     maxWidth = layer != null ? layer.MaxWidth : 1f,
                     minHeight = layer != null ? layer.MinHeight : 1f,
                     maxHeight = layer != null ? layer.MaxHeight : 1f,
-                    yOffset = layer != null ? layer.YOffset : 0f
+                    yOffset = layer != null ? layer.YOffset : 0f,
+                    padding1 = layer != null && (uint)layer.PrototypeIndex < m_Prototypes.Count && CanFadeDetail(m_Prototypes[layer.PrototypeIndex])
+                        ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f
                 };
             }
             if (parameters.Length > 0)
@@ -804,7 +811,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_ActiveDetailBrgBuildGroups.Clear();
         }
 
-        void AppendBrgMatrices(DrawBatch batch, ShadowCastingMode shadowCasting, int maximumInstances, int layerIndex)
+        void AppendBrgMatrices(DrawBatch batch, ShadowCastingMode shadowCasting, int maximumInstances, int layerIndex, int population, bool fade)
         {
             var key = new DenseDetailBatchKey(batch, shadowCasting, true);
             if (!m_DetailBrgBuildGroups.TryGetValue(key, out BrgBuildGroup group))
@@ -832,7 +839,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     group.matrices.Add(matrices[matrixIndex]);
                     var matrix = matrices[matrixIndex];
                     uint seed = Hash((uint)matrix.m03.GetHashCode() ^ (uint)matrix.m23.GetHashCode());
-                    group.shaderData.Add(new Vector4(layerIndex, Hash01(seed), 0, 0));
+                    group.shaderData.Add(new Vector4(layerIndex, Hash01(seed), (maximumInstances - remaining + matrixIndex + 1f) / Mathf.Max(1, population), fade ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f));
                 }
                 remaining -= count;
             }

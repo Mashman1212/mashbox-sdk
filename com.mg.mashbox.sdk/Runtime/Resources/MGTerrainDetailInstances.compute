@@ -145,7 +145,7 @@ void GenerateDetailInstances(uint3 groupId : SV_GroupID, uint3 groupThreadId : S
         float4x4 worldToObject = InverseAffine(objectToWorld);
         uint destination = _GroupOutputBase + command.outputStart + item;
         _InstanceData.Store4(_DetailDataAddress + destination * 16,
-            asuint(float4(command.layerIndex, Hash01(Hash(hash + 0x165667B1)), 0, 0)));
+            asuint(float4(command.layerIndex, Hash01(Hash(hash + 0x165667B1)), (item + 1.0) / max(1u, command.padding0), layer.padding1)));
         StorePackedMatrix(_ObjectToWorldAddress, destination, objectToWorld);
         StorePackedMatrix(_WorldToObjectAddress, destination, worldToObject);
     }

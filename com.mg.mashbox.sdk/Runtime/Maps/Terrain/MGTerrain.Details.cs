@@ -449,6 +449,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal DrawBatch batch;
             internal ShadowCastingMode shadowCasting;
             internal readonly Matrix4x4[] matrices = new Matrix4x4[1023];
+            internal readonly Vector4[] fadeData = new Vector4[1023];
+            internal readonly MaterialPropertyBlock properties = new MaterialPropertyBlock();
             internal int count;
             internal bool active;
         }
@@ -463,8 +465,22 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool m_UseDetailDensityLod = true;
         [SerializeField, Tooltip("Use one fixed cell grid for every distance. Mid/far density changes select fewer instances without rebuilding the cell.")]
         bool m_UseStaticDetailCells;
+        [SerializeField, Min(0f), Tooltip("GodGrass density fade band in metres. Positive values keep cells fixed so instance positions remain stable; zero disables fading.")]
+        float m_DensityTransitionWidth = 10f;
         bool UseFixedDetailCells => m_AppearanceCaptureCamera == null
-            && (m_UseStaticDetailCells || (Application.isPlaying && m_UseBatchRendererGroup));
+            && (m_UseStaticDetailCells || m_DensityTransitionWidth > 0f || (Application.isPlaying && m_UseBatchRendererGroup));
+
+        bool CanFadeDetail(Prototype prototype)
+        {
+            if (!UseFixedDetailCells || !m_UseDetailDensityLod || m_DensityTransitionWidth <= 0f) return false;
+            var parts = GetDenseDetailRenderParts(prototype).parts;
+            if (parts.Count == 0) return false;
+            foreach (var part in parts)
+                if (part.material == null || part.material.shader == null || part.material.shader.name != "Shader Graphs/MG_GodGrass") return false;
+            return true;
+        }
+        Vector4 DetailFadeRanges => new Vector4(Mathf.Max(0, m_FullDetailDensityDistance), Mathf.Max(m_FullDetailDensityDistance, m_MidDetailDensityDistance),
+            Mathf.Min(Mathf.Max(0, m_DensityTransitionWidth), Mathf.Max(0, m_MidDetailDensityDistance - m_FullDetailDensityDistance)), 0);
         [SerializeField, Min(0f), Tooltip("Cells at or inside this distance keep 100% of their generated detail density.")]
         float m_FullDetailDensityDistance = 35f;
         [SerializeField, Min(0f), Tooltip("Cells between the full-density distance and this distance use the mid-density percentage. Cells beyond it use the far-density percentage.")]
@@ -1531,7 +1547,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                             visible.chunk.batches[batchIndex],
                             camera,
                             allowedInstances,
-                            shadowCasting));
+                            shadowCasting,
+                            visible.chunk.instanceCount,
+                            CanFadeDetail(visible.prototype)));
                 }
                 submittedInstances = Mathf.Min(visible.chunk.instanceCount, submittedInstances);
                 if (submittedInstances <= 0)
@@ -1548,6 +1566,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             if (!UseFixedDetailCells)
                 return visible.chunk.instanceCount;
+            if (CanFadeDetail(visible.prototype))
+            {
+                // Retain the denser band's population through the entire fade.
+                // The shader animates coverage continuously between CPU refreshes.
+                Vector4 ranges = DetailFadeRanges;
+                float guard = Mathf.Max(.1f, m_DetailStreamingRefreshDistance);
+                float cap = visible.distance < ranges.x + ranges.z * .5f + guard ? 1f
+                    : visible.distance < ranges.y + ranges.z * .5f + guard ? Mathf.Max(m_MidDetailDensity, m_FarDetailDensity) : m_FarDetailDensity;
+                return Mathf.Clamp(Mathf.CeilToInt(visible.chunk.instanceCount * Mathf.Clamp01(m_OverallDetailDensity) * cap), 0, visible.chunk.instanceCount);
+            }
             return Mathf.Clamp(
                 Mathf.FloorToInt(visible.chunk.instanceCount * GetDetailDensityScale(visible.densityLod)),
                 0,
@@ -1581,12 +1609,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             DrawBatch batch,
             Camera camera,
             int maximumInstances,
-            ShadowCastingMode shadowCasting)
+            ShadowCastingMode shadowCasting,
+            int population,
+            bool fade)
         {
             if (batch == null || maximumInstances <= 0)
                 return 0;
 
-            if (!SystemInfo.supportsInstancing || batch.forceNonInstanced)
+            if ((!SystemInfo.supportsInstancing || batch.forceNonInstanced) && !fade)
             {
                 int drawn = DrawBatchInstances(batch, camera, maximumInstances, shadowCasting);
                 m_LastDensityDetailDrawCalls += drawn;
@@ -1611,6 +1641,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
             int remaining = maximumInstances;
             int queued = 0;
+            accumulator.properties.SetVector("_MGDetailFadeRanges", DetailFadeRanges);
+            accumulator.properties.SetVector("_MGDetailFadeDensities", new Vector4(m_MidDetailDensity, m_FarDetailDensity, 0, 0));
             for (int chunkIndex = 0; chunkIndex < batch.matrixChunks.Count && remaining > 0; chunkIndex++)
             {
                 Matrix4x4[] matrices = batch.matrixChunks[chunkIndex];
@@ -1622,6 +1654,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 {
                     int copyCount = Mathf.Min(1023 - accumulator.count, count - sourceIndex);
                     Array.Copy(matrices, sourceIndex, accumulator.matrices, accumulator.count, copyCount);
+                    for (int i = 0; i < copyCount; i++)
+                        accumulator.fadeData[accumulator.count + i] = fade
+                            ? new Vector4(0, 0, (queued + i + 1f) / Mathf.Max(1, population), Mathf.Clamp01(m_OverallDetailDensity) + 1f) : Vector4.zero;
                     accumulator.count += copyCount;
                     sourceIndex += copyCount;
                     queued += copyCount;
@@ -1652,13 +1687,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
             DrawBatch batch = accumulator.batch;
             try
             {
+                if (!SystemInfo.supportsInstancing || batch.forceNonInstanced) throw new InvalidOperationException();
+                accumulator.properties.SetVectorArray("_MGDetailInstance", accumulator.fadeData);
                 Graphics.DrawMeshInstanced(
                     batch.mesh,
                     batch.subMesh,
                     batch.material,
                     accumulator.matrices,
                     accumulator.count,
-                    null,
+                    accumulator.properties,
                     accumulator.shadowCasting,
                     batch.prototype.ReceiveShadows,
                     gameObject.layer,
@@ -1671,6 +1708,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 batch.forceNonInstanced = true;
                 for (int index = 0; index < accumulator.count; index++)
                 {
+                    accumulator.properties.Clear();
+                    accumulator.properties.SetVector("_MGDetailInstance", accumulator.fadeData[index]);
+                    accumulator.properties.SetVector("_MGDetailFadeRanges", DetailFadeRanges);
+                    accumulator.properties.SetVector("_MGDetailFadeDensities", new Vector4(m_MidDetailDensity, m_FarDetailDensity, 0, 0));
                     Graphics.DrawMesh(
                         batch.mesh,
                         accumulator.matrices[index],
@@ -1678,7 +1719,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         gameObject.layer,
                         camera,
                         batch.subMesh,
-                        null,
+                        accumulator.properties,
                         accumulator.shadowCasting,
                         batch.prototype.ReceiveShadows,
                         null,

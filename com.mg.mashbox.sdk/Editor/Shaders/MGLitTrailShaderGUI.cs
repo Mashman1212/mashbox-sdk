@@ -218,6 +218,9 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             return propertyName == "_ControlMap1" ||
                    propertyName == "_ControlMap2" ||
                    propertyName == "_FarRangeAppearanceMap" ||
+                   propertyName == "_FarRangeAppearanceNormalMap" ||
+                   propertyName == "_FarRangeAppearanceNormalStrength" ||
+                   propertyName == "_FarRangeAppearnceNormalStrength" ||
                    propertyName == "_FarRangeAppearnceMapBlend" ||
                    propertyName == "_FarRangeAppearanceMapBlend" ||
                    propertyName == "_FarRangeAppearnceMapLighten" ||
@@ -694,11 +697,14 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             MaterialProperty controlMap2 = FindOptionalProperty(ControlMap2PropertyName, properties);
             MaterialProperty controlUv2 = FindOptionalProperty("_ControlUV2", properties);
             MaterialProperty farRangeAppearanceMap = FindOptionalProperty("_FarRangeAppearanceMap", properties);
+            MaterialProperty farRangeAppearanceNormalMap = FindOptionalProperty("_FarRangeAppearanceNormalMap", properties);
+            MaterialProperty farRangeAppearanceNormalStrength = FindOptionalProperty("_FarRangeAppearanceNormalStrength", properties)
+                ?? FindOptionalProperty("_FarRangeAppearnceNormalStrength", properties);
             MaterialProperty farRangeAppearanceBlend = FindOptionalProperty("_FarRangeAppearanceMapBlend", properties)
                 ?? FindOptionalProperty("_FarRangeAppearnceMapBlend", properties);
             MaterialProperty farRangeAppearanceLighten = FindOptionalProperty("_FarRangeAppearanceMapLighten", properties)
                 ?? FindOptionalProperty("_FarRangeAppearnceMapLighten", properties);
-            if (controlMap1 == null && controlMap2 == null && controlUv2 == null && farRangeAppearanceMap == null && farRangeAppearanceBlend == null && farRangeAppearanceLighten == null)
+            if (controlMap1 == null && controlMap2 == null && controlUv2 == null && farRangeAppearanceMap == null && farRangeAppearanceBlend == null && farRangeAppearanceLighten == null && farRangeAppearanceNormalMap == null && farRangeAppearanceNormalStrength == null)
                 return;
 
             GUILayout.Space(4f);
@@ -711,6 +717,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 materialEditor.TexturePropertySingleLine(
                     new GUIContent("Far Range Appearance Map", "Terrain appearance capture. Kept local to this material, independent of the linked material."),
                     farRangeAppearanceMap);
+            if (farRangeAppearanceNormalMap != null)
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Far Range Appearance Normal Map", "Terrain appearance normal capture. Kept independent of the linked material."),
+                    farRangeAppearanceNormalMap);
+            if (farRangeAppearanceNormalStrength != null)
+                materialEditor.ShaderProperty(farRangeAppearanceNormalStrength,
+                    new GUIContent("Far Range Appearance Normal Strength", "Normal strength for this material's appearance capture. Kept independent of the linked material."));
             if (farRangeAppearanceBlend != null)
                 materialEditor.ShaderProperty(farRangeAppearanceBlend,
                     new GUIContent("Far Range Appearance Map Blend", "Blend value for this material's appearance map. Kept independent of the linked material."));

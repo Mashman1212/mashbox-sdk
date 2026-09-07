@@ -38,6 +38,34 @@ This includes the current Edit Mode renderer; test indexed variants in Play Mode
 Existing grass Shader Graphs and materials are not rewritten, and texture arrays are not
 automatically assembled from their textures. Connect the node to an array-enabled graph first.
 
-Layout: existing 96-byte matrix pair per submitted mesh instance plus 16 bytes for index/random.
-The table uses a 16-byte header plus 32 bytes per layer (tint, then slice/wind/reserved).
+Layout: existing 96-byte matrix pair per submitted mesh instance plus 16 bytes for index/random/rank/fade enable.
+The table uses a 16-byte header (layer count, near end, mid end, transition width) plus 32 bytes per layer (tint, then slice/wind/mid density/far density).
 No global shader buffer or material mutation is used, so terrains can share materials safely.
+
+## GodGrass density transitions
+
+`Density Transition Width` defaults to 10 metres. A positive width keeps the grid fixed;
+zero disables fades. Distance Density LOD must be enabled. Runtime draw budgets remain
+hard limits: transition instances consume that budget and can still be cut by it.
+
+GodGrass's alpha path now passes through the file Custom Function `MGTerrainDetailFade`:
+inputs InAlpha (Vector1), UV (Vector2/UV0); outputs OutAlpha (Vector1), InstanceFade (Vector1).
+OutAlpha preserves the authored alpha; the function performs a separate fragment discard
+using stable UV-space noise. The existing alpha and shadow cutoff logic remains connected.
+Preview and standalone renderers without MG fade data are fully visible.
+
+Instance data z is stable population rank; w is overall density + 1, or zero to disable.
+The fade itself is calculated every shader invocation from rank, distance and the band's
+endpoints, so it continues smoothly between resident-cell refreshes. Existing low-density
+instances retain full coverage. Additional instances are submitted for the fade band.
+The width is limited to the separation between the two transition centres to avoid overlap.
+
+This fade is wired for `Shader Graphs/MG_GodGrass` in CPU BRG, compute-generated BRG,
+and classic instanced/non-instanced fallback draws. Classic draws supply `_MGDetailInstance`
+and the two `_MGDetailFadeRanges`/`_MGDetailFadeDensities` vectors through a property block;
+the older indexed tint/texture-definition function remains BRG-only. Other shaders keep
+discrete density selection. Capture mode disables fading and retains full density.
+
+The dither is also evaluated in shadow/depth passes. It is not transparent blending and
+can look stippled without sufficient temporal antialiasing; test motion and shadow quality
+in the intended renderer. Shader Graph wiring was added to GodGrass, not MG Lit Trail.
