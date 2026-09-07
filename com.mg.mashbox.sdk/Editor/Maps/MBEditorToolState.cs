@@ -20,7 +20,7 @@ namespace MashBoxSDK.MapTools
     public enum MBEditorAuthoringCategory { Brush, Spline, Terrain, Mesh, UVInspector }
 
     public enum MBBrushMode { Decor, Painter, SplatMap }
-    public enum MBSculptMode { Displace, Smooth, Flatten }
+    public enum MBSculptMode { Displace, Smooth, Flatten, SeamFit = 4 }
     public enum MBUvHandleMode { MoveAndUv, SideOffset, UvScale }
     public enum MBEditorToolAction { CreateSpline, CreateLoftSpline }
     public enum MBSplatPaintMode { Color, TextureId }
@@ -179,12 +179,14 @@ namespace MashBoxSDK.MapTools
             }
         }
 
+        internal const float MaxBrushRadius = 100f;
+
         internal static float BrushRadius
         {
-            get => Mathf.Clamp(EditorPrefs.GetFloat(BrushRadiusPreferenceKey, 2f), 0.1f, 10f);
+            get => Mathf.Clamp(EditorPrefs.GetFloat(BrushRadiusPreferenceKey, 2f), 0.1f, MaxBrushRadius);
             set
             {
-                float clamped = Mathf.Clamp(value, 0.1f, 10f);
+                float clamped = Mathf.Clamp(value, 0.1f, MaxBrushRadius);
                 if (Mathf.Approximately(BrushRadius, clamped))
                     return;
 

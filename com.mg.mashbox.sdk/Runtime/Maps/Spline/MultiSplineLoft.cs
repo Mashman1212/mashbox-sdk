@@ -726,6 +726,10 @@ namespace MashBoxSDK.Maps.Spline
 
             RefreshTerrainMatchedNormals();
 
+            if (m_SculptModifier != null && m_SculptModifier.ApplySeamNormals(m_GeneratedMesh)
+                && m_GeneratedMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
+                m_GeneratedMesh.RecalculateTangents();
+
             RebuildColliderChunks();
 
             if (m_GenerateUvSplineWithLoft || (m_UvSpline != null && m_UvSpline.OutputMesh != null))

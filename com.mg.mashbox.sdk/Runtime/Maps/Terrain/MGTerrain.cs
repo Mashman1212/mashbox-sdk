@@ -199,6 +199,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void OnEnable()
         {
             ResolveComponents();
+            NotifySurfaceMeshChanged(true);
+#if UNITY_EDITOR
+            UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
+            UnityEditor.Undo.undoRedoPerformed += OnSurfaceTilesUndoRedo;
+#endif
             InitializeDetailSettingsIfNeeded();
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
             RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
@@ -215,6 +220,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnDisable()
         {
+#if UNITY_EDITOR
+            UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
+#endif
+            ReleaseSurfaceTiles();
             ApplyFarGrassProperties(false);
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
             ReleaseDetailRenderCache();
@@ -224,6 +233,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void OnValidate()
         {
             ResolveComponents();
+            NotifySurfaceMeshChanged(true);
             InitializeDetailSettingsIfNeeded();
             InvalidateRenderCache();
         }
@@ -232,6 +242,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnRenderObject()
         {
+            RefreshSurfaceTiles();
             if (GraphicsSettings.currentRenderPipeline == null)
                 RenderInstances(Camera.current);
         }
@@ -239,6 +250,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void OnBeginCameraRendering(ScriptableRenderContext context, Camera camera)
         {
             ApplyFarGrassProperties();
+            RefreshSurfaceTiles();
             RenderInstances(camera);
         }
 
@@ -386,8 +398,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
         }
 
         // A capture is scoped to one temporary editor camera. No serialized quality
-        // settings are changed, and its full-density cells never survive the scope.
+        // settings are changed, and its capture-specific cells never survive the scope.
         [NonSerialized] Camera m_AppearanceCaptureCamera;
+        [NonSerialized] float m_AppearanceCaptureDetailTilt;
         [NonSerialized] long m_AppearanceCapturePopulation;
         public bool AppearanceCaptureNeedsSubdivision { get; private set; }
         public bool AppearanceCaptureTileComplete { get; private set; }
@@ -401,10 +414,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_AppearanceCaptureLayerSubmissions = new long[DensityDetailLayerCount];
             InvalidateRenderCache();
         }
-        public void BeginAppearanceCapture(Camera camera)
+        public void BeginAppearanceCapture(Camera camera, float detailTilt = 30f)
         {
             if (Application.isPlaying || camera == null || m_AppearanceCaptureCamera != null)
                 throw new InvalidOperationException("Appearance capture requires an idle terrain in Edit Mode.");
+            m_AppearanceCaptureDetailTilt = Mathf.Clamp(detailTilt, 0f, 60f);
             m_AppearanceCaptureCamera = camera;
             PrepareAppearanceCaptureTile();
         }
@@ -412,6 +426,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public void EndAppearanceCapture()
         {
             m_AppearanceCaptureCamera = null;
+            m_AppearanceCaptureDetailTilt = 0f;
             ReleaseDetailRenderCache();
             InvalidateRenderCache();
         }

@@ -13,6 +13,62 @@ namespace MashBoxSDK.MapTools
 {
     internal static class MBEditorToolVisuals
     {
+        internal static void RepaintBrushModifiers(Event current, SceneView sceneView)
+        {
+            if (sceneView != null && (current.type == EventType.KeyDown || current.type == EventType.KeyUp
+                || current.type == EventType.MouseMove))
+                sceneView.Repaint();
+        }
+
+        internal static void DrawBrushAction(string action)
+        {
+            Event current = Event.current;
+            if (current.type != EventType.Repaint || current.alt || Tools.viewToolActive) return;
+            string modifiers = current.control ? (current.shift ? "Ctrl+Shift" : "Ctrl")
+                : current.shift ? "Shift" : "";
+            var content = new GUIContent((modifiers.Length > 0 ? modifiers + " · " : "") + action);
+            Handles.BeginGUI();
+            var style = new GUIStyle(EditorStyles.helpBox) { fontSize = 12, wordWrap = true };
+            style.normal.textColor = Color.white;
+            float width = Mathf.Min(360f, style.CalcSize(content).x + 16f);
+            float height = style.CalcHeight(content, width) + 6f;
+            Vector2 mouse = current.mousePosition;
+            var view = SceneView.currentDrawingSceneView;
+            float x = mouse.x + 20f, y = mouse.y + 24f;
+            if (view != null)
+            {
+                x = Mathf.Max(4f, Mathf.Min(x, view.position.width - width - 8f));
+                y = Mathf.Max(4f, Mathf.Min(y, view.position.height - height - 28f));
+            }
+            var rect = new Rect(x, y, width, height);
+            EditorGUI.DrawRect(rect, new Color(.08f, .08f, .08f, .94f));
+            GUI.Label(rect, content, style);
+            Handles.EndGUI();
+        }
+
+        internal static bool IsBrushFocusEvent(Event current)
+        {
+            if (EditorGUIUtility.editingTextField || current.alt || current.control || current.command || current.shift)
+                return false;
+            return (current.type == EventType.KeyDown && current.keyCode == KeyCode.F)
+                || ((current.type == EventType.ValidateCommand || current.type == EventType.ExecuteCommand)
+                    && current.commandName == "FrameSelected");
+        }
+
+        internal static bool FocusBrushSurface(Event current, SceneView sceneView, Vector3 point, float radius)
+        {
+            if (!IsBrushFocusEvent(current)) return false;
+            // Unity can deliver F as a key event or its built-in frame command.
+            // Validate without moving; execute once using the brush's own hit.
+            if (current.type != EventType.ValidateCommand)
+            {
+                sceneView.LookAt(point, sceneView.rotation, Mathf.Max(0.5f, radius * 2f), sceneView.orthographic);
+                sceneView.Repaint();
+            }
+            current.Use();
+            return true;
+        }
+
         static readonly Color ModeToolSelectionColor = new Color(0.68f, 0.38f, 0.08f, 0.95f);
         static readonly Color ToolActionSelectionColor = new Color(0.42f, 0.27f, 0.68f, 0.95f);
         static readonly System.Collections.Generic.Dictionary<string, Texture2D> CustomIcons =
@@ -185,6 +241,19 @@ namespace MashBoxSDK.MapTools
                     DrawIconLine(pixels, size, new Vector2(10f, 15f), new Vector2(7f, 19f), 2.3f, mid);
                     DrawIconLine(pixels, size, new Vector2(22f, 15f), new Vector2(25f, 19f), 2.3f, mid);
                     break;
+                case "MashBox.SeamFit":
+                    // Two surface profiles meeting at a shared vertex, with a
+                    // lift arrow from the terrain toward the loft shoulder.
+                    DrawIconLine(pixels, size, new Vector2(3f, 24f), new Vector2(12f, 24f), 2.4f, bright);
+                    DrawIconLine(pixels, size, new Vector2(12f, 24f), new Vector2(20f, 16f), 2.4f, bright);
+                    DrawIconLine(pixels, size, new Vector2(20f, 16f), new Vector2(29f, 16f), 2.4f, bright);
+                    DrawIconLine(pixels, size, new Vector2(3f, 6f), new Vector2(11f, 9f), 2.2f, mid);
+                    DrawIconLine(pixels, size, new Vector2(11f, 9f), new Vector2(20f, 16f), 2.2f, mid);
+                    DrawIconDot(pixels, size, new Vector2(20f, 16f), 2.8f, bright);
+                    DrawIconLine(pixels, size, new Vector2(7f, 12f), new Vector2(7f, 20f), 2f, bright);
+                    DrawIconLine(pixels, size, new Vector2(7f, 20f), new Vector2(4f, 17f), 2f, bright);
+                    DrawIconLine(pixels, size, new Vector2(7f, 20f), new Vector2(10f, 17f), 2f, bright);
+                    break;
             }
 
             icon.SetPixels32(pixels);
@@ -281,6 +350,7 @@ namespace MashBoxSDK.MapTools
             MBDisplaceSculptToggle.Id,
             MBSmoothSculptToggle.Id,
             MBFlattenSculptToggle.Id,
+            MBSeamFitSculptToggle.Id,
             MBMoveUvToggle.Id,
             MBSideOffsetUvToggle.Id,
             MBUvScaleToggle.Id)
@@ -336,6 +406,7 @@ namespace MashBoxSDK.MapTools
             actionsContent.Add(new MBDisplaceSculptToggle());
             actionsContent.Add(new MBSmoothSculptToggle());
             actionsContent.Add(new MBFlattenSculptToggle());
+            actionsContent.Add(new MBSeamFitSculptToggle());
             actionsContent.Add(new MBMoveUvToggle());
             actionsContent.Add(new MBSideOffsetUvToggle());
             actionsContent.Add(new MBUvScaleToggle());
@@ -369,6 +440,8 @@ namespace MashBoxSDK.MapTools
                     : DisplayStyle.None;
             };
 
+            var decorSection = new IMGUIContainer(MGBrushWindow.DrawDecorOverlay);
+            root.Add(decorSection);
             VisualElement controlsSection = CreateControlsSection();
             root.Add(controlsSection);
 
@@ -399,6 +472,10 @@ namespace MashBoxSDK.MapTools
                     && MBEditorToolState.SplatPaintMode == MBSplatPaintMode.TextureId
                         ? DisplayStyle.Flex
                         : DisplayStyle.None;
+                decorSection.style.display = MBEditorToolState.ActiveEditing
+                    && MBEditorToolState.Mode == MBEditorAuthoringMode.Brush
+                    && MBEditorToolState.BrushMode == MBBrushMode.Decor
+                        ? DisplayStyle.Flex : DisplayStyle.None;
                 syncActionsVisibility();
             };
             root.RegisterCallback<AttachToPanelEvent>(_ =>
@@ -1594,6 +1671,16 @@ namespace MashBoxSDK.MapTools
             "d_RectTool") { }
     }
 
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBSeamFitSculptToggle : MBSculptSubmodeToggle
+    {
+        public const string Id = "MashBox/Sculpt/SeamFit";
+        public MBSeamFitSculptToggle() : base(
+            MBSculptMode.SeamFit, "Seam Fit",
+            "Fit MG Terrain to nearby mesh surfaces and blend edge normals.",
+            "MashBox.SeamFit", "d_EditCollider") { }
+    }
+
     public abstract class MBUvSubmodeToggle : EditorToolbarToggle
     {
         readonly MBUvHandleMode m_Mode;
@@ -1688,9 +1775,14 @@ namespace MashBoxSDK.MapTools
             this.RegisterCallback<AttachToPanelEvent>(_ =>
             {
                 MBEditorToolState.ModeChanged += Sync;
+                MBEditorToolState.SculptModeChanged += Sync;
                 Sync();
             });
-            this.RegisterCallback<DetachFromPanelEvent>(_ => MBEditorToolState.ModeChanged -= Sync);
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged -= Sync;
+                MBEditorToolState.SculptModeChanged -= Sync;
+            });
             Sync();
         }
 
@@ -1711,12 +1803,14 @@ namespace MashBoxSDK.MapTools
                     AddShortcut("TreeEditor.Trash", "Remove Knots", "Delete / Backspace");
                     break;
                 case MBEditorAuthoringMode.MeshSculpt:
-                    AddShortcut("MashBox.Sculpt", "Sculpt", "LMB Drag");
+                    bool seamFit = MBEditorToolState.SculptMode == MBSculptMode.SeamFit;
+                    AddShortcut(seamFit ? "MashBox.SeamFit" : "MashBox.Sculpt", seamFit ? "Fit" : "Sculpt", "LMB Drag");
                     AddShortcut("d_ToolHandlePivot", "Make Sculptable", "Shift + Click");
-                    AddShortcut("d_RotateTool", "Invert", "Ctrl");
+                    AddShortcut("d_RotateTool", seamFit ? "Lower Terrain" : "Invert", seamFit ? "Ctrl + LMB Drag" : "Ctrl");
                     AddShortcut("MashBox.Smooth", "Smooth", "Shift");
                     AddShortcut("d_PreMatCube", "Noise", "Ctrl + Shift");
                     AddShortcut("d_ViewToolZoom", "Radius / Strength", "Ctrl + MMB Drag");
+                    AddShortcut("d_SceneViewFx", "Focus Surface", "F");
                     break;
                 case MBEditorAuthoringMode.UVSpline:
                     AddShortcut("d_MoveTool", "Move + UV", "W");

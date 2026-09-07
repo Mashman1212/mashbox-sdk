@@ -33,7 +33,9 @@ namespace MashBoxSDK.MapTools
         // --- Decor Settings ---
         [SerializeField] private List<GameObject> prefabPalette = new List<GameObject>();
         [SerializeField] private bool prefabPaletteExpanded;
-        private int selectedPrefabIndex = 0;
+        [SerializeField] private int selectedPrefabIndex = 0;
+        [SerializeField] private bool mixDecorPalette = true;
+        [SerializeField] private Transform decorReferenceRoot;
         private bool scatterMode = true;
         private bool alignToSurface = true;
         private bool gridSnapping = false;
@@ -388,6 +390,72 @@ namespace MashBoxSDK.MapTools
         private UnityEngine.Object[] lastVisualEditingSelection = System.Array.Empty<UnityEngine.Object>();
         private GameObject splatHoverCandidate;
 
+        internal static void DrawDecorOverlay()
+        {
+            var tool = s_ActiveSceneToolOwner;
+            if (tool == null) return;
+            float previousLabelWidth = EditorGUIUtility.labelWidth;
+            EditorGUIUtility.labelWidth = 90f;
+            try
+            {
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    EditorGUILayout.LabelField("Decor Source", EditorStyles.boldLabel);
+                    tool.selectedPrefabIndex = Mathf.Clamp(tool.selectedPrefabIndex, 0, Mathf.Max(0, tool.prefabPalette.Count - 1));
+                    GameObject selected = tool.prefabPalette.Count > 0
+                        ? tool.prefabPalette[Mathf.Clamp(tool.selectedPrefabIndex, 0, tool.prefabPalette.Count - 1)] : null;
+                    var source = (GameObject)EditorGUILayout.ObjectField("Paint Object", selected, typeof(GameObject), true);
+                    if (source != selected)
+                    {
+                        if (source != null)
+                        {
+                            var asset = PrefabUtility.GetCorrespondingObjectFromSource(source);
+                            if (asset != null) source = asset;
+                            int index = tool.prefabPalette.IndexOf(source);
+                            if (index < 0) { index = tool.prefabPalette.Count; tool.prefabPalette.Add(source); }
+                            tool.selectedPrefabIndex = index;
+                        }
+                        else if (tool.prefabPalette.Count > 0) tool.prefabPalette[tool.selectedPrefabIndex] = null;
+                        tool.mixDecorPalette = false;
+                        tool.paintMGTerrainDensityDetails = false;
+                        tool.Repaint();
+                    }
+                    if (source != null)
+                    {
+                        Texture preview = AssetPreview.GetAssetPreview(source) ?? AssetPreview.GetMiniThumbnail(source);
+                        Rect rect = GUILayoutUtility.GetRect(0, 58, GUILayout.ExpandWidth(true));
+                        if (preview != null) GUI.DrawTexture(rect, preview, ScaleMode.ScaleToFit);
+                        if (AssetPreview.IsLoadingAssetPreview(source.GetInstanceID())) SceneView.RepaintAll();
+                    }
+                    if (tool.prefabPalette.Count > 1)
+                    {
+                        string[] names = tool.prefabPalette.Select(p => p != null ? p.name : "(Empty)").ToArray();
+                        tool.selectedPrefabIndex = EditorGUILayout.Popup("Palette", Mathf.Clamp(tool.selectedPrefabIndex, 0, names.Length - 1), names);
+                        tool.mixDecorPalette = EditorGUILayout.Toggle("Mix Palette", tool.mixDecorPalette);
+                    }
+                    tool.DrawDecorReferenceRoot();
+                }
+            }
+            finally { EditorGUIUtility.labelWidth = previousLabelWidth; }
+        }
+
+        void DrawDecorReferenceRoot()
+        {
+            var root = (Transform)EditorGUILayout.ObjectField("Reference Root", decorReferenceRoot, typeof(Transform), true);
+            if (root != decorReferenceRoot && (root == null || (!EditorUtility.IsPersistent(root) && root.gameObject.scene.IsValid())))
+                decorReferenceRoot = root;
+            if (GUILayout.Button("Create Reference Root"))
+            {
+                var created = new GameObject("Decor Reference Root");
+                Undo.RegisterCreatedObjectUndo(created, "Create Decor Reference Root");
+                decorReferenceRoot = created.transform;
+                EditorGUIUtility.PingObject(created);
+                Repaint();
+            }
+            if (decorReferenceRoot != null)
+                EditorGUILayout.HelpBox("Paints GameObjects under this root, including on MG Terrain. Clear the root to use terrain instances.", MessageType.None);
+        }
+
         public static void ShowWindow()
         {
             GetWindow<MGBrushWindow>("MG Brush");
@@ -505,7 +573,7 @@ namespace MashBoxSDK.MapTools
                 scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
 
             EditorGUILayout.Space(5);
-            brushRadius = EditorGUILayout.Slider("Brush Radius", brushRadius, 0.1f, 10f);
+            brushRadius = EditorGUILayout.Slider("Brush Radius", brushRadius, 0.1f, MBEditorToolState.MaxBrushRadius);
             brushStrength = EditorGUILayout.Slider("Brush Strength", brushStrength, 0.01f, 1f);
 
             if (currentMode == ToolMode.Decor)
@@ -828,6 +896,7 @@ namespace MashBoxSDK.MapTools
                 MessageType.None);
 
             EditorGUILayout.Space(5);
+            DrawDecorReferenceRoot();
             EditorGUILayout.LabelField("Prefab Palette", EditorStyles.boldLabel);
             
             SerializedObject so = new SerializedObject(this);
@@ -844,6 +913,7 @@ namespace MashBoxSDK.MapTools
                 selectedPrefabIndex = EditorGUILayout.IntSlider("Selected Prefab", selectedPrefabIndex, 0, prefabPalette.Count - 1);
             }
 
+            mixDecorPalette = EditorGUILayout.Toggle("Mix Palette", mixDecorPalette);
             if (GUILayout.Button("Simulate & Settle (Physics)"))
             {
                 SimulatePhysics();
@@ -1193,7 +1263,7 @@ namespace MashBoxSDK.MapTools
             }
             else if (IsPaintTarget(meshFilter.gameObject))
             {
-                label = $"Active: {meshFilter.gameObject.name}";
+                label = shiftPressed ? "Click · Add Paint Target" : "Paint Vertex Color";
             }
             else
             {
@@ -1202,14 +1272,7 @@ namespace MashBoxSDK.MapTools
                     : "Shift+Click Add Target";
             }
 
-            var style = new GUIStyle(EditorStyles.boldLabel)
-            {
-                alignment = TextAnchor.MiddleCenter
-            };
-            style.normal.textColor = GetPainterBrushColor(hit, shiftPressed);
-
-            float handleSize = HandleUtility.GetHandleSize(hit.point);
-            Handles.Label(hit.point + hit.normal * handleSize * 0.22f, label, style);
+            MBEditorToolVisuals.DrawBrushAction(label);
         }
 
         private void CleanPaintTargets()
@@ -1503,6 +1566,8 @@ namespace MashBoxSDK.MapTools
         {
             if (meshFilter == null)
                 return false;
+            var terrain = meshFilter.GetComponentInParent<MGTerrain>();
+            if (terrain != null && terrain.IsSurfaceRenderTile(meshFilter)) return true;
             MicroBumpMeshColliderGenerator generator =
                 meshFilter.GetComponentInParent<MicroBumpMeshColliderGenerator>();
             return generator != null
@@ -1691,6 +1756,9 @@ namespace MashBoxSDK.MapTools
             EditorUtility.SetDirty(meshFilter);
             EditorUtility.SetDirty(meshFilter.gameObject);
             mesh.UploadMeshData(false);
+            var terrain = meshFilter.GetComponentInParent<MGTerrain>();
+            if (terrain != null && terrain.MeshFilter == meshFilter)
+                terrain.NotifySurfaceMeshChanged();
         }
 
         private void GenerateAutoUVs(GameObject go)
@@ -1799,6 +1867,7 @@ namespace MashBoxSDK.MapTools
         private void OnSceneGUI(SceneView sceneView)
         {
             Event e = Event.current;
+            MBEditorToolVisuals.RepaintBrushModifiers(e, sceneView);
 
             if ((e.type == EventType.MouseDown || e.rawType == EventType.MouseDown) && e.button == 1)
                 sceneCameraRightMouseHeld = true;
@@ -1838,25 +1907,14 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            if (e.type == EventType.KeyDown
-                && e.keyCode == KeyCode.F
-                && !EditorGUIUtility.editingTextField
+            if (MBEditorToolVisuals.IsBrushFocusEvent(e)
                 && !sceneCameraRightMouseHeld
-                && !Tools.viewToolActive
-                && !e.shift
-                && !e.alt
-                && !e.control
-                && !e.command)
+                && !Tools.viewToolActive)
             {
                 Ray focusRay = HandleUtility.GUIPointToWorldRay(e.mousePosition);
-                if (Physics.Raycast(focusRay, out RaycastHit focusHit))
+                if (TryGetBrushHit(focusRay, out RaycastHit focusHit))
                 {
-                    sceneView.LookAt(
-                        focusHit.point,
-                        sceneView.rotation,
-                        Mathf.Max(0.5f, brushRadius * 2f));
-                    e.Use();
-                    sceneView.Repaint();
+                    MBEditorToolVisuals.FocusBrushSurface(e, sceneView, focusHit.point, brushRadius);
                     return;
                 }
             }
@@ -1960,6 +2018,15 @@ namespace MashBoxSDK.MapTools
                     DrawPainterHoverLabel(hit, e.shift);
                 else if (currentMode == ToolMode.SplatMap)
                     DrawSplatHoverLabel(hit, e.shift, brushColor);
+                else
+                {
+                    var terrain = hit.collider != null ? hit.collider.GetComponentInParent<MGTerrain>() : null;
+                    bool density = terrain != null && decorReferenceRoot == null
+                        && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails;
+                    MBEditorToolVisuals.DrawBrushAction(density
+                        ? (e.shift ? "Thin / Erase Detail Density" : "Paint Detail Density")
+                        : (e.shift ? "Erase Decor" : "Paint Decor"));
+                }
 
                 // Handle Input
                 int controlID = GUIUtility.GetControlID(FocusType.Passive);
@@ -2067,7 +2134,7 @@ namespace MashBoxSDK.MapTools
             }
             else if (isAdjustingBrush && e.type == EventType.MouseDrag && e.button == 2)
             {
-                brushRadius = Mathf.Clamp(brushRadius * Mathf.Exp(e.delta.x * 0.01f), 0.1f, 10f);
+                brushRadius = Mathf.Clamp(brushRadius * Mathf.Exp(e.delta.x * 0.01f), 0.1f, MBEditorToolState.MaxBrushRadius);
                 brushStrength = Mathf.Clamp(brushStrength - e.delta.y * 0.005f, 0.01f, 1f);
                 e.Use();
                 Repaint();
@@ -2721,7 +2788,7 @@ namespace MashBoxSDK.MapTools
             MGTerrain hitTerrain = hit.collider != null
                 ? hit.collider.GetComponentInParent<MGTerrain>()
                 : null;
-            if (hitTerrain != null && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails)
+            if (decorReferenceRoot == null && hitTerrain != null && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails)
             {
                 PaintMGTerrainDensity(hitTerrain, hit, false);
                 return;
@@ -2755,7 +2822,7 @@ namespace MashBoxSDK.MapTools
 
                 if (Physics.Raycast(scatterRay, out scatterHit, 20f))
                 {
-                    GameObject prefab = prefabPalette[Random.Range(0, prefabPalette.Count)];
+                    GameObject prefab = prefabPalette[mixDecorPalette ? Random.Range(0, prefabPalette.Count) : Mathf.Clamp(selectedPrefabIndex, 0, prefabPalette.Count - 1)];
                     if (prefab != null) SpawnPrefab(scatterHit, prefab);
                 }
             }
@@ -2785,7 +2852,7 @@ namespace MashBoxSDK.MapTools
             MGTerrain terrain = hit.collider != null
                 ? hit.collider.GetComponentInParent<MGTerrain>()
                 : null;
-            if (terrain != null)
+            if (terrain != null && decorReferenceRoot == null)
             {
                 Undo.RecordObject(terrain, "Paint MG Terrain Instance");
                 float localSurfaceOffset = terrain.transform
@@ -2802,12 +2869,18 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            GameObject instance = PrefabUtility.IsPartOfPrefabAsset(prefab)
+                ? (GameObject)PrefabUtility.InstantiatePrefab(prefab, decorReferenceRoot != null ? decorReferenceRoot.gameObject.scene : hit.collider.gameObject.scene)
+                : Instantiate(prefab);
             if (instance == null)
                 return;
             Undo.RegisterCreatedObjectUndo(instance, "Place Prefab");
             instance.transform.SetPositionAndRotation(position, rotation);
             instance.transform.localScale = scale;
+            var destinationScene = decorReferenceRoot != null ? decorReferenceRoot.gameObject.scene : hit.collider.gameObject.scene;
+            if (instance.scene != destinationScene)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(instance, destinationScene);
+            if (decorReferenceRoot != null) instance.transform.SetParent(decorReferenceRoot, true);
         }
 
         private void ErasePrefabs(RaycastHit hit)
@@ -2815,7 +2888,7 @@ namespace MashBoxSDK.MapTools
             MGTerrain terrain = hit.collider != null
                 ? hit.collider.GetComponentInParent<MGTerrain>()
                 : null;
-            if (terrain != null)
+            if (terrain != null && decorReferenceRoot == null)
             {
                 if (mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails)
                 {
@@ -2842,6 +2915,15 @@ namespace MashBoxSDK.MapTools
             Collider[] colliders = Physics.OverlapSphere(hit.point, brushRadius);
             foreach (var col in colliders)
             {
+                if (col == null) continue;
+                if (decorReferenceRoot != null)
+                {
+                    Transform placed = col.transform;
+                    while (placed.parent != null && placed.parent != decorReferenceRoot) placed = placed.parent;
+                    if (placed.parent == decorReferenceRoot && placed != hit.collider.transform)
+                        Undo.DestroyObjectImmediate(placed.gameObject);
+                    continue;
+                }
                 if (col.gameObject != hit.collider.gameObject)
                 {
                     Undo.DestroyObjectImmediate(col.gameObject);
@@ -3053,10 +3135,6 @@ namespace MashBoxSDK.MapTools
 
         private void DrawSplatHoverLabel(RaycastHit hit, bool shiftPressed, Color brushColor)
         {
-            Handles.BeginGUI();
-            Vector2 mouse = Event.current.mousePosition;
-            var style = new GUIStyle(EditorStyles.helpBox);
-            style.normal.textColor = brushColor;
             GameObject target = ResolveSplatPaintTarget(hit);
             string label;
             if (target != null && !IsPaintTarget(target))
@@ -3078,11 +3156,7 @@ namespace MashBoxSDK.MapTools
                     : $"Texture {splatTextureId}  {GetActiveControlMapPropertyName()} {GetActiveSplatChannelName()}";
                 label = $"{action} {paintTarget}   {splatUVChannel} {uv.x:0.000}, {uv.y:0.000}";
             }
-            GUI.Label(
-                new Rect(mouse.x + 18f, mouse.y + 18f, 340f, 38f),
-                label,
-                style);
-            Handles.EndGUI();
+            MBEditorToolVisuals.DrawBrushAction(label);
         }
 
         private bool TryGetSplatHoverCandidate(Vector2 mousePosition, out GameObject target)

@@ -9,7 +9,7 @@ namespace MashBoxSDK.Maps.Sculpting
     [ExecuteAlways, DisallowMultipleComponent]
     public sealed class MeshSculptModifier : MonoBehaviour
     {
-        public enum SculptMode { Displace, Smooth, Flatten, Noise }
+        public enum SculptMode { Displace, Smooth, Flatten, Noise, SeamFit }
         public enum StrokeSpace { World, TargetLocal }
 
         [Serializable]
@@ -23,6 +23,19 @@ namespace MashBoxSDK.Maps.Sculpting
             public float strength = 0.1f;
             [Min(0.01f)] public float falloff = 2f;
             public int noiseSeed;
+            // Seam fitting is baked at paint time. Sparse local deltas and normal
+            // samples keep replay independent of target loft edits or deletion.
+            public int seamVertexCount;
+            public SeamVertex[] seamVertices;
+        }
+
+        [Serializable]
+        public struct SeamVertex
+        {
+            public int index;
+            public Vector3 delta;
+            public Vector3 normal;
+            public float normalWeight;
         }
 
         [SerializeField] MeshFilter m_Target;
@@ -35,6 +48,16 @@ namespace MashBoxSDK.Maps.Sculpting
         [NonSerialized] Vector3[] m_BaseVertices;
         [NonSerialized] Mesh m_BaseMesh;
         [NonSerialized] List<int>[] m_Neighbours;
+
+#if UNITY_EDITOR
+        // OnValidate is called for the component Unity restores, including an
+        // undo that removes its final stroke. Do not inspect/replay other meshes.
+        public static event Action<MeshSculptModifier> RestoredByUndo;
+        void OnValidate()
+        {
+            if (UnityEditor.Undo.isProcessing) RestoredByUndo?.Invoke(this);
+        }
+#endif
 
         public MeshFilter Target => m_Target;
         public MultiSplineLoft LinkedLoft => m_LinkedLoft;
@@ -133,9 +156,16 @@ namespace MashBoxSDK.Maps.Sculpting
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
             bool matchedTerrainNormals = m_LinkedLoft != null && m_LinkedLoft.RefreshTerrainMatchedNormals();
-            if (!matchedTerrainNormals && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
+            bool matchedSeamNormals = ApplySeamNormals(mesh);
+            if ((!matchedTerrainNormals || matchedSeamNormals) && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
                 mesh.RecalculateTangents();
             mesh.UploadMeshData(false);
+            if (m_Target != null)
+            {
+                var terrain = m_Target.GetComponentInParent<MGTerrain>();
+                if (terrain != null && terrain.MeshFilter == m_Target)
+                    terrain.NotifySurfaceMeshChanged();
+            }
         }
 
         // Expensive derived data is refreshed once after a drag, rather than for
@@ -153,6 +183,12 @@ namespace MashBoxSDK.Maps.Sculpting
                 collider.sharedMesh = m_Target.sharedMesh;
             }
 
+            if (m_Target != null)
+            {
+                var terrain = m_Target.GetComponentInParent<MGTerrain>();
+                if (terrain != null && terrain.MeshFilter == m_Target)
+                    terrain.RefreshSurfaceCollidersFromMesh();
+            }
             ConformTerrainInstancesForLatestStroke();
 
             UVSpline uvSpline = m_LinkedLoft != null ? m_LinkedLoft.GeneratedUvSpline : null;
@@ -204,10 +240,20 @@ namespace MashBoxSDK.Maps.Sculpting
             mesh.vertices = vertices;
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
-            bool matchedTerrainNormals = m_LinkedLoft != null && m_LinkedLoft.RefreshTerrainMatchedNormals();
-            if (!matchedTerrainNormals && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
+            // Fresh loft generation finishes its normal passes after sculpting.
+            // Apply seam normals there once, after the loft's terrain matching.
+            bool deferNormals = m_LinkedLoft != null && !updateCollider;
+            bool matchedTerrainNormals = !deferNormals && m_LinkedLoft != null && m_LinkedLoft.RefreshTerrainMatchedNormals();
+            bool matchedSeamNormals = !deferNormals && ApplySeamNormals(mesh);
+            if ((!matchedTerrainNormals || matchedSeamNormals) && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
                 mesh.RecalculateTangents();
             mesh.UploadMeshData(false);
+            if (m_Target != null)
+            {
+                var terrain = m_Target.GetComponentInParent<MGTerrain>();
+                if (terrain != null && terrain.MeshFilter == m_Target)
+                    terrain.NotifySurfaceMeshChanged();
+            }
 
             if (m_UpdateMeshCollider && updateCollider && m_LinkedLoft != null)
             {
@@ -220,12 +266,25 @@ namespace MashBoxSDK.Maps.Sculpting
             }
 
             if (updateCollider)
+            {
+                var terrain = m_Target.GetComponentInParent<MGTerrain>();
+                if (terrain != null && terrain.MeshFilter == m_Target)
+                    terrain.RefreshSurfaceCollidersFromMesh();
                 ConformTerrainInstances();
+            }
         }
 
         void ApplyStroke(Vector3[] vertices, Mesh mesh, Stroke stroke)
         {
             if (stroke == null || stroke.radius <= Mathf.Epsilon) return;
+            if (stroke.mode == SculptMode.SeamFit)
+            {
+                if (stroke.seamVertexCount != vertices.Length || stroke.seamVertices == null) return;
+                foreach (SeamVertex sample in stroke.seamVertices)
+                    if ((uint)sample.index < (uint)vertices.Length)
+                        vertices[sample.index] += sample.delta;
+                return;
+            }
             Transform targetTransform = m_Target.transform;
             MGTerrain terrain = m_Target.GetComponent<MGTerrain>()
                 ?? m_Target.GetComponentInParent<MGTerrain>();
@@ -315,6 +374,31 @@ namespace MashBoxSDK.Maps.Sculpting
                 ?? m_Target.GetComponentInParent<MGTerrain>();
             if (terrain != null)
                 terrain.ConformInstancesToSurface();
+        }
+
+        public bool ApplySeamNormals(Mesh mesh)
+        {
+            if (mesh == null || m_Target == null) return false;
+            Vector3[] normals = null;
+            foreach (Stroke stroke in m_Strokes)
+            {
+                if (stroke == null || stroke.mode != SculptMode.SeamFit
+                    || stroke.seamVertexCount != mesh.vertexCount || stroke.seamVertices == null) continue;
+                foreach (SeamVertex sample in stroke.seamVertices)
+                {
+                    if (sample.normalWeight <= 0f || sample.normal.sqrMagnitude < 0.000001f
+                        || (uint)sample.index >= (uint)mesh.vertexCount) continue;
+                    normals ??= mesh.normals;
+                    // Blend in world space so nonuniform terrain scale does not
+                    // distort the interpolation. Normals use inverse transpose.
+                    Vector3 current = m_Target.transform.worldToLocalMatrix.transpose.MultiplyVector(normals[sample.index]).normalized;
+                    Vector3 desired = m_Target.transform.worldToLocalMatrix.transpose.MultiplyVector(sample.normal).normalized;
+                    Vector3 blended = Vector3.Slerp(current, desired, Mathf.Clamp01(sample.normalWeight)).normalized;
+                    normals[sample.index] = m_Target.transform.localToWorldMatrix.transpose.MultiplyVector(blended).normalized;
+                }
+            }
+            if (normals != null) mesh.normals = normals;
+            return normals != null;
         }
 
         void ConformTerrainInstancesForLatestStroke()

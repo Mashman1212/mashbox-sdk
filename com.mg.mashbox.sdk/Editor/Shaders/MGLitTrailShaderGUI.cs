@@ -225,6 +225,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                    propertyName == "_FarRangeAppearanceMapBlend" ||
                    propertyName == "_FarRangeAppearnceMapLighten" ||
                    propertyName == "_FarRangeAppearanceMapLighten" ||
+                   propertyName == "_FarRangeAppearanceMapHue" ||
+                   propertyName == "_FarRangeAppearanceMapSaturation" ||
                    propertyName == "_ControlUV2";
         }
     }
@@ -730,6 +732,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             if (farRangeAppearanceLighten != null)
                 materialEditor.ShaderProperty(farRangeAppearanceLighten,
                     new GUIContent("Far Range Appearance Map Lighten", "Lighten value for this material's appearance map. Kept independent of the linked material."));
+
+            MaterialProperty appearanceHue = FindOptionalProperty("_FarRangeAppearanceMapHue", properties);
+            MaterialProperty appearanceSaturation = FindOptionalProperty("_FarRangeAppearanceMapSaturation", properties);
+            if (appearanceHue != null)
+                materialEditor.ShaderProperty(appearanceHue, new GUIContent("Far Range Appearance Map Hue", "Hue shift in degrees, applied only to this material's far-range appearance map. 0 preserves its hue."));
+            if (appearanceSaturation != null)
+                materialEditor.ShaderProperty(appearanceSaturation, new GUIContent("Far Range Appearance Map Saturation", "0 is grayscale, 1 preserves the captured saturation, and 2 increases saturation. Independent of the linked material."));
 
             if (controlUv2 != null)
             {

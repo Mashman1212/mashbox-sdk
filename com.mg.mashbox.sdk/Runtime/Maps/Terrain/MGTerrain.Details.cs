@@ -2055,14 +2055,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
             Bounds localBounds = new Bounds(
                 new Vector3((minX + maxX) * 0.5f, surfaceBounds.center.y + yOffset + maximumHeight * 0.5f, (minZ + maxZ) * 0.5f),
                 new Vector3(maxX - minX, surfaceBounds.size.y + maximumHeight, maxZ - minZ));
+            if (m_AppearanceCaptureCamera != null && m_AppearanceCaptureDetailTilt > 0f)
+                localBounds.Expand(maximumHeight * 2f);
             return TransformBounds(localBounds, transform.localToWorldMatrix);
         }
 
         float GetDetailDensityScale(int densityLod)
         {
-            if (m_AppearanceCaptureCamera != null) return 1f;
             float overall = Mathf.Clamp01(m_OverallDetailDensity);
-            if (!m_UseDetailDensityLod || densityLod <= 0)
+            // Capture uses the same overall density as nearby live cells, with no distance thinning.
+            if (m_AppearanceCaptureCamera != null || !m_UseDetailDensityLod || densityLod <= 0)
                 return overall;
             if (densityLod == 1)
                 return overall * Mathf.Clamp(m_MidDetailDensity, 0.01f, 1f);
@@ -2235,7 +2237,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         float localY = SampleSurfaceHeight(normalizedX, normalizedZ) + layer.YOffset;
                         Matrix4x4 instanceMatrix = Matrix4x4.TRS(
                             new Vector3(localX, localY, localZ),
-                            Quaternion.Euler(0f, angle, 0f),
+                            Quaternion.Euler(0f, angle, 0f) * Quaternion.Euler(
+                                m_AppearanceCaptureCamera != null ? m_AppearanceCaptureDetailTilt : 0f, 0f, 0f),
                             new Vector3(widthScale, heightScale, widthScale) * paintedSize);
                         for (int partIndex = 0; partIndex < parts.Count; partIndex++)
                             matricesByPart[partIndex].Add(instanceMatrix * parts[partIndex].relativeMatrix);

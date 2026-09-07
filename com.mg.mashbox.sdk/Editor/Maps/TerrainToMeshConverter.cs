@@ -139,23 +139,52 @@ namespace MashBoxSDK.MapTools
                     MeshFilter filter = root.AddComponent<MeshFilter>();
                     MeshRenderer renderer = root.AddComponent<MeshRenderer>();
                     filter.sharedMesh = mesh;
-                    if (terrain.materialTemplate != null)
+                    Shader trailShader = Shader.Find("Shader Graphs/MG_Lit_Trail");
+                    if (trailShader == null) throw new InvalidOperationException("MG Lit Trail shader was not found.");
+                    bool alreadyTrail = terrain.materialTemplate != null && terrain.materialTemplate.shader == trailShader;
+                    var material = alreadyTrail ? new Material(terrain.materialTemplate) : new Material(trailShader);
+                    material.name = safeTerrainName + "_Material";
+                    string materialPath = AssetDatabase.GenerateUniqueAssetPath($"{assetFolder}/{material.name}.mat");
+                    AssetDatabase.CreateAsset(material, materialPath);
+                    createdAssets.Add(materialPath);
+                    renderer.sharedMaterial = material;
+                    if (material.HasProperty("_ControlUV2")) material.SetFloat("_ControlUV2", 1f);
+                    if (!alreadyTrail)
                     {
-                        var material = new Material(terrain.materialTemplate)
+                        if (data.terrainLayers.Length > 8)
+                            Debug.LogWarning("MG Lit Trail supports eight terrain layers. Only the first eight source layers will be rendered.", terrain);
+                        for (int layerIndex = 0; layerIndex < Mathf.Min(8, data.terrainLayers.Length); layerIndex++)
                         {
-                            name = safeTerrainName + "_Material"
-                        };
-                        string materialPath = AssetDatabase.GenerateUniqueAssetPath($"{assetFolder}/{material.name}.mat");
-                        AssetDatabase.CreateAsset(material, materialPath);
-                        createdAssets.Add(materialPath);
-                        renderer.sharedMaterial = material;
+                            TerrainLayer layer = data.terrainLayers[layerIndex];
+                            if (layer == null) continue;
+                            string suffix = layerIndex.ToString("00");
+                            material.SetOverrideTag("MashBox.MGLitTrail.TerrainLayer." + suffix,
+                                AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(layer)));
+                            if (material.HasProperty("_Tiling" + suffix))
+                                material.SetVector("_Tiling" + suffix, new Vector4(data.size.x / Mathf.Max(.001f, layer.tileSize.x), data.size.z / Mathf.Max(.001f, layer.tileSize.y), 0, 0));
+                            if (material.HasProperty("_Offset" + suffix))
+                                material.SetVector("_Offset" + suffix, new Vector4(layer.tileOffset.x / Mathf.Max(.001f, layer.tileSize.x), layer.tileOffset.y / Mathf.Max(.001f, layer.tileSize.y), 0, 0));
+                            if (material.HasProperty("_PlanarMap" + suffix)) material.SetFloat("_PlanarMap" + suffix, 0f);
+                        }
+                        string arrayBase = System.IO.Path.ChangeExtension(materialPath, null);
+                        foreach (string kind in new[] { "BaseMap", "Height", "Surface" })
+                            if (System.IO.File.Exists(arrayBase + "_" + kind + "Array.asset"))
+                                throw new InvalidOperationException("Texture arrays already exist for this material name. Choose a different conversion output folder.");
+                        foreach (string kind in new[] { "BaseMap", "Height", "Surface" })
+                            createdAssets.Add(arrayBase + "_" + kind + "Array.asset");
+                        if (!MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui.MGLitTrailTextureArrayBuilder.Build(material, 1024, false))
+                            throw new InvalidOperationException("Could not build MG Lit Trail texture arrays for the converted terrain.");
                     }
+                    EditorUtility.SetDirty(material);
                     MeshCollider meshCollider = root.AddComponent<MeshCollider>();
                     meshCollider.sharedMesh = mesh;
                     mgTerrain = root.AddComponent<MGTerrain>();
                     mgTerrain.Configure(filter, renderer, meshCollider);
                     int surfaceGridSize = Mathf.RoundToInt(Mathf.Sqrt(mesh.vertexCount));
                     mgTerrain.ConfigureSurfaceGrid(surfaceGridSize, surfaceGridSize);
+                    EditorUtility.DisplayProgressBar("Converting Terrain", "Building terrain child colliders...", 0.12f);
+                    MGTerrainEditor.BuildSurfaceColliders(mgTerrain,
+                        MGTerrainEditor.DefaultColliderCellSize, assetFolder, createdAssets);
                 }
 
                 List<Texture2D> controlMaps = null;
@@ -187,6 +216,7 @@ namespace MashBoxSDK.MapTools
 
                 if (mgTerrain != null)
                 {
+                    mgTerrain.RefreshSurfaceTiles();
                     mgTerrain.InvalidateRenderCache();
                     EditorUtility.SetDirty(mgTerrain);
                 }

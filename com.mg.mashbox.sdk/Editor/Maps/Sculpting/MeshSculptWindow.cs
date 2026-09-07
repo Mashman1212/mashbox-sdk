@@ -24,6 +24,21 @@ namespace MashBoxSDK.MapTools
         [SerializeField] float m_Strength = 0.1f;
         [SerializeField] float m_Falloff = 2f;
         [SerializeField, Range(0.05f, 1f)] float m_Spacing = 0.2f;
+        [SerializeField] GameObject m_SeamTargetRoot;
+        [SerializeField] float m_SeamThreshold = 0.5f;
+        [SerializeField] float m_SeamNormalBlend = 0.5f;
+        [SerializeField] float m_SeamSurfaceOffset = -0.002f;
+        [SerializeField] bool m_SeamVerticesOnly = true;
+        [SerializeField] bool m_SeamAboveOnly = true;
+        [SerializeField] bool m_LoftSeamVerticesOnly = true;
+        bool EditingSeamLoft => m_Modifier != null && m_Modifier.LinkedLoft != null;
+        [SerializeField] float m_SeamLowerDepth = 0.05f;
+        [SerializeField] float m_SeamMinimumRise = 0.02f;
+        [SerializeField] bool m_SeamHeightOnly;
+        MeshSeamFitBrush m_SeamBrush;
+        MGTerrain[] m_SeamTerrains;
+        string m_SeamStatus;
+        bool IsSeamFit => m_Mode == MeshSculptModifier.SculptMode.SeamFit;
         Vector2 m_Scroll;
         bool m_IsSculpting;
         bool m_HasLastStrokePosition;
@@ -59,6 +74,7 @@ namespace MashBoxSDK.MapTools
             ClearActiveModifier();
             MBEditorToolState.SculptModeChanged -= OnSharedSculptModeChanged;
             MBEditorToolState.SculptModeChanged += OnSharedSculptModeChanged;
+            EditorApplication.hierarchyChanged += InvalidateSeamTerrains;
             if (MBEditorToolState.ActiveEditing)
                 ActivateSceneTool();
         }
@@ -66,6 +82,7 @@ namespace MashBoxSDK.MapTools
         void OnDisable()
         {
             MBEditorToolState.SculptModeChanged -= OnSharedSculptModeChanged;
+            EditorApplication.hierarchyChanged -= InvalidateSeamTerrains;
             DeactivateSceneTool();
             ClearActiveModifier();
         }
@@ -80,6 +97,7 @@ namespace MashBoxSDK.MapTools
             m_SceneToolActive = true;
             SceneView.duringSceneGui += OnSceneGUI;
             Undo.undoRedoPerformed += OnUndoRedo;
+            MeshSeamFitBrush.UndoMeshRebuilt += OnSculptUndoRebuilt;
         }
 
         public void DeactivateSceneTool()
@@ -97,6 +115,7 @@ namespace MashBoxSDK.MapTools
             m_SceneCameraRightMouseHeld = false;
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedo;
+            MeshSeamFitBrush.UndoMeshRebuilt -= OnSculptUndoRebuilt;
             if (s_ActiveSceneToolOwner == this)
                 s_ActiveSceneToolOwner = null;
             StopStroke();
@@ -145,14 +164,16 @@ namespace MashBoxSDK.MapTools
 
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Brush", EditorStyles.boldLabel);
-            var requestedMode = (MeshSculptModifier.SculptMode)GUILayout.Toolbar((int)m_Mode, new[] { "Displace", "Smooth", "Flatten" });
+            int requestedIndex = GUILayout.Toolbar(IsSeamFit ? 3 : (int)m_Mode, new[] { "Displace", "Smooth", "Flatten", "Seam Fit" });
+            var requestedMode = requestedIndex == 3 ? MeshSculptModifier.SculptMode.SeamFit : (MeshSculptModifier.SculptMode)requestedIndex;
             if (requestedMode != m_Mode)
             {
                 ClearActiveModifier();
                 m_Mode = requestedMode;
                 MBEditorToolState.SculptMode = (MBSculptMode)m_Mode;
             }
-            m_StrokeSpace = (MeshSculptModifier.StrokeSpace)EditorGUILayout.EnumPopup(new GUIContent("Memory Space", "World stays at the same scene position. Target Local follows the sculpted object."), m_StrokeSpace);
+            if (!IsSeamFit)
+                m_StrokeSpace = (MeshSculptModifier.StrokeSpace)EditorGUILayout.EnumPopup(new GUIContent("Memory Space", "World stays at the same scene position. Target Local follows the sculpted object."), m_StrokeSpace);
             m_Radius = EditorGUILayout.Slider("Radius", m_Radius, 0.01f, 20f);
             m_Strength = m_Mode == MeshSculptModifier.SculptMode.Displace
                 ? EditorGUILayout.Slider("Strength", m_Strength, -2f, 2f)
@@ -160,14 +181,48 @@ namespace MashBoxSDK.MapTools
             m_Falloff = EditorGUILayout.Slider("Falloff", m_Falloff, 0.1f, 8f);
             m_Spacing = EditorGUILayout.Slider("Stroke Spacing", m_Spacing, 0.05f, 1f);
 
-            if (m_Mode != MeshSculptModifier.SculptMode.Smooth)
+            if (IsSeamFit)
+            {
+                EditorGUILayout.LabelField("Fit Direction", EditingSeamLoft ? "Loft to MG Terrain" : "MG Terrain to Loft");
+                m_SeamTargetRoot = (GameObject)EditorGUILayout.ObjectField(new GUIContent("Target Root", "Optional target mesh or parent. Empty uses MG Terrains when editing a loft, and lofts when editing terrain."), m_SeamTargetRoot, typeof(GameObject), true);
+                m_SeamThreshold = Mathf.Clamp(EditorGUILayout.FloatField(new GUIContent("Snap Distance (m)", "Maximum world-space distance from a terrain vertex to the target surface."), m_SeamThreshold), 0.001f, 100f);
+                if (EditingSeamLoft)
+                {
+                    bool vertices = EditorGUILayout.Popup("Snap To", m_LoftSeamVerticesOnly ? 1 : 0, new[] { "Nearest Surface", "Nearest Vertex" }) == 1;
+                    if (vertices != m_LoftSeamVerticesOnly) m_SeamBrush = null;
+                    m_LoftSeamVerticesOnly = vertices;
+                }
+                else
+                {
+                    int snapMode = EditorGUILayout.Popup("Snap To", m_SeamAboveOnly ? 2 : m_SeamVerticesOnly ? 1 : 0,
+                        new[] { "Nearest Surface", "Nearest Vertex", "Nearest Vertex Above" });
+                    bool verticesOnly = snapMode != 0, aboveOnly = snapMode == 2;
+                    if (verticesOnly != m_SeamVerticesOnly || aboveOnly != m_SeamAboveOnly) m_SeamBrush = null;
+                    m_SeamVerticesOnly = verticesOnly;
+                    m_SeamAboveOnly = aboveOnly;
+                    if (m_SeamAboveOnly)
+                    {
+                        m_SeamMinimumRise = Mathf.Clamp(EditorGUILayout.FloatField(new GUIContent("Minimum Rise (m)", "Prefer vertices at least this far above the current terrain vertex. Repeated passes climb past nearly reached shoulder vertices. Surface Offset is accounted for automatically."), m_SeamMinimumRise), 0.0001f, 100f);
+                        EditorGUILayout.HelpBox("Repeated passes climb to the next higher vertex, skipping steps already nearly reached. Increase Minimum Rise to skip farther upward; increase Snap Distance to reach more of the shoulder. At the last reachable step, the brush finishes fitting the remaining gap.", MessageType.None);
+                    }
+                }
+                m_SeamHeightOnly = EditorGUILayout.Toggle(new GUIContent("Height Only", "Keep the edited mesh's local X/Z fixed. Off allows full 3D fitting."), m_SeamHeightOnly);
+                m_SeamNormalBlend = EditorGUILayout.Slider("Normal Blend", m_SeamNormalBlend, 0f, 1f);
+                m_SeamSurfaceOffset = Mathf.Clamp(EditorGUILayout.FloatField(new GUIContent("Surface Offset (m)", "Offset along the target normal after snapping. A small negative offset keeps terrain just under the loft to reduce flickering. Zero fits exactly to the surface."), m_SeamSurfaceOffset), -m_SeamThreshold, m_SeamThreshold);
+                m_SeamLowerDepth = Mathf.Clamp(EditorGUILayout.FloatField(new GUIContent("Ctrl Lower Depth (m)", "Maximum lowering per brush sample at full strength. Ctrl-drag lowers vertically in world space without needing a target mesh."), m_SeamLowerDepth), 0.001f, 1f);
+                EditorGUILayout.HelpBox("Shift-click terrain or a loft to choose what is edited. Paint its shoulder or face to fit toward the opposite surface. Surface snapping follows triangles; vertex snapping can bunch vertices on coarse meshes. Changes are baked in source local space. Loft regeneration replays them while its vertex layout stays compatible.", MessageType.Info);
+                if (!string.IsNullOrEmpty(m_SeamStatus)) EditorGUILayout.HelpBox(m_SeamStatus, MessageType.None);
+            }
+            else if (m_Mode != MeshSculptModifier.SculptMode.Smooth)
             {
                 m_DirectionMode = (DirectionMode)EditorGUILayout.EnumPopup("Direction", m_DirectionMode);
                 if (m_DirectionMode == DirectionMode.Custom)
                     m_CustomDirection = EditorGUILayout.Vector3Field("Custom World Direction", m_CustomDirection);
             }
 
-            EditorGUILayout.HelpBox("Drag to sculpt. Ctrl inverts the active brush, Shift temporarily smooths, and Ctrl+Shift temporarily adds deterministic noise. Ctrl+Middle-drag adjusts the brush: horizontal changes radius and vertical changes strength.", MessageType.None);
+            EditorGUILayout.HelpBox(IsSeamFit
+                ? "Shift+Click terrain or a loft to choose the sculptable source. Drag fits it to the target; Ctrl+Left-drag gently lowers the selected mesh. Shift smooths; Ctrl+Shift adds noise. Ctrl+Middle-drag adjusts radius and strength. Undo restores a whole drag."
+                : "Drag to sculpt. Ctrl inverts the active brush, Shift temporarily smooths, and Ctrl+Shift temporarily adds deterministic noise. Ctrl+Middle-drag adjusts the brush: horizontal changes radius and vertical changes strength.", MessageType.None);
 
             using (new EditorGUI.DisabledScope(m_Modifier == null))
             {
@@ -196,6 +251,7 @@ namespace MashBoxSDK.MapTools
 
         void OnSharedSculptModeChanged()
         {
+            InvalidateSeamTerrains();
             MeshSculptModifier.SculptMode mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
             if (m_Mode != mode)
                 ClearActiveModifier();
@@ -206,6 +262,7 @@ namespace MashBoxSDK.MapTools
 
         internal void UseSelection()
         {
+            m_SeamBrush = null;
             GameObject selected = Selection.activeGameObject;
             if (selected == null)
                 return;
@@ -287,7 +344,9 @@ namespace MashBoxSDK.MapTools
 
         void OnSceneGUI(SceneView sceneView)
         {
+            sceneView.wantsMouseMove = true;
             Event current = Event.current;
+            MBEditorToolVisuals.RepaintBrushModifiers(current, sceneView);
             if (current.type == EventType.MouseDown && current.button == 1)
                 m_SceneCameraRightMouseHeld = true;
             else if (current.type == EventType.MouseUp && current.button == 1)
@@ -333,7 +392,12 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
+            if (MBEditorToolVisuals.FocusBrushSurface(current, sceneView, hit.point, m_Radius))
+                return;
+
             MeshSculptModifier hoveredModifier = ResolveSculptModifier(hitMeshFilter);
+            if (current.type == EventType.Layout && !current.alt)
+                HandleUtility.AddDefaultControl(controlId);
             if (m_IsSculpting && hoveredModifier != null && hoveredModifier != m_Modifier)
                 SwitchModifierDuringStroke(hoveredModifier);
 
@@ -365,7 +429,9 @@ namespace MashBoxSDK.MapTools
                 : previewMode == MeshSculptModifier.SculptMode.Noise
                     ? Color.magenta
                     : previewMode == MeshSculptModifier.SculptMode.Flatten ? Color.yellow : Color.cyan;
+            if (IsSeamFit && current.control && !current.shift) brushColor = new Color(1f, 0.4f, 0.2f);
             DrawBrushFalloff(hit.point, hit.normal, brushColor);
+            MBEditorToolVisuals.DrawBrushAction(GetBrushAction(previewMode, current.control));
             sceneView.Repaint();
 
             if (current.type == EventType.MouseDown && current.button == 0 && !current.alt)
@@ -394,22 +460,29 @@ namespace MashBoxSDK.MapTools
 
         void DrawActivationLabel(RaycastHit hit)
         {
-            var style = new GUIStyle(EditorStyles.boldLabel)
+            MBEditorToolVisuals.DrawBrushAction("Shift+Click · Make Sculptable");
+        }
+
+        string GetBrushAction(MeshSculptModifier.SculptMode mode, bool control)
+        {
+            switch (mode)
             {
-                alignment = TextAnchor.MiddleCenter
-            };
-            style.normal.textColor = new Color(1f, 0.65f, 0.2f, 1f);
-            float handleSize = HandleUtility.GetHandleSize(hit.point);
-            Handles.Label(
-                hit.point + hit.normal * handleSize * 0.22f,
-                "Shift+Click Make Sculptable",
-                style);
+                case MeshSculptModifier.SculptMode.Smooth: return "Smooth";
+                case MeshSculptModifier.SculptMode.Noise: return "Noise";
+                case MeshSculptModifier.SculptMode.Flatten: return "Flatten";
+                case MeshSculptModifier.SculptMode.SeamFit:
+                    if (control) return "Seam Fit · Lower";
+                    if (EditingSeamLoft) return "Seam Fit · Fit Loft to Terrain";
+                    return m_SeamAboveOnly ? "Seam Fit · Raise to Higher Surface" : "Seam Fit · Fit to Surface";
+                default: return control ? "Lower / Push In" : "Raise / Push Out";
+            }
         }
 
         void CreateOrActivateModifier(MeshFilter meshFilter)
         {
             if (meshFilter == null || meshFilter.sharedMesh == null)
                 return;
+            if (IsSeamFit && !IsTerrainSurface(meshFilter) && meshFilter.GetComponentInParent<MultiSplineLoft>() == null) return;
 
             MultiSplineLoft loft = meshFilter.GetComponent<MultiSplineLoft>()
                 ?? meshFilter.GetComponentInParent<MultiSplineLoft>();
@@ -457,6 +530,7 @@ namespace MashBoxSDK.MapTools
             StopStroke();
             DestroySculptPickingCollider();
             m_Modifier = modifier;
+            m_SeamBrush = null;
             EnsureSculptPickingCollider();
             Repaint();
         }
@@ -470,6 +544,7 @@ namespace MashBoxSDK.MapTools
                 m_Modifier.FinalizeStrokePreview();
             DestroySculptPickingCollider();
             m_Modifier = modifier;
+            m_SeamBrush = null;
             EnsureSculptPickingCollider();
             m_HasLastStrokePosition = false;
             Repaint();
@@ -639,6 +714,8 @@ namespace MashBoxSDK.MapTools
 
         bool TryRaycastSculptSurface(Ray ray, out RaycastHit surfaceHit, out MeshFilter meshFilter)
         {
+            if (IsSeamFit)
+                return TryRaycastSeamSurface(ray, out surfaceHit, out meshFilter);
             surfaceHit = default;
             meshFilter = null;
 
@@ -683,6 +760,11 @@ namespace MashBoxSDK.MapTools
             if (hitCollider == null)
                 return null;
 
+            // Terrain collision can live on child chunks, while its configured
+            // editable filter may be on a different object in the hierarchy.
+            MGTerrain terrain = hitCollider.GetComponentInParent<MGTerrain>();
+            if (terrain != null) return terrain.MeshFilter;
+
             // Collider chunks deliberately have no MeshFilter of their own.
             // Resolve them to the owning loft's full generated render mesh.
             MultiSplineLoft loft = hitCollider.GetComponentInParent<MultiSplineLoft>();
@@ -693,18 +775,119 @@ namespace MashBoxSDK.MapTools
                 ?? hitCollider.GetComponentInParent<MeshFilter>();
         }
 
+        void InvalidateSeamTerrains() => m_SeamTerrains = null;
+
+        static bool IsTerrainSurface(MeshFilter filter)
+        {
+            if (filter == null) return false;
+            var terrain = filter.GetComponentInParent<MGTerrain>();
+            return terrain != null && terrain.MeshFilter == filter;
+        }
+
+        bool TryRaycastSeamSurface(Ray ray, out RaycastHit surfaceHit, out MeshFilter meshFilter)
+        {
+            surfaceHit = default;
+            meshFilter = null;
+            EnsureSculptPickingCollider();
+            Physics.SyncTransforms();
+            float closest = float.MaxValue;
+
+            // Once painting begins, this collider represents the current edited
+            // surface. Hover before activation must work without a modifier too.
+            bool choosing = !m_IsSculpting && Event.current != null && Event.current.shift;
+            bool pickTerrain = m_Modifier == null || !EditingSeamLoft || choosing;
+            bool pickLoft = m_Modifier == null || EditingSeamLoft || choosing;
+            if (m_SculptPickingCollider != null
+                && m_SculptPickingCollider.Raycast(ray, out var previewHit, closest))
+            {
+                surfaceHit = previewHit;
+                meshFilter = m_SculptPickingTarget;
+                closest = previewHit.distance;
+            }
+
+            m_SeamTerrains ??= Object.FindObjectsByType<MGTerrain>(FindObjectsSortMode.None);
+            foreach (MGTerrain terrain in m_SeamTerrains)
+            {
+                if (!pickTerrain) break;
+                if (terrain == null || !terrain.gameObject.activeInHierarchy
+                    || !terrain.gameObject.scene.IsValid() || !terrain.gameObject.scene.isLoaded) continue;
+                MeshFilter surface = terrain.MeshFilter;
+                if (surface == null || surface.sharedMesh == null) continue;
+                // Query the terrain's registered master/chunk colliders directly.
+                // Loft/decor hits must not hide the terrain hover brush.
+                if (!terrain.RaycastSurface(ray, out var hit, closest)) continue;
+                surfaceHit = hit;
+                meshFilter = surface;
+                closest = hit.distance;
+            }
+            if (pickLoft)
+            {
+                foreach (var hit in Physics.RaycastAll(ray, closest, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    var loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
+                    if (loft == null || hit.distance >= closest) continue;
+                    var filter = loft.GetComponent<MeshFilter>();
+                    if (filter == null || filter.sharedMesh == null) continue;
+                    if (EditingSeamLoft && !choosing && filter != m_Modifier.Target) continue;
+                    surfaceHit = hit;
+                    meshFilter = filter;
+                    closest = hit.distance;
+                }
+            }
+            return meshFilter != null;
+        }
+
         void RecordStroke(RaycastHit hit, bool control, bool shift)
         {
             MeshSculptModifier.SculptMode strokeMode = GetStrokeMode(control, shift);
             Vector3 direction = m_DirectionMode == DirectionMode.WorldUp ? Vector3.up : m_DirectionMode == DirectionMode.Custom ? m_CustomDirection.normalized : hit.normal;
             float strength = control && !shift ? -m_Strength : m_Strength;
+            var stroke = m_Modifier.CreateStroke(strokeMode,
+                strokeMode == MeshSculptModifier.SculptMode.SeamFit ? MeshSculptModifier.StrokeSpace.TargetLocal : m_StrokeSpace,
+                hit.point, direction, m_Radius, strength, m_Falloff);
+            if (strokeMode == MeshSculptModifier.SculptMode.SeamFit)
+            {
+                bool editingLoft = EditingSeamLoft;
+                Mesh sourceMesh = editingLoft ? m_Modifier.LinkedLoft.GeneratedMesh : m_Modifier.Target.sharedMesh;
+                if ((!editingLoft && !IsTerrainSurface(m_Modifier.Target)) || sourceMesh == null || !sourceMesh.isReadable) return;
+                bool lower = control && !shift;
+                if (!lower && m_SeamBrush == null)
+                {
+                    var candidates = new List<MeshFilter>();
+                    if (m_SeamTargetRoot != null) candidates.AddRange(m_SeamTargetRoot.GetComponentsInChildren<MeshFilter>());
+                    else if (editingLoft)
+                        foreach (var terrainTarget in Object.FindObjectsByType<MGTerrain>(FindObjectsSortMode.None))
+                            candidates.Add(terrainTarget.MeshFilter);
+                    else foreach (MultiSplineLoft loft in Object.FindObjectsByType<MultiSplineLoft>(FindObjectsSortMode.InstanceID))
+                        candidates.Add(loft.GetComponent<MeshFilter>());
+                    m_SeamBrush = new MeshSeamFitBrush(candidates, m_Modifier.Target,
+                        editingLoft ? m_LoftSeamVerticesOnly : m_SeamVerticesOnly, editingLoft);
+                }
+                stroke.seamVertexCount = sourceMesh.vertexCount;
+                stroke.seamVertices = lower
+                    ? MeshSeamFitBrush.SampleLower(m_Modifier.Target, hit.point, m_Radius, m_Strength, m_Falloff, m_SeamLowerDepth, sourceMesh)
+                    : m_SeamBrush.Sample(m_Modifier.Target, hit.point, m_Radius,
+                        m_SeamThreshold, m_Strength, m_Falloff, m_SeamNormalBlend, m_SeamHeightOnly, m_SeamSurfaceOffset, !editingLoft && m_SeamAboveOnly, m_SeamMinimumRise, sourceMesh);
+                m_SeamStatus = stroke.seamVertices.Length == 0
+                    ? "No terrain vertices within both the brush and snap distance of an eligible target."
+                    : $"{(lower ? "Lowered" : "Fitted")} {stroke.seamVertices.Length} {(editingLoft ? "loft" : "terrain")} vertices in the latest sample.";
+                if (stroke.seamVertices.Length == 0) { Repaint(); return; }
+            }
             Undo.RecordObject(m_Modifier, "Mesh Sculpt Stroke");
-            MGTerrain terrain = m_Modifier.Target.GetComponent<MGTerrain>()
-                ?? m_Modifier.Target.GetComponentInParent<MGTerrain>();
+            MGTerrain terrain = EditingSeamLoft ? null : (m_Modifier.Target.GetComponent<MGTerrain>()
+                ?? m_Modifier.Target.GetComponentInParent<MGTerrain>());
             if (terrain != null)
+            {
                 Undo.RecordObject(terrain, "Mesh Sculpt Stroke");
+                if (IsSeamFit)
+                {
+                    EnsureSeamMasterCollider(terrain);
+                    m_Modifier.UpdateMeshCollider = true;
+                }
+            }
             m_StrokeModifiers.Add(m_Modifier);
-            m_Modifier.AddStroke(m_Modifier.CreateStroke(strokeMode, m_StrokeSpace, hit.point, direction, m_Radius, strength, m_Falloff));
+            m_Modifier.AddStroke(stroke);
+            if (strokeMode == MeshSculptModifier.SculptMode.SeamFit) MeshSeamFitBrush.TrackUndo(m_Modifier);
             m_Modifier.ApplyLatestStrokePreview();
             EditorUtility.SetDirty(m_Modifier);
             m_LastStrokePosition = hit.point;
@@ -717,6 +900,20 @@ namespace MashBoxSDK.MapTools
             if (control && shift) return MeshSculptModifier.SculptMode.Noise;
             if (shift) return MeshSculptModifier.SculptMode.Smooth;
             return m_Mode;
+        }
+
+        static void EnsureSeamMasterCollider(MGTerrain terrain)
+        {
+            MeshCollider master = terrain.MeshCollider;
+            if (master == null) master = Undo.AddComponent<MeshCollider>(terrain.MeshFilter.gameObject);
+            Undo.RecordObject(master, "Fit Terrain Collision");
+            master.enabled = true;
+            foreach (MeshCollider chunk in terrain.SurfaceColliderChunks)
+            {
+                if (chunk == null || !chunk.enabled) continue;
+                Undo.RecordObject(chunk, "Fit Terrain Collision");
+                chunk.enabled = false;
+            }
         }
 
         void EnsureSculptPickingCollider()
@@ -779,6 +976,7 @@ namespace MashBoxSDK.MapTools
                 RefreshSculptPickingCollider();
             }
             m_IsSculpting = false;
+            m_SeamBrush = null;
             EndBrushAdjustment();
             m_HasLastStrokePosition = false;
             GUIUtility.hotControl = 0;
@@ -786,21 +984,16 @@ namespace MashBoxSDK.MapTools
             m_UndoGroup = -1;
         }
 
+        void OnSculptUndoRebuilt(MeshSculptModifier modifier)
+        {
+            if (modifier != null && modifier.Target == m_SculptPickingTarget)
+                RefreshSculptPickingCollider();
+        }
+
         void OnUndoRedo()
         {
-            if (m_StrokeModifiers.Count > 0)
-            {
-                foreach (MeshSculptModifier modifier in m_StrokeModifiers)
-                {
-                    if (modifier != null)
-                        modifier.Rebuild();
-                }
-            }
-            else if (m_Modifier != null)
-            {
-                m_Modifier.Rebuild();
-            }
-            RefreshSculptPickingCollider();
+            // Mesh replay and collider cooking are handled only for components
+            // restored by Undo. Unrelated scene edits only refresh the UI.
             SceneView.RepaintAll();
             Repaint();
         }
