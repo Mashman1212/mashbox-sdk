@@ -230,6 +230,8 @@ namespace MashBoxSDK.MapTools
                 new GUIContent("Near Cell Size (Texels)", "Streaming cell width in density-map texels. The density ceiling is fixed per world area: 32,768 instances per 50 × 50 metres per layer, independent of this cell size."));
             EditorGUILayout.PropertyField(m_MaxCachedDetailChunks);
             EditorGUILayout.PropertyField(m_MaxDetailChunksBuiltPerLayerPerFrame);
+            var staticCells = serializedObject.FindProperty("m_UseStaticDetailCells");
+            EditorGUILayout.PropertyField(staticCells, new GUIContent("Static Cell Sizes", "Use the Near Cell Size at every distance. Mid/far density still thins instances; cells do not merge or rebuild when changing density bands. Uses instanced draws rather than combined cell meshes."));
             EditorGUILayout.PropertyField(
                 m_UseDetailDensityLod,
                 new GUIContent("Distance Density LOD", "Keep nearby cells dense while deterministically thinning farther cells."));
@@ -239,7 +241,7 @@ namespace MashBoxSDK.MapTools
                 int nearCellSize = Mathf.Clamp(m_DetailChunkCells.intValue, 8, 64);
                 EditorGUILayout.LabelField(
                     "HLOD Cell Sizes",
-                    m_UseBatchRendererGroup.boolValue
+                    staticCells.boolValue || (Application.isPlaying && m_UseBatchRendererGroup.boolValue)
                         ? $"Fixed {nearCellSize} (reused by Near / Mid / Far)"
                         : $"Near {nearCellSize} / Mid {nearCellSize * 2} / Far {nearCellSize * 4}");
                 EditorGUILayout.PropertyField(
@@ -837,6 +839,26 @@ namespace MashBoxSDK.MapTools
         float m_FarBakeCoverage = 1f;
         float m_CaptureExposure = 12f;
         Texture2D m_LastAppearanceCapture;
+        bool m_CaptureNormalMap;
+        Texture2D m_LastNormalCapture;
+
+        [Serializable]
+        sealed class AppearanceNormalPass : CustomPass
+        {
+            [NonSerialized] internal Camera captureCamera;
+            [NonSerialized] internal RenderTexture destination;
+            [NonSerialized] internal Material decoder;
+            [NonSerialized] internal bool captured;
+            protected override void Execute(CustomPassContext ctx)
+            {
+                if (ctx.hdCamera.camera != captureCamera || destination == null || decoder == null) return;
+                ctx.cmd.SetGlobalTexture("_MGCaptureNormalBuffer", ctx.cameraNormalBuffer);
+                CoreUtils.SetRenderTarget(ctx.cmd, destination);
+                ctx.cmd.SetViewport(new Rect(0, 0, destination.width, destination.height));
+                CoreUtils.DrawFullScreen(ctx.cmd, decoder);
+                captured = true;
+            }
+        }
 
         void DrawFarGrassBake(MGTerrain terrain)
         {
@@ -845,8 +867,14 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.HelpBox("Captures the actual terrain, painted details and visible scene geometry from above into one RGB texture. Tiled capture temporarily removes detail distance/quality thinning and enables detail shadows. Sun shadows and lighting are baked permanently into the image; this is not unlit albedo. Fog and lens effects are excluded. No shader or material is modified. UVs: terrain mesh local X/Z bounds, not mesh UV2.", MessageType.Info);
             m_FarBakeResolution = EditorGUILayout.IntPopup("Capture Resolution", m_FarBakeResolution, new[] { "2K", "4K" }, new[] { 2048, 4096 });
             m_CaptureExposure = EditorGUILayout.Slider(new GUIContent("Fixed Exposure (EV100)", "Higher values make the capture darker. Uses one fixed exposure across every tile; does not inherit automatic exposure."), m_CaptureExposure, -4f, 20f);
+            m_CaptureNormalMap = EditorGUILayout.Toggle("Capture Normal Map (World Space)", m_CaptureNormalMap);
+            if (m_CaptureNormalMap)
+                EditorGUILayout.HelpBox("Also saves a matching _NormalWS.png from HDRP's opaque/alpha-clipped normal buffer, including normal-map shading. Imported as linear data, NOT a tangent-space Normal Map. Decode RGB × 2 − 1 and normalize in world space; use the colour map's same X/Z UVs. Transparent objects that do not write normals are not represented. Baked colour still contains lighting.", MessageType.Info);
             using (new EditorGUI.DisabledScope(true))
+            {
                 EditorGUILayout.ObjectField("Last Capture", m_LastAppearanceCapture, typeof(Texture2D), false);
+                if (m_CaptureNormalMap) EditorGUILayout.ObjectField("Last World Normal Capture", m_LastNormalCapture, typeof(Texture2D), false);
+            }
             using (new EditorGUI.DisabledScope(Application.isPlaying || !terrain.isActiveAndEnabled))
                 if (GUILayout.Button("Capture Terrain Appearance..."))
                 { serializedObject.ApplyModifiedProperties(); CaptureTerrainAppearance(terrain); GUIUtility.ExitGUI(); }
@@ -883,6 +911,10 @@ namespace MashBoxSDK.MapTools
             VolumeProfile profile = null;
             RenderTexture target = null;
             Texture2D texture = null;
+            Texture2D normalTexture = null;
+            RenderTexture normalTarget = null;
+            Material normalDecoder = null;
+            AppearanceNormalPass normalPass = null;
             RenderTexture previousActive = RenderTexture.active;
             var lights = new List<(HDAdditionalLightData data, int resolution, bool useOverride, ShadowUpdateMode update)>();
             bool captureStarted = false;
@@ -905,6 +937,23 @@ namespace MashBoxSDK.MapTools
                 var hd = captureObject.AddComponent<HDAdditionalCameraData>();
                 hd.volumeLayerMask = ~0;
                 hd.customRenderingSettings = true;
+                if (m_CaptureNormalMap)
+                {
+                    Shader normalShader = Shader.Find("Hidden/MashBox/TerrainCaptureNormals");
+                    if (normalShader == null || !normalShader.isSupported)
+                        throw new InvalidOperationException("The terrain normal capture shader is missing or unsupported. Allow Unity to finish importing the SDK shaders.");
+                    normalDecoder = CoreUtils.CreateEngineMaterial(normalShader);
+                    var normalVolume = captureObject.AddComponent<CustomPassVolume>();
+                    normalVolume.isGlobal = true;
+                    normalVolume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
+                    normalPass = new AppearanceNormalPass { name = "Terrain world normal export", captureCamera = camera,
+                        decoder = normalDecoder, targetColorBuffer = CustomPass.TargetBuffer.None, targetDepthBuffer = CustomPass.TargetBuffer.None };
+                    normalVolume.customPasses.Add(normalPass);
+                    hd.renderingPathCustomFrameSettings.SetEnabled(FrameSettingsField.CustomPass, true);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)FrameSettingsField.CustomPass] = true;
+                    normalTexture = new Texture2D(resolution, resolution, TextureFormat.RGB24, true, true)
+                    { name = terrain.name + "_NormalWS", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear };
+                }
                 foreach (FrameSettingsField field in new[] { FrameSettingsField.AtmosphericScattering, FrameSettingsField.Volumetrics,
                     FrameSettingsField.DepthOfField, FrameSettingsField.MotionBlur, FrameSettingsField.Bloom,
                     FrameSettingsField.ChromaticAberration, FrameSettingsField.Vignette, FrameSettingsField.FilmGrain,
@@ -975,6 +1024,18 @@ namespace MashBoxSDK.MapTools
                     camera.transform.position = surface.TransformPoint(new Vector3(bounds.min.x + (pixelX + pixels * .5f) * bounds.size.x / resolution,
                         bounds.max.y, bounds.min.z + (pixelZ + pixels * .5f) * bounds.size.z / resolution)) + surface.up * 20f;
                     terrain.PrepareAppearanceCaptureTile();
+                    if (normalPass != null)
+                    {
+                        if (normalTarget == null || normalTarget.width != paddedPixels)
+                        {
+                            if (normalTarget != null) { normalTarget.Release(); DestroyImmediate(normalTarget); }
+                            normalTarget = new RenderTexture(paddedPixels, paddedPixels, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
+                            { name = "MG Terrain Normal Tile", hideFlags = HideFlags.HideAndDontSave };
+                            normalTarget.Create();
+                        }
+                        normalPass.destination = normalTarget;
+                        normalPass.captured = false;
+                    }
                     RenderPipeline.SubmitRenderRequest(camera, request);
                     if (!terrain.AppearanceCaptureNeedsSubdivision)
                         RenderPipeline.SubmitRenderRequest(camera, request);
@@ -991,6 +1052,13 @@ namespace MashBoxSDK.MapTools
                         layerSubmissions[layer] += terrain.AppearanceCaptureLayerSubmissions[layer];
                     RenderTexture.active = target;
                     texture.ReadPixels(new Rect(border, border, pixels, pixels), pixelX, pixelZ, false);
+                    if (normalPass != null)
+                    {
+                        if (!normalPass.captured)
+                            throw new InvalidOperationException("HDRP did not execute normal capture. Enable Custom Pass support in the active HDRP asset. No incomplete capture was saved.");
+                        RenderTexture.active = normalTarget;
+                        normalTexture.ReadPixels(new Rect(border, border, pixels, pixels), pixelX, pixelZ, false);
+                    }
                     completedPixels += (long)pixels * pixels;
                     return true;
                 }
@@ -1021,6 +1089,33 @@ namespace MashBoxSDK.MapTools
                 importer.SaveAndReimport();
                 m_LastAppearanceCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
                 EditorGUIUtility.PingObject(m_LastAppearanceCapture);
+                if (normalTexture != null)
+                {
+                    normalTexture.Apply(true, false);
+                    byte[] normalPng = normalTexture.EncodeToPNG();
+                    if (normalPng == null || normalPng.Length == 0) throw new InvalidOperationException("Normal PNG encoding failed. The colour PNG was saved successfully.");
+                    string normalPath = AssetDatabase.GenerateUniqueAssetPath(System.IO.Path.ChangeExtension(path, null) + "_NormalWS.png");
+                    string normalAbsolutePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "..", normalPath));
+                    using (var file = new System.IO.FileStream(normalAbsolutePath, System.IO.FileMode.CreateNew, System.IO.FileAccess.Write))
+                        file.Write(normalPng, 0, normalPng.Length);
+                    AssetDatabase.ImportAsset(normalPath, ImportAssetOptions.ForceSynchronousImport);
+                    var normalImporter = AssetImporter.GetAtPath(normalPath) as TextureImporter;
+                    if (normalImporter == null) throw new InvalidOperationException("Normal PNG saved but could not be imported: " + normalPath);
+                    normalImporter.textureType = TextureImporterType.Default;
+                    normalImporter.sRGBTexture = false;
+                    normalImporter.alphaSource = TextureImporterAlphaSource.None;
+                    normalImporter.mipmapEnabled = true;
+                    normalImporter.wrapMode = TextureWrapMode.Clamp;
+                    normalImporter.filterMode = FilterMode.Trilinear;
+                    normalImporter.anisoLevel = 4;
+                    normalImporter.maxTextureSize = resolution;
+                    normalImporter.textureCompression = TextureImporterCompression.Uncompressed;
+                    normalImporter.isReadable = false;
+                    normalImporter.userData = "MG Terrain World Space Normals: normalize(RGB * 2 - 1). Same local X/Z bounds UVs as colour capture. Not tangent-space normal data.";
+                    normalImporter.SaveAndReimport();
+                    m_LastNormalCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath);
+                    Debug.Log($"World-space normal capture saved to {normalPath}. Sample as linear RGB, decode RGB * 2 - 1 and normalize. Do not use tangent-space normal unpacking.", terrain);
+                }
                 for (int layer = 0; layer < layerSubmissions.Length; layer++)
                     Debug.Log($"[MG Terrain Capture] Layer {layer}: {layerSubmissions[layer]:N0} instance submissions across completed tiles (includes overlapping borders).", terrain);
                 Debug.Log($"Terrain appearance saved to {path}. RGB maps local X/Z bounds {bounds.min} to {bounds.max}; lighting and shadows are baked. No shader/material was changed.", terrain);
@@ -1045,6 +1140,9 @@ namespace MashBoxSDK.MapTools
                 }
                 if (target != null) { target.Release(); DestroyImmediate(target); }
                 if (texture != null) DestroyImmediate(texture);
+                if (normalTexture != null) DestroyImmediate(normalTexture);
+                if (normalTarget != null) { normalTarget.Release(); DestroyImmediate(normalTarget); }
+                if (normalDecoder != null) CoreUtils.Destroy(normalDecoder);
                 EditorUtility.ClearProgressBar();
                 EditorApplication.UnlockReloadAssemblies();
                 SceneView.RepaintAll();

@@ -461,6 +461,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, Range(1, 64)] int m_MaxDetailChunksBuiltPerLayerPerFrame = 2;
         [SerializeField, Tooltip("Reduce the number of generated detail instances in cells farther from the camera.")]
         bool m_UseDetailDensityLod = true;
+        [SerializeField, Tooltip("Use one fixed cell grid for every distance. Mid/far density changes select fewer instances without rebuilding the cell.")]
+        bool m_UseStaticDetailCells;
+        bool UseFixedDetailCells => m_AppearanceCaptureCamera == null
+            && (m_UseStaticDetailCells || (Application.isPlaying && m_UseBatchRendererGroup));
         [SerializeField, Min(0f), Tooltip("Cells at or inside this distance keep 100% of their generated detail density.")]
         float m_FullDetailDensityDistance = 35f;
         [SerializeField, Min(0f), Tooltip("Cells between the full-density distance and this distance use the mid-density percentage. Cells beyond it use the far-density percentage.")]
@@ -1174,6 +1178,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return;
             }
             bool useFixedResidentCells = Application.isPlaying && m_UseBatchRendererGroup;
+            bool useFixedCells = UseFixedDetailCells;
             if (useFixedResidentCells && !IsDensityDetailStreamingCamera(camera))
                 return;
             if (useFixedResidentCells && !m_RuntimeDetailCameraLogged)
@@ -1210,10 +1215,19 @@ namespace MashBoxSDK.Maps.TerrainSystem
             float worldPerLocalX = Mathf.Max(0.0001f, transform.TransformVector(Vector3.right).magnitude);
             float worldPerLocalZ = Mathf.Max(0.0001f, transform.TransformVector(Vector3.forward).magnitude);
             int renderedFrame = Time.renderedFrameCount;
-            if (m_DetailUploadBudgetFrame != renderedFrame)
+            // Scene view repaints need not advance the gameplay frame counter.
+            if (!Application.isPlaying || m_DetailUploadBudgetFrame != renderedFrame)
             {
                 m_DetailUploadBudgetFrame = renderedFrame;
                 m_RemainingDetailMeshUploads = Mathf.Max(1, m_MaxDetailMeshUploadsPerFrame);
+            }
+            // Completion must not depend on visibility. Otherwise flying away
+            // from pending cells fills the global queue forever: new cells cannot
+            // build, while the old cells never get a chance to finish uploading.
+            foreach (DensityDetailChunk cachedChunk in m_DensityDetailCache.Values)
+            {
+                if (m_RemainingDetailMeshUploads <= 0) break;
+                FinalizeCompletedDetailMeshes(cachedChunk, ref m_RemainingDetailMeshUploads);
             }
             int pendingBuilds = CountPendingDetailBuilds();
             m_AppearanceCapturePopulation = 0;
@@ -1257,7 +1271,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     maximumDistance = Mathf.Min(maximumDistance, m_MaxDensityDetailDistance);
                 if (m_AppearanceCaptureCamera != null) maximumDistance = float.MaxValue;
                 List<DetailCandidateChunk> candidateChunks = m_DetailCandidateChunks;
-                if (useFixedResidentCells)
+                if (useFixedCells)
                 {
                     BuildFixedDetailCellCandidates(
                         camera,
@@ -1301,7 +1315,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 for (int candidateIndex = 0; candidateIndex < candidateChunks.Count; candidateIndex++)
                 {
                         DetailCandidateChunk candidate = candidateChunks[candidateIndex];
-                        int cachedDensityLod = useFixedResidentCells ? 0 : candidate.densityLod;
+                        // Nonresident fixed grids need only the camera-visible cells.
+                        if (useFixedCells && !useFixedResidentCells && !candidate.visible) continue;
+                        int cachedDensityLod = useFixedCells ? 0 : candidate.densityLod;
                         var key = new DetailChunkKey(
                             layerIndex,
                             candidate.firstX,
@@ -1324,7 +1340,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                                 candidate.firstX,
                                 candidate.firstZ,
                                 cachedDensityLod,
-                                useFixedResidentCells ? 1f : GetDetailDensityScale(candidate.densityLod));
+                                useFixedCells ? 1f : GetDetailDensityScale(candidate.densityLod));
                             m_DensityDetailCache.Add(key, chunk);
                             pendingBuilds += chunk.pendingCombinedDraws.Count;
                             builtThisFrame++;
@@ -1335,7 +1351,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
                         if (chunk != null)
                         {
-                            if (useFixedResidentCells)
+                            if (useFixedCells)
                                 chunk.densityLod = candidate.densityLod;
                             chunk.lastUsedTick = m_DetailRenderTick;
                             FinalizeCompletedDetailMeshes(chunk, ref m_RemainingDetailMeshUploads);
@@ -1344,13 +1360,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         // Fixed resident cells are prebuilt in a camera-centered
                         // radius, including cells outside the current frustum.
                         // Only the visible subset is submitted to BRG.
-                        if (useFixedResidentCells && !candidate.visible)
+                        if (useFixedCells && !candidate.visible)
                             continue;
 
                         // Do not switch away from the old density until every
                         // slice of the requested cell has reached the GPU.
                         DensityDetailChunk drawChunk;
-                        if (useFixedResidentCells)
+                        if (useFixedCells)
                         {
                             drawChunk = IsDetailChunkFullyReady(chunk) ? chunk : null;
                         }
@@ -1378,7 +1394,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                                 drawChunk,
                                 prototype,
                                 candidate.distance,
-                                useFixedResidentCells ? candidate.densityLod : drawChunk.densityLod));
+                                useFixedCells ? candidate.densityLod : drawChunk.densityLod));
                         }
                 }
             }
@@ -1394,6 +1410,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 AppearanceCaptureTileComplete = !AppearanceCaptureNeedsSubdivision && allCandidateCellsReady
                     && m_LastSubmittedDensityDetailInstances == m_LastVisibleDensityDetailInstances;
             PruneDetailChunkCache();
+#if UNITY_EDITOR
+            if (!Application.isPlaying && m_AppearanceCaptureCamera == null
+                && (!allCandidateCellsReady || CountPendingDetailBuilds() > 0))
+                UnityEditor.SceneView.RepaintAll();
+#endif
         }
 
         void DrawVisibleDensityDetails(Camera camera)
@@ -1525,7 +1546,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         int GetVisibleDensityDetailInstanceCount(VisibleDensityDetail visible)
         {
-            if (!Application.isPlaying || !m_UseBatchRendererGroup)
+            if (!UseFixedDetailCells)
                 return visible.chunk.instanceCount;
             return Mathf.Clamp(
                 Mathf.FloorToInt(visible.chunk.instanceCount * GetDetailDensityScale(visible.densityLod)),
@@ -2195,6 +2216,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 List<Matrix4x4> matrices = matricesByPart[partIndex];
                 long combinedVertexCount = (long)part.mesh.vertexCount * matrices.Count;
                 if (m_CombineDenseDetailMeshes
+                    && !UseFixedDetailCells
                     && m_AppearanceCaptureCamera == null
                     && !(m_UseBatchRendererGroup && Application.isPlaying)
                     && !RequiresPerInstanceObjectTransform(part.material)
