@@ -20,10 +20,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
         int DetailDataAddress => BrgZeroPrefixBytes + m_DetailBrgCapacity * BrgPackedMatrixBytes * 2;
         int DetailTableAddress => DetailDataAddress + m_DetailBrgCapacity * 16;
         Vector4[] m_DetailInstanceShaderData;
+        Vector4[] m_DetailDefinitionData;
 
         void UploadDetailDefinitions()
         {
-            var data = new Vector4[1 + m_DensityDetailLayers.Count * 2];
+            int count = 1 + m_DensityDetailLayers.Count * 2;
+            if (m_DetailDefinitionData == null || m_DetailDefinitionData.Length != count)
+                m_DetailDefinitionData = new Vector4[count];
+            var data = m_DetailDefinitionData;
             data[0] = new Vector4(m_DensityDetailLayers.Count, 0, 0, 0);
             Vector4 fadeRanges = DetailFadeRanges;
             data[0] = new Vector4(m_DensityDetailLayers.Count, fadeRanges.x, fadeRanges.y, fadeRanges.z);
@@ -220,9 +224,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return false;
             }
 
-            bool allProcedural = m_VisibleDensityDetails.Count > 0;
-            for (int index = 0; index < m_VisibleDensityDetails.Count && allProcedural; index++)
-                allProcedural = m_VisibleDensityDetails[index].chunk.gpuProcedural;
+            // Looking at an empty area must not destroy the resident GPU buffer.
+            var proceduralCandidates = m_VisibleDensityDetails.Count > 0 ? m_VisibleDensityDetails : m_ResidentDensityDetails;
+            bool allProcedural = proceduralCandidates.Count > 0;
+            for (int index = 0; index < proceduralCandidates.Count && allProcedural; index++)
+                allProcedural = proceduralCandidates[index].chunk.gpuProcedural;
             if (allProcedural && CanUseGpuGeneratedDensityDetailBrg())
                 return TryPrepareGpuGeneratedDensityDetailBrg(camera, budget, nearScale, distantScale);
 
@@ -497,6 +503,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
         readonly List<ResidentGpuCell> m_ResidentGpuCells = new List<ResidentGpuCell>();
         readonly List<FreeGpuRange> m_FreeGpuRanges = new List<FreeGpuRange>();
         readonly Dictionary<DensityDetailChunk, int> m_ResidentVisibleCounts = new Dictionary<DensityDetailChunk, int>();
+        // Resolve draw state once per prototype per pass, never per cell.
+        // Refresh each pass so material and shadow edits remain observable.
+        sealed class GpuPrototypeGroups
+        {
+            internal int tick;
+            internal readonly List<GpuProceduralBuildGroup> groups = new List<GpuProceduralBuildGroup>();
+        }
+        readonly Dictionary<Prototype, GpuPrototypeGroups> m_GpuPrototypeGroups = new Dictionary<Prototype, GpuPrototypeGroups>();
         int m_ResidentGpuEnd;
         int m_ResidentGpuTick;
 
@@ -540,6 +554,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             // The generator emits prefixes within each density texel. Select those
             // same prefixes at the new budget without regenerating their matrices.
+            if (cell.visible == cell.population)
+            {
+                AppendResidentVisibleRange(cell.start, cell.visible, ref destination, draw);
+                return;
+            }
             int sourceCount = Mathf.Max(1, cell.chunk.instanceCount);
             int sourceCursor = 0, residentCursor = 0, selectedCursor = 0;
             foreach (DensityDetailSpawn spawn in cell.chunk.proceduralSpawns)
@@ -548,17 +567,45 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 int residentEnd = (int)((long)sourceCursor * cell.population / sourceCount);
                 int selectedEnd = (int)((long)residentEnd * cell.visible / Mathf.Max(1, cell.population));
                 int count = selectedEnd - selectedCursor;
-                if (m_UseIndirectDetailDraws)
-                {
-                    if (count > 0) m_IndirectVisibilityRanges.Add(new IndirectVisibilityRange
-                        { source = (uint)(cell.start + residentCursor), count = (uint)count, destination = (uint)destination, draw = (uint)draw });
-                    destination += count;
-                }
-                else
-                    for (int i = 0; i < count; i++) m_DetailBrgSequentialVisibleIndices[destination++] = cell.start + residentCursor + i;
+                AppendResidentVisibleRange(cell.start + residentCursor, count, ref destination, draw);
                 residentCursor = residentEnd;
                 selectedCursor = selectedEnd;
             }
+        }
+
+        void AppendResidentVisibleRange(int source, int count, ref int destination, int draw)
+        {
+            // Keep enough workgroups in flight: one range is one 64-thread group.
+            const int maximumRangeCount = 1024;
+            while (count > maximumRangeCount)
+            {
+                AppendResidentVisibleRange(source, maximumRangeCount, ref destination, draw);
+                source += maximumRangeCount;
+                count -= maximumRangeCount;
+            }
+            if (count <= 0) return;
+            if (m_UseIndirectDetailDraws)
+            {
+                // Adjacent selected texels can share one GPU visibility command.
+                int lastIndex = m_IndirectVisibilityRanges.Count - 1;
+                if (lastIndex >= 0)
+                {
+                    var last = m_IndirectVisibilityRanges[lastIndex];
+                    if (last.count + (uint)count <= maximumRangeCount && last.draw == (uint)draw && last.source + last.count == (uint)source
+                        && last.destination + last.count == (uint)destination)
+                    {
+                        last.count += (uint)count;
+                        m_IndirectVisibilityRanges[lastIndex] = last;
+                        destination += count;
+                        return;
+                    }
+                }
+                m_IndirectVisibilityRanges.Add(new IndirectVisibilityRange
+                    { source = (uint)source, count = (uint)count, destination = (uint)destination, draw = (uint)draw });
+                destination += count;
+            }
+            else
+                for (int i = 0; i < count; i++) m_DetailBrgSequentialVisibleIndices[destination++] = source + i;
         }
 
         bool TryPrepareGpuGeneratedDensityDetailBrg(Camera camera, int budget, float nearScale, float distantScale)
@@ -591,19 +638,32 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     int population = GetVisibleDensityDetailInstanceCount(resident);
                     if (population <= 0 || !resident.chunk.gpuProcedural) continue;
                     m_ResidentVisibleCounts.TryGetValue(resident.chunk, out int allowed);
-                    DenseDetailPrototypeParts parts = GetDenseDetailRenderParts(resident.prototype);
-                    foreach (RenderPart part in parts.parts)
+                    if (!m_GpuPrototypeGroups.TryGetValue(resident.prototype, out var prototypeGroups))
                     {
-                        Material material = GetInstancedMaterial(part.material);
-                        if (!SupportsDotsInstancing(material))
+                        prototypeGroups = new GpuPrototypeGroups { tick = m_ResidentGpuTick - 1 };
+                        m_GpuPrototypeGroups.Add(resident.prototype, prototypeGroups);
+                    }
+                    if (prototypeGroups.tick != m_ResidentGpuTick)
+                    {
+                        prototypeGroups.tick = m_ResidentGpuTick;
+                        prototypeGroups.groups.Clear();
+                        DenseDetailPrototypeParts parts = GetDenseDetailRenderParts(resident.prototype);
+                        foreach (RenderPart part in parts.parts)
                         {
-                            FailDensityDetailBrg($"Material '{material?.name}' has no DOTS_INSTANCING_ON keyword.");
-                            return false;
+                            Material material = GetInstancedMaterial(part.material);
+                            if (!SupportsDotsInstancing(material))
+                            {
+                                FailDensityDetailBrg($"Material '{material?.name}' has no DOTS_INSTANCING_ON keyword.");
+                                return false;
+                            }
+                            var shadow = m_DenseDetailShadows ? resident.prototype.ShadowCasting : ShadowCastingMode.Off;
+                            var group = GetGpuProceduralBuildGroup(part.mesh, part.subMesh, material,
+                                resident.prototype, shadow, part.relativeMatrix);
+                            prototypeGroups.groups.Add(group);
                         }
-                        var shadow = m_DenseDetailShadows ? resident.prototype.ShadowCasting : ShadowCastingMode.Off;
-                        var batch = new DrawBatch { mesh = part.mesh, subMesh = part.subMesh, material = material,
-                            prototype = resident.prototype, lightProbeUsage = LightProbeUsage.Off, shadowCastingOverride = shadow };
-                        var group = GetGpuProceduralBuildGroup(batch, shadow, part.relativeMatrix);
+                    }
+                    foreach (var group in prototypeGroups.groups)
+                    {
                         if (!group.residentCells.TryGetValue(resident.chunk, out ResidentGpuCell cell))
                         {
                             cell = new ResidentGpuCell { chunk = resident.chunk, group = group };
@@ -732,20 +792,25 @@ namespace MashBoxSDK.Maps.TerrainSystem
         }
 
         GpuProceduralBuildGroup GetGpuProceduralBuildGroup(
-            DrawBatch batch,
+            Mesh mesh, int subMesh, Material material, Prototype prototype,
             ShadowCastingMode shadowCasting,
             Matrix4x4 relativeMatrix)
         {
-            var key = new DenseDetailBatchKey(batch, shadowCasting, true, relativeMatrix);
+            var key = new DenseDetailBatchKey(mesh, subMesh, material, prototype, shadowCasting, true, relativeMatrix);
             if (!m_DetailGpuBuildGroups.TryGetValue(key, out GpuProceduralBuildGroup group))
             {
-                group = new GpuProceduralBuildGroup();
+                group = new GpuProceduralBuildGroup { batch = new DrawBatch() };
                 m_DetailGpuBuildGroups.Add(key, group);
             }
             if (!group.active)
             {
                 group.active = true;
-                group.batch = batch;
+                group.batch.mesh = mesh;
+                group.batch.subMesh = subMesh;
+                group.batch.material = material;
+                group.batch.prototype = prototype;
+                group.batch.lightProbeUsage = LightProbeUsage.Off;
+                group.batch.shadowCastingOverride = shadowCasting;
                 group.shadowCasting = shadowCasting;
                 group.relativeMatrix = relativeMatrix;
                 m_ActiveDetailGpuBuildGroups.Add(group);
@@ -813,9 +878,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return true;
         }
 
+        GpuDetailLayerParameters[] m_GpuDetailLayerParameters;
+
         void UploadGpuLayerParameters()
         {
-            var parameters = new GpuDetailLayerParameters[m_DensityDetailLayers.Count];
+            if (m_GpuDetailLayerParameters == null || m_GpuDetailLayerParameters.Length != m_DensityDetailLayers.Count)
+                m_GpuDetailLayerParameters = new GpuDetailLayerParameters[m_DensityDetailLayers.Count];
+            var parameters = m_GpuDetailLayerParameters;
             for (int index = 0; index < parameters.Length; index++)
             {
                 DensityDetailLayer layer = m_DensityDetailLayers[index];
@@ -1210,6 +1279,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ResetBrgBuildGroups();
             ResetGpuProceduralBuildGroups();
             m_DetailGpuBuildGroups.Clear();
+            m_GpuPrototypeGroups.Clear();
             m_ResidentGpuCells.Clear();
             m_FreeGpuRanges.Clear();
             m_ResidentVisibleCounts.Clear();
@@ -1232,6 +1302,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             m_DetailGpuCommandCapacity = 0;
             m_DetailGpuLayerCapacity = 0;
+            m_GpuDetailLayerParameters = null;
             m_DetailGpuSurfaceMesh = null;
             m_DetailGpuSurfaceWidth = 0;
             m_DetailGpuSurfaceHeight = 0;
@@ -1243,6 +1314,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailBrgObjectToWorld = null;
             m_DetailBrgWorldToObject = null;
             m_DetailInstanceShaderData = null;
+            m_DetailDefinitionData = null;
             m_DetailDefinitionCapacity = 0;
             if (m_DetailBrgSequentialVisibleIndices.IsCreated)
                 m_DetailBrgSequentialVisibleIndices.Dispose();

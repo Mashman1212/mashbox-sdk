@@ -22,6 +22,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         const int DetailDensityReferenceChunkCells = 32;
         const int CombinedVertexStrideBytes = 52;
         static readonly Unity.Profiling.ProfilerMarker s_DetailSelectionMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.DetailSelection");
+        static readonly Unity.Profiling.ProfilerMarker s_DetailCandidateMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.DetailCandidates");
+        static readonly Unity.Profiling.ProfilerMarker s_DetailCellBuildMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.DetailCellBuild");
 
         public struct MemoryUsageSnapshot
         {
@@ -280,12 +282,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal Matrix4x4 terrainMatrix;
             internal int cellSize, width, height;
             internal float distance;
+            internal Bounds surfaceBounds;
+            internal float maximumHeight, yOffset;
             internal bool valid;
+            internal int geometryVersion;
         }
         readonly Dictionary<int, FixedCandidateCache> m_FixedCandidateCaches = new Dictionary<int, FixedCandidateCache>();
         public int LastDetailCandidateBoundsBuilt { get; private set; }
 
-        readonly struct DetailCandidateChunk
+        struct DetailCandidateChunk
         {
             internal readonly int firstX;
             internal readonly int firstZ;
@@ -294,8 +299,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal readonly Bounds bounds;
             internal readonly float distance;
             internal readonly bool visible;
+            internal DensityDetailChunk cachedChunk;
 
-            internal DetailCandidateChunk(int firstX, int firstZ, int cellSize, int densityLod, Bounds bounds, float distance, bool visible = true)
+            internal DetailCandidateChunk(int firstX, int firstZ, int cellSize, int densityLod, Bounds bounds, float distance, bool visible = true, DensityDetailChunk cachedChunk = null)
             {
                 this.firstX = firstX;
                 this.firstZ = firstZ;
@@ -304,11 +310,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 this.bounds = bounds;
                 this.distance = distance;
                 this.visible = visible;
+                this.cachedChunk = cachedChunk;
             }
         }
 
         sealed class DensityDetailChunk
         {
+            internal int fixedBoundsVersion;
             internal Bounds worldBounds;
             internal int instanceCount;
             internal int densityLod;
@@ -424,12 +432,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
             readonly Matrix4x4 m_PartTransform;
 
             internal DenseDetailBatchKey(DrawBatch batch, ShadowCastingMode shadowCasting, bool sharePrototypes = false, Matrix4x4 partTransform = default)
+                : this(batch.mesh, batch.subMesh, batch.material, batch.prototype, shadowCasting, sharePrototypes, partTransform) { }
+
+            internal DenseDetailBatchKey(Mesh mesh, int subMesh, Material material, Prototype prototype,
+                ShadowCastingMode shadowCasting, bool sharePrototypes = false, Matrix4x4 partTransform = default)
             {
-                m_Mesh = batch.mesh;
-                m_SubMesh = batch.subMesh;
-                m_Material = batch.material;
-                m_Prototype = sharePrototypes ? null : batch.prototype;
-                m_ReceiveShadows = batch.prototype.ReceiveShadows;
+                m_Mesh = mesh;
+                m_SubMesh = subMesh;
+                m_Material = material;
+                m_Prototype = sharePrototypes ? null : prototype;
+                m_ReceiveShadows = prototype.ReceiveShadows;
                 m_PartTransform = partTransform;
                 m_ShadowCasting = shadowCasting;
             }
@@ -487,7 +499,17 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool UseFixedDetailCells => m_AppearanceCaptureCamera == null
             && (m_UseStaticDetailCells || m_DensityTransitionWidth > 0f || (Application.isPlaying && m_UseBatchRendererGroup));
 
+        readonly Dictionary<Prototype, bool> m_DetailFadeEligibility = new Dictionary<Prototype, bool>();
         bool CanFadeDetail(Prototype prototype)
+        {
+            if (prototype == null) return false;
+            if (m_DetailFadeEligibility.TryGetValue(prototype, out bool eligible)) return eligible;
+            eligible = EvaluateDetailFadeEligibility(prototype);
+            m_DetailFadeEligibility.Add(prototype, eligible);
+            return eligible;
+        }
+
+        bool EvaluateDetailFadeEligibility(Prototype prototype)
         {
             if (!UseFixedDetailCells || !m_UseDetailDensityLod || m_DensityTransitionWidth <= 0f) return false;
             var parts = GetDenseDetailRenderParts(prototype).parts;
@@ -1139,6 +1161,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 MarkDetailFoliagePaletteSourcesDirty(layer.DensityMap);
             }
             if (normalizedRegion.width <= 0 || normalizedRegion.height <= 0) return;
+            // Cached candidates can hold references to cells replaced by painting.
+            m_FixedCandidateCaches.Clear();
             // Include neighboring samples used by bilinear size interpolation.
             normalizedRegion.xMin -= 1f / width; normalizedRegion.xMax += 1f / width;
             normalizedRegion.yMin -= 1f / height; normalizedRegion.yMax += 1f / height;
@@ -1171,6 +1195,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ReleaseDensityDetailBrg();
             m_FixedCandidateCaches.Clear();
             m_ResidentDensityDetails.Clear();
+            m_MissingFixedDetailCandidates.Clear();
             foreach (DensityDetailChunk chunk in m_DensityDetailCache.Values)
                 DestroyDensityDetailChunk(chunk);
             m_DensityDetailCache.Clear();
@@ -1191,6 +1216,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
             }
             m_DenseDetailPrototypeParts.Clear();
+            m_DetailFadeEligibility.Clear();
             m_DenseDetailBatchAccumulators.Clear();
             m_ActiveDenseDetailBatchAccumulators.Clear();
             m_DetailLodStates.Clear();
@@ -1200,6 +1226,22 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailNeedsInitialPrewarm = true;
             m_DetailRenderCacheDirty = false;
         }
+
+        // Reuse sort state instead of allocating a captured closure per layer.
+        sealed class DetailCandidateComparer
+        {
+            internal MGTerrain terrain;
+            internal int layer, width, height;
+            internal readonly Comparison<DetailCandidateChunk> comparison;
+            internal DetailCandidateComparer() { comparison = Compare; }
+            public int Compare(DetailCandidateChunk left, DetailCandidateChunk right)
+            {
+                bool lp = terrain.IsDetailPaintRegion(layer, left.firstX, left.firstZ, left.cellSize, width, height);
+                bool rp = terrain.IsDetailPaintRegion(layer, right.firstX, right.firstZ, right.cellSize, width, height);
+                return lp != rp ? (lp ? -1 : 1) : left.distance.CompareTo(right.distance);
+            }
+        }
+        readonly DetailCandidateComparer m_DetailCandidateComparer = new DetailCandidateComparer();
 
         void RenderDensityDetails(Camera camera, Plane[] planes)
         {
@@ -1240,6 +1282,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 ReleaseDetailRenderCache();
 
             m_DetailRenderTick++;
+            m_DetailFadeEligibility.Clear();
             Bounds surfaceBounds = MeshFilter.sharedMesh.bounds;
             if (surfaceBounds.size.x <= Mathf.Epsilon || surfaceBounds.size.z <= Mathf.Epsilon)
                 return;
@@ -1261,10 +1304,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             // Completion must not depend on visibility. Otherwise flying away
             // from pending cells fills the global queue forever: new cells cannot
             // build, while the old cells never get a chance to finish uploading.
-            foreach (DensityDetailChunk cachedChunk in m_DensityDetailCache.Values)
+            for (int pendingIndex = m_PendingDetailChunks.Count - 1; pendingIndex >= 0; pendingIndex--)
             {
                 if (m_RemainingDetailMeshUploads <= 0) break;
-                FinalizeCompletedDetailMeshes(cachedChunk, ref m_RemainingDetailMeshUploads);
+                FinalizeCompletedDetailMeshes(m_PendingDetailChunks[pendingIndex], ref m_RemainingDetailMeshUploads);
             }
             int pendingBuilds = CountPendingDetailBuilds();
             m_AppearanceCapturePopulation = 0;
@@ -1350,12 +1393,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         maximumDistance,
                         candidateChunks);
                 }
-                if (!candidatesAlreadySorted) candidateChunks.Sort((left, right) =>
+                if (!candidatesAlreadySorted)
                 {
-                    bool lp = IsDetailPaintRegion(layerIndex, left.firstX, left.firstZ, left.cellSize, width, height);
-                    bool rp = IsDetailPaintRegion(layerIndex, right.firstX, right.firstZ, right.cellSize, width, height);
-                    return lp != rp ? (lp ? -1 : 1) : left.distance.CompareTo(right.distance);
-                });
+                    m_DetailCandidateComparer.terrain = this;
+                    m_DetailCandidateComparer.layer = layerIndex;
+                    m_DetailCandidateComparer.width = width;
+                    m_DetailCandidateComparer.height = height;
+                    candidateChunks.Sort(m_DetailCandidateComparer.comparison);
+                }
 
                 int builtThisFrame = 0;
                 int buildLimit = prewarmThisPass
@@ -1373,7 +1418,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                             candidate.firstZ,
                             candidate.cellSize,
                             cachedDensityLod);
-                        m_DensityDetailCache.TryGetValue(key, out DensityDetailChunk chunk);
+                        DensityDetailChunk chunk = candidate.cachedChunk;
+                        if (!useFixedResidentCells)
+                            m_DensityDetailCache.TryGetValue(key, out chunk);
                         if (chunk == null
                             && builtThisFrame < buildLimit
                             && (prewarmThisPass
@@ -1391,6 +1438,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
                                 cachedDensityLod,
                                 useFixedCells ? 1f : GetDetailDensityScale(candidate.densityLod));
                             m_DensityDetailCache.Add(key, chunk);
+                            if (useFixedResidentCells)
+                            {
+                                candidate.cachedChunk = chunk;
+                                candidateChunks[candidateIndex] = candidate;
+                            }
                             pendingBuilds += chunk.pendingCombinedDraws.Count;
                             builtThisFrame++;
                         }
@@ -1403,8 +1455,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
                             if (useFixedCells)
                                 chunk.densityLod = candidate.densityLod;
                             chunk.lastUsedTick = m_DetailRenderTick;
-                            FinalizeCompletedDetailMeshes(chunk, ref m_RemainingDetailMeshUploads);
+                            if (chunk.pendingCombinedDraws.Count > 0)
+                                FinalizeCompletedDetailMeshes(chunk, ref m_RemainingDetailMeshUploads);
                         }
+
+                        // Empty GPU cells are cached, but contribute no draw work.
+                        if (useFixedResidentCells && chunk != null && chunk.gpuProcedural && chunk.instanceCount == 0)
+                            continue;
 
                         // Fixed resident cells are prebuilt in a camera-centered
                         // radius, including cells outside the current frustum.
@@ -1439,7 +1496,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                             continue;
 
                         drawChunk.lastUsedTick = m_DetailRenderTick;
-                        if (m_VisibleDensityDetailSet.Add(drawChunk))
+                        if (useFixedCells || m_VisibleDensityDetailSet.Add(drawChunk))
                         {
                             m_VisibleDensityDetails.Add(new VisibleDensityDetail(
                                 drawChunk,
@@ -1822,6 +1879,28 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailStreamingCameraRotation = camera.transform.rotation;
         }
 
+        readonly List<DetailCandidateChunk> m_MissingFixedDetailCandidates = new List<DetailCandidateChunk>();
+
+        static float DetailBoundsDistanceSquared(Bounds bounds, Vector3 point)
+        {
+            Vector3 center = bounds.center, extents = bounds.extents;
+            float x = Mathf.Max(0f, Mathf.Abs(point.x - center.x) - extents.x);
+            float y = Mathf.Max(0f, Mathf.Abs(point.y - center.y) - extents.y);
+            float z = Mathf.Max(0f, Mathf.Abs(point.z - center.z) - extents.z);
+            return x * x + y * y + z * z;
+        }
+
+        static void GetDetailSectorWindow(float center, float radius, float minimum, float size,
+            int resolution, int sectorSize, out int first, out int end)
+        {
+            // Clamp before converting to integer, including cameras far outside
+            // the terrain. Include the previous sector at a touching boundary.
+            double lower = Math.Max(0.0, Math.Min(1.0, ((double)center - radius - minimum) / size));
+            double upper = Math.Max(0.0, Math.Min(1.0, ((double)center + radius - minimum) / size));
+            first = Math.Max(0, ((int)Math.Floor(lower * resolution / sectorSize) - 1) * sectorSize);
+            end = Math.Min(resolution, ((int)Math.Floor(upper * resolution / sectorSize) + 1) * sectorSize);
+        }
+
         bool BuildFixedDetailCellCandidates(
             Camera camera,
             Plane[] planes,
@@ -1835,13 +1914,19 @@ namespace MashBoxSDK.Maps.TerrainSystem
             float maximumDistance,
             List<DetailCandidateChunk> candidates)
         {
+            using var profile = s_DetailCandidateMarker.Auto();
             FixedCandidateCache cache = null;
             m_FixedCandidateCaches.TryGetValue(layerIndex, out cache);
             int sectorSize = leafCellSize * 8;
             long SectorKey(int x, int z) => ((long)(x / sectorSize) << 32) | (uint)(z / sectorSize);
-            if (cache != null && cache.valid && cache.cameraPosition == cameraWorld
-                && cache.terrainMatrix == transform.localToWorldMatrix && cache.cellSize == leafCellSize
-                && cache.width == width && cache.height == height && cache.distance == maximumDistance)
+            Matrix4x4 terrainMatrix = transform.localToWorldMatrix;
+            float maximumHeight = layer.MaximumPaintedHeight;
+            float yOffset = layer.YOffset;
+            bool geometryUnchanged = cache != null && cache.valid && cache.terrainMatrix == terrainMatrix
+                && cache.cellSize == leafCellSize && cache.width == width && cache.height == height
+                && cache.surfaceBounds.Equals(surfaceBounds) && cache.maximumHeight == maximumHeight && cache.yOffset == yOffset;
+            if (cache != null && !geometryUnchanged) cache.geometryVersion++;
+            if (geometryUnchanged && cache.cameraPosition == cameraWorld && cache.distance == maximumDistance)
             {
                 cache.visibleSectors.Clear();
                 foreach (var sector in cache.sectors)
@@ -1851,41 +1936,94 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     var c = candidates[i];
                     bool visible = cache.visibleSectors.Contains(SectorKey(c.firstX, c.firstZ))
                         && GeometryUtility.TestPlanesAABB(planes, c.bounds);
-                    candidates[i] = new DetailCandidateChunk(c.firstX, c.firstZ, c.cellSize, c.densityLod, c.bounds, c.distance, visible);
+                    candidates[i] = new DetailCandidateChunk(c.firstX, c.firstZ, c.cellSize, c.densityLod, c.bounds, c.distance, visible, c.cachedChunk);
                 }
                 return true;
             }
             candidates.Clear();
             cache?.sectors.Clear();
-            // Coarse rejection skips entire 8x8 blocks outside the streaming radius.
-            for (int sz = 0; sz < height; sz += sectorSize)
-            for (int sx = 0; sx < width; sx += sectorSize)
+            // Axis-aligned terrain can directly query its nearby grid window.
+            // Rotated/sheared transforms retain the conservative full-grid path.
+            int firstSectorX = 0, firstSectorZ = 0, endSectorX = width, endSectorZ = height;
+            if (maximumDistance > 0f && maximumDistance < float.MaxValue
+                && terrainMatrix.m01 == 0f && terrainMatrix.m02 == 0f
+                && terrainMatrix.m10 == 0f && terrainMatrix.m12 == 0f
+                && terrainMatrix.m20 == 0f && terrainMatrix.m21 == 0f
+                && Mathf.Abs(terrainMatrix.m00) > .000001f && Mathf.Abs(terrainMatrix.m22) > .000001f)
             {
-                Bounds sector = CalculateDetailChunkBounds(surfaceBounds, width, height, sectorSize, sx, sz, layer.MaximumPaintedHeight, layer.YOffset);
-                if (maximumDistance > 0f && Vector3.Distance(cameraWorld, sector.ClosestPoint(cameraWorld)) > maximumDistance) continue;
+                GetDetailSectorWindow((cameraWorld.x - terrainMatrix.m03) / terrainMatrix.m00,
+                    maximumDistance / Mathf.Abs(terrainMatrix.m00), surfaceBounds.min.x, surfaceBounds.size.x,
+                    width, sectorSize, out firstSectorX, out endSectorX);
+                GetDetailSectorWindow((cameraWorld.z - terrainMatrix.m23) / terrainMatrix.m22,
+                    maximumDistance / Mathf.Abs(terrainMatrix.m22), surfaceBounds.min.z, surfaceBounds.size.z,
+                    height, sectorSize, out firstSectorZ, out endSectorZ);
+            }
+            float maximumDistanceSquared = maximumDistance * maximumDistance;
+            for (int sz = firstSectorZ; sz < endSectorZ; sz += sectorSize)
+            for (int sx = firstSectorX; sx < endSectorX; sx += sectorSize)
+            {
+                Bounds sector = CalculateDetailChunkBounds(surfaceBounds, width, height, sectorSize, sx, sz, maximumHeight, yOffset, terrainMatrix);
+                if (maximumDistance > 0f && DetailBoundsDistanceSquared(sector, cameraWorld) > maximumDistanceSquared) continue;
                 cache?.sectors.Add(SectorKey(sx, sz), sector);
                 bool sectorVisible = GeometryUtility.TestPlanesAABB(planes, sector);
                 for (int firstZ = sz; firstZ < Mathf.Min(height, sz + sectorSize); firstZ += leafCellSize)
                 for (int firstX = sx; firstX < Mathf.Min(width, sx + sectorSize); firstX += leafCellSize)
                 {
-                    Bounds bounds = CalculateDetailChunkBounds(surfaceBounds, width, height, leafCellSize, firstX, firstZ, layer.MaximumPaintedHeight, layer.YOffset);
-                    LastDetailCandidateBoundsBuilt++;
-                    float distance = Vector3.Distance(cameraWorld, bounds.ClosestPoint(cameraWorld));
-                    if (maximumDistance > 0f && distance > maximumDistance) continue;
+                    // Bounds belong to the cell, not the camera. Reuse the bounds
+                    // already retained with its source data while the terrain is unchanged.
+                    DensityDetailChunk existing = null;
+                    if (cache != null)
+                        m_DensityDetailCache.TryGetValue(new DetailChunkKey(layerIndex, firstX, firstZ, leafCellSize, 0), out existing);
+                    Bounds bounds;
+                    if (geometryUnchanged && existing != null && existing.fixedBoundsVersion == cache.geometryVersion) bounds = existing.worldBounds;
+                    else
+                    {
+                        bounds = CalculateDetailChunkBounds(surfaceBounds, width, height, leafCellSize, firstX, firstZ, maximumHeight, yOffset, terrainMatrix);
+                        LastDetailCandidateBoundsBuilt++;
+                        if (existing != null)
+                        {
+                            existing.worldBounds = bounds;
+                            existing.fixedBoundsVersion = cache.geometryVersion;
+                        }
+                    }
+                    float distanceSquared = DetailBoundsDistanceSquared(bounds, cameraWorld);
+                    if (maximumDistance > 0f && distanceSquared > maximumDistanceSquared) continue;
+                    float distance = Mathf.Sqrt(distanceSquared);
                     int densityLod = GetFixedDetailCellDensityLod(camera, layerIndex, firstX, firstZ, leafCellSize, distance);
                     candidates.Add(new DetailCandidateChunk(firstX, firstZ, leafCellSize, densityLod, bounds, distance,
-                        sectorVisible && GeometryUtility.TestPlanesAABB(planes, bounds)));
+                        sectorVisible && GeometryUtility.TestPlanesAABB(planes, bounds), existing));
                 }
             }
             if (cache != null)
             {
                 cache.valid = true;
                 cache.cameraPosition = cameraWorld;
-                cache.terrainMatrix = transform.localToWorldMatrix;
+                cache.terrainMatrix = terrainMatrix;
+                cache.surfaceBounds = surfaceBounds;
+                cache.maximumHeight = maximumHeight;
+                cache.yOffset = yOffset;
                 cache.cellSize = leafCellSize;
                 cache.width = width; cache.height = height; cache.distance = maximumDistance;
             }
-            return false;
+            if (cache == null) return false;
+            // Only new cells compete for the construction budget. Sorting every
+            // existing cell because a few new cells entered the radius is wasted work.
+            m_MissingFixedDetailCandidates.Clear();
+            int readyCount = 0;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                var candidate = candidates[i];
+                if (candidate.cachedChunk == null) m_MissingFixedDetailCandidates.Add(candidate);
+                else candidates[readyCount++] = candidate;
+            }
+            candidates.RemoveRange(readyCount, candidates.Count - readyCount);
+            m_DetailCandidateComparer.terrain = this;
+            m_DetailCandidateComparer.layer = layerIndex;
+            m_DetailCandidateComparer.width = width;
+            m_DetailCandidateComparer.height = height;
+            m_MissingFixedDetailCandidates.Sort(m_DetailCandidateComparer.comparison);
+            candidates.AddRange(m_MissingFixedDetailCandidates);
+            return true;
         }
 
         int GetFixedDetailCellDensityLod(
@@ -2095,7 +2233,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return state.split;
         }
 
-        Bounds CalculateDetailChunkBounds(Bounds surfaceBounds, int width, int height, int chunkCells, int firstX, int firstZ, float maximumHeight, float yOffset)
+        Bounds CalculateDetailChunkBounds(Bounds surfaceBounds, int width, int height, int chunkCells, int firstX, int firstZ, float maximumHeight, float yOffset, Matrix4x4? terrainMatrix = null)
         {
             int endX = Mathf.Min(width, firstX + chunkCells);
             int endZ = Mathf.Min(height, firstZ + chunkCells);
@@ -2108,7 +2246,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 new Vector3(maxX - minX, surfaceBounds.size.y + maximumHeight, maxZ - minZ));
             if (m_AppearanceCaptureCamera != null && m_AppearanceCaptureDetailTilt > 0f)
                 localBounds.Expand(maximumHeight * 2f);
-            return TransformBounds(localBounds, transform.localToWorldMatrix);
+            return TransformBounds(localBounds, terrainMatrix ?? transform.localToWorldMatrix);
         }
 
         float GetDetailDensityScale(int densityLod)
@@ -2165,6 +2303,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             int densityLod,
             float densityScale)
         {
+            using var profile = s_DetailCellBuildMarker.Auto();
             var chunk = new DensityDetailChunk
             {
                 densityLod = densityLod,
@@ -2178,9 +2317,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_LastDensityDetailBatchedParts = Mathf.Max(m_LastDensityDetailBatchedParts, parts.Count);
             if (parts.Count == 0)
                 return chunk;
-            var matricesByPart = new List<Matrix4x4>[parts.Count];
-            for (int index = 0; index < parts.Count; index++)
-                matricesByPart[index] = new List<Matrix4x4>();
 
             int width = layer.DensityMap.width;
             int height = layer.DensityMap.height;
@@ -2258,6 +2394,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 chunk.instanceCount = generated;
                 return chunk;
             }
+
+            var matricesByPart = new List<Matrix4x4>[parts.Count];
+            for (int index = 0; index < parts.Count; index++)
+                matricesByPart[index] = new List<Matrix4x4>();
 
             for (int z = firstZ; z < endZ && generated < limit; z++)
             {
@@ -2339,7 +2479,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                                 prototype);
                             if (pending == null)
                                 continue;
+                            if (chunk.pendingCombinedDraws.Count == 0) m_PendingDetailChunks.Add(chunk);
                             chunk.pendingCombinedDraws.Add(pending);
+                            m_PendingDetailBuildCount++;
                             queuedAny = true;
                         }
                         if (queuedAny)
@@ -2642,6 +2784,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (!pending.task.IsCompleted)
                     continue;
                 chunk.pendingCombinedDraws.RemoveAt(index);
+                m_PendingDetailBuildCount--;
                 if (pending.abandoned)
                     continue;
                 if (pending.task.IsFaulted)
@@ -2697,6 +2840,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     Debug.LogException(exception, this);
                 }
             }
+            if (chunk.pendingCombinedDraws.Count == 0) m_PendingDetailChunks.Remove(chunk);
         }
 
         void DestroyDensityDetailChunk(DensityDetailChunk chunk)
@@ -2705,6 +2849,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return;
             for (int index = 0; index < chunk.pendingCombinedDraws.Count; index++)
                 chunk.pendingCombinedDraws[index].abandoned = true;
+            m_PendingDetailBuildCount -= chunk.pendingCombinedDraws.Count;
+            m_PendingDetailChunks.Remove(chunk);
             chunk.pendingCombinedDraws.Clear();
             for (int index = 0; index < chunk.combinedDraws.Count; index++)
             {
@@ -2797,13 +2943,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
-        int CountPendingDetailBuilds()
-        {
-            int count = 0;
-            foreach (DensityDetailChunk chunk in m_DensityDetailCache.Values)
-                count += chunk.pendingCombinedDraws.Count;
-            return count;
-        }
+        // GPU cells never enter this queue. Its cost must not grow with all the
+        // previously visited cells retained in the terrain's source cache.
+        readonly List<DensityDetailChunk> m_PendingDetailChunks = new List<DensityDetailChunk>();
+        int m_PendingDetailBuildCount;
+        int CountPendingDetailBuilds() => m_PendingDetailBuildCount;
 
         void OnDrawGizmosSelected()
         {
