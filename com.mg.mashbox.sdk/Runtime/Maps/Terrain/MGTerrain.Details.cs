@@ -486,7 +486,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         [SerializeField] List<DensityDetailLayer> m_DensityDetailLayers = new List<DensityDetailLayer>();
         [SerializeField] List<DetailFoliagePaletteBinding> m_DetailFoliagePalettes = new List<DetailFoliagePaletteBinding>();
-        [SerializeField, Range(8, 64)] int m_DetailChunkCells = 64;
+        [SerializeField, Range(2, 64)] int m_DetailChunkCells = 64;
         [SerializeField, Range(0f, 1f)] float m_OverallDetailDensity = 1f;
         [SerializeField, Range(32, 2048)] int m_MaxCachedDetailChunks = 128;
         [SerializeField, Range(1, 64)] int m_MaxDetailChunksBuiltPerLayerPerFrame = 2;
@@ -691,6 +691,20 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         count += m_DensityDetailLayers[index].RepresentedInstanceCount;
                 return count;
             }
+        }
+
+        /// <summary>
+        /// Sets the density-detail distance ceiling. Zero uses each prototype's distance.
+        /// </summary>
+        public void SetMaxDensityDetailDistance(float distance)
+        {
+            InitializeDetailSettingsIfNeeded();
+            distance = Mathf.Max(0f, distance);
+            if (Mathf.Approximately(m_MaxDensityDetailDistance, distance))
+                return;
+
+            m_MaxDensityDetailDistance = distance;
+            InvalidateRenderCache();
         }
 
         /// <summary>
@@ -1177,6 +1191,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 DestroyDensityDetailChunk(m_DensityDetailCache[key]);
                 m_DensityDetailCache.Remove(key);
             }
+            ResetFullDetailResidency();
             m_DetailStreamingSettled = false;
             m_HasDetailStreamingCamera = false;
         }
@@ -1184,6 +1199,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void InvalidateDetailRenderCache()
         {
             m_DetailRenderCacheDirty = true;
+            ResetFullDetailResidency();
             m_DetailStreamingSettled = false;
             m_HasDetailStreamingCamera = false;
             m_DetailStreamingCamera = null;
@@ -1220,6 +1236,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DenseDetailBatchAccumulators.Clear();
             m_ActiveDenseDetailBatchAccumulators.Clear();
             m_DetailLodStates.Clear();
+            ResetFullDetailResidency();
             m_DetailStreamingSettled = false;
             m_HasDetailStreamingCamera = false;
             m_DetailStreamingCamera = null;
@@ -1260,9 +1277,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             bool useFixedCells = UseFixedDetailCells;
             if (useFixedResidentCells && !IsDensityDetailStreamingCamera(camera))
                 return;
+            if (KeepAllDetailCellsResident && m_FullResidentReady && !m_DetailRenderCacheDirty)
+            {
+                UpdateFullResidentVisibility(camera, planes);
+                return;
+            }
             if (useFixedResidentCells && !m_RuntimeDetailCameraLogged)
             {
-                Camera mainCamera = Camera.main;
+                Camera mainCamera = m_CachedGameplayCamera;
                 string targetName = camera.targetTexture != null ? camera.targetTexture.name : "backbuffer";
                 Debug.Log(
                     $"[MG Terrain Runtime] '{name}' selected camera '{camera.name}' "
@@ -1311,7 +1333,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             int pendingBuilds = CountPendingDetailBuilds();
             m_AppearanceCapturePopulation = 0;
-            bool prewarmThisPass = m_AppearanceCaptureCamera != null || useFixedResidentCells
+            bool prewarmThisPass = KeepAllDetailCellsResident || m_AppearanceCaptureCamera != null || useFixedResidentCells
                 && m_PrewarmFixedDetailCells
                 && m_DetailNeedsInitialPrewarm;
             bool allCandidateCellsReady = true;
@@ -1337,7 +1359,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
                 int width = layer.DensityMap.width;
                 int height = layer.DensityMap.height;
-                int leafCellSize = Mathf.Clamp(m_DetailChunkCells, 8, 64);
+                int leafCellSize = Mathf.Clamp(m_DetailChunkCells, 2, 64);
                 if (m_AppearanceCaptureCamera != null)
                 {
                     float metresPerTexel = Mathf.Max(surfaceBounds.size.x * worldPerLocalX / width, surfaceBounds.size.z * worldPerLocalZ / height);
@@ -1351,7 +1373,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     : fallbackDistance;
                 if (m_MaxDensityDetailDistance > 0f)
                     maximumDistance = Mathf.Min(maximumDistance, m_MaxDensityDetailDistance);
-                if (m_AppearanceCaptureCamera != null) maximumDistance = float.MaxValue;
+                if (m_AppearanceCaptureCamera != null || KeepAllDetailCellsResident) maximumDistance = float.MaxValue;
                 List<DetailCandidateChunk> candidateChunks = m_DetailCandidateChunks;
                 bool candidatesAlreadySorted = false;
                 if (useFixedResidentCells)
@@ -1517,6 +1539,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (m_AppearanceCaptureCamera != null)
                 AppearanceCaptureTileComplete = !AppearanceCaptureNeedsSubdivision && allCandidateCellsReady
                     && m_LastSubmittedDensityDetailInstances == m_LastVisibleDensityDetailInstances;
+            if (KeepAllDetailCellsResident && m_DetailStreamingSettled && IsGpuProceduralDensityDetailActive)
+            {
+                CacheFullResidentSectors(camera);
+                UpdateFullResidentVisibility(camera, planes);
+            }
             PruneDetailChunkCache();
 #if UNITY_EDITOR
             if (!Application.isPlaying && m_AppearanceCaptureCamera == null
@@ -1579,7 +1606,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             // budget proportionally between all middle/far cells. The old
             // first-come cutoff made entire cells alternately disappear when
             // two candidates exchanged sort order during camera movement.
-            m_VisibleDensityDetails.Sort((left, right) =>
+            if (!m_ResidentSelectionOrdered) m_VisibleDensityDetails.Sort((left, right) =>
             {
                 int lodComparison = left.densityLod.CompareTo(right.densityLod);
                 if (lodComparison != 0)
@@ -1828,21 +1855,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (!CanCameraRenderDensityDetails(camera))
                 return false;
 
-            Camera mainCamera = Camera.main;
-            if (CanCameraRenderDensityDetails(mainCamera))
-                return camera == mainCamera;
-
-            // Some runtime camera stacks have no tagged MainCamera, replace it during
-            // transitions, or render the final view through an intermediate texture.
-            // Keep the first valid gameplay camera while it is alive, then allow a clean
-            // takeover. A target texture is not a reason to reject a camera: HDRP and
-            // Project X can legitimately render their gameplay view through one.
-            if (m_DetailStreamingCamera != null && CanCameraRenderDensityDetails(m_DetailStreamingCamera))
-                return camera == m_DetailStreamingCamera;
-
-            return true;
+            // Cache the camera supplied by the render callback; never search the scene.
+            if (m_CachedGameplayCamera == null)
+            {
+                if (!camera.CompareTag("MainCamera")) return false;
+                m_CachedGameplayCamera = camera;
+            }
+            return camera == m_CachedGameplayCamera;
         }
-
         bool CanCameraRenderDensityDetails(Camera camera)
         {
             if (camera == null || camera.cameraType != CameraType.Game || !camera.isActiveAndEnabled)
@@ -2241,12 +2261,49 @@ namespace MashBoxSDK.Maps.TerrainSystem
             float maxX = Mathf.Lerp(surfaceBounds.min.x, surfaceBounds.max.x, endX / (float)width);
             float minZ = Mathf.Lerp(surfaceBounds.min.z, surfaceBounds.max.z, firstZ / (float)height);
             float maxZ = Mathf.Lerp(surfaceBounds.min.z, surfaceBounds.max.z, endZ / (float)height);
+            GetDetailCellSurfaceHeightRange(surfaceBounds, firstX / (float)width, firstZ / (float)height,
+                endX / (float)width, endZ / (float)height, out float minY, out float maxY);
             Bounds localBounds = new Bounds(
-                new Vector3((minX + maxX) * 0.5f, surfaceBounds.center.y + yOffset + maximumHeight * 0.5f, (minZ + maxZ) * 0.5f),
-                new Vector3(maxX - minX, surfaceBounds.size.y + maximumHeight, maxZ - minZ));
+                new Vector3((minX + maxX) * 0.5f, (minY + maxY) * 0.5f + yOffset + maximumHeight * 0.5f, (minZ + maxZ) * 0.5f),
+                new Vector3(maxX - minX, maxY - minY + maximumHeight, maxZ - minZ));
             if (m_AppearanceCaptureCamera != null && m_AppearanceCaptureDetailTilt > 0f)
                 localBounds.Expand(maximumHeight * 2f);
             return TransformBounds(localBounds, terrainMatrix ?? transform.localToWorldMatrix);
+        }
+
+        void GetDetailCellSurfaceHeightRange(Bounds fallback, float minX, float minZ, float maxX, float maxZ,
+            out float minY, out float maxY)
+        {
+            minY = fallback.min.y; maxY = fallback.max.y;
+            Mesh mesh = MeshFilter != null ? MeshFilter.sharedMesh : null;
+            if (mesh == null || !mesh.isReadable) return;
+            if (m_CachedDetailSurfaceMesh != mesh || m_CachedDetailSurfaceVertices == null
+                || m_CachedDetailSurfaceVertices.Length != mesh.vertexCount)
+            {
+                m_CachedDetailSurfaceMesh = mesh;
+                m_CachedDetailSurfaceVertices = mesh.vertices;
+            }
+            var vertices = m_CachedDetailSurfaceVertices;
+            int gridWidth = Mathf.Max(2, m_SurfaceGridWidth), gridHeight = Mathf.Max(2, m_SurfaceGridHeight);
+            if (vertices.Length != gridWidth * gridHeight)
+            {
+                int square = Mathf.RoundToInt(Mathf.Sqrt(vertices.Length));
+                if (square < 2 || square * square != vertices.Length) return;
+                gridWidth = gridHeight = square;
+            }
+            // Include every interpolation-support vertex, not just the four cell corners:
+            // a ridge inside a cell must remain inside its culling bounds.
+            int x0 = Mathf.Clamp(Mathf.FloorToInt(minX * (gridWidth - 1)), 0, gridWidth - 1);
+            int x1 = Mathf.Clamp(Mathf.CeilToInt(maxX * (gridWidth - 1)), x0, gridWidth - 1);
+            int z0 = Mathf.Clamp(Mathf.FloorToInt(minZ * (gridHeight - 1)), 0, gridHeight - 1);
+            int z1 = Mathf.Clamp(Mathf.CeilToInt(maxZ * (gridHeight - 1)), z0, gridHeight - 1);
+            minY = float.PositiveInfinity; maxY = float.NegativeInfinity;
+            for (int z = z0; z <= z1; z++)
+                for (int x = x0; x <= x1; x++)
+                {
+                    float y = vertices[z * gridWidth + x].y;
+                    minY = Mathf.Min(minY, y); maxY = Mathf.Max(maxY, y);
+                }
         }
 
         float GetDetailDensityScale(int densityLod)
@@ -2916,7 +2973,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void PruneDetailChunkCache()
         {
-            if (Application.isPlaying && m_UseBatchRendererGroup && m_RetainFixedDetailCells)
+            if (KeepAllDetailCellsResident || Application.isPlaying && m_UseBatchRendererGroup && m_RetainFixedDetailCells)
                 return;
             int maximum = Mathf.Max(32, m_MaxCachedDetailChunks);
             while (m_DensityDetailCache.Count > maximum)

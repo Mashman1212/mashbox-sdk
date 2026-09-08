@@ -594,6 +594,7 @@ namespace MashBoxSDK.Maps.Spline
 
             m_OutputMesh = result;
             m_Target.sharedMesh = result;
+            m_Target.GetComponent<MultiSplineLoft>()?.InvalidateVisualChunks();
             if (previousOutput != null && previousOutput != result && previousOutput != m_SourceMesh)
                 DestroyGeneratedMesh(previousOutput);
             return result;

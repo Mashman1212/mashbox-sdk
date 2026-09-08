@@ -15,31 +15,49 @@ namespace MashBoxSDK.Maps.TerrainSystem
     public sealed partial class MGTerrain
     {
         const int BrgPackedMatrixBytes = 48;
+        // Batch layer 0 includes ordinary renderers. Reserve 1 for terrain details so
+        // integrations can exclude unsupported shader overrides without hiding the terrain.
+        public const byte DetailBatchLayer = 1;
         const int BrgZeroPrefixBytes = 96;
         int m_DetailDefinitionCapacity;
         int DetailDataAddress => BrgZeroPrefixBytes + m_DetailBrgCapacity * BrgPackedMatrixBytes * 2;
         int DetailTableAddress => DetailDataAddress + m_DetailBrgCapacity * 16;
         Vector4[] m_DetailInstanceShaderData;
         Vector4[] m_DetailDefinitionData;
+        GraphicsBuffer m_LastDetailDefinitionBuffer;
+        int m_LastDetailDefinitionAddress = -1;
 
         void UploadDetailDefinitions()
         {
             int count = 1 + m_DensityDetailLayers.Count * 2;
+            bool changed = m_LastDetailDefinitionBuffer != m_DetailBrgInstanceBuffer || m_LastDetailDefinitionAddress != DetailTableAddress;
             if (m_DetailDefinitionData == null || m_DetailDefinitionData.Length != count)
+            {
                 m_DetailDefinitionData = new Vector4[count];
+                changed = true;
+            }
             var data = m_DetailDefinitionData;
-            data[0] = new Vector4(m_DensityDetailLayers.Count, 0, 0, 0);
             Vector4 fadeRanges = DetailFadeRanges;
-            data[0] = new Vector4(m_DensityDetailLayers.Count, fadeRanges.x, fadeRanges.y, fadeRanges.z);
+            var header = new Vector4(m_DensityDetailLayers.Count, fadeRanges.x, fadeRanges.y, fadeRanges.z);
+            changed |= data[0] != header;
+            data[0] = header;
             for (int i = 0; i < m_DensityDetailLayers.Count; i++)
             {
                 var layer = m_DensityDetailLayers[i];
-                data[1 + i * 2] = layer != null ? (Vector4)layer.ShaderTint : Vector4.one;
-                data[2 + i * 2] = layer != null ? layer.ShaderDefinition : new Vector4(0, 1, 0, 0);
-                data[2 + i * 2].z = m_MidDetailDensity;
-                data[2 + i * 2].w = m_FarDetailDensity;
+                Vector4 tint = layer != null ? (Vector4)layer.ShaderTint : Vector4.one;
+                Vector4 definition = layer != null ? layer.ShaderDefinition : new Vector4(0, 1, 0, 0);
+                definition.z = m_MidDetailDensity;
+                definition.w = m_FarDetailDensity;
+                changed |= data[1 + i * 2] != tint || data[2 + i * 2] != definition;
+                data[1 + i * 2] = tint;
+                data[2 + i * 2] = definition;
             }
-            m_DetailBrgInstanceBuffer.SetData(data, 0, DetailTableAddress / 16, data.Length);
+            if (changed)
+            {
+                m_DetailBrgInstanceBuffer.SetData(data, 0, DetailTableAddress / 16, data.Length);
+                m_LastDetailDefinitionBuffer = m_DetailBrgInstanceBuffer;
+                m_LastDetailDefinitionAddress = DetailTableAddress;
+            }
         }
         static readonly Unity.Profiling.ProfilerMarker s_GpuPrepareMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.GpuPrepare");
         static readonly Unity.Profiling.ProfilerMarker s_BrgCullingMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.BrgCulling");
@@ -106,6 +124,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal ShadowCastingMode shadowCasting;
             internal Matrix4x4 relativeMatrix;
             internal readonly List<GpuDetailSpawnCommand> commands = new List<GpuDetailSpawnCommand>();
+            internal readonly List<ResidentGpuCell> visibleCells = new List<ResidentGpuCell>();
             internal int outputCount;
             internal int commandOffset;
             internal bool active;
@@ -223,6 +242,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 ReleaseDensityDetailBrg();
                 return false;
             }
+
+            if (m_FullResidentReady && KeepAllDetailCellsResident && m_DetailBrgUsesGpuGeneration)
+                return UpdateResidentGpuVisibility(budget, nearScale, distantScale);
 
             // Looking at an empty area must not destroy the resident GPU buffer.
             var proceduralCandidates = m_VisibleDensityDetails.Count > 0 ? m_VisibleDensityDetails : m_ResidentDensityDetails;
@@ -423,6 +445,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void PrepareIndirectDetailVisibility(int visibleCount)
         {
+            using var uploadProfile = s_ResidentUploadMarker.Auto();
             m_IndirectDetailDrawsReady = false;
             if (!m_UseIndirectDetailDraws || visibleCount == 0) return;
             void Ensure(ref GraphicsBuffer buffer, GraphicsBuffer.Target target, int count, int stride)
@@ -478,7 +501,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 {
                     drawCommandsType = BatchDrawCommandType.Indirect,
                     drawCommandsBegin = (uint)command, drawCommandsCount = 1,
-                    filterSettings = new BatchFilterSettings { renderingLayerMask = uint.MaxValue, layer = (byte)gameObject.layer,
+                    filterSettings = new BatchFilterSettings { batchLayer = DetailBatchLayer, renderingLayerMask = uint.MaxValue, layer = (byte)gameObject.layer,
                         shadowCastingMode = group.shadowCasting, receiveShadows = group.receiveShadows }
                 };
                 command++;
@@ -492,6 +515,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal GpuProceduralBuildGroup group;
             internal int start, capacity, population, requested, visible, tick;
             internal int generation = -1;
+            internal int cachedVisible = -1, cachedPopulation = -1, cachedStart = -1, cachedGeneration = -1;
+            internal readonly List<FreeGpuRange> cachedVisibilityRanges = new List<FreeGpuRange>();
         }
 
         readonly struct FreeGpuRange
@@ -559,6 +584,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 AppendResidentVisibleRange(cell.start, cell.visible, ref destination, draw);
                 return;
             }
+            if (cell.cachedVisible == cell.visible && cell.cachedPopulation == cell.population && cell.cachedStart == cell.start && cell.cachedGeneration == cell.generation)
+            {
+                for (int i = 0; i < cell.cachedVisibilityRanges.Count; i++)
+                {
+                    FreeGpuRange range = cell.cachedVisibilityRanges[i];
+                    AppendResidentVisibleRange(range.start, range.count, ref destination, draw);
+                }
+                return;
+            }
+            cell.cachedVisibilityRanges.Clear();
             int sourceCount = Mathf.Max(1, cell.chunk.instanceCount);
             int sourceCursor = 0, residentCursor = 0, selectedCursor = 0;
             foreach (DensityDetailSpawn spawn in cell.chunk.proceduralSpawns)
@@ -567,10 +602,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 int residentEnd = (int)((long)sourceCursor * cell.population / sourceCount);
                 int selectedEnd = (int)((long)residentEnd * cell.visible / Mathf.Max(1, cell.population));
                 int count = selectedEnd - selectedCursor;
+                if (count > 0) cell.cachedVisibilityRanges.Add(new FreeGpuRange(cell.start + residentCursor, count));
                 AppendResidentVisibleRange(cell.start + residentCursor, count, ref destination, draw);
                 residentCursor = residentEnd;
                 selectedCursor = selectedEnd;
             }
+            cell.cachedVisible = cell.visible;
+            cell.cachedPopulation = cell.population;
+            cell.cachedStart = cell.start;
+            cell.cachedGeneration = cell.generation;
         }
 
         void AppendResidentVisibleRange(int source, int count, ref int destination, int draw)
@@ -610,6 +650,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool TryPrepareGpuGeneratedDensityDetailBrg(Camera camera, int budget, float nearScale, float distantScale)
         {
+            if (KeepAllDetailCellsResident && m_FullResidentReady)
+                return UpdateResidentGpuVisibility(budget, nearScale, distantScale);
+            bool keepAllResident = KeepAllDetailCellsResident;
             using var profile = s_GpuPrepareMarker.Auto();
             try
             {
@@ -635,7 +678,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 // distance-density cap. Visibility budgets only select its indices.
                 foreach (VisibleDensityDetail resident in m_ResidentDensityDetails)
                 {
-                    int population = GetVisibleDensityDetailInstanceCount(resident);
+                    int population = keepAllResident ? resident.chunk.instanceCount : GetVisibleDensityDetailInstanceCount(resident);
                     if (population <= 0 || !resident.chunk.gpuProcedural) continue;
                     m_ResidentVisibleCounts.TryGetValue(resident.chunk, out int allowed);
                     if (!m_GpuPrototypeGroups.TryGetValue(resident.prototype, out var prototypeGroups))
@@ -735,14 +778,100 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     }
                     foreach (ResidentGpuCell cell in m_ResidentGpuCells) cell.generation = m_DetailGpuGeneration;
                 }
+                return FinalizeResidentGpuVisibility(submitted, false);
+            }
+            catch (Exception exception)
+            {
+                FailGpuDensityDetailGeneration(exception.Message);
+                return false;
+            }
+        }
+
+        static readonly Unity.Profiling.ProfilerMarker s_ResidentCompareMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.ResidentVisibility.Compare");
+        static readonly Unity.Profiling.ProfilerMarker s_ResidentBuildMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.ResidentVisibility.BuildCommands");
+        static readonly Unity.Profiling.ProfilerMarker s_ResidentUploadMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.ResidentVisibility.Upload");
+
+        bool ResidentGpuSelectionUnchanged(int budget, float nearScale, float distantScale, out int submitted)
+        {
+            using var compareProfile = s_ResidentCompareMarker.Auto();
+            submitted = 0;
+            if (!m_DetailBrgHasSignature || !m_DetailBrgUsesGpuGeneration
+                || (m_UseIndirectDetailDraws && !m_IndirectDetailDrawsReady)) return false;
+            int remaining = budget, selectedCells = 0;
+            foreach (var visible in m_VisibleDensityDetails)
+            {
+                float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                int allowed = Mathf.Min(remaining, Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                if (allowed <= 0 || !m_GpuPrototypeGroups.ContainsKey(visible.prototype)) continue;
+                // One changed population is enough to require rebuilding. Continuing to
+                // compare every other cell repeats work that the rebuild must do anyway.
+                if (!m_ResidentVisibleCounts.TryGetValue(visible.chunk, out int previous) || previous != allowed) return false;
+                remaining -= allowed;
+                submitted += allowed;
+                selectedCells++;
+            }
+            return selectedCells == m_ResidentVisibleCounts.Count;
+        }
+
+        bool UpdateResidentGpuVisibility(int budget, float nearScale, float distantScale)
+        {
+            LastRegeneratedDetailInstances = 0;
+            // Camera movement alone does not change GPU transforms or visibility indices.
+            // Compare the exact selected populations before rebuilding/uploading any data.
+            if (ResidentGpuSelectionUnchanged(budget, nearScale, distantScale, out int checkSubmitted))
+            {
+                m_LastSubmittedDensityDetailInstances = checkSubmitted;
+                m_LastDensityDetailDrawCalls = m_DetailBrgPreparedGroups.Count;
+                return true;
+            }
+            using var buildProfile = s_ResidentBuildMarker.Auto();
+            m_IndirectDetailDrawsReady = false;
+            m_IndirectVisibilityRanges.Clear(); m_IndirectArguments.Clear(); m_IndirectTopologies.Clear();
+            m_ResidentVisibleCounts.Clear();
+            foreach (var group in m_ActiveDetailGpuBuildGroups) group.visibleCells.Clear();
+            int remaining = budget, submitted = 0;
+            foreach (var visible in m_VisibleDensityDetails)
+            {
+                float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                int allowed = Mathf.Min(remaining, Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                if (allowed <= 0) continue;
+                if (!m_GpuPrototypeGroups.TryGetValue(visible.prototype, out var groups)) continue;
+                m_ResidentVisibleCounts[visible.chunk] = allowed;
+                foreach (var group in groups.groups)
+                {
+                    if (!group.residentCells.TryGetValue(visible.chunk, out var cell)) continue;
+                    cell.visible = allowed;
+                    group.visibleCells.Add(cell);
+                }
+                remaining -= allowed;
+                submitted += allowed;
+            }
+            return FinalizeResidentGpuVisibility(submitted, true);
+        }
+
+        bool FinalizeResidentGpuVisibility(int submitted, bool onlyVisibleCells)
+        {
                 UploadDetailDefinitions();
                 int destination = 0;
                 m_DetailBrgPreparedGroups.Clear();
                 foreach (var group in m_ActiveDetailGpuBuildGroups)
                 {
                     int offset = destination;
-                    foreach (var cell in group.residentCells.Values)
-                        if (cell.tick == m_ResidentGpuTick && cell.visible > 0) AppendResidentVisibleIndices(cell, ref destination, m_DetailBrgPreparedGroups.Count);
+                    if (onlyVisibleCells)
+                    {
+                        for (int i = 0; i < group.visibleCells.Count; i++)
+                        {
+                            var cell = group.visibleCells[i];
+                            if (cell.tick == m_ResidentGpuTick && cell.visible > 0)
+                                AppendResidentVisibleIndices(cell, ref destination, m_DetailBrgPreparedGroups.Count);
+                        }
+                    }
+                    else
+                    {
+                        foreach (var cell in group.residentCells.Values)
+                            if (cell.tick == m_ResidentGpuTick && cell.visible > 0)
+                                AppendResidentVisibleIndices(cell, ref destination, m_DetailBrgPreparedGroups.Count);
+                    }
                     if (destination == offset) continue;
                     if (m_UseIndirectDetailDraws)
                     {
@@ -770,12 +899,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_LastSubmittedDensityDetailInstances = submitted;
                 m_LastDensityDetailDrawCalls = m_DetailBrgPreparedGroups.Count;
                 return true;
-            }
-            catch (Exception exception)
-            {
-                FailGpuDensityDetailGeneration(exception.Message);
-                return false;
-            }
         }
 
         void ResetGpuProceduralBuildGroups()
@@ -1221,6 +1344,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     drawCommandsCount = 1,
                     filterSettings = new BatchFilterSettings
                     {
+                        batchLayer = DetailBatchLayer,
                         renderingLayerMask = uint.MaxValue,
                         layer = (byte)gameObject.layer,
                         shadowCastingMode = group.shadowCasting,
@@ -1261,6 +1385,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ReleaseDensityDetailBrg()
         {
+            ResetFullDetailResidency();
             ReleaseIndirectDetailBuffers();
             LastRegeneratedDetailInstances = 0;
             if (m_DetailBrg != null)

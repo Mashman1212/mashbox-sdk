@@ -137,6 +137,7 @@ namespace MashBoxSDK.Maps.Spline
                 ReplaceOverlayChunks(loft, rebuiltMesh, sourceRenderer, m_DebugMaterial);
                 DestroyGeneratedObject(rebuiltMesh);
                 m_OverlayObject.SetActive(true);
+                loft.InvalidateVisualChunks();
                 return true;
             }
             catch (Exception exception)

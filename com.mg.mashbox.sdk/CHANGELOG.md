@@ -6,9 +6,9 @@
 
 - Added MG Terrain Seam Fit with nearest-surface or vertex snapping, a world-distance threshold, optional normal blending and surface offset, shared sculpt controls, replayable terrain-only strokes, and updated collision.
 
-### Fixed
+### Removed
 
-- Ported the Project X U6 HDRP color-grading LUT refresh workaround to the shared SDK. Unity 6 editor and player cameras invalidate the cached LUT before rendering so tonemapping and volume color adjustments refresh. This rebuilds the LUT per camera render; Unity 2022 projects are unaffected.
+- Removed the Unity 6 HDRP color-grading LUT refresh workaround and its dedicated rendering assembly. Unity now controls LUT cache updates; the underlying volume-refresh bug is fixed in Unity 6000.4.11f1 and later 6000.4 patches.
 
 ## [0.14.13] - 2026-08-18
 

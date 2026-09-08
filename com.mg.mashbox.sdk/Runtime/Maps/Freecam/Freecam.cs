@@ -31,9 +31,12 @@ namespace MashBoxSDK.Maps
         private Vector3 movementInput;
         private Vector3 finalMoveForce;
 
+        // Explicit opt-in for a camera created by the ProjectX editor inspection flow.
+        public bool EditorInspectionMode { get; set; }
+
         private void Awake()
         {
-            if (Application.productName == "ProjectX")
+            if (Application.productName == "ProjectX" && !(Application.isEditor && EditorInspectionMode))
             {
                 Destroy(this.gameObject);
             }
@@ -51,6 +54,9 @@ namespace MashBoxSDK.Maps
             fpsFrames = 0;
             fpsText = "FPS: --";
             EnsureComponents();
+
+            if (Application.isEditor && EditorInspectionMode)
+                return;
 
             var mainCamera = Camera.main;
             if (mainCamera == null || mainCamera.transform.IsChildOf(transform))
@@ -164,6 +170,9 @@ namespace MashBoxSDK.Maps
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            if (Application.isEditor && EditorInspectionMode)
+                return;
+
             var movers = GameObject.FindGameObjectsWithTag("WorldMover");
             foreach (var mover in movers)
                 Destroy(mover);

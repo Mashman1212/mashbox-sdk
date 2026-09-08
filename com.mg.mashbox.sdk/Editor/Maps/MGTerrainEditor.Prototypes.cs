@@ -8,7 +8,19 @@ namespace MashBoxSDK.MapTools
 {
     public sealed partial class MGTerrainEditor
     {
-        bool m_ShowAdvanced, m_ShowPrototypeAdvanced;
+        const string AdvancedFoldoutPreference = "MashBoxSDK.MGTerrainEditor.ShowAdvanced";
+        // This is a user preference, not scene data. Editor instances are recreated
+        // on selection and Play mode changes, so an instance field loses the choice.
+        bool m_ShowAdvanced
+        {
+            get => EditorPrefs.GetBool(AdvancedFoldoutPreference, false);
+            set
+            {
+                if (value != m_ShowAdvanced)
+                    EditorPrefs.SetBool(AdvancedFoldoutPreference, value);
+            }
+        }
+        bool m_ShowPrototypeAdvanced;
         int m_SelectedPrototype;
 
         static void DrawPrototypeFields(SerializedProperty parent, params string[] hidden)

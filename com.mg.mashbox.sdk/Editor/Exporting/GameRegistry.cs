@@ -31,7 +31,7 @@ namespace MashBoxSDK.Exporting
                 DisplayName = "ProjectX",
                 Aliases = new[] { "Project X" },
                 SteamAppId = 4068320,
-                UnityEditorVersion = "6000.4.10f1",
+                UnityEditorVersion = "6000.4.12f1",
                 ModIoApiBase = "https://g-12806.modapi.io/v1",
                 MapSharedMemoryBudgetBytes = 4L * 1024L * 1024L * 1024L
             }

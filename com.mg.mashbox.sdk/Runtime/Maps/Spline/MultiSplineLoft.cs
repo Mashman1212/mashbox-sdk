@@ -15,7 +15,7 @@ namespace MashBoxSDK.Maps.Spline
     [ExecuteAlways]
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
-    public sealed class MultiSplineLoft : MonoBehaviour
+    public sealed partial class MultiSplineLoft : MonoBehaviour
     {
         const string GeneratedColliderTag = "dirt";
         static bool s_HasWarnedAboutMissingColliderTag;
@@ -372,6 +372,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnEnable()
         {
+            if (m_VisualsBaked) return;
             EnsureMesh();
             UnitySpline.Changed += OnSplineChanged;
             SplineContainer.SplineAdded += OnSplineSetChanged;
@@ -384,6 +385,8 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnDisable()
         {
+            // Disabling the authoring component must not remove runtime visual culling.
+            if (!Application.isPlaying || !gameObject.activeInHierarchy) ClearRuntimeVisuals();
             UnitySpline.Changed -= OnSplineChanged;
             SplineContainer.SplineAdded -= OnSplineSetChanged;
             SplineContainer.SplineRemoved -= OnSplineSetChanged;
@@ -393,6 +396,9 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnValidate()
         {
+            if (m_VisualsBaked) return;
+            m_VisualCullDistance = Mathf.Max(1f, m_VisualCullDistance);
+            InvalidateVisualChunks();
             m_SamplesAlong = Mathf.Max(2, m_SamplesAlong);
             m_SegmentsAcross = Mathf.Max(1, m_SegmentsAcross);
             m_TargetSegmentLength = Mathf.Max(0.01f, m_TargetSegmentLength);
@@ -653,6 +659,8 @@ namespace MashBoxSDK.Maps.Spline
 
         void RegenerateInternal(bool livePreview)
         {
+            if (m_VisualsBaked) return;
+            InvalidateVisualChunks();
             m_UseFastSourceEvaluation = livePreview;
             try
             {
@@ -1650,6 +1658,7 @@ namespace MashBoxSDK.Maps.Spline
             float totalAcrossDistance = crossCount > 1 ? m_CrossDistances[crossCount - 1] : 0f;
             float inverseAcrossDistance = totalAcrossDistance > Mathf.Epsilon ? 1f / totalAcrossDistance : 0f;
             float alongUvPerMeter = CurrentUvAlongPerMeter;
+            m_RenderUvAlongPerMeter = alongUvPerMeter;
             m_Vertices.Capacity = Mathf.Max(m_Vertices.Capacity, vertexCount);
             m_Normals.Capacity = Mathf.Max(m_Normals.Capacity, vertexCount);
             m_Uvs.Capacity = Mathf.Max(m_Uvs.Capacity, vertexCount);

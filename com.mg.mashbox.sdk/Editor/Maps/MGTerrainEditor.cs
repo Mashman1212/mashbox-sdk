@@ -189,6 +189,7 @@ namespace MashBoxSDK.MapTools
             DrawDetailLayerVisibility(terrain);
             DrawPrototypeGrid(terrain);
             DrawDetailPainter(terrain);
+            DrawHolePainter(terrain);
             DrawFarGrassBake(terrain);
             m_ShowAdvanced = EditorGUILayout.Foldout(m_ShowAdvanced, "Advanced", true);
             if (m_ShowAdvanced)
@@ -243,7 +244,7 @@ namespace MashBoxSDK.MapTools
                 if (m_UseDetailDensityLod.boolValue)
                 {
                     EditorGUI.indentLevel++;
-                    int nearCellSize = Mathf.Clamp(m_DetailChunkCells.intValue, 8, 64);
+                    int nearCellSize = Mathf.Clamp(m_DetailChunkCells.intValue, 2, 64);
                     EditorGUILayout.LabelField(
                         "HLOD Cell Sizes",
                         staticCells.boolValue || transitionWidth.floatValue > 0f || (Application.isPlaying && m_UseBatchRendererGroup.boolValue)
@@ -305,6 +306,10 @@ namespace MashBoxSDK.MapTools
                     using (new EditorGUI.DisabledScope(!m_UseGpuProceduralDetailGeneration.boolValue))
                         EditorGUILayout.PropertyField(m_UseIndirectDetailDraws,
                             new GUIContent("Use Indirect Draws", "On: GPU builds visible indices and counts for indirect BRG draws. Off: CPU builds indices for direct BRG draws. Both use the same cached cells and visibility rules."));
+                    var keepAllResident = serializedObject.FindProperty("m_KeepAllDetailCellsResident");
+                    EditorGUILayout.PropertyField(keepAllResident, new GUIContent("Keep All Cells GPU Resident"));
+                    using (new EditorGUI.DisabledScope(keepAllResident.boolValue && m_UseGpuProceduralDetailGeneration.boolValue))
+                    {
                     EditorGUILayout.PropertyField(
                         m_PrewarmFixedDetailCells,
                         new GUIContent("Prewarm Cells On First Render", "Build all fixed cells inside the initial detail radius in one startup pass. Rotation reuses cached transforms; movement streams newly reached cells."));
@@ -317,10 +322,11 @@ namespace MashBoxSDK.MapTools
                     EditorGUILayout.PropertyField(
                         m_DetailStreamingRefreshAngle,
                         new GUIContent("Refresh After Rotating", "Reuse the current GPU-resident cell set until the main camera rotates this many degrees."));
+                    }
                     EditorGUI.indentLevel--;
                     EditorGUILayout.HelpBox(
                         m_UseGpuProceduralDetailGeneration.boolValue
-                            ? "Nearby cells keep stable GPU transforms, including behind the camera. Turning updates visibility without regenerating transforms. Indirect mode expands visible indices and counts on the GPU; direct mode builds indices on the CPU. Cell selection uses the same cached hierarchy in both modes."
+                            ? "With Keep All Cells GPU Resident enabled, the full terrain population is prepared once and retained until terrain data changes. Movement and rotation only update visibility. Indirect mode expands visible indices and counts on the GPU; direct mode builds indices on the CPU. Cell selection uses the same cached hierarchy in both modes."
                             : "GPU Resident uses fixed CPU-matrix cells: a cell is generated once at full density, while Near/Mid/Far only alter the submitted instance prefix.",
                         MessageType.None);
                 }
@@ -687,7 +693,7 @@ namespace MashBoxSDK.MapTools
             serializedObject.Update();
         }
 
-        internal static void BuildSurfaceColliders(MGTerrain terrain, float cellSize, string assetFolder = null, List<string> createdAssets = null)
+        internal static void BuildSurfaceColliders(MGTerrain terrain, float cellSize, string assetFolder = null, List<string> createdAssets = null, bool saveAssets = true)
         {
             if (terrain == null) throw new ArgumentNullException(nameof(terrain));
             if (float.IsNaN(cellSize) || float.IsInfinity(cellSize) || cellSize <= 0f)
@@ -697,7 +703,7 @@ namespace MashBoxSDK.MapTools
             if (source == null || !source.isReadable)
                 throw new InvalidOperationException("A readable surface mesh is required.");
             Vector3[] vertices = source.vertices;
-            int[] triangles = source.triangles;
+            int[] triangles = terrain.GetSurfaceTrianglesIncludingHoles();
             if (triangles.Length == 0) throw new InvalidOperationException("The surface mesh has no triangles to build colliders from.");
             float sx = Mathf.Max(.0001f, filter.transform.TransformVector(Vector3.right).magnitude);
             float sz = Mathf.Max(.0001f, filter.transform.TransformVector(Vector3.forward).magnitude);
@@ -782,9 +788,10 @@ namespace MashBoxSDK.MapTools
             serializedObject.ApplyModifiedProperties();
             Undo.RecordObject(terrain, "Build Terrain Child Colliders");
             terrain.SetSurfaceColliderVertexMaps(vertexMaps.ToArray(), source.vertexCount);
+            terrain.ApplySurfaceHoles();
             EditorUtility.SetDirty(terrain);
             if (original != null) { Undo.RecordObject(original, "Build Terrain Child Colliders"); original.enabled = false; }
-            AssetDatabase.SaveAssets();
+            if (saveAssets) AssetDatabase.SaveAssets();
             EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
             Physics.SyncTransforms();
             SceneView.RepaintAll();
@@ -1412,6 +1419,7 @@ namespace MashBoxSDK.MapTools
         void SetDetailPainting(bool enabled)
         {
             if (enabled == m_DetailPainting) return;
+            if (enabled) SetHolePainting(false);
             FinishDetailStroke();
             m_DetailPainting = enabled;
             if (enabled)
@@ -1434,6 +1442,7 @@ namespace MashBoxSDK.MapTools
 
         void OnDisable()
         {
+            SetHolePainting(false);
             SetDetailPainting(false);
             Undo.undoRedoPerformed -= RefreshPaintUndo;
             EditorApplication.update -= UpdateDetailPaintPreview;
@@ -1450,6 +1459,7 @@ namespace MashBoxSDK.MapTools
 
         void OnSceneGUI()
         {
+            DrawHoleSceneGUI();
             if (!m_DetailPainting) return;
             var terrain = (MGTerrain)target;
             if (Application.isPlaying || MBEditorToolState.ActiveEditing || Tools.current != Tool.None)

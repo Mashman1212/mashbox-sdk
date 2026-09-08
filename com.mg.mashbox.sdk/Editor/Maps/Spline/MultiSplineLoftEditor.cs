@@ -37,6 +37,7 @@ namespace MashBoxSDK.Maps.Spline
         SerializedProperty m_DoubleSided;
         SerializedProperty m_UpdateMeshCollider;
         SerializedProperty m_ColliderChunkLength;
+        SerializedProperty m_VisualCullDistance;
         SerializedProperty m_NormalMode;
         SerializedProperty m_FlipNormals;
         SerializedProperty m_MatchSideNormalsToTerrain;
@@ -83,6 +84,7 @@ namespace MashBoxSDK.Maps.Spline
             m_DoubleSided = serializedObject.FindProperty("m_DoubleSided");
             m_UpdateMeshCollider = serializedObject.FindProperty("m_UpdateMeshCollider");
             m_ColliderChunkLength = serializedObject.FindProperty("m_ColliderChunkLength");
+            m_VisualCullDistance = serializedObject.FindProperty("m_VisualCullDistance");
             m_NormalMode = serializedObject.FindProperty("m_NormalMode");
             m_FlipNormals = serializedObject.FindProperty("m_FlipNormals");
             m_MatchSideNormalsToTerrain = serializedObject.FindProperty("m_MatchSideNormalsToTerrain");
@@ -227,8 +229,9 @@ namespace MashBoxSDK.Maps.Spline
                     MessageType.None);
             }
             EditorGUILayout.PropertyField(m_UpdateMeshCollider, new GUIContent("Generate Collider Chunks"));
-            using (new EditorGUI.DisabledScope(!m_UpdateMeshCollider.boolValue))
-                EditorGUILayout.PropertyField(m_ColliderChunkLength, new GUIContent("Collider Chopping Distance", "Creates a separate child MeshCollider for approximately this many meters of track."));
+            EditorGUILayout.PropertyField(m_ColliderChunkLength, new GUIContent("Chunk Length (Visuals / Colliders)", "Approximate metres along the loft per visual section and collider chunk."));
+            EditorGUILayout.PropertyField(m_VisualCullDistance, new GUIContent("Visual Cull Distance"));
+            EditorGUILayout.HelpBox("Visual chunks are mandatory in Play Mode and builds. Builds bake them automatically; the editable loft stays whole. Culling uses the gameplay camera and distance to each chunk bounding sphere. Colliders remain independent.", MessageType.None);
             EditorGUILayout.PropertyField(m_AutoRegenerate, new GUIContent("Live Regenerate"));
             using (new EditorGUI.DisabledScope(!m_AutoRegenerate.boolValue))
                 EditorGUILayout.PropertyField(m_AutoRegenerateDelay, new GUIContent("Live Regenerate Delay", "Coalesces rapid spline edits before rebuilding the loft."));

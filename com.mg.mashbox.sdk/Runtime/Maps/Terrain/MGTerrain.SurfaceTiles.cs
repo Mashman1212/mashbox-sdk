@@ -30,13 +30,65 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             public MeshCollider collider;
             public int[] sourceIndices;
+            public int[] holeSourceTriangles;
+            public Mesh holeMesh;
             public SurfaceColliderVertexMap(MeshCollider collider, int[] sourceIndices)
-            { this.collider = collider; this.sourceIndices = sourceIndices; }
+            { this.collider = collider; this.sourceIndices = sourceIndices; holeSourceTriangles = collider != null && collider.sharedMesh != null ? collider.sharedMesh.triangles : null; }
         }
         [SerializeField, HideInInspector] SurfaceColliderVertexMap[] m_SurfaceColliderVertexMaps = Array.Empty<SurfaceColliderVertexMap>();
         [SerializeField, HideInInspector] int m_ColliderSourceVertexCount;
 #if UNITY_EDITOR
         [NonSerialized] int m_SurfaceMeshDirtyCount;
+        static readonly HashSet<MGTerrain> s_PickableTerrains = new HashSet<MGTerrain>();
+        static Material s_SurfacePickingMaterial;
+
+        [UnityEditor.InitializeOnLoadMethod]
+        static void RegisterSurfacePicking()
+        {
+            UnityEditor.HandleUtility.RegisterRenderPickingCallback(RenderSurfacePicking);
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += () =>
+            {
+                if (s_SurfacePickingMaterial != null) DestroyImmediate(s_SurfacePickingMaterial);
+            };
+        }
+
+        static UnityEditor.RenderPickingResult RenderSurfacePicking(in UnityEditor.RenderPickingArgs args)
+        {
+            Camera camera = Camera.current;
+            if (camera == null) return UnityEditor.RenderPickingResult.NoOperation;
+            if (s_SurfacePickingMaterial == null)
+            {
+                var shader = UnityEditor.AssetDatabase.LoadAssetAtPath<Shader>(
+                    "Packages/com.mg.mashbox.sdk/Editor/Maps/MGTerrainPicking.shader");
+                if (shader == null) return UnityEditor.RenderPickingResult.NoOperation;
+                s_SurfacePickingMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            }
+            var owners = new List<GameObject>();
+            foreach (MGTerrain terrain in s_PickableTerrains)
+            {
+                if (terrain == null || !terrain.isActiveAndEnabled || !terrain.m_MasterRenderingSuppressed
+                    || terrain.m_MasterWasForceRenderingOff || terrain.MeshRenderer == null || !terrain.MeshRenderer.enabled)
+                    continue;
+                GameObject owner = terrain.gameObject;
+                var visibility = UnityEditor.SceneVisibilityManager.instance;
+                if (!args.NeedToRenderForPicking(owner) || visibility.IsHidden(owner) || visibility.IsPickingDisabled(owner)
+                    || visibility.IsHidden(terrain.MeshFilter.gameObject) || visibility.IsPickingDisabled(terrain.MeshFilter.gameObject)
+                    || (camera.cullingMask & (1 << terrain.MeshFilter.gameObject.layer)) == 0
+                    || UnityEditor.SceneManagement.StageUtility.GetStageHandle(owner) != UnityEditor.SceneManagement.StageUtility.GetCurrentStageHandle())
+                    continue;
+                // Draw the current surface only into Unity's picking buffer. The native
+                // depth test handles occlusion; the retained hole faces are never drawn.
+                s_SurfacePickingMaterial.SetColor("_SelectionID", UnityEditor.HandleUtility.EncodeSelectionId(args.pickingIndex + owners.Count));
+                if (!s_SurfacePickingMaterial.SetPass(0)) continue;
+                Mesh mesh = terrain.MeshFilter.sharedMesh;
+                if (mesh == null) continue;
+                for (int sub = 0; sub < mesh.subMeshCount; sub++)
+                    Graphics.DrawMeshNow(mesh, terrain.MeshFilter.transform.localToWorldMatrix, sub);
+                owners.Add(owner);
+            }
+            return owners.Count == 0 ? UnityEditor.RenderPickingResult.NoOperation
+                : new UnityEditor.RenderPickingResult(owners.Count, index => owners[index]);
+        }
 #endif
 
         sealed class SurfaceTile
@@ -79,6 +131,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         // disposable render caches, regenerated after reload and never painted directly.
         public void NotifySurfaceMeshChanged(bool topologyChanged = false)
         {
+            m_HolePickTree = null;
             m_SurfaceTilesDirty = true;
             if (topologyChanged) m_TiledSource = null;
         }
@@ -157,6 +210,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 SurfaceTileGroup group = entry.Value;
                 var child = new GameObject($"Surface Tile {entry.Key.x},{entry.Key.y}") { hideFlags = HideFlags.HideAndDontSave };
                 child.transform.SetParent(m_SurfaceTileRoot.transform, false);
+                child.layer = MeshFilter.gameObject.layer;
                 var mesh = new Mesh
                 {
                     name = child.name,
@@ -173,6 +227,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_SurfaceTiles.Add(tile);
 #if UNITY_EDITOR
                 UnityEditor.SceneVisibilityManager.instance.DisablePicking(child, true);
+                s_PickableTerrains.Add(this);
 #endif
             }
             m_TiledSource = source;
@@ -396,7 +451,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_MasterRenderingSuppressed = false;
             foreach (SurfaceTile tile in m_SurfaceTiles)
             {
-                if (tile.renderer != null) tile.renderer.enabled = false;
+                if (tile.renderer != null)
+                {
+#if UNITY_EDITOR
+                    s_PickableTerrains.Remove(this);
+#endif
+                    tile.renderer.enabled = false;
+                }
                 if (tile.mesh == null) continue;
                 if (Application.isPlaying) Destroy(tile.mesh); else DestroyImmediate(tile.mesh);
             }
