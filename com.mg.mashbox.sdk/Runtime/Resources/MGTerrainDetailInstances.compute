@@ -150,3 +150,21 @@ void GenerateDetailInstances(uint3 groupId : SV_GroupID, uint3 groupThreadId : S
         StorePackedMatrix(_WorldToObjectAddress, destination, worldToObject);
     }
 }
+
+// Expand compact per-texel visibility ranges, preserving the direct renderer's
+// exact selection. GPU-written counts feed BRG indirect draw commands.
+#pragma kernel BuildVisibleIndices
+StructuredBuffer<uint4> _VisibilityRanges;
+RWByteAddressBuffer _VisibleIndices;
+RWStructuredBuffer<uint> _IndirectArgs;
+uint _VisibilityRangeOffset;
+
+[numthreads(64, 1, 1)]
+void BuildVisibleIndices(uint3 group : SV_GroupID, uint thread : SV_GroupIndex)
+{
+    uint4 range = _VisibilityRanges[_VisibilityRangeOffset + group.x];
+    for (uint i = thread; i < range.y; i += 64)
+        _VisibleIndices.Store((range.z + i) * 4, range.x + i);
+    if (thread == 0)
+        InterlockedAdd(_IndirectArgs[range.w * 5 + 1], range.y);
+}

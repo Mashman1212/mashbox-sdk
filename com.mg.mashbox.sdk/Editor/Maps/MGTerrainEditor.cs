@@ -118,6 +118,7 @@ namespace MashBoxSDK.MapTools
         SerializedProperty m_DistantDetailBudgetReserve;
         SerializedProperty m_UseBatchRendererGroup;
         SerializedProperty m_UseGpuProceduralDetailGeneration;
+        SerializedProperty m_UseIndirectDetailDraws;
         SerializedProperty m_PrewarmFixedDetailCells;
         SerializedProperty m_RetainFixedDetailCells;
         SerializedProperty m_DetailStreamingRefreshDistance;
@@ -160,6 +161,7 @@ namespace MashBoxSDK.MapTools
             m_DistantDetailBudgetReserve = serializedObject.FindProperty("m_DistantDetailBudgetReserve");
             m_UseBatchRendererGroup = serializedObject.FindProperty("m_UseBatchRendererGroup");
             m_UseGpuProceduralDetailGeneration = serializedObject.FindProperty("m_UseGpuProceduralDetailGeneration");
+            m_UseIndirectDetailDraws = serializedObject.FindProperty("m_UseIndirectDetailDraws");
             m_PrewarmFixedDetailCells = serializedObject.FindProperty("m_PrewarmFixedDetailCells");
             m_RetainFixedDetailCells = serializedObject.FindProperty("m_RetainFixedDetailCells");
             m_DetailStreamingRefreshDistance = serializedObject.FindProperty("m_DetailStreamingRefreshDistance");
@@ -184,6 +186,7 @@ namespace MashBoxSDK.MapTools
 
             DrawMappyToolLauncher(terrain);
 
+            DrawDetailLayerVisibility(terrain);
             DrawPrototypeGrid(terrain);
             DrawDetailPainter(terrain);
             DrawFarGrassBake(terrain);
@@ -298,13 +301,16 @@ namespace MashBoxSDK.MapTools
                         m_UseGpuProceduralDetailGeneration,
                         new GUIContent(
                             "GPU Procedural Generation",
-                            "Keep compact density spans on the CPU and generate only submitted transforms with a compute shader. This avoids per-blade CPU matrices and all cell mesh combining."));
+                            "Keep compact density spans on the CPU and prewarm nearby transforms in stable GPU allocations. This avoids per-blade CPU matrices and all cell mesh combining."));
+                    using (new EditorGUI.DisabledScope(!m_UseGpuProceduralDetailGeneration.boolValue))
+                        EditorGUILayout.PropertyField(m_UseIndirectDetailDraws,
+                            new GUIContent("Use Indirect Draws", "On: GPU builds visible indices and counts for indirect BRG draws. Off: CPU builds indices for direct BRG draws. Both use the same cached cells and visibility rules."));
                     EditorGUILayout.PropertyField(
                         m_PrewarmFixedDetailCells,
-                        new GUIContent("Prewarm Cells On First Render", "Build all fixed cells inside the initial detail radius in one startup pass. Camera movement then enables/disables cached cells instead of regenerating LOD variants."));
+                        new GUIContent("Prewarm Cells On First Render", "Build all fixed cells inside the initial detail radius in one startup pass. Rotation reuses cached transforms; movement streams newly reached cells."));
                     EditorGUILayout.PropertyField(
                         m_RetainFixedDetailCells,
-                        new GUIContent("Retain Built Cells", "Never evict a fixed cell after it has been generated during this play session. Revisiting terrain is hitch-free but memory grows with explored area."));
+                        new GUIContent("Retain Built Cells", "Keep CPU cell descriptions for revisits. GPU allocations outside the nearby radius are reclaimed and reused."));
                     EditorGUILayout.PropertyField(
                         m_DetailStreamingRefreshDistance,
                         new GUIContent("Refresh After Moving", "Reuse the current GPU-resident cell set until the main camera moves this far."));
@@ -314,7 +320,7 @@ namespace MashBoxSDK.MapTools
                     EditorGUI.indentLevel--;
                     EditorGUILayout.HelpBox(
                         m_UseGpuProceduralDetailGeneration.boolValue
-                            ? "GPU Procedural stores occupied density spans rather than blade matrices. Compute expands only the submitted budget directly into the BRG buffer; cell meshes are never combined. Only the MainCamera refreshes the resident set."
+                            ? "Nearby cells keep stable GPU transforms, including behind the camera. Turning updates visibility without regenerating transforms. Indirect mode expands visible indices and counts on the GPU; direct mode builds indices on the CPU. Cell selection uses the same cached hierarchy in both modes."
                             : "GPU Resident uses fixed CPU-matrix cells: a cell is generated once at full density, while Near/Mid/Far only alter the submitted instance prefix.",
                         MessageType.None);
                 }
@@ -332,7 +338,9 @@ namespace MashBoxSDK.MapTools
                         new GUIContent(terrain.LastDensityDetailDrawCalls.ToString("N0")));
                     EditorGUILayout.LabelField(
                         "Active Renderer",
-                        terrain.IsGpuProceduralDensityDetailActive
+                        terrain.IsIndirectDensityDetailActive
+                            ? "GPU Procedural + Indirect (BRG)"
+                            : terrain.IsGpuProceduralDensityDetailActive
                             ? "GPU Procedural + Resident (BRG)"
                             : terrain.IsDensityDetailBrgActive
                                 ? "GPU Resident (BRG)"
@@ -341,6 +349,9 @@ namespace MashBoxSDK.MapTools
                         EditorGUILayout.LabelField(
                             new GUIContent("Transforms Regenerated Last Update", "Number of GPU instance transforms rewritten on the last detail update. Unchanged cell ranges retain their existing transforms; zero means all ranges were reused. Includes prefab mesh parts."),
                             new GUIContent(terrain.LastRegeneratedDetailInstances.ToString("N0")));
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Cell Bounds Built Last Update", "New candidate bounds calculated on the last streaming update. Rotation at a fixed position reuses cached bounds and should report zero."),
+                        new GUIContent(terrain.LastDetailCandidateBoundsBuilt.ToString("N0")));
                     EditorGUILayout.LabelField(
                         new GUIContent(
                             "Prototype Part Batching",
@@ -779,6 +790,25 @@ namespace MashBoxSDK.MapTools
             SceneView.RepaintAll();
         }
 
+        void DrawDetailLayerVisibility(MGTerrain terrain)
+        {
+            if (m_DensityDetailLayers.arraySize == 0) return;
+            EditorGUILayout.LabelField("Detail Layer Visibility", EditorStyles.boldLabel);
+            for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
+            {
+                var layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+                if (layer.FindPropertyRelative("m_PaletteSourceOnly").boolValue) continue;
+                int prototype = layer.FindPropertyRelative("m_PrototypeIndex").intValue;
+                string name = prototype >= 0 && prototype < terrain.Prototypes.Count
+                    && terrain.Prototypes[prototype]?.Prefab != null
+                    ? terrain.Prototypes[prototype].Prefab.name : "Prototype " + prototype;
+                var disabled = layer.FindPropertyRelative("m_RenderDisabled");
+                disabled.boolValue = !EditorGUILayout.ToggleLeft(
+                    new GUIContent($"Layer {index + 1}: {name}", "Enable rendering for this detail layer. Turning it off preserves its painted density and size maps. Works in Edit and Play modes."),
+                    !disabled.boolValue);
+            }
+            EditorGUILayout.Space();
+        }
         void DrawDensityLayersWithFlood(MGTerrain terrain)
         {
             using (new EditorGUI.IndentLevelScope())

@@ -1990,7 +1990,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     1f,
                     new GUIContent(
                         "Tessellation Remapping",
-                        "Sets the minimum and maximum sampled-height range used for this layer's tessellation displacement."));
+                        "Remaps this layer's height-array sample before the two selected layers are blended for tessellation. Min maps black heights; Max maps white heights."));
             }
             else if (tessellationRemapMin != null)
             {

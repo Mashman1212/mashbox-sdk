@@ -103,28 +103,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal Matrix4x4 relativeMatrix;
             internal readonly List<GpuDetailSpawnCommand> commands = new List<GpuDetailSpawnCommand>();
             internal int outputCount;
-            internal int outputBase;
             internal int commandOffset;
             internal bool active;
-            internal readonly List<GpuCellRange> ranges = new List<GpuCellRange>();
-            internal readonly List<GpuCellRange> previousRanges = new List<GpuCellRange>();
-            internal int previousOutputBase;
-            internal int generation;
-            internal Matrix4x4 previousRelativeMatrix;
-        }
-
-        readonly struct GpuCellRange
-        {
-            internal readonly DensityDetailChunk chunk;
-            internal readonly int count;
-            internal readonly int start;
-
-            internal GpuCellRange(DensityDetailChunk chunk, int count, int start)
-            {
-                this.chunk = chunk;
-                this.count = count;
-                this.start = start;
-            }
+            internal readonly Dictionary<DensityDetailChunk, ResidentGpuCell> residentCells = new Dictionary<DensityDetailChunk, ResidentGpuCell>();
         }
 
         sealed class BrgBuildGroup
@@ -217,6 +198,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 bytes += (long)m_DetailGpuLayerBuffer.count * m_DetailGpuLayerBuffer.stride;
             if (m_DetailGpuSurfaceHeightBuffer != null)
                 bytes += (long)m_DetailGpuSurfaceHeightBuffer.count * m_DetailGpuSurfaceHeightBuffer.stride;
+            if (m_IndirectVisibilityInput != null) bytes += (long)m_IndirectVisibilityInput.count * m_IndirectVisibilityInput.stride;
+            if (m_IndirectVisibleIndices != null) bytes += (long)m_IndirectVisibleIndices.count * m_IndirectVisibleIndices.stride;
+            if (m_IndirectArgs != null) bytes += (long)m_IndirectArgs.count * m_IndirectArgs.stride;
             return bytes;
         }
 
@@ -293,6 +277,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
             m_LastSubmittedDensityDetailInstances = submitted;
             if (m_DetailBrgHasSignature
+                && !m_DetailBrgUsesGpuGeneration
                 && signature == m_DetailBrgSignature
                 && submitted == m_DetailBrgLogicalCount)
             {
@@ -357,6 +342,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             uint objectToWorldAddress = BrgZeroPrefixBytes;
             uint worldToObjectAddress = (uint)(BrgZeroPrefixBytes + m_DetailBrgCapacity * BrgPackedMatrixBytes);
             UploadDetailDefinitions();
+            for (int i = 0; i < destinationIndex; i++) m_DetailBrgSequentialVisibleIndices[i] = i;
             m_DetailBrgInstanceBuffer.SetData(m_DetailInstanceShaderData, 0, DetailDataAddress / 16, destinationIndex);
             m_DetailBrgInstanceBuffer.SetData(
                 m_DetailBrgObjectToWorld,
@@ -408,202 +394,317 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
-        bool TryPrepareGpuGeneratedDensityDetailBrg(
-            Camera camera,
-            int budget,
-            float nearScale,
-            float distantScale)
+        [StructLayout(LayoutKind.Sequential)]
+        struct IndirectVisibilityRange
+        {
+            internal uint source, count, destination, draw;
+        }
+        readonly List<IndirectVisibilityRange> m_IndirectVisibilityRanges = new List<IndirectVisibilityRange>();
+        readonly List<uint> m_IndirectArguments = new List<uint>();
+        readonly List<MeshTopology> m_IndirectTopologies = new List<MeshTopology>();
+        GraphicsBuffer m_IndirectVisibilityInput, m_IndirectVisibleIndices, m_IndirectArgs;
+        bool m_IndirectDetailDrawsReady;
+        public bool IsIndirectDensityDetailActive => IsGpuProceduralDensityDetailActive && m_IndirectDetailDrawsReady;
+
+        void ReleaseIndirectDetailBuffers()
+        {
+            m_IndirectDetailDrawsReady = false;
+            m_IndirectVisibilityInput?.Dispose(); m_IndirectVisibilityInput = null;
+            m_IndirectVisibleIndices?.Dispose(); m_IndirectVisibleIndices = null;
+            m_IndirectArgs?.Dispose(); m_IndirectArgs = null;
+            m_IndirectVisibilityRanges.Clear(); m_IndirectArguments.Clear(); m_IndirectTopologies.Clear();
+        }
+
+        void PrepareIndirectDetailVisibility(int visibleCount)
+        {
+            m_IndirectDetailDrawsReady = false;
+            if (!m_UseIndirectDetailDraws || visibleCount == 0) return;
+            void Ensure(ref GraphicsBuffer buffer, GraphicsBuffer.Target target, int count, int stride)
+            {
+                if (buffer != null && buffer.count >= count) return;
+                buffer?.Dispose();
+                buffer = new GraphicsBuffer(target, Mathf.NextPowerOfTwo(Mathf.Max(64, count)), stride);
+            }
+            Ensure(ref m_IndirectVisibilityInput, GraphicsBuffer.Target.Structured, m_IndirectVisibilityRanges.Count, 16);
+            Ensure(ref m_IndirectVisibleIndices, GraphicsBuffer.Target.Raw, visibleCount, sizeof(uint));
+            Ensure(ref m_IndirectArgs, GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.IndirectArguments, m_IndirectArguments.Count, sizeof(uint));
+            m_IndirectVisibilityInput.SetData(m_IndirectVisibilityRanges);
+            m_IndirectArgs.SetData(m_IndirectArguments);
+            int kernel = m_DetailGpuGenerator.FindKernel("BuildVisibleIndices");
+            m_DetailGpuGenerator.SetBuffer(kernel, "_VisibilityRanges", m_IndirectVisibilityInput);
+            m_DetailGpuGenerator.SetBuffer(kernel, "_VisibleIndices", m_IndirectVisibleIndices);
+            m_DetailGpuGenerator.SetBuffer(kernel, "_IndirectArgs", m_IndirectArgs);
+            for (int start = 0; start < m_IndirectVisibilityRanges.Count; start += 65535)
+            {
+                m_DetailGpuGenerator.SetInt("_VisibilityRangeOffset", start);
+                m_DetailGpuGenerator.Dispatch(kernel, Mathf.Min(65535, m_IndirectVisibilityRanges.Count - start), 1, 1);
+            }
+            m_IndirectDetailDrawsReady = true;
+        }
+
+        unsafe JobHandle OutputIndirectDetailCommands(BatchCullingOutputDrawCommands* output, int count, bool cameraView, bool lightView)
+        {
+            int alignment = UnsafeUtility.AlignOf<long>();
+            output->indirectDrawCommands = (BatchDrawCommandIndirect*)UnsafeUtility.Malloc(
+                UnsafeUtility.SizeOf<BatchDrawCommandIndirect>() * count, alignment, Allocator.TempJob);
+            output->drawRanges = (BatchDrawRange*)UnsafeUtility.Malloc(
+                UnsafeUtility.SizeOf<BatchDrawRange>() * count, alignment, Allocator.TempJob);
+            output->indirectDrawCommandCount = count;
+            output->drawRangeCount = count;
+            int command = 0;
+            for (int i = 0; i < m_DetailBrgPreparedGroups.Count; i++)
+            {
+                var group = m_DetailBrgPreparedGroups[i];
+                if ((cameraView && group.shadowCasting == ShadowCastingMode.ShadowsOnly)
+                    || (lightView && group.shadowCasting == ShadowCastingMode.Off)) continue;
+                output->indirectDrawCommands[command] = new BatchDrawCommandIndirect
+                {
+                    flags = BatchDrawCommandFlags.None,
+                    visibleOffset = group.visibleOffset,
+                    batchID = m_DetailBrgBatchId, materialID = group.materialId, meshID = group.meshId,
+                    splitVisibilityMask = ushort.MaxValue, sortingPosition = 0,
+                    topology = m_IndirectTopologies[i],
+                    visibleInstancesBufferHandle = m_IndirectVisibleIndices.bufferHandle,
+                    indirectArgsBufferHandle = m_IndirectArgs.bufferHandle,
+                    indirectArgsBufferOffset = (uint)(i * GraphicsBuffer.IndirectDrawIndexedArgs.size)
+                };
+                output->drawRanges[command] = new BatchDrawRange
+                {
+                    drawCommandsType = BatchDrawCommandType.Indirect,
+                    drawCommandsBegin = (uint)command, drawCommandsCount = 1,
+                    filterSettings = new BatchFilterSettings { renderingLayerMask = uint.MaxValue, layer = (byte)gameObject.layer,
+                        shadowCastingMode = group.shadowCasting, receiveShadows = group.receiveShadows }
+                };
+                command++;
+            }
+            return default;
+        }
+
+        sealed class ResidentGpuCell
+        {
+            internal DensityDetailChunk chunk;
+            internal GpuProceduralBuildGroup group;
+            internal int start, capacity, population, requested, visible, tick;
+            internal int generation = -1;
+        }
+
+        readonly struct FreeGpuRange
+        {
+            internal readonly int start, count;
+            internal FreeGpuRange(int start, int count) { this.start = start; this.count = count; }
+        }
+
+        readonly List<ResidentGpuCell> m_ResidentGpuCells = new List<ResidentGpuCell>();
+        readonly List<FreeGpuRange> m_FreeGpuRanges = new List<FreeGpuRange>();
+        readonly Dictionary<DensityDetailChunk, int> m_ResidentVisibleCounts = new Dictionary<DensityDetailChunk, int>();
+        int m_ResidentGpuEnd;
+        int m_ResidentGpuTick;
+
+        int AllocateResidentGpuRange(int count)
+        {
+            for (int i = 0; i < m_FreeGpuRanges.Count; i++)
+            {
+                FreeGpuRange range = m_FreeGpuRanges[i];
+                if (range.count < count) continue;
+                if (range.count == count) m_FreeGpuRanges.RemoveAt(i);
+                else m_FreeGpuRanges[i] = new FreeGpuRange(range.start + count, range.count - count);
+                return range.start;
+            }
+            int start = m_ResidentGpuEnd;
+            m_ResidentGpuEnd = checked(start + count);
+            return start;
+        }
+
+        void ReleaseUnusedResidentGpuCells()
+        {
+            for (int i = m_ResidentGpuCells.Count - 1; i >= 0; i--)
+            {
+                ResidentGpuCell cell = m_ResidentGpuCells[i];
+                if (cell.tick == m_ResidentGpuTick) continue;
+                cell.group.residentCells.Remove(cell.chunk);
+                if (cell.capacity > 0) m_FreeGpuRanges.Add(new FreeGpuRange(cell.start, cell.capacity));
+                m_ResidentGpuCells.RemoveAt(i);
+            }
+            // Coalesce holes when movement releases cells. Rotation keeps all slots.
+            m_FreeGpuRanges.Sort((a, b) => a.start.CompareTo(b.start));
+            for (int i = m_FreeGpuRanges.Count - 2; i >= 0; i--)
+            {
+                FreeGpuRange a = m_FreeGpuRanges[i], b = m_FreeGpuRanges[i + 1];
+                if (a.start + a.count != b.start) continue;
+                m_FreeGpuRanges[i] = new FreeGpuRange(a.start, a.count + b.count);
+                m_FreeGpuRanges.RemoveAt(i + 1);
+            }
+        }
+
+        void AppendResidentVisibleIndices(ResidentGpuCell cell, ref int destination, int draw)
+        {
+            // The generator emits prefixes within each density texel. Select those
+            // same prefixes at the new budget without regenerating their matrices.
+            int sourceCount = Mathf.Max(1, cell.chunk.instanceCount);
+            int sourceCursor = 0, residentCursor = 0, selectedCursor = 0;
+            foreach (DensityDetailSpawn spawn in cell.chunk.proceduralSpawns)
+            {
+                sourceCursor += spawn.count;
+                int residentEnd = (int)((long)sourceCursor * cell.population / sourceCount);
+                int selectedEnd = (int)((long)residentEnd * cell.visible / Mathf.Max(1, cell.population));
+                int count = selectedEnd - selectedCursor;
+                if (m_UseIndirectDetailDraws)
+                {
+                    if (count > 0) m_IndirectVisibilityRanges.Add(new IndirectVisibilityRange
+                        { source = (uint)(cell.start + residentCursor), count = (uint)count, destination = (uint)destination, draw = (uint)draw });
+                    destination += count;
+                }
+                else
+                    for (int i = 0; i < count; i++) m_DetailBrgSequentialVisibleIndices[destination++] = cell.start + residentCursor + i;
+                residentCursor = residentEnd;
+                selectedCursor = selectedEnd;
+            }
+        }
+
+        bool TryPrepareGpuGeneratedDensityDetailBrg(Camera camera, int budget, float nearScale, float distantScale)
         {
             using var profile = s_GpuPrepareMarker.Auto();
             try
             {
+                LastRegeneratedDetailInstances = 0;
+                m_IndirectDetailDrawsReady = false;
+                m_IndirectVisibilityRanges.Clear(); m_IndirectArguments.Clear(); m_IndirectTopologies.Clear();
                 ResetGpuProceduralBuildGroups();
-                int remaining = budget;
-                int submitted = 0;
-                int signature = 23;
-                for (int visibleIndex = 0; visibleIndex < m_VisibleDensityDetails.Count && remaining > 0; visibleIndex++)
+                m_ResidentVisibleCounts.Clear();
+                int remaining = budget, submitted = 0;
+                foreach (VisibleDensityDetail visible in m_VisibleDensityDetails)
                 {
-                    VisibleDensityDetail visible = m_VisibleDensityDetails[visibleIndex];
-                    float budgetScale = visible.densityLod == 0 ? nearScale : distantScale;
-                    int allowed = Mathf.Min(
-                        remaining,
-                        Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * budgetScale));
-                    if (allowed <= 0)
-                        continue;
+                    float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                    int allowed = Mathf.Min(remaining, Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                    if (allowed <= 0) continue;
+                    m_ResidentVisibleCounts[visible.chunk] = allowed;
+                    remaining -= allowed;
+                    submitted += allowed;
+                }
 
-                    DenseDetailPrototypeParts prototypeParts = GetDenseDetailRenderParts(visible.prototype);
-                    if (prototypeParts.parts.Count == 0)
-                        continue;
-                    signature = unchecked(signature * 31 + RuntimeHelpers.GetHashCode(visible.chunk));
-                    signature = unchecked(signature * 31 + allowed);
-                    signature = unchecked(signature * 31 + prototypeParts.parts.Count);
-
-                    for (int partIndex = 0; partIndex < prototypeParts.parts.Count; partIndex++)
+                m_ResidentGpuTick++;
+                int visibleInstances = 0;
+                // Warm the full nearby ring, including behind the camera, at its
+                // distance-density cap. Visibility budgets only select its indices.
+                foreach (VisibleDensityDetail resident in m_ResidentDensityDetails)
+                {
+                    int population = GetVisibleDensityDetailInstanceCount(resident);
+                    if (population <= 0 || !resident.chunk.gpuProcedural) continue;
+                    m_ResidentVisibleCounts.TryGetValue(resident.chunk, out int allowed);
+                    DenseDetailPrototypeParts parts = GetDenseDetailRenderParts(resident.prototype);
+                    foreach (RenderPart part in parts.parts)
                     {
-                        RenderPart part = prototypeParts.parts[partIndex];
                         Material material = GetInstancedMaterial(part.material);
                         if (!SupportsDotsInstancing(material))
                         {
-                            FailDensityDetailBrg(
-                                $"Material '{(material != null ? material.name : "<missing>")}' uses shader "
-                                + $"'{(material != null && material.shader != null ? material.shader.name : "<missing>")}', "
-                                + "which has no DOTS_INSTANCING_ON keyword. Enable DOTS Instancing on the Shader Graph "
-                                + "and rebuild the map/content bundle.");
+                            FailDensityDetailBrg($"Material '{material?.name}' has no DOTS_INSTANCING_ON keyword.");
                             return false;
                         }
-
-                        var batch = new DrawBatch
+                        var shadow = m_DenseDetailShadows ? resident.prototype.ShadowCasting : ShadowCastingMode.Off;
+                        var batch = new DrawBatch { mesh = part.mesh, subMesh = part.subMesh, material = material,
+                            prototype = resident.prototype, lightProbeUsage = LightProbeUsage.Off, shadowCastingOverride = shadow };
+                        var group = GetGpuProceduralBuildGroup(batch, shadow, part.relativeMatrix);
+                        if (!group.residentCells.TryGetValue(resident.chunk, out ResidentGpuCell cell))
                         {
-                            mesh = part.mesh,
-                            subMesh = part.subMesh,
-                            material = material,
-                            prototype = visible.prototype,
-                            lightProbeUsage = LightProbeUsage.Off,
-                            shadowCastingOverride = m_DenseDetailShadows
-                                ? visible.prototype.ShadowCasting
-                                : ShadowCastingMode.Off
-                        };
-                        ShadowCastingMode shadowCasting = m_DenseDetailShadows
-                            ? visible.prototype.ShadowCasting
-                            : ShadowCastingMode.Off;
-                        GpuProceduralBuildGroup group = GetGpuProceduralBuildGroup(
-                            batch,
-                            shadowCasting,
-                            part.relativeMatrix);
-                        group.ranges.Add(new GpuCellRange(visible.chunk, allowed, group.outputCount));
-                        group.outputCount += allowed;
-                    }
-                    submitted += allowed;
-                    remaining -= allowed;
-                }
-
-                int gpuInstanceCount = 0;
-                int commandCount = 0;
-                for (int groupIndex = 0; groupIndex < m_ActiveDetailGpuBuildGroups.Count; groupIndex++)
-                {
-                    gpuInstanceCount += m_ActiveDetailGpuBuildGroups[groupIndex].outputCount;
-                }
-                if (submitted <= 1 || gpuInstanceCount <= 1)
-                {
-                    ReleaseDensityDetailBrg();
-                    return false;
-                }
-                if (!EnsureDensityDetailBrg()
-                    || !EnsureDensityDetailBrgBuffer(gpuInstanceCount, false)
-                    || !EnsureGpuSurfaceHeightBuffer())
-                {
-                    return false;
-                }
-
-                // Compare exact cell ranges before expanding any density texels into
-                // commands. Buffer recreation invalidates all previous addresses.
-                bool reuseRanges = m_DetailBrgHasSignature && m_DetailBrgUsesGpuGeneration;
-                int rangeBase = 0;
-                LastRegeneratedDetailInstances = 0;
-                for (int groupIndex = 0; groupIndex < m_ActiveDetailGpuBuildGroups.Count; groupIndex++)
-                {
-                    GpuProceduralBuildGroup group = m_ActiveDetailGpuBuildGroups[groupIndex];
-                    bool reuseGroup = reuseRanges && group.generation == m_DetailGpuGeneration
-                        && group.previousRelativeMatrix == group.relativeMatrix;
-                    for (int index = 0; index < group.ranges.Count; index++)
-                    {
-                        GpuCellRange range = group.ranges[index];
-                        if (reuseGroup && index < group.previousRanges.Count)
-                        {
-                            GpuCellRange previous = group.previousRanges[index];
-                            if (ReferenceEquals(previous.chunk, range.chunk) && previous.count == range.count
-                                && group.previousOutputBase + previous.start == rangeBase + range.start)
-                                continue;
+                            cell = new ResidentGpuCell { chunk = resident.chunk, group = group };
+                            group.residentCells.Add(resident.chunk, cell);
+                            m_ResidentGpuCells.Add(cell);
                         }
-                        AppendGpuProceduralSpawns(group, range.chunk, range.count, range.start);
-                        LastRegeneratedDetailInstances += range.count;
+                        cell.tick = m_ResidentGpuTick;
+                        cell.requested = population;
+                        cell.visible = allowed;
+                        group.outputCount += allowed;
+                        visibleInstances += allowed;
                     }
-                    commandCount += group.commands.Count;
-                    rangeBase += group.outputCount;
                 }
+                ReleaseUnusedResidentGpuCells();
+                foreach (ResidentGpuCell cell in m_ResidentGpuCells)
+                {
+                    if (cell.capacity >= cell.requested) continue;
+                    if (cell.capacity > 0) m_FreeGpuRanges.Add(new FreeGpuRange(cell.start, cell.capacity));
+                    cell.capacity = Mathf.NextPowerOfTwo(cell.requested);
+                    cell.start = AllocateResidentGpuRange(cell.capacity);
+                    cell.population = 0;
+                    cell.generation = -1;
+                }
+                if (!EnsureDensityDetailBrg() || !EnsureDensityDetailBrgBuffer(Mathf.Max(visibleInstances, m_ResidentGpuEnd), false)
+                    || !EnsureGpuSurfaceHeightBuffer()) return false;
 
-                if (!EnsureGpuProceduralInputBuffers(commandCount))
-                    return false;
-                if (commandCount > 0)
-                    UploadGpuLayerParameters();
+                int commandCount = 0;
+                foreach (ResidentGpuCell cell in m_ResidentGpuCells)
+                {
+                    if (cell.generation == m_DetailGpuGeneration && cell.population >= cell.requested) continue;
+                    cell.population = Mathf.Max(cell.population, cell.requested);
+                    AppendGpuProceduralSpawns(cell.group, cell.chunk, cell.population, cell.start);
+                    LastRegeneratedDetailInstances += cell.population;
+                }
                 m_DetailGpuCommands.Clear();
-                int outputBase = 0;
-                for (int groupIndex = 0; groupIndex < m_ActiveDetailGpuBuildGroups.Count; groupIndex++)
+                foreach (var group in m_ActiveDetailGpuBuildGroups)
                 {
-                    GpuProceduralBuildGroup group = m_ActiveDetailGpuBuildGroups[groupIndex];
                     group.commandOffset = m_DetailGpuCommands.Count;
-                    group.outputBase = outputBase;
                     m_DetailGpuCommands.AddRange(group.commands);
-                    outputBase += group.outputCount;
                 }
+                commandCount = m_DetailGpuCommands.Count;
                 if (commandCount > 0)
+                {
+                    if (!EnsureGpuProceduralInputBuffers(commandCount)) return false;
+                    UploadGpuLayerParameters();
                     m_DetailGpuCommandBuffer.SetData(m_DetailGpuCommands);
-
-                Bounds surfaceBounds = MeshFilter.sharedMesh.bounds;
-                uint objectToWorldAddress = BrgZeroPrefixBytes;
-                uint worldToObjectAddress = (uint)(BrgZeroPrefixBytes + m_DetailBrgCapacity * BrgPackedMatrixBytes);
-                int kernel = m_DetailGpuGeneratorKernel;
-                m_DetailGpuGenerator.SetBuffer(kernel, "_Commands", m_DetailGpuCommandBuffer);
-                m_DetailGpuGenerator.SetBuffer(kernel, "_Layers", m_DetailGpuLayerBuffer);
-                m_DetailGpuGenerator.SetBuffer(kernel, "_SurfaceHeights", m_DetailGpuSurfaceHeightBuffer);
-                m_DetailGpuGenerator.SetBuffer(kernel, "_InstanceData", m_DetailBrgInstanceBuffer);
-                m_DetailGpuGenerator.SetInt("_ObjectToWorldAddress", (int)objectToWorldAddress);
-                m_DetailGpuGenerator.SetInt("_WorldToObjectAddress", (int)worldToObjectAddress);
-                m_DetailGpuGenerator.SetInt("_DetailDataAddress", DetailDataAddress);
-                UploadDetailDefinitions();
-                m_DetailGpuGenerator.SetInt("_SurfaceGridWidth", m_DetailGpuSurfaceWidth);
-                m_DetailGpuGenerator.SetInt("_SurfaceGridHeight", m_DetailGpuSurfaceHeight);
-                m_DetailGpuGenerator.SetVector(
-                    "_SurfaceMinMax",
-                    new Vector4(surfaceBounds.min.x, surfaceBounds.min.z, surfaceBounds.max.x, surfaceBounds.max.z));
-                m_DetailGpuGenerator.SetMatrix("_TerrainLocalToWorld", transform.localToWorldMatrix);
-
-                m_DetailBrgPreparedGroups.Clear();
-                const int maximumDispatchGroups = 65535;
-                for (int groupIndex = 0; groupIndex < m_ActiveDetailGpuBuildGroups.Count; groupIndex++)
-                {
-                    GpuProceduralBuildGroup group = m_ActiveDetailGpuBuildGroups[groupIndex];
-                    if (group.outputCount <= 0)
-                        continue;
-                    m_DetailGpuGenerator.SetMatrix("_PartRelative", group.relativeMatrix);
-                    m_DetailGpuGenerator.SetInt("_GroupOutputBase", group.outputBase);
-                    for (int start = 0; start < group.commands.Count; start += maximumDispatchGroups)
+                    Bounds surface = MeshFilter.sharedMesh.bounds;
+                    int kernel = m_DetailGpuGeneratorKernel;
+                    m_DetailGpuGenerator.SetBuffer(kernel, "_Commands", m_DetailGpuCommandBuffer);
+                    m_DetailGpuGenerator.SetBuffer(kernel, "_Layers", m_DetailGpuLayerBuffer);
+                    m_DetailGpuGenerator.SetBuffer(kernel, "_SurfaceHeights", m_DetailGpuSurfaceHeightBuffer);
+                    m_DetailGpuGenerator.SetBuffer(kernel, "_InstanceData", m_DetailBrgInstanceBuffer);
+                    m_DetailGpuGenerator.SetInt("_ObjectToWorldAddress", BrgZeroPrefixBytes);
+                    m_DetailGpuGenerator.SetInt("_WorldToObjectAddress", BrgZeroPrefixBytes + m_DetailBrgCapacity * BrgPackedMatrixBytes);
+                    m_DetailGpuGenerator.SetInt("_DetailDataAddress", DetailDataAddress);
+                    m_DetailGpuGenerator.SetInt("_SurfaceGridWidth", m_DetailGpuSurfaceWidth);
+                    m_DetailGpuGenerator.SetInt("_SurfaceGridHeight", m_DetailGpuSurfaceHeight);
+                    m_DetailGpuGenerator.SetVector("_SurfaceMinMax", new Vector4(surface.min.x, surface.min.z, surface.max.x, surface.max.z));
+                    m_DetailGpuGenerator.SetMatrix("_TerrainLocalToWorld", transform.localToWorldMatrix);
+                    m_DetailGpuGenerator.SetInt("_GroupOutputBase", 0);
+                    foreach (var group in m_ActiveDetailGpuBuildGroups)
                     {
-                        int count = Mathf.Min(maximumDispatchGroups, group.commands.Count - start);
-                        m_DetailGpuGenerator.SetInt("_CommandOffset", group.commandOffset + start);
-                        m_DetailGpuGenerator.Dispatch(kernel, count, 1, 1);
+                        m_DetailGpuGenerator.SetMatrix("_PartRelative", group.relativeMatrix);
+                        for (int start = 0; start < group.commands.Count; start += 65535)
+                        {
+                            m_DetailGpuGenerator.SetInt("_CommandOffset", group.commandOffset + start);
+                            m_DetailGpuGenerator.Dispatch(kernel, Mathf.Min(65535, group.commands.Count - start), 1, 1);
+                        }
                     }
-                    m_DetailBrgPreparedGroups.Add(new BrgPreparedGroup(
-                        GetOrRegisterBrgMesh(group.batch.mesh),
-                        GetOrRegisterBrgMaterial(group.batch.material),
-                        group.batch.subMesh,
-                        group.outputBase,
-                        group.outputCount,
-                        group.shadowCasting,
-                        group.batch.prototype.ReceiveShadows));
+                    foreach (ResidentGpuCell cell in m_ResidentGpuCells) cell.generation = m_DetailGpuGeneration;
                 }
-
-                // Commit reuse metadata only after every dispatch succeeds. Inactive
-                // groups must not reuse addresses overwritten by another group.
-                m_DetailGpuGeneration++;
-                for (int groupIndex = 0; groupIndex < m_ActiveDetailGpuBuildGroups.Count; groupIndex++)
+                UploadDetailDefinitions();
+                int destination = 0;
+                m_DetailBrgPreparedGroups.Clear();
+                foreach (var group in m_ActiveDetailGpuBuildGroups)
                 {
-                    GpuProceduralBuildGroup group = m_ActiveDetailGpuBuildGroups[groupIndex];
-                    group.previousRanges.Clear();
-                    group.previousRanges.AddRange(group.ranges);
-                    group.previousOutputBase = group.outputBase;
-                    group.previousRelativeMatrix = group.relativeMatrix;
-                    group.generation = m_DetailGpuGeneration;
+                    int offset = destination;
+                    foreach (var cell in group.residentCells.Values)
+                        if (cell.tick == m_ResidentGpuTick && cell.visible > 0) AppendResidentVisibleIndices(cell, ref destination, m_DetailBrgPreparedGroups.Count);
+                    if (destination == offset) continue;
+                    if (m_UseIndirectDetailDraws)
+                    {
+                        Mesh mesh = group.batch.mesh;
+                        int submesh = group.batch.subMesh;
+                        m_IndirectArguments.Add(mesh.GetIndexCount(submesh));
+                        m_IndirectArguments.Add(0); // Compute accumulates the visible instance count.
+                        m_IndirectArguments.Add(mesh.GetIndexStart(submesh));
+                        m_IndirectArguments.Add((uint)mesh.GetBaseVertex(submesh));
+                        m_IndirectArguments.Add(0);
+                        m_IndirectTopologies.Add(mesh.GetTopology(submesh));
+                    }
+                    m_DetailBrgPreparedGroups.Add(new BrgPreparedGroup(GetOrRegisterBrgMesh(group.batch.mesh),
+                        GetOrRegisterBrgMaterial(group.batch.material), group.batch.subMesh, offset, destination - offset,
+                        group.shadowCasting, group.batch.prototype.ReceiveShadows));
                 }
-
-                Bounds bounds = MeshRenderer != null
-                    ? MeshRenderer.bounds
-                    : new Bounds(transform.position, Vector3.one);
+                Bounds bounds = MeshRenderer != null ? MeshRenderer.bounds : new Bounds(transform.position, Vector3.one);
                 bounds.Expand(Mathf.Max(2f, GetMaximumDenseDetailHeight() * 2f));
                 m_DetailBrg.SetGlobalBounds(bounds);
-                m_DetailBrgVisibleCount = gpuInstanceCount;
+                PrepareIndirectDetailVisibility(destination);
+                m_DetailBrgVisibleCount = destination;
                 m_DetailBrgLogicalCount = submitted;
-                m_DetailBrgSignature = signature;
                 m_DetailBrgHasSignature = true;
                 m_DetailBrgUsesGpuGeneration = true;
                 m_LastSubmittedDensityDetailInstances = submitted;
@@ -623,9 +724,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             {
                 GpuProceduralBuildGroup group = m_ActiveDetailGpuBuildGroups[index];
                 group.commands.Clear();
-                group.ranges.Clear();
                 group.outputCount = 0;
-                group.outputBase = 0;
                 group.commandOffset = 0;
                 group.active = false;
             }
@@ -933,6 +1032,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         metadata.Dispose();
                 }
                 m_DetailBrgHasSignature = false;
+                m_DetailGpuGeneration++;
                 return true;
             }
             catch (Exception exception)
@@ -998,6 +1098,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 || visibleCount == 0
                 || !m_DetailBrgSequentialVisibleIndices.IsCreated)
                 return default;
+
+            if (m_IndirectDetailDrawsReady && m_DetailBrgUsesGpuGeneration)
+                return OutputIndirectDetailCommands(output, commandCount, cameraView, lightView);
 
             int alignment = UnsafeUtility.AlignOf<long>();
             output->drawCommands = (BatchDrawCommand*)UnsafeUtility.Malloc(
@@ -1079,6 +1182,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ClearDensityDetailBrgVisibility()
         {
+            m_IndirectDetailDrawsReady = false;
             m_DetailBrgPreparedGroups.Clear();
             m_DetailBrgVisibleCount = 0;
             m_DetailBrgLogicalCount = 0;
@@ -1088,6 +1192,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ReleaseDensityDetailBrg()
         {
+            ReleaseIndirectDetailBuffers();
             LastRegeneratedDetailInstances = 0;
             if (m_DetailBrg != null)
             {
@@ -1105,6 +1210,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ResetBrgBuildGroups();
             ResetGpuProceduralBuildGroups();
             m_DetailGpuBuildGroups.Clear();
+            m_ResidentGpuCells.Clear();
+            m_FreeGpuRanges.Clear();
+            m_ResidentVisibleCounts.Clear();
+            m_ResidentGpuEnd = 0;
             m_DetailGpuCommands.Clear();
             if (m_DetailGpuCommandBuffer != null)
             {
@@ -1152,6 +1261,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
     {
         public bool IsDensityDetailBrgActive => false;
         public bool IsGpuProceduralDensityDetailActive => false;
+        public bool IsIndirectDensityDetailActive => false;
         public int LastRegeneratedDetailInstances => 0;
         void ClearDensityDetailBrgVisibility() { }
         long GetDensityDetailBrgMemoryBytes() => 0L;
