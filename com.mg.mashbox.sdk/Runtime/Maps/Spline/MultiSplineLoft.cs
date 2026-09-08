@@ -372,7 +372,8 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnEnable()
         {
-            if (m_VisualsBaked) return;
+            // Runtime keeps the authored geometry; do not queue a startup rebuild.
+            if (Application.isPlaying || m_VisualsBaked) return;
             EnsureMesh();
             UnitySpline.Changed += OnSplineChanged;
             SplineContainer.SplineAdded += OnSplineSetChanged;
@@ -396,7 +397,8 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnValidate()
         {
-            if (m_VisualsBaked) return;
+            // Runtime keeps the authored geometry; do not queue a startup rebuild.
+            if (Application.isPlaying || m_VisualsBaked) return;
             m_VisualCullDistance = Mathf.Max(1f, m_VisualCullDistance);
             InvalidateVisualChunks();
             m_SamplesAlong = Mathf.Max(2, m_SamplesAlong);
@@ -2258,6 +2260,10 @@ namespace MashBoxSDK.Maps.Spline
 
         public void RebuildColliderChunks()
         {
+            // Collision is authored offline. The nonserialized surface count can
+            // be zero after loading even though the saved chunks are valid.
+            if (Application.isPlaying || m_VisualsBaked) return;
+
             ClearLegacyRootCollider();
             Transform chunksRoot = FindColliderChunksRoot();
             if (!m_UpdateMeshCollider || m_GeneratedMesh == null || m_GeneratedMesh.vertexCount == 0 || m_SurfaceTriangleCount <= 0)
@@ -2439,6 +2445,8 @@ namespace MashBoxSDK.Maps.Spline
 
         void ClearLegacyRootCollider()
         {
+            if (Application.isPlaying || m_VisualsBaked) return;
+
             if (!TryGetComponent(out MeshCollider collider))
                 return;
 

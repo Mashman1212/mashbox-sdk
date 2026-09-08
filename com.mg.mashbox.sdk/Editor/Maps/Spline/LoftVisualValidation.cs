@@ -172,12 +172,36 @@ namespace MashBoxSDK.MapTools
                 loft.ReleaseEditorVisualChunks();
                 loft.enabled = true;
                 Check(loft.RegenerateUvSpline(out string error), "UV spline generation failed: " + error);
+                Mesh[] authoringColliderMeshes = colliders.Select(c => c.sharedMesh).ToArray();
                 loft.BuildVisualChunks(true);
                 owner = go.GetComponentInChildren<LoftVisualChunks>(true);
                 Check(loft.VisualsBaked && owner.ChunkCount == 4, "UV-edited loft did not bake into four sections.");
                 Check(!go.GetComponent<MeshRenderer>().enabled, "Baked monolithic renderer must be disabled.");
+                Check(colliders.All(c => c.enabled && c.gameObject.activeInHierarchy && c.sharedMesh != null),
+                    "Baking removed or disabled collision.");
+                Check(colliders.All(c => (c.sharedMesh.hideFlags &
+                    (HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild)) == 0),
+                    "Baked collision meshes would be omitted from the saved scene/build.");
+                Check(authoringColliderMeshes.All(m => (m.hideFlags & HideFlags.DontSave) == HideFlags.DontSave),
+                    "Baking changed shared authoring collider mesh flags.");
+                Physics.SyncTransforms();
+                Check(colliders.Any(c => c.Raycast(new Ray(new Vector3(2, 10, 25), Vector3.down), out _, 20)),
+                    "Baked loft no longer supports a downward collision ray.");
+                foreach (Mesh mesh in authoringColliderMeshes) Object.DestroyImmediate(mesh);
                 Lifecycle(loft, "OnEnable");
                 Check(loft.VisualsBaked, "Baked loft entered authoring regeneration.");
+                Mesh[] bakedColliderMeshes = colliders.Select(c => c.sharedMesh).ToArray();
+                // Simulate a loaded scene: this generation buffer is not serialized.
+                typeof(MultiSplineLoft).GetField("m_SurfaceTriangleCount", System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.NonPublic).SetValue(loft, 0);
+                loft.Regenerate();
+                loft.RebuildColliderChunks();
+                Check(go.GetComponentsInChildren<MeshCollider>(true).SequenceEqual(colliders),
+                    "A rebuild call removed baked collider chunks after loading.");
+                Check(colliders.Select(c => c.sharedMesh).SequenceEqual(bakedColliderMeshes),
+                    "A rebuild call replaced baked collider meshes after loading.");
+                Check(colliders.All(c => c.enabled && c.gameObject.activeInHierarchy),
+                    "A rebuild call deactivated baked collider chunks.");
             }
             finally
             {

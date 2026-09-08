@@ -186,11 +186,11 @@ namespace MashBoxSDK.MapTools
                 Set(terrain, "m_SurfaceGridWidth", 9); Set(terrain, "m_SurfaceGridHeight", 9);
                 MethodInfo calculate = typeof(MGTerrain).GetMethod("CalculateDetailChunkBounds", Flags);
                 Bounds local = (Bounds)calculate.Invoke(terrain,
-                    new object[] { mesh.bounds, 8, 8, 2, 0, 0, 1f, 0f, (Matrix4x4?)Matrix4x4.identity });
+                    new object[] { mesh.bounds, 8, 8, 2, 0, 0, 1f, 0f, (Matrix4x4?)Matrix4x4.identity, null });
                 Check(Mathf.Abs(local.min.y) < 0.001f && Mathf.Abs(local.max.y - 4f) < 0.001f,
                     "Cell bounds missed the interior ridge or included the distant mountain.");
                 Bounds flat = (Bounds)calculate.Invoke(terrain,
-                    new object[] { mesh.bounds, 8, 8, 1, 0, 4, 1f, 0f, (Matrix4x4?)Matrix4x4.identity });
+                    new object[] { mesh.bounds, 8, 8, 1, 0, 4, 1f, 0f, (Matrix4x4?)Matrix4x4.identity, null });
                 Check(Mathf.Abs(flat.size.y - 1f) < 0.001f, "Flat cell retained terrain-wide height.");
                 camera.projectionMatrix = camera.nonJitteredProjectionMatrix;
                 camera.transform.position = new Vector3(0.5f, 2f, 6f);
@@ -199,6 +199,31 @@ namespace MashBoxSDK.MapTools
                 Bounds old = flat; old.SetMinMax(new Vector3(flat.min.x, 0, flat.min.z), new Vector3(flat.max.x, 101, flat.max.z));
                 Check(!GeometryUtility.TestPlanesAABB(planes, flat), "Downward view retained a cell behind the camera.");
                 Check(GeometryUtility.TestPlanesAABB(planes, old), "Fixture did not reproduce oversized-bounds visibility.");
+                var treeMesh = new Mesh();
+                var material = new Material(Shader.Find("Hidden/InternalErrorShader"));
+                try
+                {
+                    treeMesh.bounds = new Bounds(new Vector3(0, 5, 0), new Vector3(2, 10, 2));
+                    object prototype = New("Prototype", (GameObject)null, (MGTerrain.InstanceKind)0, 500f);
+                    Set(prototype, "m_Mesh", treeMesh); Set(prototype, "m_Material", material);
+                    var prototypes = (IList)Get(terrain, "m_Prototypes"); int index = prototypes.Count; prototypes.Add(prototype);
+                    object layer = New("DensityDetailLayer", index, (Texture2D)null, 1f, 2f, 1f, 3f, 0, 0L, 0f);
+                    object[] layerArgs = { mesh.bounds, 8, 8, 1, 0, 4, 1f, 0f, (Matrix4x4?)Matrix4x4.identity, layer };
+                    for (int mask = 0; mask < 8; mask++)
+                    {
+                        Set(terrain, "m_GpuDetailFrustumCulling", (mask & 1) != 0);
+                        Set(terrain, "m_GpuTerrainOcclusion", (mask & 2) != 0);
+                        Set(terrain, "m_GpuRenderedDepthOcclusion", (mask & 4) != 0);
+                        Set(terrain, "m_DetailOcclusionPadding", 20f);
+                        Check(((Bounds)calculate.Invoke(terrain, layerArgs)).Equals(flat),
+                            $"GPU toggle combination {mask} expanded the CPU cell selection.");
+                    }
+                    Set(terrain, "m_GpuDetailFrustumCulling", false);
+                    Set(terrain, "m_GpuTerrainOcclusion", false);
+                    Set(terrain, "m_GpuRenderedDepthOcclusion", false);
+                    Set(terrain, "m_DetailOcclusionPadding", 1f);
+                }
+                finally { Object.DestroyImmediate(treeMesh); Object.DestroyImmediate(material); }
             }
             finally { terrain.GetComponent<MeshFilter>().sharedMesh = null; Object.DestroyImmediate(mesh); }
         }

@@ -461,6 +461,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
             }
             RenderDensityDetails(camera, planes);
+#if UNITY_6000_0_OR_NEWER
+            UpdateTerrainOcclusion(camera);
+#endif
         }
 
         void DrawBatchInstances(DrawBatch batch, Camera camera)

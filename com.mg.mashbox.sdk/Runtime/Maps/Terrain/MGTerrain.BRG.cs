@@ -436,6 +436,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ReleaseIndirectDetailBuffers()
         {
+            ReleaseTerrainOcclusion();
             m_IndirectDetailDrawsReady = false;
             m_IndirectVisibilityInput?.Dispose(); m_IndirectVisibilityInput = null;
             m_IndirectVisibleIndices?.Dispose(); m_IndirectVisibleIndices = null;
@@ -445,6 +446,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void PrepareIndirectDetailVisibility(int visibleCount)
         {
+            m_OcclusionDirty = true;
+            m_OcclusionReady = false;
             using var uploadProfile = s_ResidentUploadMarker.Auto();
             m_IndirectDetailDrawsReady = false;
             if (!m_UseIndirectDetailDraws || visibleCount == 0) return;
@@ -471,7 +474,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_IndirectDetailDrawsReady = true;
         }
 
-        unsafe JobHandle OutputIndirectDetailCommands(BatchCullingOutputDrawCommands* output, int count, bool cameraView, bool lightView)
+        unsafe JobHandle OutputIndirectDetailCommands(BatchCullingOutputDrawCommands* output, int count, bool cameraView, bool lightView, bool useOcclusion)
         {
             int alignment = UnsafeUtility.AlignOf<long>();
             output->indirectDrawCommands = (BatchDrawCommandIndirect*)UnsafeUtility.Malloc(
@@ -493,8 +496,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     batchID = m_DetailBrgBatchId, materialID = group.materialId, meshID = group.meshId,
                     splitVisibilityMask = ushort.MaxValue, sortingPosition = 0,
                     topology = m_IndirectTopologies[i],
-                    visibleInstancesBufferHandle = m_IndirectVisibleIndices.bufferHandle,
-                    indirectArgsBufferHandle = m_IndirectArgs.bufferHandle,
+                    visibleInstancesBufferHandle = (useOcclusion ? m_OcclusionIndices : m_IndirectVisibleIndices).bufferHandle,
+                    indirectArgsBufferHandle = (useOcclusion ? m_OcclusionArgs : m_IndirectArgs).bufferHandle,
                     indirectArgsBufferOffset = (uint)(i * GraphicsBuffer.IndirectDrawIndexedArgs.size)
                 };
                 output->drawRanges[command] = new BatchDrawRange
@@ -851,6 +854,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool FinalizeResidentGpuVisibility(int submitted, bool onlyVisibleCells)
         {
+                m_OcclusionDraws.Clear();
                 UploadDetailDefinitions();
                 int destination = 0;
                 m_DetailBrgPreparedGroups.Clear();
@@ -884,6 +888,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         m_IndirectArguments.Add(0);
                         m_IndirectTopologies.Add(mesh.GetTopology(submesh));
                     }
+                    Bounds meshBounds = group.batch.mesh.bounds;
+                    m_OcclusionDraws.Add(new OcclusionDraw { center = meshBounds.center, extents = meshBounds.extents, offset = (uint)offset });
                     m_DetailBrgPreparedGroups.Add(new BrgPreparedGroup(GetOrRegisterBrgMesh(group.batch.mesh),
                         GetOrRegisterBrgMaterial(group.batch.material), group.batch.subMesh, offset, destination - offset,
                         group.shadowCasting, group.batch.prototype.ReceiveShadows));
@@ -1292,7 +1298,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return default;
 
             if (m_IndirectDetailDrawsReady && m_DetailBrgUsesGpuGeneration)
-                return OutputIndirectDetailCommands(output, commandCount, cameraView, lightView);
+                return OutputIndirectDetailCommands(output, commandCount, cameraView, lightView,
+                    cameraView && m_OcclusionReady && m_OcclusionCamera != null
+                    && cullingContext.viewID.GetInstanceID() == m_OcclusionCamera.GetInstanceID());
 
             int alignment = UnsafeUtility.AlignOf<long>();
             output->drawCommands = (BatchDrawCommand*)UnsafeUtility.Malloc(

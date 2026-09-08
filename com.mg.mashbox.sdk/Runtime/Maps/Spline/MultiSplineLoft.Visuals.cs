@@ -149,7 +149,11 @@ namespace MashBoxSDK.Maps.Spline
                 m_VisualsBaked = bake;
                 m_VisualGeneration = m_GenerationVersion;
                 m_LastVisualMesh = GetComponent<MeshFilter>().sharedMesh;
-                if (bake) RemoveFromRegenerationQueue(this);
+                if (bake)
+                {
+                    PreserveBakedColliderMeshes();
+                    RemoveFromRegenerationQueue(this);
+                }
             }
             catch
             {
@@ -166,6 +170,29 @@ namespace MashBoxSDK.Maps.Spline
             }
         }
 
+        // Baked lofts do not regenerate at runtime. Their collision meshes must be
+        // serialized too; authoring chunks use DontSave and would otherwise vanish.
+        void PreserveBakedColliderMeshes()
+        {
+            var copies = new Dictionary<Mesh, Mesh>();
+            foreach (MeshCollider collider in GetComponentsInChildren<MeshCollider>(true))
+            {
+                if (collider.GetComponentInParent<MultiSplineLoft>() != this) continue;
+                Mesh source = collider.sharedMesh;
+                if (source == null || (source.hideFlags &
+                    (HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild)) == 0) continue;
+                if (!copies.TryGetValue(source, out Mesh baked))
+                {
+                    baked = Instantiate(source);
+                    baked.name = source.name;
+                    baked.hideFlags = HideFlags.None;
+                    copies.Add(source, baked);
+                }
+                // Clone instead of changing authoring mesh flags on the shared source.
+                // No collider or GameObject activation depends on visual visibility.
+                collider.sharedMesh = baked;
+            }
+        }
         float ResolveVisualUvDensity()
         {
             if (m_AlongDistances.Count > 1) return Mathf.Max(0.0001f, CurrentUvAlongPerMeter);

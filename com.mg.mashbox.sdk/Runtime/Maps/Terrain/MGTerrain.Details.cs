@@ -1982,7 +1982,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             for (int sz = firstSectorZ; sz < endSectorZ; sz += sectorSize)
             for (int sx = firstSectorX; sx < endSectorX; sx += sectorSize)
             {
-                Bounds sector = CalculateDetailChunkBounds(surfaceBounds, width, height, sectorSize, sx, sz, maximumHeight, yOffset, terrainMatrix);
+                Bounds sector = CalculateDetailChunkBounds(surfaceBounds, width, height, sectorSize, sx, sz, maximumHeight, yOffset, terrainMatrix, layer);
                 if (maximumDistance > 0f && DetailBoundsDistanceSquared(sector, cameraWorld) > maximumDistanceSquared) continue;
                 cache?.sectors.Add(SectorKey(sx, sz), sector);
                 bool sectorVisible = GeometryUtility.TestPlanesAABB(planes, sector);
@@ -1998,7 +1998,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     if (geometryUnchanged && existing != null && existing.fixedBoundsVersion == cache.geometryVersion) bounds = existing.worldBounds;
                     else
                     {
-                        bounds = CalculateDetailChunkBounds(surfaceBounds, width, height, leafCellSize, firstX, firstZ, maximumHeight, yOffset, terrainMatrix);
+                        bounds = CalculateDetailChunkBounds(surfaceBounds, width, height, leafCellSize, firstX, firstZ, maximumHeight, yOffset, terrainMatrix, layer);
                         LastDetailCandidateBoundsBuilt++;
                         if (existing != null)
                         {
@@ -2158,7 +2158,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 firstX,
                 firstZ,
                 layer.MaximumPaintedHeight,
-                layer.YOffset);
+                layer.YOffset, null, layer);
             if (!GeometryUtility.TestPlanesAABB(planes, bounds))
                 return;
             float distance = Vector3.Distance(cameraWorld, bounds.ClosestPoint(cameraWorld));
@@ -2253,7 +2253,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return state.split;
         }
 
-        Bounds CalculateDetailChunkBounds(Bounds surfaceBounds, int width, int height, int chunkCells, int firstX, int firstZ, float maximumHeight, float yOffset, Matrix4x4? terrainMatrix = null)
+        Bounds CalculateDetailChunkBounds(Bounds surfaceBounds, int width, int height, int chunkCells, int firstX, int firstZ, float maximumHeight, float yOffset, Matrix4x4? terrainMatrix = null, DensityDetailLayer layer = null)
         {
             int endX = Mathf.Min(width, firstX + chunkCells);
             int endZ = Mathf.Min(height, firstZ + chunkCells);
@@ -2268,6 +2268,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 new Vector3(maxX - minX, maxY - minY + maximumHeight, maxZ - minZ));
             if (m_AppearanceCaptureCamera != null && m_AppearanceCaptureDetailTilt > 0f)
                 localBounds.Expand(maximumHeight * 2f);
+            // Optional GPU filters refine this CPU selection. Expanding cell bounds
+            // when enabling them increases camera input AND unfiltered shadow work.
             return TransformBounds(localBounds, terrainMatrix ?? transform.localToWorldMatrix);
         }
 
@@ -2367,7 +2369,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 layerIndex = layerIndex,
                 gpuProcedural = ShouldBuildGpuProceduralDetailCells()
             };
-            chunk.worldBounds = CalculateDetailChunkBounds(surfaceBounds, layer.DensityMap.width, layer.DensityMap.height, chunkCells, firstX, firstZ, layer.MaximumPaintedHeight, layer.YOffset);
+            chunk.worldBounds = CalculateDetailChunkBounds(surfaceBounds, layer.DensityMap.width, layer.DensityMap.height, chunkCells, firstX, firstZ, layer.MaximumPaintedHeight, layer.YOffset, null, layer);
             DenseDetailPrototypeParts prototypeParts = GetDenseDetailRenderParts(prototype);
             List<RenderPart> parts = prototypeParts.parts;
             m_LastDensityDetailSourceParts = Mathf.Max(m_LastDensityDetailSourceParts, prototypeParts.sourcePartCount);

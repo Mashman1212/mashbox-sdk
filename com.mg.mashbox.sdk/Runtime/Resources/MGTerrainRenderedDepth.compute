@@ -1,0 +1,32 @@
+#pragma kernel CopySceneDepth
+#pragma kernel ReduceSceneDepth
+#pragma target 5.0
+Texture2D<float> _DepthInput;
+Texture2D<float> _DepthReduceInput;
+RWTexture2D<float> _DepthOutput;
+float4 _DepthSizes;
+int _DepthSourceMip, _DepthReversed;
+
+[numthreads(8,8,1)]
+void CopySceneDepth(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id.xy >= (uint2)_DepthSizes.zw)) return;
+    float value = 1;
+    if (all(id.xy < (uint2)_DepthSizes.xy))
+    {
+        value = _DepthInput.Load(int3(id.xy, 0));
+        if (_DepthReversed != 0) value = 1 - value;
+    }
+    _DepthOutput[id.xy] = value;
+}
+
+[numthreads(8,8,1)]
+void ReduceSceneDepth(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id.xy >= (uint2)_DepthSizes.zw)) return;
+    uint2 a = id.xy * 2, b = min(a + 1, (uint2)_DepthSizes.xy - 1);
+    float d = max(max(_DepthReduceInput.Load(int3(a, _DepthSourceMip)), _DepthReduceInput.Load(int3(b, _DepthSourceMip))),
+        max(_DepthReduceInput.Load(int3(a.x,b.y,_DepthSourceMip)), _DepthReduceInput.Load(int3(b.x,a.y,_DepthSourceMip))));
+    _DepthOutput[id.xy] = d;
+}
+

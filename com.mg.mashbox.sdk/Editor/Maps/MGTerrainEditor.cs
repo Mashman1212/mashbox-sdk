@@ -308,6 +308,22 @@ namespace MashBoxSDK.MapTools
                             new GUIContent("Use Indirect Draws", "On: GPU builds visible indices and counts for indirect BRG draws. Off: CPU builds indices for direct BRG draws. Both use the same cached cells and visibility rules."));
                     var keepAllResident = serializedObject.FindProperty("m_KeepAllDetailCellsResident");
                     EditorGUILayout.PropertyField(keepAllResident, new GUIContent("Keep All Cells GPU Resident"));
+                    using (new EditorGUI.DisabledScope(!keepAllResident.boolValue || !m_UseGpuProceduralDetailGeneration.boolValue || !m_UseIndirectDetailDraws.boolValue))
+                    {
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_GpuDetailFrustumCulling"), new GUIContent("GPU Per-Mesh Frustum Culling"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_GpuTerrainOcclusion"), new GUIContent("GPU Terrain Occlusion"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_GpuRenderedDepthOcclusion"), new GUIContent("GPU Rendered Depth Occlusion (HDRP)", "Current-frame depth from opaque scene objects, including cubes, rocks and lofts. Adds a depth pass; benchmark on/off."));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_DetailOcclusionPadding"), new GUIContent("Culling Bounds Padding (m)", "World-space margin for wind and shader displacement beyond mesh bounds. Increase if foliage clips."));
+                        EditorGUILayout.HelpBox("Optional GPU culling affects the gameplay camera only; shadow draws stay unchanged. Terrain mode uses solid hills/banks. Rendered Depth includes opaque scene geometry and adds a depth pass; measure its cost. No bake required. All optional toggles off restores the baseline. Cell colors show CPU selection, not GPU survivors.", MessageType.None);
+                        if (Application.isPlaying)
+                        {
+                            EditorGUILayout.LabelField("Optional GPU Culling", ((MGTerrain)target).IsGpuDetailCullingActive ? "Active" : "Off / bypassed");
+                            EditorGUILayout.LabelField("Terrain Occlusion", ((MGTerrain)target).TerrainOcclusionStatus, EditorStyles.wordWrappedLabel);
+                            EditorGUILayout.LabelField("Rendered Depth", ((MGTerrain)target).RenderedDepthStatus, EditorStyles.wordWrappedLabel);
+                            if (GUILayout.Button("Measure GPU Culling")) ((MGTerrain)target).MeasureGpuCulling();
+                            EditorGUILayout.LabelField("GPU snapshot", ((MGTerrain)target).GpuCullingMeasurement, EditorStyles.wordWrappedLabel);
+                        }
+                    }
                     using (new EditorGUI.DisabledScope(keepAllResident.boolValue && m_UseGpuProceduralDetailGeneration.boolValue))
                     {
                     EditorGUILayout.PropertyField(

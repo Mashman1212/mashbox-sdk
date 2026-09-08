@@ -1,0 +1,17 @@
+{
+    "name": "MashBoxSDK.Terrain.HDRP",
+    "rootNamespace": "MashBoxSDK.Rendering",
+    "references": [
+        "MashBoxSDK",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.HighDefinition.Runtime",
+        "Unity.RenderPipelines.HighDefinition.Config.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "autoReferenced": true,
+    "defineConstraints": ["UNITY_6000_0_OR_NEWER", "MG_TERRAIN_HDRP"],
+    "versionDefines": [{"name": "com.unity.render-pipelines.high-definition", "expression": "17.0.0", "define": "MG_TERRAIN_HDRP"}],
+    "noEngineReferences": false
+}
