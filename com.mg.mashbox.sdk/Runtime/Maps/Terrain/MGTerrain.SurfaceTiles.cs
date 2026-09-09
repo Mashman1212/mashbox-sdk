@@ -318,6 +318,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             AddSurfaceState(ref state, padding);
             AddSurfaceState(ref state, m_SurfaceTileProperties.isEmpty);
             AddSurfaceState(ref state, hasPropertyBlocks);
+            AddSurfaceState(ref state, m_DistantMorphTop);
             bool settingsChanged = !m_HasSurfaceRendererState || state != m_SurfaceRendererState;
             if (!settingsChanged && !materialsChanged && !hasPropertyBlocks) return;
             Vector3 scale = MeshFilter.transform.lossyScale;
@@ -354,7 +355,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 renderer.sortingOrder = master.sortingOrder;
                 Bounds bounds = tile.mesh.bounds;
                 bounds.Expand(localPadding * 2f);
-                renderer.localBounds = bounds;
+                renderer.localBounds = ExpandDistantMorphBounds(bounds);
             }
             m_SurfaceRendererState = state;
             m_HasSurfaceRendererState = true;

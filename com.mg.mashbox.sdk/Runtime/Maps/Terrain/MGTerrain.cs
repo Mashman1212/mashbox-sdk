@@ -223,6 +223,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 #if UNITY_EDITOR
             UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
 #endif
+            RestoreDistantMorphBounds();
             ReleaseSurfaceTiles();
             ApplyFarGrassProperties(false);
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
@@ -250,6 +251,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void OnBeginCameraRendering(ScriptableRenderContext context, Camera camera)
         {
             ApplyFarGrassProperties();
+            RefreshDistantMorphBounds();
             RefreshSurfaceTiles();
             RenderInstances(camera);
         }

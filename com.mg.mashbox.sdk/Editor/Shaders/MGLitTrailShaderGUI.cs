@@ -120,6 +120,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 string propertyName = shader.GetPropertyName(index);
                 if (IsLocalControlProperty(propertyName))
                     continue;
+                // A morph material needs its own conservative tessellation culling bound.
+                if (propertyName == "_TessellationMaxDisplacement" && destination.HasProperty("_DistantSurfaceHeightMap")
+                    && destination.GetTexture("_DistantSurfaceHeightMap") != null)
+                    continue;
 
                 switch (shader.GetPropertyType(index))
                 {
@@ -215,7 +219,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
         private static bool IsLocalControlProperty(string propertyName)
         {
-            return propertyName == "_ControlMap1" ||
+            return propertyName.StartsWith("_DistantSurface", System.StringComparison.Ordinal) || propertyName == "_ControlMap1" ||
                    propertyName == "_ControlMap2" ||
                    propertyName == "_FarRangeAppearanceMap" ||
                    propertyName == "_FarRangeAppearanceNormalMap" ||
@@ -461,6 +465,11 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             "2048 x 2048",
             "4096 x 4096"
         };
+        // Capture belongs to this inspector, not to whichever controls happen to
+        // receive the same generated IDs after a foldout or selection change.
+        private int layerDragControl;
+        private int layerDragIndex = -1;
+        private Vector2 layerDragStart;
         private static bool terrainLayerCacheBuilt;
         private static int selectedControlTextureResolutionIndex = 2;
         private static int selectedArrayTextureResolutionIndex = 2;
@@ -589,8 +598,39 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             base.ValidateMaterial(material);
         }
 
+        public override void OnClosed(Material material)
+        {
+            ReleaseLayerDrag();
+            if (DragAndDrop.GetGenericData(LayerDragDataKey) is LayerDragData drag && drag.material == material)
+                DragAndDrop.SetGenericData(LayerDragDataKey, null);
+            base.OnClosed(material);
+        }
+
+        private void ReleaseLayerDrag()
+        {
+            if (layerDragControl != 0 && GUIUtility.hotControl == layerDragControl)
+                GUIUtility.hotControl = 0;
+            layerDragControl = 0;
+            layerDragIndex = -1;
+        }
+
+        private void CancelLayerDragIfNeeded()
+        {
+            Event current = Event.current;
+            if (layerDragControl == 0)
+                return;
+            // Check before drawing any conditional layer UI. The originating
+            // row may have disappeared or acquired a different control ID.
+            if (GUIUtility.hotControl != layerDragControl || !GUI.enabled ||
+                current.rawType == EventType.MouseUp || current.rawType == EventType.Ignore ||
+                current.type == EventType.DragExited ||
+                (current.type == EventType.KeyDown && current.keyCode == KeyCode.Escape))
+                ReleaseLayerDrag();
+        }
+
         protected override void OnMaterialGUI(MaterialEditor materialEditor, MaterialProperty[] properties)
         {
+            CancelLayerDragIfNeeded();
             Material material = materialEditor.target as Material;
             if (material == null)
                 return;
@@ -740,6 +780,19 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             if (appearanceSaturation != null)
                 materialEditor.ShaderProperty(appearanceSaturation, new GUIContent("Far Range Appearance Map Saturation", "0 is grayscale, 1 preserves the captured saturation, and 2 increases saturation. Independent of the linked material."));
 
+            var distantHeight = FindOptionalProperty("_DistantSurfaceHeightMap", properties);
+            if (distantHeight != null)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Distant Surface Morph", EditorStyles.boldLabel);
+                materialEditor.TexturePropertySingleLine(new GUIContent("Baked Height Map", "Use MG Terrain > Apply Height Map to Trail to configure maps, alignment and culling bounds together."), distantHeight);
+                foreach (string name in new[] { "_DistantSurfaceStrength", "_DistantSurfaceStart", "_DistantSurfaceEnd", "_DistantSurfaceBounds", "_DistantSurfaceMaxHeight" })
+                {
+                    var property = FindOptionalProperty(name, properties);
+                    if (property != null) materialEditor.ShaderProperty(property, property.displayName);
+                }
+                EditorGUILayout.HelpBox("Horizontal distance morph. Strength 0 disables it. Bounds are terrain-local X/Z minimum and size; Max Height is terrain-local Y. Configure automatically from the MG Terrain inspector.", MessageType.Info);
+            }
             if (controlUv2 != null)
             {
                 materialEditor.ShaderProperty(
@@ -1411,7 +1464,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             }
         }
 
-        private static void DrawTerrainLayers(
+        private void DrawTerrainLayers(
             MaterialEditor materialEditor,
             MaterialProperty[] properties,
             Material material)
@@ -1544,7 +1597,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             }
         }
 
-        private static void HandleLayerDragAndDrop(
+        private void HandleLayerDragAndDrop(
             MaterialEditor materialEditor,
             Material material,
             int index,
@@ -1557,34 +1610,47 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 FocusType.Passive,
                 dragHandleRect);
 
+            if (!GUI.enabled)
+            {
+                ReleaseLayerDrag();
+                return;
+            }
+
             if (current.type == EventType.MouseDown &&
-                current.button == 0 &&
+                current.button == 0 && GUIUtility.hotControl == 0 &&
                 dragHandleRect.Contains(current.mousePosition))
             {
+                layerDragControl = controlId;
+                layerDragIndex = index;
+                layerDragStart = current.mousePosition;
                 GUIUtility.hotControl = controlId;
                 current.Use();
                 return;
             }
 
-            if (current.type == EventType.MouseDrag && GUIUtility.hotControl == controlId)
+            if (current.type == EventType.MouseDrag && layerDragIndex == index &&
+                layerDragControl != 0 && GUIUtility.hotControl == layerDragControl)
             {
-                DragAndDrop.PrepareStartDrag();
-                DragAndDrop.SetGenericData(
-                    LayerDragDataKey,
-                    new LayerDragData { material = material, sourceIndex = index });
-                DragAndDrop.objectReferences = new Object[] { material };
-                DragAndDrop.StartDrag($"Move Layer {index}");
-                GUIUtility.hotControl = 0;
+                if ((current.mousePosition - layerDragStart).sqrMagnitude >= 25f)
+                {
+                    // Release before handing off to Unity's drag system, even
+                    // if starting the drag throws or changes the selection.
+                    ReleaseLayerDrag();
+                    DragAndDrop.PrepareStartDrag();
+                    DragAndDrop.SetGenericData(
+                        LayerDragDataKey,
+                        new LayerDragData { material = material, sourceIndex = index });
+                    DragAndDrop.objectReferences = new Object[] { material };
+                    DragAndDrop.StartDrag($"Move Layer {index}");
+                }
                 current.Use();
                 return;
             }
 
-            if (current.type == EventType.MouseUp && GUIUtility.hotControl == controlId)
-            {
-                GUIUtility.hotControl = 0;
-                current.Use();
-                return;
-            }
+            if (current.type == EventType.DragExited &&
+                DragAndDrop.GetGenericData(LayerDragDataKey) is LayerDragData exitedDrag &&
+                exitedDrag.material == material)
+                DragAndDrop.SetGenericData(LayerDragDataKey, null);
 
             LayerDragData dragData = DragAndDrop.GetGenericData(LayerDragDataKey) as LayerDragData;
             if (dragData == null ||

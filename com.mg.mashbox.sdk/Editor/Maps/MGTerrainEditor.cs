@@ -184,6 +184,8 @@ namespace MashBoxSDK.MapTools
                 "The surface is a normal mesh, so its MeshRenderer can use any material. MG Brush paints the mesh/control maps and stores Decor strokes as GPU instances.",
                 MessageType.Info);
 
+            DrawSettingsCopy(terrain);
+
             DrawMappyToolLauncher(terrain);
 
             DrawDetailLayerVisibility(terrain);
@@ -970,10 +972,11 @@ namespace MashBoxSDK.MapTools
             using (new EditorGUI.DisabledScope(Application.isPlaying || !terrain.isActiveAndEnabled))
                 if (GUILayout.Button("Capture Terrain Appearance"))
                 { serializedObject.ApplyModifiedProperties(); CaptureTerrainAppearance(terrain); GUIUtility.ExitGUI(); }
+            DrawDistantSurfaceBake(terrain);
         }
 
 
-        void CaptureTerrainAppearance(MGTerrain terrain)
+        void CaptureTerrainAppearance(MGTerrain terrain, bool bakeDistant = false)
         {
             if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null || !(RenderPipelineManager.currentPipeline is HDRenderPipeline))
             { EditorUtility.DisplayDialog("Terrain Capture", "An active HDRP pipeline and a terrain mesh are required.", "OK"); return; }
@@ -987,19 +990,31 @@ namespace MashBoxSDK.MapTools
             Material captureMaterial = terrain.MeshRenderer != null ? terrain.MeshRenderer.sharedMaterial : null;
             Texture2D assignedColour = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty);
             Texture2D assignedNormal = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty);
-            bool captureNormals = m_CaptureNormalMap || assignedNormal != null;
+            bool captureNormals = m_CaptureNormalMap || assignedNormal != null || (bakeDistant && m_ApplyDistantMorph);
+            if (bakeDistant)
+            {
+                long nx = Mathf.Max(1, Mathf.CeilToInt(metresX / m_DistantSpacing));
+                long nz = Mathf.Max(1, Mathf.CeilToInt(metresZ / m_DistantSpacing));
+                if ((nx + 1) * (nz + 1) > 1048576)
+                { EditorUtility.DisplayDialog("Distant Mesh", "Increase Mesh Spacing: the mesh would exceed one million vertices.", "OK"); return; }
+                if (!SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RFloat) || !SystemInfo.SupportsTextureFormat(TextureFormat.RFloat))
+                { EditorUtility.DisplayDialog("Distant Mesh", "This GPU does not support floating-point height capture.", "OK"); return; }
+                if ((m_DistantLayers.value & (1 << terrain.MeshRenderer.gameObject.layer)) == 0)
+                { EditorUtility.DisplayDialog("Distant Mesh", "Capture Layers must include the terrain renderer's layer.", "OK"); return; }
+            }
             string folderPreference = "MashBox.MGTerrain.AppearanceCapture.LastFolder." + Application.dataPath;
             string captureFolder = EditorPrefs.GetString(folderPreference, "Assets");
             if (!AssetDatabase.IsValidFolder(captureFolder)) captureFolder = "Assets";
-            string path = MGTerrainAppearanceCaptureAssets.ReusablePath(assignedColour);
+            string path = bakeDistant ? null : MGTerrainAppearanceCaptureAssets.ReusablePath(assignedColour);
             if (string.IsNullOrEmpty(path))
             {
-                path = EditorUtility.SaveFilePanelInProject("Save Terrain Appearance PNG", "TerrainAppearance", "png", "Choose the appearance PNG. It will be assigned to the terrain material and reused on future captures.", captureFolder);
+                path = EditorUtility.SaveFilePanelInProject(bakeDistant ? "Save Distant Surface Appearance" : "Save Terrain Appearance PNG", bakeDistant ? "TerrainDistantSurface" : "TerrainAppearance", "png", bakeDistant ? "Choose the output location. A new set of distant surface assets will be created." : "Choose the appearance PNG. It will be assigned to the terrain material and reused on future captures.", captureFolder);
                 if (string.IsNullOrEmpty(path)) return;
                 path = System.IO.Path.ChangeExtension(path, ".png").Replace('\\', '/');
                 EditorPrefs.SetString(folderPreference, System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
             }
-            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(assignedNormal, path) : null;
+            if (bakeDistant) path = AssetDatabase.GenerateUniqueAssetPath(path);
+            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(bakeDistant ? null : assignedNormal, path) : null;
             int resolution = m_FarBakeResolution;
             int tiles = Mathf.NextPowerOfTwo(Mathf.Max(4, Mathf.CeilToInt(Mathf.Max(metresX, metresZ) / 48f)));
             if (tiles > 64)
@@ -1016,6 +1031,12 @@ namespace MashBoxSDK.MapTools
             RenderTexture normalTarget = null;
             Material normalDecoder = null;
             AppearanceNormalPass normalPass = null;
+            Texture2D heightTexture = null;
+            RenderTexture heightTarget = null;
+            Material heightDecoder = null;
+            AppearanceHeightPass heightPass = null;
+            var hiddenSurfaces = new List<(GameObject obj, bool active)>();
+            bool bakeSucceeded = false;
             RenderTexture previousActive = RenderTexture.active;
             var lights = new List<(HDAdditionalLightData data, int resolution, bool useOverride, ShadowUpdateMode update)>();
             bool captureStarted = false;
@@ -1028,15 +1049,23 @@ namespace MashBoxSDK.MapTools
             bool hasAppearanceNormal = captureMaterial != null && captureMaterial.HasProperty(appearanceNormalProperty);
             float previousAppearanceBlend = hasAppearanceBlend ? captureMaterial.GetFloat(appearanceBlendProperty) : 0f;
             float previousAppearanceNormal = hasAppearanceNormal ? captureMaterial.GetFloat(appearanceNormalProperty) : 0f;
+            float previousMorphStrength = captureMaterial != null && captureMaterial.HasProperty("_DistantSurfaceStrength") ? captureMaterial.GetFloat("_DistantSurfaceStrength") : 0;
             void RestoreAppearanceInfluence()
             {
                 if (captureMaterial == null) return;
+                if (captureMaterial.HasProperty("_DistantSurfaceStrength")) captureMaterial.SetFloat("_DistantSurfaceStrength", previousMorphStrength);
                 if (hasAppearanceBlend) captureMaterial.SetFloat(appearanceBlendProperty, previousAppearanceBlend);
                 if (hasAppearanceNormal) captureMaterial.SetFloat(appearanceNormalProperty, previousAppearanceNormal);
             }
             EditorApplication.LockReloadAssemblies();
             try
             {
+                // Exclude generated geometry from both ordinary and distant appearance recaptures.
+                foreach (var proxy in UnityEngine.Object.FindObjectsByType<MGTerrainDistantSurface>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                {
+                    hiddenSurfaces.Add((proxy.gameObject, proxy.gameObject.activeSelf));
+                    proxy.gameObject.SetActive(false);
+                }
                 captureSun = RenderSettings.sun;
                 if (captureSun == null || !captureSun.isActiveAndEnabled || captureSun.type != LightType.Directional)
                 {
@@ -1058,6 +1087,7 @@ namespace MashBoxSDK.MapTools
                     captureSun.transform.rotation = Quaternion.LookRotation(direction, heading.normalized);
                 }
                 // Prevent the previous colour/normal bake from feeding into its replacement.
+                if (captureMaterial != null && captureMaterial.HasProperty("_DistantSurfaceStrength")) captureMaterial.SetFloat("_DistantSurfaceStrength", 0);
                 if (hasAppearanceBlend) captureMaterial.SetFloat(appearanceBlendProperty, 0f);
                 if (hasAppearanceNormal) captureMaterial.SetFloat(appearanceNormalProperty, 0f);
                 captureObject = new GameObject("MG Terrain Capture (Temporary)") { hideFlags = HideFlags.HideAndDontSave };
@@ -1068,10 +1098,10 @@ namespace MashBoxSDK.MapTools
                 camera.allowMSAA = false;
                 camera.clearFlags = CameraClearFlags.SolidColor;
                 camera.backgroundColor = Color.black;
-                camera.cullingMask = ~0;
+                camera.cullingMask = bakeDistant ? m_DistantLayers.value : ~0;
                 camera.nearClipPlane = .1f;
                 float height = surface.TransformVector(Vector3.up * bounds.size.y).magnitude;
-                camera.farClipPlane = height + 100f;
+                camera.farClipPlane = height + (bakeDistant ? m_DistantHeadroom : 20f) + 80f;
                 camera.transform.rotation = Quaternion.LookRotation(-surface.up, surface.forward);
                 var hd = captureObject.AddComponent<HDAdditionalCameraData>();
                 hd.volumeLayerMask = ~0;
@@ -1092,6 +1122,29 @@ namespace MashBoxSDK.MapTools
                     hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)FrameSettingsField.CustomPass] = true;
                     normalTexture = new Texture2D(resolution, resolution, TextureFormat.RGB24, true, true)
                     { name = terrain.name + "_NormalWS", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear };
+                }
+                if (bakeDistant)
+                {
+                    Shader heightShader = Shader.Find("Hidden/MashBox/TerrainCaptureHeight");
+                    Shader surfaceShader = Shader.Find("MashBox/Terrain Distant Surface");
+                    if (heightShader == null || !heightShader.isSupported || surfaceShader == null || !surfaceShader.isSupported)
+                        throw new InvalidOperationException("The distant terrain shaders are missing or unsupported. Allow Unity to finish importing the SDK shaders.");
+                    heightDecoder = CoreUtils.CreateEngineMaterial(heightShader);
+                    heightDecoder.SetMatrix("_MGHeightWorldToLocal", surface.worldToLocalMatrix);
+                    var heightVolume = captureObject.GetComponent<CustomPassVolume>();
+                    if (heightVolume == null) heightVolume = captureObject.AddComponent<CustomPassVolume>();
+                    heightVolume.isGlobal = true;
+                    heightVolume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
+                    heightPass = new AppearanceHeightPass { name = "Terrain surface height export", captureCamera = camera,
+                        decoder = heightDecoder, targetColorBuffer = CustomPass.TargetBuffer.None, targetDepthBuffer = CustomPass.TargetBuffer.None };
+                    heightVolume.customPasses.Add(heightPass);
+                    hd.renderingPathCustomFrameSettings.SetEnabled(FrameSettingsField.CustomPass, true);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)FrameSettingsField.CustomPass] = true;
+                    heightTexture = new Texture2D(resolution, resolution, TextureFormat.RFloat, false, true)
+                    { name = terrain.name + "_SurfaceHeight", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+                    // Transparent colour without matching depth would project onto the wrong surface.
+                    hd.renderingPathCustomFrameSettings.SetEnabled(FrameSettingsField.TransparentObjects, false);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)FrameSettingsField.TransparentObjects] = true;
                 }
                 foreach (FrameSettingsField field in new[] { FrameSettingsField.AtmosphericScattering, FrameSettingsField.Volumetrics,
                     FrameSettingsField.DepthOfField, FrameSettingsField.MotionBlur, FrameSettingsField.Bloom,
@@ -1141,7 +1194,7 @@ namespace MashBoxSDK.MapTools
                 { name = terrain.name + "_Appearance", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
                 var request = new RenderPipeline.StandardRequest { destination = target };
                 if (!RenderPipeline.SupportsRenderRequest(camera, request)) throw new InvalidOperationException("The active render pipeline does not support camera capture requests.");
-                terrain.BeginAppearanceCapture(camera, m_CaptureDetailTilt);
+                terrain.BeginAppearanceCapture(camera, bakeDistant ? 0f : m_CaptureDetailTilt);
                 captureStarted = true;
                 long completedPixels = 0;
                 var layerSubmissions = new long[terrain.DensityDetailLayerCount];
@@ -1161,7 +1214,7 @@ namespace MashBoxSDK.MapTools
                     }
                     camera.orthographicSize = metresZ * paddedPixels / resolution * .5f;
                     camera.transform.position = surface.TransformPoint(new Vector3(bounds.min.x + (pixelX + pixels * .5f) * bounds.size.x / resolution,
-                        bounds.max.y, bounds.min.z + (pixelZ + pixels * .5f) * bounds.size.z / resolution)) + surface.up * 20f;
+                        bounds.max.y, bounds.min.z + (pixelZ + pixels * .5f) * bounds.size.z / resolution)) + surface.up * (bakeDistant ? m_DistantHeadroom : 20f);
                     terrain.PrepareAppearanceCaptureTile();
                     if (normalPass != null)
                     {
@@ -1174,6 +1227,18 @@ namespace MashBoxSDK.MapTools
                         }
                         normalPass.destination = normalTarget;
                         normalPass.captured = false;
+                    }
+                    if (heightPass != null)
+                    {
+                        if (heightTarget == null || heightTarget.width != paddedPixels)
+                        {
+                            if (heightTarget != null) { heightTarget.Release(); DestroyImmediate(heightTarget); }
+                            heightTarget = new RenderTexture(paddedPixels, paddedPixels, 0, RenderTextureFormat.RFloat, RenderTextureReadWrite.Linear)
+                            { name = "MG Terrain Height Tile", hideFlags = HideFlags.HideAndDontSave };
+                            heightTarget.Create();
+                        }
+                        heightPass.destination = heightTarget;
+                        heightPass.captured = false;
                     }
                     RenderPipeline.SubmitRenderRequest(camera, request);
                     if (!terrain.AppearanceCaptureNeedsSubdivision)
@@ -1197,6 +1262,12 @@ namespace MashBoxSDK.MapTools
                             throw new InvalidOperationException("HDRP did not execute normal capture. Enable Custom Pass support in the active HDRP asset. No incomplete capture was saved.");
                         RenderTexture.active = normalTarget;
                         normalTexture.ReadPixels(new Rect(border, border, pixels, pixels), pixelX, pixelZ, false);
+                    }
+                    if (heightPass != null)
+                    {
+                        if (!heightPass.captured) throw new InvalidOperationException("HDRP did not execute height capture. Enable Custom Pass support in the active HDRP asset.");
+                        RenderTexture.active = heightTarget;
+                        heightTexture.ReadPixels(new Rect(border, border, pixels, pixels), pixelX, pixelZ, false);
                     }
                     completedPixels += (long)pixels * pixels;
                     return true;
@@ -1230,7 +1301,7 @@ namespace MashBoxSDK.MapTools
                 importer.isReadable = false;
                 importer.SaveAndReimport();
                 m_LastAppearanceCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty, m_LastAppearanceCapture);
+                if (!bakeDistant) MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty, m_LastAppearanceCapture);
                 EditorGUIUtility.PingObject(m_LastAppearanceCapture);
                 if (normalTexture != null)
                 {
@@ -1259,13 +1330,24 @@ namespace MashBoxSDK.MapTools
                     normalImporter.userData = "MG Terrain World Space Normals: normalize(RGB * 2 - 1). Sample as Default linear RGB using colour capture X/Z UVs. Not tangent-space normal data.";
                     normalImporter.SaveAndReimport();
                     m_LastNormalCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath);
-                    MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty, m_LastNormalCapture);
+                    if (!bakeDistant) MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty, m_LastNormalCapture);
                     Debug.Log($"World-space normal capture saved to {normalPath}. Imported as Default linear RGB; decode normalize(RGB * 2 - 1) and use in world space.", terrain);
                 }
+                if (bakeDistant)
+                {
+                    heightTexture.Apply(false, false);
+                    // Capture is finished. Restore visibility before recording replacement Undo.
+                    foreach (var hidden in hiddenSurfaces) if (hidden.obj != null) hidden.obj.SetActive(hidden.active);
+                    SaveDistantSurface(terrain, heightTexture, m_LastAppearanceCapture, path);
+                }
+                bakeSucceeded = true;
+                if (bakeDistant && m_ApplyDistantMorph && captureMaterial != null && captureMaterial.HasProperty("_DistantSurfaceHeightMap"))
+                    ApplyDistantMorph(terrain, m_LastMorphHeight);
                 for (int layer = 0; layer < layerSubmissions.Length; layer++)
                     Debug.Log($"[MG Terrain Capture] Layer {layer}: {layerSubmissions[layer]:N0} instance submissions across completed tiles (includes overlapping borders).", terrain);
-                Debug.Log($"Terrain appearance saved to {path}. RGB maps local X/Z bounds {bounds.min} to {bounds.max}; lighting and shadows are baked. Captures are assigned to the material's appearance slots when supported and reused on the next capture.", terrain);
+                if (!bakeDistant) Debug.Log($"Terrain appearance saved to {path}. RGB maps local X/Z bounds {bounds.min} to {bounds.max}; lighting and shadows are baked. Captures are assigned to the material's appearance slots when supported and reused on the next capture.", terrain);
             }
+            catch (OperationCanceledException exception) { Debug.Log(exception.Message, terrain); }
             catch (Exception exception) { Debug.LogException(exception, terrain); EditorUtility.DisplayDialog("Terrain Capture Failed", exception.Message, "OK"); }
             finally
             {
@@ -1273,6 +1355,12 @@ namespace MashBoxSDK.MapTools
                 if (sunRotationChanged && captureSun != null)
                     captureSun.transform.localRotation = previousSunLocalRotation;
                 if (captureStarted) terrain.EndAppearanceCapture();
+                foreach (var hidden in hiddenSurfaces) if (hidden.obj != null) hidden.obj.SetActive(hidden.active);
+                if (bakeDistant && !bakeSucceeded)
+                {
+                    if (AssetDatabase.LoadAssetAtPath<Texture2D>(path) != null) AssetDatabase.DeleteAsset(path);
+                    if (normalPath != null && AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath) != null) AssetDatabase.DeleteAsset(normalPath);
+                }
                 foreach (var light in lights)
                     if (light.data != null)
                     {
@@ -1293,6 +1381,9 @@ namespace MashBoxSDK.MapTools
                 if (normalTexture != null) DestroyImmediate(normalTexture);
                 if (normalTarget != null) { normalTarget.Release(); DestroyImmediate(normalTarget); }
                 if (normalDecoder != null) CoreUtils.Destroy(normalDecoder);
+                if (heightTexture != null) DestroyImmediate(heightTexture);
+                if (heightTarget != null) { heightTarget.Release(); DestroyImmediate(heightTarget); }
+                if (heightDecoder != null) CoreUtils.Destroy(heightDecoder);
                 EditorUtility.ClearProgressBar();
                 EditorApplication.UnlockReloadAssemblies();
                 SceneView.RepaintAll();
