@@ -182,12 +182,12 @@ namespace MashBoxSDK.MapTools
                 Check(colliders.All(c => (c.sharedMesh.hideFlags &
                     (HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild)) == 0),
                     "Baked collision meshes would be omitted from the saved scene/build.");
-                Check(authoringColliderMeshes.All(m => (m.hideFlags & HideFlags.DontSave) == HideFlags.DontSave),
+                Check(authoringColliderMeshes.All(m => (m.hideFlags & (HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild)) == 0),
                     "Baking changed shared authoring collider mesh flags.");
                 Physics.SyncTransforms();
                 Check(colliders.Any(c => c.Raycast(new Ray(new Vector3(2, 10, 25), Vector3.down), out _, 20)),
                     "Baked loft no longer supports a downward collision ray.");
-                foreach (Mesh mesh in authoringColliderMeshes) Object.DestroyImmediate(mesh);
+                foreach (Mesh mesh in authoringColliderMeshes.Except(colliders.Select(c => c.sharedMesh))) Object.DestroyImmediate(mesh);
                 Lifecycle(loft, "OnEnable");
                 Check(loft.VisualsBaked, "Baked loft entered authoring regeneration.");
                 Mesh[] bakedColliderMeshes = colliders.Select(c => c.sharedMesh).ToArray();

@@ -2419,9 +2419,11 @@ namespace MashBoxSDK.Maps.Spline
             Mesh mesh = reusableMesh != null ? reusableMesh : new Mesh
             {
                 name = $"{gameObject.name} Collider Chunk {chunkIndex + 1:000}",
-                hideFlags = HideFlags.DontSave
+                hideFlags = HideFlags.None
             };
             mesh.name = $"{gameObject.name} Collider Chunk {chunkIndex + 1:000}";
+            // Collider meshes are scene data, including chunks reused from older saves.
+            mesh.hideFlags = HideFlags.None;
             mesh.Clear();
             mesh.indexFormat = vertices.Count > ushort.MaxValue
                 ? UnityEngine.Rendering.IndexFormat.UInt32
@@ -2470,7 +2472,12 @@ namespace MashBoxSDK.Maps.Spline
             Mesh colliderMesh = collider != null ? collider.sharedMesh : null;
             if (collider != null)
                 collider.sharedMesh = null;
+#if UNITY_EDITOR
+            // Scene-owned meshes are now saved, so DontSave is no longer an ownership test.
+            if (colliderMesh != null && !UnityEditor.EditorUtility.IsPersistent(colliderMesh))
+#else
             if (colliderMesh != null && (colliderMesh.hideFlags & HideFlags.DontSave) != 0)
+#endif
                 DestroyGeneratedObject(colliderMesh);
             DestroyGeneratedObject(chunkObject);
         }
