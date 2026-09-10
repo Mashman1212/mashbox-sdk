@@ -351,6 +351,7 @@ namespace MashBoxSDK.MapTools
             MBSmoothSculptToggle.Id,
             MBFlattenSculptToggle.Id,
             MBSeamFitSculptToggle.Id,
+            MBSculptableOnlyToggle.Id,
             MBMoveUvToggle.Id,
             MBSideOffsetUvToggle.Id,
             MBUvScaleToggle.Id)
@@ -407,6 +408,7 @@ namespace MashBoxSDK.MapTools
             actionsContent.Add(new MBSmoothSculptToggle());
             actionsContent.Add(new MBFlattenSculptToggle());
             actionsContent.Add(new MBSeamFitSculptToggle());
+            actionsContent.Add(new MBSculptableOnlyToggle());
             actionsContent.Add(new MBMoveUvToggle());
             actionsContent.Add(new MBSideOffsetUvToggle());
             actionsContent.Add(new MBUvScaleToggle());
@@ -1590,6 +1592,41 @@ namespace MashBoxSDK.MapTools
         }
     }
 
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBSculptableOnlyToggle : EditorToolbarToggle
+    {
+        public const string Id = "MashBox/Sculpt/Sculptable Only";
+
+        public MBSculptableOnlyToggle()
+        {
+            MBEditorToolVisuals.ConfigureIconOnly(this, "LockIcon-On", "d_InspectorLock", "Sculptable Only",
+                "Sculptable Only: ignore other objects and sculpt through them. Unlock to make more objects sculptable with Shift+Click.");
+            this.RegisterValueChangedCallback(evt => MBEditorToolState.SculptableOnly = evt.newValue);
+            this.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged += Sync;
+                MBEditorToolState.ActiveEditingChanged += Sync;
+                MBEditorToolState.SculptableOnlyChanged += Sync;
+                Sync();
+            });
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged -= Sync;
+                MBEditorToolState.ActiveEditingChanged -= Sync;
+                MBEditorToolState.SculptableOnlyChanged -= Sync;
+            });
+            Sync();
+        }
+
+        void Sync()
+        {
+            style.display = MBEditorToolState.Mode == MBEditorAuthoringMode.MeshSculpt ? DisplayStyle.Flex : DisplayStyle.None;
+            SetEnabled(MBEditorToolState.ActiveEditing);
+            SetValueWithoutNotify(MBEditorToolState.SculptableOnly);
+            MBEditorToolVisuals.ApplyToolActionSelection(this, MBEditorToolState.SculptableOnly);
+        }
+    }
+
     public abstract class MBSculptSubmodeToggle : EditorToolbarToggle
     {
         readonly MBSculptMode m_Mode;
@@ -1776,12 +1813,14 @@ namespace MashBoxSDK.MapTools
             {
                 MBEditorToolState.ModeChanged += Sync;
                 MBEditorToolState.SculptModeChanged += Sync;
+                MBEditorToolState.SculptableOnlyChanged += Sync;
                 Sync();
             });
             this.RegisterCallback<DetachFromPanelEvent>(_ =>
             {
                 MBEditorToolState.ModeChanged -= Sync;
                 MBEditorToolState.SculptModeChanged -= Sync;
+                MBEditorToolState.SculptableOnlyChanged -= Sync;
             });
             Sync();
         }
@@ -1805,7 +1844,10 @@ namespace MashBoxSDK.MapTools
                 case MBEditorAuthoringMode.MeshSculpt:
                     bool seamFit = MBEditorToolState.SculptMode == MBSculptMode.SeamFit;
                     AddShortcut(seamFit ? "MashBox.SeamFit" : "MashBox.Sculpt", seamFit ? "Fit" : "Sculpt", "LMB Drag");
-                    AddShortcut("d_ToolHandlePivot", "Make Sculptable", "Shift + Click");
+                    if (MBEditorToolState.SculptableOnly)
+                        AddShortcut("LockIcon-On", "Sculptable Only", "Unlock to add");
+                    else
+                        AddShortcut("d_ToolHandlePivot", "Make Sculptable", "Shift + Click");
                     AddShortcut("d_RotateTool", seamFit ? "Lower Terrain" : "Invert", seamFit ? "Ctrl + LMB Drag" : "Ctrl");
                     AddShortcut("MashBox.Smooth", "Smooth", "Shift");
                     AddShortcut("d_PreMatCube", "Noise", "Ctrl + Shift");

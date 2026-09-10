@@ -129,8 +129,9 @@ namespace MashBoxSDK.MapTools
                 material.SetFloat("_FadeEnd", m_DistantFadeEnd);
                 string materialPath = AssetDatabase.GenerateUniqueAssetPath(stem + "_Surface.mat");
                 AssetDatabase.CreateAsset(material, materialPath); createdPaths.Add(materialPath);
-                var savedHeight = MGTerrainHeightEncoding.Encode(heightMap, out Vector4 heightDecode);
-                savedHeight.name = terrain.name + " Surface Height";
+                var savedHeight = MGTerrainHeightEncoding.EncodeDifference(terrain.MeshFilter.sharedMesh, bounds, heights,
+                    nx, nz, width, height, out Vector4 heightDecode);
+                savedHeight.name = terrain.name + " Surface Height Difference";
                 string heightPath = AssetDatabase.GenerateUniqueAssetPath(stem + "_Height.asset");
                 AssetDatabase.CreateAsset(savedHeight, heightPath); createdPaths.Add(heightPath);
                 MGTerrainHeightEncoding.SaveMetadata(heightPath, heightDecode);

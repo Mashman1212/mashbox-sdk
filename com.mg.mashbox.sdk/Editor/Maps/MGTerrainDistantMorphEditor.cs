@@ -25,7 +25,7 @@ namespace MashBoxSDK.MapTools
                     try { ApplyDistantMorph(terrain, m_LastMorphHeight); }
                     catch (Exception exception) { Debug.LogException(exception, terrain); EditorUtility.DisplayDialog("Distant Terrain Morph", exception.Message, "OK"); }
                 }
-            EditorGUILayout.HelpBox("Uses the bake's terrain-local height to raise vertices over the Fade In distance interval (horizontal metres). Set Distant Surface Strength to 0 on the generated material to turn it off. Vertex density still limits canopy detail. Mesh colliders stay at the original ground.", MessageType.Info);
+            EditorGUILayout.HelpBox("Uses the baked mesh-minus-terrain height difference (black = no lift) to raise existing vertices over the Fade In distance interval (horizontal metres). Set Distant Surface Strength to 0 on the generated material to turn it off. Vertex density still limits canopy detail. Mesh colliders stay at the original ground.", MessageType.Info);
         }
 
         void ApplyDistantMorph(MGTerrain terrain, Texture2D height)
@@ -45,7 +45,8 @@ namespace MashBoxSDK.MapTools
             if (colour == null) throw new InvalidOperationException("The matching baked colour PNG was not found beside the height map.");
             Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
             Vector4 heightDecode = MGTerrainHeightEncoding.ReadDecode(height);
-            float top = MGTerrainHeightEncoding.Maximum(height, heightDecode);
+            float maximum = MGTerrainHeightEncoding.Maximum(height, heightDecode);
+            float top = heightDecode.z > 1.5f ? bounds.max.y + maximum : maximum;
             var material = new Material(source) { name = terrain.name + " Distant Morph" };
             material.SetTexture("_DistantSurfaceHeightMap", height);
             material.SetVector("_DistantSurfaceHeightDecode", heightDecode);

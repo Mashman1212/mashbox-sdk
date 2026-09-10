@@ -56,6 +56,7 @@ namespace MashBoxSDK.MapTools
             layer.FindPropertyRelative("m_ShaderTint").colorValue = Color.white;
             layer.FindPropertyRelative("m_FarBakeColor").colorValue = new Color(.32f, .4f, .12f, 1f);
             layer.FindPropertyRelative("m_TextureSlice").intValue = 0;
+            layer.FindPropertyRelative("m_UseGrassArray").boolValue = false;
             layer.FindPropertyRelative("m_YOffset").floatValue = 0f;
             layer.FindPropertyRelative("m_Seed").intValue = UnityEngine.Random.Range(1, int.MaxValue);
             m_PaintDetailIndex = index;
@@ -79,6 +80,89 @@ namespace MashBoxSDK.MapTools
             EditorUtility.SetDirty(terrain);
             SelectPrototype(index);
             SceneView.RepaintAll();
+        }
+
+        void DuplicateSelectedDetail(MGTerrain terrain)
+        {
+            FinishDetailStroke();
+            SetDetailPainting(false);
+            serializedObject.ApplyModifiedProperties();
+            serializedObject.Update();
+            int sourcePrototype = m_SelectedPrototype;
+            if (sourcePrototype < 0 || sourcePrototype >= m_Prototypes.arraySize) return;
+            Undo.IncrementCurrentGroup();
+            int undoGroup = Undo.GetCurrentGroup();
+            const string action = "Duplicate Terrain Detail";
+            Undo.SetCurrentGroupName(action);
+            Undo.RegisterCompleteObjectUndo(terrain, action);
+            var createdPaths = new System.Collections.Generic.List<string>();
+            try
+            {
+                int duplicatePrototype = m_Prototypes.arraySize;
+                m_Prototypes.arraySize++;
+                MGTerrainSettingsCopy.CopyValue(m_Prototypes.GetArrayElementAtIndex(sourcePrototype),
+                    m_Prototypes.GetArrayElementAtIndex(duplicatePrototype));
+                int originalLayerCount = m_DensityDetailLayers.arraySize;
+                bool copiedLayer = false;
+                for (int index = 0; index < originalLayerCount; index++)
+                {
+                    if (m_DensityDetailLayers.GetArrayElementAtIndex(index).FindPropertyRelative("m_PrototypeIndex").intValue != sourcePrototype) continue;
+                    int duplicateLayer = m_DensityDetailLayers.arraySize;
+                    m_DensityDetailLayers.arraySize++;
+                    var source = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+                    var copy = m_DensityDetailLayers.GetArrayElementAtIndex(duplicateLayer);
+                    MGTerrainSettingsCopy.CopyValue(source, copy);
+                    copy.FindPropertyRelative("m_PrototypeIndex").intValue = duplicatePrototype;
+                    foreach (string field in new[] { "m_DensityMap", "m_SizeMap" })
+                    {
+                        var texture = source.FindPropertyRelative(field).objectReferenceValue as Texture2D;
+                        if (texture == null) continue;
+                        string sourcePath = AssetDatabase.GetAssetPath(texture);
+                        string folder = sourcePath.StartsWith("Assets/", StringComparison.Ordinal)
+                            ? System.IO.Path.GetDirectoryName(sourcePath).Replace('\\', '/') : "Assets";
+                        string suffix = field == "m_DensityMap" ? "Density" : "Size";
+                        string filename = MGTerrainAppearanceCaptureAssets.TerrainPrefix(terrain.name)
+                            + $"DetailPrototype_{duplicatePrototype}_Layer_{duplicateLayer}_{suffix}.asset";
+                        string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/" + filename);
+                        var textureCopy = Instantiate(texture);
+                        textureCopy.name = System.IO.Path.GetFileNameWithoutExtension(path);
+                        textureCopy.hideFlags = HideFlags.None;
+                        try { AssetDatabase.CreateAsset(textureCopy, path); }
+                        catch { DestroyImmediate(textureCopy); throw; }
+                        createdPaths.Add(path);
+                        copy.FindPropertyRelative(field).objectReferenceValue = textureCopy;
+                    }
+                    // A duplicate is an editable snapshot, not an output owned by a palette bake.
+                    copy.FindPropertyRelative("m_GeneratedByPalette").objectReferenceValue = null;
+                    copy.FindPropertyRelative("m_PaletteSourceMap").objectReferenceValue = null;
+                    copy.FindPropertyRelative("m_PaletteEntryIndex").intValue = -1;
+                    copy.FindPropertyRelative("m_PaletteSourceOnly").boolValue = false;
+                    copiedLayer = true;
+                }
+                if (!copiedLayer) AddEmptyDensityLayer(duplicatePrototype);
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+                PrefabUtility.RecordPrefabInstancePropertyModifications(terrain);
+                EditorUtility.SetDirty(terrain);
+                if (terrain.gameObject.scene.IsValid())
+                    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+                foreach (string path in createdPaths) AssetDatabase.SaveAssetIfDirty(AssetDatabase.LoadAssetAtPath<Texture2D>(path));
+                terrain.InvalidateRenderCache();
+                SelectPrototype(duplicatePrototype);
+                // Keep saved maps when undoing the component edit, so redo retains their references.
+                Undo.CollapseUndoOperations(undoGroup);
+                SceneView.RepaintAll();
+                Repaint();
+            }
+            catch (Exception exception)
+            {
+                serializedObject.Update();
+                Undo.RevertAllDownToGroup(undoGroup);
+                foreach (string path in createdPaths) AssetDatabase.DeleteAsset(path);
+                serializedObject.Update();
+                terrain.InvalidateRenderCache();
+                Debug.LogException(exception, terrain);
+                EditorUtility.DisplayDialog("Duplicate Terrain Detail", exception.Message, "OK");
+            }
         }
 
         void RemoveSelectedPrototype(MGTerrain terrain)
@@ -140,7 +224,7 @@ namespace MashBoxSDK.MapTools
             if (evt.type == EventType.Repaint)
                 GUI.skin.button.Draw(cell, GUIContent.none, cell.Contains(evt.mousePosition),
                     GUIUtility.hotControl == control, m_SelectedPrototype == index, false);
-            if (Application.isPlaying || serializedObject.isEditingMultipleObjects) return;
+            if (serializedObject.isEditingMultipleObjects) return;
             switch (evt.GetTypeForControl(control))
             {
                 case EventType.MouseDown:
@@ -153,7 +237,7 @@ namespace MashBoxSDK.MapTools
                     break;
                 case EventType.MouseDrag:
                     if (GUIUtility.hotControl != control) break;
-                    if ((evt.mousePosition - m_PrototypeDragStart).sqrMagnitude >= 25f)
+                    if (!Application.isPlaying && (evt.mousePosition - m_PrototypeDragStart).sqrMagnitude >= 25f)
                     {
                         serializedObject.ApplyModifiedProperties();
                         DragAndDrop.PrepareStartDrag();
@@ -174,7 +258,7 @@ namespace MashBoxSDK.MapTools
                     break;
                 case EventType.DragUpdated:
                 case EventType.DragPerform:
-                    if (!cell.Contains(evt.mousePosition)) break;
+                    if (Application.isPlaying || !cell.Contains(evt.mousePosition)) break;
                     var drag = DragAndDrop.GetGenericData(PrototypeDragKey) as PrototypeDrag;
                     if (drag == null) break;
                     bool valid = drag.Terrain == terrain && drag.From >= 0 && drag.From < m_Prototypes.arraySize;
@@ -207,11 +291,89 @@ namespace MashBoxSDK.MapTools
             return ids.ToString();
         }
 
+        bool m_ShowGrassLayerSettings;
+        int m_GrassPaintSubId;
+        int m_GrassPaintPopulation;
+        Texture2D m_GrassStrokeIds;
+
+        void DrawGrassSubIdGrid(MGTerrain terrain)
+        {
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Grass Sub-IDs", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Choose a population, then paint its grass ID. IDs share one density map.", EditorStyles.miniLabel);
+            EditorGUI.BeginChangeCheck();
+            int population = GUILayout.Toolbar(m_GrassPaintPopulation, new[] { "Population A", "Population B" });
+            if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); SetDetailPainting(false); m_GrassPaintPopulation = population; }
+            if (MGGrassDetailLayers.SharedIndex(terrain, m_SelectedPrototype, 0) < 0)
+                EditorGUILayout.HelpBox("First selection consolidates legacy grass into one density population. The densest ID wins in overlaps. Population B is only created when selected. Original maps and an editor backup are kept.", MessageType.Info);
+            if (MGGrassDetailLayers.SharedIndex(terrain, m_SelectedPrototype, 0) < 0)
+            {
+                using (new EditorGUI.DisabledScope(Application.isPlaying || serializedObject.isEditingMultipleObjects))
+                    if (GUILayout.Button("Consolidate Grass Layers into Shared Populations"))
+                    {
+                        FinishDetailStroke();
+                        SetDetailPainting(false);
+                        serializedObject.ApplyModifiedProperties();
+                        m_PaintDetailIndex = MGGrassDetailLayers.EnsureShared(terrain, m_SelectedPrototype, 0);
+                        m_GrassPaintPopulation = 0;
+                        serializedObject.Update();
+                        GUIUtility.ExitGUI();
+                    }
+            }
+            int columns = Mathf.Clamp(Mathf.FloorToInt((EditorGUIUtility.currentViewWidth - 42f) / 88f), 1, 8);
+            for (int row = 0; row < Mathf.CeilToInt(8f / columns); row++)
+            {
+                Rect strip = EditorGUILayout.GetControlRect(false, 98f);
+                float width = strip.width / columns;
+                for (int column = 0; column < columns; column++)
+                {
+                    int id = row * columns + column;
+                    if (id >= 8) break;
+                    string label = "Empty";
+                    Texture2D thumbnail = null;
+                    foreach (var material in m_DetailSourceMaterials)
+                        if (material != null && material.HasProperty("_GrassUseArrays")
+                            && MGGrassDetailLayers.SlotInfo(material, id, out string slotName, out Texture2D source))
+                        { label = slotName; thumbnail = source; break; }
+                    int existing = -1;
+                    for (int i = 0; i < terrain.DensityDetailLayerCount; i++)
+                    {
+                        var layer = terrain.DensityDetailLayers[i];
+                        if (layer != null && layer.PrototypeIndex == m_SelectedPrototype && layer.UsesGrassArray && layer.GrassIdMap != null && layer.GrassPopulation == m_GrassPaintPopulation)
+                        { existing = i; break; }
+                    }
+                    bool available = thumbnail != null;
+                    bool selected = existing >= 0 && existing == m_PaintDetailIndex && id == m_GrassPaintSubId;
+                    Rect cell = new Rect(strip.x + column * width, strip.y, width - 4f, 94f);
+                    Color previous = GUI.backgroundColor;
+                    if (selected) GUI.backgroundColor = new Color(.4f, .7f, 1f);
+                    bool clicked;
+                    using (new EditorGUI.DisabledScope(!available || Application.isPlaying || serializedObject.isEditingMultipleObjects))
+                        clicked = GUI.Button(cell, new GUIContent("", available ? "Paint Sub-ID " + id + ": " + label : "Assign this slot in the grass material first."));
+                    GUI.backgroundColor = previous;
+                    if (Event.current.type == EventType.Repaint && thumbnail != null)
+                        GUI.DrawTexture(new Rect(cell.x + 5, cell.y + 20, cell.width - 10, 50), thumbnail, ScaleMode.ScaleToFit, true);
+                    GUI.Label(new Rect(cell.x + 5, cell.y + 3, cell.width - 10, 18), "Sub-ID " + id, EditorStyles.miniBoldLabel);
+                    GUI.Label(new Rect(cell.x + 3, cell.y + 72, cell.width - 6, 18), new GUIContent(label, label), EditorStyles.centeredGreyMiniLabel);
+                    if (!clicked) continue;
+                    FinishDetailStroke();
+                    serializedObject.ApplyModifiedProperties();
+                    m_PaintDetailIndex = MGGrassDetailLayers.EnsureShared(terrain, m_SelectedPrototype, m_GrassPaintPopulation);
+                    m_GrassPaintSubId = id;
+                    serializedObject.Update();
+                    m_PaintChannel = 0;
+                    SetDetailPainting(true);
+                    Repaint();
+                    SceneView.RepaintAll();
+                    GUIUtility.ExitGUI();
+                }
+            }
+        }
         void DrawPrototypeGrid(MGTerrain terrain)
         {
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Foliage Prototypes", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Drag thumbnails to reorder IDs.", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField(Application.isPlaying ? "Select a thumbnail to tune its settings." : "Drag thumbnails to reorder IDs.", EditorStyles.miniLabel);
             if (Event.current.type == EventType.DragExited)
             {
                 DragAndDrop.SetGenericData(PrototypeDragKey, null);
@@ -234,11 +396,13 @@ namespace MashBoxSDK.MapTools
                     string label = asset != null ? asset.name : "Empty Prototype";
                     Rect cell = new Rect(strip.x + column * width, strip.y, width - 4f, 94f);
                     DrawPrototypeCell(terrain, cell, index);
-                    if (asset != null)
+                    // Previews are visual-only. Request them only when drawing, and let normal
+                    // Inspector events show completed previews instead of recursively repainting
+                    // the entire terrain Inspector while Unity's preview queue is busy.
+                    if (asset != null && Event.current.type == EventType.Repaint)
                     {
                         Texture preview = AssetPreview.GetAssetPreview(asset) ?? AssetPreview.GetMiniThumbnail(asset);
                         if (preview != null) GUI.DrawTexture(new Rect(cell.x + 5, cell.y + 4, cell.width - 10, 65), preview, ScaleMode.ScaleToFit);
-                        if (AssetPreview.IsLoadingAssetPreview(asset.GetInstanceID())) Repaint();
                     }
                     GUI.Label(new Rect(cell.x + 5, cell.y + 3, 48, 18), "ID " + index, EditorStyles.helpBox);
                     var dragging = DragAndDrop.GetGenericData(PrototypeDragKey) as PrototypeDrag;
@@ -279,15 +443,28 @@ namespace MashBoxSDK.MapTools
             }
             m_ShowPrototypeAdvanced = EditorGUILayout.Foldout(m_ShowPrototypeAdvanced, "Advanced Prototype Settings", true);
             if (m_ShowPrototypeAdvanced) DrawPrototypeFields(selected, "m_Prefab", "m_Mesh", "m_Material");
+            terrain.GetDetailSourceMaterials(m_SelectedPrototype, m_DetailSourceMaterials);
+            bool grassArrayMaterial = m_DetailSourceMaterials.Exists(material => material != null && material.HasProperty("_GrassUseArrays"));
+            if (grassArrayMaterial) DrawGrassSubIdGrid(terrain);
             bool found = false;
             for (int i = 0; i < m_DensityDetailLayers.arraySize; i++)
                 found |= m_DensityDetailLayers.GetArrayElementAtIndex(i).FindPropertyRelative("m_PrototypeIndex").intValue == m_SelectedPrototype;
-            if (found) DrawDensityLayersWithFlood(terrain);
-            else if (selected.FindPropertyRelative("m_Kind").enumValueIndex == (int)MGTerrain.InstanceKind.Detail)
+            if (grassArrayMaterial)
+                m_ShowGrassLayerSettings = EditorGUILayout.Foldout(m_ShowGrassLayerSettings, "Grass Paint Layer Settings", true);
+            if (found && (!grassArrayMaterial || m_ShowGrassLayerSettings)) DrawDensityLayersWithFlood(terrain);
+            else if (!found && !grassArrayMaterial && selected.FindPropertyRelative("m_Kind").enumValueIndex == (int)MGTerrain.InstanceKind.Detail)
             {
                 using (new EditorGUI.DisabledScope(Application.isPlaying))
                     if (GUILayout.Button("Enable Density Painting")) AddEmptyDensityLayer(m_SelectedPrototype);
             }
+            using (new EditorGUI.DisabledScope(Application.isPlaying || serializedObject.isEditingMultipleObjects
+                || selected.FindPropertyRelative("m_Kind").enumValueIndex != (int)MGTerrain.InstanceKind.Detail))
+                if (GUILayout.Button(new GUIContent("Duplicate Detail and Maps",
+                    "Copies this prototype, its density layers and painted density/size maps. Prefab, mesh and material assets stay shared. Palette-generated layers become standalone copies.")))
+                {
+                    DuplicateSelectedDetail(terrain);
+                    GUIUtility.ExitGUI();
+                }
             using (new EditorGUI.DisabledScope(Application.isPlaying))
                 if (GUILayout.Button("Remove Selected Prototype...") && EditorUtility.DisplayDialog(
                     "Remove Terrain Prototype?", "Remove this prototype and its placed instances and density layers? Texture and prefab assets are kept. This can be undone.", "Remove", "Cancel"))

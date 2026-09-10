@@ -4,10 +4,11 @@
 // Shader Graph Custom Function (File): MGTerrainDetailData, float precision.
 // Do NOT also declare these reserved metadata names as Blackboard properties.
 #if defined(UNITY_DOTS_INSTANCING_ENABLED) && !defined(SHADERGRAPH_PREVIEW)
-UNITY_DOTS_INSTANCING_START(MGTerrainDetailMetadata)
+// BRG binds only BuiltinPropertyMetadata, MaterialPropertyMetadata, or UserPropertyMetadata.
+UNITY_DOTS_INSTANCING_START(UserPropertyMetadata)
     UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float4, _MGDetailInstance)
     UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float4, _MGDetailTable)
-UNITY_DOTS_INSTANCING_END(MGTerrainDetailMetadata)
+UNITY_DOTS_INSTANCING_END(UserPropertyMetadata)
 #elif !defined(SHADERGRAPH_PREVIEW)
 UNITY_INSTANCING_BUFFER_START(MGTerrainClassicDetailMetadata)
     UNITY_DEFINE_INSTANCED_PROP(float4, _MGDetailInstance)
@@ -59,6 +60,9 @@ void MGTerrainDetailFade_float(float InAlpha, float2 UV, out float OutAlpha, out
         float nearToMid = smoothstep(ranges.x - halfWidth, ranges.x + halfWidth, distanceToCamera);
         float midToFar = smoothstep(ranges.y - halfWidth, ranges.y + halfWidth, distanceToCamera);
         InstanceFade = lerp(lerp(nearCoverage, midCoverage, nearToMid), farCoverage, midToFar);
+        // Only the transition band needs per-pixel dithering.
+        [branch] if (InstanceFade >= 1) return;
+        [branch] if (InstanceFade <= 0) { clip(-1); return; }
         float2 cell = floor(UV * 1024);
         float noise = frac(sin(dot(cell, float2(12.9898, 78.233)) + dot(originWS.xz, float2(3.17, 7.13))) * 43758.5453);
         // Strictly inside (0,1): fully hidden/visible instances are exact.
@@ -76,6 +80,21 @@ void MGTerrainDetailFade_half(half InAlpha, half2 UV, out half OutAlpha, out hal
     InstanceFade = fade;
 }
 
+// Texture-array sampling needs only the instance slice, not the tint/wind table.
+void MGTerrainDetailSlice_float(float DefaultSlice, out float Slice)
+{
+    Slice = DefaultSlice;
+#if defined(UNITY_DOTS_INSTANCING_ENABLED) && !defined(SHADERGRAPH_PREVIEW)
+    if (UNITY_DOTS_INSTANCED_METADATA_NAME(float4, _MGDetailInstance) != 0)
+    {
+        float encoded = UNITY_ACCESS_DOTS_INSTANCED_PROP(float4, _MGDetailInstance).y;
+        if (encoded >= 1) Slice = floor(encoded) - 1;
+    }
+#elif !defined(SHADERGRAPH_PREVIEW)
+    float encoded = UNITY_ACCESS_INSTANCED_PROP(MGTerrainClassicDetailMetadata, _MGDetailInstance).y;
+    if (encoded >= 1) Slice = floor(encoded) - 1;
+#endif
+}
 void MGTerrainDetailData_float(out float DefinitionIndex, out float TextureSlice,
     out float4 Tint, out float WindMultiplier, out float RandomValue, out float HasDetailData)
 {
@@ -99,11 +118,19 @@ void MGTerrainDetailData_float(out float DefinitionIndex, out float TextureSlice
             Tint = asfloat(unity_DOTSInstanceData.Load4(address));
             float4 definition = asfloat(unity_DOTSInstanceData.Load4(address + 16));
             DefinitionIndex = index;
-            TextureSlice = definition.x;
+            TextureSlice = instance.y >= 1 ? floor(instance.y) - 1 : definition.x;
             WindMultiplier = definition.y;
-            RandomValue = instance.y;
+            RandomValue = frac(instance.y);
             HasDetailData = 1;
         }
+    }
+#elif !defined(SHADERGRAPH_PREVIEW)
+    float4 instance = UNITY_ACCESS_INSTANCED_PROP(MGTerrainClassicDetailMetadata, _MGDetailInstance);
+    if (instance.y > 0)
+    {
+        DefinitionIndex = instance.x;
+        TextureSlice = instance.y - 1;
+        HasDetailData = 1;
     }
 #endif
 }

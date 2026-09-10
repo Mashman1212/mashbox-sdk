@@ -1,8 +1,9 @@
 #ifndef MG_TERRAIN_DISTANT_MORPH_INCLUDED
 #define MG_TERRAIN_DISTANT_MORPH_INCLUDED
 
-// R16 uses 0 for missing surface, 1..65535 for normalized local Y.
-// Decode = (minimum, range, encoding: 1=R16/0=legacy RFloat, reserved).
+// Encoding 2: R16 normalized upward delta, including valid zero (no lift).
+// Encoding 1: legacy R16 uses 0 for missing surface, 1..65535 for local Y.
+// Decode = (minimum, range, encoding: 2=delta R16/1=absolute R16/0=absolute RFloat, reserved).
 // Filter valid samples manually so an empty pixel cannot pull a canopy downwards.
 float2 MGDistantHeight(UnityTexture2D map, float2 uv, float4 decode)
 {
@@ -16,10 +17,11 @@ float2 MGDistantHeight(UnityTexture2D map, float2 uv, float4 decode)
     {
         float h = LOAD_TEXTURE2D_LOD(map.tex, min(basePixel + int2(x,y), size - 1), 0).r;
         float w = (x == 0 ? 1-f.x : f.x) * (y == 0 ? 1-f.y : f.y);
-        bool valid = decode.z > .5 ? h > .5 / 65535.0 : h > -1e19 && h < 1e19;
+        bool valid = decode.z > 1.5 ? true : decode.z > .5 ? h > .5 / 65535.0 : h > -1e19 && h < 1e19;
         if (valid)
         {
-            if (decode.z > .5) h = decode.x + saturate((h * 65535.0 - 1.0) / 65534.0) * decode.y;
+            if (decode.z > 1.5) h *= decode.y;
+            else if (decode.z > .5) h = decode.x + saturate((h * 65535.0 - 1.0) / 65534.0) * decode.y;
             sum += h*w; weight += w;
         }
     }
@@ -44,8 +46,19 @@ void MGDistantSurfaceMorph_float(float3 PositionWS, float3 DisplacementWS, Unity
     if (sample.y == 0) return;
     // HDRP's Tessellation Displacement block expects a WORLD-space offset.
     float3 displacementOS = mul((float3x3)GetWorldToObjectMatrix(), DisplacementWS);
-    float raise = max(0, sample.x - (positionOS.y + displacementOS.y));
+    float targetOffset = HeightDecode.z > 1.5 ? sample.x : sample.x - positionOS.y;
+    float raise = max(0, targetOffset - displacementOS.y);
     Displacement += mul((float3x3)GetObjectToWorldMatrix(), float3(0, raise * Blend, 0));
+#endif
+}
+// Vertex Position is object-space; keep the morph off the tessellation displacement path.
+void MGDistantSurfaceVertexMorph_float(float3 PositionWS, float3 DisplacementWS, UnityTexture2D HeightMap,
+    float4 BoundsXZ, float Strength, float Start, float End, float4 HeightDecode, out float3 Displacement, out float Blend)
+{
+    MGDistantSurfaceMorph_float(PositionWS, DisplacementWS, HeightMap, BoundsXZ, Strength, Start, End,
+        HeightDecode, Displacement, Blend);
+#if !defined(SHADERGRAPH_PREVIEW)
+    Displacement = mul((float3x3)GetWorldToObjectMatrix(), Displacement);
 #endif
 }
 #endif

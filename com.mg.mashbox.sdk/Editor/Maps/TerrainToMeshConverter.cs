@@ -16,6 +16,7 @@ namespace MashBoxSDK.MapTools
     [Serializable]
     internal sealed class TerrainConversionOptions
     {
+        public MGTerrainWorld DestinationWorld;
         public bool ConvertMesh;
         public bool AddMeshCollider;
         public bool ExportSplatMaps;
@@ -106,6 +107,8 @@ namespace MashBoxSDK.MapTools
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
+            if (options.DestinationWorld != null && options.DestinationWorld.gameObject.scene != terrain.gameObject.scene)
+                throw new InvalidOperationException("The destination terrain world must be in the source terrain scene.");
             TerrainConversionSummary summary = Analyze(terrain);
             if (options.ConvertTrees && summary.TreeCount > MaxTreeGameObjects)
                 throw new InvalidOperationException($"Tree conversion is limited to {MaxTreeGameObjects:N0} serialized instances; this terrain contains {summary.TreeCount:N0}.");
@@ -117,6 +120,8 @@ namespace MashBoxSDK.MapTools
             Undo.RegisterCreatedObjectUndo(root, "Convert Terrain");
             SceneManager.MoveGameObjectToScene(root, terrain.gameObject.scene);
             CopyTransformAndParent(terrain.transform, root.transform);
+            if (options.DestinationWorld != null)
+                Undo.SetTransformParent(root.transform, options.DestinationWorld.transform, "Convert Terrain Into World");
 
             int skippedTrees = 0;
             long skippedDetails = 0;

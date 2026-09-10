@@ -47,6 +47,8 @@ namespace MashBoxSDK.MapTools
         [SerializeField] private MGTerrain.InstanceKind mgTerrainInstanceKind = MGTerrain.InstanceKind.Detail;
         [SerializeField] private bool paintMGTerrainDensityDetails;
         [SerializeField] private int mgTerrainDensityLayerIndex;
+        [SerializeField] private int mgGrassSubId;
+        [SerializeField] private bool mgGrassIdOnly;
 
         // --- Painter Settings ---
         private enum UVChannel { UV0 = 0, UV1 = 1, UV2 = 2, UV3 = 3 }
@@ -874,12 +876,21 @@ namespace MashBoxSDK.MapTools
                             string prototypeName = prototype != null && prototype.Prefab != null
                                 ? prototype.Prefab.name
                                 : prototype != null && prototype.Material != null ? prototype.Material.name : "Missing Prototype";
-                            layerNames[layerIndex] = $"{layerIndex}: {prototypeName}";
+                            layerNames[layerIndex] = $"{layerIndex}: {prototypeName}" + (layer != null && layer.GrassIdMap != null ? " / Population " + (layer.GrassPopulation == 0 ? "A" : "B") : layer != null && layer.UsesGrassArray ? " / Sub-ID " + layer.TextureSlice : "");
                         }
                         mgTerrainDensityLayerIndex = EditorGUILayout.Popup(
                             "Density Layer",
                             Mathf.Clamp(mgTerrainDensityLayerIndex, 0, layerNames.Length - 1),
                             layerNames);
+                        var selectedLayer = selectedTerrain.DensityDetailLayers[mgTerrainDensityLayerIndex];
+                        if (selectedLayer.GrassIdMap != null)
+                        {
+                            mgGrassSubId = EditorGUILayout.IntSlider("Paint Grass Sub-ID", mgGrassSubId, 0, 7);
+                            mgGrassIdOnly = EditorGUILayout.Toggle("Replace ID Only", mgGrassIdOnly);
+                        }
+                        else if (selectedLayer.UsesGrassArray)
+                            EditorGUILayout.HelpBox("Painting grass Sub-ID " + selectedLayer.TextureSlice + ". Choose another density layer to paint another slice; source textures are shared arrays.", MessageType.None);
+                        EditorGUILayout.HelpBox("Choose Population A or B in MG Terrain, then paint a Sub-ID. Each population shares one density map across all IDs.", MessageType.None);
                     }
                     else
                     {
@@ -2942,21 +2953,36 @@ namespace MashBoxSDK.MapTools
                 return;
             lastScatterTime = Time.realtimeSinceStartup;
 
+            MGTerrain sourceTerrain = Selection.activeGameObject != null
+                ? Selection.activeGameObject.GetComponentInParent<MGTerrain>()
+                : null;
             int layerIndex = Mathf.Clamp(mgTerrainDensityLayerIndex, 0, terrain.DensityDetailLayerCount - 1);
+            if (sourceTerrain != null && sourceTerrain != terrain)
+            {
+                layerIndex = MGTerrainEditor.FindWorldPaintLayer(sourceTerrain, mgTerrainDensityLayerIndex, terrain);
+                if (layerIndex < 0)
+                {
+                    painterStatusMessage = "This terrain has no unique matching detail layer and grass Sub-ID. Add the matching layer before painting here.";
+                    return;
+                }
+            }
             Texture2D densityMap = terrain.DensityDetailLayers[layerIndex].DensityMap;
             if (densityMap == null)
                 return;
             Undo.RecordObject(terrain, erase ? "Erase MG Terrain Detail Density" : "Paint MG Terrain Detail Density");
             Undo.RecordObject(densityMap, erase ? "Erase MG Terrain Detail Density" : "Paint MG Terrain Detail Density");
+            var idMap = terrain.DensityDetailLayers[layerIndex].GrassIdMap;
+            if (idMap != null) Undo.RegisterCompleteObjectUndo(idMap, "Paint Grass IDs");
             int magnitude = Mathf.Max(1, Mathf.RoundToInt(Mathf.Lerp(1f, 32f, scatterDensity) * Mathf.Clamp01(brushStrength)));
             int changedCells = terrain.PaintDensityDetailLayer(
                 layerIndex,
                 hit.point,
                 brushRadius,
                 erase ? -magnitude : magnitude,
-                1.5f);
+                1.5f, idMap != null ? mgGrassSubId : -1, mgGrassIdOnly);
             if (changedCells <= 0)
                 return;
+            if (idMap != null) EditorUtility.SetDirty(idMap);
             EditorUtility.SetDirty(densityMap);
             EditorUtility.SetDirty(terrain);
             SceneView.RepaintAll();

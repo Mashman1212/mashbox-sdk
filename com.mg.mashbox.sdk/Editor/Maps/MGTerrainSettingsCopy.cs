@@ -52,8 +52,8 @@ namespace MashBoxSDK.MapTools
 
         static string DescribeSetup(MGTerrain terrain)
         {
-            using var data = new SerializedObject(terrain);
-            return $"{data.FindProperty("m_Prototypes").arraySize} prototypes, {data.FindProperty("m_DensityDetailLayers").arraySize} detail layers, {data.FindProperty("m_DetailFoliagePalettes").arraySize} palettes";
+            // These counts do not require serializing the terrain's large instance/mesh data on every GUI event.
+            return $"{terrain.Prototypes.Count} prototypes, {terrain.DensityDetailLayerCount} detail layers, {terrain.DetailFoliagePalettes.Count} palettes";
         }
     }
 
@@ -192,7 +192,7 @@ namespace MashBoxSDK.MapTools
                 if (!child.Next(false)) break;
             }
         }
-        static void CopyValue(SerializedProperty a, SerializedProperty b)
+        internal static void CopyValue(SerializedProperty a, SerializedProperty b)
         {
             if (b == null) throw new InvalidOperationException("Missing destination setting: " + a.propertyPath);
             switch (a.propertyType)

@@ -89,6 +89,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal Material material;
             internal Prototype prototype;
             internal readonly List<Matrix4x4[]> matrixChunks = new List<Matrix4x4[]>();
+            internal readonly List<byte[]> grassSliceChunks = new List<byte[]>();
             internal bool forceNonInstanced;
             internal LightProbeUsage lightProbeUsage = LightProbeUsage.BlendProbes;
             internal ShadowCastingMode? shadowCastingOverride;
@@ -205,8 +206,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             UnityEditor.Undo.undoRedoPerformed += OnSurfaceTilesUndoRedo;
 #endif
             InitializeDetailSettingsIfNeeded();
-            RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
-            RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
+            RefreshWorldOwnership();
             InvalidateRenderCache();
             if (Application.isPlaying)
             {
@@ -220,6 +220,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnDisable()
         {
+            RefreshWorldOwnership();
 #if UNITY_EDITOR
             UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
 #endif
@@ -243,6 +244,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnRenderObject()
         {
+            if (m_World != null) return;
             RefreshSurfaceTiles();
             if (GraphicsSettings.currentRenderPipeline == null)
                 RenderInstances(Camera.current);
@@ -464,7 +466,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             RenderDensityDetails(camera, planes);
 #if UNITY_6000_0_OR_NEWER
-            UpdateTerrainOcclusion(camera);
+            if (!m_WorldDefersDraw) UpdateTerrainOcclusion(camera);
 #endif
         }
 

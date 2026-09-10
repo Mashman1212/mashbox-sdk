@@ -58,8 +58,21 @@ namespace MashBoxSDK.MapTools
         internal static event Action SplatUvChannelChanged;
         internal static event Action SplatPaintSettingsChanged;
         internal static event Action SculptModeChanged;
+        internal static event Action SculptableOnlyChanged;
         internal static event Action UvModeChanged;
         internal static event Action<MBEditorToolAction> ActionRequested;
+
+        internal static bool SculptableOnly
+        {
+            get => EditorPrefs.GetBool("MashBoxSDK.EditorTools.SculptableOnly", true);
+            set
+            {
+                if (SculptableOnly == value) return;
+                EditorPrefs.SetBool("MashBoxSDK.EditorTools.SculptableOnly", value);
+                SculptableOnlyChanged?.Invoke();
+                SceneView.RepaintAll();
+            }
+        }
 
         internal static MBEditorAuthoringMode Mode
         {

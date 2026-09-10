@@ -227,6 +227,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                    propertyName == "_FarRangeAppearnceNormalStrength" ||
                    propertyName == "_FarRangeAppearnceMapBlend" ||
                    propertyName == "_FarRangeAppearanceMapBlend" ||
+                   propertyName == "_FarRangeAppearanceBlendStart" ||
                    propertyName == "_FarRangeAppearnceMapLighten" ||
                    propertyName == "_FarRangeAppearanceMapLighten" ||
                    propertyName == "_FarRangeAppearanceMapHue" ||
@@ -769,6 +770,15 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             if (farRangeAppearanceBlend != null)
                 materialEditor.ShaderProperty(farRangeAppearanceBlend,
                     new GUIContent("Far Range Appearance Map Blend", "Blend value for this material's appearance map. Kept independent of the linked material."));
+            MaterialProperty farRangeAppearanceBlendStart = FindOptionalProperty("_FarRangeAppearanceBlendStart", properties);
+            if (farRangeAppearanceBlendStart != null)
+            {
+                EditorGUI.BeginChangeCheck();
+                materialEditor.ShaderProperty(farRangeAppearanceBlendStart,
+                    new GUIContent("Far Range Appearance Blend Start", "Camera distance in Unity units where the appearance blend starts. The existing transition spans 20 units. Default: 40. Independent of the linked material."));
+                if (EditorGUI.EndChangeCheck())
+                    farRangeAppearanceBlendStart.floatValue = Mathf.Max(0f, farRangeAppearanceBlendStart.floatValue);
+            }
             if (farRangeAppearanceLighten != null)
                 materialEditor.ShaderProperty(farRangeAppearanceLighten,
                     new GUIContent("Far Range Appearance Map Lighten", "Lighten value for this material's appearance map. Kept independent of the linked material."));

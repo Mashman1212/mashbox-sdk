@@ -140,7 +140,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             bool hadResult = m_OcclusionReady;
             m_OcclusionReady = false;
             if ((!m_GpuDetailFrustumCulling && !m_GpuTerrainOcclusion && !m_GpuRenderedDepthOcclusion) || m_OcclusionFailed
-                || !Application.isPlaying || !KeepAllDetailCellsResident || !m_FullResidentReady
+                || !Application.isPlaying || (!UsesWorldBudget && (!KeepAllDetailCellsResident || !m_FullResidentReady))
+                || !m_DetailBrgUsesGpuGeneration
                 || !m_IndirectDetailDrawsReady || m_DetailBrgVisibleCount == 0
                 || m_AppearanceCaptureCamera != null || camera.stereoEnabled || camera.orthographic) return;
             using var profile = s_TerrainOcclusion.Auto();

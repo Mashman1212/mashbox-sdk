@@ -172,6 +172,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] BatchRendererGroup m_DetailBrg;
         [NonSerialized] GraphicsBuffer m_DetailBrgInstanceBuffer;
         [NonSerialized] BatchID m_DetailBrgBatchId;
+        [NonSerialized] bool m_HasDetailBrgBatch;
         [NonSerialized] int m_DetailBrgCapacity;
         [NonSerialized] int m_DetailBrgVisibleCount;
         [NonSerialized] int m_DetailBrgLogicalCount;
@@ -387,7 +388,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 ? MeshRenderer.bounds
                 : new Bounds(transform.position, Vector3.one);
             bounds.Expand(Mathf.Max(2f, GetMaximumDenseDetailHeight() * 2f));
-            m_DetailBrg.SetGlobalBounds(bounds);
+            SetDetailBrgBounds(bounds);
             m_DetailBrgVisibleCount = destinationIndex;
             m_DetailBrgLogicalCount = submitted;
             m_DetailBrgUsesGpuGeneration = false;
@@ -653,6 +654,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool TryPrepareGpuGeneratedDensityDetailBrg(Camera camera, int budget, float nearScale, float distantScale)
         {
+            if (UsesWorldBudget && m_WorldReuseSelection && m_DetailBrgUsesGpuGeneration)
+                return UpdateResidentGpuVisibility(budget, nearScale, distantScale);
             if (KeepAllDetailCellsResident && m_FullResidentReady)
                 return UpdateResidentGpuVisibility(budget, nearScale, distantScale);
             bool keepAllResident = KeepAllDetailCellsResident;
@@ -896,7 +899,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
                 Bounds bounds = MeshRenderer != null ? MeshRenderer.bounds : new Bounds(transform.position, Vector3.one);
                 bounds.Expand(Mathf.Max(2f, GetMaximumDenseDetailHeight() * 2f));
-                m_DetailBrg.SetGlobalBounds(bounds);
+                SetDetailBrgBounds(bounds);
                 PrepareIndirectDetailVisibility(destination);
                 m_DetailBrgVisibleCount = destination;
                 m_DetailBrgLogicalCount = submitted;
@@ -972,6 +975,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         outputStart = (uint)(outputStart + selectedCursor),
                         layerIndex = (uint)chunk.layerIndex,
                         padding0 = (uint)spawn.count,
+                        padding1 = (uint)(spawn.slice + 1),
                         sizes = spawn.sizes
                     });
                 }
@@ -1136,7 +1140,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     group.matrices.Add(matrices[matrixIndex]);
                     var matrix = matrices[matrixIndex];
                     uint seed = Hash((uint)matrix.m03.GetHashCode() ^ (uint)matrix.m23.GetHashCode());
-                    group.shaderData.Add(new Vector4(layerIndex, Hash01(seed), (maximumInstances - remaining + matrixIndex + 1f) / Mathf.Max(1, population), fade ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f));
+                    int slice = chunkIndex < batch.grassSliceChunks.Count ? batch.grassSliceChunks[chunkIndex][matrixIndex] : m_DensityDetailLayers[layerIndex].TextureSlice;
+                    group.shaderData.Add(new Vector4(layerIndex, slice + 1 + Hash01(seed) * .999f, (maximumInstances - remaining + matrixIndex + 1f) / Mathf.Max(1, population), fade ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f));
                 }
                 remaining -= count;
             }
@@ -1148,7 +1153,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return true;
             try
             {
-                m_DetailBrg = new BatchRendererGroup(OnPerformDensityDetailBrgCulling, IntPtr.Zero);
+                m_BrgWorld = m_World;
+                m_DetailBrg = m_BrgWorld != null ? m_BrgWorld.AcquireRenderer(this)
+                    : new BatchRendererGroup(OnPerformDensityDetailBrgCulling, IntPtr.Zero);
                 return true;
             }
             catch (Exception exception)
@@ -1175,8 +1182,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
             {
                 if (m_DetailBrgInstanceBuffer != null)
                 {
-                    m_DetailBrg.RemoveBatch(m_DetailBrgBatchId);
+                    if (m_HasDetailBrgBatch) m_DetailBrg.RemoveBatch(m_DetailBrgBatchId);
+                    m_HasDetailBrgBatch = false;
+                    m_DetailBrgBatchId = default;
                     m_DetailBrgInstanceBuffer.Dispose();
+                    m_DetailBrgInstanceBuffer = null;
                 }
 
                 m_DetailBrgCapacity = Mathf.NextPowerOfTwo(Mathf.Max(256, requiredInstances));
@@ -1223,6 +1233,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     metadata[2] = new MetadataValue { NameID = Shader.PropertyToID("_MGDetailInstance"), Value = 0x80000000u | (uint)DetailDataAddress };
                     metadata[3] = new MetadataValue { NameID = Shader.PropertyToID("_MGDetailTable"), Value = (uint)DetailTableAddress };
                     m_DetailBrgBatchId = m_DetailBrg.AddBatch(metadata, m_DetailBrgInstanceBuffer.bufferHandle);
+                    m_HasDetailBrgBatch = true;
                 }
                 finally
                 {
@@ -1244,7 +1255,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             if (!m_DetailBrgMeshIds.TryGetValue(mesh, out BatchMeshID id))
             {
-                id = m_DetailBrg.RegisterMesh(mesh);
+                id = m_BrgWorld != null ? m_BrgWorld.RegisterMesh(mesh) : m_DetailBrg.RegisterMesh(mesh);
                 m_DetailBrgMeshIds.Add(mesh, id);
             }
             return id;
@@ -1254,7 +1265,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             if (!m_DetailBrgMaterialIds.TryGetValue(material, out BatchMaterialID id))
             {
-                id = m_DetailBrg.RegisterMaterial(material);
+                id = m_BrgWorld != null ? m_BrgWorld.RegisterMaterial(material) : m_DetailBrg.RegisterMaterial(material);
                 m_DetailBrgMaterialIds.Add(material, id);
             }
             return id;
@@ -1398,7 +1409,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
             LastRegeneratedDetailInstances = 0;
             if (m_DetailBrg != null)
             {
-                m_DetailBrg.Dispose();
+                if (m_BrgWorld != null)
+                    m_BrgWorld.ReleaseRenderer(this, m_DetailBrgBatchId, m_HasDetailBrgBatch,
+                        m_DetailBrgMeshIds.Keys, m_DetailBrgMaterialIds.Keys);
+                else m_DetailBrg.Dispose();
+                m_BrgWorld = null;
+                m_HasDetailBrgBatch = false;
                 m_DetailBrg = null;
             }
             if (m_DetailBrgInstanceBuffer != null)
