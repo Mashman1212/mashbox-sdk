@@ -5,7 +5,6 @@ using System.Linq;
 using System.Reflection;
 using MashBoxSDK.Maps.TerrainSystem;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -156,7 +155,7 @@ namespace MashBoxSDK.MapTools
             Debug.Log("MG Terrain World GPU ownership PASS: shared BRG, shared mesh/material registration, per-chunk buffer cleanup, neighbour retention and world disposal.");
         }
 
-        static unsafe void ValidateCommands(MGTerrainWorld world, MGTerrain[] chunks)
+        static void ValidateCommands(MGTerrainWorld world, MGTerrain[] chunks)
         {
             var registered = (IList)Get(world, "m_BrgChunks");
             Type groupType = typeof(MGTerrain).GetNestedType("BrgPreparedGroup", BindingFlags.NonPublic);
@@ -181,26 +180,7 @@ namespace MashBoxSDK.MapTools
                 {
                     var output = new BatchCullingOutput { drawCommands = commands };
                     typeof(MGTerrainWorld).GetMethod("Cull", Fields).Invoke(world, new object[] { null, context, output, IntPtr.Zero });
-                    var result = commands[0];
-                    try
-                    {
-                        int expected = view == BatchCullingViewType.Camera ? 4 : 2;
-                        Check(result.drawCommandCount == expected && result.drawRangeCount == expected, "Wrong shared command count.");
-                        Check(result.visibleInstanceCount == expected * 3, "Wrong shared visible count.");
-                        for (int i = 0; i < expected; i++)
-                        {
-                            Check(result.drawCommands[i].visibleOffset == i * 3, "Chunk visible offsets overlap.");
-                            Check(result.drawRanges[i].drawCommandsBegin == i, "Draw range references the wrong chunk.");
-                            for (int j = 0; j < 3; j++) Check(result.visibleInstances[i * 3 + j] == j, "Per-batch indices were incorrectly rebased.");
-                        }
-                    }
-                    finally
-                    {
-                        UnsafeUtility.Free(result.drawCommands, Allocator.TempJob);
-                        UnsafeUtility.Free(result.indirectDrawCommands, Allocator.TempJob);
-                        UnsafeUtility.Free(result.drawRanges, Allocator.TempJob);
-                        UnsafeUtility.Free(result.visibleInstances, Allocator.TempJob);
-                    }
+                    MGTerrainCommandValidation.ValidateAndRelease(commands[0], view == BatchCullingViewType.Camera ? 4 : 2);
                 }
                 finally { commands.Dispose(); }
             }

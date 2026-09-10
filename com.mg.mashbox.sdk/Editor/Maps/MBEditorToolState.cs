@@ -20,7 +20,7 @@ namespace MashBoxSDK.MapTools
     public enum MBEditorAuthoringCategory { Brush, Spline, Terrain, Mesh, UVInspector }
 
     public enum MBBrushMode { Decor, Painter, SplatMap }
-    public enum MBSculptMode { Displace, Smooth, Flatten, SeamFit = 4 }
+    public enum MBSculptMode { Displace, Smooth, Flatten, SeamFit = 4, MeshStamp = 5 }
     public enum MBUvHandleMode { MoveAndUv, SideOffset, UvScale }
     public enum MBEditorToolAction { CreateSpline, CreateLoftSpline }
     public enum MBSplatPaintMode { Color, TextureId }

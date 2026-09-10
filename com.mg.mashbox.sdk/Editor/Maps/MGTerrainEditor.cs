@@ -191,6 +191,7 @@ namespace MashBoxSDK.MapTools
                 if (GUILayout.Button("Select Terrain World")) Selection.activeGameObject = terrain.World.gameObject;
             }
             DrawSettingsCopy(terrain);
+            DrawTileAuthoring(terrain);
 
             DrawMappyToolLauncher(terrain);
 

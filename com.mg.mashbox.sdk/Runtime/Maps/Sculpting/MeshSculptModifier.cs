@@ -9,7 +9,7 @@ namespace MashBoxSDK.Maps.Sculpting
     [ExecuteAlways, DisallowMultipleComponent]
     public sealed class MeshSculptModifier : MonoBehaviour
     {
-        public enum SculptMode { Displace, Smooth, Flatten, Noise, SeamFit }
+        public enum SculptMode { Displace, Smooth, Flatten, Noise, SeamFit, MeshStamp }
         public enum StrokeSpace { World, TargetLocal }
 
         [Serializable]
@@ -277,7 +277,7 @@ namespace MashBoxSDK.Maps.Sculpting
         void ApplyStroke(Vector3[] vertices, Mesh mesh, Stroke stroke)
         {
             if (stroke == null || stroke.radius <= Mathf.Epsilon) return;
-            if (stroke.mode == SculptMode.SeamFit)
+            if (stroke.mode == SculptMode.SeamFit || stroke.mode == SculptMode.MeshStamp)
             {
                 if (stroke.seamVertexCount != vertices.Length || stroke.seamVertices == null) return;
                 foreach (SeamVertex sample in stroke.seamVertices)

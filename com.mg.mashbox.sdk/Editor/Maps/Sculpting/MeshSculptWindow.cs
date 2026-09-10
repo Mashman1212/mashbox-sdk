@@ -7,11 +7,12 @@ using UnityEngine;
 
 namespace MashBoxSDK.MapTools
 {
-    public sealed class MeshSculptWindow : EditorWindow
+    public sealed partial class MeshSculptWindow : EditorWindow
     {
         const string ActiveModifierSessionKey = "MashBoxSDK.MeshSculpt.ActiveModifier";
         static readonly float[] BrushInfluenceLevels = { 0.75f, 0.5f, 0.25f };
         static MeshSculptWindow s_ActiveSceneToolOwner;
+        bool m_ApplyingWorldDab;
 
         enum DirectionMode { SurfaceNormal, WorldUp, Custom }
 
@@ -166,24 +167,25 @@ namespace MashBoxSDK.MapTools
 
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Brush", EditorStyles.boldLabel);
-            int requestedIndex = GUILayout.Toolbar(IsSeamFit ? 3 : (int)m_Mode, new[] { "Displace", "Smooth", "Flatten", "Seam Fit" });
-            var requestedMode = requestedIndex == 3 ? MeshSculptModifier.SculptMode.SeamFit : (MeshSculptModifier.SculptMode)requestedIndex;
+            int requestedIndex = GUILayout.Toolbar(IsMeshStamp ? 4 : IsSeamFit ? 3 : (int)m_Mode, new[] { "Displace", "Smooth", "Flatten", "Seam Fit", "Mesh Stamp" });
+            var requestedMode = requestedIndex == 4 ? MeshSculptModifier.SculptMode.MeshStamp : requestedIndex == 3 ? MeshSculptModifier.SculptMode.SeamFit : (MeshSculptModifier.SculptMode)requestedIndex;
             if (requestedMode != m_Mode)
             {
                 ClearActiveModifier();
                 m_Mode = requestedMode;
                 MBEditorToolState.SculptMode = (MBSculptMode)m_Mode;
             }
-            if (!IsSeamFit)
+            if (!IsSeamFit && !IsMeshStamp)
                 m_StrokeSpace = (MeshSculptModifier.StrokeSpace)EditorGUILayout.EnumPopup(new GUIContent("Memory Space", "World stays at the same scene position. Target Local follows the sculpted object."), m_StrokeSpace);
             m_Radius = EditorGUILayout.Slider("Radius", m_Radius, 0.01f, 20f);
             m_Strength = m_Mode == MeshSculptModifier.SculptMode.Displace
                 ? EditorGUILayout.Slider("Strength", m_Strength, -2f, 2f)
                 : EditorGUILayout.Slider("Strength", Mathf.Abs(m_Strength), 0.01f, 1f);
-            m_Falloff = EditorGUILayout.Slider("Falloff", m_Falloff, 0.1f, 8f);
+            m_Falloff = EditorGUILayout.Slider("Falloff", m_Falloff, IsMeshStamp ? 0f : 0.1f, 8f);
             m_Spacing = EditorGUILayout.Slider("Stroke Spacing", m_Spacing, 0.05f, 1f);
 
-            if (IsSeamFit)
+            if (IsMeshStamp) DrawMeshStampSettings();
+            else if (IsSeamFit)
             {
                 EditorGUILayout.LabelField("Fit Direction", EditingSeamLoft ? "Loft to MG Terrain" : "MG Terrain to Loft");
                 m_SeamTargetRoot = (GameObject)EditorGUILayout.ObjectField(new GUIContent("Target Root", "Optional target mesh or parent. Empty uses MG Terrains when editing a loft, and lofts when editing terrain."), m_SeamTargetRoot, typeof(GameObject), true);
@@ -438,7 +440,9 @@ namespace MashBoxSDK.MapTools
                     ? Color.magenta
                     : previewMode == MeshSculptModifier.SculptMode.Flatten ? Color.yellow : Color.cyan;
             if (IsSeamFit && current.control && !current.shift) brushColor = new Color(1f, 0.4f, 0.2f);
-            DrawBrushFalloff(hit.point, hit.normal, brushColor);
+            DrawBrushFalloff(hit.point, previewMode == MeshSculptModifier.SculptMode.MeshStamp ? Vector3.up : hit.normal, brushColor);
+            if (previewMode == MeshSculptModifier.SculptMode.MeshStamp)
+                DrawMeshStampPreview(hit.point, current.control);
             MBEditorToolVisuals.DrawBrushAction(GetBrushAction(previewMode, current.control));
             sceneView.Repaint();
 
@@ -478,6 +482,7 @@ namespace MashBoxSDK.MapTools
                 case MeshSculptModifier.SculptMode.Smooth: return "Smooth";
                 case MeshSculptModifier.SculptMode.Noise: return "Noise";
                 case MeshSculptModifier.SculptMode.Flatten: return "Flatten";
+                case MeshSculptModifier.SculptMode.MeshStamp: return control ? "Mesh Stamp · Carve" : "Mesh Stamp";
                 case MeshSculptModifier.SculptMode.SeamFit:
                     if (control) return "Seam Fit · Lower";
                     if (EditingSeamLoft) return "Seam Fit · Fit Loft to Terrain";
@@ -767,6 +772,8 @@ namespace MashBoxSDK.MapTools
         static bool CanPickSculptSurface(MeshFilter surface)
         {
             if (!MBEditorToolState.SculptableOnly) return true;
+            var terrain = surface.GetComponentInParent<MGTerrain>();
+            if (terrain != null && terrain.World != null && terrain.MeshFilter == surface) return true;
             MeshSculptModifier modifier = ResolveSculptModifier(surface);
             return IsUsableSceneModifier(modifier) && modifier.Target == surface;
         }
@@ -857,12 +864,55 @@ namespace MashBoxSDK.MapTools
 
         void RecordStroke(RaycastHit hit, bool control, bool shift)
         {
+            var worldTerrain = m_Modifier.Target.GetComponentInParent<MGTerrain>();
+            if (!m_ApplyingWorldDab && worldTerrain != null && worldTerrain.World != null)
+            {
+                var active = m_Modifier;
+                var affected = new List<MGTerrain>();
+                foreach (var tile in worldTerrain.World.Chunks)
+                {
+                    if (tile == null || !tile.isActiveAndEnabled) continue;
+                    var bounds = MGTerrainTileAuthoring.BoundsOf(tile);
+                    float dx = Mathf.Max(bounds.min.x - hit.point.x, 0, hit.point.x - bounds.max.x);
+                    float dz = Mathf.Max(bounds.min.z - hit.point.z, 0, hit.point.z - bounds.max.z);
+                    if (dx * dx + dz * dz > m_Radius * m_Radius) continue;
+                    MGTerrainTileAuthoring.Validate(tile);
+                    affected.Add(tile);
+                }
+                m_ApplyingWorldDab = true;
+                try
+                {
+                    foreach (var tile in affected)
+                    {
+                        m_Modifier = MGTerrainTileAuthoring.Modifier(tile);
+                        // World tiles must retain X/Z so subsequent edits cannot open their borders.
+                        Undo.RecordObject(tile, "Sculpt Terrain Tiles");
+                        tile.HeightOnlySculpt = true;
+                        m_SeamBrush = null;
+                        RecordStroke(hit, control, shift);
+                        MeshSeamFitBrush.TrackUndo(m_Modifier);
+                    }
+                    MGTerrainTileAuthoring.JoinBrushEdges(affected, hit.point, m_Radius);
+                }
+                finally { m_Modifier = active; m_ApplyingWorldDab = false; m_SeamBrush = null; }
+                return;
+            }
             MeshSculptModifier.SculptMode strokeMode = GetStrokeMode(control, shift);
             Vector3 direction = m_DirectionMode == DirectionMode.WorldUp ? Vector3.up : m_DirectionMode == DirectionMode.Custom ? m_CustomDirection.normalized : hit.normal;
             float strength = control && !shift ? -m_Strength : m_Strength;
             var stroke = m_Modifier.CreateStroke(strokeMode,
-                strokeMode == MeshSculptModifier.SculptMode.SeamFit ? MeshSculptModifier.StrokeSpace.TargetLocal : m_StrokeSpace,
+                strokeMode == MeshSculptModifier.SculptMode.SeamFit || strokeMode == MeshSculptModifier.SculptMode.MeshStamp ? MeshSculptModifier.StrokeSpace.TargetLocal : m_StrokeSpace,
                 hit.point, direction, m_Radius, strength, m_Falloff);
+            if (strokeMode == MeshSculptModifier.SculptMode.MeshStamp)
+            {
+                if (!PrepareMeshStamp()) return;
+                var source = m_Modifier.Target.sharedMesh;
+                if (source == null || !source.isReadable) return;
+                stroke.seamVertexCount = source.vertexCount;
+                stroke.seamVertices = m_MeshStampBrush.Sample(m_Modifier.Target, hit.point, m_Radius,
+                    m_StampHeight, m_StampRotation, strength, m_Falloff);
+                if (stroke.seamVertices.Length == 0) return;
+            }
             if (strokeMode == MeshSculptModifier.SculptMode.SeamFit)
             {
                 bool editingLoft = EditingSeamLoft;
@@ -905,7 +955,7 @@ namespace MashBoxSDK.MapTools
             }
             m_StrokeModifiers.Add(m_Modifier);
             m_Modifier.AddStroke(stroke);
-            if (strokeMode == MeshSculptModifier.SculptMode.SeamFit) MeshSeamFitBrush.TrackUndo(m_Modifier);
+            if (strokeMode == MeshSculptModifier.SculptMode.SeamFit || strokeMode == MeshSculptModifier.SculptMode.MeshStamp) MeshSeamFitBrush.TrackUndo(m_Modifier);
             m_Modifier.ApplyLatestStrokePreview();
             EditorUtility.SetDirty(m_Modifier);
             m_LastStrokePosition = hit.point;
@@ -990,9 +1040,11 @@ namespace MashBoxSDK.MapTools
         {
             if (m_IsSculpting && m_Modifier != null)
             {
-                m_Modifier.FinalizeStrokePreview();
+                foreach (var modifier in m_StrokeModifiers)
+                    if (modifier != null) modifier.FinalizeStrokePreview();
                 RefreshSculptPickingCollider();
             }
+            m_StrokeModifiers.Clear();
             m_IsSculpting = false;
             m_SeamBrush = null;
             EndBrushAdjustment();

@@ -351,6 +351,7 @@ namespace MashBoxSDK.MapTools
             MBSmoothSculptToggle.Id,
             MBFlattenSculptToggle.Id,
             MBSeamFitSculptToggle.Id,
+            MBMeshStampSculptToggle.Id,
             MBSculptableOnlyToggle.Id,
             MBMoveUvToggle.Id,
             MBSideOffsetUvToggle.Id,
@@ -408,6 +409,7 @@ namespace MashBoxSDK.MapTools
             actionsContent.Add(new MBSmoothSculptToggle());
             actionsContent.Add(new MBFlattenSculptToggle());
             actionsContent.Add(new MBSeamFitSculptToggle());
+            actionsContent.Add(new MBMeshStampSculptToggle());
             actionsContent.Add(new MBSculptableOnlyToggle());
             actionsContent.Add(new MBMoveUvToggle());
             actionsContent.Add(new MBSideOffsetUvToggle());
@@ -1716,6 +1718,16 @@ namespace MashBoxSDK.MapTools
             MBSculptMode.SeamFit, "Seam Fit",
             "Fit MG Terrain to nearby mesh surfaces and blend edge normals.",
             "MashBox.SeamFit", "d_EditCollider") { }
+    }
+
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBMeshStampSculptToggle : MBSculptSubmodeToggle
+    {
+        public const string Id = "MashBox/Sculpt/MeshStamp";
+        public MBMeshStampSculptToggle() : base(
+            MBSculptMode.MeshStamp, "Mesh Stamp",
+            "Paint mesh shapes onto the surface. Configure the shape in Mesh Sculpt.",
+            "MashBox.Sculpt", "d_MeshFilter Icon") { }
     }
 
     public abstract class MBUvSubmodeToggle : EditorToolbarToggle
