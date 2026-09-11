@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+#if UNITY_EDITOR && UNITY_6000_0_OR_NEWER
 using System;
 using System.Collections;
 using System.Linq;

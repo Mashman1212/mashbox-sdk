@@ -66,7 +66,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 bool canStream = !Application.isPlaying || !m_UseBatchRendererGroup || IsDensityDetailStreamingCamera(camera);
                 m_WorldReuseSelection = UsesWorldBudget && Application.isPlaying && canStream
                     && !m_DetailRenderCacheDirty && CanReuseDensityDetailStreamingSet(camera);
-                bool outside = UsesWorldBudget && canStream && MeshRenderer != null
+                bool outside = UsesWorldBudget && canStream && !KeepAllDetailCellsResident && MeshRenderer != null
                     && MeshRenderer.bounds.SqrDistance(camera.transform.position) > unloadDistance * unloadDistance;
                 if (outside && !m_WorldDetailsSleeping)
                 {
@@ -98,10 +98,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
             finally { m_WorldDrawBudget = int.MaxValue; }
         }
 
+#if UNITY_6000_0_OR_NEWER
         void SetDetailBrgBounds(Bounds bounds)
         {
             if (m_BrgWorld != null) m_BrgWorld.SetChunkBounds(this, bounds);
             else m_DetailBrg.SetGlobalBounds(bounds);
         }
+#endif
     }
 }

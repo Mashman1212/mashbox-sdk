@@ -41,6 +41,32 @@ namespace MashBoxSDK.MapTools
             return match;
         }
 
+        internal static void SetWorldDetailVisibility(MGTerrain source, int sourceIndex, bool disabled)
+        {
+            var world = source.GetComponentInParent<MGTerrainWorld>();
+            if (world == null) { source.InvalidateRenderCache(); return; }
+            // Include inactive tiles; they must inherit visibility when enabled later.
+            foreach (var tile in world.GetComponentsInChildren<MGTerrain>(true))
+            {
+                if (tile.GetComponentInParent<MGTerrainWorld>() != world) continue;
+                int index = tile == source ? sourceIndex : FindWorldPaintLayer(source, sourceIndex, tile);
+                if (index < 0)
+                {
+                    Debug.LogWarning($"Detail visibility not applied to '{tile.name}': no unique matching detail layer.", tile);
+                    continue;
+                }
+                using var data = new SerializedObject(tile);
+                var layers = data.FindProperty("m_DensityDetailLayers");
+                layers.GetArrayElementAtIndex(index).FindPropertyRelative("m_RenderDisabled").boolValue = disabled;
+                data.ApplyModifiedProperties();
+                tile.InvalidateRenderCache();
+                EditorUtility.SetDirty(tile);
+                if (tile.gameObject.scene.IsValid())
+                    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(tile.gameObject.scene);
+            }
+            SceneView.RepaintAll();
+        }
+
         void PaintWorldNeighbours(MGTerrain terrain, Vector3 point, bool erase)
         {
             if (m_WorldPaintDelegate || terrain.World == null) return;
@@ -92,3 +118,5 @@ namespace MashBoxSDK.MapTools
     }
 }
 #endif
+
+

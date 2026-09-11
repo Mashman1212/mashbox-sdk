@@ -10,7 +10,7 @@ using UnityEngine.SceneManagement;
 namespace MashBoxSDK.MapTools
 {
     [CustomEditor(typeof(MGTerrainWorld))]
-    public sealed class MGTerrainWorldEditor : Editor
+    public sealed partial class MGTerrainWorldEditor : Editor
     {
         MGTerrain m_EditChunk;
         Editor m_ChunkEditor;
@@ -102,7 +102,7 @@ namespace MashBoxSDK.MapTools
         }
         void DrawScene(SceneView view)
         {
-            if (m_ShowChunk && m_ChunkEditor is MGTerrainEditor editor) editor.DrawWorldSceneGUI();
+            if ((m_PaintWorld || m_ShowChunk) && m_ChunkEditor is MGTerrainEditor editor) editor.DrawWorldSceneGUI();
         }
         public override void OnInspectorGUI()
         {
@@ -111,9 +111,11 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.LabelField("MG Terrain World", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("One renderer and overall detail budget. Child MG Terrain components retain their existing painted data and editing tools. Distant chunk detail resources are released automatically; surface meshes and colliders stay loaded.", MessageType.Info);
             DrawPropertiesExcluding(serializedObject, "m_Script");
-            serializedObject.ApplyModifiedProperties();
+            if (serializedObject.ApplyModifiedProperties()) world.ApplySharedQuality();
             EditorGUILayout.LabelField("Registered Chunks", world.Chunks.Count.ToString());
+#if UNITY_6000_0_OR_NEWER
             EditorGUILayout.LabelField("Shared Renderers", world.SharedRendererCount.ToString());
+#endif
             EditorGUILayout.LabelField("Submitted Details", world.LastSubmittedDetailInstances.ToString("N0"));
             using (new EditorGUI.DisabledScope(Application.isPlaying))
             {
@@ -124,6 +126,7 @@ namespace MashBoxSDK.MapTools
                 }
                 if (GUILayout.Button("Convert Selected Unity Terrains Into This World")) ConvertSelected(world);
             }
+            DrawWorldTools(world);
             EditorGUILayout.Space();
             foreach (var chunk in world.GetComponentsInChildren<MGTerrain>(true))
             {
@@ -145,7 +148,7 @@ namespace MashBoxSDK.MapTools
                         }
                 }
             }
-            if (m_EditChunk != null && m_EditChunk.World == world)
+            if (!m_PaintWorld && m_EditChunk != null && m_EditChunk.World == world)
             {
                 m_ShowChunk = EditorGUILayout.Foldout(m_ShowChunk, "Edit " + m_EditChunk.name, true);
                 if (m_ShowChunk)
@@ -183,3 +186,4 @@ namespace MashBoxSDK.MapTools
     }
 }
 #endif
+

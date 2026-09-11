@@ -14,6 +14,47 @@ namespace MashBoxSDK.MapTools
     public class MGBrushWindow : EditorWindow
     {
         static MGBrushWindow s_ActiveSceneToolOwner;
+        static MGBrushWindow s_DecorPaletteOwner;
+        Vector2 decorPaletteScroll;
+
+        void SyncDecorPalette()
+        {
+            if (s_DecorPaletteOwner == null)
+            {
+                // Recover an existing populated window before initializing the
+                // empty hidden brush created by Mappy.
+                s_DecorPaletteOwner = Resources.FindObjectsOfTypeAll<MGBrushWindow>()
+                    .Where(w => w.prefabPalette != null && w.prefabPalette.Count > 0)
+                    .OrderBy(w => (w.hideFlags & HideFlags.HideInHierarchy) != 0)
+                    .FirstOrDefault() ?? this;
+            }
+            if (s_DecorPaletteOwner.prefabPalette.Count == 0 && prefabPalette.Count > 0)
+            {
+                PublishDecorPalette();
+                return;
+            }
+            if (s_DecorPaletteOwner != this) CopyDecorPalette(s_DecorPaletteOwner);
+        }
+
+        void CopyDecorPalette(MGBrushWindow source)
+        {
+            prefabPalette = new List<GameObject>(source.prefabPalette);
+            selectedPrefabIndex = Mathf.Clamp(source.selectedPrefabIndex, 0, Mathf.Max(0, prefabPalette.Count - 1));
+            mixDecorPalette = source.mixDecorPalette;
+            decorReferenceRoot = source.decorReferenceRoot;
+        }
+
+        void PublishDecorPalette()
+        {
+            s_DecorPaletteOwner = this;
+            foreach (var window in Resources.FindObjectsOfTypeAll<MGBrushWindow>())
+            {
+                if (window != this) window.CopyDecorPalette(this);
+                window.Repaint();
+            }
+            SceneView.RepaintAll();
+        }
+
 
         private enum ToolMode { Decor, Painter, SplatMap }
         [SerializeField] private ToolMode currentMode = ToolMode.Decor;
@@ -403,39 +444,19 @@ namespace MashBoxSDK.MapTools
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
                     EditorGUILayout.LabelField("Decor Source", EditorStyles.boldLabel);
-                    tool.selectedPrefabIndex = Mathf.Clamp(tool.selectedPrefabIndex, 0, Mathf.Max(0, tool.prefabPalette.Count - 1));
-                    GameObject selected = tool.prefabPalette.Count > 0
-                        ? tool.prefabPalette[Mathf.Clamp(tool.selectedPrefabIndex, 0, tool.prefabPalette.Count - 1)] : null;
-                    var source = (GameObject)EditorGUILayout.ObjectField("Paint Object", selected, typeof(GameObject), true);
-                    if (source != selected)
-                    {
-                        if (source != null)
-                        {
-                            var asset = PrefabUtility.GetCorrespondingObjectFromSource(source);
-                            if (asset != null) source = asset;
-                            int index = tool.prefabPalette.IndexOf(source);
-                            if (index < 0) { index = tool.prefabPalette.Count; tool.prefabPalette.Add(source); }
-                            tool.selectedPrefabIndex = index;
-                        }
-                        else if (tool.prefabPalette.Count > 0) tool.prefabPalette[tool.selectedPrefabIndex] = null;
-                        tool.mixDecorPalette = false;
-                        tool.paintMGTerrainDensityDetails = false;
-                        tool.Repaint();
-                    }
+                    tool.SyncDecorPalette();
+                    EditorGUI.BeginChangeCheck();
+                    tool.DrawDecorPaletteControls(true);
+                    GameObject source = tool.prefabPalette.Count > 0
+                        ? tool.prefabPalette[tool.selectedPrefabIndex] : null;
                     if (source != null)
                     {
                         Texture preview = AssetPreview.GetAssetPreview(source) ?? AssetPreview.GetMiniThumbnail(source);
                         Rect rect = GUILayoutUtility.GetRect(0, 58, GUILayout.ExpandWidth(true));
                         if (preview != null) GUI.DrawTexture(rect, preview, ScaleMode.ScaleToFit);
-                        if (AssetPreview.IsLoadingAssetPreview(source.GetInstanceID())) SceneView.RepaintAll();
-                    }
-                    if (tool.prefabPalette.Count > 1)
-                    {
-                        string[] names = tool.prefabPalette.Select(p => p != null ? p.name : "(Empty)").ToArray();
-                        tool.selectedPrefabIndex = EditorGUILayout.Popup("Palette", Mathf.Clamp(tool.selectedPrefabIndex, 0, names.Length - 1), names);
-                        tool.mixDecorPalette = EditorGUILayout.Toggle("Mix Palette", tool.mixDecorPalette);
                     }
                     tool.DrawDecorReferenceRoot();
+                    if (EditorGUI.EndChangeCheck()) tool.PublishDecorPalette();
                 }
             }
             finally { EditorGUIUtility.labelWidth = previousLabelWidth; }
@@ -474,6 +495,7 @@ namespace MashBoxSDK.MapTools
 
         private void OnEnable()
         {
+            SyncDecorPalette();
             splatPartialPreviewUploadUnavailable = false;
             currentMode = (ToolMode)MBEditorToolState.BrushMode;
             ClearPaintTargetsForModeExit();
@@ -515,6 +537,7 @@ namespace MashBoxSDK.MapTools
 
         public void ActivateSceneTool()
         {
+            SyncDecorPalette();
             if (s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner != this)
                 s_ActiveSceneToolOwner.DeactivateSceneTool();
             s_ActiveSceneToolOwner = this;
@@ -579,7 +602,12 @@ namespace MashBoxSDK.MapTools
             brushStrength = EditorGUILayout.Slider("Brush Strength", brushStrength, 0.01f, 1f);
 
             if (currentMode == ToolMode.Decor)
+            {
+                SyncDecorPalette();
+                EditorGUI.BeginChangeCheck();
                 DrawDecorSettings();
+                if (EditorGUI.EndChangeCheck()) PublishDecorPalette();
+            }
             else if (currentMode == ToolMode.Painter)
                 DrawPainterSettings();
             else
@@ -908,27 +936,31 @@ namespace MashBoxSDK.MapTools
 
             EditorGUILayout.Space(5);
             DrawDecorReferenceRoot();
-            EditorGUILayout.LabelField("Prefab Palette", EditorStyles.boldLabel);
-            
-            SerializedObject so = new SerializedObject(this);
-            SerializedProperty paletteProp = so.FindProperty("prefabPalette");
-            DrawPrefabPalette(paletteProp);
-            so.ApplyModifiedProperties();
-
-            selectedPrefabIndex = prefabPalette.Count > 0
-                ? Mathf.Clamp(selectedPrefabIndex, 0, prefabPalette.Count - 1)
-                : 0;
-
-            if (prefabPalette.Count > 0)
-            {
-                selectedPrefabIndex = EditorGUILayout.IntSlider("Selected Prefab", selectedPrefabIndex, 0, prefabPalette.Count - 1);
-            }
-
-            mixDecorPalette = EditorGUILayout.Toggle("Mix Palette", mixDecorPalette);
+            DrawDecorPaletteControls(false);
             if (GUILayout.Button("Simulate & Settle (Physics)"))
             {
                 SimulatePhysics();
             }
+        }
+
+
+        void DrawDecorPaletteControls(bool compact)
+        {
+            using var so = new SerializedObject(this);
+            so.Update();
+            if (compact) decorPaletteScroll = EditorGUILayout.BeginScrollView(decorPaletteScroll, GUILayout.MaxHeight(200));
+            DrawPrefabPalette(so.FindProperty("prefabPalette"));
+            if (compact) EditorGUILayout.EndScrollView();
+            so.ApplyModifiedProperties();
+            selectedPrefabIndex = Mathf.Clamp(selectedPrefabIndex, 0, Mathf.Max(0, prefabPalette.Count - 1));
+            if (prefabPalette.Count > 0)
+            {
+                string[] names = prefabPalette.Select((p, i) => (i + 1) + ": " + (p != null ? p.name : "(Empty)")).ToArray();
+                selectedPrefabIndex = EditorGUILayout.Popup("Selected Prefab", selectedPrefabIndex, names);
+            }
+            mixDecorPalette = EditorGUILayout.Toggle("Mix Palette", mixDecorPalette);
+            if (mixDecorPalette)
+                EditorGUILayout.HelpBox("Scatter randomly chooses from the palette. Selected Prefab controls single placement and erasing.", MessageType.None);
         }
 
         private void DrawPrefabPalette(SerializedProperty paletteProperty)
@@ -1981,17 +2013,20 @@ namespace MashBoxSDK.MapTools
                     if (index < prefabPalette.Count)
                     {
                         selectedPrefabIndex = index;
+                        PublishDecorPalette();
                         Repaint();
                     }
                 }
                 if (e.keyCode == KeyCode.RightArrow)
                 {
                     selectedPrefabIndex = (selectedPrefabIndex + 1) % Mathf.Max(1, prefabPalette.Count);
+                    PublishDecorPalette();
                     Repaint();
                 }
                 if (e.keyCode == KeyCode.LeftArrow)
                 {
                     selectedPrefabIndex = (selectedPrefabIndex - 1 + prefabPalette.Count) % Mathf.Max(1, prefabPalette.Count);
+                    PublishDecorPalette();
                     Repaint();
                 }
             }
@@ -4499,3 +4534,4 @@ namespace MashBoxSDK.MapTools
         }
     }
 }
+

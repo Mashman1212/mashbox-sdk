@@ -117,6 +117,55 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, HideInInspector] Transform m_SurfaceColliderRoot;
         [SerializeField, HideInInspector] MeshCollider[] m_SurfaceColliderChunks = Array.Empty<MeshCollider>();
         public IReadOnlyList<MeshCollider> SurfaceColliderChunks => m_SurfaceColliderChunks;
+        [SerializeField, Tooltip("Use the saved terrain collider chunks in Play Mode. Terrains without valid chunks retain their master collider.")]
+        bool m_UseColliderChunksAtRuntime = true;
+
+        // No cooking or vertex reads here: these meshes were prepared while authoring.
+        // Empty hole chunks intentionally have no sharedMesh and must stay empty.
+        public bool TryUseSurfaceColliderChunks()
+        {
+            Mesh source = MeshFilter != null ? MeshFilter.sharedMesh : null;
+            if (source == null || m_SurfaceColliderChunks.Length == 0
+                || m_SurfaceColliderVertexMaps.Length != m_SurfaceColliderChunks.Length
+                || m_ColliderSourceVertexCount != source.vertexCount) return false;
+            HashSet<(int, int, int)> hiddenFaces = null;
+            for (int i = 0; i < m_SurfaceColliderChunks.Length; i++)
+            {
+                MeshCollider chunk = m_SurfaceColliderChunks[i];
+                SurfaceColliderVertexMap map = m_SurfaceColliderVertexMaps[i];
+                if (chunk == null || !chunk.gameObject.activeInHierarchy || map == null
+                    || map.collider != chunk || map.sourceIndices == null) return false;
+                Mesh mesh = chunk.sharedMesh;
+                if (mesh == null)
+                {
+                    mesh = map.holeMesh;
+                    if (!HasHoleData || mesh == null) return false;
+                    // holeMesh is retained for restoring faces and can still contain
+                    // the original indices. Validate against the saved hole mask.
+                    if (hiddenFaces == null)
+                    {
+                        hiddenFaces = new HashSet<(int, int, int)>();
+                        foreach (var sub in m_HoleSubMeshes)
+                            for (int face = 0; face < sub.hidden.Length; face++)
+                                if (sub.hidden[face]) hiddenFaces.Add(HoleTriangleKey(
+                                    sub.triangles[face * 3], sub.triangles[face * 3 + 1], sub.triangles[face * 3 + 2]));
+                    }
+                    int[] triangles = map.holeSourceTriangles;
+                    if (triangles == null || triangles.Length % 3 != 0) return false;
+                    for (int j = 0; j < triangles.Length; j += 3)
+                    {
+                        int a = triangles[j], b = triangles[j + 1], c = triangles[j + 2];
+                        if ((uint)a >= map.sourceIndices.Length || (uint)b >= map.sourceIndices.Length
+                            || (uint)c >= map.sourceIndices.Length || !hiddenFaces.Contains(HoleTriangleKey(
+                                map.sourceIndices[a], map.sourceIndices[b], map.sourceIndices[c]))) return false;
+                    }
+                }
+                if (mesh.vertexCount != map.sourceIndices.Length) return false;
+            }
+            foreach (MeshCollider chunk in m_SurfaceColliderChunks) chunk.enabled = true;
+            if (MeshCollider != null) MeshCollider.enabled = false;
+            return true;
+        }
         public bool HasSurfaceCollider
         {
             get
@@ -210,6 +259,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             InvalidateRenderCache();
             if (Application.isPlaying)
             {
+                if (m_UseColliderChunksAtRuntime && m_SurfaceColliderChunks.Length > 0
+                    && !TryUseSurfaceColliderChunks())
+                    Debug.LogWarning($"[MG Terrain] '{name}' could not activate its saved collider chunks. Rebuild child colliders; keeping the existing collision state.", this);
                 Debug.Log(
                     $"[MG Terrain Runtime] Enabled '{name}': draw={m_DrawInstances}, "
                     + $"densityLayers={DensityDetailLayerCount}, represented={RepresentedDensityDetailCount:N0}, "

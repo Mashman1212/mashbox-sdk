@@ -21,6 +21,29 @@ namespace MashBoxSDK.Maps.TerrainSystem
         float m_DetailDistance = 250f;
         [SerializeField, Min(0), Tooltip("Extra distance before releasing a chunk's detail resources.")]
         float m_UnloadMargin = 64f;
+        [SerializeField] MGTerrainWorldQuality m_Quality;
+        [SerializeField, HideInInspector] bool m_QualityInitialized;
+        [HideInInspector] public int CaptureResolution = 2048;
+        [HideInInspector] public float CaptureExposure = 10f;
+        [HideInInspector] public float CaptureDetailTilt;
+        [HideInInspector] public float DistantMeshSpacing = 2f;
+        public void ApplySharedQuality()
+        {
+            if ((!m_QualityInitialized || m_Quality == null) && m_Chunks.Count > 0 && m_Chunks[0] != null)
+            {
+                m_Quality = m_Chunks[0].CaptureWorldQuality();
+                m_QualityInitialized = true;
+            }
+            foreach (var chunk in m_Chunks) if (chunk != null) chunk.ApplyWorldQuality(m_Quality);
+        }
+        public void ApplyQualityPreset(MGTerrain.DetailQualityPreset preset)
+        {
+            if (m_Chunks.Count == 0) return;
+            m_Chunks[0].ApplyDetailQualityPreset(preset);
+            m_Quality = m_Chunks[0].CaptureWorldQuality();
+            m_QualityInitialized = true;
+            ApplySharedQuality();
+        }
         readonly List<MGTerrain> m_Chunks = new List<MGTerrain>();
         readonly List<MGTerrain> m_RenderChunks = new List<MGTerrain>();
         int m_BudgetFrame = -1, m_RemainingBuilds, m_RemainingUploads, m_FirstChunk;
@@ -43,11 +66,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             // Rebind while disabled, so children fall back to standalone or an outer world.
             foreach (var chunk in m_Chunks.ToArray())
                 if (chunk != null) chunk.RefreshWorldOwnership();
+#if UNITY_6000_0_OR_NEWER
             DisposeWorldRenderer();
+#endif
         }
 
         void OnValidate()
         {
+            ApplySharedQuality();
             foreach (var chunk in m_Chunks)
                 if (chunk != null) chunk.InvalidateRenderCache();
         }
@@ -65,6 +91,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
         internal void Register(MGTerrain chunk)
         {
             if (!m_Chunks.Contains(chunk)) m_Chunks.Add(chunk);
+            if (!m_QualityInitialized || m_Quality == null)
+            {
+                m_Quality = chunk.CaptureWorldQuality();
+                m_QualityInitialized = true;
+            }
+            chunk.ApplyWorldQuality(m_Quality);
         }
         internal void Unregister(MGTerrain chunk) => m_Chunks.Remove(chunk);
         internal bool TryBuildCell()
@@ -93,6 +125,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             if (m_Rendering || camera == null || camera.cameraType == CameraType.Preview) return;
             m_Rendering = true;
+            ApplySharedQuality();
             try
             {
                 // Edit-mode repaints are independent work opportunities; gameplay cameras share a frame budget.

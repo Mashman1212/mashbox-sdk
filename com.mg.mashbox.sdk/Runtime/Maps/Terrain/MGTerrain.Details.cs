@@ -283,7 +283,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
-        sealed class DetailLodState
+        struct DetailLodState
         {
             internal bool split;
             internal int densityLod;
@@ -306,7 +306,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal int geometryVersion;
             internal bool[] occupiedCells;
             internal int occupiedColumns;
-            internal readonly Dictionary<DetailChunkKey, Bounds> editorBounds = new Dictionary<DetailChunkKey, Bounds>();
+            internal readonly Dictionary<DetailChunkKey, Bounds> geometryBounds = new Dictionary<DetailChunkKey, Bounds>();
         }
         readonly Dictionary<int, FixedCandidateCache> m_FixedCandidateCaches = new Dictionary<int, FixedCandidateCache>();
         public int LastDetailCandidateBoundsBuilt { get; private set; }
@@ -1990,7 +1990,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (cache != null && !geometryUnchanged)
             {
                 cache.geometryVersion++;
-                cache.editorBounds.Clear();
+                cache.geometryBounds.Clear();
                 cache.occupiedCells = null;
                 // Painted R16 maps are readable. Scan once per invalidation, not once
                 // per camera repaint; empty cells need no bounds or candidate work.
@@ -2005,6 +2005,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
                                 cache.occupiedCells[(z / leafCellSize) * cache.occupiedColumns + x / leafCellSize] = true;
                 }
             }
+            // A fully resident grid is camera independent. While its one-time build is
+            // progressing, reuse the retained candidates instead of clearing and
+            // recreating the entire list whenever the camera crosses the refresh
+            // threshold. Visibility is evaluated by UpdateFullResidentVisibility once
+            // the population is ready; the world budget still limits construction.
+            if (geometryUnchanged && KeepAllDetailCellsResident && candidates.Count > 0)
+            {
+                return true;
+            }
             if (geometryUnchanged && cache.cameraPosition == cameraWorld && cache.distance == maximumDistance)
             {
                 cache.visibleSectors.Clear();
@@ -2017,6 +2026,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         && GeometryUtility.TestPlanesAABB(planes, c.bounds);
                     candidates[i] = new DetailCandidateChunk(c.firstX, c.firstZ, c.cellSize, c.densityLod, c.bounds, c.distance, visible, c.cachedChunk);
                 }
+                PrioritizeFixedDetailCandidates(candidates, layerIndex, width, height);
                 return true;
             }
             candidates.Clear();
@@ -2051,10 +2061,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
                 var sectorBoundsKey = new DetailChunkKey(layerIndex, sx, sz, sectorSize, 0);
                 Bounds sector;
-                if (Application.isPlaying || cache == null || !cache.editorBounds.TryGetValue(sectorBoundsKey, out sector))
+                if (cache == null || !cache.geometryBounds.TryGetValue(sectorBoundsKey, out sector))
                 {
                     sector = CalculateDetailChunkBounds(surfaceBounds, width, height, sectorSize, sx, sz, maximumHeight, yOffset, terrainMatrix, layer);
-                    if (!Application.isPlaying && cache != null) cache.editorBounds[sectorBoundsKey] = sector;
+                    if (cache != null) cache.geometryBounds[sectorBoundsKey] = sector;
                 }
                 if (maximumDistance > 0f && DetailBoundsDistanceSquared(sector, cameraWorld) > maximumDistanceSquared) continue;
                 cache?.sectors.Add(SectorKey(sx, sz), sector);
@@ -2070,13 +2080,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     if (cache != null)
                         m_DensityDetailCache.TryGetValue(new DetailChunkKey(layerIndex, firstX, firstZ, leafCellSize, 0), out existing);
                     Bounds bounds;
-                    if (!Application.isPlaying && cache != null && cache.editorBounds.TryGetValue(cellBoundsKey, out bounds)) { }
+                    if (cache != null && cache.geometryBounds.TryGetValue(cellBoundsKey, out bounds)) { }
                     else if (geometryUnchanged && existing != null && existing.fixedBoundsVersion == cache.geometryVersion) bounds = existing.worldBounds;
                     else
                     {
                         bounds = CalculateDetailChunkBounds(surfaceBounds, width, height, leafCellSize, firstX, firstZ, maximumHeight, yOffset, terrainMatrix, layer);
                         LastDetailCandidateBoundsBuilt++;
-                        if (!Application.isPlaying && cache != null) cache.editorBounds[cellBoundsKey] = bounds;
+                        if (cache != null) cache.geometryBounds[cellBoundsKey] = bounds;
                         if (existing != null)
                         {
                             existing.worldBounds = bounds;
@@ -2103,6 +2113,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 cache.width = width; cache.height = height; cache.distance = maximumDistance;
             }
             if (cache == null) return false;
+            PrioritizeFixedDetailCandidates(candidates, layerIndex, width, height);
+            return true;
+        }
+
+        void PrioritizeFixedDetailCandidates(List<DetailCandidateChunk> candidates, int layerIndex, int width, int height)
+        {
             // Only new cells compete for the construction budget. Sorting every
             // existing cell because a few new cells entered the radius is wasted work.
             m_MissingFixedDetailCandidates.Clear();
@@ -2118,9 +2134,26 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailCandidateComparer.layer = layerIndex;
             m_DetailCandidateComparer.width = width;
             m_DetailCandidateComparer.height = height;
-            m_MissingFixedDetailCandidates.Sort(m_DetailCandidateComparer.comparison);
+            // Only the nearest build-budget prefix needs ordering. World-budgeted
+            // tiles can have thousands of missing cells but build only two this pass.
+            bool bounded = Application.isPlaying && m_UseBatchRendererGroup
+                && !KeepAllDetailCellsResident && m_AppearanceCaptureCamera == null
+                && (UsesWorldBudget || !m_PrewarmFixedDetailCells || !m_DetailNeedsInitialPrewarm);
+            int prefix = Mathf.Min(m_MissingFixedDetailCandidates.Count, Mathf.Max(1, m_MaxDetailChunksBuiltPerLayerPerFrame));
+            if (!bounded || prefix >= 16)
+                m_MissingFixedDetailCandidates.Sort(m_DetailCandidateComparer.comparison);
+            else
+                for (int i = 0; i < prefix; i++)
+                {
+                    int nearest = i;
+                    for (int j = i + 1; j < m_MissingFixedDetailCandidates.Count; j++)
+                        if (m_DetailCandidateComparer.Compare(m_MissingFixedDetailCandidates[j], m_MissingFixedDetailCandidates[nearest]) < 0)
+                            nearest = j;
+                    var next = m_MissingFixedDetailCandidates[nearest];
+                    m_MissingFixedDetailCandidates[nearest] = m_MissingFixedDetailCandidates[i];
+                    m_MissingFixedDetailCandidates[i] = next;
+                }
             candidates.AddRange(m_MissingFixedDetailCandidates);
-            return true;
         }
 
         int GetFixedDetailCellDensityLod(
@@ -2167,6 +2200,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 state.densityLod = distance < nearEnd - hysteresis ? 0 : 1;
             }
             state.lastUsedTick = m_DetailRenderTick;
+            m_DetailLodStates[key] = state;
             return state.densityLod;
         }
 
@@ -2327,6 +2361,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 state.split = true;
             }
             state.lastUsedTick = m_DetailRenderTick;
+            m_DetailLodStates[key] = state;
             return state.split;
         }
 

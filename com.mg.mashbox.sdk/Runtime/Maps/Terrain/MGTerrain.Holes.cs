@@ -170,8 +170,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 bool differs = visible.Count != m_HoleColliderCurrentTriangles.Count;
                 for (int i = 0; !differs && i < visible.Count; i++)
                     differs = visible[i] != m_HoleColliderCurrentTriangles[i];
-                if (!differs) continue;
-                mesh.SetTriangles(visible, 0, false);
+                // The saved mesh can be current while the collider reference was
+                // cleared by a previous hole edit. Restore that reference too.
+                if (!differs && ((visible.Count == 0 && map.collider.sharedMesh == null)
+                    || (visible.Count > 0 && map.collider.sharedMesh == mesh))) continue;
+                if (differs) mesh.SetTriangles(visible, 0, false);
                 map.collider.sharedMesh = null;
                 if (visible.Count > 0) map.collider.sharedMesh = mesh;
 #if UNITY_EDITOR

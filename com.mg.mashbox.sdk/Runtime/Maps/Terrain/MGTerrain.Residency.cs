@@ -10,7 +10,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool m_KeepAllDetailCellsResident = true;
         [SerializeField, Tooltip("Experimental: spread visibility scans across frames. Retains extra instances around the camera, increasing render and shadow work. Leave disabled unless full-frame profiling shows a benefit.")]
         bool m_AmortizeResidentVisibility = false;
-        bool KeepAllDetailCellsResident => !UsesWorldBudget && m_KeepAllDetailCellsResident && ShouldBuildGpuProceduralDetailCells();
+        // Residency is a storage policy, not a budgeting policy. World-owned terrains
+        // still use the world's visible-instance/build budgets, but opting into full
+        // residency must prevent camera motion from reconstructing the candidate grid.
+        bool KeepAllDetailCellsResident => m_KeepAllDetailCellsResident && ShouldBuildGpuProceduralDetailCells();
         bool m_FullResidentReady;
         Camera m_CachedGameplayCamera;
         Matrix4x4 m_ResidentProjection;

@@ -221,9 +221,12 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.HelpBox("Paint and sculpt the whole terrain as usual. Render tiles share the master mesh's UVs, vertex colors and materials, and update with edits.", MessageType.Info);
                 DrawSurfaceColliders(terrain);
                 EditorGUILayout.PropertyField(m_HeightOnlySculpt);
-                EditorGUILayout.PropertyField(m_DrawInstances);
-                if (m_DrawInstances.boolValue)
-                    EditorGUILayout.PropertyField(m_DrawInstancesInEditMode);
+                using (new EditorGUI.DisabledScope(terrain.World != null))
+                {
+                    EditorGUILayout.PropertyField(m_DrawInstances);
+                    if (m_DrawInstances.boolValue)
+                        EditorGUILayout.PropertyField(m_DrawInstancesInEditMode);
+                }
 
                 EditorGUILayout.Space(6f);
                 EditorGUILayout.LabelField("Paint Control Maps", EditorStyles.boldLabel);
@@ -231,6 +234,9 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.PropertyField(m_ControlMap2);
 
                 DrawDetailFoliagePalettes(terrain);
+                if (terrain.World != null) EditorGUILayout.HelpBox("Quality is controlled by the parent MG Terrain World.", MessageType.Info);
+                using (new EditorGUI.DisabledScope(terrain.World != null))
+                {
                 DrawDetailQualityPresets(terrain);
                 DrawMemoryUsage(terrain);
                 EditorGUILayout.Slider(m_OverallDetailDensity, 0f, 1f,
@@ -324,6 +330,7 @@ namespace MashBoxSDK.MapTools
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("m_GpuRenderedDepthOcclusion"), new GUIContent("GPU Rendered Depth Occlusion (HDRP)", "Current-frame depth from opaque scene objects, including cubes, rocks and lofts. Adds a depth pass; benchmark on/off."));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("m_DetailOcclusionPadding"), new GUIContent("Culling Bounds Padding (m)", "World-space margin for wind and shader displacement beyond mesh bounds. Increase if foliage clips."));
                         EditorGUILayout.HelpBox("Optional GPU culling affects the gameplay camera only; shadow draws stay unchanged. Terrain mode uses solid hills/banks. Rendered Depth includes opaque scene geometry and adds a depth pass; measure its cost. No bake required. All optional toggles off restores the baseline. Cell colors show CPU selection, not GPU survivors.", MessageType.None);
+#if UNITY_6000_0_OR_NEWER
                         if (Application.isPlaying)
                         {
                             EditorGUILayout.LabelField("Optional GPU Culling", ((MGTerrain)target).IsGpuDetailCullingActive ? "Active" : "Off / bypassed");
@@ -332,6 +339,7 @@ namespace MashBoxSDK.MapTools
                             if (GUILayout.Button("Measure GPU Culling")) ((MGTerrain)target).MeasureGpuCulling();
                             EditorGUILayout.LabelField("GPU snapshot", ((MGTerrain)target).GpuCullingMeasurement, EditorStyles.wordWrappedLabel);
                         }
+#endif
                     }
                     using (new EditorGUI.DisabledScope(keepAllResident.boolValue && m_UseGpuProceduralDetailGeneration.boolValue))
                     {
@@ -417,6 +425,7 @@ namespace MashBoxSDK.MapTools
                 }
 
                 EditorGUILayout.Space();
+                }
                 EditorGUILayout.LabelField("Clear Details Under Lofts", EditorStyles.boldLabel);
                 m_LoftEdgeWidth = EditorGUILayout.Slider(new GUIContent("Edge Feather (Metres)", "Positive feathers outside the loft; negative feathers inside, preserving grass near its edge. Reapply from the original map to restore previously removed grass."), m_LoftEdgeWidth, -10f, 10f);
                 m_LoftEdgeVariation = EditorGUILayout.Slider("Edge Variation", m_LoftEdgeVariation, 0f, 1f);
@@ -673,6 +682,7 @@ namespace MashBoxSDK.MapTools
         void DrawSurfaceColliders(MGTerrain terrain)
         {
             EditorGUILayout.LabelField("Surface Collision", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("m_UseColliderChunksAtRuntime"), new GUIContent("Use Chunks At Runtime"));
             m_ColliderCellSize = EditorGUILayout.Slider("Collider Cell Size (Metres)", m_ColliderCellSize, 10f, 200f);
             using (new EditorGUI.DisabledScope(Application.isPlaying))
             {
@@ -843,7 +853,13 @@ namespace MashBoxSDK.MapTools
                 bool enabled = EditorGUILayout.ToggleLeft(
                     new GUIContent($"Layer {index + 1}: {name}", "Enable rendering for this detail layer. Turning it off preserves its painted density and size maps. Works in Edit and Play modes."),
                     !disabled.boolValue);
-                if (EditorGUI.EndChangeCheck()) disabled.boolValue = !enabled;
+                if (EditorGUI.EndChangeCheck())
+                {
+                    disabled.boolValue = !enabled;
+                    serializedObject.ApplyModifiedProperties();
+                    SetWorldDetailVisibility(terrain, index, !enabled);
+                    serializedObject.Update();
+                }
                 bool remove;
                 using (new EditorGUI.DisabledScope(Application.isPlaying || serializedObject.isEditingMultipleObjects))
                     remove = GUILayout.Button(new GUIContent("Remove", "Remove this paint layer from the terrain. Its map assets are kept; Undo restores the layer."), GUILayout.Width(65));
@@ -1017,7 +1033,7 @@ namespace MashBoxSDK.MapTools
         }
 
 
-        void CaptureTerrainAppearance(MGTerrain terrain, bool bakeDistant = false)
+        void CaptureTerrainAppearance(MGTerrain terrain, bool bakeDistant = false, string worldOutputPath = null)
         {
             if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null || !(RenderPipelineManager.currentPipeline is HDRenderPipeline))
             { EditorUtility.DisplayDialog("Terrain Capture", "An active HDRP pipeline and a terrain mesh are required.", "OK"); return; }
@@ -1046,7 +1062,7 @@ namespace MashBoxSDK.MapTools
             string folderPreference = "MashBox.MGTerrain.AppearanceCapture.LastFolder." + Application.dataPath;
             string captureFolder = EditorPrefs.GetString(folderPreference, "Assets");
             if (!AssetDatabase.IsValidFolder(captureFolder)) captureFolder = "Assets";
-            string path = bakeDistant ? null : MGTerrainAppearanceCaptureAssets.ReusablePath(assignedColour, terrain.name);
+            string path = worldOutputPath ?? (bakeDistant ? null : MGTerrainAppearanceCaptureAssets.ReusablePath(assignedColour, terrain.name));
             if (string.IsNullOrEmpty(path))
             {
                 path = EditorUtility.SaveFilePanelInProject(bakeDistant ? "Save Distant Surface Appearance" : "Save Terrain Appearance PNG", MGTerrainAppearanceCaptureAssets.WithTerrainPrefix(bakeDistant ? "TerrainDistantSurface" : "TerrainAppearance", terrain.name), "png", bakeDistant ? "Choose the output location. A new set of distant surface assets will be created." : "Choose the appearance PNG. It will be assigned to the terrain material and reused on future captures.", captureFolder);
@@ -1056,7 +1072,7 @@ namespace MashBoxSDK.MapTools
                 EditorPrefs.SetString(folderPreference, System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
             }
             if (bakeDistant) path = AssetDatabase.GenerateUniqueAssetPath(path);
-            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(bakeDistant ? null : assignedNormal, path, terrain.name) : null;
+            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(bakeDistant || worldOutputPath != null ? null : assignedNormal, path, terrain.name) : null;
             int resolution = m_FarBakeResolution;
             int tiles = Mathf.NextPowerOfTwo(Mathf.Max(4, Mathf.CeilToInt(Mathf.Max(metresX, metresZ) / 48f)));
             if (tiles > 64)
@@ -2484,3 +2500,4 @@ namespace MashBoxSDK.MapTools
 }
 
 #endif
+

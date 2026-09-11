@@ -39,6 +39,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, HideInInspector] int m_ColliderSourceVertexCount;
 #if UNITY_EDITOR
         [NonSerialized] int m_SurfaceMeshDirtyCount;
+#if UNITY_6000_0_OR_NEWER
         static readonly HashSet<MGTerrain> s_PickableTerrains = new HashSet<MGTerrain>();
         static Material s_SurfacePickingMaterial;
 
@@ -89,6 +90,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return owners.Count == 0 ? UnityEditor.RenderPickingResult.NoOperation
                 : new UnityEditor.RenderPickingResult(owners.Count, index => owners[index]);
         }
+#endif
 #endif
 
         sealed class SurfaceTile
@@ -227,7 +229,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_SurfaceTiles.Add(tile);
 #if UNITY_EDITOR
                 UnityEditor.SceneVisibilityManager.instance.DisablePicking(child, true);
+#if UNITY_6000_0_OR_NEWER
                 s_PickableTerrains.Add(this);
+#endif
 #endif
             }
             m_TiledSource = source;
@@ -442,6 +446,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (!Application.isPlaying) UnityEditor.EditorUtility.SetDirty(mesh);
 #endif
             }
+            // Seam sculpting temporarily uses the master. Once the saved chunks
+            // have been refreshed, hand collision back to them (including holes).
+            TryUseSurfaceColliderChunks();
             Physics.SyncTransforms();
         }
 
@@ -454,7 +461,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             {
                 if (tile.renderer != null)
                 {
-#if UNITY_EDITOR
+#if UNITY_EDITOR && UNITY_6000_0_OR_NEWER
                     s_PickableTerrains.Remove(this);
 #endif
                     tile.renderer.enabled = false;

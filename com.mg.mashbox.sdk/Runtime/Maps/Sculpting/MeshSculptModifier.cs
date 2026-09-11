@@ -9,7 +9,7 @@ namespace MashBoxSDK.Maps.Sculpting
     [ExecuteAlways, DisallowMultipleComponent]
     public sealed class MeshSculptModifier : MonoBehaviour
     {
-        public enum SculptMode { Displace, Smooth, Flatten, Noise, SeamFit, MeshStamp }
+        public enum SculptMode { Displace, Smooth, Flatten, Noise, SeamFit, MeshStamp, SetHeight }
         public enum StrokeSpace { World, TargetLocal }
 
         [Serializable]
@@ -23,6 +23,8 @@ namespace MashBoxSDK.Maps.Sculpting
             public float strength = 0.1f;
             [Min(0.01f)] public float falloff = 2f;
             public int noiseSeed;
+            public float targetHeight;
+            [Range(1, 16)] public int smoothIterations = 1;
             // Seam fitting is baked at paint time. Sparse local deltas and normal
             // samples keep replay independent of target loft edits or deletion.
             public int seamVertexCount;
@@ -276,6 +278,12 @@ namespace MashBoxSDK.Maps.Sculpting
 
         void ApplyStroke(Vector3[] vertices, Mesh mesh, Stroke stroke)
         {
+            int passes = stroke.mode == SculptMode.Smooth ? Mathf.Clamp(stroke.smoothIterations, 1, 16) : 1;
+            for (int pass = 0; pass < passes; pass++) ApplyStrokePass(vertices, mesh, stroke);
+        }
+
+        void ApplyStrokePass(Vector3[] vertices, Mesh mesh, Stroke stroke)
+        {
             if (stroke == null || stroke.radius <= Mathf.Epsilon) return;
             if (stroke.mode == SculptMode.SeamFit || stroke.mode == SculptMode.MeshStamp)
             {
@@ -301,11 +309,14 @@ namespace MashBoxSDK.Maps.Sculpting
             for (int i = 0; i < vertices.Length; i++)
             {
                 Vector3 world = targetTransform.TransformPoint(vertices[i]);
-                float distance = Vector3.Distance(world, center);
+                float distance = stroke.mode == SculptMode.SetHeight
+                    ? new Vector2(world.x - center.x, world.z - center.z).magnitude : Vector3.Distance(world, center);
                 if (distance >= stroke.radius) continue;
                 float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff);
 
-                if (stroke.mode == SculptMode.Displace)
+                if (stroke.mode == SculptMode.SetHeight)
+                    world.y = Mathf.Lerp(world.y, stroke.targetHeight, Mathf.Clamp01(Mathf.Abs(stroke.strength) * influence));
+                else if (stroke.mode == SculptMode.Displace)
                     world += direction * (stroke.strength * influence);
                 else if (stroke.mode == SculptMode.Noise)
                     world += direction * (SignedNoise(stroke.noiseSeed, i) * Mathf.Abs(stroke.strength) * influence);
@@ -345,7 +356,14 @@ namespace MashBoxSDK.Maps.Sculpting
                 float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff);
                 Vector3 vertex = vertices[index];
 
-                if (stroke.mode == SculptMode.Displace)
+                if (stroke.mode == SculptMode.SetHeight)
+                {
+                    Vector3 world = targetTransform.TransformPoint(vertex);
+                    float yScale = targetTransform.TransformVector(Vector3.up).y;
+                    if (Mathf.Abs(yScale) > 0.00001f)
+                        vertex.y += (stroke.targetHeight - world.y) / yScale * Mathf.Clamp01(Mathf.Abs(stroke.strength) * influence);
+                }
+                else if (stroke.mode == SculptMode.Displace)
                     vertex.y += localStrength * influence;
                 else if (stroke.mode == SculptMode.Noise)
                     vertex.y += SignedNoise(stroke.noiseSeed, index) * Mathf.Abs(localStrength) * influence;
@@ -454,3 +472,5 @@ namespace MashBoxSDK.Maps.Sculpting
         }
     }
 }
+
+
