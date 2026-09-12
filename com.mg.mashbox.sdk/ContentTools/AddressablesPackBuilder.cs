@@ -305,6 +305,7 @@ namespace MashBoxSDK.ContentTools
             // is different. Give each pack a stable identity of its own.
             MonoScriptBundleNaming previousMonoScriptBundleNaming = settings.MonoScriptBundleNaming;
             string previousMonoScriptBundleCustomNaming = settings.MonoScriptBundleCustomNaming;
+            bool previousUniqueBundleIds = settings.UniqueBundleIds;
             string monoScriptBundlePrefix =
                 $"mashbox_{Hash128.Compute(def.PackName.Trim().ToLowerInvariant())}";
 
@@ -326,6 +327,11 @@ namespace MashBoxSDK.ContentTools
             {
                 settings.MonoScriptBundleNaming = MonoScriptBundleNaming.Custom;
                 settings.MonoScriptBundleCustomNaming = monoScriptBundlePrefix;
+                // The external filename alone is not enough: Unity rejects two loaded
+                // bundles when their embedded bundle IDs match. Since every content pack
+                // is an independently loadable catalog, give all of its generated bundles
+                // unique embedded IDs as well. This applies only to newly exported packs.
+                settings.UniqueBundleIds = true;
                 EditorUtility.SetDirty(settings);
                 AssetDatabase.SaveAssets();
 
@@ -444,6 +450,8 @@ namespace MashBoxSDK.ContentTools
 
                 settings.MonoScriptBundleNaming = previousMonoScriptBundleNaming;
                 settings.MonoScriptBundleCustomNaming = previousMonoScriptBundleCustomNaming;
+                settings.UniqueBundleIds = previousUniqueBundleIds;
+                EditorUtility.SetDirty(settings);
 
                 EditorBuildSettings.scenes = originalScenes;
                 
