@@ -32,6 +32,8 @@ namespace MashBoxSDK.ContentTools
     {
         private const string JsonCatalogScriptingDefine = "ENABLE_JSON_CATALOG";
         private const string PendingBuildQueueKey = "MashBoxSDK.PendingJsonCatalogPackBuilds";
+        private const string LegacyAddressablesVersion = "1.22.3";
+        private const string ProjectXAddressablesVersion = "2.11.1";
 
         [InitializeOnLoadMethod]
         private static void ConfigureJsonCatalogOnEditorLoad()
@@ -140,6 +142,13 @@ namespace MashBoxSDK.ContentTools
         public static void BuildPack(ContentPackDefinition def, BuildOptions opts)
         {
             if (def == null) { Debug.LogError("ContentPackDefinition is null"); return; }
+
+            if (!ValidateAddressablesVersionForTarget(def, out string versionError))
+            {
+                Debug.LogError(versionError, def);
+                EditorUtility.DisplayDialog("Wrong Addressables Version", versionError, "OK");
+                return;
+            }
 
             var settings = AddressableAssetSettingsDefaultObject.Settings;
             if (settings == null) { Debug.LogError("Addressables settings not found."); return; }
@@ -489,6 +498,64 @@ namespace MashBoxSDK.ContentTools
                     "[AddressablesPackBuilder] Enabled JSON catalog output for MashBox content packs." +
                     (changedDefine ? " Unity will recompile scripts to activate the JSON catalog serializer." : ""));
             }
+        }
+
+        private static bool ValidateAddressablesVersionForTarget(
+            ContentPackDefinition definition,
+            out string error)
+        {
+            string target = definition != null ? definition.PublisingToGameName : string.Empty;
+
+            // Custom-folder builds do not carry a UI game name. Unity 6 is the
+            // ProjectX authoring line; the Unity 2022 authoring line is used by
+            // BMX Streets and ScootX. A named target always wins this fallback.
+            bool isProjectX =
+                string.Equals(target, "ProjectX", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(target, "Project X", StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(target, "Custom Folder", StringComparison.OrdinalIgnoreCase) &&
+                 Application.unityVersion.StartsWith("6000.", StringComparison.Ordinal));
+
+            bool isLegacyTarget =
+                string.Equals(target, "BMXS", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(target, "BMX Streets", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(target, "ScootX", StringComparison.OrdinalIgnoreCase);
+
+            // Old pack assets can retain their last publishing target while being
+            // opened in the dedicated U6 creator. Treat that project as ProjectX.
+            if (Application.unityVersion.StartsWith("6000.", StringComparison.Ordinal))
+                isProjectX = true;
+
+            string requiredVersion = isProjectX
+                ? ProjectXAddressablesVersion
+                : (isLegacyTarget ? LegacyAddressablesVersion : null);
+
+            if (string.IsNullOrEmpty(requiredVersion))
+            {
+                error =
+                    $"Cannot build '{definition?.PackName}' because target game '{target}' has no " +
+                    "Addressables compatibility rule. Select BMXS, ScootX, or ProjectX in MashBox Setup.";
+                return false;
+            }
+
+            UnityEditor.PackageManager.PackageInfo addressablesPackage =
+                UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()
+                .FirstOrDefault(package =>
+                    string.Equals(package.name, "com.unity.addressables", StringComparison.OrdinalIgnoreCase));
+            string installedVersion = addressablesPackage?.version;
+
+            if (string.Equals(installedVersion, requiredVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                error = string.Empty;
+                return true;
+            }
+
+            string gameLabel = isProjectX ? "ProjectX" : target;
+            error =
+                $"Building content for {gameLabel} requires com.unity.addressables {requiredVersion} exactly, " +
+                $"but this project has {installedVersion ?? "no registered Addressables package"}. " +
+                "Change Packages/manifest.json to the required version, let Unity finish resolving packages, " +
+                "then build again. The SDK blocks this build to prevent missing MonoBehaviour scripts.";
+            return false;
         }
 
         private static bool EnsureJsonCatalogScriptingDefine()

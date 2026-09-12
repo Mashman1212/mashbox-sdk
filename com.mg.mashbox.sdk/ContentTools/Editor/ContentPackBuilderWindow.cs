@@ -3917,6 +3917,25 @@ namespace MashBoxSDK.ContentTools.Editor
             foreach (var p in list)
             {
                 if (p == null) continue;
+
+                // Persist the actual build target on the pack so the lower-level
+                // builder can enforce that game's package compatibility. Custom
+                // Folder is only a destination; in the U6 authoring project it is
+                // necessarily a ProjectX build.
+                string compatibilityTarget = _currentGameName;
+                if (string.Equals(compatibilityTarget, "Custom Folder", StringComparison.OrdinalIgnoreCase))
+                {
+                    compatibilityTarget = Application.unityVersion.StartsWith("6000.", StringComparison.Ordinal)
+                        ? "ProjectX"
+                        : p.PublisingToGameName;
+                }
+
+                if (!string.Equals(p.PublisingToGameName, compatibilityTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    p.PublisingToGameName = compatibilityTarget;
+                    EditorUtility.SetDirty(p);
+                }
+
                 if (!p.IsCorePack)
                 {
                     // Capture 2K icons before building
