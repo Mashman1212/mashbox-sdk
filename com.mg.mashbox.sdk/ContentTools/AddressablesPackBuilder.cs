@@ -299,6 +299,15 @@ namespace MashBoxSDK.ContentTools
             string prevRemoteCatalogBuildVarId = settings.RemoteCatalogBuildPath != null ? settings.RemoteCatalogBuildPath.Id : null;
             string prevRemoteCatalogLoadVarId  = settings.RemoteCatalogLoadPath  != null ? settings.RemoteCatalogLoadPath.Id  : null;
 
+            // Every pack is built independently. Addressables' default project-name
+            // prefix gives all of those builds the same internal MonoScripts bundle
+            // name, so Unity refuses to load the second pack even when its file hash
+            // is different. Give each pack a stable identity of its own.
+            MonoScriptBundleNaming previousMonoScriptBundleNaming = settings.MonoScriptBundleNaming;
+            string previousMonoScriptBundleCustomNaming = settings.MonoScriptBundleCustomNaming;
+            string monoScriptBundlePrefix =
+                $"mashbox_{Hash128.Compute(def.PackName.Trim().ToLowerInvariant())}";
+
             // Rewire ONLY selected groups to pack vars (by NAME)
             foreach (var t in tracked)
             {
@@ -315,6 +324,11 @@ namespace MashBoxSDK.ContentTools
             
             try
             {
+                settings.MonoScriptBundleNaming = MonoScriptBundleNaming.Custom;
+                settings.MonoScriptBundleCustomNaming = monoScriptBundlePrefix;
+                EditorUtility.SetDirty(settings);
+                AssetDatabase.SaveAssets();
+
                 // Build Addressables
                 EnsureBuildTargetIsValid(); // ✅ make sure Unity has a valid target
                 
@@ -364,6 +378,7 @@ namespace MashBoxSDK.ContentTools
                         string dynamicPerPackJson = dynamicPerPackRaw.Replace("\\", "\\\\");
 
                         string json = File.ReadAllText(catalogLocal, Encoding.UTF8);
+                        ValidateMonoScriptBundleIdentity(json, monoScriptBundlePrefix, def.PackName);
 
                         // Addressables can emit its generated MonoScripts bundle into
                         // Library/com.unity.addressables even though all selected content
@@ -426,6 +441,9 @@ namespace MashBoxSDK.ContentTools
                     settings.RemoteCatalogBuildPath.SetVariableById(settings, prevRemoteCatalogBuildVarId);
                 if (settings.RemoteCatalogLoadPath != null && !string.IsNullOrEmpty(prevRemoteCatalogLoadVarId))
                     settings.RemoteCatalogLoadPath.SetVariableById(settings, prevRemoteCatalogLoadVarId);
+
+                settings.MonoScriptBundleNaming = previousMonoScriptBundleNaming;
+                settings.MonoScriptBundleCustomNaming = previousMonoScriptBundleCustomNaming;
 
                 EditorBuildSettings.scenes = originalScenes;
                 
@@ -834,6 +852,27 @@ namespace MashBoxSDK.ContentTools
                     return $"\"{dynamicPerPackJsonPrefix}{fileName}\"";
                 },
                 RegexOptions.IgnoreCase);
+        }
+
+        private static void ValidateMonoScriptBundleIdentity(
+            string catalogJson,
+            string expectedPrefix,
+            string packName)
+        {
+            if (string.IsNullOrEmpty(catalogJson) ||
+                catalogJson.IndexOf("_monoscripts_", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return;
+            }
+
+            string expectedToken = expectedPrefix + "_monoscripts_";
+            if (catalogJson.IndexOf(expectedToken, StringComparison.OrdinalIgnoreCase) >= 0)
+                return;
+
+            throw new InvalidOperationException(
+                $"Addressables built pack '{packName}' with a shared/default MonoScripts identity. " +
+                $"Expected a bundle beginning with '{expectedToken}'. Clear the Addressables/SBP build cache " +
+                "and rebuild; shipping this catalog would cause duplicate AssetBundle errors and missing MonoBehaviours.");
         }
 
         private static string ResolveGeneratedBundleSourcePath(

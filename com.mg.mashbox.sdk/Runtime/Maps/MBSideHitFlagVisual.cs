@@ -5,10 +5,17 @@ namespace MashBoxSDK.Maps
     [DisallowMultipleComponent]
     public class MBSideHitFlagVisual : MonoBehaviour
     {
+        public enum ColorTarget
+        {
+            RendererPropertyBlock,
+            MaterialBaseMap
+        }
+
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
 
         [SerializeField] private Renderer[] coloredRenderers;
+        [SerializeField] private ColorTarget colorTarget;
         [SerializeField, ColorUsage(false, true)] private Color orangeColor = new Color(1f, 0.48f, 0.06f, 1f);
         [SerializeField, ColorUsage(false, true)] private Color blueColor = new Color(0.08f, 0.46f, 1f, 1f);
 
@@ -33,6 +40,15 @@ namespace MashBoxSDK.Maps
                 Renderer renderer = coloredRenderers[i];
                 if (!renderer)
                     continue;
+
+                if (colorTarget == ColorTarget.MaterialBaseMap)
+                {
+                    Material material = renderer.material;
+                    if (material && material.HasProperty(BaseColorId))
+                        material.SetColor(BaseColorId, color);
+
+                    continue;
+                }
 
                 renderer.GetPropertyBlock(propertyBlock);
                 propertyBlock.SetColor(BaseColorId, color);

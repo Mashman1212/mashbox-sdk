@@ -9,6 +9,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
+using UnityRenderPipeline = UnityEngine.Rendering.RenderPipeline;
 
 namespace MashBoxSDK.MapTools
 {
@@ -1250,8 +1251,8 @@ namespace MashBoxSDK.MapTools
                 target.Create();
                 texture = new Texture2D(resolution, resolution, TextureFormat.RGB24, true, false)
                 { name = terrain.name + "_Appearance", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
-                var request = new RenderPipeline.StandardRequest { destination = target };
-                if (!RenderPipeline.SupportsRenderRequest(camera, request)) throw new InvalidOperationException("The active render pipeline does not support camera capture requests.");
+                var request = new UnityRenderPipeline.StandardRequest { destination = target };
+                if (!UnityRenderPipeline.SupportsRenderRequest(camera, request)) throw new InvalidOperationException("The active render pipeline does not support camera capture requests.");
                 terrain.BeginAppearanceCapture(camera, bakeDistant ? 0f : m_CaptureDetailTilt);
                 captureStarted = true;
                 long completedPixels = 0;
@@ -1298,9 +1299,9 @@ namespace MashBoxSDK.MapTools
                         heightPass.destination = heightTarget;
                         heightPass.captured = false;
                     }
-                    RenderPipeline.SubmitRenderRequest(camera, request);
+                    UnityRenderPipeline.SubmitRenderRequest(camera, request);
                     if (!terrain.AppearanceCaptureNeedsSubdivision)
-                        RenderPipeline.SubmitRenderRequest(camera, request);
+                        UnityRenderPipeline.SubmitRenderRequest(camera, request);
                     if (terrain.AppearanceCaptureNeedsSubdivision)
                     {
                         if (pixels <= 1) throw new InvalidOperationException("Even the smallest capture tile exceeds the safe detail capacity. No incomplete PNG was saved.");
@@ -2500,4 +2501,3 @@ namespace MashBoxSDK.MapTools
 }
 
 #endif
-
