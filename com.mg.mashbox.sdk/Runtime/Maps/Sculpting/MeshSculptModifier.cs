@@ -24,7 +24,7 @@ namespace MashBoxSDK.Maps.Sculpting
             [Min(0.01f)] public float falloff = 2f;
             public int noiseSeed;
             public float targetHeight;
-            [Range(1, 16)] public int smoothIterations = 1;
+            [Range(1, 128)] public int smoothIterations = 1;
             // Seam fitting is baked at paint time. Sparse local deltas and normal
             // samples keep replay independent of target loft edits or deletion.
             public int seamVertexCount;
@@ -50,6 +50,13 @@ namespace MashBoxSDK.Maps.Sculpting
         [NonSerialized] Vector3[] m_BaseVertices;
         [NonSerialized] Mesh m_BaseMesh;
         [NonSerialized] List<int>[] m_Neighbours;
+        [NonSerialized] Vector3[] m_SmoothSnapshot;
+        [NonSerialized] Vector3[] m_LoftSeamBase;
+        [NonSerialized] readonly List<List<int>> m_LoftSeamGroups = new List<List<int>>();
+        [NonSerialized] readonly List<int> m_SmoothAffected = new List<int>();
+        [NonSerialized] readonly List<float> m_SmoothWeights = new List<float>();
+        [NonSerialized] readonly List<float> m_SmoothHeights = new List<float>();
+        static readonly Unity.Profiling.ProfilerMarker s_TerrainSmoothMarker = new Unity.Profiling.ProfilerMarker("MeshSculpt.SmoothTerrain");
 
 #if UNITY_EDITOR
         // OnValidate is called for the component Unity restores, including an
@@ -149,6 +156,7 @@ namespace MashBoxSDK.Maps.Sculpting
             if (mesh == null || m_BaseMesh != mesh || m_BaseVertices == null)
             {
                 Rebuild();
+                PublishLoftStrokePreview();
                 return;
             }
 
@@ -162,12 +170,37 @@ namespace MashBoxSDK.Maps.Sculpting
             if ((!matchedTerrainNormals || matchedSeamNormals) && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent))
                 mesh.RecalculateTangents();
             mesh.UploadMeshData(false);
+            PublishLoftStrokePreview();
             if (m_Target != null)
             {
                 var terrain = m_Target.GetComponentInParent<MGTerrain>();
                 if (terrain != null && terrain.MeshFilter == m_Target)
                     terrain.NotifySurfaceMeshChanged();
             }
+        }
+
+        void PublishLoftStrokePreview()
+        {
+            if (m_LinkedLoft == null || m_Target == null) return;
+            Mesh generated = m_LinkedLoft.GeneratedMesh;
+            if (generated == null) return;
+            UVSpline uvSpline = m_LinkedLoft.GeneratedUvSpline;
+            if (uvSpline == null || uvSpline.Target != m_Target)
+            {
+                uvSpline = null;
+                foreach (var candidate in m_LinkedLoft.GetComponentsInChildren<UVSpline>(true))
+                    if (candidate.Target == m_Target)
+                    {
+                        uvSpline = candidate;
+                        break;
+                    }
+            }
+            if (uvSpline != null && uvSpline.OutputMesh != null)
+            {
+                uvSpline.RefreshSculptPreview(generated);
+                m_Target.sharedMesh = uvSpline.OutputMesh;
+            }
+            else m_Target.sharedMesh = generated;
         }
 
         // Expensive derived data is refreshed once after a drag, rather than for
@@ -278,8 +311,121 @@ namespace MashBoxSDK.Maps.Sculpting
 
         void ApplyStroke(Vector3[] vertices, Mesh mesh, Stroke stroke)
         {
-            int passes = stroke.mode == SculptMode.Smooth ? Mathf.Clamp(stroke.smoothIterations, 1, 16) : 1;
-            for (int pass = 0; pass < passes; pass++) ApplyStrokePass(vertices, mesh, stroke);
+            if (stroke == null || stroke.radius <= Mathf.Epsilon) return;
+            int passes = stroke.mode == SculptMode.Smooth ? Mathf.Clamp(stroke.smoothIterations, 1, 128) : 1;
+            if (stroke.mode == SculptMode.Smooth)
+            {
+                var terrain = m_Target.GetComponentInParent<MGTerrain>();
+                if (terrain != null && terrain.HeightOnlySculpt)
+                {
+                    ApplyTerrainSmooth(vertices, mesh, stroke, passes);
+                    return;
+                }
+            }
+            if (m_LinkedLoft != null) EnsureLoftSeamGroups();
+            for (int pass = 0; pass < passes; pass++)
+            {
+                ApplyStrokePass(vertices, mesh, stroke);
+                if (m_LinkedLoft != null) SynchronizeLoftSeams(vertices);
+            }
+        }
+
+        void EnsureLoftSeamGroups()
+        {
+            if (ReferenceEquals(m_LoftSeamBase, m_BaseVertices)) return;
+            m_LoftSeamBase = m_BaseVertices;
+            m_LoftSeamGroups.Clear();
+            if (m_LoftSeamBase == null) return;
+            // Use the clean base so group membership survives deformation and
+            // replay. Keep topology, UV seams and hard normals separate; only
+            // vertices at exactly the same original position are constrained.
+            var firstAtPosition = new Dictionary<Vector3, int>();
+            var groups = new Dictionary<int, List<int>>();
+            for (int i = 0; i < m_LoftSeamBase.Length; i++)
+            {
+                if (!firstAtPosition.TryGetValue(m_LoftSeamBase[i], out int first))
+                {
+                    firstAtPosition.Add(m_LoftSeamBase[i], i);
+                    continue;
+                }
+                if (!groups.TryGetValue(first, out var group))
+                {
+                    group = new List<int> { first };
+                    groups.Add(first, group);
+                    m_LoftSeamGroups.Add(group);
+                }
+                group.Add(i);
+            }
+        }
+
+        void SynchronizeLoftSeams(Vector3[] vertices)
+        {
+            foreach (var group in m_LoftSeamGroups)
+            {
+                Vector3 position = vertices[group[0]];
+                Vector3 delta = Vector3.zero;
+                for (int i = 1; i < group.Count; i++) delta += vertices[group[i]] - position;
+                position += delta / group.Count;
+                foreach (int index in group) vertices[index] = position;
+            }
+        }
+
+        void ApplyTerrainSmooth(Vector3[] vertices, Mesh mesh, Stroke stroke, int passes)
+        {
+            using var profile = s_TerrainSmoothMarker.Auto();
+            float strength = Mathf.Abs(stroke.strength);
+            if (strength == 0f) return;
+            var targetTransform = m_Target.transform;
+            Vector3 localCenter = stroke.space == StrokeSpace.World
+                ? targetTransform.InverseTransformPoint(stroke.position) : stroke.position;
+            Matrix4x4 localToWorld = targetTransform.localToWorldMatrix;
+            float radiusSquared = stroke.radius * stroke.radius;
+            m_SmoothAffected.Clear();
+            m_SmoothWeights.Clear();
+            m_SmoothHeights.Clear();
+
+            // Height-only smoothing cannot change footprint membership or falloff.
+            // Calculate them once per dab instead of scanning/transformation of
+            // the whole terrain again for each of the smoothing passes.
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                Vector3 delta = vertices[i] - localCenter;
+                delta.y = 0f;
+                float distanceSquared = localToWorld.MultiplyVector(delta).sqrMagnitude;
+                if (distanceSquared >= radiusSquared) continue;
+                float influence = Mathf.Pow(1f - Mathf.Sqrt(distanceSquared) / stroke.radius, stroke.falloff);
+                m_SmoothAffected.Add(i);
+                m_SmoothWeights.Add(Mathf.Clamp01(strength * influence));
+                m_SmoothHeights.Add(0f);
+            }
+            if (m_SmoothAffected.Count == 0) return;
+            if (m_Neighbours == null) BuildNeighbours(mesh);
+            for (int pass = 0; pass < passes; pass++)
+            {
+                // Compute every result before writing any heights, preserving
+                // the original simultaneous neighbour averaging without a full
+                // mesh snapshot. Neighbours outside the brush remain unchanged.
+                for (int i = 0; i < m_SmoothAffected.Count; i++)
+                {
+                    int index = m_SmoothAffected[i];
+                    var neighbours = m_Neighbours[index];
+                    float height = vertices[index].y;
+                    if (neighbours.Count > 0)
+                    {
+                        float average = 0f;
+                        for (int n = 0; n < neighbours.Count; n++) average += vertices[neighbours[n]].y;
+                        height = Mathf.Lerp(height, average / neighbours.Count, m_SmoothWeights[i]);
+                    }
+                    m_SmoothHeights[i] = height;
+                }
+                for (int i = 0; i < m_SmoothAffected.Count; i++)
+                {
+                    int index = m_SmoothAffected[i];
+                    Vector3 vertex = vertices[index];
+                    vertex.y = m_SmoothHeights[i];
+                    vertices[index] = vertex;
+                }
+            }
         }
 
         void ApplyStrokePass(Vector3[] vertices, Mesh mesh, Stroke stroke)
@@ -303,7 +449,7 @@ namespace MashBoxSDK.Maps.Sculpting
             }
             Vector3 center = stroke.space == StrokeSpace.World ? stroke.position : targetTransform.TransformPoint(stroke.position);
             Vector3 direction = stroke.space == StrokeSpace.World ? stroke.direction.normalized : targetTransform.TransformDirection(stroke.direction).normalized;
-            Vector3[] before = stroke.mode == SculptMode.Smooth ? (Vector3[])vertices.Clone() : null;
+            Vector3[] before = stroke.mode == SculptMode.Smooth ? CaptureSmoothSnapshot(vertices) : null;
             if (stroke.mode == SculptMode.Smooth && m_Neighbours == null) BuildNeighbours(mesh);
 
             for (int i = 0; i < vertices.Length; i++)
@@ -334,13 +480,21 @@ namespace MashBoxSDK.Maps.Sculpting
             }
         }
 
+        Vector3[] CaptureSmoothSnapshot(Vector3[] vertices)
+        {
+            if (m_SmoothSnapshot == null || m_SmoothSnapshot.Length != vertices.Length)
+                m_SmoothSnapshot = new Vector3[vertices.Length];
+            Array.Copy(vertices, m_SmoothSnapshot, vertices.Length);
+            return m_SmoothSnapshot;
+        }
+
         void ApplyHeightOnlyStroke(Vector3[] vertices, Mesh mesh, Stroke stroke, Transform targetTransform)
         {
             Vector3 worldCenter = stroke.space == StrokeSpace.World
                 ? stroke.position
                 : targetTransform.TransformPoint(stroke.position);
             Vector3 localCenter = targetTransform.InverseTransformPoint(worldCenter);
-            Vector3[] before = stroke.mode == SculptMode.Smooth ? (Vector3[])vertices.Clone() : null;
+            Vector3[] before = stroke.mode == SculptMode.Smooth ? CaptureSmoothSnapshot(vertices) : null;
             if (stroke.mode == SculptMode.Smooth && m_Neighbours == null)
                 BuildNeighbours(mesh);
 
@@ -472,5 +626,3 @@ namespace MashBoxSDK.Maps.Sculpting
         }
     }
 }
-
-

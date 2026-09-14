@@ -1,0 +1,6 @@
+{
+  "name": "MashBoxSDK.AnimationStudio.Editor",
+  "rootNamespace": "MashBoxSDK.AnimationStudio",
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}

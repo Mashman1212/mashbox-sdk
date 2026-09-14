@@ -25,6 +25,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] readonly List<MaterialPropertyBlock> m_SurfaceTileSubMeshProperties = new List<MaterialPropertyBlock>();
         [NonSerialized] int m_SurfaceRendererState;
         [NonSerialized] bool m_HasSurfaceRendererState;
+        static readonly Unity.Profiling.ProfilerMarker s_BuildSurfaceTilesMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.BuildSurfaceTiles");
+        static readonly Unity.Profiling.ProfilerMarker s_UpdateSurfaceTilesMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.UpdateSurfaceTileVertices");
+        [NonSerialized] readonly List<Vector3> m_TileSourceVertices = new List<Vector3>();
+        [NonSerialized] readonly List<Vector3> m_TileSourceNormals = new List<Vector3>();
+        [NonSerialized] readonly List<Vector4> m_TileSourceTangents = new List<Vector4>();
+        [NonSerialized] readonly List<Color> m_TileSourceColors = new List<Color>();
+        [NonSerialized] readonly List<Vector4>[] m_TileSourceUVs = new List<Vector4>[8];
+        [NonSerialized] readonly List<Vector3> m_TileVector3Buffer = new List<Vector3>();
+        [NonSerialized] readonly List<Vector4> m_TileVector4Buffer = new List<Vector4>();
+        [NonSerialized] readonly List<Color> m_TileColorBuffer = new List<Color>();
         [Serializable]
         public sealed class SurfaceColliderVertexMap
         {
@@ -182,6 +192,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void BuildSurfaceTiles(Mesh source, float size, Vector3 scale)
         {
+            using var profile = s_BuildSurfaceTilesMarker.Auto();
             ReleaseSurfaceTiles();
             Vector3[] vertices = source.vertices;
             var groups = new Dictionary<Vector2Int, SurfaceTileGroup>();
@@ -250,29 +261,43 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return result;
         }
 
+        static void GatherInto<T>(List<T> source, int[] indices, List<T> destination)
+        {
+            destination.Clear();
+            if (source.Count == 0) return;
+            if (destination.Capacity < indices.Length) destination.Capacity = indices.Length;
+            for (int i = 0; i < indices.Length; i++) destination.Add(source[indices[i]]);
+        }
+
         void UpdateSurfaceTileVertices(Mesh source)
         {
-            Vector3[] vertices = source.vertices;
-            Vector3[] normals = source.normals;
-            Vector4[] tangents = source.tangents;
-            Color[] colors = source.colors;
-            var uvs = new Vector4[8][];
-            var uvBuffer = new List<Vector4>();
+            using var profile = s_UpdateSurfaceTilesMarker.Auto();
+            source.GetVertices(m_TileSourceVertices);
+            source.GetNormals(m_TileSourceNormals);
+            source.GetTangents(m_TileSourceTangents);
+            source.GetColors(m_TileSourceColors);
             for (int channel = 0; channel < 8; channel++)
             {
-                source.GetUVs(channel, uvBuffer);
-                uvs[channel] = uvBuffer.ToArray();
+                m_TileSourceUVs[channel] ??= new List<Vector4>();
+                source.GetUVs(channel, m_TileSourceUVs[channel]);
             }
             foreach (SurfaceTile tile in m_SurfaceTiles)
             {
-                tile.mesh.vertices = Gather(vertices, tile.sourceIndices);
+                GatherInto(m_TileSourceVertices, tile.sourceIndices, m_TileVector3Buffer);
+                tile.mesh.SetVertices(m_TileVector3Buffer);
                 // Copy master normals/tangents rather than recalculating per tile:
                 // shared boundary vertices must retain exactly the same shading.
-                tile.mesh.normals = Gather(normals, tile.sourceIndices);
-                tile.mesh.tangents = Gather(tangents, tile.sourceIndices);
-                tile.mesh.colors = Gather(colors, tile.sourceIndices);
+                GatherInto(m_TileSourceNormals, tile.sourceIndices, m_TileVector3Buffer);
+                tile.mesh.SetNormals(m_TileVector3Buffer);
+                GatherInto(m_TileSourceTangents, tile.sourceIndices, m_TileVector4Buffer);
+                tile.mesh.SetTangents(m_TileVector4Buffer);
+                GatherInto(m_TileSourceColors, tile.sourceIndices, m_TileColorBuffer);
+                tile.mesh.SetColors(m_TileColorBuffer);
                 for (int channel = 0; channel < 8; channel++)
-                    tile.mesh.SetUVs(channel, Gather(uvs[channel], tile.sourceIndices));
+                {
+                    GatherInto(m_TileSourceUVs[channel], tile.sourceIndices, m_TileVector4Buffer);
+                    tile.mesh.SetUVs(channel, m_TileVector4Buffer);
+                }
                 tile.mesh.RecalculateBounds();
                 tile.mesh.UploadMeshData(false);
             }

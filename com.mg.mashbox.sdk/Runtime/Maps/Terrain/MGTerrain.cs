@@ -287,7 +287,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void OnValidate()
         {
             ResolveComponents();
-            NotifySurfaceMeshChanged(true);
+            // Component settings/Undo recording do not change mesh topology.
+            // Source, layout and tile-setting changes are checked by the cache;
+            // topology editors and Undo replay explicitly invalidate topology.
+            NotifySurfaceMeshChanged();
             InitializeDetailSettingsIfNeeded();
             InvalidateRenderCache();
         }
@@ -403,6 +406,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             InvalidateRenderCache();
         }
 
+        // Transient editor visibility only; never changes serialized terrain settings.
+#if UNITY_EDITOR
+        public static bool EditorDetailsVisible = true;
+        internal static bool EditorDetailsHidden => !Application.isPlaying && !EditorDetailsVisible;
+#else
+        internal static bool EditorDetailsHidden => false;
+#endif
+
         public void ConformInstancesToSurface()
         {
             ConformInstancesToSurface(Vector3.zero, 0f, false);
@@ -490,6 +501,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void RenderInstances(Camera camera)
         {
             using var profile = s_InstanceUpdateMarker.Auto();
+            if (EditorDetailsHidden && m_AppearanceCaptureCamera == null) return;
             if (camera == null || camera.cameraType == CameraType.Preview) return;
             if (m_AppearanceCaptureCamera != null && camera != m_AppearanceCaptureCamera) return;
             if (m_AppearanceCaptureCamera == null && (!m_DrawInstances || (!Application.isPlaying && !m_DrawInstancesInEditMode)))

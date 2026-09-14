@@ -59,6 +59,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         internal void PrepareWorldCamera(Camera camera, float unloadDistance)
         {
             m_WorldPendingDraw = false;
+            if (EditorDetailsHidden && m_AppearanceCaptureCamera == null) return;
             m_WorldDefersDraw = UsesWorldBudget;
             try
             {

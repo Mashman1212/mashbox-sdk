@@ -1,4 +1,5 @@
 using MashBoxSDK.Maps;
+using MashBoxSDK.Maps.TerrainSystem;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEditor.Overlays;
@@ -353,6 +354,8 @@ namespace MashBoxSDK.MapTools
             MBSeamFitSculptToggle.Id,
             MBMeshStampSculptToggle.Id,
             MBSculptableOnlyToggle.Id,
+            MBClearSculptablesButton.Id,
+            MBRegenerateSculptDetailsButton.Id,
             MBMoveUvToggle.Id,
             MBSideOffsetUvToggle.Id,
             MBUvScaleToggle.Id)
@@ -382,6 +385,9 @@ namespace MashBoxSDK.MapTools
             var sunLightRow = CreateRow("Sun Light", out VisualElement sunLightContent);
             sunLightContent.Add(new MBSunLightToggle());
             root.Add(sunLightRow);
+            var terrainDetailsRow = CreateRow("Terrain Details", out VisualElement terrainDetailsContent);
+            terrainDetailsContent.Add(new MBTerrainDetailsToggle());
+            root.Add(terrainDetailsRow);
 
             var editingRow = CreateRow("Editing", out VisualElement editingContent);
             editingContent.Add(new MBActiveEditingToggle());
@@ -403,17 +409,34 @@ namespace MashBoxSDK.MapTools
             root.Add(toolsRow);
 
             var actionsRow = CreateRow("Actions", out VisualElement actionsContent);
-            actionsContent.Add(new MBSplineEditModeToggle());
-            actionsContent.Add(new MBNewSplineButton());
-            actionsContent.Add(new MBDisplaceSculptToggle());
-            actionsContent.Add(new MBSmoothSculptToggle());
-            actionsContent.Add(new MBFlattenSculptToggle());
-            actionsContent.Add(new MBSeamFitSculptToggle());
-            actionsContent.Add(new MBMeshStampSculptToggle());
-            actionsContent.Add(new MBSculptableOnlyToggle());
-            actionsContent.Add(new MBMoveUvToggle());
-            actionsContent.Add(new MBSideOffsetUvToggle());
-            actionsContent.Add(new MBUvScaleToggle());
+            actionsContent.style.flexDirection = FlexDirection.Column;
+            actionsContent.style.flexWrap = Wrap.NoWrap;
+            var primaryActions = new VisualElement();
+            primaryActions.style.flexDirection = FlexDirection.Row;
+            primaryActions.style.flexWrap = Wrap.Wrap;
+            primaryActions.style.justifyContent = Justify.FlexEnd;
+            primaryActions.Add(new MBSplineEditModeToggle());
+            primaryActions.Add(new MBNewSplineButton());
+            primaryActions.Add(new MBDisplaceSculptToggle());
+            primaryActions.Add(new MBSmoothSculptToggle());
+            primaryActions.Add(new MBFlattenSculptToggle());
+            primaryActions.Add(new MBSeamFitSculptToggle());
+            primaryActions.Add(new MBMeshStampSculptToggle());
+            primaryActions.Add(new MBMoveUvToggle());
+            primaryActions.Add(new MBSideOffsetUvToggle());
+            primaryActions.Add(new MBUvScaleToggle());
+            actionsContent.Add(primaryActions);
+            var sculptSelectionActions = new VisualElement();
+            sculptSelectionActions.style.flexDirection = FlexDirection.Row;
+            sculptSelectionActions.style.justifyContent = Justify.FlexEnd;
+            sculptSelectionActions.Add(new MBSculptableOnlyToggle());
+            sculptSelectionActions.Add(new MBClearSculptablesButton());
+            actionsContent.Add(sculptSelectionActions);
+            var sculptDetailsActions = new VisualElement();
+            sculptDetailsActions.style.flexDirection = FlexDirection.Row;
+            sculptDetailsActions.style.justifyContent = Justify.FlexEnd;
+            sculptDetailsActions.Add(new MBRegenerateSculptDetailsButton());
+            actionsContent.Add(sculptDetailsActions);
             root.Add(actionsRow);
 
             var colorRow = CreateRow("Color", out VisualElement colorContent);
@@ -442,6 +465,10 @@ namespace MashBoxSDK.MapTools
                 actionsRow.style.display = MBEditorToolState.ActiveEditing && hasActions
                     ? DisplayStyle.Flex
                     : DisplayStyle.None;
+                sculptSelectionActions.style.display = mode == MBEditorAuthoringMode.MeshSculpt
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+                sculptDetailsActions.style.display = sculptSelectionActions.style.display;
             };
 
             var decorSection = new IMGUIContainer(MGBrushWindow.DrawDecorOverlay);
@@ -732,6 +759,30 @@ namespace MashBoxSDK.MapTools
             SetEnabled(sun != null);
             SetValueWithoutNotify(sun != null && sun.enabled);
             text = sun == null ? "No sun" : sun.enabled ? "On" : "Off";
+        }
+    }
+
+    public sealed class MBTerrainDetailsToggle : Toggle
+    {
+        public MBTerrainDetailsToggle()
+        {
+            tooltip = "Show terrain details while editing. Does not change saved detail settings, baked captures, or Play Mode rendering.";
+            this.RegisterValueChangedCallback(evt =>
+            {
+                MGTerrain.EditorDetailsVisible = evt.newValue;
+                EditorApplication.QueuePlayerLoopUpdate();
+                SceneView.RepaintAll();
+                Sync();
+            });
+            schedule.Execute(Sync).Every(250);
+            Sync();
+        }
+
+        void Sync()
+        {
+            SetEnabled(!Application.isPlaying);
+            SetValueWithoutNotify(MGTerrain.EditorDetailsVisible);
+            text = MGTerrain.EditorDetailsVisible ? "On" : "Off";
         }
     }
 
@@ -1602,7 +1653,7 @@ namespace MashBoxSDK.MapTools
         public MBSculptableOnlyToggle()
         {
             MBEditorToolVisuals.ConfigureIconOnly(this, "LockIcon-On", "d_InspectorLock", "Sculptable Only",
-                "Sculptable Only: ignore other objects and sculpt through them. Unlock to make more objects sculptable with Shift+Click.");
+                "Sculptable Only: sculpt only the objects added with Shift+Click, through other objects. Unlock to add more; Clear Sculptables resets the set.");
             this.RegisterValueChangedCallback(evt => MBEditorToolState.SculptableOnly = evt.newValue);
             this.RegisterCallback<AttachToPanelEvent>(_ =>
             {
@@ -1626,6 +1677,74 @@ namespace MashBoxSDK.MapTools
             SetEnabled(MBEditorToolState.ActiveEditing);
             SetValueWithoutNotify(MBEditorToolState.SculptableOnly);
             MBEditorToolVisuals.ApplyToolActionSelection(this, MBEditorToolState.SculptableOnly);
+        }
+    }
+
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBClearSculptablesButton : EditorToolbarButton
+    {
+        public const string Id = "MashBox/Sculpt/Clear Sculptables";
+
+        public MBClearSculptablesButton()
+        {
+            text = "Clear Sculptables";
+            tooltip = "Clear the sculptable set without deleting modifiers or recorded strokes. Unlock, then Shift+Click to add objects again.";
+            clicked += MeshSculptWindow.ClearSculptables;
+            this.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged += Sync;
+                MBEditorToolState.ActiveEditingChanged += Sync;
+                Sync();
+            });
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged -= Sync;
+                MBEditorToolState.ActiveEditingChanged -= Sync;
+            });
+            Sync();
+        }
+
+        void Sync()
+        {
+            style.display = MBEditorToolState.Mode == MBEditorAuthoringMode.MeshSculpt ? DisplayStyle.Flex : DisplayStyle.None;
+            SetEnabled(MBEditorToolState.ActiveEditing);
+        }
+    }
+
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBRegenerateSculptDetailsButton : EditorToolbarButton
+    {
+        public const string Id = "MashBox/Sculpt/Regenerate Details";
+
+        public MBRegenerateSculptDetailsButton()
+        {
+            text = "Regenerate Details";
+            tooltip = "Conform instances and refresh procedural details on the locked sculptable terrains, including their world tiles. Add a terrain and enable Sculptable Only to use this.";
+            clicked += MeshSculptWindow.RegenerateLockedTerrainDetails;
+            this.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged += Sync;
+                MBEditorToolState.ActiveEditingChanged += Sync;
+                MBEditorToolState.SculptableOnlyChanged += Sync;
+                MeshSculptWindow.SculptablesChanged += Sync;
+                EditorApplication.hierarchyChanged += Sync;
+                Sync();
+            });
+            this.RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged -= Sync;
+                MBEditorToolState.ActiveEditingChanged -= Sync;
+                MBEditorToolState.SculptableOnlyChanged -= Sync;
+                MeshSculptWindow.SculptablesChanged -= Sync;
+                EditorApplication.hierarchyChanged -= Sync;
+            });
+            Sync();
+        }
+
+        void Sync()
+        {
+            style.display = MBEditorToolState.Mode == MBEditorAuthoringMode.MeshSculpt ? DisplayStyle.Flex : DisplayStyle.None;
+            SetEnabled(MBEditorToolState.ActiveEditing && MeshSculptWindow.HasLockedSculptTerrain);
         }
     }
 

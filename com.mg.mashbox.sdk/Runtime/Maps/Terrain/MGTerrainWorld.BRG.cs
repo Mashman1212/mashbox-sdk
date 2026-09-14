@@ -105,6 +105,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
     public sealed partial class MGTerrain
     {
         bool WorldHasCommands(BatchCullingContext context) =>
+            (!EditorDetailsHidden || m_AppearanceCaptureCamera != null) &&
             (context.viewType == BatchCullingViewType.Camera || context.viewType == BatchCullingViewType.Light)
             && m_DetailBrgVisibleCount > 0 && m_DetailBrgSequentialVisibleIndices.IsCreated;
         static bool WorldGroupVisible(BrgPreparedGroup group, bool camera) => camera

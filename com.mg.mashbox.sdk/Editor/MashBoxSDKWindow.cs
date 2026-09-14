@@ -295,6 +295,12 @@ namespace MashBoxSDK.SDKMain
 
         private void DrawContentToolsTab()
         {
+#if MashBoxDev
+            if (GUILayout.Button("Open Animation Studio", GUILayout.Height(28)))
+                EditorApplication.ExecuteMenuItem("MashBox/Animation Studio");
+            GUILayout.Space(6f);
+#endif
+
             int newTab = MashBoxTabDrawer.DrawTabs(_contentToolTab, new[]
             {
                 "Content Builder",

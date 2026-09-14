@@ -1287,6 +1287,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             using var profile = s_BrgCullingMarker.Auto();
             var output = (BatchCullingOutputDrawCommands*)cullingOutput.drawCommands.GetUnsafePtr();
             *output = default;
+            if (EditorDetailsHidden && m_AppearanceCaptureCamera == null) return default;
             bool cameraView = cullingContext.viewType == BatchCullingViewType.Camera;
             bool lightView = cullingContext.viewType == BatchCullingViewType.Light;
             if (!cameraView && !lightView)

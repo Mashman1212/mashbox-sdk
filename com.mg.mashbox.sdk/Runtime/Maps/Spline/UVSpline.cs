@@ -393,6 +393,8 @@ namespace MashBoxSDK.Maps.Spline
             if (result != reusableOutput)
                 result.name = source.name + "_UVSpline";
             result.SetUVs(m_UvChannel, m_WorkingOutputUvs);
+            m_SculptPreviewSourceIndices = null;
+            m_SculptPreviewSourceCount = source.vertexCount;
             if (supportsTopologySeam)
                 SplitMirroredLoftUvSeams(result, sourceUvs, longIsU, topologySeamCross);
             return result;
@@ -554,6 +556,10 @@ namespace MashBoxSDK.Maps.Spline
             if (duplicateForRightSide.Count == 0)
                 return;
 
+            m_SculptPreviewSourceIndices = new int[vertices.Count];
+            for (int i = 0; i < originalVertexCount; i++) m_SculptPreviewSourceIndices[i] = i;
+            foreach (var pair in duplicateForRightSide) m_SculptPreviewSourceIndices[pair.Value] = pair.Key;
+
             mesh.Clear(false);
             mesh.indexFormat = vertices.Count > ushort.MaxValue
                 ? UnityEngine.Rendering.IndexFormat.UInt32
@@ -576,6 +582,50 @@ namespace MashBoxSDK.Maps.Spline
         static int EstimateSeamCapacity(int vertexCount)
         {
             return Mathf.Max(8, Mathf.CeilToInt(Mathf.Sqrt(vertexCount)));
+        }
+
+        int[] m_SculptPreviewSourceIndices;
+        int m_SculptPreviewSourceCount;
+        readonly List<Vector3> m_SculptPreviewVertices = new List<Vector3>();
+        readonly List<Vector3> m_SculptPreviewNormals = new List<Vector3>();
+        readonly List<Vector4> m_SculptPreviewTangents = new List<Vector4>();
+        readonly List<Vector3> m_SculptPreviewVector3 = new List<Vector3>();
+        readonly List<Vector4> m_SculptPreviewVector4 = new List<Vector4>();
+
+        public void RefreshSculptPreview(Mesh source)
+        {
+            if (source == null || m_OutputMesh == null || m_Target == null) return;
+            if (source.vertexCount != m_SculptPreviewSourceCount
+                || (m_SculptPreviewSourceIndices != null && m_SculptPreviewSourceIndices.Length != m_OutputMesh.vertexCount)
+                || (m_SculptPreviewSourceIndices == null && source.vertexCount != m_OutputMesh.vertexCount))
+            {
+                m_Target.sharedMesh = source;
+                RebuildOutputMesh(forceSourceRefresh: true);
+                return;
+            }
+            source.GetVertices(m_SculptPreviewVertices);
+            source.GetNormals(m_SculptPreviewNormals);
+            source.GetTangents(m_SculptPreviewTangents);
+            MapSculptPreview(m_SculptPreviewVertices, m_SculptPreviewVector3);
+            m_OutputMesh.SetVertices(m_SculptPreviewVector3);
+            MapSculptPreview(m_SculptPreviewNormals, m_SculptPreviewVector3);
+            m_OutputMesh.SetNormals(m_SculptPreviewVector3);
+            MapSculptPreview(m_SculptPreviewTangents, m_SculptPreviewVector4);
+            m_OutputMesh.SetTangents(m_SculptPreviewVector4);
+            m_OutputMesh.RecalculateBounds();
+            m_OutputMesh.UploadMeshData(false);
+        }
+
+        void MapSculptPreview<T>(List<T> values, List<T> result)
+        {
+            result.Clear();
+            if (values.Count == 0) return;
+            if (m_SculptPreviewSourceIndices == null) result.AddRange(values);
+            else
+            {
+                if (result.Capacity < m_SculptPreviewSourceIndices.Length) result.Capacity = m_SculptPreviewSourceIndices.Length;
+                foreach (int index in m_SculptPreviewSourceIndices) result.Add(values[index]);
+            }
         }
 
         public Mesh RebuildOutputMesh(bool forceSourceRefresh = false)

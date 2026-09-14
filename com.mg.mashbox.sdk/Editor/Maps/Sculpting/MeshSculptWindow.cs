@@ -11,7 +11,10 @@ namespace MashBoxSDK.MapTools
     {
         const string ActiveModifierSessionKey = "MashBoxSDK.MeshSculpt.ActiveModifier";
         static readonly float[] BrushInfluenceLevels = { 0.75f, 0.5f, 0.25f };
+        static readonly Unity.Profiling.ProfilerMarker s_ActivateSurfaceMarker = new Unity.Profiling.ProfilerMarker("MeshSculpt.ActivateSurface");
         static MeshSculptWindow s_ActiveSceneToolOwner;
+        static readonly HashSet<MeshFilter> s_SculptableSurfaces = new HashSet<MeshFilter>();
+        internal static event System.Action SculptablesChanged;
         bool m_ApplyingWorldDab;
 
         enum DirectionMode { SurfaceNormal, WorldUp, Custom }
@@ -49,6 +52,7 @@ namespace MashBoxSDK.MapTools
         bool m_IsSculpting;
         bool m_HasLastStrokePosition;
         Vector3 m_LastStrokePosition;
+        double m_LastStrokeSampleTime;
         int m_UndoGroup = -1;
         bool m_SceneToolActive;
         bool m_SceneCameraRightMouseHeld;
@@ -136,13 +140,23 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.LabelField("Non-Destructive Mesh Sculpt", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Brush strokes are stored as instructions and replayed from the clean mesh. A linked loft replays them after every regeneration.", MessageType.Info);
 
-            m_Modifier = (MeshSculptModifier)EditorGUILayout.ObjectField("Sculpt Modifier", m_Modifier, typeof(MeshSculptModifier), true);
+            var selectedModifier = (MeshSculptModifier)EditorGUILayout.ObjectField("Sculpt Modifier", m_Modifier, typeof(MeshSculptModifier), true);
+            if (selectedModifier != m_Modifier)
+            {
+                if (selectedModifier == null) ClearActiveModifier();
+                else
+                {
+                    AddSculptableSurface(selectedModifier.Target);
+                    ActivateModifier(selectedModifier);
+                }
+            }
             MBEditorToolState.SculptableOnly = EditorGUILayout.Toggle(new GUIContent("Sculptable Only",
-                "Ignore other objects and sculpt through them. Turn off to make additional objects sculptable with Shift+Click."), MBEditorToolState.SculptableOnly);
+                "Sculpt only the objects added with Shift+Click, through other objects. Unlock to add more."), MBEditorToolState.SculptableOnly);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Use Selection")) UseSelection();
                 if (GUILayout.Button("Create On Selection")) CreateOnSelection();
+                if (GUILayout.Button(new GUIContent("Clear Sculptables", "Clear the sculptable set without deleting modifiers or recorded strokes. Unlock, then Shift+Click to add objects again."))) ClearSculptables();
             }
 
             if (m_Modifier != null)
@@ -187,7 +201,8 @@ namespace MashBoxSDK.MapTools
             m_RadiusMaximum = Mathf.Max(m_RadiusMaximum, m_Radius);
             m_Radius = GUILayout.HorizontalSlider(m_Radius, .01f, m_RadiusMaximum);
             m_SmoothStrength = EditorGUILayout.Slider(new GUIContent("Smoothing Strength", "Independent strength, also used while holding Shift. Zero makes no change."), m_SmoothStrength, 0f, 1f);
-            m_SmoothIterations = EditorGUILayout.IntSlider("Smoothing Passes", m_SmoothIterations, 1, 16);
+            m_SmoothIterations = EditorGUILayout.IntSlider(new GUIContent("Smoothing Passes",
+                "Passes per brush sample. Terrain uses eight times this value for stronger smoothing on dense meshes."), m_SmoothIterations, 1, 16);
             if (m_Mode == MeshSculptModifier.SculptMode.SetHeight)
             {
                 m_SetHeight = EditorGUILayout.FloatField("Target World Height (m)", m_SetHeight);
@@ -298,14 +313,93 @@ namespace MashBoxSDK.MapTools
             {
                 ClearActiveModifier();
                 CreateOnSelection();
-                if (m_Modifier != null)
-                    m_Modifier.Rebuild();
                 return;
             }
 
-            m_Modifier = selectedModifier;
             EnsureSelectedModifierTargetsLoft(selected, selectedModifier);
-            m_Modifier.Rebuild();
+            if (!IsUsableSceneModifier(selectedModifier)) return;
+            AddSculptableSurface(selectedModifier.Target);
+            ActivateModifier(selectedModifier);
+        }
+
+        internal static void AddSculptableSurface(MeshFilter surface)
+        {
+            if (surface != null && s_SculptableSurfaces.Add(surface)) SculptablesChanged?.Invoke();
+        }
+
+        internal static bool IsSculptableSurface(MeshFilter surface)
+        {
+            if (surface == null) return false;
+            if (s_SculptableSurfaces.Contains(surface)) return true;
+
+            // A tiled terrain world is one sculptable surface. Keep its tile
+            // borders editable together, without admitting unrelated lofts.
+            var terrain = surface.GetComponentInParent<MGTerrain>();
+            if (terrain == null || terrain.MeshFilter != surface || terrain.World == null) return false;
+            foreach (var selected in s_SculptableSurfaces)
+            {
+                if (selected == null) continue;
+                var selectedTerrain = selected.GetComponentInParent<MGTerrain>();
+                if (selectedTerrain != null && selectedTerrain.MeshFilter == selected
+                    && selectedTerrain.World == terrain.World) return true;
+            }
+            return false;
+        }
+
+        internal static void ClearSculptables()
+        {
+            if (s_ActiveSceneToolOwner != null) s_ActiveSceneToolOwner.ClearActiveModifier();
+            s_SculptableSurfaces.Clear();
+            SculptablesChanged?.Invoke();
+            SceneView.RepaintAll();
+        }
+
+        internal static bool HasLockedSculptTerrain
+        {
+            get
+            {
+                if (!MBEditorToolState.SculptableOnly) return false;
+                foreach (var surface in s_SculptableSurfaces)
+                    if (IsTerrainSurface(surface)) return true;
+                return false;
+            }
+        }
+
+        internal static void RegenerateLockedTerrainDetails()
+        {
+            if (!HasLockedSculptTerrain) return;
+            if (s_ActiveSceneToolOwner != null) s_ActiveSceneToolOwner.StopStroke();
+            var terrains = new HashSet<MGTerrain>();
+            foreach (var surface in s_SculptableSurfaces)
+            {
+                if (!IsTerrainSurface(surface)) continue;
+                var terrain = surface.GetComponentInParent<MGTerrain>();
+                terrains.Add(terrain);
+                if (terrain.World != null)
+                    foreach (var tile in terrain.World.Chunks)
+                        if (tile != null) terrains.Add(tile);
+            }
+            Undo.IncrementCurrentGroup();
+            int undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Regenerate Terrain Details");
+            foreach (var terrain in terrains)
+            {
+                Undo.RecordObject(terrain, "Regenerate Terrain Details");
+                var collider = terrain.MeshCollider;
+                if (collider != null && terrain.MeshFilter != null)
+                {
+                    collider.sharedMesh = null;
+                    collider.sharedMesh = terrain.MeshFilter.sharedMesh;
+                }
+                terrain.RefreshSurfaceCollidersFromMesh();
+                Physics.SyncTransforms();
+                terrain.ConformInstancesToSurface();
+                // Refresh procedural details even when there are no stored instances.
+                terrain.InvalidateRenderCache();
+                EditorUtility.SetDirty(terrain);
+            }
+            Undo.CollapseUndoOperations(undoGroup);
+            SceneView.RepaintAll();
         }
 
         void ClearActiveModifier()
@@ -391,8 +485,7 @@ namespace MashBoxSDK.MapTools
             int controlId = GUIUtility.GetControlID("MeshSculptBrush".GetHashCode(), FocusType.Passive);
             if (MBEditorToolState.SculptableOnly && current.type == EventType.Layout && !current.alt)
                 HandleUtility.AddDefaultControl(controlId);
-            if (m_Modifier != null && m_Modifier.Target != null
-                && HandleBrushAdjustment(current, controlId, sceneView))
+            if (HandleBrushAdjustment(current, controlId, sceneView))
                 return;
 
             Ray ray = HandleUtility.GUIPointToWorldRay(current.mousePosition);
@@ -427,14 +520,15 @@ namespace MashBoxSDK.MapTools
                 return;
 
             MeshSculptModifier hoveredModifier = ResolveSculptModifier(hitMeshFilter);
-            if (!m_IsSculpting && MBEditorToolState.SculptableOnly && hoveredModifier != null)
+            bool isSculptableHit = IsSculptableSurface(hitMeshFilter);
+            if (!m_IsSculpting && isSculptableHit && hoveredModifier != null)
                 ActivateModifier(hoveredModifier);
             if (current.type == EventType.Layout && !current.alt)
                 HandleUtility.AddDefaultControl(controlId);
-            if (m_IsSculpting && hoveredModifier != null && hoveredModifier != m_Modifier)
+            if (m_IsSculpting && isSculptableHit && hoveredModifier != null && hoveredModifier != m_Modifier)
                 SwitchModifierDuringStroke(hoveredModifier);
 
-            bool canSculptHit = m_Modifier != null
+            bool canSculptHit = isSculptableHit && m_Modifier != null
                 && m_Modifier.Target != null
                 && hitMeshFilter == m_Modifier.Target;
 
@@ -443,7 +537,7 @@ namespace MashBoxSDK.MapTools
                 if (MBEditorToolState.SculptableOnly)
                     return;
                 DrawBrushFalloff(hit.point, hit.normal, new Color(1f, 0.55f, 0.12f, 0.95f));
-                DrawActivationLabel(hit);
+                DrawActivationLabel(hitMeshFilter);
                 sceneView.Repaint();
 
                 if (current.type == EventType.MouseDown
@@ -484,7 +578,10 @@ namespace MashBoxSDK.MapTools
             }
             else if (m_IsSculpting && current.type == EventType.MouseDrag && current.button == 0)
             {
-                if (!m_HasLastStrokePosition || Vector3.Distance(hit.point, m_LastStrokePosition) >= m_Radius * m_Spacing)
+                bool smoothing = GetStrokeMode(current.control, current.shift) == MeshSculptModifier.SculptMode.Smooth;
+                if (!m_HasLastStrokePosition || ShouldSampleDrag(smoothing,
+                    Vector3.Distance(hit.point, m_LastStrokePosition), m_Radius * m_Spacing,
+                    EditorApplication.timeSinceStartup - m_LastStrokeSampleTime))
                     RecordStroke(hit, current.control, current.shift);
                 current.Use();
             }
@@ -495,9 +592,21 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        void DrawActivationLabel(RaycastHit hit)
+        internal static bool ShouldSampleDrag(bool smoothing, float distance, float spacing, double elapsed)
         {
-            MBEditorToolVisuals.DrawBrushAction("Shift+Click · Make Sculptable");
+            // Small back-and-forth motions must continue smoothing even inside
+            // one spacing interval. Bound the cost independently of mouse rate.
+            return smoothing ? elapsed >= 1.0 / 30.0 : distance >= spacing;
+        }
+
+        void DrawActivationLabel(MeshFilter surface)
+        {
+            var loft = surface.GetComponentInParent<MultiSplineLoft>();
+            var terrain = surface.GetComponentInParent<MGTerrain>();
+            string target = loft != null ? $"Loft: {loft.gameObject.name}"
+                : terrain != null && terrain.MeshFilter == surface ? $"Terrain: {terrain.gameObject.name}"
+                : surface.gameObject.name;
+            MBEditorToolVisuals.DrawBrushAction($"Shift+Click · Make Sculptable · {target}");
         }
 
         string GetBrushAction(MeshSculptModifier.SculptMode mode, bool control)
@@ -518,6 +627,7 @@ namespace MashBoxSDK.MapTools
 
         void CreateOrActivateModifier(MeshFilter meshFilter)
         {
+            using var profile = s_ActivateSurfaceMarker.Auto();
             if (meshFilter == null || meshFilter.sharedMesh == null)
                 return;
             if (IsSeamFit && !IsTerrainSurface(meshFilter) && meshFilter.GetComponentInParent<MultiSplineLoft>() == null) return;
@@ -536,7 +646,8 @@ namespace MashBoxSDK.MapTools
             Undo.RecordObject(modifier, "Configure Sculpt Modifier");
             if (loft != null)
             {
-                modifier.LinkToLoft(loft);
+                if (modifier.LinkedLoft != loft || modifier.Target != targetMesh)
+                    modifier.LinkToLoft(loft);
                 if (loft.SculptModifier != modifier)
                 {
                     Undo.RecordObject(loft, "Link Sculpt Modifier");
@@ -547,7 +658,9 @@ namespace MashBoxSDK.MapTools
             else
             {
                 modifier.SetTarget(targetMesh);
-                if (targetObject.GetComponent<Collider>() == null)
+                var terrain = targetMesh.GetComponentInParent<MGTerrain>();
+                bool hasTerrainCollision = terrain != null && terrain.MeshFilter == targetMesh && terrain.HasSurfaceCollider;
+                if (!hasTerrainCollision && targetObject.GetComponent<Collider>() == null)
                 {
                     MeshCollider collider = Undo.AddComponent<MeshCollider>(targetObject);
                     collider.sharedMesh = targetMesh.sharedMesh;
@@ -555,9 +668,11 @@ namespace MashBoxSDK.MapTools
             }
 
             EditorUtility.SetDirty(modifier);
+            AddSculptableSurface(targetMesh);
             ActivateModifier(modifier);
-            modifier.Rebuild();
-            RefreshSculptPickingCollider();
+            // Selection does not change geometry. The first actual brush sample
+            // initializes the editable output if needed; do not replay strokes,
+            // conform details or rebake collision merely to enroll a surface.
         }
 
         void ActivateModifier(MeshSculptModifier modifier)
@@ -674,7 +789,7 @@ namespace MashBoxSDK.MapTools
             EditorGUI.ProgressBar(
                 new Rect(panelRect.x + 8f, panelRect.y + 27f, panelRect.width - 16f, 16f),
                 GetNormalizedAdjustmentStrength(),
-                $"Strength  {m_Strength:0.00}   (drag vertically)");
+                $"Strength  {GetAdjustmentStrength():0.00}   (drag vertically)");
             Handles.EndGUI();
             return true;
         }
@@ -682,7 +797,16 @@ namespace MashBoxSDK.MapTools
         void CaptureBrushAdjustmentSurface(Vector2 mousePosition)
         {
             Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
-            m_HasBrushAdjustSurface = TryRaycastTarget(ray, out RaycastHit hit);
+            RaycastHit hit;
+            if (m_Modifier != null && m_Modifier.Target != null)
+                m_HasBrushAdjustSurface = TryRaycastTarget(ray, out hit);
+            else
+            {
+                // A hover surface only anchors the preview; adjusting settings
+                // must not require or enroll a sculptable target.
+                Physics.SyncTransforms();
+                m_HasBrushAdjustSurface = Physics.Raycast(ray, out hit, float.MaxValue, ~0, QueryTriggerInteraction.Ignore);
+            }
             if (!m_HasBrushAdjustSurface)
                 return;
 
@@ -721,11 +845,17 @@ namespace MashBoxSDK.MapTools
             GUIUtility.hotControl = 0;
         }
 
+        float GetAdjustmentStrength()
+        {
+            return m_Mode == MeshSculptModifier.SculptMode.Smooth ? m_SmoothStrength : m_Strength;
+        }
+
         float GetNormalizedAdjustmentStrength()
         {
+            float strength = GetAdjustmentStrength();
             return m_Mode == MeshSculptModifier.SculptMode.Displace
-                ? Mathf.Clamp01(Mathf.Abs(m_Strength) / 2f)
-                : Mathf.Clamp01(m_Strength);
+                ? Mathf.Clamp01(Mathf.Abs(strength) / 2f)
+                : Mathf.Clamp01(strength);
         }
 
         bool TryRaycastTarget(Ray ray, out RaycastHit targetHit)
@@ -796,13 +926,10 @@ namespace MashBoxSDK.MapTools
             return meshFilter != null;
         }
 
-        static bool CanPickSculptSurface(MeshFilter surface)
+        bool CanPickSculptSurface(MeshFilter surface)
         {
-            if (!MBEditorToolState.SculptableOnly) return true;
-            var terrain = surface.GetComponentInParent<MGTerrain>();
-            if (terrain != null && terrain.World != null && terrain.MeshFilter == surface) return true;
-            MeshSculptModifier modifier = ResolveSculptModifier(surface);
-            return IsUsableSceneModifier(modifier) && modifier.Target == surface;
+            return (!MBEditorToolState.SculptableOnly && !m_IsSculpting)
+                || IsSculptableSurface(surface);
         }
 
         static MeshFilter ResolveSculptMeshFilter(Collider hitCollider)
@@ -842,12 +969,8 @@ namespace MashBoxSDK.MapTools
             Physics.SyncTransforms();
             float closest = float.MaxValue;
 
-            // Once painting begins, this collider represents the current edited
-            // surface. Hover before activation must work without a modifier too.
-            bool choosing = !MBEditorToolState.SculptableOnly
-                && !m_IsSculpting && Event.current != null && Event.current.shift;
-            bool pickTerrain = m_Modifier == null || !EditingSeamLoft || choosing;
-            bool pickLoft = m_Modifier == null || EditingSeamLoft || choosing;
+            // Membership, rather than the last active target's type, determines
+            // which terrain and loft surfaces can receive a stroke.
             if (m_SculptPickingCollider != null
                 && CanPickSculptSurface(m_SculptPickingTarget)
                 && m_SculptPickingCollider.Raycast(ray, out var previewHit, closest))
@@ -860,7 +983,6 @@ namespace MashBoxSDK.MapTools
             m_SeamTerrains ??= Object.FindObjectsByType<MGTerrain>(FindObjectsSortMode.None);
             foreach (MGTerrain terrain in m_SeamTerrains)
             {
-                if (!pickTerrain) break;
                 if (terrain == null || !terrain.gameObject.activeInHierarchy
                     || !terrain.gameObject.scene.IsValid() || !terrain.gameObject.scene.isLoaded) continue;
                 MeshFilter surface = terrain.MeshFilter;
@@ -872,19 +994,15 @@ namespace MashBoxSDK.MapTools
                 meshFilter = surface;
                 closest = hit.distance;
             }
-            if (pickLoft)
+            foreach (var hit in Physics.RaycastAll(ray, closest, ~0, QueryTriggerInteraction.Ignore))
             {
-                foreach (var hit in Physics.RaycastAll(ray, closest, ~0, QueryTriggerInteraction.Ignore))
-                {
-                    var loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
-                    if (loft == null || hit.distance >= closest) continue;
-                    var filter = loft.GetComponent<MeshFilter>();
-                    if (filter == null || filter.sharedMesh == null || !CanPickSculptSurface(filter)) continue;
-                    if (EditingSeamLoft && !choosing && filter != m_Modifier.Target) continue;
-                    surfaceHit = hit;
-                    meshFilter = filter;
-                    closest = hit.distance;
-                }
+                var loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
+                if (loft == null || hit.distance >= closest) continue;
+                var filter = loft.GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null || !CanPickSculptSurface(filter)) continue;
+                surfaceHit = hit;
+                meshFilter = filter;
+                closest = hit.distance;
             }
             return meshFilter != null;
         }
@@ -931,7 +1049,10 @@ namespace MashBoxSDK.MapTools
                 strokeMode == MeshSculptModifier.SculptMode.SeamFit || strokeMode == MeshSculptModifier.SculptMode.MeshStamp ? MeshSculptModifier.StrokeSpace.TargetLocal : m_StrokeSpace,
                 hit.point, direction, m_Radius, strength, m_Falloff);
             stroke.targetHeight = m_SetHeight;
-            stroke.smoothIterations = m_SmoothIterations;
+            // Store the terrain boost in new strokes so replaying older sculpt
+            // histories keeps their original smoothing effect.
+            stroke.smoothIterations = Mathf.Clamp(m_SmoothIterations, 1, 16)
+                * (strokeMode == MeshSculptModifier.SculptMode.Smooth && IsTerrainSurface(m_Modifier.Target) ? 8 : 1);
             if (strokeMode == MeshSculptModifier.SculptMode.MeshStamp)
             {
                 if (!PrepareMeshStamp()) return;
@@ -988,7 +1109,12 @@ namespace MashBoxSDK.MapTools
             m_Modifier.ApplyLatestStrokePreview();
             EditorUtility.SetDirty(m_Modifier);
             m_LastStrokePosition = hit.point;
+            m_LastStrokeSampleTime = EditorApplication.timeSinceStartup;
             m_HasLastStrokePosition = true;
+            // Publish the changed renderer during the drag, including when the
+            // Scene view is not otherwise running its player loop continuously.
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
             Repaint();
         }
 
@@ -1019,6 +1145,15 @@ namespace MashBoxSDK.MapTools
             if (target == null || target.sharedMesh == null)
             {
                 DestroySculptPickingCollider();
+                return;
+            }
+
+            var terrain = target.GetComponentInParent<MGTerrain>();
+            if (terrain != null && terrain.MeshFilter == target && terrain.HasSurfaceCollider)
+            {
+                // Terrain already supplies master/chunk collision. Cooking a
+                // duplicate full-resolution mesh just for selection is costly.
+                if (m_SculptPickingObject != null) DestroySculptPickingCollider();
                 return;
             }
 
@@ -1098,4 +1233,3 @@ namespace MashBoxSDK.MapTools
         }
     }
 }
-

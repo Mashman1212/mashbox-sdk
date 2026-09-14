@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using MashBoxSDK.Maps.TerrainSystem;
 using UnityEditor;
 using UnityEngine;
 
@@ -40,8 +41,64 @@ namespace MashBoxSDK.MapTools
                 catch (InvalidOperationException) { rejected = true; }
                 Check(rejected, "Ambiguous overlapping edge heights must not silently produce a seam.");
                 Debug.Log("Terrain tile geometry PASS: south/north/east/west, split vertices, irregular interior, edge interpolation, UVs, source preservation, ambiguous edge guard.");
+                ValidateSurfaceTileReuse();
             }
             finally { UnityEngine.Object.DestroyImmediate(mesh); }
+        }
+
+        static void ValidateSurfaceTileReuse()
+        {
+            var owner = new GameObject("Surface tile reuse validation") { hideFlags = HideFlags.HideAndDontSave };
+            var mesh = new Mesh();
+            try
+            {
+                var filter = owner.AddComponent<MeshFilter>();
+                owner.AddComponent<MeshRenderer>();
+                mesh.vertices = new[] { Vector3.zero, new Vector3(64, 0, 0), new Vector3(0, 0, 64), new Vector3(64, 0, 64) };
+                mesh.triangles = new[] { 0, 2, 1, 1, 2, 3 };
+                mesh.uv = new[] { Vector2.zero, Vector2.right, Vector2.up, Vector2.one };
+                mesh.colors = Enumerable.Repeat(Color.red, 4).ToArray();
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+                filter.sharedMesh = mesh;
+                var terrain = owner.AddComponent<MGTerrain>();
+                terrain.RefreshSurfaceTiles();
+                var tiles = owner.GetComponentsInChildren<MeshFilter>().Where(terrain.IsSurfaceRenderTile).ToArray();
+                Check(tiles.Length > 0, "Validation must create render tiles.");
+                var originals = tiles.Select(tile => tile.sharedMesh).ToArray();
+
+                var vertices = mesh.vertices;
+                for (int i = 0; i < vertices.Length; i++) vertices[i].y = 3f;
+                mesh.vertices = vertices;
+                mesh.colors = Enumerable.Repeat(Color.blue, 4).ToArray();
+                mesh.RecalculateBounds();
+                terrain.NotifySurfaceMeshChanged();
+                terrain.RefreshSurfaceTiles();
+                // Settings validation must update the cache without recreating it.
+                owner.SendMessage("OnValidate", SendMessageOptions.DontRequireReceiver);
+                terrain.RefreshSurfaceTiles();
+                for (int i = 0; i < tiles.Length; i++)
+                {
+                    Check(tiles[i] != null && tiles[i].sharedMesh == originals[i], "Vertex edits and component validation must reuse tile meshes.");
+                    Check(originals[i].vertices.All(vertex => Mathf.Abs(vertex.y - 3f) < .0001f), "Reused tiles must contain updated heights.");
+                    Check(originals[i].colors.All(color => color == Color.blue), "Reused tiles must update colours.");
+                    Check(originals[i].uv.Length == originals[i].vertexCount, "Tile UVs must survive refresh.");
+                }
+                mesh.colors = Array.Empty<Color>();
+                mesh.uv = Array.Empty<Vector2>();
+                terrain.NotifySurfaceMeshChanged();
+                terrain.RefreshSurfaceTiles();
+                Check(originals.All(tile => tile.colors.Length == 0 && tile.uv.Length == 0), "Removed channels must not retain stale buffer data.");
+                terrain.NotifySurfaceMeshChanged(true);
+                terrain.RefreshSurfaceTiles();
+                Check(originals.All(tile => tile == null), "Explicit topology changes must rebuild render tiles.");
+                Debug.Log("Surface tile reuse PASS: stable mesh identities, updated heights/colours, UV preservation, removed channels, topology rebuild.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(owner);
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
         }
 
         static void Check(bool condition, string message)
