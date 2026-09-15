@@ -226,7 +226,10 @@ namespace MashBoxSDK.Map.Rendering.Instancer
                     var sourceMaterials = renderer.sharedMaterials;
                     // Preserve unsupported rendering features through the original renderer.
                     var lod = renderer.GetComponentInParent<LODGroup>();
-                    if ((lod != null && lod.lodCount > 1) || renderer.HasPropertyBlock() ||
+                    // Mirrored transforms need per-renderer winding correction. DrawMeshInstanced
+                    // cannot preserve it in a mixed batch; retain their original renderers.
+                    if (renderer.localToWorldMatrix.determinant < 0f ||
+                        (lod != null && lod.lodCount > 1) || renderer.HasPropertyBlock() ||
                         renderer.lightmapIndex >= 0 || renderer.realtimeLightmapIndex >= 0 ||
                         renderer.renderingLayerMask != 1 ||
                         (renderer.lightProbeUsage != LightProbeUsage.Off &&
@@ -308,3 +311,4 @@ namespace MashBoxSDK.Map.Rendering.Instancer
         }
     }
 }
+

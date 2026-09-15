@@ -562,6 +562,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             public Vector2 maskOffset;
             public Vector4 mappingTiling;
             public Vector4 mappingOffset;
+            public float aoRemapMin;
+            public float aoRemapMax;
             public float heightBlend;
             public float heightRemapMin;
             public float heightRemapMax;
@@ -1493,6 +1495,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 MaterialProperty maskMap = FindOptionalProperty("_MaskMap" + suffix, properties);
                 MaterialProperty mappingTiling = FindOptionalProperty("_Tiling" + suffix, properties);
                 MaterialProperty mappingOffset = FindOptionalProperty("_Offset" + suffix, properties);
+                MaterialProperty aoRemapMin = FindOptionalProperty("_AORemapMin" + suffix, properties);
+                MaterialProperty aoRemapMax = FindOptionalProperty("_AORemapMax" + suffix, properties);
                 MaterialProperty heightBlend = FindOptionalProperty("_HeightBlend" + suffix, properties);
                 MaterialProperty heightRemapMin = FindOptionalProperty("_HeightRemapMin" + suffix, properties);
                 MaterialProperty heightRemapMax = FindOptionalProperty("_HeightRemapMax" + suffix, properties);
@@ -1586,6 +1590,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                         lighten,
                         color,
                         whiteBalance);
+                    DrawAOControls(materialEditor, aoRemapMin, aoRemapMax);
                     DrawHeightControls(
                         materialEditor,
                         heightBlend,
@@ -1751,6 +1756,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 maskOffset = GetTextureOffset(material, maskProperty),
                 mappingTiling = GetVector(material, mappingTilingProperty, new Vector4(1f, 1f, 0f, 0f)),
                 mappingOffset = GetVector(material, mappingOffsetProperty, Vector4.zero),
+                aoRemapMin = GetFloat(material, "_AORemapMin" + suffix),
+                aoRemapMax = GetFloat(material, "_AORemapMax" + suffix, 1f),
                 heightBlend = GetFloat(material, heightBlendProperty),
                 heightRemapMin = GetFloat(material, heightRemapMinProperty),
                 heightRemapMax = GetFloat(material, heightRemapMaxProperty, 1f),
@@ -1796,6 +1803,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 values.baseOffset);
             SetVector(material, "_Tiling" + suffix, values.mappingTiling);
             SetVector(material, "_Offset" + suffix, values.mappingOffset);
+            SetFloat(material, "_AORemapMin" + suffix, values.aoRemapMin);
+            SetFloat(material, "_AORemapMax" + suffix, values.aoRemapMax);
             SetFloat(material, "_HeightBlend" + suffix, values.heightBlend);
             SetFloat(material, "_HeightRemapMin" + suffix, values.heightRemapMin);
             SetFloat(material, "_HeightRemapMax" + suffix, values.heightRemapMax);
@@ -1999,6 +2008,38 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 materialEditor.ShaderProperty(color, new GUIContent("Color"));
             if (whiteBalance != null)
                 materialEditor.ShaderProperty(whiteBalance, new GUIContent("White Balance"));
+        }
+
+        private static void DrawAOControls(
+            MaterialEditor materialEditor,
+            MaterialProperty aoRemapMin,
+            MaterialProperty aoRemapMax)
+        {
+            if (aoRemapMin == null && aoRemapMax == null)
+                return;
+
+            GUILayout.Space(2f);
+            EditorGUILayout.LabelField("Ambient Occlusion", EditorStyles.miniBoldLabel);
+
+            if (aoRemapMin != null && aoRemapMax != null)
+            {
+                materialEditor.MinMaxShaderProperty(
+                    aoRemapMin,
+                    aoRemapMax,
+                    0f,
+                    1f,
+                    new GUIContent(
+                        "AO Remapping",
+                        "Sets the minimum and maximum bounds used to remap this layer's sampled ambient occlusion."));
+            }
+            else if (aoRemapMin != null)
+            {
+                materialEditor.ShaderProperty(aoRemapMin, new GUIContent("AO Remap Min"));
+            }
+            else if (aoRemapMax != null)
+            {
+                materialEditor.ShaderProperty(aoRemapMax, new GUIContent("AO Remap Max"));
+            }
         }
 
         private static void DrawHeightControls(

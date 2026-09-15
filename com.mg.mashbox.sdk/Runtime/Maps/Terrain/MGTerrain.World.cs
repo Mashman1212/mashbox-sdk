@@ -59,6 +59,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
         internal void PrepareWorldCamera(Camera camera, float unloadDistance)
         {
             m_WorldPendingDraw = false;
+            // Captures consume resident data, never the streaming or world budgets.
+            if (camera != null && camera.cameraType == CameraType.Reflection)
+            {
+                RenderInstances(camera);
+                return;
+            }
             if (EditorDetailsHidden && m_AppearanceCaptureCamera == null) return;
             m_WorldDefersDraw = UsesWorldBudget;
             try

@@ -1,3 +1,7 @@
+#if UNITY_6000_0_OR_NEWER
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+#endif
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -513,6 +517,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return;
             }
             if (m_Instances.Count == 0 && DensityDetailLayerCount == 0) return;
+            if (camera.cameraType == CameraType.Reflection)
+            {
+                RenderReflectionDetails(camera);
+                return;
+            }
             Matrix4x4 localToWorld = transform.localToWorldMatrix;
             if (m_RenderCacheDirty || m_CachedLocalToWorld != localToWorld) RebuildRenderCache(localToWorld);
             GeometryUtility.CalculateFrustumPlanes(camera, m_InstanceFrustumPlanes);
@@ -763,5 +772,129 @@ namespace MashBoxSDK.Maps.TerrainSystem
             extents = new Vector3(Mathf.Abs(axisX.x) + Mathf.Abs(axisY.x) + Mathf.Abs(axisZ.x), Mathf.Abs(axisX.y) + Mathf.Abs(axisY.y) + Mathf.Abs(axisZ.y), Mathf.Abs(axisX.z) + Mathf.Abs(axisY.z) + Mathf.Abs(axisZ.z));
             return new Bounds(center, extents * 2f);
         }
+    }
+}
+
+namespace MashBoxSDK.Maps.TerrainSystem
+{
+    public sealed partial class MGTerrain
+    {
+        readonly System.Collections.Generic.HashSet<int> m_ReflectionDetailCameraIds = new System.Collections.Generic.HashSet<int>();
+
+        bool m_BuildingReflectionDetails;
+        readonly List<DetailCandidateChunk> m_ReflectionCandidates = new List<DetailCandidateChunk>();
+
+        void RenderReflectionDetails(Camera camera)
+        {
+            m_ReflectionDetailCameraIds.Add(camera.GetInstanceID());
+            if (m_RenderCacheDirty || m_DetailRenderCacheDirty) return;
+            GeometryUtility.CalculateFrustumPlanes(camera, m_InstanceFrustumPlanes);
+            foreach (var batch in m_DrawBatches) DrawBatchInstances(batch, camera);
+#if UNITY_6000_0_OR_NEWER
+            if (m_DetailBrgUsesGpuGeneration) return; // Resident GPU cells are selected in BRG culling.
+#endif
+            if (MeshFilter == null || MeshFilter.sharedMesh == null) return;
+            // A one-shot capture cannot wait for frame-budgeted CPU mesh builds.
+            // Generate temporary instanced batches for the probe's own view, without
+            // replacing, evicting or advancing the gameplay detail cache.
+            Bounds bounds = MeshFilter.sharedMesh.bounds;
+            int remaining = UsesWorldBudget ? m_World.VisibleDetailBudget
+                : m_MaxVisibleDenseDetailInstances > 0 ? m_MaxVisibleDenseDetailInstances : int.MaxValue;
+            int previousDrawCalls = m_LastDensityDetailDrawCalls;
+            m_BuildingReflectionDetails = true;
+            ResetDenseDetailBatchAccumulators();
+            try
+            {
+                for (int layerIndex = 0; layerIndex < m_DensityDetailLayers.Count && remaining > 0; layerIndex++)
+                {
+                    var layer = m_DensityDetailLayers[layerIndex];
+                    if (layer == null || !layer.RenderingEnabled || layer.PaletteSourceOnly || layer.DensityMap == null
+                        || (uint)layer.PrototypeIndex >= m_Prototypes.Count) continue;
+                    var prototype = m_Prototypes[layer.PrototypeIndex];
+                    if (prototype == null || prototype.ShadowCasting == ShadowCastingMode.ShadowsOnly) continue;
+                    float distance = prototype.MaximumDrawDistance > 0 ? prototype.MaximumDrawDistance : camera.farClipPlane;
+                    if (EffectiveDetailDistance > 0) distance = Mathf.Min(distance, EffectiveDetailDistance);
+                    BuildDetailHierarchyCandidates(camera, m_InstanceFrustumPlanes, camera.transform.position,
+                        layerIndex, layer, bounds, layer.DensityMap.width, layer.DensityMap.height,
+                        Mathf.Clamp(m_DetailChunkCells, 2, 64), distance, m_ReflectionCandidates);
+                    m_ReflectionCandidates.Sort((a, b) => a.distance.CompareTo(b.distance));
+                    foreach (var candidate in m_ReflectionCandidates)
+                    {
+                        if (remaining <= 0) break;
+                        var chunk = BuildDensityDetailChunk(layerIndex, layer, prototype, bounds, candidate.cellSize,
+                            candidate.firstX, candidate.firstZ, candidate.densityLod, GetDetailDensityScale(candidate.densityLod));
+                        int allowed = Mathf.Min(remaining, chunk.instanceCount);
+                        foreach (var batch in chunk.batches)
+                            QueueDenseDetailBatch(batch, camera, allowed, ShadowCastingMode.Off,
+                                chunk.instanceCount, false, layerIndex);
+                        remaining -= allowed;
+                    }
+                }
+                FlushDenseDetailBatchAccumulators(camera);
+            }
+            finally
+            {
+                ResetDenseDetailBatchAccumulators();
+                m_BuildingReflectionDetails = false;
+                m_LastDensityDetailDrawCalls = previousDrawCalls;
+            }
+        }
+
+#if UNITY_6000_0_OR_NEWER
+        bool IsResidentReflectionView(BatchCullingContext context) =>
+            context.viewType == BatchCullingViewType.Camera
+            && m_ReflectionDetailCameraIds.Contains(context.viewID.GetInstanceID());
+
+        bool ReflectionCellVisible(ResidentGpuCell cell, BatchCullingContext context)
+        {
+            if (EditorDetailsHidden || !m_DrawInstances || (!Application.isPlaying && !m_DrawInstancesInEditMode)
+                || !m_DetailBrgUsesGpuGeneration || !m_HasDetailBrgBatch
+                || cell.generation != m_DetailGpuGeneration || cell.population <= 0
+                || cell.group.shadowCasting == ShadowCastingMode.ShadowsOnly
+                || !m_DetailBrgMeshIds.ContainsKey(cell.group.batch.mesh)
+                || !m_DetailBrgMaterialIds.ContainsKey(cell.group.batch.material)) return false;
+            Bounds bounds = cell.chunk.worldBounds;
+            Vector3 center = bounds.center, extents = bounds.extents;
+            foreach (var plane in context.cullingPlanes)
+            {
+                Vector3 normal = plane.normal;
+                float radius = Mathf.Abs(normal.x) * extents.x + Mathf.Abs(normal.y) * extents.y + Mathf.Abs(normal.z) * extents.z;
+                if (plane.GetDistanceToPoint(center) + radius < 0f) return false;
+            }
+            return true;
+        }
+
+        void CountReflectionCommands(BatchCullingContext context, ref int direct, ref int visible)
+        {
+            foreach (var cell in m_ResidentGpuCells)
+                if (ReflectionCellVisible(cell, context)) { direct++; visible += cell.population; }
+        }
+
+        unsafe void WriteReflectionCommands(BatchCullingContext context, BatchCullingOutputDrawCommands* output,
+            ref int direct, ref int visible, ref int range)
+        {
+            foreach (var cell in m_ResidentGpuCells)
+            {
+                if (!ReflectionCellVisible(cell, context)) continue;
+                var group = cell.group;
+                output->drawCommands[direct] = new BatchDrawCommand
+                {
+                    batchID = m_DetailBrgBatchId, meshID = m_DetailBrgMeshIds[group.batch.mesh],
+                    materialID = m_DetailBrgMaterialIds[group.batch.material], submeshIndex = (ushort)group.batch.subMesh,
+                    visibleOffset = (uint)visible, visibleCount = (uint)cell.population, splitVisibilityMask = ushort.MaxValue
+                };
+                for (int i = 0; i < cell.population; i++) output->visibleInstances[visible++] = cell.start + i;
+                output->drawRanges[range++] = new BatchDrawRange
+                {
+                    drawCommandsType = BatchDrawCommandType.Direct, drawCommandsBegin = (uint)direct++, drawCommandsCount = 1,
+                    filterSettings = new BatchFilterSettings
+                    {
+                        batchLayer = DetailBatchLayer, renderingLayerMask = uint.MaxValue, layer = (byte)gameObject.layer,
+                        shadowCastingMode = ShadowCastingMode.Off, receiveShadows = group.batch.prototype.ReceiveShadows
+                    }
+                };
+            }
+        }
+#endif
     }
 }

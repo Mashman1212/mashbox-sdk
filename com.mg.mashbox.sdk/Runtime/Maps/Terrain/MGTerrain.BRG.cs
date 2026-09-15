@@ -879,6 +879,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                             if (cell.tick == m_ResidentGpuTick && cell.visible > 0)
                                 AppendResidentVisibleIndices(cell, ref destination, m_DetailBrgPreparedGroups.Count);
                     }
+                    // Reflection faces can see groups outside the gameplay frustum.
+                    GetOrRegisterBrgMesh(group.batch.mesh);
+                    GetOrRegisterBrgMaterial(group.batch.material);
                     if (destination == offset) continue;
                     if (m_UseIndirectDetailDraws)
                     {
@@ -1288,6 +1291,20 @@ namespace MashBoxSDK.Maps.TerrainSystem
             var output = (BatchCullingOutputDrawCommands*)cullingOutput.drawCommands.GetUnsafePtr();
             *output = default;
             if (EditorDetailsHidden && m_AppearanceCaptureCamera == null) return default;
+            if (IsResidentReflectionView(cullingContext))
+            {
+                int direct = 0, visible = 0, range = 0;
+                CountReflectionCommands(cullingContext, ref direct, ref visible);
+                if (direct == 0) return default;
+                output->drawCommandCount = output->drawRangeCount = direct;
+                output->visibleInstanceCount = visible;
+                output->drawCommands = (BatchDrawCommand*)UnsafeUtility.Malloc(sizeof(BatchDrawCommand) * (long)direct, 8, Allocator.TempJob);
+                output->drawRanges = (BatchDrawRange*)UnsafeUtility.Malloc(sizeof(BatchDrawRange) * (long)direct, 8, Allocator.TempJob);
+                output->visibleInstances = (int*)UnsafeUtility.Malloc(sizeof(int) * (long)visible, 8, Allocator.TempJob);
+                direct = visible = 0;
+                WriteReflectionCommands(cullingContext, output, ref direct, ref visible, ref range);
+                return default;
+            }
             bool cameraView = cullingContext.viewType == BatchCullingViewType.Camera;
             bool lightView = cullingContext.viewType == BatchCullingViewType.Light;
             if (!cameraView && !lightView)

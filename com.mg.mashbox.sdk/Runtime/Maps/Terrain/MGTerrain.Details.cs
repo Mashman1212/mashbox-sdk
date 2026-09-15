@@ -1742,7 +1742,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool ShouldBuildGpuProceduralDetailCells()
         {
 #if UNITY_6000_0_OR_NEWER
-            return Application.isPlaying
+            return !m_BuildingReflectionDetails && Application.isPlaying
                 && m_UseBatchRendererGroup
                 && m_UseGpuProceduralDetailGeneration
                 && CanUseGpuGeneratedDensityDetailBrg();
@@ -2623,7 +2623,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 RenderPart part = parts[partIndex];
                 List<Matrix4x4> matrices = matricesByPart[partIndex];
                 long combinedVertexCount = (long)part.mesh.vertexCount * matrices.Count;
-                if (m_CombineDenseDetailMeshes
+                if (!m_BuildingReflectionDetails && m_CombineDenseDetailMeshes
                     && !UseFixedDetailCells
                     && m_AppearanceCaptureCamera == null
                     && !(m_UseBatchRendererGroup && Application.isPlaying)

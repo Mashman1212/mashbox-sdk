@@ -113,6 +113,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         internal void CountWorldCommands(BatchCullingContext context, ref int direct, ref int indirect, ref int visible)
         {
+            if (IsResidentReflectionView(context))
+            {
+                CountReflectionCommands(context, ref direct, ref visible);
+                return;
+            }
             if (!WorldHasCommands(context)) return;
             bool useIndirect = m_IndirectDetailDrawsReady && m_DetailBrgUsesGpuGeneration;
             int count = 0;
@@ -125,6 +130,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
         internal unsafe void WriteWorldCommands(BatchCullingContext context, BatchCullingOutputDrawCommands* output,
             ref int direct, ref int indirect, ref int visible, ref int range)
         {
+            if (IsResidentReflectionView(context))
+            {
+                WriteReflectionCommands(context, output, ref direct, ref visible, ref range);
+                return;
+            }
             if (!WorldHasCommands(context)) return;
             bool camera = context.viewType == BatchCullingViewType.Camera;
             bool useIndirect = m_IndirectDetailDrawsReady && m_DetailBrgUsesGpuGeneration;

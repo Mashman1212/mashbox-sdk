@@ -91,6 +91,7 @@ public class InstanceGroupStatusEditor : Editor
     {
         var filter = renderer.GetComponent<MeshFilter>();
         if (filter == null || filter.sharedMesh == null) return "missing mesh";
+        if (renderer.localToWorldMatrix.determinant < 0f) return "mirrored transform (negative world scale)";
         var lod = renderer.GetComponentInParent<LODGroup>();
         if (lod != null && lod.lodCount > 1) return "multiple LODs";
         if (renderer.HasPropertyBlock()) return "material property override";
@@ -119,3 +120,4 @@ public class InstanceGroupStatusEditor : Editor
         Debug.Log(report.ToString());
     }
 }
+
