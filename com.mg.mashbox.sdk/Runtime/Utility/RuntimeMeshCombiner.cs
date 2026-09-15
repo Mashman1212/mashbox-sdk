@@ -184,6 +184,18 @@ public class RuntimeMeshCombiner : MonoBehaviour
     }
 
 #if UNITY_EDITOR
+    // Read-only inspection: do not combine, restore renderers or reimport assets.
+    public List<MeshFilter> GetMaterialPreviewMeshFilters()
+    {
+        List<MeshFilter> results = new List<MeshFilter>();
+        foreach (MeshFilter filter in GetComponentsInChildren<MeshFilter>(includeInactiveChildren))
+        {
+            if (ShouldUseMeshFilter(filter, true))
+                results.Add(filter);
+        }
+        return results;
+    }
+
     [ContextMenu("Enable Read/Write On Child Mesh Assets")]
     public void EnableReadWriteOnChildMeshAssets()
     {
@@ -335,7 +347,7 @@ public class RuntimeMeshCombiner : MonoBehaviour
     }
 #endif
 
-    private bool ShouldUseMeshFilter(MeshFilter meshFilter)
+    private bool ShouldUseMeshFilter(MeshFilter meshFilter, bool preview = false)
     {
         if (meshFilter == null || meshFilter.sharedMesh == null)
             return false;
@@ -356,7 +368,15 @@ public class RuntimeMeshCombiner : MonoBehaviour
         if (meshRenderer == null)
             return false;
 
-        if (!includeDisabledRenderers && !meshRenderer.enabled)
+        bool enabled = meshRenderer.enabled;
+        if (preview)
+        {
+            int sourceIndex = sourceRenderers.IndexOf(meshRenderer);
+            if (sourceIndex >= 0 && sourceIndex < sourceRendererEnabledStates.Count)
+                enabled = sourceRendererEnabledStates[sourceIndex];
+        }
+
+        if (!includeDisabledRenderers && !enabled)
             return false;
 
         return true;

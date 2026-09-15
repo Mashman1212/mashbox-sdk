@@ -36,6 +36,18 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             foreach (var chunk in m_Chunks) if (chunk != null) chunk.ApplyWorldQuality(m_Quality);
         }
+        /// <summary>Stores the shadow preference for current and newly registered chunks.</summary>
+        public void SetDenseDetailShadows(bool enabled)
+        {
+            if (m_Quality == null)
+                m_Quality = m_Chunks.Count > 0 && m_Chunks[0] != null
+                    ? m_Chunks[0].CaptureWorldQuality() : new MGTerrainWorldQuality();
+            m_QualityInitialized = true;
+            m_Quality.m_DenseDetailShadows = enabled;
+            foreach (var chunk in m_Chunks)
+                if (chunk != null) chunk.SetDenseDetailShadows(enabled);
+        }
+
         public void ApplyQualityPreset(MGTerrain.DetailQualityPreset preset)
         {
             if (m_Chunks.Count == 0) return;

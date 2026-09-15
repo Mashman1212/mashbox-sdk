@@ -16,7 +16,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool UsesWorldBudget => m_World != null && m_AppearanceCaptureCamera == null;
         float EffectiveDetailDistance => UsesWorldBudget ? m_World.DetailDistance : m_MaxDensityDetailDistance;
         bool RetainDetailCells => !UsesWorldBudget && m_RetainFixedDetailCells;
-        bool TryBuildWorldCell() => !UsesWorldBudget || m_World.TryBuildCell();
+        // Fully resident GPU cells must be ready for the first gameplay render.
+        // They have no asynchronous mesh builds, so streaming limits do not apply.
+        bool TryBuildWorldCell() => !UsesWorldBudget || KeepAllDetailCellsResident || m_World.TryBuildCell();
         bool TryUploadWorldMesh() => !UsesWorldBudget || m_World.TryUploadMesh();
 
         public void RefreshWorldOwnership()

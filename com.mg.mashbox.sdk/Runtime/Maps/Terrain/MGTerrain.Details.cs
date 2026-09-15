@@ -714,6 +714,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
+        /// <summary>Sets shadow casting for density details and refreshes cached batches.</summary>
+        public void SetDenseDetailShadows(bool enabled)
+        {
+            InitializeDetailSettingsIfNeeded();
+            if (m_DenseDetailShadows == enabled) return;
+            m_DenseDetailShadows = enabled;
+            InvalidateRenderCache();
+        }
+
         /// <summary>
         /// Sets the density-detail distance ceiling. Zero uses each prototype's distance.
         /// </summary>
@@ -729,7 +738,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         }
 
         /// <summary>
-        /// Applies one of the supported runtime density-detail quality presets.
+        /// Applies a density-detail quality preset, preserving the independent shadow setting.
         /// </summary>
         public void ApplyDetailQualityPreset(DetailQualityPreset preset)
         {
@@ -743,7 +752,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 case DetailQualityPreset.Medium:
                 case DetailQualityPreset.High:
                 default:
-                    SetDetailQualityValues(10, 65536, 249, 2, 30f, 90f, 0.5f, 0.25f, 3.8f, 300000, 0.223f, true, 1, 4);
+                    SetDetailQualityValues(10, 65536, 249, 2, 30f, 90f, 0.5f, 0.25f, 3.8f, 300000, 0.223f, 1, 4);
                     m_OverallDetailDensity = preset == DetailQualityPreset.Low ? 0.15f
                         : preset == DetailQualityPreset.Medium ? 0.25f
                         : preset == DetailQualityPreset.High ? 0.5f : 1f;
@@ -773,11 +782,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             float hysteresis,
             int visibleBudget,
             float distantBudgetReserve,
-            bool detailShadows,
             int uploadsPerFrame,
             int pendingBuilds)
         {
-            // Render distance is user-controlled, independent of quality presets.
+            // Render distance and dense detail shadows are independent of quality presets.
             m_DetailChunkCells = nearCellSize;
             m_MaxCachedDetailChunks = cachedCells;
             m_MaxDetailChunksBuiltPerLayerPerFrame = buildsPerFrame;
@@ -788,7 +796,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailDensityLodHysteresis = hysteresis;
             m_MaxVisibleDenseDetailInstances = visibleBudget;
             m_DistantDetailBudgetReserve = distantBudgetReserve;
-            m_DenseDetailShadows = detailShadows;
             m_MaxDetailMeshUploadsPerFrame = uploadsPerFrame;
             m_MaxPendingDetailBuilds = pendingBuilds;
         }
@@ -2009,7 +2016,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             // progressing, reuse the retained candidates instead of clearing and
             // recreating the entire list whenever the camera crosses the refresh
             // threshold. Visibility is evaluated by UpdateFullResidentVisibility once
-            // the population is ready; the world budget still limits construction.
+            // the population is ready; full residency completes construction in one pass.
             if (geometryUnchanged && KeepAllDetailCellsResident && candidates.Count > 0)
             {
                 return true;

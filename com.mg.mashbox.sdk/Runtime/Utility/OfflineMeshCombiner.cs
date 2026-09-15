@@ -51,6 +51,16 @@ public sealed class OfflineMeshCombiner : MonoBehaviour
     public bool HasBake => bakedObject != null && bakedMesh != null;
 
 #if UNITY_EDITOR
+    public bool GetSourceRendererEnabledForPreview(MeshRenderer renderer)
+    {
+        foreach (SourceRendererState state in sourceRendererStates)
+        {
+            if (state.renderer == renderer)
+                return state.enabled;
+        }
+        return renderer != null && renderer.enabled;
+    }
+
     public void RestoreRecordedSourceRenderers()
     {
         for (int i = 0; i < sourceRendererStates.Count; i++)

@@ -10,6 +10,10 @@ using UnityEngine.Rendering;
 [CustomEditor(typeof(OfflineMeshCombiner))]
 public sealed class OfflineMeshCombinerEditor : Editor
 {
+    private readonly MeshCombinerMaterialPreview materialPreview = new MeshCombinerMaterialPreview();
+
+    public override bool RequiresConstantRepaint() => true;
+
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
@@ -19,9 +23,10 @@ public sealed class OfflineMeshCombinerEditor : Editor
             "bakedObject",
             "bakedMesh",
             "sourceRendererStates");
-        serializedObject.ApplyModifiedProperties();
+        bool settingsChanged = serializedObject.ApplyModifiedProperties();
 
         OfflineMeshCombiner combiner = (OfflineMeshCombiner)target;
+        materialPreview.Draw(() => GetSourceMeshFilters(combiner, true), false, settingsChanged);
 
         EditorGUILayout.Space();
         EditorGUILayout.HelpBox(
@@ -234,7 +239,7 @@ public sealed class OfflineMeshCombinerEditor : Editor
             combiner);
     }
 
-    private static List<MeshFilter> GetSourceMeshFilters(OfflineMeshCombiner combiner)
+    private static List<MeshFilter> GetSourceMeshFilters(OfflineMeshCombiner combiner, bool preview = false)
     {
         MeshFilter[] filters = combiner.GetComponentsInChildren<MeshFilter>(combiner.IncludeInactiveChildren);
         List<MeshFilter> results = new List<MeshFilter>(filters.Length);
@@ -258,7 +263,7 @@ public sealed class OfflineMeshCombinerEditor : Editor
             MeshRenderer renderer = filter.GetComponent<MeshRenderer>();
             if (renderer == null)
                 continue;
-            if (!combiner.IncludeDisabledRenderers && !renderer.enabled)
+            if (!combiner.IncludeDisabledRenderers && !(preview ? combiner.GetSourceRendererEnabledForPreview(renderer) : renderer.enabled))
                 continue;
 
             results.Add(filter);
