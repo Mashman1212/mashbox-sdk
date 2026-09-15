@@ -351,6 +351,7 @@ namespace MashBoxSDK.MapTools
             MBDisplaceSculptToggle.Id,
             MBSmoothSculptToggle.Id,
             MBFlattenSculptToggle.Id,
+            MBSetHeightSculptToggle.Id,
             MBSeamFitSculptToggle.Id,
             MBMeshStampSculptToggle.Id,
             MBSculptableOnlyToggle.Id,
@@ -420,6 +421,7 @@ namespace MashBoxSDK.MapTools
             primaryActions.Add(new MBDisplaceSculptToggle());
             primaryActions.Add(new MBSmoothSculptToggle());
             primaryActions.Add(new MBFlattenSculptToggle());
+            primaryActions.Add(new MBSetHeightSculptToggle());
             primaryActions.Add(new MBSeamFitSculptToggle());
             primaryActions.Add(new MBMeshStampSculptToggle());
             primaryActions.Add(new MBMoveUvToggle());
@@ -438,6 +440,11 @@ namespace MashBoxSDK.MapTools
             sculptDetailsActions.Add(new MBRegenerateSculptDetailsButton());
             actionsContent.Add(sculptDetailsActions);
             root.Add(actionsRow);
+
+            var setHeightSection = new IMGUIContainer(MeshSculptWindow.DrawSetHeightOverlay);
+            setHeightSection.style.paddingLeft = 6f;
+            setHeightSection.style.paddingRight = 6f;
+            root.Add(setHeightSection);
 
             var colorRow = CreateRow("Color", out VisualElement colorContent);
             colorContent.Add(new MBPaintColorField());
@@ -482,6 +489,10 @@ namespace MashBoxSDK.MapTools
                     ? DisplayStyle.Flex
                     : DisplayStyle.None;
                 modeRow.style.display = editingDisplay;
+                setHeightSection.style.display = MBEditorToolState.ActiveEditing
+                    && MBEditorToolState.Mode == MBEditorAuthoringMode.MeshSculpt
+                    && MBEditorToolState.SculptMode == MBSculptMode.SetHeight
+                        ? DisplayStyle.Flex : DisplayStyle.None;
                 toolsRow.style.display = editingDisplay;
                 controlsSection.style.display = MBEditorToolState.ActiveEditing
                     && MBEditorToolState.Mode != MBEditorAuthoringMode.Spline
@@ -515,6 +526,7 @@ namespace MashBoxSDK.MapTools
                 MBEditorToolState.ActiveEditingChanged += syncEditingVisibility;
                 MBEditorToolState.BrushModeChanged += syncEditingVisibility;
                 MBEditorToolState.SplatPaintSettingsChanged += syncEditingVisibility;
+                MBEditorToolState.SculptModeChanged += syncEditingVisibility;
                 syncEditingVisibility();
             });
             root.RegisterCallback<DetachFromPanelEvent>(_ =>
@@ -523,6 +535,7 @@ namespace MashBoxSDK.MapTools
                 MBEditorToolState.ActiveEditingChanged -= syncEditingVisibility;
                 MBEditorToolState.BrushModeChanged -= syncEditingVisibility;
                 MBEditorToolState.SplatPaintSettingsChanged -= syncEditingVisibility;
+                MBEditorToolState.SculptModeChanged -= syncEditingVisibility;
             });
             syncEditingVisibility();
 
@@ -1142,7 +1155,7 @@ namespace MashBoxSDK.MapTools
                 },
                 MBEditorAuthoringMode.SplineLoft => "Spline Loft",
                 MBEditorAuthoringMode.Spline => "Spline",
-                MBEditorAuthoringMode.MeshSculpt => "Sculpt - " + MBEditorToolState.SculptMode,
+                MBEditorAuthoringMode.MeshSculpt => "Sculpt - " + (MBEditorToolState.SculptMode == MBSculptMode.SetHeight ? "Set Height" : MBEditorToolState.SculptMode.ToString()),
                 MBEditorAuthoringMode.UVSpline => "UV Spline - " + (MBEditorToolState.UvMode switch
                 {
                     MBUvHandleMode.MoveAndUv => "Move + UV",
@@ -1830,6 +1843,16 @@ namespace MashBoxSDK.MapTools
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBSetHeightSculptToggle : MBSculptSubmodeToggle
+    {
+        public const string Id = "MashBox/Sculpt/SetHeight";
+        public MBSetHeightSculptToggle() : base(
+            MBSculptMode.SetHeight, "Set Height",
+            "Sculpt to a world height. Ctrl+click samples; Ctrl+scroll adjusts height.",
+            "d_TerrainInspector.TerrainToolSetHeight", "d_RectTool") { }
+    }
+
+    [EditorToolbarElement(Id, typeof(SceneView))]
     public sealed class MBSeamFitSculptToggle : MBSculptSubmodeToggle
     {
         public const string Id = "MashBox/Sculpt/SeamFit";
@@ -1979,7 +2002,14 @@ namespace MashBoxSDK.MapTools
                         AddShortcut("LockIcon-On", "Sculptable Only", "Unlock to add");
                     else
                         AddShortcut("d_ToolHandlePivot", "Make Sculptable", "Shift + Click");
-                    AddShortcut("d_RotateTool", seamFit ? "Lower Terrain" : "Invert", seamFit ? "Ctrl + LMB Drag" : "Ctrl");
+                    if (MBEditorToolState.SculptMode == MBSculptMode.SetHeight)
+                    {
+                        AddShortcut("d_ToolHandlePivot", "Sample Height", "Ctrl + Click");
+                        AddShortcut("d_MoveTool", "Height", "Ctrl + Scroll");
+                        AddShortcut("d_MoveTool", "Fine Height", "Ctrl + Shift + Scroll");
+                    }
+                    else
+                        AddShortcut("d_RotateTool", seamFit ? "Lower Terrain" : "Invert", seamFit ? "Ctrl + LMB Drag" : "Ctrl");
                     AddShortcut("MashBox.Smooth", "Smooth", "Shift");
                     AddShortcut("d_PreMatCube", "Noise", "Ctrl + Shift");
                     AddShortcut("d_ViewToolZoom", "Radius / Strength", "Ctrl + MMB Drag");

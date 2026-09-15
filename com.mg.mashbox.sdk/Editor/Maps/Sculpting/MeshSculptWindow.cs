@@ -30,6 +30,9 @@ namespace MashBoxSDK.MapTools
         [SerializeField] float m_SmoothStrength = 0.1f;
         [SerializeField] int m_SmoothIterations = 1;
         bool m_PickSetHeight;
+        bool m_HeightSampleGesture;
+        [SerializeField] float m_SetHeightMinimum = -100f;
+        [SerializeField] float m_SetHeightMaximum = 1000f;
         [SerializeField] float m_Strength = 0.1f;
         [SerializeField] float m_Falloff = 2f;
         [SerializeField, Range(0.05f, 1f)] float m_Spacing = 0.2f;
@@ -122,6 +125,8 @@ namespace MashBoxSDK.MapTools
             }
 
             m_SceneToolActive = false;
+            m_PickSetHeight = false;
+            m_HeightSampleGesture = false;
             m_SceneCameraRightMouseHeld = false;
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedo;
@@ -205,9 +210,7 @@ namespace MashBoxSDK.MapTools
                 "Passes per brush sample. Terrain uses eight times this value for stronger smoothing on dense meshes."), m_SmoothIterations, 1, 16);
             if (m_Mode == MeshSculptModifier.SculptMode.SetHeight)
             {
-                m_SetHeight = EditorGUILayout.FloatField("Target World Height (m)", m_SetHeight);
-                if (GUILayout.Button(m_PickSetHeight ? "Click the surface to sample height…" : "Pick Height From Surface"))
-                    m_PickSetHeight = !m_PickSetHeight;
+                DrawSetHeightSettings();
             }
             if (m_Mode != MeshSculptModifier.SculptMode.Smooth)
             m_Strength = m_Mode == MeshSculptModifier.SculptMode.Displace
@@ -287,6 +290,8 @@ namespace MashBoxSDK.MapTools
 
         void OnSharedSculptModeChanged()
         {
+            m_PickSetHeight = false;
+            m_HeightSampleGesture = false;
             InvalidateSeamTerrains();
             MeshSculptModifier.SculptMode mode = (MeshSculptModifier.SculptMode)MBEditorToolState.SculptMode;
             if (m_Mode != mode)
@@ -294,6 +299,41 @@ namespace MashBoxSDK.MapTools
             m_Mode = mode;
             Repaint();
             SceneView.RepaintAll();
+        }
+
+        internal static void DrawSetHeightOverlay()
+        {
+            if (s_ActiveSceneToolOwner != null)
+                s_ActiveSceneToolOwner.DrawSetHeightSettings();
+        }
+
+        void SetTargetHeight(float height)
+        {
+            if (float.IsNaN(height) || float.IsInfinity(height)) return;
+            m_SetHeight = height;
+            m_SetHeightMinimum = Mathf.Min(m_SetHeightMinimum, height - 1f);
+            m_SetHeightMaximum = Mathf.Max(m_SetHeightMaximum, height + 1f);
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        void DrawSetHeightSettings()
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label(new GUIContent("Height (m)", "Target world Y coordinate in metres."));
+                EditorGUI.BeginChangeCheck();
+                float height = EditorGUILayout.FloatField(m_SetHeight, GUILayout.MinWidth(60f));
+                if (EditorGUI.EndChangeCheck()) SetTargetHeight(height);
+            }
+            EditorGUI.BeginChangeCheck();
+            float sliderHeight = GUILayout.HorizontalSlider(m_SetHeight, m_SetHeightMinimum, m_SetHeightMaximum);
+            if (EditorGUI.EndChangeCheck()) SetTargetHeight(sliderHeight);
+            if (GUILayout.Button(m_PickSetHeight ? "Cancel Pick (Esc)" : "Pick Height From Surface"))
+            {
+                m_PickSetHeight = !m_PickSetHeight;
+                SceneView.RepaintAll();
+            }
         }
 
         internal void UseSelection()
@@ -469,6 +509,7 @@ namespace MashBoxSDK.MapTools
 
             if (current.type == EventType.MouseLeaveWindow || current.type == EventType.Ignore)
             {
+                m_HeightSampleGesture = false;
                 m_SceneCameraRightMouseHeld = false;
                 StopStroke();
                 return;
@@ -487,6 +528,31 @@ namespace MashBoxSDK.MapTools
                 HandleUtility.AddDefaultControl(controlId);
             if (HandleBrushAdjustment(current, controlId, sceneView))
                 return;
+
+            if (m_Mode == MeshSculptModifier.SculptMode.SetHeight && !current.alt)
+            {
+                if (current.type == EventType.KeyDown && current.keyCode == KeyCode.Escape && m_PickSetHeight)
+                {
+                    m_PickSetHeight = false;
+                    current.Use();
+                    Repaint();
+                    sceneView.Repaint();
+                    return;
+                }
+                if (current.type == EventType.ScrollWheel && current.control && !m_IsSculpting)
+                {
+                    SetTargetHeight(m_SetHeight - current.delta.y * (current.shift ? 0.01f : 0.1f));
+                    current.Use();
+                    return;
+                }
+            }
+            // A sampling click never becomes a sculpt stroke when dragged.
+            if (m_HeightSampleGesture && (current.type == EventType.MouseDrag || current.type == EventType.MouseUp) && current.button == 0)
+            {
+                if (current.type == EventType.MouseUp) m_HeightSampleGesture = false;
+                current.Use();
+                return;
+            }
 
             Ray ray = HandleUtility.GUIPointToWorldRay(current.mousePosition);
             RaycastHit hit;
@@ -508,10 +574,13 @@ namespace MashBoxSDK.MapTools
                 return;
             }
 
-            if (m_PickSetHeight && current.type == EventType.MouseDown && current.button == 0 && !current.alt)
+            if (m_Mode == MeshSculptModifier.SculptMode.SetHeight
+                && (m_PickSetHeight || (current.control && !current.shift))
+                && current.type == EventType.MouseDown && current.button == 0 && !current.alt)
             {
-                m_SetHeight = hit.point.y;
+                SetTargetHeight(hit.point.y);
                 m_PickSetHeight = false;
+                m_HeightSampleGesture = true;
                 current.Use();
                 Repaint();
                 return;
@@ -559,9 +628,18 @@ namespace MashBoxSDK.MapTools
                     ? Color.magenta
                     : previewMode == MeshSculptModifier.SculptMode.Flatten ? Color.yellow : Color.cyan;
             if (IsSeamFit && current.control && !current.shift) brushColor = new Color(1f, 0.4f, 0.2f);
-            DrawBrushFalloff(hit.point, previewMode == MeshSculptModifier.SculptMode.MeshStamp ? Vector3.up : hit.normal, brushColor);
+            DrawBrushFalloff(hit.point, previewMode == MeshSculptModifier.SculptMode.MeshStamp || previewMode == MeshSculptModifier.SculptMode.SetHeight ? Vector3.up : hit.normal, brushColor);
             if (previewMode == MeshSculptModifier.SculptMode.MeshStamp)
                 DrawMeshStampPreview(hit.point, current.control);
+            if (previewMode == MeshSculptModifier.SculptMode.SetHeight)
+            {
+                Vector3 target = new Vector3(hit.point.x, m_SetHeight, hit.point.z);
+                using (new Handles.DrawingScope(Color.yellow))
+                {
+                    Handles.DrawWireDisc(target, Vector3.up, m_Radius);
+                    Handles.DrawDottedLine(hit.point, target, 4f);
+                }
+            }
             MBEditorToolVisuals.DrawBrushAction(GetBrushAction(previewMode, current.control));
             sceneView.Repaint();
 
@@ -616,6 +694,8 @@ namespace MashBoxSDK.MapTools
                 case MeshSculptModifier.SculptMode.Smooth: return "Smooth";
                 case MeshSculptModifier.SculptMode.Noise: return "Noise";
                 case MeshSculptModifier.SculptMode.Flatten: return "Flatten";
+                case MeshSculptModifier.SculptMode.SetHeight:
+                    return m_PickSetHeight || control ? "Click to Sample Height" : $"Set Height · {m_SetHeight:0.###} m";
                 case MeshSculptModifier.SculptMode.MeshStamp: return control ? "Mesh Stamp · Carve" : "Mesh Stamp";
                 case MeshSculptModifier.SculptMode.SeamFit:
                     if (control) return "Seam Fit · Lower";

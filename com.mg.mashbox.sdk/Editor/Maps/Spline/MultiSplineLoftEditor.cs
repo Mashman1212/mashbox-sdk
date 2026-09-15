@@ -14,6 +14,9 @@ namespace MashBoxSDK.Maps.Spline
     [CustomEditor(typeof(MultiSplineLoft))]
     public sealed class MultiSplineLoftEditor : Editor
     {
+        // Optional project tools can draw directly in the loft inspector.
+        public static event System.Action<MultiSplineLoft> TerrainConformGUI;
+
         ReorderableList m_SourceList;
         SerializedProperty m_Sources;
         SerializedProperty m_SamplesAlong;
@@ -126,6 +129,8 @@ namespace MashBoxSDK.Maps.Spline
 
             EditorGUILayout.Space();
             DrawToolbar();
+
+            TerrainConformGUI?.Invoke(loft);
 
             EditorGUILayout.Space(4f);
             m_SourceList.DoLayoutList();
