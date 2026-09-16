@@ -146,7 +146,7 @@ namespace MashBoxSDK.ContentTools
             if (!ValidateAddressablesVersionForTarget(def, out string versionError))
             {
                 Debug.LogError(versionError, def);
-                EditorUtility.DisplayDialog("Wrong Addressables Version", versionError, "OK");
+                EditorUtility.DisplayDialog("Incompatible Content Build", versionError, "OK");
                 return;
             }
 
@@ -500,7 +500,7 @@ namespace MashBoxSDK.ContentTools
             }
         }
 
-        private static bool ValidateAddressablesVersionForTarget(
+        public static bool ValidateAddressablesVersionForTarget(
             ContentPackDefinition definition,
             out string error)
         {
@@ -520,11 +520,6 @@ namespace MashBoxSDK.ContentTools
                 string.Equals(target, "BMX Streets", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(target, "ScootX", StringComparison.OrdinalIgnoreCase);
 
-            // Old pack assets can retain their last publishing target while being
-            // opened in the dedicated U6 creator. Treat that project as ProjectX.
-            if (Application.unityVersion.StartsWith("6000.", StringComparison.Ordinal))
-                isProjectX = true;
-
             string requiredVersion = isProjectX
                 ? ProjectXAddressablesVersion
                 : (isLegacyTarget ? LegacyAddressablesVersion : null);
@@ -534,6 +529,18 @@ namespace MashBoxSDK.ContentTools
                 error =
                     $"Cannot build '{definition?.PackName}' because target game '{target}' has no " +
                     "Addressables compatibility rule. Select BMXS, ScootX, or ProjectX in MashBox Setup.";
+                return false;
+            }
+
+            // The editor must also match the target's authoring line. Changing only
+            // Addressables cannot make a Unity 6 bundle compatible with a 2022 player.
+            string requiredEditorLine = isProjectX ? "6000." : "2022.3.";
+            if (!Application.unityVersion.StartsWith(requiredEditorLine, StringComparison.Ordinal))
+            {
+                error =
+                    $"Building content for {target} requires the {(isProjectX ? "Unity 6" : "Unity 2022.3")} " +
+                    $"authoring project with Addressables {requiredVersion}. This project is running Unity {Application.unityVersion}. " +
+                    "Open the matching authoring project and rebuild the pack.";
                 return false;
             }
 

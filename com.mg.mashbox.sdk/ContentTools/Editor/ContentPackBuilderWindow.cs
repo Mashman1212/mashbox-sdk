@@ -3936,6 +3936,15 @@ namespace MashBoxSDK.ContentTools.Editor
                     EditorUtility.SetDirty(p);
                 }
 
+                // Reject incompatible targets before generating icons or reporting a
+                // successful build. BuildPack repeats this check for direct callers.
+                if (!AddressablesPackBuilder.ValidateAddressablesVersionForTarget(p, out string compatibilityError))
+                {
+                    Debug.LogError(compatibilityError, p);
+                    EditorUtility.DisplayDialog("Incompatible Content Build", compatibilityError, "OK");
+                    continue;
+                }
+
                 if (!p.IsCorePack)
                 {
                     // Capture 2K icons before building

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Content pack builds now honor explicit BMX Streets and ScootX targets in Unity 6 instead of validating them as ProjectX. Incompatible editor and Addressables combinations are rejected before icon generation; ProjectX retains its Unity 6 / Addressables 2.11.1 build path.
+
 ### Added
 
 - Added MG Terrain Seam Fit with nearest-surface or vertex snapping, a world-distance threshold, optional normal blending and surface offset, shared sculpt controls, replayable terrain-only strokes, and updated collision.
