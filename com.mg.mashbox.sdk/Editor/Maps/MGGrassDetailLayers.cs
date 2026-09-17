@@ -114,9 +114,8 @@ namespace MashBoxSDK.MapTools
             var values = map.GetPixelData<ushort>(0);
             for (int i = 0; i < values.Length; i++) values[i] = 0;
             map.Apply(false, false);
-            const string folder = "Assets/MGTerrainDetailPaint";
-            if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "MGTerrainDetailPaint");
-            string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/GrassSubID_" + subId + ".asset");
+            string path = MGTerrainSceneAssets.UniquePath(terrain, $"Detail_{prototype}_SubID_{subId}_Density");
+            map.name = System.IO.Path.GetFileNameWithoutExtension(path);
             try { AssetDatabase.CreateAsset(map, path); }
             catch { UnityEngine.Object.DestroyImmediate(map); throw; }
             Undo.RegisterCreatedObjectUndo(map, "Create Grass Sub-ID Density Map");

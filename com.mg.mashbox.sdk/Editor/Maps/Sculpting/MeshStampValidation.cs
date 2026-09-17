@@ -41,7 +41,35 @@ namespace MashBoxSDK.MapTools
                 Check(rotated[1].delta.y < samples[1].delta.y, "Stamp rotation");
                 var softened = brush.Sample(filter, center, 2, 4, 0, .5f, 2);
                 Check(softened[1].delta.y < samples[1].delta.y, "Falloff");
-                Debug.Log("Mesh stamp sampling PASS: interpolation, footprint, strength, transform, inversion, rotation, falloff.");
+                var preview = brush.BuildPreviewLines(filter, center, 2, 4, 0, .5f, 0);
+                Check(preview.Length == 6, "Preview must preserve the destination triangle edges");
+                var targetPoints = destination.vertices;
+                foreach (var sample in samples)
+                {
+                    var expected = target.transform.TransformPoint(targetPoints[sample.index] + sample.delta);
+                    Check(Array.Exists(preview, point => (point - expected).sqrMagnitude < .000001f),
+                        "Preview vertices must match actual stamp results on the transformed terrain");
+                }
+                var carvePreview = brush.BuildPreviewLines(filter, center, 2, 4, 0, -.5f, 0);
+                foreach (var sample in inverted)
+                {
+                    var expected = target.transform.TransformPoint(targetPoints[sample.index] + sample.delta);
+                    Check(Array.Exists(carvePreview, point => (point - expected).sqrMagnitude < .000001f), "Carve preview must match stroke");
+                }
+                // Exercise multiple submeshes and base-vertex offsets while CPU
+                // readability is disabled, matching imported model stamps.
+                source.subMeshCount = 2;
+                source.SetIndices(new[] { 0, 2, 1 }, MeshTopology.Triangles, 0);
+                source.SetIndices(new[] { 0, 1, 2 }, MeshTopology.Triangles, 1, true, 1);
+                source.UploadMeshData(true);
+                Check(!source.isReadable, "Test mesh must have Read/Write disabled");
+                var nonReadableBrush = new MeshStampBrush(source);
+                var nonReadableSamples = nonReadableBrush.Sample(filter, center, 2, 4, 0, .5f, 0);
+                Check(nonReadableSamples.Length == samples.Length, "Non-readable footprint");
+                for (int i = 0; i < samples.Length; i++)
+                    Check((samples[i].delta - nonReadableSamples[i].delta).sqrMagnitude < .000001f, "Non-readable sampling matches readable sampling");
+                Check(!source.isReadable, "Stamping must leave Read/Write disabled");
+                Debug.Log("Mesh stamp sampling PASS: interpolation, footprint, strength, transform, inversion, rotation, falloff, non-readable meshes and submesh base vertices.");
             }
             finally
             {

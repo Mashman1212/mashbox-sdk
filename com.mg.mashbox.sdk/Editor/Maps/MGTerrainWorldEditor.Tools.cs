@@ -11,10 +11,9 @@ namespace MashBoxSDK.MapTools
     public sealed partial class MGTerrainWorldEditor
     {
         bool m_PaintWorld = true;
-        void DrawWorldTools(MGTerrainWorld world)
+        void DrawWorldQualityPresets(MGTerrainWorld world)
         {
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("World Detail Quality", EditorStyles.boldLabel);
             var maps = new HashSet<Texture2D>();
             foreach (var tile in world.Chunks)
                 foreach (var layer in tile.DensityDetailLayers)
@@ -34,8 +33,14 @@ namespace MashBoxSDK.MapTools
                         Undo.RecordObjects(world.Chunks.Cast<UnityEngine.Object>().ToArray(), "World Detail Quality");
                         world.ApplyQualityPreset(preset);
                         EditorUtility.SetDirty(world);
+                        serializedObject.Update();
                     }
-            m_PaintWorld = EditorGUILayout.Foldout(m_PaintWorld, "Paint World Density / Detail Prototypes", true);
+        }
+
+        void DrawWorldTools(MGTerrainWorld world)
+        {
+            m_PaintWorld = true;
+            EditorGUILayout.LabelField("Paint Details", EditorStyles.boldLabel);
             if (m_EditChunk == null || m_EditChunk.World != world) m_EditChunk = world.Chunks.FirstOrDefault();
             if (m_PaintWorld && m_EditChunk != null)
             {
@@ -49,7 +54,6 @@ namespace MashBoxSDK.MapTools
                 CreateCachedEditor(m_EditChunk, typeof(MGTerrainEditor), ref m_ChunkEditor);
                 ((MGTerrainEditor)m_ChunkEditor).DrawWorldDetailControls();
             }
-            DrawWorldBakes(world);
         }
 
         void DrawWorldBakes(MGTerrainWorld world)
@@ -88,7 +92,7 @@ namespace MashBoxSDK.MapTools
                     if (shared.Contains(tile.MeshRenderer.sharedMaterial))
                     {
                         var material = new Material(tile.MeshRenderer.sharedMaterial);
-                        string materialPath = AssetDatabase.GenerateUniqueAssetPath(folder + "/Tile_" + i + "_Capture.mat");
+                        string materialPath = MGTerrainSceneAssets.UniquePath(tile, "Capture", ".mat");
                         AssetDatabase.CreateAsset(material, materialPath);
                         Undo.RecordObject(tile.MeshRenderer, "Tile Capture Material");
                         tile.MeshRenderer.sharedMaterial = material;
@@ -96,7 +100,7 @@ namespace MashBoxSDK.MapTools
                     var editor = (MGTerrainEditor)CreateEditor(tile);
                     try
                     {
-                        string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/Tile_" + i + (distant ? "_Distant.png" : "_Appearance.png"));
+                        string path = MGTerrainSceneAssets.UniquePath(tile, distant ? "Distant" : "Appearance", ".png");
                         editor.BakeWorldTile(world, distant, path);
                     }
                     finally { DestroyImmediate(editor); }
@@ -116,10 +120,82 @@ namespace MashBoxSDK.MapTools
             var terrain = (MGTerrain)target;
             DrawDetailFoliagePalettes(terrain);
             DrawDetailLayerVisibility(terrain);
-            DrawPrototypeGrid(terrain);
+            m_WorldDetailControls = true;
+            try { DrawPrototypeGrid(terrain); }
+            finally { m_WorldDetailControls = false; }
+            DrawWorldDetailMapBrowser(terrain);
             DrawDetailPainter(terrain);
             serializedObject.ApplyModifiedProperties();
         }
+        int m_MapBrowserScope, m_MapBrowserLayer, m_MapBrowserPage;
+        string m_MapBrowserFilter = "";
+        void DrawWorldDetailMapBrowser(MGTerrain source)
+        {
+            if (source.World == null) return;
+            var layers = Enumerable.Range(0, source.DensityDetailLayerCount)
+                .Where(i => source.DensityDetailLayers[i] != null
+                    && source.DensityDetailLayers[i].PrototypeIndex == m_SelectedPrototype
+                    && !source.DensityDetailLayers[i].PaletteSourceOnly).ToArray();
+            if (layers.Length == 0) return;
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Selected Detail Maps", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("The editable map fields above belong to the reference tile: " + source.name
+                + ". Each matching tile has its own map assignments. This browser inspects them without changing assignments.", MessageType.None);
+            m_MapBrowserLayer = Mathf.Clamp(m_MapBrowserLayer, 0, layers.Length - 1);
+            if (layers.Length > 1)
+                m_MapBrowserLayer = EditorGUILayout.Popup("Detail Layer", m_MapBrowserLayer,
+                    layers.Select(i => "Layer " + (i + 1) + " / Population " + source.DensityDetailLayers[i].GrassPopulation).ToArray());
+            int layerIndex = layers[m_MapBrowserLayer];
+            int scope = GUILayout.Toolbar(m_MapBrowserScope, new[] { "Reference Tile", "All Tiles" });
+            if (scope != m_MapBrowserScope) { m_MapBrowserScope = scope; m_MapBrowserPage = 0; }
+            var tiles = source.World.GetComponentsInChildren<MGTerrain>(true)
+                .Where(t => t.GetComponentInParent<MGTerrainWorld>(true) == source.World).ToArray();
+            if (scope == 0) tiles = new[] { source };
+            else
+            {
+                string filter = EditorGUILayout.TextField("Find Tile", m_MapBrowserFilter);
+                if (filter != m_MapBrowserFilter) { m_MapBrowserFilter = filter; m_MapBrowserPage = 0; }
+                if (!string.IsNullOrWhiteSpace(filter))
+                    tiles = tiles.Where(t => t.name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0).ToArray();
+            }
+            const int pageSize = 8;
+            int pages = Mathf.Max(1, (tiles.Length + pageSize - 1) / pageSize);
+            m_MapBrowserPage = Mathf.Clamp(m_MapBrowserPage, 0, pages - 1);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(m_MapBrowserPage == 0))
+                    if (GUILayout.Button("Previous", GUILayout.Width(70))) m_MapBrowserPage--;
+                GUILayout.Label($"{tiles.Length} tiles / Page {m_MapBrowserPage + 1} of {pages}");
+                using (new EditorGUI.DisabledScope(m_MapBrowserPage + 1 == pages))
+                    if (GUILayout.Button("Next", GUILayout.Width(55))) m_MapBrowserPage++;
+            }
+            foreach (var tile in tiles.Skip(m_MapBrowserPage * pageSize).Take(pageSize))
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    // Return values deliberately ignored: references are inspectable/pingable, not editable here.
+                    EditorGUILayout.ObjectField("Tile", tile, typeof(MGTerrain), true);
+                    int match = FindWorldFloodLayer(source, layerIndex, tile);
+                    if (match < 0)
+                    {
+                        EditorGUILayout.HelpBox("No unique matching detail layer. Painting cannot resolve this tile for the selected layer.", MessageType.Warning);
+                        continue;
+                    }
+                    var layer = tile.DensityDetailLayers[match];
+                    DrawMapReference("Density", layer.DensityMap, "No density map assigned");
+                    DrawMapReference("Size", layer.SizeMap, "No size overrides (multiplier 1)");
+                    DrawMapReference("Grass IDs", layer.GrassIdMap, "No per-texel grass-ID map");
+                    if (!tile.isActiveAndEnabled) EditorGUILayout.LabelField("Tile is inactive", EditorStyles.miniLabel);
+                }
+        }
+
+        static void DrawMapReference(string label, Texture2D map, string empty)
+        {
+            EditorGUILayout.ObjectField(label, map, typeof(Texture2D), false);
+            EditorGUILayout.LabelField(map != null
+                ? $"{map.width} × {map.height} / {map.format} / {EditorUtility.FormatBytes(UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(map))}"
+                : empty, EditorStyles.miniLabel);
+        }
+
         internal void BakeWorldTile(MGTerrainWorld world, bool distant, string path)
         {
             m_FarBakeResolution = world.CaptureResolution;

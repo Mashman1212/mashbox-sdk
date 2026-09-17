@@ -157,7 +157,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     {
                         float limit = sector.prototype.MaximumDrawDistance;
                         if (limit <= 0f) limit = float.MaxValue;
-                        if (m_MaxDensityDetailDistance > 0f) limit = Mathf.Min(limit, m_MaxDensityDetailDistance);
+                        if (EffectiveDetailDistance > 0f) limit = Mathf.Min(limit, EffectiveDetailDistance);
                         if (m_AmortizeResidentVisibility) limit += ResidentPositionGuard;
                         m_ResidentSectorLimit = limit * limit;
                         if (!ResidentBoundsVisible(sector.bounds, m_ResidentSectorLimit))

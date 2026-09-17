@@ -10,7 +10,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [Range(2, 64)] public int m_DetailChunkCells = 64;
         [Range(0f, 1f)] public float m_OverallDetailDensity = 1f;
         public bool m_UseDetailDensityLod = true;
-        public bool m_UseStaticDetailCells;
         [Min(0f)] public float m_DensityTransitionWidth = 10f;
         [Min(0f)] public float m_FullDetailDensityDistance = 35f;
         [Min(0f)] public float m_MidDetailDensityDistance = 100f;
@@ -38,7 +37,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailChunkCells = m_DetailChunkCells,
             m_OverallDetailDensity = m_OverallDetailDensity,
             m_UseDetailDensityLod = m_UseDetailDensityLod,
-            m_UseStaticDetailCells = m_UseStaticDetailCells,
             m_DensityTransitionWidth = m_DensityTransitionWidth,
             m_FullDetailDensityDistance = m_FullDetailDensityDistance,
             m_MidDetailDensityDistance = m_MidDetailDensityDistance,
@@ -63,7 +61,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             bool changed = m_DrawInstances != settings.m_DrawInstances || m_DrawInstancesInEditMode != settings.m_DrawInstancesInEditMode || m_DetailChunkCells != settings.m_DetailChunkCells
                 || m_OverallDetailDensity != settings.m_OverallDetailDensity
                 || m_UseDetailDensityLod != settings.m_UseDetailDensityLod
-                || m_UseStaticDetailCells != settings.m_UseStaticDetailCells
                 || m_DensityTransitionWidth != settings.m_DensityTransitionWidth
                 || m_FullDetailDensityDistance != settings.m_FullDetailDensityDistance
                 || m_MidDetailDensityDistance != settings.m_MidDetailDensityDistance
@@ -87,7 +84,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailChunkCells = settings.m_DetailChunkCells;
             m_OverallDetailDensity = settings.m_OverallDetailDensity;
             m_UseDetailDensityLod = settings.m_UseDetailDensityLod;
-            m_UseStaticDetailCells = settings.m_UseStaticDetailCells;
             m_DensityTransitionWidth = settings.m_DensityTransitionWidth;
             m_FullDetailDensityDistance = settings.m_FullDetailDensityDistance;
             m_MidDetailDensityDistance = settings.m_MidDetailDensityDistance;

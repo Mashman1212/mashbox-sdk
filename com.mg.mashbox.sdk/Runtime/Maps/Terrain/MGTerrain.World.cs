@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -18,7 +19,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool RetainDetailCells => !UsesWorldBudget && m_RetainFixedDetailCells;
         // Fully resident GPU cells must be ready for the first gameplay render.
         // They have no asynchronous mesh builds, so streaming limits do not apply.
-        bool TryBuildWorldCell() => !UsesWorldBudget || KeepAllDetailCellsResident || m_World.TryBuildCell();
+        bool TryBuildWorldCell(DetailChunkKey key, float distance) =>
+            !UsesWorldBudget || KeepAllDetailCellsResident || m_World.TryBuildCell(this, key, distance);
         bool TryUploadWorldMesh() => !UsesWorldBudget || m_World.TryUploadMesh();
 
         public void RefreshWorldOwnership()
@@ -56,6 +58,42 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 foreach (var visible in m_VisibleDensityDetails) count += GetVisibleDensityDetailInstanceCount(visible);
                 return count;
             }
+        }
+
+        internal void AccumulateWorldDetailDemand(ref long near, ref long distant)
+        {
+            if (!m_WorldPendingDraw) return;
+            foreach (var visible in m_VisibleDensityDetails)
+                if (visible.densityLod == 0) near += GetVisibleDensityDetailInstanceCount(visible);
+                else distant += GetVisibleDensityDetailInstanceCount(visible);
+        }
+        readonly Dictionary<DensityDetailChunk, int> m_WorldCellAllocations = new Dictionary<DensityDetailChunk, int>();
+
+        // All draw paths use the same integer allocation; independently rounding a
+        // small cell's proportional share to zero can erase an entire sparse tile.
+        int GetBudgetedDetailInstanceCount(VisibleDensityDetail visible, float scale)
+        {
+            if (UsesWorldBudget)
+                return m_WorldCellAllocations.TryGetValue(visible.chunk, out int count) ? count : 0;
+            return Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale);
+        }
+
+        internal int AllocateWorldDetailCells(float nearScale, float distantScale, int budget,
+            ref double nearRemainder, ref double distantRemainder)
+        {
+            m_WorldCellAllocations.Clear();
+            if (!m_WorldPendingDraw) return 0;
+            int allocated = 0;
+            foreach (var visible in m_VisibleDensityDetails)
+            {
+                int population = GetVisibleDensityDetailInstanceCount(visible);
+                int count = visible.densityLod == 0
+                    ? MGTerrainWorld.AllocateCellShare(population, nearScale, budget - allocated, ref nearRemainder)
+                    : MGTerrainWorld.AllocateCellShare(population, distantScale, budget - allocated, ref distantRemainder);
+                m_WorldCellAllocations[visible.chunk] = count;
+                allocated += count;
+            }
+            return allocated;
         }
 
         internal void PrepareWorldCamera(Camera camera, float unloadDistance)

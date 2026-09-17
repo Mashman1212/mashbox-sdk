@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using MashBoxSDK.Maps.Sculpting;
 using UnityEditor;
 using UnityEngine;
+using Unity.Collections;
 
 namespace MashBoxSDK.MapTools
 {
@@ -19,8 +20,30 @@ namespace MashBoxSDK.MapTools
         public MeshStampBrush(Mesh source)
         {
             Source = source;
-            vertices = source.vertices;
-            triangles = source.triangles;
+            // Editor snapshots can read imported meshes without changing their
+            // Read/Write flag. Keep only the sampling arrays, not native handles.
+            using (var snapshot = MeshUtility.AcquireReadOnlyMeshData(source))
+            {
+                var data = snapshot[0];
+                using (var positions = new NativeArray<Vector3>(data.vertexCount, Allocator.Temp))
+                {
+                    data.GetVertices(positions);
+                    vertices = positions.ToArray();
+                }
+                var indices = new List<int>();
+                for (int submesh = 0; submesh < data.subMeshCount; submesh++)
+                {
+                    var descriptor = data.GetSubMesh(submesh);
+                    if (descriptor.topology != MeshTopology.Triangles) continue;
+                    using (var buffer = new NativeArray<int>(descriptor.indexCount, Allocator.Temp))
+                    {
+                        data.GetIndices(buffer, submesh, true);
+                        indices.AddRange(buffer.ToArray());
+                    }
+                }
+                triangles = indices.ToArray();
+            }
+            if (triangles.Length == 0) throw new System.InvalidOperationException("The stamp mesh has no triangle surfaces.");
             Bounds bounds = source.bounds;
             float radius = Mathf.Max(0.00001f, new Vector2(bounds.extents.x, bounds.extents.z).magnitude);
             float height = Mathf.Max(0.00001f, bounds.size.y);
@@ -48,7 +71,11 @@ namespace MashBoxSDK.MapTools
 
         internal bool TryHeight(float x, float z, out float height)
         {
-            height = 0f;
+            return TrySurface(x, z, out height, out _, out _);
+        }
+        internal bool TrySurface(float x, float z, out float height, out int triangle, out Vector3 barycentric)
+        {
+            height = 0f; triangle = -1; barycentric = Vector3.zero;
             if (x < -1f || x > 1f || z < -1f || z > 1f) return false;
             var candidates = bins[Bin(z) * BinCount + Bin(x)];
             if (candidates == null) return false;
@@ -63,7 +90,7 @@ namespace MashBoxSDK.MapTools
                 float w = 1f - u - v;
                 if (u < -0.00001f || v < -0.00001f || w < -0.00001f) continue;
                 float y = u * a.y + v * b.y + w * c.y;
-                if (!found || y > height) height = y;
+                if (!found || y > height) { height = y; triangle = i / 3; barycentric = new Vector3(u, v, w); }
                 found = true;
             }
             return found;
@@ -89,38 +116,73 @@ namespace MashBoxSDK.MapTools
             return result.ToArray();
         }
 
-        public void DrawPreview(Vector3 center, float radius, float height, float rotation, float strength, float falloff)
-        {
-            // Render the sampled top surface, including the same strength and
-            // falloff as the dab. A bounded grid keeps dense source meshes responsive.
-            var orientation = Quaternion.Euler(0, rotation, 0);
-            Color previous = Handles.color;
-            Handles.color = strength < 0f ? new Color(1f, .4f, .2f, .8f) : new Color(.1f, .9f, 1f, .8f);
-            try
-            {
-                const int steps = 24;
-                for (int z = 0; z <= steps; z++)
-                    for (int x = 0; x <= steps; x++)
-                    {
-                        float px = -1f + 2f * x / steps, pz = -1f + 2f * z / steps;
-                        if (x < steps) DrawSegment(px, pz, px + 2f / steps, pz);
-                        if (z < steps) DrawSegment(px, pz, px, pz + 2f / steps);
-                    }
-            }
-            finally { Handles.color = previous; }
+        Vector3[] previewLines;
+        readonly List<MeshFilter> previewTargets = new List<MeshFilter>();
+        readonly List<Mesh> previewMeshes = new List<Mesh>();
+        readonly List<Matrix4x4> previewTransforms = new List<Matrix4x4>();
+        Vector3 previewCenter;
+        float previewRadius, previewHeight, previewRotation, previewStrength, previewFalloff;
 
-            void DrawSegment(float ax, float az, float bx, float bz)
+        public void InvalidatePreview() => previewLines = null;
+
+        internal Vector3[] BuildPreviewLines(MeshFilter target, Vector3 center, float radius,
+            float height, float rotation, float strength, float falloff)
+        {
+            var changes = Sample(target, center, radius, height, rotation, strength, falloff);
+            if (changes.Length == 0) return System.Array.Empty<Vector3>();
+            var points = target.sharedMesh.vertices;
+            var changed = new bool[points.Length];
+            foreach (var change in changes) { points[change.index] += change.delta; changed[change.index] = true; }
+            for (int i = 0; i < points.Length; i++) points[i] = target.transform.TransformPoint(points[i]);
+            var indices = target.sharedMesh.triangles;
+            var edges = new HashSet<ulong>();
+            var lines = new List<Vector3>();
+            for (int i = 0; i < indices.Length; i += 3)
             {
-                if (!TryHeight(ax, az, out float a) || !TryHeight(bx, bz, out float b)) return;
-                previewLine[0] = Point(ax, az, a);
-                previewLine[1] = Point(bx, bz, b);
-                Handles.DrawAAPolyLine(2f, previewLine);
+                int a = indices[i], b = indices[i + 1], c = indices[i + 2];
+                if (!changed[a] && !changed[b] && !changed[c]) continue;
+                Edge(a, b); Edge(b, c); Edge(c, a);
             }
-            Vector3 Point(float x, float z, float y)
+            return lines.ToArray();
+
+            void Edge(int a, int b)
             {
-                float weight = Mathf.Pow(Mathf.Clamp01(1f - new Vector2(x, z).magnitude), falloff);
-                return center + orientation * new Vector3(x * radius, y * height * strength * weight, z * radius);
+                ulong key = ((ulong)(uint)Mathf.Min(a, b) << 32) | (uint)Mathf.Max(a, b);
+                if (!edges.Add(key)) return;
+                lines.Add(points[a]); lines.Add(points[b]);
             }
+        }
+
+        public void DrawPreview(List<MeshFilter> targets, Vector3 center, float radius, float height,
+            float rotation, float strength, float falloff)
+        {
+            bool rebuild = previewLines == null || center != previewCenter || radius != previewRadius
+                || height != previewHeight || rotation != previewRotation || strength != previewStrength
+                || falloff != previewFalloff || targets.Count != previewTargets.Count;
+            if (!rebuild)
+                for (int i = 0; i < targets.Count; i++)
+                    if (targets[i] != previewTargets[i] || targets[i].sharedMesh != previewMeshes[i]
+                        || targets[i].transform.localToWorldMatrix != previewTransforms[i]) { rebuild = true; break; }
+            if (rebuild)
+            {
+                var lines = new List<Vector3>();
+                previewTargets.Clear(); previewMeshes.Clear(); previewTransforms.Clear();
+                foreach (var target in targets)
+                {
+                    lines.AddRange(BuildPreviewLines(target, center, radius, height, rotation, strength, falloff));
+                    previewTargets.Add(target); previewMeshes.Add(target.sharedMesh);
+                    previewTransforms.Add(target.transform.localToWorldMatrix);
+                }
+                previewLines = lines.ToArray();
+                previewCenter = center; previewRadius = radius; previewHeight = height;
+                previewRotation = rotation; previewStrength = strength; previewFalloff = falloff;
+            }
+            Color previous = Handles.color;
+            var previousDepth = Handles.zTest;
+            Handles.zTest = UnityEngine.Rendering.CompareFunction.Always;
+            Handles.color = strength < 0f ? new Color(1f, .4f, .2f, .65f) : new Color(.1f, .9f, 1f, .65f);
+            try { if (previewLines.Length > 0) Handles.DrawLines(previewLines); }
+            finally { Handles.color = previous; Handles.zTest = previousDepth; }
         }
     }
 }

@@ -14,6 +14,7 @@ using UnityRenderPipeline = UnityEngine.Rendering.RenderPipeline;
 namespace MashBoxSDK.MapTools
 {
     [CustomEditor(typeof(MGTerrain))]
+    [CanEditMultipleObjects]
     public sealed partial class MGTerrainEditor : Editor
     {
         int m_FloodDensity = ushort.MaxValue;
@@ -176,9 +177,28 @@ namespace MashBoxSDK.MapTools
             m_MaxPendingDetailBuilds = serializedObject.FindProperty("m_MaxPendingDetailBuilds");
         }
 
+        bool m_InspectFromWorld;
+        internal void DrawWorldTileInspector()
+        {
+            m_InspectFromWorld = true;
+            try { OnInspectorGUI(); }
+            finally { m_InspectFromWorld = false; }
+        }
         public override void OnInspectorGUI()
         {
+            if (targets.Length > 1)
+            {
+                DrawMultipleTileInspector();
+                return;
+            }
             MGTerrain terrain = (MGTerrain)target;
+            if (terrain.World != null && !m_InspectFromWorld)
+            {
+                EditorGUILayout.HelpBox("This tile is managed by MG Terrain World. Edit terrain from the world inspector.", MessageType.Info);
+                if (GUILayout.Button("Edit Terrain World")) Selection.activeGameObject = terrain.World.gameObject;
+                DrawFlattenTile(terrain);
+                return;
+            }
             serializedObject.UpdateIfRequiredOrScript();
 
             EditorGUILayout.LabelField("MG Terrain", EditorStyles.boldLabel);
@@ -193,6 +213,7 @@ namespace MashBoxSDK.MapTools
             }
             DrawSettingsCopy(terrain);
             DrawTileAuthoring(terrain);
+            DrawFlattenTile(terrain);
 
             DrawMappyToolLauncher(terrain);
 
@@ -250,9 +271,7 @@ namespace MashBoxSDK.MapTools
                     new GUIContent("Near Cell Size (Texels)", "Streaming cell width in density-map texels. The density ceiling is fixed per world area: 32,768 instances per 50 Ã— 50 metres per layer, independent of this cell size."));
                 EditorGUILayout.PropertyField(m_MaxCachedDetailChunks);
                 EditorGUILayout.PropertyField(m_MaxDetailChunksBuiltPerLayerPerFrame);
-                var staticCells = serializedObject.FindProperty("m_UseStaticDetailCells");
                 var transitionWidth = serializedObject.FindProperty("m_DensityTransitionWidth");
-                EditorGUILayout.PropertyField(staticCells, new GUIContent("Static Cell Sizes", "Use the Near Cell Size at every distance. Mid/far density still thins instances; cells do not merge or rebuild when changing density bands. Uses instanced draws rather than combined cell meshes."));
                 EditorGUILayout.PropertyField(transitionWidth, new GUIContent("Density Transition Width", "GodGrass dither-fade width in metres. A positive width keeps cells fixed and reserves the denser population during transitions. Zero disables fading. The visible instance budget still applies."));
                 EditorGUILayout.PropertyField(
                     m_UseDetailDensityLod,
@@ -263,9 +282,7 @@ namespace MashBoxSDK.MapTools
                     int nearCellSize = Mathf.Clamp(m_DetailChunkCells.intValue, 2, 64);
                     EditorGUILayout.LabelField(
                         "HLOD Cell Sizes",
-                        staticCells.boolValue || transitionWidth.floatValue > 0f || (Application.isPlaying && m_UseBatchRendererGroup.boolValue)
-                            ? $"Fixed {nearCellSize} (reused by Near / Mid / Far)"
-                            : $"Near {nearCellSize} / Mid {nearCellSize * 2} / Far {nearCellSize * 4}");
+                        $"Fixed {nearCellSize} (reused by Near / Mid / Far)");
                     EditorGUILayout.PropertyField(
                         m_FullDetailDensityDistance,
                         new GUIContent("Full Density Distance", "Cells inside this distance render at 100% generated density."));
@@ -589,8 +606,6 @@ namespace MashBoxSDK.MapTools
                     if (changed) results.Add(map, values);
                 }
                 if (results.Count == 0) { EditorUtility.DisplayDialog("Clear Details Under Lofts", "No occupied density texels overlap the loft footprints or feathered edges.", "OK"); return; }
-                const string folder = "Assets/MGTerrainLoftMasks";
-                if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "MGTerrainLoftMasks");
                 foreach (var result in results)
                 {
                     Texture2D source = result.Key;
@@ -598,7 +613,7 @@ namespace MashBoxSDK.MapTools
                     { name = source.name + "_LoftsCleared", filterMode = source.filterMode, wrapMode = source.wrapMode };
                     output.SetPixelData(result.Value, 0);
                     output.Apply(false, false);
-                    AssetDatabase.CreateAsset(output, AssetDatabase.GenerateUniqueAssetPath(folder + "/LoftsCleared.asset"));
+                    MGTerrainSceneAssets.Create(output, terrain, "Density_LoftsCleared");
                     replacements.Add(source, output);
                     long total = 0;
                     foreach (ushort value in result.Value) total += value;
@@ -612,7 +627,8 @@ namespace MashBoxSDK.MapTools
                         property.objectReferenceValue = replacement;
                 for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
                 {
-                    SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+
+            SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
                     var map = layer.FindPropertyRelative("m_DensityMap").objectReferenceValue as Texture2D;
                     if (map != null && counts.TryGetValue(map, out long total)) layer.FindPropertyRelative("m_RepresentedInstanceCount").longValue = total;
                 }
@@ -755,13 +771,14 @@ namespace MashBoxSDK.MapTools
                 throw new InvalidOperationException("More than 1,024 chunks requested. Increase Collider Cell Size.");
             var sourceUvs = new List<Vector4>[8];
             for (int channel = 0; channel < 8; channel++) { sourceUvs[channel] = new List<Vector4>(); source.GetUVs(channel, sourceUvs[channel]); }
-            string folder = assetFolder ?? "Assets/MGTerrainColliders";
+            string folder = assetFolder ?? MGTerrainSceneAssets.Folder(terrain);
             if (!AssetDatabase.IsValidFolder(folder))
             {
                 if (assetFolder != null) throw new InvalidOperationException("The collider asset folder does not exist.");
                 AssetDatabase.CreateFolder("Assets", "MGTerrainColliders");
             }
-            string assetPath = AssetDatabase.GenerateUniqueAssetPath(folder + "/TerrainColliders.asset");
+            string assetPath = assetFolder == null ? MGTerrainSceneAssets.UniquePath(terrain, "Colliders")
+                : AssetDatabase.GenerateUniqueAssetPath(folder + "/TerrainColliders.asset");
             // Track the asset before writing so conversion rollback also removes partial builds.
             createdAssets?.Add(assetPath);
             var root = new GameObject("MG Terrain Collider Chunks");
@@ -891,7 +908,8 @@ namespace MashBoxSDK.MapTools
             {
                 for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
                 {
-                    SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+
+            SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
                     if (layer.FindPropertyRelative("m_PrototypeIndex").intValue != m_SelectedPrototype) continue;
                     EditorGUILayout.LabelField("Density Layer " + (index + 1), EditorStyles.boldLabel);
                     if (GUILayout.Button("Paint This Layer"))
@@ -947,12 +965,12 @@ namespace MashBoxSDK.MapTools
                         using (new EditorGUI.DisabledScope(Application.isPlaying || layer.FindPropertyRelative("m_DensityMap").objectReferenceValue == null))
                         using (new EditorGUILayout.HorizontalScope())
                         {
-                            if (GUILayout.Button("Flood This Detail..."))
+                            if (GUILayout.Button(m_WorldDetailControls ? "Flood Detail Across World..." : "Flood This Detail..."))
                             {
                                 FloodDensityLayer(terrain, index, false);
                                 GUIUtility.ExitGUI();
                             }
-                            if (GUILayout.Button("Flood + Keep Only This Detail..."))
+                            if (GUILayout.Button(m_WorldDetailControls ? "Flood World + Keep Only This Detail..." : "Flood + Keep Only This Detail..."))
                             {
                                 FloodDensityLayer(terrain, index, true);
                                 GUIUtility.ExitGUI();
@@ -987,7 +1005,7 @@ namespace MashBoxSDK.MapTools
         Texture2D m_LastNormalCapture;
 
         [Serializable]
-        sealed class AppearanceNormalPass : CustomPass
+        internal sealed class AppearanceNormalPass : CustomPass
         {
             [NonSerialized] internal Camera captureCamera;
             [NonSerialized] internal RenderTexture destination;
@@ -1499,9 +1517,7 @@ namespace MashBoxSDK.MapTools
                 { name = terrain.name + "_FarGrass", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
                 texture.SetPixels32(pixels);
                 texture.Apply(true, false);
-                const string folder = "Assets/MGTerrainFarGrass";
-                if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "MGTerrainFarGrass");
-                AssetDatabase.CreateAsset(texture, AssetDatabase.GenerateUniqueAssetPath(folder + "/FarGrass.asset"));
+                MGTerrainSceneAssets.Create(texture, terrain, "FarGrass");
                 Undo.RecordObject(terrain, "Bake Far Grass");
                 serializedObject.Update();
                 serializedObject.FindProperty("m_FarGrassBake").objectReferenceValue = texture;
@@ -1635,6 +1651,7 @@ namespace MashBoxSDK.MapTools
 
         void OnSceneGUI()
         {
+            if (targets.Length > 1) return;
             DrawHoleSceneGUI();
             if (!m_DetailPainting) return;
             var terrain = (MGTerrain)target;
@@ -1814,9 +1831,7 @@ namespace MashBoxSDK.MapTools
                     for (int i = 0; i < pixels.Length; i++) pixels[i] = neutral;
                     copy.Apply(false, false);
                 }
-                const string folder = "Assets/MGTerrainDetailPaint";
-                if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "MGTerrainDetailPaint");
-                AssetDatabase.CreateAsset(copy, AssetDatabase.GenerateUniqueAssetPath(folder + "/" + (m_PaintChannel == 0 ? "Density" : "Size") + ".asset"));
+                MGTerrainSceneAssets.Create(copy, terrain, $"Layer_{m_PaintDetailIndex}_" + (m_PaintChannel == 0 ? "Density" : "Size"));
                 serializedObject.Update();
                 var layer = m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex);
                 layer.FindPropertyRelative(m_PaintChannel == 0 ? "m_DensityMap" : "m_SizeMap").objectReferenceValue = copy;
@@ -1831,7 +1846,7 @@ namespace MashBoxSDK.MapTools
                 if (!m_PaintCopies.Contains(ids))
                 {
                     ids = Instantiate(ids);
-                    AssetDatabase.CreateAsset(ids, AssetDatabase.GenerateUniqueAssetPath("Assets/MGTerrainDetailPaint/GrassIDs.asset"));
+                    MGTerrainSceneAssets.Create(ids, terrain, $"Layer_{m_PaintDetailIndex}_GrassIDs");
                     serializedObject.Update();
                     m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex).FindPropertyRelative("m_GrassIdMap").objectReferenceValue = ids;
                     serializedObject.ApplyModifiedProperties();
@@ -1946,9 +1961,15 @@ namespace MashBoxSDK.MapTools
             SceneView.RepaintAll();
         }
 
-        void FloodDensityLayer(MGTerrain terrain, int index, bool onlyThisDetail)
+        void FloodDensityLayer(MGTerrain terrain, int index, bool onlyThisDetail, bool confirmed = false)
         {
             serializedObject.ApplyModifiedProperties();
+
+            if (m_WorldDetailControls && terrain.World != null && !confirmed)
+            {
+                FloodWorldDetail(terrain, index, onlyThisDetail);
+                return;
+            }
             SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
             var source = layer.FindPropertyRelative("m_DensityMap").objectReferenceValue as Texture2D;
             if (source == null) return;
@@ -1962,15 +1983,12 @@ namespace MashBoxSDK.MapTools
             string isolation = onlyThisDetail
                 ? "Other density layer entries will be removed from this terrain (their texture assets are kept). Palette bindings remain; rebaking them can add layers again.\n\n"
                 : "Other density layers will remain active.\n\n";
-            if (!EditorUtility.DisplayDialog("Flood MG Terrain Detail?",
+            if (!confirmed && !EditorUtility.DisplayDialog("Flood MG Terrain Detail?",
                 $"Fill Element {index}, prototype {prototype}, across the entire {source.width} Ã— {source.height} map at {m_FloodDensity:N0} per texel?\n\n"
                 + $"This represents {represented:N0} instances; draw budgets and distance limits still apply.\n\n"
                 + isolation + "A new density texture will be created, preserving the original painting. Undo restores the terrain assignment; the new texture asset remains available.",
                 "Flood Density", "Cancel")) return;
 
-            const string folder = "Assets/MGTerrainDensityTests";
-            if (!AssetDatabase.IsValidFolder(folder))
-                AssetDatabase.CreateFolder("Assets", "MGTerrainDensityTests");
             var filled = new Texture2D(source.width, source.height, TextureFormat.R16, false, true)
             {
                 name = source.name + "_Flood",
@@ -1980,8 +1998,7 @@ namespace MashBoxSDK.MapTools
             var pixels = filled.GetPixelData<ushort>(0);
             for (int pixel = 0; pixel < pixels.Length; pixel++) pixels[pixel] = (ushort)m_FloodDensity;
             filled.Apply(false, false);
-            string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/DetailFlood.asset");
-            AssetDatabase.CreateAsset(filled, path);
+            MGTerrainSceneAssets.Create(filled, terrain, $"Layer_{index}_Density_Flood");
             Undo.RecordObject(terrain, "Flood MG Terrain Detail");
             serializedObject.Update();
             layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);

@@ -80,9 +80,7 @@ namespace MashBoxSDK.MapTools
             if (initialize)
             {
                 // Make persistent private copies, leaving imported/shared mesh assets intact.
-                const string folder = "Assets/MGTerrainHoles";
-                if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "MGTerrainHoles");
-                string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/TerrainHoles.asset");
+                string path = MGTerrainSceneAssets.UniquePath(terrain, "Holes");
                 Mesh source = Instantiate(terrain.MeshFilter.sharedMesh);
                 source.name = terrain.MeshFilter.sharedMesh.name + " Holes";
                 AssetDatabase.CreateAsset(source, path);

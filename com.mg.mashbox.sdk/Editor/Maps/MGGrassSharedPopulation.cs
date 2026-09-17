@@ -95,9 +95,9 @@ namespace MashBoxSDK.MapTools
                 layer.FindPropertyRelative("m_PaletteSourceMap").objectReferenceValue = null;
                 layer.FindPropertyRelative("m_PaletteEntryIndex").intValue = -1;
                 layer.FindPropertyRelative("m_Seed").intValue = UnityEngine.Random.Range(1, int.MaxValue);
-                layer.FindPropertyRelative("m_DensityMap").objectReferenceValue = SaveSharedMap(width, height, TextureFormat.R16, "GrassDensity" + group, counts[group]);
-                layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue = SaveSharedMap(width, height, TextureFormat.R8, "GrassIDs" + group, ids[group]);
-                layer.FindPropertyRelative("m_SizeMap").objectReferenceValue = SaveSharedMap(width, height, TextureFormat.RHalf, "GrassSizes" + group, sizes[group]);
+                layer.FindPropertyRelative("m_DensityMap").objectReferenceValue = SaveSharedMap(terrain, prototype, width, height, TextureFormat.R16, "GrassDensity" + group, counts[group]);
+                layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue = SaveSharedMap(terrain, prototype, width, height, TextureFormat.R8, "GrassIDs" + group, ids[group]);
+                layer.FindPropertyRelative("m_SizeMap").objectReferenceValue = SaveSharedMap(terrain, prototype, width, height, TextureFormat.RHalf, "GrassSizes" + group, sizes[group]);
                 long total = 0; foreach (ushort count in counts[group]) total += count;
                 layer.FindPropertyRelative("m_RepresentedInstanceCount").longValue = total;
             }
@@ -109,13 +109,11 @@ namespace MashBoxSDK.MapTools
             return SharedIndex(terrain, prototype, population);
         }
 
-        static Texture2D SaveSharedMap<T>(int width, int height, TextureFormat format, string name, T[] data) where T : struct
+        static Texture2D SaveSharedMap<T>(MGTerrain terrain, int prototype, int width, int height, TextureFormat format, string name, T[] data) where T : struct
         {
-            const string folder = "Assets/MGTerrainDetailPaint";
-            if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "MGTerrainDetailPaint");
             var map = new Texture2D(width, height, format, false, true) { name = name, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Point };
             map.SetPixelData(data, 0); map.Apply(false, false);
-            AssetDatabase.CreateAsset(map, AssetDatabase.GenerateUniqueAssetPath(folder + "/" + name + ".asset"));
+            MGTerrainSceneAssets.Create(map, terrain, $"Detail_{prototype}_" + name);
             Undo.RegisterCreatedObjectUndo(map, "Create Shared Grass Map");
             return map;
         }

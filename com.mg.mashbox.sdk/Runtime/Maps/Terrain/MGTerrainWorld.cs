@@ -27,6 +27,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [HideInInspector] public float CaptureExposure = 10f;
         [HideInInspector] public float CaptureDetailTilt;
         [HideInInspector] public float DistantMeshSpacing = 2f;
+        [HideInInspector] public float TileSize = 512f;
+        [HideInInspector] public int TileResolution = 129;
+        [HideInInspector] public Material TileMaterial;
         public void ApplySharedQuality()
         {
             if ((!m_QualityInitialized || m_Quality == null) && m_Chunks.Count > 0 && m_Chunks[0] != null)
@@ -111,7 +114,64 @@ namespace MashBoxSDK.Maps.TerrainSystem
             chunk.ApplyWorldQuality(m_Quality);
         }
         internal void Unregister(MGTerrain chunk) => m_Chunks.Remove(chunk);
-        internal bool TryBuildCell()
+        internal float NearDetailScale { get; private set; } = 1f;
+        internal float DistantDetailScale { get; private set; } = 1f;
+
+        void UpdateDetailScales(long near, long distant)
+        {
+            NearDetailScale = DistantDetailScale = 1f;
+            int budget = VisibleDetailBudget;
+            if (near + distant <= budget) return;
+            long farAllocation = Math.Min(distant, Mathf.RoundToInt(budget
+                * Mathf.Clamp01(m_Quality.m_DistantDetailBudgetReserve)));
+            long nearAllocation = Math.Min(near, budget - farAllocation);
+            long extra = budget - nearAllocation - farAllocation;
+            long extraNear = Math.Min(near - nearAllocation, extra);
+            nearAllocation += extraNear;
+            farAllocation += Math.Min(distant - farAllocation, extra - extraNear);
+            NearDetailScale = nearAllocation / (float)Math.Max(1L, near);
+            DistantDetailScale = farAllocation / (float)Math.Max(1L, distant);
+        }
+
+        readonly struct CellBuildRequest
+        {
+            internal readonly MGTerrain tile;
+            internal readonly MGTerrain.DetailChunkKey key;
+            internal readonly float distance;
+            internal CellBuildRequest(MGTerrain tile, MGTerrain.DetailChunkKey key, float distance)
+            { this.tile = tile; this.key = key; this.distance = distance; }
+        }
+        readonly List<CellBuildRequest> m_CellBuildRequests = new List<CellBuildRequest>();
+        readonly List<MGTerrain> m_CellBuildTiles = new List<MGTerrain>();
+        bool m_CollectingCellBuilds;
+
+        internal bool TryBuildCell(MGTerrain tile, MGTerrain.DetailChunkKey key, float distance)
+        {
+            if (m_RemainingBuilds <= 0) return false;
+            if (m_CollectingCellBuilds)
+            {
+                // Keep only the nearest frame-budget worth of requests. Memory is
+                // bounded by the world budget, not the number of tiles or missing cells.
+                int index = 0;
+                while (index < m_CellBuildRequests.Count && m_CellBuildRequests[index].distance <= distance) index++;
+                if (index >= m_RemainingBuilds) return false;
+                m_CellBuildRequests.Insert(index, new CellBuildRequest(tile, key, distance));
+                if (m_CellBuildRequests.Count > m_RemainingBuilds)
+                    m_CellBuildRequests.RemoveAt(m_CellBuildRequests.Count - 1);
+                return false;
+            }
+            for (int i = 0; i < m_CellBuildRequests.Count; i++)
+            {
+                var request = m_CellBuildRequests[i];
+                if (request.tile != tile || !request.key.Equals(key)) continue;
+                if (!ConsumeCellBuildBudget()) return false;
+                m_CellBuildRequests.RemoveAt(i);
+                return true;
+            }
+            return false;
+        }
+
+        bool ConsumeCellBuildBudget()
         {
             if (m_RemainingBuilds <= 0) return false;
             int pending = 0;
@@ -151,27 +211,54 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_RenderChunks.Clear();
                 foreach (var chunk in m_Chunks)
                     if (chunk != null && chunk.isActiveAndEnabled) m_RenderChunks.Add(chunk);
-                // Rotate build priority so a dense first chunk cannot starve its neighbours.
+                // Selection pass: gather missing cells before any streamed tile builds.
+                // Rotation breaks equal-distance ties without granting a whole tile priority.
+                m_CellBuildRequests.Clear();
+                m_CellBuildTiles.Clear();
+                m_CollectingCellBuilds = true;
                 int first = m_RenderChunks.Count == 0 ? 0 : (m_FirstChunk & int.MaxValue) % m_RenderChunks.Count;
                 for (int i = 0; i < m_RenderChunks.Count; i++)
                     m_RenderChunks[(i + first) % m_RenderChunks.Count]
                         .PrepareWorldCamera(camera, DetailDistance + Mathf.Max(0f, m_UnloadMargin));
-                long demand = 0;
-                foreach (var chunk in m_RenderChunks) demand += chunk.WorldDetailDemand;
-                long remainingDemand = demand;
+                m_CollectingCellBuilds = false;
+                foreach (var request in m_CellBuildRequests)
+                    if (!m_CellBuildTiles.Contains(request.tile)) m_CellBuildTiles.Add(request.tile);
+                // Only tiles with granted cells need another selection pass. The grants
+                // are world-wide: no per-tile/per-layer build cap changes their priority.
+                foreach (var tile in m_CellBuildTiles)
+                    tile.PrepareWorldCamera(camera, DetailDistance + Mathf.Max(0f, m_UnloadMargin));
+                long nearDemand = 0, distantDemand = 0;
+                foreach (var chunk in m_RenderChunks)
+                    chunk.AccumulateWorldDetailDemand(ref nearDemand, ref distantDemand);
+                UpdateDetailScales(nearDemand, distantDemand);
                 int remaining = VisibleDetailBudget;
+                double nearRemainder = 0, distantRemainder = 0;
                 LastSubmittedDetailInstances = 0;
                 foreach (var chunk in m_RenderChunks)
                 {
-                    long requested = chunk.WorldDetailDemand;
-                    int allocated = AllocateDetailBudget(requested, remainingDemand, remaining);
-                    remainingDemand -= requested;
+                    int allocated = chunk.AllocateWorldDetailCells(NearDetailScale, DistantDetailScale, remaining,
+                        ref nearRemainder, ref distantRemainder);
                     remaining -= allocated;
                     chunk.SubmitWorldDetails(camera, allocated);
                     LastSubmittedDetailInstances += chunk.WorldSubmittedDetails;
                 }
             }
-            finally { m_Rendering = false; }
+            finally
+            {
+                m_CollectingCellBuilds = false;
+                m_CellBuildRequests.Clear();
+                m_CellBuildTiles.Clear();
+                m_Rendering = false;
+            }
+        }
+
+        internal static int AllocateCellShare(int population, float scale, int remainingBudget, ref double remainder)
+        {
+            if (population <= 0 || remainingBudget <= 0) return 0;
+            double share = population * (double)Mathf.Clamp01(scale) + remainder;
+            int allocated = (int)Math.Min(population, Math.Min(remainingBudget, Math.Floor(share)));
+            remainder = share - Math.Floor(share);
+            return allocated;
         }
 
         // Integer remainder is carried forward; allocations never exceed the world budget.

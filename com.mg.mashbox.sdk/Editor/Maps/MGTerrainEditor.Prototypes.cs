@@ -20,7 +20,6 @@ namespace MashBoxSDK.MapTools
                     EditorPrefs.SetBool(AdvancedFoldoutPreference, value);
             }
         }
-        bool m_ShowPrototypeAdvanced;
         int m_SelectedPrototype;
 
         static void DrawPrototypeFields(SerializedProperty parent, params string[] hidden)
@@ -113,17 +112,13 @@ namespace MashBoxSDK.MapTools
                     var copy = m_DensityDetailLayers.GetArrayElementAtIndex(duplicateLayer);
                     MGTerrainSettingsCopy.CopyValue(source, copy);
                     copy.FindPropertyRelative("m_PrototypeIndex").intValue = duplicatePrototype;
-                    foreach (string field in new[] { "m_DensityMap", "m_SizeMap" })
+                    foreach (string field in new[] { "m_DensityMap", "m_SizeMap", "m_GrassIdMap" })
                     {
                         var texture = source.FindPropertyRelative(field).objectReferenceValue as Texture2D;
                         if (texture == null) continue;
-                        string sourcePath = AssetDatabase.GetAssetPath(texture);
-                        string folder = sourcePath.StartsWith("Assets/", StringComparison.Ordinal)
-                            ? System.IO.Path.GetDirectoryName(sourcePath).Replace('\\', '/') : "Assets";
-                        string suffix = field == "m_DensityMap" ? "Density" : "Size";
-                        string filename = MGTerrainAppearanceCaptureAssets.TerrainPrefix(terrain.name)
-                            + $"DetailPrototype_{duplicatePrototype}_Layer_{duplicateLayer}_{suffix}.asset";
-                        string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/" + filename);
+                        string suffix = field == "m_DensityMap" ? "Density" : field == "m_SizeMap" ? "Size" : "GrassIDs";
+                        string path = MGTerrainSceneAssets.UniquePath(terrain,
+                            $"Detail_{duplicatePrototype}_Layer_{duplicateLayer}_{suffix}");
                         var textureCopy = Instantiate(texture);
                         textureCopy.name = System.IO.Path.GetFileNameWithoutExtension(path);
                         textureCopy.hideFlags = HideFlags.None;
@@ -291,7 +286,8 @@ namespace MashBoxSDK.MapTools
             return ids.ToString();
         }
 
-        bool m_ShowGrassLayerSettings;
+
+        bool m_ShowPrototypeAdvanced = true;
         int m_GrassPaintSubId;
         int m_GrassPaintPopulation;
         Texture2D m_GrassStrokeIds;
@@ -435,14 +431,6 @@ namespace MashBoxSDK.MapTools
             }
             if (count == 0) return;
             var selected = m_Prototypes.GetArrayElementAtIndex(m_SelectedPrototype);
-            EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_Prefab"));
-            if (selected.FindPropertyRelative("m_Prefab").objectReferenceValue == null)
-            {
-                EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_Mesh"));
-                EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_Material"));
-            }
-            m_ShowPrototypeAdvanced = EditorGUILayout.Foldout(m_ShowPrototypeAdvanced, "Advanced Prototype Settings", true);
-            if (m_ShowPrototypeAdvanced) DrawPrototypeFields(selected, "m_Prefab", "m_Mesh", "m_Material");
             terrain.GetDetailSourceMaterials(m_SelectedPrototype, m_DetailSourceMaterials);
             bool grassArrayMaterial = m_DetailSourceMaterials.Exists(material => material != null && material.HasProperty("_GrassUseArrays"));
             if (grassArrayMaterial) DrawGrassSubIdGrid(terrain);
@@ -450,8 +438,16 @@ namespace MashBoxSDK.MapTools
             for (int i = 0; i < m_DensityDetailLayers.arraySize; i++)
                 found |= m_DensityDetailLayers.GetArrayElementAtIndex(i).FindPropertyRelative("m_PrototypeIndex").intValue == m_SelectedPrototype;
             if (grassArrayMaterial)
-                m_ShowGrassLayerSettings = EditorGUILayout.Foldout(m_ShowGrassLayerSettings, "Grass Paint Layer Settings", true);
-            if (found && (!grassArrayMaterial || m_ShowGrassLayerSettings)) DrawDensityLayersWithFlood(terrain);
+                EditorGUILayout.LabelField("Grass Paint Layer Settings", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_Prefab"));
+            if (selected.FindPropertyRelative("m_Prefab").objectReferenceValue == null)
+            {
+                EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_Mesh"));
+                EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_Material"));
+            }
+
+            DrawPrototypeFields(selected, "m_Prefab", "m_Mesh", "m_Material");
+            if (found) DrawDensityLayersWithFlood(terrain);
             else if (!found && !grassArrayMaterial && selected.FindPropertyRelative("m_Kind").enumValueIndex == (int)MGTerrain.InstanceKind.Detail)
             {
                 using (new EditorGUI.DisabledScope(Application.isPlaying))

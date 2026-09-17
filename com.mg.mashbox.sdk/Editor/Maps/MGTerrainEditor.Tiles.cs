@@ -15,6 +15,44 @@ namespace MashBoxSDK.MapTools
         Terrain m_HeightSource;
         float m_StampBlend = 1f, m_StampOffset;
         bool m_ShowTileAuthoring = true;
+        float? m_FlattenHeight;
+
+        void DrawMultipleTileInspector()
+        {
+            var tiles = targets.Cast<MGTerrain>().ToArray();
+            EditorGUILayout.LabelField("MG Terrain", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox($"{tiles.Length} terrain tiles selected. Flatten applies to all selected tiles at the same world height. Edit shared settings from the terrain world.", MessageType.Info);
+            var worlds = tiles.Select(tile => tile.World).Where(world => world != null).Distinct().ToArray();
+            foreach (var world in worlds)
+                if (GUILayout.Button(worlds.Length == 1 ? "Edit Terrain World" : "Edit Terrain World: " + world.name))
+                    Selection.activeGameObject = world.gameObject;
+            DrawFlattenTile(tiles[0]);
+        }
+
+        void DrawFlattenTile(MGTerrain terrain)
+        {
+            var tiles = targets.Cast<MGTerrain>().ToArray();
+            if (!m_FlattenHeight.HasValue)
+                m_FlattenHeight = terrain.MeshFilter != null ? terrain.MeshFilter.transform.position.y : terrain.transform.position.y;
+            using (new EditorGUI.DisabledScope(Application.isPlaying || tiles.Any(tile => tile.MeshFilter == null
+                || tile.MeshFilter.sharedMesh == null || !tile.MeshFilter.sharedMesh.isReadable)))
+            {
+                m_FlattenHeight = EditorGUILayout.FloatField(new GUIContent("Flatten Height (m)",
+                    "World-space elevation for every selected tile. Defaults to the first tile origin's height."), m_FlattenHeight.Value);
+                using (new EditorGUI.DisabledScope(float.IsNaN(m_FlattenHeight.Value) || float.IsInfinity(m_FlattenHeight.Value)))
+                    if (GUILayout.Button(new GUIContent(tiles.Length > 1 ? $"Flatten {tiles.Length} Selected Tiles" : "Flatten Tile", "Flatten every vertex of the selected tiles to the specified height. Unselected tiles are unchanged. Undo restores the previous shapes.")))
+                        RunTileAction(() =>
+                        {
+                            // Validate the full selection before editing any tile.
+                            foreach (var tile in tiles) MGTerrainTileAuthoring.Validate(tile);
+                            Undo.IncrementCurrentGroup();
+                            int group = Undo.GetCurrentGroup();
+                            Undo.SetCurrentGroupName("Flatten Selected Terrain Tiles");
+                            try { foreach (var tile in tiles) MGTerrainTileAuthoring.Flatten(tile, m_FlattenHeight.Value); }
+                            finally { Undo.CollapseUndoOperations(group); }
+                        });
+            }
+        }
 
         void DrawTileAuthoring(MGTerrain terrain)
         {
@@ -67,6 +105,36 @@ namespace MashBoxSDK.MapTools
     // Editor-only geometry authoring; each child retains its own MGTerrain and sculpt history.
     internal static class MGTerrainTileAuthoring
     {
+        internal static void Flatten(MGTerrain tile, float worldHeight)
+        {
+            Validate(tile);
+            if (float.IsNaN(worldHeight) || float.IsInfinity(worldHeight))
+                throw new ArgumentOutOfRangeException(nameof(worldHeight));
+            var filter = tile.MeshFilter;
+            var vertices = filter.sharedMesh.vertices;
+            var deltas = new List<MeshSculptModifier.SeamVertex>();
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                float difference = worldHeight - filter.transform.TransformPoint(vertices[i]).y;
+                if (Mathf.Abs(difference) < .000001f) continue;
+                deltas.Add(new MeshSculptModifier.SeamVertex { index = i,
+                    delta = filter.transform.InverseTransformVector(Vector3.up * difference) });
+            }
+            if (deltas.Count == 0) return;
+            Undo.IncrementCurrentGroup();
+            int undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Flatten Terrain Tile");
+            try
+            {
+                ApplyDeltas(tile, deltas);
+                filter.GetComponent<MeshSculptModifier>().FinalizeStrokePreview();
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(tile.gameObject.scene);
+            }
+            finally { Undo.CollapseUndoOperations(undoGroup); }
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+
         internal static void Validate(MGTerrain tile)
         {
             if (tile == null || tile.MeshFilter == null || tile.MeshFilter.sharedMesh == null || !tile.MeshFilter.sharedMesh.isReadable)

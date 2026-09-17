@@ -94,7 +94,14 @@ namespace MashBoxSDK.MapTools
             catch { Undo.RevertAllDownToGroup(undo); throw; }
         }
 
-        void OnEnable() => SceneView.duringSceneGui += DrawScene;
+        enum WorldTab { Tiles, Details, Settings }
+        WorldTab m_Tab;
+        const string TabPreference = "MashBox.MGTerrainWorld.InspectorTab";
+        void OnEnable()
+        {
+            m_Tab = (WorldTab)Mathf.Clamp(SessionState.GetInt(TabPreference, 0), 0, 2);
+            SceneView.duringSceneGui += DrawScene;
+        }
         void OnDisable()
         {
             SceneView.duringSceneGui -= DrawScene;
@@ -102,21 +109,49 @@ namespace MashBoxSDK.MapTools
         }
         void DrawScene(SceneView view)
         {
-            if ((m_PaintWorld || m_ShowChunk) && m_ChunkEditor is MGTerrainEditor editor) editor.DrawWorldSceneGUI();
+            if (m_Tab == WorldTab.Tiles && DrawTilePlacement(view)) return;
+            if ((m_Tab == WorldTab.Details || m_Tab == WorldTab.Tiles && m_ShowChunk) && m_ChunkEditor is MGTerrainEditor editor) editor.DrawWorldSceneGUI();
         }
         public override void OnInspectorGUI()
         {
             var world = (MGTerrainWorld)target;
             serializedObject.Update();
+            MashBoxSDK.EditorResources.MashBoxInspectorHeaderUtility.DrawScriptHeader();
             EditorGUILayout.LabelField("MG Terrain World", EditorStyles.boldLabel);
+            DrawTabBar();
+            EditorGUILayout.Space(6);
+            switch (m_Tab)
+            {
+                case WorldTab.Tiles: DrawTilesTab(world); break;
+                case WorldTab.Details:
+                    DrawWorldTools(world);
+                    if (world.Chunks.Count == 0)
+                        EditorGUILayout.HelpBox("Create or adopt a terrain tile in the Tiles tab to begin painting.", MessageType.Info);
+                    break;
+                case WorldTab.Settings: DrawSettingsTab(world); break;
+            }
+        }
+
+        void DrawSettingsTab(MGTerrainWorld world)
+        {
             EditorGUILayout.HelpBox("One renderer and overall detail budget. Child MG Terrain components retain their existing painted data and editing tools. Distant chunk detail resources are released automatically; surface meshes and colliders stay loaded.", MessageType.Info);
-            DrawPropertiesExcluding(serializedObject, "m_Script");
+            DrawPropertiesExcluding(serializedObject, "m_Script", "m_Quality");
             if (serializedObject.ApplyModifiedProperties()) world.ApplySharedQuality();
+            DrawWorldQuality(world);
             EditorGUILayout.LabelField("Registered Chunks", world.Chunks.Count.ToString());
 #if UNITY_6000_0_OR_NEWER
             EditorGUILayout.LabelField("Shared Renderers", world.SharedRendererCount.ToString());
 #endif
             EditorGUILayout.LabelField("Submitted Details", world.LastSubmittedDetailInstances.ToString("N0"));
+            DrawWorldBakes(world);
+        }
+
+        void DrawTilesTab(MGTerrainWorld world)
+        {
+            DrawTileCreation(world);
+            DrawWorldDataEstimator(world);
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Import Terrain", EditorStyles.boldLabel);
             using (new EditorGUI.DisabledScope(Application.isPlaying))
             {
                 if (GUILayout.Button("Adopt Selected Converted Chunks"))
@@ -126,8 +161,8 @@ namespace MashBoxSDK.MapTools
                 }
                 if (GUILayout.Button("Convert Selected Unity Terrains Into This World")) ConvertSelected(world);
             }
-            DrawWorldTools(world);
             EditorGUILayout.Space();
+            EditorGUILayout.LabelField("World Tiles", EditorStyles.boldLabel);
             foreach (var chunk in world.GetComponentsInChildren<MGTerrain>(true))
             {
                 if (chunk.World != null && chunk.World != world) continue;
@@ -137,7 +172,7 @@ namespace MashBoxSDK.MapTools
                     if (GUILayout.Button("Edit", GUILayout.Width(45)))
                     {
                         if (m_EditChunk != chunk && m_ChunkEditor != null) DestroyImmediate(m_ChunkEditor);
-                        m_EditChunk = chunk; m_ShowChunk = true;
+                        m_EditChunk = chunk; m_ShowChunk = true; m_PaintWorld = false;
                     }
                     using (new EditorGUI.DisabledScope(Application.isPlaying))
                         if (GUILayout.Button("Detach", GUILayout.Width(55)))
@@ -148,15 +183,101 @@ namespace MashBoxSDK.MapTools
                         }
                 }
             }
-            if (!m_PaintWorld && m_EditChunk != null && m_EditChunk.World == world)
+            if (m_ShowChunk && m_EditChunk != null && m_EditChunk.World == world)
             {
                 m_ShowChunk = EditorGUILayout.Foldout(m_ShowChunk, "Edit " + m_EditChunk.name, true);
                 if (m_ShowChunk)
                 {
                     CreateCachedEditor(m_EditChunk, typeof(MGTerrainEditor), ref m_ChunkEditor);
-                    m_ChunkEditor.OnInspectorGUI();
+                    ((MGTerrainEditor)m_ChunkEditor).DrawWorldTileInspector();
                 }
             }
+        }
+
+        GUIStyle m_WorldTabButtonStyle;
+        void DrawTabBar()
+        {
+            // miniButton's built-in fixed height otherwise paints a short background
+            // inside the taller layout rect, leaving the centered glyph hanging below it.
+            m_WorldTabButtonStyle ??= new GUIStyle(EditorStyles.miniButton)
+            { fixedHeight = 0, stretchHeight = true, alignment = TextAnchor.MiddleCenter };
+            string[] labels = { "Tiles", "Details", "Settings" };
+            string[] tips = { "Create tiles, add neighbours and manage this world's terrain.",
+                "Paint detail density, size and grass sub-IDs across the world.",
+                "World quality, rendering budgets, diagnostics and appearance baking." };
+            using (new EditorGUILayout.HorizontalScope())
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    Rect rect = GUILayoutUtility.GetRect(36, 36, GUILayout.Height(36), GUILayout.ExpandWidth(true));
+                    bool selected = (int)m_Tab == i;
+                    if (GUI.Toggle(rect, selected, new GUIContent("", labels[i] + ": " + tips[i]), m_WorldTabButtonStyle) && !selected)
+                    {
+                        m_AddTiles = false;
+                        m_ShowChunk = false;
+                        if (m_ChunkEditor != null) { DestroyImmediate(m_ChunkEditor); m_ChunkEditor = null; }
+                        m_Tab = (WorldTab)i;
+                        SessionState.SetInt(TabPreference, i);
+                        SceneView.RepaintAll();
+                        Repaint();
+                        GUIUtility.ExitGUI();
+                    }
+                    if (Event.current.type == EventType.Repaint)
+                        DrawTabIcon(new Rect(rect.center.x - 8, rect.center.y - 8, 16, 16), i, selected);
+                }
+        }
+
+        // Small vector glyphs stay crisp at editor DPI and adapt to both Unity themes.
+        static void DrawTabIcon(Rect r, int icon, bool selected)
+        {
+            Color previous = Handles.color;
+            Handles.BeginGUI();
+            Handles.color = selected ? new Color(.35f, .75f, 1f)
+                : EditorGUIUtility.isProSkin ? new Color(.85f, .85f, .85f) : new Color(.22f, .22f, .22f);
+            void Line(float x1, float y1, float x2, float y2) => Handles.DrawAAPolyLine(2f,
+                new Vector3(r.x + x1, r.y + y1), new Vector3(r.x + x2, r.y + y2));
+            if (icon == 0)
+            {
+                for (int n = 0; n < 3; n++) { Line(1, 1 + n * 7, 15, 1 + n * 7); Line(1 + n * 7, 1, 1 + n * 7, 15); }
+            }
+            else if (icon == 1)
+            {
+                Line(6, 10, 13, 1); Line(13, 1, 15, 3); Line(15, 3, 8, 12);
+                Line(6, 10, 8, 12); Line(6, 10, 3, 11); Line(3, 11, 1, 15);
+                Line(1, 15, 6, 15); Line(6, 15, 8, 12);
+            }
+            else
+            {
+                for (int n = 0; n < 3; n++)
+                {
+                    float y = 3 + n * 5, x = n == 1 ? 11 : 5;
+                    Line(1, y, 15, y); Line(x, y - 2, x, y + 2);
+                    Line(x + 1, y - 2, x + 1, y + 2);
+                }
+            }
+            Handles.color = previous;
+            Handles.EndGUI();
+        }
+
+        void DrawWorldQuality(MGTerrainWorld world)
+        {
+            var quality = serializedObject.FindProperty("m_Quality");
+            quality.isExpanded = EditorGUILayout.Foldout(quality.isExpanded, "Quality", true);
+            if (!quality.isExpanded) return;
+            using (new EditorGUI.IndentLevelScope())
+            {
+                DrawWorldQualityPresets(world);
+                // Presets can update the serialized object, so acquire a fresh iterator.
+                quality = serializedObject.FindProperty("m_Quality");
+                var child = quality.Copy();
+                var end = quality.GetEndProperty();
+                bool enterChildren = true;
+                while (child.NextVisible(enterChildren) && !SerializedProperty.EqualContents(child, end))
+                {
+                    EditorGUILayout.PropertyField(child, true);
+                    enterChildren = false;
+                }
+            }
+            if (serializedObject.ApplyModifiedProperties()) world.ApplySharedQuality();
         }
 
         static void ConvertSelected(MGTerrainWorld world)

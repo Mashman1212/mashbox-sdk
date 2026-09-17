@@ -209,6 +209,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         public bool IsDensityDetailBrgActive => m_DetailBrg != null && m_DetailBrgVisibleCount > 0;
         public bool IsGpuProceduralDensityDetailActive => IsDensityDetailBrgActive && m_DetailBrgUsesGpuGeneration;
+        int m_GpuDetailCellSelectionVersion = -1;
+        // CPU candidate readiness does not imply that this selection reached the GPU.
+        bool HasCurrentGpuDetailCells => m_DetailBrg != null && m_DetailBrgUsesGpuGeneration
+            && m_GpuDetailCellSelectionVersion == m_DetailCellSelectionVersion;
 
         long GetDensityDetailBrgMemoryBytes()
         {
@@ -244,7 +248,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return false;
             }
 
-            if (m_FullResidentReady && KeepAllDetailCellsResident && m_DetailBrgUsesGpuGeneration)
+            if (m_FullResidentReady && KeepAllDetailCellsResident && HasCurrentGpuDetailCells)
                 return UpdateResidentGpuVisibility(budget, nearScale, distantScale);
 
             // Looking at an empty area must not destroy the resident GPU buffer.
@@ -271,7 +275,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 float scale = visible.densityLod == 0 ? nearScale : distantScale;
                 int allowed = Mathf.Min(
                     remaining,
-                    Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                    GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowed <= 0)
                     continue;
                 signature = unchecked(signature * 31 + RuntimeHelpers.GetHashCode(visible.chunk));
@@ -322,7 +326,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 float scale = visible.densityLod == 0 ? nearScale : distantScale;
                 int allowed = Mathf.Min(
                     remaining,
-                    Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                    GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowed <= 0)
                     continue;
 
@@ -654,9 +658,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool TryPrepareGpuGeneratedDensityDetailBrg(Camera camera, int budget, float nearScale, float distantScale)
         {
-            if (UsesWorldBudget && m_WorldReuseSelection && m_DetailBrgUsesGpuGeneration)
+            if (UsesWorldBudget && m_WorldReuseSelection && HasCurrentGpuDetailCells)
                 return UpdateResidentGpuVisibility(budget, nearScale, distantScale);
-            if (KeepAllDetailCellsResident && m_FullResidentReady)
+            if (KeepAllDetailCellsResident && m_FullResidentReady && HasCurrentGpuDetailCells)
                 return UpdateResidentGpuVisibility(budget, nearScale, distantScale);
             bool keepAllResident = KeepAllDetailCellsResident;
             using var profile = s_GpuPrepareMarker.Auto();
@@ -671,7 +675,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 foreach (VisibleDensityDetail visible in m_VisibleDensityDetails)
                 {
                     float scale = visible.densityLod == 0 ? nearScale : distantScale;
-                    int allowed = Mathf.Min(remaining, Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                    int allowed = Mathf.Min(remaining, GetBudgetedDetailInstanceCount(visible, scale));
                     if (allowed <= 0) continue;
                     m_ResidentVisibleCounts[visible.chunk] = allowed;
                     remaining -= allowed;
@@ -784,7 +788,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     }
                     foreach (ResidentGpuCell cell in m_ResidentGpuCells) cell.generation = m_DetailGpuGeneration;
                 }
-                return FinalizeResidentGpuVisibility(submitted, false);
+                bool prepared = FinalizeResidentGpuVisibility(submitted, false);
+                if (prepared) m_GpuDetailCellSelectionVersion = m_DetailCellSelectionVersion;
+                return prepared;
             }
             catch (Exception exception)
             {
@@ -807,7 +813,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             foreach (var visible in m_VisibleDensityDetails)
             {
                 float scale = visible.densityLod == 0 ? nearScale : distantScale;
-                int allowed = Mathf.Min(remaining, Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                int allowed = Mathf.Min(remaining, GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowed <= 0 || !m_GpuPrototypeGroups.ContainsKey(visible.prototype)) continue;
                 // One changed population is enough to require rebuilding. Continuing to
                 // compare every other cell repeats work that the rebuild must do anyway.
@@ -839,7 +845,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             foreach (var visible in m_VisibleDensityDetails)
             {
                 float scale = visible.densityLod == 0 ? nearScale : distantScale;
-                int allowed = Mathf.Min(remaining, Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                int allowed = Mathf.Min(remaining, GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowed <= 0) continue;
                 if (!m_GpuPrototypeGroups.TryGetValue(visible.prototype, out var groups)) continue;
                 m_ResidentVisibleCounts[visible.chunk] = allowed;
@@ -1451,6 +1457,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_FreeGpuRanges.Clear();
             m_ResidentVisibleCounts.Clear();
             m_ResidentGpuEnd = 0;
+            m_GpuDetailCellSelectionVersion = -1;
             m_DetailGpuCommands.Clear();
             if (m_DetailGpuCommandBuffer != null)
             {
@@ -1500,6 +1507,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
     {
         public bool IsDensityDetailBrgActive => false;
         public bool IsGpuProceduralDensityDetailActive => false;
+        bool HasCurrentGpuDetailCells => false;
         public bool IsIndirectDensityDetailActive => false;
         public int LastRegeneratedDetailInstances => 0;
         void ClearDensityDetailBrgVisibility() { }

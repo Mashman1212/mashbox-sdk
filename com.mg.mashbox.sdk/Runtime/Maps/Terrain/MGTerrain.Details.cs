@@ -220,7 +220,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
-        readonly struct DetailChunkKey : IEquatable<DetailChunkKey>
+        internal readonly struct DetailChunkKey : IEquatable<DetailChunkKey>
         {
             readonly int m_Layer;
             readonly int m_X;
@@ -513,12 +513,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, Range(1, 64)] int m_MaxDetailChunksBuiltPerLayerPerFrame = 2;
         [SerializeField, Tooltip("Reduce the number of generated detail instances in cells farther from the camera.")]
         bool m_UseDetailDensityLod = true;
-        [SerializeField, Tooltip("Use one fixed cell grid for every distance. Mid/far density changes select fewer instances without rebuilding the cell.")]
-        bool m_UseStaticDetailCells;
         [SerializeField, Min(0f), Tooltip("GodGrass density fade band in metres. Positive values keep cells fixed so instance positions remain stable; zero disables fading.")]
         float m_DensityTransitionWidth = 10f;
-        bool UseFixedDetailCells => m_AppearanceCaptureCamera == null
-            && (m_UseStaticDetailCells || m_DensityTransitionWidth > 0f || (Application.isPlaying && m_UseBatchRendererGroup));
+        // Artist-authored details always use stable cells; captures retain adaptive subdivision.
+        bool UseFixedDetailCells => m_AppearanceCaptureCamera == null;
 
         readonly Dictionary<Prototype, bool> m_DetailFadeEligibility = new Dictionary<Prototype, bool>();
         bool CanFadeDetail(Prototype prototype)
@@ -584,6 +582,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] readonly Dictionary<DetailChunkKey, DensityDetailChunk> m_DensityDetailCache = new Dictionary<DetailChunkKey, DensityDetailChunk>();
         [NonSerialized] bool m_DetailRenderCacheDirty = true;
         [NonSerialized] int m_DetailRenderTick;
+        [NonSerialized] int m_DetailCellSelectionVersion;
         [NonSerialized] int m_DetailUploadBudgetFrame = -1;
         [NonSerialized] int m_RemainingDetailMeshUploads;
         [NonSerialized] Mesh m_CachedDetailSurfaceMesh;
@@ -1243,6 +1242,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ReleaseDensityDetailBrg();
             m_FixedCandidateCaches.Clear();
             m_ResidentDensityDetails.Clear();
+            m_WorldCellAllocations.Clear();
             m_MissingFixedDetailCandidates.Clear();
             foreach (DensityDetailChunk chunk in m_DensityDetailCache.Values)
                 DestroyDensityDetailChunk(chunk);
@@ -1337,6 +1337,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 ReleaseDetailRenderCache();
 
             m_DetailRenderTick++;
+            m_DetailCellSelectionVersion++;
             m_DetailFadeEligibility.Clear();
             Bounds surfaceBounds = MeshFilter.sharedMesh.bounds;
             if (surfaceBounds.size.x <= Mathf.Epsilon || surfaceBounds.size.z <= Mathf.Epsilon)
@@ -1459,7 +1460,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
 
                 int builtThisFrame = 0;
-                int buildLimit = prewarmThisPass
+                int buildLimit = prewarmThisPass || UsesWorldBudget
                     ? int.MaxValue
                     : Mathf.Max(1, m_MaxDetailChunksBuiltPerLayerPerFrame);
                 for (int candidateIndex = 0; candidateIndex < candidateChunks.Count; candidateIndex++)
@@ -1482,7 +1483,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                             && (prewarmThisPass
                                 || IsDetailPaintRegion(layerIndex, candidate.firstX, candidate.firstZ, candidate.cellSize, width, height)
                                 || pendingBuilds < Mathf.Max(1, m_MaxPendingDetailBuilds))
-                            && TryBuildWorldCell())
+                            && TryBuildWorldCell(key, candidate.distance))
                         {
                             chunk = BuildDensityDetailChunk(
                                 layerIndex,
@@ -1574,7 +1575,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (m_AppearanceCaptureCamera != null)
                 AppearanceCaptureTileComplete = !AppearanceCaptureNeedsSubdivision && allCandidateCellsReady
                     && m_LastSubmittedDensityDetailInstances == m_LastVisibleDensityDetailInstances;
-            if (KeepAllDetailCellsResident && m_DetailStreamingSettled && IsGpuProceduralDensityDetailActive)
+            // CPU residency is sufficient to track visibility. Requiring a GPU draw here
+            // deadlocks tiles that started outside the camera: their cached candidate
+            // visibility stays empty, so the world never grants their first draw budget.
+            if (KeepAllDetailCellsResident && m_DetailStreamingSettled)
             {
                 CacheFullResidentSectors(camera);
                 UpdateFullResidentVisibility(camera, planes);
@@ -1645,6 +1649,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 distantScale = distantAllocation / (float)Math.Max(1L, distantInstances);
             }
 
+            // A cell's density budget must not change when it crosses a tile border.
+            if (UsesWorldBudget)
+            {
+                nearScale = m_World.NearDetailScale;
+                distantScale = m_World.DistantDetailScale;
+            }
+
             // Draw by stable LOD/distance priority, but share the remaining
             // budget proportionally between all middle/far cells. The old
             // first-come cutoff made entire cells alternately disappear when
@@ -1670,7 +1681,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 float scale = visible.densityLod == 0 ? nearScale : distantScale;
                 int allowedInstances = Mathf.Min(
                     remaining,
-                    Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale));
+                    GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowedInstances <= 0)
                     continue;
 

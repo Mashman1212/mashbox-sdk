@@ -366,29 +366,51 @@ namespace MashBoxSDK.MapTools
 
         public override VisualElement CreatePanelContent()
         {
+            const float compactWidth = 240f;
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.width = compactWidth;
+            scroll.style.minWidth = compactWidth;
+            scroll.style.maxWidth = compactWidth;
+            scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            scroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            void UpdateHeight()
+            {
+                var view = containerWindow as SceneView;
+                float available = view != null ? view.position.height - 110f : 520f;
+                scroll.style.maxHeight = Mathf.Clamp(available, 180f, 520f);
+            }
+            UpdateHeight();
+            var resize = scroll.schedule.Execute(UpdateHeight).Every(500);
+            scroll.RegisterCallback<AttachToPanelEvent>(_ => { resize.Resume(); UpdateHeight(); });
+            scroll.RegisterCallback<DetachFromPanelEvent>(_ => resize.Pause());
             var root = new VisualElement();
             root.style.flexDirection = FlexDirection.Column;
             root.style.width = Length.Percent(100f);
-            root.style.minWidth = PanelWidth;
+            root.style.minWidth = 0;
+            root.style.maxWidth = compactWidth;
             root.style.alignSelf = Align.Stretch;
+            scroll.Add(root);
+
+            var displaySettings = CompactFoldout("Display Settings", "Display", false);
+            root.Add(displaySettings);
 
             var displayRow = CreateRow("Display", out VisualElement displayContent);
             displayContent.Add(new MBGameplayGizmoToggle());
-            root.Add(displayRow);
+            displaySettings.Add(displayRow);
 
             var timeOfDayRow = CreateRow("Time of Day", out VisualElement timeOfDayContent);
             timeOfDayContent.Add(new MBTimeOfDaySlider());
-            root.Add(timeOfDayRow);
+            displaySettings.Add(timeOfDayRow);
 
             var sunAzimuthRow = CreateRow("Sun Azimuth", out VisualElement sunAzimuthContent);
             sunAzimuthContent.Add(new MBSunAzimuthSlider());
-            root.Add(sunAzimuthRow);
+            displaySettings.Add(sunAzimuthRow);
             var sunLightRow = CreateRow("Sun Light", out VisualElement sunLightContent);
             sunLightContent.Add(new MBSunLightToggle());
-            root.Add(sunLightRow);
+            displaySettings.Add(sunLightRow);
             var terrainDetailsRow = CreateRow("Terrain Details", out VisualElement terrainDetailsContent);
             terrainDetailsContent.Add(new MBTerrainDetailsToggle());
-            root.Add(terrainDetailsRow);
+            displaySettings.Add(terrainDetailsRow);
 
             var editingRow = CreateRow("Editing", out VisualElement editingContent);
             editingContent.Add(new MBActiveEditingToggle());
@@ -445,6 +467,14 @@ namespace MashBoxSDK.MapTools
             setHeightSection.style.paddingLeft = 6f;
             setHeightSection.style.paddingRight = 6f;
             root.Add(setHeightSection);
+            var meshStampSection = new IMGUIContainer(MeshSculptWindow.DrawMeshStampOverlay);
+            meshStampSection.style.width = Length.Percent(100f);
+            meshStampSection.style.minWidth = 0;
+            meshStampSection.style.maxWidth = compactWidth;
+            meshStampSection.style.flexShrink = 0;
+            meshStampSection.style.paddingLeft = 6f;
+            meshStampSection.style.paddingRight = 6f;
+            root.Add(meshStampSection);
 
             var colorRow = CreateRow("Color", out VisualElement colorContent);
             colorContent.Add(new MBPaintColorField());
@@ -480,7 +510,8 @@ namespace MashBoxSDK.MapTools
 
             var decorSection = new IMGUIContainer(MGBrushWindow.DrawDecorOverlay);
             root.Add(decorSection);
-            VisualElement controlsSection = CreateControlsSection();
+            var controlsSection = CompactFoldout("Shortcut Guide", "Shortcuts", false);
+            controlsSection.Add(CreateControlsSection());
             root.Add(controlsSection);
 
             System.Action syncEditingVisibility = () =>
@@ -489,6 +520,10 @@ namespace MashBoxSDK.MapTools
                     ? DisplayStyle.Flex
                     : DisplayStyle.None;
                 modeRow.style.display = editingDisplay;
+                meshStampSection.style.display = MBEditorToolState.ActiveEditing
+                    && MBEditorToolState.Mode == MBEditorAuthoringMode.MeshSculpt
+                    && MBEditorToolState.SculptMode == MBSculptMode.MeshStamp
+                        ? DisplayStyle.Flex : DisplayStyle.None;
                 setHeightSection.style.display = MBEditorToolState.ActiveEditing
                     && MBEditorToolState.Mode == MBEditorAuthoringMode.MeshSculpt
                     && MBEditorToolState.SculptMode == MBSculptMode.SetHeight
@@ -539,7 +574,17 @@ namespace MashBoxSDK.MapTools
             });
             syncEditingVisibility();
 
-            return root;
+            return scroll;
+        }
+
+        static Foldout CompactFoldout(string title, string key, bool defaultValue)
+        {
+            string sessionKey = "MashBox.Mappy.Compact." + key;
+            var foldout = new Foldout { text = title, value = SessionState.GetBool(sessionKey, defaultValue) };
+            foldout.style.flexShrink = 0;
+            foldout.contentContainer.style.marginLeft = 0;
+            foldout.RegisterValueChangedCallback(evt => SessionState.SetBool(sessionKey, evt.newValue));
+            return foldout;
         }
 
         static Toolbar CreateRow(string label, out VisualElement content)
@@ -1868,7 +1913,7 @@ namespace MashBoxSDK.MapTools
         public const string Id = "MashBox/Sculpt/MeshStamp";
         public MBMeshStampSculptToggle() : base(
             MBSculptMode.MeshStamp, "Mesh Stamp",
-            "Paint mesh shapes onto the surface. Configure the shape in Mesh Sculpt.",
+            "Paint mesh shapes across the selected Terrain World. Configure the mesh and brush in this overlay.",
             "MashBox.Sculpt", "d_MeshFilter Icon") { }
     }
 
@@ -1968,6 +2013,7 @@ namespace MashBoxSDK.MapTools
                 MBEditorToolState.ModeChanged += Sync;
                 MBEditorToolState.SculptModeChanged += Sync;
                 MBEditorToolState.SculptableOnlyChanged += Sync;
+                Selection.selectionChanged += Sync;
                 Sync();
             });
             this.RegisterCallback<DetachFromPanelEvent>(_ =>
@@ -1975,6 +2021,7 @@ namespace MashBoxSDK.MapTools
                 MBEditorToolState.ModeChanged -= Sync;
                 MBEditorToolState.SculptModeChanged -= Sync;
                 MBEditorToolState.SculptableOnlyChanged -= Sync;
+                Selection.selectionChanged -= Sync;
             });
             Sync();
         }
@@ -1998,7 +2045,9 @@ namespace MashBoxSDK.MapTools
                 case MBEditorAuthoringMode.MeshSculpt:
                     bool seamFit = MBEditorToolState.SculptMode == MBSculptMode.SeamFit;
                     AddShortcut(seamFit ? "MashBox.SeamFit" : "MashBox.Sculpt", seamFit ? "Fit" : "Sculpt", "LMB Drag");
-                    if (MBEditorToolState.SculptableOnly)
+                    if (MeshSculptWindow.SelectedTerrainWorld != null)
+                        AddShortcut("d_Terrain Icon", "Terrain World", "All active tiles");
+                    else if (MBEditorToolState.SculptableOnly)
                         AddShortcut("LockIcon-On", "Sculptable Only", "Unlock to add");
                     else
                         AddShortcut("d_ToolHandlePivot", "Make Sculptable", "Shift + Click");
@@ -2012,7 +2061,7 @@ namespace MashBoxSDK.MapTools
                         AddShortcut("d_RotateTool", seamFit ? "Lower Terrain" : "Invert", seamFit ? "Ctrl + LMB Drag" : "Ctrl");
                     AddShortcut("MashBox.Smooth", "Smooth", "Shift");
                     AddShortcut("d_PreMatCube", "Noise", "Ctrl + Shift");
-                    AddShortcut("d_ViewToolZoom", "Radius / Strength", "Ctrl + MMB Drag");
+                    AddShortcut("d_ViewToolZoom", MBEditorToolState.SculptMode == MBSculptMode.MeshStamp ? "Radius / Height" : "Radius / Strength", "Ctrl + MMB Drag");
                     AddShortcut("d_SceneViewFx", "Focus Surface", "F");
                     break;
                 case MBEditorAuthoringMode.UVSpline:
