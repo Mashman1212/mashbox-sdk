@@ -12,14 +12,19 @@ namespace MashBoxSDK.Maps.TerrainSystem
     [ExecuteAlways]
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
-    [AddComponentMenu("MashBox/Maps/MG Terrain")]
+    [AddComponentMenu("MashBox/Maps/MG Terrain Tile")]
     public sealed partial class MGTerrain : MonoBehaviour
     {
+        [SerializeField, HideInInspector] Mesh m_EditableSculptMesh;
+        public Mesh EditableSculptMesh => m_EditableSculptMesh;
+
         public enum InstanceKind { Detail, Tree }
 
         [Serializable]
-        public sealed class Prototype
+        public sealed class Prototype : ISerializationCallbackReceiver
         {
+            [SerializeField, HideInInspector] string m_WorldDetailId;
+            public string WorldDetailId => m_WorldDetailId;
             [SerializeField] GameObject m_Prefab;
             [SerializeField] Mesh m_Mesh;
             [SerializeField] Material m_Material;
@@ -27,6 +32,33 @@ namespace MashBoxSDK.Maps.TerrainSystem
             [SerializeField, Min(0f)] float m_MaximumDrawDistance = 500f;
             [SerializeField] ShadowCastingMode m_ShadowCasting = ShadowCastingMode.On;
             [SerializeField] bool m_ReceiveShadows = true;
+
+            [SerializeField, Range(1, 3), Tooltip("Maximum tree mesh LODs. Uses the prefab LODGroup; missing levels reuse the last available mesh.")]
+            int m_TreeLodCount = 3;
+            [SerializeField, Min(0f)] float m_TreeLod1Distance = 60f;
+            [SerializeField, Min(0f)] float m_TreeLod2Distance = 200f;
+            [SerializeField, Min(0f)] float m_TreeLodHysteresis = 5f;
+            [SerializeField, Tooltip("Optional medium-distance prefab. Empty uses the source prefab's LODGroup.")]
+            GameObject m_TreeLod1Prefab;
+            [SerializeField, Tooltip("Optional far-distance prefab or mesh impostor. Empty uses the source prefab's last mesh LOD.")]
+            GameObject m_TreeLod2Prefab;
+            public int TreeLodCount => Kind == InstanceKind.Tree ? Mathf.Clamp(m_TreeLodCount, 1, 3) : 1;
+            public float TreeLod1Distance => Mathf.Max(0f, m_TreeLod1Distance);
+            public float TreeLod2Distance => Mathf.Max(TreeLod1Distance, m_TreeLod2Distance);
+            public float TreeLodHysteresis => Mathf.Clamp(m_TreeLodHysteresis, 0f, TreeLod1Distance * .5f);
+            internal GameObject TreeLodPrefab(int lod) => lod == 1 ? m_TreeLod1Prefab : lod == 2 ? m_TreeLod2Prefab : null;
+
+            public void OnBeforeSerialize() { }
+            public void OnAfterDeserialize()
+            {
+                // Existing nested prototypes may deserialize new fields as zero.
+                // Zero is reserved for migration; one remains an explicit no-LOD choice.
+                if (m_TreeLodCount > 0) return;
+                m_TreeLodCount = 3;
+                m_TreeLod1Distance = 60f;
+                m_TreeLod2Distance = 200f;
+                m_TreeLodHysteresis = 5f;
+            }
 
             public GameObject Prefab => m_Prefab;
             public Mesh Mesh => m_Mesh;
@@ -88,6 +120,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         sealed class DrawBatch
         {
+            internal int treeLodMask = 7;
             internal Mesh mesh;
             internal int subMesh;
             internal Material material;
@@ -105,13 +138,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal readonly int subMesh;
             internal readonly Material material;
             internal readonly Matrix4x4 relativeMatrix;
+            internal readonly int treeLodMask;
 
-            internal RenderPart(Mesh mesh, int subMesh, Material material, Matrix4x4 relativeMatrix)
+            internal RenderPart(Mesh mesh, int subMesh, Material material, Matrix4x4 relativeMatrix, int treeLodMask = 7)
             {
                 this.mesh = mesh;
                 this.subMesh = subMesh;
                 this.material = material;
                 this.relativeMatrix = relativeMatrix;
+                this.treeLodMask = treeLodMask;
             }
         }
 
@@ -286,6 +321,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
             ReleaseDetailRenderCache();
             ReleaseInstancedMaterials();
+            m_TreeInstanceCells.Clear();
         }
 
         void OnValidate()
@@ -537,6 +573,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     DrawBatchInstances(batch, camera);
                 }
             }
+            DrawTreeInstanceCells(camera, planes);
             RenderDensityDetails(camera, planes);
 #if UNITY_6000_0_OR_NEWER
             if (!m_WorldDefersDraw) UpdateTerrainOcclusion(camera);
@@ -610,6 +647,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void RebuildRenderCache(Matrix4x4 terrainLocalToWorld)
         {
             m_DrawBatches.Clear();
+            m_TreeInstanceCells.Clear();
             ReleaseDetailRenderCache();
             ReleaseInstancedMaterials();
             var batchMatrices = new Dictionary<(int prototype, Mesh mesh, int subMesh, Material material), List<Matrix4x4>>();
@@ -627,6 +665,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 TerrainInstance instance = m_Instances[instanceIndex];
                 int prototypeIndex = instance.PrototypeIndex;
                 if ((uint)prototypeIndex >= partsByPrototype.Length) continue;
+                if (m_Prototypes[prototypeIndex]?.Kind == InstanceKind.Tree) continue;
                 List<RenderPart> parts = partsByPrototype[prototypeIndex];
                 if (parts == null || parts.Count == 0) continue;
                 Matrix4x4 instanceMatrix = terrainLocalToWorld * Matrix4x4.TRS(instance.LocalPosition, instance.LocalRotation, instance.LocalScale);
@@ -660,6 +699,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
                 m_DrawBatches.Add(batch);
             }
+            BuildTreeInstanceCells(terrainLocalToWorld);
             MeshRenderer renderer = MeshRenderer;
             m_WorldBounds = hasBounds ? bounds : renderer != null ? renderer.bounds : new Bounds(transform.position, Vector3.one);
             m_CachedLocalToWorld = terrainLocalToWorld;
@@ -677,19 +717,36 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (part.material != null && !materials.Contains(part.material)) materials.Add(part.material);
         }
 
-        List<RenderPart> GetRenderParts(Prototype prototype)
+        // Inspector diagnostics use the same cached parts and fallback policy as rendering.
+        public void GetTreeLodSourceMeshes(int prototypeIndex, int lod, List<Mesh> meshes)
+        {
+            if (meshes == null) throw new ArgumentNullException(nameof(meshes));
+            meshes.Clear();
+            if ((uint)prototypeIndex >= m_Prototypes.Count) return;
+            var prototype = m_Prototypes[prototypeIndex];
+            if (prototype == null || prototype.Kind != InstanceKind.Tree) return;
+            int mask = 1 << Mathf.Clamp(lod, 0, prototype.TreeLodCount - 1);
+            foreach (var part in GetDenseDetailRenderParts(prototype).parts)
+                if ((part.treeLodMask & mask) != 0 && part.mesh != null && !meshes.Contains(part.mesh)) meshes.Add(part.mesh);
+        }
+
+        List<RenderPart> GetRenderParts(Prototype prototype, int treeLod = 0)
         {
             var result = new List<RenderPart>();
-            if (prototype.Mesh != null && prototype.Material != null)
+            // Serialized empty Unity object references can be managed wrappers that compare
+            // equal to null. Use Unity's null check, not the C# null-coalescing operator.
+            GameObject lodOverride = prototype.TreeLodPrefab(treeLod);
+            GameObject prefab = lodOverride != null ? lodOverride : prototype.Prefab;
+            if (prototype.TreeLodPrefab(treeLod) == null && prototype.Mesh != null && prototype.Material != null)
             {
                 int subMeshCount = Mathf.Max(1, prototype.Mesh.subMeshCount);
                 for (int subMesh = 0; subMesh < subMeshCount; subMesh++) result.Add(new RenderPart(prototype.Mesh, subMesh, prototype.Material, Matrix4x4.identity));
                 return result;
             }
-            if (prototype.Prefab == null) return result;
-            HashSet<MeshRenderer> allowedRenderers = GetHighestDetailRenderers(prototype.Prefab);
-            MeshRenderer[] renderers = prototype.Prefab.GetComponentsInChildren<MeshRenderer>(true);
-            Matrix4x4 rootInverse = prototype.Prefab.transform.worldToLocalMatrix;
+            if (prefab == null) return result;
+            HashSet<MeshRenderer> allowedRenderers = GetHighestDetailRenderers(prefab, prototype.TreeLodPrefab(treeLod) != null ? 0 : treeLod);
+            MeshRenderer[] renderers = prefab.GetComponentsInChildren<MeshRenderer>(true);
+            Matrix4x4 rootInverse = prefab.transform.worldToLocalMatrix;
             for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
             {
                 MeshRenderer renderer = renderers[rendererIndex];
@@ -705,7 +762,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return result;
         }
 
-        static HashSet<MeshRenderer> GetHighestDetailRenderers(GameObject prefab)
+        static HashSet<MeshRenderer> GetHighestDetailRenderers(GameObject prefab, int requestedLod = 0)
         {
             var controlled = new HashSet<MeshRenderer>();
             var highest = new HashSet<MeshRenderer>();
@@ -713,6 +770,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             for (int groupIndex = 0; groupIndex < lodGroups.Length; groupIndex++)
             {
                 LOD[] lods = lodGroups[groupIndex].GetLODs();
+                // Mesh impostors are supported. Skip a terminal BillboardRenderer/cull-only
+                // level and retain the last drawable mesh instead of losing the tree.
+                int lastMeshLod = -1;
+                for (int i = 0; i < lods.Length; i++)
+                    foreach (Renderer renderer in lods[i].renderers)
+                        if (renderer is MeshRenderer) { lastMeshLod = i; break; }
+                int selectedLod = requestedLod >= 2 ? lastMeshLod : Mathf.Min(requestedLod, lastMeshLod);
+                while (selectedLod > 0 && !Array.Exists(lods[selectedLod].renderers, r => r is MeshRenderer)) selectedLod--;
                 for (int lodIndex = 0; lodIndex < lods.Length; lodIndex++)
                 {
                     Renderer[] renderers = lods[lodIndex].renderers;
@@ -720,7 +785,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     {
                         if (!(renderers[rendererIndex] is MeshRenderer meshRenderer)) continue;
                         controlled.Add(meshRenderer);
-                        if (lodIndex == 0) highest.Add(meshRenderer);
+                        if (lodIndex == selectedLod) highest.Add(meshRenderer);
                     }
                 }
             }
@@ -790,6 +855,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (m_RenderCacheDirty || m_DetailRenderCacheDirty) return;
             GeometryUtility.CalculateFrustumPlanes(camera, m_InstanceFrustumPlanes);
             foreach (var batch in m_DrawBatches) DrawBatchInstances(batch, camera);
+            DrawTreeInstanceCells(camera, m_InstanceFrustumPlanes);
 #if UNITY_6000_0_OR_NEWER
             if (m_DetailBrgUsesGpuGeneration) return; // Resident GPU cells are selected in BRG culling.
 #endif
@@ -813,7 +879,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     var prototype = m_Prototypes[layer.PrototypeIndex];
                     if (prototype == null || prototype.ShadowCasting == ShadowCastingMode.ShadowsOnly) continue;
                     float distance = prototype.MaximumDrawDistance > 0 ? prototype.MaximumDrawDistance : camera.farClipPlane;
-                    if (EffectiveDetailDistance > 0) distance = Mathf.Min(distance, EffectiveDetailDistance);
+                    if (prototype.Kind != InstanceKind.Tree && EffectiveDetailDistance > 0) distance = Mathf.Min(distance, EffectiveDetailDistance);
                     BuildDetailHierarchyCandidates(camera, m_InstanceFrustumPlanes, camera.transform.position,
                         layerIndex, layer, bounds, layer.DensityMap.width, layer.DensityMap.height,
                         Mathf.Clamp(m_DetailChunkCells, 2, 64), distance, m_ReflectionCandidates);
@@ -824,8 +890,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         var chunk = BuildDensityDetailChunk(layerIndex, layer, prototype, bounds, candidate.cellSize,
                             candidate.firstX, candidate.firstZ, candidate.densityLod, GetDetailDensityScale(candidate.densityLod));
                         int allowed = Mathf.Min(remaining, chunk.instanceCount);
+                        int treeLod = SelectTreeLod(prototype, candidate.distance);
                         foreach (var batch in chunk.batches)
-                            QueueDenseDetailBatch(batch, camera, allowed, ShadowCastingMode.Off,
+                            if (TreeBatchVisible(batch, treeLod)) QueueDenseDetailBatch(batch, camera, allowed, ShadowCastingMode.Off,
                                 chunk.instanceCount, false, layerIndex);
                         remaining -= allowed;
                     }
@@ -854,6 +921,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 || !m_DetailBrgMeshIds.ContainsKey(cell.group.batch.mesh)
                 || !m_DetailBrgMaterialIds.ContainsKey(cell.group.batch.material)) return false;
             Bounds bounds = cell.chunk.worldBounds;
+            if (cell.group.batch.prototype.Kind == InstanceKind.Tree)
+            {
+                float distance = Mathf.Sqrt(DetailBoundsDistanceSquared(bounds, context.lodParameters.cameraPosition));
+                var prototype = cell.group.batch.prototype;
+                if (prototype.MaximumDrawDistance > 0f && distance > prototype.MaximumDrawDistance) return false;
+                if (!TreeBatchVisible(cell.group.batch, SelectTreeLod(prototype, distance))) return false;
+            }
             Vector3 center = bounds.center, extents = bounds.extents;
             foreach (var plane in context.cullingPlanes)
             {
@@ -896,5 +970,122 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 #endif
+    }
+}
+
+namespace MashBoxSDK.Maps.TerrainSystem
+{
+    public sealed partial class MGTerrain
+    {
+        bool TryGetTreeLayerBounds(DensityDetailLayer layer, out Bounds bounds)
+        {
+            bounds = default;
+            if (layer == null || (uint)layer.PrototypeIndex >= m_Prototypes.Count) return false;
+            var prototype = m_Prototypes[layer.PrototypeIndex];
+            if (prototype == null || prototype.Kind != InstanceKind.Tree) return false;
+            bounds = GetDenseDetailRenderParts(prototype).treeBounds;
+            float painted = layer.SizeMap != null ? 4f : 1f;
+            float width = Mathf.Max(Mathf.Abs(layer.MinWidth), Mathf.Abs(layer.MaxWidth)) * painted;
+            float height = Mathf.Max(Mathf.Abs(layer.MinHeight), Mathf.Abs(layer.MaxHeight)) * painted;
+            bounds = new Bounds(Vector3.Scale(bounds.center, new Vector3(width, height, width)),
+                Vector3.Scale(bounds.size, new Vector3(width, height, width)));
+            return true;
+        }
+
+        static bool TreeBatchVisible(DrawBatch batch, int lod) => batch.prototype.Kind != InstanceKind.Tree
+            || (batch.treeLodMask & (1 << Mathf.Clamp(lod, 0, batch.prototype.TreeLodCount - 1))) != 0;
+
+        static int SelectTreeLod(Prototype prototype, float distance, int previous = -1)
+        {
+            if (prototype.TreeLodCount <= 1) return 0;
+            float near = prototype.TreeLod1Distance;
+            float far = prototype.TreeLodCount > 2 ? prototype.TreeLod2Distance : float.MaxValue;
+            float hysteresis = prototype.TreeLodHysteresis;
+            if (previous < 0) return distance <= near ? 0 : distance <= far ? 1 : 2;
+            if (previous == 0) return distance > near + hysteresis ? (distance > far + hysteresis ? 2 : 1) : 0;
+            if (previous == 1) return distance < near - hysteresis ? 0 : distance > far + hysteresis ? 2 : 1;
+            return distance < far - hysteresis ? (distance < near - hysteresis ? 0 : 1) : 2;
+        }
+
+        sealed class TreeInstanceCell
+        {
+            internal Prototype prototype;
+            internal Bounds bounds;
+            internal bool hasBounds;
+            internal readonly List<DrawBatch> batches = new List<DrawBatch>();
+            internal readonly Dictionary<int, int> cameraLods = new Dictionary<int, int>();
+        }
+        readonly List<TreeInstanceCell> m_TreeInstanceCells = new List<TreeInstanceCell>();
+
+        void BuildTreeInstanceCells(Matrix4x4 terrainLocalToWorld)
+        {
+            // Serialized trees use small world-space cells rather than one tile-wide draw.
+            // All LODs reuse a cached matrix array when their child transforms match.
+            var cells = new Dictionary<(int prototype, int x, int z), (TreeInstanceCell cell, List<Matrix4x4> roots)>();
+            foreach (var instance in m_Instances)
+            {
+                if ((uint)instance.PrototypeIndex >= m_Prototypes.Count) continue;
+                var prototype = m_Prototypes[instance.PrototypeIndex];
+                if (prototype == null || prototype.Kind != InstanceKind.Tree) continue;
+                var matrix = terrainLocalToWorld * Matrix4x4.TRS(instance.LocalPosition, instance.LocalRotation, instance.LocalScale);
+                Vector3 position = matrix.GetColumn(3);
+                var key = (instance.PrototypeIndex, Mathf.FloorToInt(position.x / 32f), Mathf.FloorToInt(position.z / 32f));
+                if (!cells.TryGetValue(key, out var entry))
+                {
+                    entry = (new TreeInstanceCell { prototype = prototype }, new List<Matrix4x4>());
+                    cells.Add(key, entry);
+                    m_TreeInstanceCells.Add(entry.cell);
+                }
+                entry.roots.Add(matrix);
+            }
+            foreach (var entry in cells.Values)
+            {
+                var cell = entry.cell;
+                var transforms = new Dictionary<Matrix4x4, List<Matrix4x4[]>>();
+                foreach (var part in GetDenseDetailRenderParts(cell.prototype).parts)
+                {
+                    if (!transforms.TryGetValue(part.relativeMatrix, out var chunks))
+                    {
+                        chunks = new List<Matrix4x4[]>();
+                        for (int start = 0; start < entry.roots.Count; start += 1023)
+                        {
+                            var chunk = new Matrix4x4[Mathf.Min(1023, entry.roots.Count - start)];
+                            for (int i = 0; i < chunk.Length; i++) chunk[i] = entry.roots[start + i] * part.relativeMatrix;
+                            chunks.Add(chunk);
+                        }
+                        transforms.Add(part.relativeMatrix, chunks);
+                    }
+                    var batch = new DrawBatch { mesh = part.mesh, subMesh = part.subMesh,
+                        material = GetInstancedMaterial(part.material), prototype = cell.prototype, treeLodMask = part.treeLodMask };
+                    batch.matrixChunks.AddRange(chunks);
+                    cell.batches.Add(batch);
+                    foreach (var chunk in chunks)
+                        foreach (var matrix in chunk)
+                        {
+                            var bounds = TransformBounds(part.mesh.bounds, matrix);
+                            if (!cell.hasBounds) { cell.bounds = bounds; cell.hasBounds = true; }
+                            else cell.bounds.Encapsulate(bounds);
+                        }
+                }
+            }
+        }
+
+        void DrawTreeInstanceCells(Camera camera, Plane[] planes)
+        {
+            Vector3 position = camera.transform.position;
+            int cameraId = camera.GetInstanceID();
+            foreach (var cell in m_TreeInstanceCells)
+            {
+                if (!cell.hasBounds || !GeometryUtility.TestPlanesAABB(planes, cell.bounds)) continue;
+                float distance = Mathf.Sqrt(cell.bounds.SqrDistance(position));
+                if (m_AppearanceCaptureCamera == null && cell.prototype.MaximumDrawDistance > 0f
+                    && distance > cell.prototype.MaximumDrawDistance) continue;
+                int previous = cell.cameraLods.TryGetValue(cameraId, out int saved) ? saved : -1;
+                int lod = m_AppearanceCaptureCamera != null ? 0 : SelectTreeLod(cell.prototype, distance, previous);
+                cell.cameraLods[cameraId] = lod;
+                foreach (var batch in cell.batches)
+                    if (TreeBatchVisible(batch, lod)) DrawBatchInstances(batch, camera);
+            }
+        }
     }
 }

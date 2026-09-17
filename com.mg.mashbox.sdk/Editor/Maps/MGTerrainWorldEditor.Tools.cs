@@ -44,13 +44,7 @@ namespace MashBoxSDK.MapTools
             if (m_EditChunk == null || m_EditChunk.World != world) m_EditChunk = world.Chunks.FirstOrDefault();
             if (m_PaintWorld && m_EditChunk != null)
             {
-                var next = (MGTerrain)EditorGUILayout.ObjectField("Detail Definitions From", m_EditChunk, typeof(MGTerrain), true);
-                if (next != null && next.World == world && next != m_EditChunk)
-                {
-                    if (m_ChunkEditor != null) DestroyImmediate(m_ChunkEditor);
-                    m_EditChunk = next;
-                }
-                EditorGUILayout.HelpBox("Choose a detail below and paint in the Scene view with the world selected. Matching layers on intersected tiles receive the stroke. Tiles without a unique matching prototype are skipped with a warning. Each tile retains its own painted distribution.", MessageType.None);
+                EditorGUILayout.HelpBox("Paint and edit shared details across the entire world. Visibility applies everywhere; painted density and size remain local to each area.", MessageType.None);
                 CreateCachedEditor(m_EditChunk, typeof(MGTerrainEditor), ref m_ChunkEditor);
                 ((MGTerrainEditor)m_ChunkEditor).DrawWorldDetailControls();
             }
@@ -116,19 +110,36 @@ namespace MashBoxSDK.MapTools
     {
         internal void DrawWorldDetailControls()
         {
-            serializedObject.Update();
             var terrain = (MGTerrain)target;
-            DrawDetailFoliagePalettes(terrain);
-            DrawDetailLayerVisibility(terrain);
+            PrepareSharedWorldDetails(terrain);
+            serializedObject.Update();
             m_WorldDetailControls = true;
-            try { DrawPrototypeGrid(terrain); }
-            finally { m_WorldDetailControls = false; }
-            DrawWorldDetailMapBrowser(terrain);
-            DrawDetailPainter(terrain);
-            serializedObject.ApplyModifiedProperties();
+            try
+            {
+                DrawDetailFoliagePalettes(terrain);
+                DrawDetailLayerVisibility(terrain);
+                DrawPaintModeToggle(terrain);
+                DrawDetailPainter(terrain);
+                DrawPrototypeGrid(terrain);
+                DrawWorldDetailMapBrowser(terrain);
+                DrawLoftDetailOperations(terrain);
+            }
+            finally
+            {
+                serializedObject.ApplyModifiedProperties();
+                CommitSharedWorldDetails(terrain);
+                m_WorldDetailControls = false;
+            }
         }
-        int m_MapBrowserScope, m_MapBrowserLayer, m_MapBrowserPage;
-        string m_MapBrowserFilter = "";
+        int m_MapBrowserPage, m_MapBrowserPrototype = -1;
+        sealed class DetailMapUsage
+        {
+            internal Texture2D Map;
+            internal readonly HashSet<string> Roles = new HashSet<string>();
+            internal readonly HashSet<int> Layers = new HashSet<int>();
+            internal readonly HashSet<MGTerrain> Areas = new HashSet<MGTerrain>();
+        }
+
         void DrawWorldDetailMapBrowser(MGTerrain source)
         {
             if (source.World == null) return;
@@ -137,63 +148,60 @@ namespace MashBoxSDK.MapTools
                     && source.DensityDetailLayers[i].PrototypeIndex == m_SelectedPrototype
                     && !source.DensityDetailLayers[i].PaletteSourceOnly).ToArray();
             if (layers.Length == 0) return;
+            if (m_MapBrowserPrototype != m_SelectedPrototype)
+            { m_MapBrowserPrototype = m_SelectedPrototype; m_MapBrowserPage = 0; }
+            var maps = new Dictionary<Texture2D, DetailMapUsage>();
+            var roles = new HashSet<string>();
+            void Add(Texture2D map, string role, int layer, MGTerrain area)
+            {
+                if (map == null) return;
+                if (!maps.TryGetValue(map, out var usage))
+                    maps.Add(map, usage = new DetailMapUsage { Map = map });
+                usage.Roles.Add(role); usage.Layers.Add(layer + 1); usage.Areas.Add(area); roles.Add(role);
+            }
+            foreach (var area in SharedTiles(source))
+                foreach (int index in layers)
+                {
+                    int match = FindWorldPaintLayer(source, index, area);
+                    if (match < 0) continue;
+                    var layer = area.DensityDetailLayers[match];
+                    Add(layer.DensityMap, "Density", index, area);
+                    Add(layer.SizeMap, "Size", index, area);
+                    Add(layer.GrassIdMap, "Grass IDs", index, area);
+                    Add(layer.PaletteSourceMap, "Palette Source", index, area);
+                }
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Selected Detail Maps", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("The editable map fields above belong to the reference tile: " + source.name
-                + ". Each matching tile has its own map assignments. This browser inspects them without changing assignments.", MessageType.None);
-            m_MapBrowserLayer = Mathf.Clamp(m_MapBrowserLayer, 0, layers.Length - 1);
-            if (layers.Length > 1)
-                m_MapBrowserLayer = EditorGUILayout.Popup("Detail Layer", m_MapBrowserLayer,
-                    layers.Select(i => "Layer " + (i + 1) + " / Population " + source.DensityDetailLayers[i].GrassPopulation).ToArray());
-            int layerIndex = layers[m_MapBrowserLayer];
-            int scope = GUILayout.Toolbar(m_MapBrowserScope, new[] { "Reference Tile", "All Tiles" });
-            if (scope != m_MapBrowserScope) { m_MapBrowserScope = scope; m_MapBrowserPage = 0; }
-            var tiles = source.World.GetComponentsInChildren<MGTerrain>(true)
-                .Where(t => t.GetComponentInParent<MGTerrainWorld>(true) == source.World).ToArray();
-            if (scope == 0) tiles = new[] { source };
-            else
-            {
-                string filter = EditorGUILayout.TextField("Find Tile", m_MapBrowserFilter);
-                if (filter != m_MapBrowserFilter) { m_MapBrowserFilter = filter; m_MapBrowserPage = 0; }
-                if (!string.IsNullOrWhiteSpace(filter))
-                    tiles = tiles.Where(t => t.name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0).ToArray();
-            }
+            EditorGUILayout.LabelField("Generated Maps", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField($"{maps.Count} unique assets for this detail across the world.", EditorStyles.miniLabel);
+            if (!roles.Contains("Density")) EditorGUILayout.LabelField("Density: created when painted.", EditorStyles.miniLabel);
+            if (!roles.Contains("Size")) EditorGUILayout.LabelField("Size: no map yet; default multiplier is 1.", EditorStyles.miniLabel);
+            if (!roles.Contains("Grass IDs")) EditorGUILayout.LabelField("Grass IDs: no per-pixel ID maps.", EditorStyles.miniLabel);
             const int pageSize = 8;
-            int pages = Mathf.Max(1, (tiles.Length + pageSize - 1) / pageSize);
+            int pages = Mathf.Max(1, (maps.Count + pageSize - 1) / pageSize);
             m_MapBrowserPage = Mathf.Clamp(m_MapBrowserPage, 0, pages - 1);
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                using (new EditorGUI.DisabledScope(m_MapBrowserPage == 0))
-                    if (GUILayout.Button("Previous", GUILayout.Width(70))) m_MapBrowserPage--;
-                GUILayout.Label($"{tiles.Length} tiles / Page {m_MapBrowserPage + 1} of {pages}");
-                using (new EditorGUI.DisabledScope(m_MapBrowserPage + 1 == pages))
-                    if (GUILayout.Button("Next", GUILayout.Width(55))) m_MapBrowserPage++;
-            }
-            foreach (var tile in tiles.Skip(m_MapBrowserPage * pageSize).Take(pageSize))
+            if (pages > 1)
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    using (new EditorGUI.DisabledScope(m_MapBrowserPage == 0))
+                        if (GUILayout.Button("Previous")) m_MapBrowserPage--;
+                    GUILayout.Label($"Page {m_MapBrowserPage + 1} of {pages}");
+                    using (new EditorGUI.DisabledScope(m_MapBrowserPage == pages - 1))
+                        if (GUILayout.Button("Next")) m_MapBrowserPage++;
+                }
+            foreach (var usage in maps.Values.OrderBy(u => u.Map.name).Skip(m_MapBrowserPage * pageSize).Take(pageSize))
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
-                    // Return values deliberately ignored: references are inspectable/pingable, not editable here.
-                    EditorGUILayout.ObjectField("Tile", tile, typeof(MGTerrain), true);
-                    int match = FindWorldFloodLayer(source, layerIndex, tile);
-                    if (match < 0)
+                    EditorGUILayout.LabelField(string.Join(" / ", usage.Roles.OrderBy(r => r)), EditorStyles.boldLabel);
+                    using (new EditorGUILayout.HorizontalScope())
                     {
-                        EditorGUILayout.HelpBox("No unique matching detail layer. Painting cannot resolve this tile for the selected layer.", MessageType.Warning);
-                        continue;
+                        // Asset references remain clickable, but assignments are managed by world painting.
+                        EditorGUILayout.ObjectField(usage.Map, typeof(Texture2D), false);
+                        if (GUILayout.Button("Ping", GUILayout.Width(45))) EditorGUIUtility.PingObject(usage.Map);
                     }
-                    var layer = tile.DensityDetailLayers[match];
-                    DrawMapReference("Density", layer.DensityMap, "No density map assigned");
-                    DrawMapReference("Size", layer.SizeMap, "No size overrides (multiplier 1)");
-                    DrawMapReference("Grass IDs", layer.GrassIdMap, "No per-texel grass-ID map");
-                    if (!tile.isActiveAndEnabled) EditorGUILayout.LabelField("Tile is inactive", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField($"{usage.Map.width} x {usage.Map.height} / {usage.Map.format}", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField("Layers " + string.Join(", ", usage.Layers.OrderBy(i => i))
+                        + $" / {usage.Areas.Count} area(s)" + (usage.Layers.Count > 1 ? " / Shared asset" : ""), EditorStyles.miniLabel);
                 }
-        }
-
-        static void DrawMapReference(string label, Texture2D map, string empty)
-        {
-            EditorGUILayout.ObjectField(label, map, typeof(Texture2D), false);
-            EditorGUILayout.LabelField(map != null
-                ? $"{map.width} × {map.height} / {map.format} / {EditorUtility.FormatBytes(UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(map))}"
-                : empty, EditorStyles.miniLabel);
         }
 
         internal void BakeWorldTile(MGTerrainWorld world, bool distant, string path)

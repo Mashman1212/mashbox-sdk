@@ -1,0 +1,2567 @@
+#if UNITY_EDITOR
+
+using System;
+using System.Collections.Generic;
+using MashBoxSDK.Maps.TerrainSystem;
+using DetailQualityPreset = MashBoxSDK.Maps.TerrainSystem.MGTerrain.DetailQualityPreset;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.HighDefinition;
+using UnityRenderPipeline = UnityEngine.Rendering.RenderPipeline;
+
+namespace MashBoxSDK.MapTools
+{
+    [CustomEditor(typeof(MGTerrain))]
+    [CanEditMultipleObjects]
+    public sealed partial class MGTerrainEditor : Editor
+    {
+        int m_FloodDensity = ushort.MaxValue;
+        readonly List<Material> m_DetailSourceMaterials = new List<Material>();
+        bool m_DetailPainting, m_AdjustDetailBrush, m_PreviousEditing;
+        bool m_HasDetailAdjustSurface;
+        Vector2 m_DetailAdjustMouse;
+        Vector3 m_DetailAdjustPoint, m_DetailAdjustNormal;
+        int m_PaintDetailIndex, m_PaintChannel, m_PaintDensity = 32;
+        bool m_GrassIdOnly;
+        float m_PaintSize = 1f;
+        bool m_RandomPaintSize;
+        float m_PaintSizeMin = .8f, m_PaintSizeMax = 1.2f;
+        int m_PaintSizeSeed = 1;
+        Texture2D m_StrokeMap;
+        Rect m_PendingPaintRegion;
+        bool m_HasPendingPaint;
+        double m_NextPaintPreview;
+        int m_StrokeUndo = -1;
+        Vector3 m_LastDetailDab;
+        readonly HashSet<Texture2D> m_PaintCopies = new HashSet<Texture2D>();
+        Tool m_PreviousTool;
+        float m_LoftEdgeWidth = 1f;
+        float m_LoftEdgeVariation = 0.5f;
+        float m_LoftNoiseScale = 2f;
+        int m_LoftEdgeSeed = 12345;
+        static readonly int[] DetailInstanceCapSteps =
+        {
+            4096,
+            8192,
+            16384,
+            32768,
+            65536,
+            131072,
+            262144,
+            524288
+        };
+
+        static readonly string[] DetailInstanceCapLabels =
+        {
+            "4,096",
+            "8,192",
+            "16,384",
+            "32,768",
+            "65,536",
+            "131,072",
+            "262,144",
+            "524,288"
+        };
+
+        static readonly int[] VisibleInstanceBudgetSteps =
+        {
+            25000,
+            50000,
+            75000,
+            100000,
+            150000,
+            200000,
+            300000,
+            400000,
+            500000,
+            750000,
+            1000000,
+            0
+        };
+
+        static readonly string[] VisibleInstanceBudgetLabels =
+        {
+            "25,000",
+            "50,000",
+            "75,000",
+            "100,000",
+            "150,000",
+            "200,000",
+            "300,000",
+            "400,000",
+            "500,000",
+            "750,000",
+            "1,000,000",
+            "Unlimited"
+        };
+
+        SerializedProperty m_HeightOnlySculpt;
+        SerializedProperty m_DrawInstances;
+        SerializedProperty m_DrawInstancesInEditMode;
+        SerializedProperty m_ControlMap1;
+        SerializedProperty m_ControlMap2;
+        SerializedProperty m_Prototypes;
+        SerializedProperty m_DensityDetailLayers;
+        SerializedProperty m_DetailFoliagePalettes;
+        SerializedProperty m_DetailChunkCells;
+        SerializedProperty m_OverallDetailDensity;
+        SerializedProperty m_MaxCachedDetailChunks;
+        SerializedProperty m_MaxDetailChunksBuiltPerLayerPerFrame;
+        SerializedProperty m_UseDetailDensityLod;
+        SerializedProperty m_FullDetailDensityDistance;
+        SerializedProperty m_MidDetailDensityDistance;
+        SerializedProperty m_MidDetailDensity;
+        SerializedProperty m_FarDetailDensity;
+        SerializedProperty m_DetailDensityLodHysteresis;
+        SerializedProperty m_DebugDrawDensityDetailCells;
+        SerializedProperty m_MaxDensityDetailDistance;
+        SerializedProperty m_MaxVisibleDenseDetailInstances;
+        SerializedProperty m_DistantDetailBudgetReserve;
+        SerializedProperty m_UseBatchRendererGroup;
+        SerializedProperty m_UseGpuProceduralDetailGeneration;
+        SerializedProperty m_UseIndirectDetailDraws;
+        SerializedProperty m_PrewarmFixedDetailCells;
+        SerializedProperty m_RetainFixedDetailCells;
+        SerializedProperty m_DetailStreamingRefreshDistance;
+        SerializedProperty m_DetailStreamingRefreshAngle;
+        SerializedProperty m_CombineDenseDetailMeshes;
+        SerializedProperty m_DenseDetailShadows;
+        SerializedProperty m_MaxCombinedDetailVerticesPerChunk;
+        SerializedProperty m_MaxDetailVerticesPerUpload;
+        SerializedProperty m_MaxDetailMeshUploadsPerFrame;
+        SerializedProperty m_MaxPendingDetailBuilds;
+        bool m_ShowMemoryUsage;
+        bool m_HasMemoryUsageSnapshot;
+        MGTerrain.MemoryUsageSnapshot m_MemoryUsageSnapshot;
+
+        void OnEnable()
+        {
+            Undo.undoRedoPerformed += RefreshPaintUndo;
+            EditorApplication.update += UpdateDetailPaintPreview;
+            m_HeightOnlySculpt = serializedObject.FindProperty("m_HeightOnlySculpt");
+            m_DrawInstances = serializedObject.FindProperty("m_DrawInstances");
+            m_DrawInstancesInEditMode = serializedObject.FindProperty("m_DrawInstancesInEditMode");
+            m_ControlMap1 = serializedObject.FindProperty("m_ControlMap1");
+            m_ControlMap2 = serializedObject.FindProperty("m_ControlMap2");
+            m_Prototypes = serializedObject.FindProperty("m_Prototypes");
+            m_DensityDetailLayers = serializedObject.FindProperty("m_DensityDetailLayers");
+            m_DetailFoliagePalettes = serializedObject.FindProperty("m_DetailFoliagePalettes");
+            m_DetailChunkCells = serializedObject.FindProperty("m_DetailChunkCells");
+            m_OverallDetailDensity = serializedObject.FindProperty("m_OverallDetailDensity");
+            m_MaxCachedDetailChunks = serializedObject.FindProperty("m_MaxCachedDetailChunks");
+            m_MaxDetailChunksBuiltPerLayerPerFrame = serializedObject.FindProperty("m_MaxDetailChunksBuiltPerLayerPerFrame");
+            m_UseDetailDensityLod = serializedObject.FindProperty("m_UseDetailDensityLod");
+            m_FullDetailDensityDistance = serializedObject.FindProperty("m_FullDetailDensityDistance");
+            m_MidDetailDensityDistance = serializedObject.FindProperty("m_MidDetailDensityDistance");
+            m_MidDetailDensity = serializedObject.FindProperty("m_MidDetailDensity");
+            m_FarDetailDensity = serializedObject.FindProperty("m_FarDetailDensity");
+            m_DetailDensityLodHysteresis = serializedObject.FindProperty("m_DetailDensityLodHysteresis");
+            m_DebugDrawDensityDetailCells = serializedObject.FindProperty("m_DebugDrawDensityDetailCells");
+            m_MaxDensityDetailDistance = serializedObject.FindProperty("m_MaxDensityDetailDistance");
+            m_MaxVisibleDenseDetailInstances = serializedObject.FindProperty("m_MaxVisibleDenseDetailInstances");
+            m_DistantDetailBudgetReserve = serializedObject.FindProperty("m_DistantDetailBudgetReserve");
+            m_UseBatchRendererGroup = serializedObject.FindProperty("m_UseBatchRendererGroup");
+            m_UseGpuProceduralDetailGeneration = serializedObject.FindProperty("m_UseGpuProceduralDetailGeneration");
+            m_UseIndirectDetailDraws = serializedObject.FindProperty("m_UseIndirectDetailDraws");
+            m_PrewarmFixedDetailCells = serializedObject.FindProperty("m_PrewarmFixedDetailCells");
+            m_RetainFixedDetailCells = serializedObject.FindProperty("m_RetainFixedDetailCells");
+            m_DetailStreamingRefreshDistance = serializedObject.FindProperty("m_DetailStreamingRefreshDistance");
+            m_DetailStreamingRefreshAngle = serializedObject.FindProperty("m_DetailStreamingRefreshAngle");
+            m_CombineDenseDetailMeshes = serializedObject.FindProperty("m_CombineDenseDetailMeshes");
+            m_DenseDetailShadows = serializedObject.FindProperty("m_DenseDetailShadows");
+            m_MaxCombinedDetailVerticesPerChunk = serializedObject.FindProperty("m_MaxCombinedDetailVerticesPerChunk");
+            m_MaxDetailVerticesPerUpload = serializedObject.FindProperty("m_MaxDetailVerticesPerUpload");
+            m_MaxDetailMeshUploadsPerFrame = serializedObject.FindProperty("m_MaxDetailMeshUploadsPerFrame");
+            m_MaxPendingDetailBuilds = serializedObject.FindProperty("m_MaxPendingDetailBuilds");
+        }
+
+        bool m_InspectFromWorld;
+        internal void DrawWorldTileInspector()
+        {
+            m_InspectFromWorld = true;
+            try { OnInspectorGUI(); }
+            finally { m_InspectFromWorld = false; }
+        }
+        public override void OnInspectorGUI()
+        {
+            if (targets.Length > 1)
+            {
+                DrawMultipleTileInspector();
+                return;
+            }
+            MGTerrain terrain = (MGTerrain)target;
+            if (terrain.World != null && !m_InspectFromWorld)
+            {
+                EditorGUILayout.HelpBox("This tile is managed by MG Terrain World. Edit terrain from the world inspector.", MessageType.Info);
+                if (GUILayout.Button("Edit Terrain World")) Selection.activeGameObject = terrain.World.gameObject;
+                DrawFlattenTile(terrain);
+                return;
+            }
+            serializedObject.UpdateIfRequiredOrScript();
+
+            EditorGUILayout.LabelField("MG Terrain", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "The surface is a normal mesh, so its MeshRenderer can use any material. MG Brush paints the mesh/control maps and stores Decor strokes as GPU instances.",
+                MessageType.Info);
+
+            if (terrain.World != null)
+            {
+                EditorGUILayout.HelpBox("This chunk uses its parent MG Terrain World renderer and budgets. Painted maps and geometry remain local to this chunk.", MessageType.Info);
+                if (GUILayout.Button("Select Terrain World")) Selection.activeGameObject = terrain.World.gameObject;
+            }
+            DrawSettingsCopy(terrain);
+            DrawTileAuthoring(terrain);
+            DrawFlattenTile(terrain);
+
+            DrawMappyToolLauncher(terrain);
+
+            DrawDetailLayerVisibility(terrain);
+            DrawPaintModeToggle(terrain);
+            DrawPrototypeGrid(terrain);
+            DrawDetailPainter(terrain);
+            DrawHolePainter(terrain);
+            DrawFarGrassBake(terrain);
+            m_ShowAdvanced = EditorGUILayout.Foldout(m_ShowAdvanced, "Advanced", true);
+            if (m_ShowAdvanced)
+            {
+                using (new EditorGUI.DisabledScope(true))
+                {
+                    EditorGUILayout.ObjectField("Surface Mesh", terrain.MeshFilter, typeof(MeshFilter), true);
+                    EditorGUILayout.ObjectField("Surface Collider", terrain.MeshCollider, typeof(MeshCollider), true);
+                }
+
+                EditorGUILayout.LabelField("Surface Rendering", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("m_UseSurfaceTiles"), new GUIContent("Render as Tiles"));
+                SerializedProperty tileSize = serializedObject.FindProperty("m_SurfaceTileSize");
+                EditorGUI.BeginChangeCheck();
+                EditorGUILayout.Slider(tileSize, 32f, 256f,
+                    new GUIContent("Tile Size (Metres)", "Render tile size in 32-metre steps. Default: 32 metres."));
+                if (EditorGUI.EndChangeCheck())
+                    tileSize.floatValue = Mathf.Clamp(Mathf.Round(tileSize.floatValue / 32f) * 32f, 32f, 256f);
+                EditorGUILayout.LabelField("Active Render Tiles", terrain.SurfaceTileCount.ToString());
+                EditorGUILayout.HelpBox("Paint and sculpt the whole terrain as usual. Render tiles share the master mesh's UVs, vertex colors and materials, and update with edits.", MessageType.Info);
+                DrawSurfaceColliders(terrain);
+                EditorGUILayout.PropertyField(m_HeightOnlySculpt);
+                using (new EditorGUI.DisabledScope(terrain.World != null))
+                {
+                    EditorGUILayout.PropertyField(m_DrawInstances);
+                    if (m_DrawInstances.boolValue)
+                        EditorGUILayout.PropertyField(m_DrawInstancesInEditMode);
+                }
+
+                EditorGUILayout.Space(6f);
+                EditorGUILayout.LabelField("Paint Control Maps", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(m_ControlMap1);
+                EditorGUILayout.PropertyField(m_ControlMap2);
+
+                DrawDetailFoliagePalettes(terrain);
+                if (terrain.World != null) EditorGUILayout.HelpBox("Quality is controlled by the parent MG Terrain World.", MessageType.Info);
+                using (new EditorGUI.DisabledScope(terrain.World != null))
+                {
+                DrawDetailQualityPresets(terrain);
+                DrawMemoryUsage(terrain);
+                EditorGUILayout.Slider(m_OverallDetailDensity, 0f, 1f,
+                    new GUIContent("Overall Detail Density", "Main density multiplier: 0 hides density details, 1 uses full available density. Distance LOD multiplies this value. Cell capacity and the visible instance budget remain upper limits; the combined-mesh vertex limit does not affect density."));
+                EditorGUILayout.PropertyField(
+                    m_MaxDensityDetailDistance,
+                    new GUIContent("Max Detail Distance", "Global maximum rendering distance for density-map grass/details. A prototype can use a shorter distance; 0 removes this global ceiling."));
+                EditorGUILayout.PropertyField(
+                    m_DetailChunkCells,
+                    new GUIContent("Near Cell Size (Texels)", "Streaming cell width in density-map texels. The density ceiling is fixed per world area: 32,768 instances per 50 Ã— 50 metres per layer, independent of this cell size."));
+                EditorGUILayout.PropertyField(m_MaxCachedDetailChunks);
+                EditorGUILayout.PropertyField(m_MaxDetailChunksBuiltPerLayerPerFrame);
+                var transitionWidth = serializedObject.FindProperty("m_DensityTransitionWidth");
+                EditorGUILayout.PropertyField(transitionWidth, new GUIContent("Density Transition Width", "GodGrass dither-fade width in metres. A positive width keeps cells fixed and reserves the denser population during transitions. Zero disables fading. The visible instance budget still applies."));
+                EditorGUILayout.PropertyField(
+                    m_UseDetailDensityLod,
+                    new GUIContent("Distance Density LOD", "Keep nearby cells dense while deterministically thinning farther cells."));
+                if (m_UseDetailDensityLod.boolValue)
+                {
+                    EditorGUI.indentLevel++;
+                    int nearCellSize = Mathf.Clamp(m_DetailChunkCells.intValue, 2, 64);
+                    EditorGUILayout.LabelField(
+                        "HLOD Cell Sizes",
+                        $"Fixed {nearCellSize} (reused by Near / Mid / Far)");
+                    EditorGUILayout.PropertyField(
+                        m_FullDetailDensityDistance,
+                        new GUIContent("Full Density Distance", "Cells inside this distance render at 100% generated density."));
+                    EditorGUILayout.PropertyField(
+                        m_MidDetailDensityDistance,
+                        new GUIContent("Mid Density End", "Cells after Full Density Distance and up to here use Mid Density."));
+                    EditorGUILayout.Slider(
+                        m_MidDetailDensity,
+                        0.01f,
+                        1f,
+                        new GUIContent("Mid Density", "Fraction of authored details generated in the middle distance band."));
+                    EditorGUILayout.Slider(
+                        m_FarDetailDensity,
+                        0.01f,
+                        1f,
+                        new GUIContent("Far Density", "Fraction generated after Mid Density End and before the prototype draw distance."));
+                    EditorGUILayout.PropertyField(
+                        m_DetailDensityLodHysteresis,
+                        new GUIContent("LOD Hysteresis", "Distance margin around density boundaries. Cells do not change density again until they move completely across this margin."));
+                    EditorGUI.indentLevel--;
+                }
+                EditorGUILayout.PropertyField(
+                    m_DebugDrawDensityDetailCells,
+                    new GUIContent(
+                        "Debug Draw HLOD Cells",
+                        "Draw the currently rendered density-detail cells and the camera-centered LOD/hysteresis boundaries while this terrain is selected."));
+                if (m_DebugDrawDensityDetailCells.boolValue)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Cell colors: green = Near/full density, yellow = Mid, red = Far. Strong spheres are the LOD boundaries; faint paired spheres show the hysteresis enter/exit limits. Blue is Max Detail Distance. Hysteresis prevents boundary chatterâ€”it does not fade density.",
+                        MessageType.None);
+                }
+                DrawVisibleInstanceBudgetSlider(m_MaxVisibleDenseDetailInstances);
+                EditorGUILayout.Slider(
+                    m_DistantDetailBudgetReserve,
+                    0f,
+                    0.75f,
+                    new GUIContent(
+                        "Distance Budget Reserve",
+                        "Fraction of the visible budget guaranteed to middle/far HLOD cells when nearby grass alone exceeds the cap. Unused reserve is automatically returned to the near field."));
+                EditorGUILayout.PropertyField(
+                    m_UseBatchRendererGroup,
+                    new GUIContent(
+                        "GPU Resident Renderer",
+                        "Use BatchRendererGroup/DOTS instancing for dense details in Play Mode. This removes the 1,023-instance draw limit and keeps instance matrices in a persistent GPU buffer. The packed renderer remains the automatic fallback."));
+                if (m_UseBatchRendererGroup.boolValue)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(
+                        m_UseGpuProceduralDetailGeneration,
+                        new GUIContent(
+                            "GPU Procedural Generation",
+                            "Keep compact density spans on the CPU and prewarm nearby transforms in stable GPU allocations. This avoids per-blade CPU matrices and all cell mesh combining."));
+                    using (new EditorGUI.DisabledScope(!m_UseGpuProceduralDetailGeneration.boolValue))
+                        EditorGUILayout.PropertyField(m_UseIndirectDetailDraws,
+                            new GUIContent("Use Indirect Draws", "On: GPU builds visible indices and counts for indirect BRG draws. Off: CPU builds indices for direct BRG draws. Both use the same cached cells and visibility rules."));
+                    var keepAllResident = serializedObject.FindProperty("m_KeepAllDetailCellsResident");
+                    EditorGUILayout.PropertyField(keepAllResident, new GUIContent("Keep All Cells GPU Resident"));
+                    using (new EditorGUI.DisabledScope(!keepAllResident.boolValue || !m_UseGpuProceduralDetailGeneration.boolValue || !m_UseIndirectDetailDraws.boolValue))
+                    {
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_GpuDetailFrustumCulling"), new GUIContent("GPU Per-Mesh Frustum Culling"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_GpuTerrainOcclusion"), new GUIContent("GPU Terrain Occlusion"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_GpuRenderedDepthOcclusion"), new GUIContent("GPU Rendered Depth Occlusion (HDRP)", "Current-frame depth from opaque scene objects, including cubes, rocks and lofts. Adds a depth pass; benchmark on/off."));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("m_DetailOcclusionPadding"), new GUIContent("Culling Bounds Padding (m)", "World-space margin for wind and shader displacement beyond mesh bounds. Increase if foliage clips."));
+                        EditorGUILayout.HelpBox("Optional GPU culling affects the gameplay camera only; shadow draws stay unchanged. Terrain mode uses solid hills/banks. Rendered Depth includes opaque scene geometry and adds a depth pass; measure its cost. No bake required. All optional toggles off restores the baseline. Cell colors show CPU selection, not GPU survivors.", MessageType.None);
+#if UNITY_6000_0_OR_NEWER
+                        if (Application.isPlaying)
+                        {
+                            EditorGUILayout.LabelField("Optional GPU Culling", ((MGTerrain)target).IsGpuDetailCullingActive ? "Active" : "Off / bypassed");
+                            EditorGUILayout.LabelField("Terrain Occlusion", ((MGTerrain)target).TerrainOcclusionStatus, EditorStyles.wordWrappedLabel);
+                            EditorGUILayout.LabelField("Rendered Depth", ((MGTerrain)target).RenderedDepthStatus, EditorStyles.wordWrappedLabel);
+                            if (GUILayout.Button("Measure GPU Culling")) ((MGTerrain)target).MeasureGpuCulling();
+                            EditorGUILayout.LabelField("GPU snapshot", ((MGTerrain)target).GpuCullingMeasurement, EditorStyles.wordWrappedLabel);
+                        }
+#endif
+                    }
+                    using (new EditorGUI.DisabledScope(keepAllResident.boolValue && m_UseGpuProceduralDetailGeneration.boolValue))
+                    {
+                    EditorGUILayout.PropertyField(
+                        m_PrewarmFixedDetailCells,
+                        new GUIContent("Prewarm Cells On First Render", "Build all fixed cells inside the initial detail radius in one startup pass. Rotation reuses cached transforms; movement streams newly reached cells."));
+                    EditorGUILayout.PropertyField(
+                        m_RetainFixedDetailCells,
+                        new GUIContent("Retain Built Cells", "Keep CPU cell descriptions for revisits. GPU allocations outside the nearby radius are reclaimed and reused."));
+                    EditorGUILayout.PropertyField(
+                        m_DetailStreamingRefreshDistance,
+                        new GUIContent("Refresh After Moving", "Reuse the current GPU-resident cell set until the main camera moves this far."));
+                    EditorGUILayout.PropertyField(
+                        m_DetailStreamingRefreshAngle,
+                        new GUIContent("Refresh After Rotating", "Reuse the current GPU-resident cell set until the main camera rotates this many degrees."));
+                    }
+                    EditorGUI.indentLevel--;
+                    EditorGUILayout.HelpBox(
+                        m_UseGpuProceduralDetailGeneration.boolValue
+                            ? "With Keep All Cells GPU Resident enabled, the full terrain population is prepared once and retained until terrain data changes. Movement and rotation only update visibility. Indirect mode expands visible indices and counts on the GPU; direct mode builds indices on the CPU. Cell selection uses the same cached hierarchy in both modes."
+                            : "GPU Resident uses fixed CPU-matrix cells: a cell is generated once at full density, while Near/Mid/Far only alter the submitted instance prefix.",
+                        MessageType.None);
+                }
+                using (new EditorGUI.DisabledScope(true))
+                {
+                    EditorGUILayout.LabelField(
+                        new GUIContent(
+                            "Last Camera Detail Load",
+                            "Logical density-detail instances available in visible HLOD cells versus the number actually submitted after the visible budget."),
+                        new GUIContent($"{terrain.LastVisibleDensityDetailInstances:N0} visible / {terrain.LastSubmittedDensityDetailInstances:N0} submitted"));
+                    EditorGUILayout.LabelField(
+                        new GUIContent(
+                            "Last Camera Draw Submissions",
+                            "MG Terrain draw submissions for the last rendered camera. HDRP normally executes each alpha-clipped submission once in Deferred Depth Prepass and once in GBuffer, so the Frame Debugger shows approximately this count in each pass."),
+                        new GUIContent(terrain.LastDensityDetailDrawCalls.ToString("N0")));
+                    EditorGUILayout.LabelField(
+                        "Active Renderer",
+                        terrain.IsIndirectDensityDetailActive
+                            ? "GPU Procedural + Indirect (BRG)"
+                            : terrain.IsGpuProceduralDensityDetailActive
+                            ? "GPU Procedural + Resident (BRG)"
+                            : terrain.IsDensityDetailBrgActive
+                                ? "GPU Resident (BRG)"
+                                : "Packed / Combined Fallback");
+                    if (terrain.IsGpuProceduralDensityDetailActive)
+                        EditorGUILayout.LabelField(
+                            new GUIContent("Transforms Regenerated Last Update", "Number of GPU instance transforms rewritten on the last detail update. Unchanged cell ranges retain their existing transforms; zero means all ranges were reused. Includes prefab mesh parts."),
+                            new GUIContent(terrain.LastRegeneratedDetailInstances.ToString("N0")));
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Cell Bounds Built Last Update", "New candidate bounds calculated on the last streaming update. Rotation at a fixed position reuses cached bounds and should report zero."),
+                        new GUIContent(terrain.LastDetailCandidateBoundsBuilt.ToString("N0")));
+                    EditorGUILayout.LabelField(
+                        new GUIContent(
+                            "Prototype Part Batching",
+                            "Source prefab renderer/submesh parts compared with the same-material parts MG Terrain consolidated for dense instancing."),
+                        new GUIContent($"{terrain.LastDensityDetailSourceParts:N0} source / {terrain.LastDensityDetailBatchedParts:N0} batched"));
+                }
+                EditorGUILayout.Space(3f);
+                EditorGUILayout.LabelField("Packed / Combined Fallback", EditorStyles.boldLabel);
+                if (m_UseBatchRendererGroup.boolValue && Application.isPlaying && terrain.IsDensityDetailBrgActive)
+                {
+                    EditorGUILayout.HelpBox(
+                        "The combined-mesh limits below are inactive while GPU Resident (BRG) is active. They only configure the automatic fallback renderer and are not clipping distant BRG cells.",
+                        MessageType.None);
+                }
+                EditorGUILayout.PropertyField(m_CombineDenseDetailMeshes);
+                EditorGUILayout.PropertyField(
+                    m_DenseDetailShadows,
+                    new GUIContent("Dense Detail Shadows", "Master switch for density-map shadows. Each prototype's Shadow Casting setting is still respected."));
+                if (m_CombineDenseDetailMeshes.boolValue)
+                {
+                    EditorGUILayout.PropertyField(m_MaxCombinedDetailVerticesPerChunk,
+                        new GUIContent("Fallback Combine Vertex Limit", "Only limits fallback mesh combining. Larger populations use instanced drawing instead. This setting does not reduce detail density."));
+                    EditorGUILayout.PropertyField(
+                        m_MaxDetailVerticesPerUpload,
+                        new GUIContent("Vertices Per Upload", "Hard limit for one packed GPU vertex-buffer upload. Lower values reduce camera-movement spikes but create more draw calls."));
+                    EditorGUILayout.PropertyField(
+                        m_MaxDetailMeshUploadsPerFrame,
+                        new GUIContent("Mesh Uploads Per Frame", "Maximum completed worker-built detail chunks uploaded to the GPU per rendered frame."));
+                    EditorGUILayout.PropertyField(
+                        m_MaxPendingDetailBuilds,
+                        new GUIContent("Pending Worker Builds", "Maximum detail chunks being assembled in background worker tasks."));
+                }
+
+                EditorGUILayout.Space();
+                }
+                DrawLoftDetailOperations(terrain);
+
+            } // Advanced
+
+            bool changed = serializedObject.ApplyModifiedProperties();
+            if (changed)
+            {
+                terrain.ApplyControlMapsToMaterial();
+                terrain.InvalidateRenderCache();
+                EditorUtility.SetDirty(terrain);
+                SceneView.RepaintAll();
+            }
+
+            if (!m_ShowAdvanced) return;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Conform Instances"))
+                {
+                    Undo.RecordObject(terrain, "Conform MG Terrain Instances");
+                    terrain.ConformInstancesToSurface();
+                    EditorUtility.SetDirty(terrain);
+                    SceneView.RepaintAll();
+                }
+                if (GUILayout.Button("Rebuild Render Cache"))
+                {
+                    terrain.InvalidateRenderCache();
+                    SceneView.RepaintAll();
+                }
+            }
+
+            using (new EditorGUI.DisabledScope(terrain.InstanceCount == 0))
+            {
+                if (GUILayout.Button("Clear All Instances...")
+                    && EditorUtility.DisplayDialog(
+                        "Clear MG Terrain Instances?",
+                        $"Remove all {terrain.InstanceCount:N0} detail and tree instances from '{terrain.name}'? This can be undone.",
+                        "Clear Instances",
+                        "Cancel"))
+                {
+                    Undo.RecordObject(terrain, "Clear MG Terrain Instances");
+                    terrain.ClearInstances();
+                    EditorUtility.SetDirty(terrain);
+                    SceneView.RepaintAll();
+                }
+            }
+        }
+
+        void ClearDetailsUnderLofts(MGTerrain terrain, bool confirmed = false)
+        {
+            serializedObject.ApplyModifiedProperties();
+            if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null) return;
+            var triangles = new List<Vector2>();
+            Vector3 scaleX = terrain.transform.TransformVector(Vector3.right);
+            Vector3 scaleZ = terrain.transform.TransformVector(Vector3.forward);
+            float sx = scaleX.magnitude, sz = scaleZ.magnitude;
+            if (sx < 0.00001f || sz < 0.00001f) return;
+            var lofts = UnityEngine.Object.FindObjectsByType<MashBoxSDK.Maps.Spline.MultiSplineLoft>(FindObjectsSortMode.None);
+            foreach (var loft in lofts)
+            {
+                if (!loft.isActiveAndEnabled || loft.gameObject.scene != terrain.gameObject.scene) continue;
+                MeshFilter filter = loft.GetComponent<MeshFilter>();
+                Mesh mesh = filter != null ? filter.sharedMesh : null;
+                if (mesh == null) continue;
+                if (!mesh.isReadable)
+                {
+                    if (confirmed) throw new InvalidOperationException($"Cannot read loft {loft.name}; world operation reverted.");
+                    EditorUtility.DisplayDialog("Cannot Read Loft", $"Enable mesh Read/Write for '{loft.name}' and try again. No maps were changed.", "OK");
+                    return;
+                }
+                Matrix4x4 matrix = terrain.transform.worldToLocalMatrix * filter.transform.localToWorldMatrix;
+                Vector3[] vertices = mesh.vertices;
+                foreach (int vertex in mesh.triangles)
+                {
+                    Vector3 p = matrix.MultiplyPoint3x4(vertices[vertex]);
+                    triangles.Add(new Vector2(p.x * sx, p.z * sz));
+                }
+            }
+            if (triangles.Count == 0)
+            {
+                if (confirmed) return;
+                EditorUtility.DisplayDialog("No Lofts Found", "No active Multi Spline Loft meshes were found in this terrain's scene.", "OK");
+                return;
+            }
+            var maps = new HashSet<Texture2D>();
+            foreach (var layer in terrain.DensityDetailLayers)
+                if (layer != null)
+                {
+                    if (layer.DensityMap != null) maps.Add(layer.DensityMap);
+                    if (layer.PaletteSourceMap != null) maps.Add(layer.PaletteSourceMap);
+                }
+            foreach (var binding in terrain.DetailFoliagePalettes)
+                if (binding != null && binding.SourceDensityMap != null) maps.Add(binding.SourceDensityMap);
+            if (maps.Count == 0) return;
+            foreach (Texture2D map in maps)
+                if (!map.isReadable || map.format != TextureFormat.R16)
+                {
+                    if (confirmed) throw new InvalidOperationException($"Cannot read density map {map.name}; world operation reverted.");
+                    EditorUtility.DisplayDialog("Cannot Read Density Map", $"'{map.name}' must be a readable R16 texture. No maps were changed.", "OK");
+                    return;
+                }
+            if (!confirmed && !EditorUtility.DisplayDialog("Clear Density Under Lofts?",
+                $"Clear the projected footprints of active Multi Spline Lofts in this scene, including raised lofts, from this terrain's {maps.Count} density/source maps?\n\nThe edge feathers {(m_LoftEdgeWidth < 0f ? "inward" : "outward")} over up to {Mathf.Abs(m_LoftEdgeWidth)} metres with seeded variation. Individual Decor instances and trees are unchanged. New maps preserve the original painting; Undo restores assignments but keeps the created assets. This only removes density; use the original map to restore grass.", "Clear Under Lofts", "Cancel")) return;
+            var results = new Dictionary<Texture2D, ushort[]>();
+            var replacements = new Dictionary<Texture2D, Texture2D>();
+            var counts = new Dictionary<Texture2D, long>();
+            Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
+            float minX = bounds.min.x * sx, minZ = bounds.min.z * sz;
+            float sizeX = bounds.size.x * sx, sizeZ = bounds.size.z * sz;
+            if (sizeX <= 0f || sizeZ <= 0f) return;
+            try
+            {
+                foreach (Texture2D map in maps)
+                {
+                    float dx = sizeX / map.width, dz = sizeZ / map.height;
+                    var keep = new float[map.width * map.height];
+                    for (int p = 0; p < keep.Length; p++) keep[p] = 1f;
+                    for (int t = 0; t < triangles.Count; t += 3)
+                    {
+                        if (t % 768 == 0 && EditorUtility.DisplayCancelableProgressBar("Clear Details Under Lofts", map.name, t / (float)triangles.Count))
+                        { if (confirmed) throw new OperationCanceledException(); return; }
+                        Vector2 a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
+                        if (Mathf.Abs(LoftCross(b - a, c - a)) < 0.000001f) continue;
+                        float feather = Mathf.Max(0f, m_LoftEdgeWidth);
+                        int x0 = Mathf.Max(0, Mathf.FloorToInt((Mathf.Min(a.x, b.x, c.x) - feather - minX) / dx));
+                        int x1 = Mathf.Min(map.width - 1, Mathf.FloorToInt((Mathf.Max(a.x, b.x, c.x) + feather - minX) / dx));
+                        int z0 = Mathf.Max(0, Mathf.FloorToInt((Mathf.Min(a.y, b.y, c.y) - feather - minZ) / dz));
+                        int z1 = Mathf.Min(map.height - 1, Mathf.FloorToInt((Mathf.Max(a.y, b.y, c.y) + feather - minZ) / dz));
+                        for (int z = z0; z <= z1; z++)
+                        for (int x = x0; x <= x1; x++)
+                        {
+                            int pixel = z * map.width + x;
+                            if (keep[pixel] == 0f) continue;
+                            var p = new Vector2(minX + (x + 0.5f) * dx, minZ + (z + 0.5f) * dz);
+                            float u = LoftCross(b - a, p - a), v = LoftCross(c - b, p - b), w = LoftCross(a - c, p - c);
+                            if ((u >= 0 && v >= 0 && w >= 0) || (u <= 0 && v <= 0 && w <= 0)) { keep[pixel] = 0f; continue; }
+                            if (feather <= 0f) continue;
+                            float distance = Mathf.Min(LoftEdgeDistance(p, a, b), LoftEdgeDistance(p, b, c), LoftEdgeDistance(p, c, a));
+                            float noise = Mathf.PerlinNoise(p.x / m_LoftNoiseScale + (m_LoftEdgeSeed & 65535), p.y / m_LoftNoiseScale + ((m_LoftEdgeSeed >> 16) & 65535));
+                            float reach = feather * Mathf.Lerp(1f, Mathf.Lerp(0.2f, 1f, noise), m_LoftEdgeVariation);
+                            keep[pixel] = Mathf.Min(keep[pixel], Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(distance / reach)));
+                        }
+                    }
+                    if (m_LoftEdgeWidth < 0f)
+                        FeatherInsideLoft(keep, map.width, map.height, dx, dz, minX, minZ);
+                    ushort[] values = map.GetPixelData<ushort>(0).ToArray();
+                    bool changed = false;
+                    for (int p = 0; p < values.Length; p++)
+                    {
+                        ushort value = (ushort)Mathf.RoundToInt(values[p] * keep[p]);
+                        changed |= value != values[p];
+                        values[p] = value;
+                    }
+                    if (changed) results.Add(map, values);
+                }
+                if (results.Count == 0) { if (confirmed) return; EditorUtility.DisplayDialog("Clear Details Under Lofts", "No occupied density texels overlap the loft footprints or feathered edges.", "OK"); return; }
+                foreach (var result in results)
+                {
+                    Texture2D source = result.Key;
+                    var output = new Texture2D(source.width, source.height, TextureFormat.R16, false, true)
+                    { name = source.name + "_LoftsCleared", filterMode = source.filterMode, wrapMode = source.wrapMode };
+                    output.SetPixelData(result.Value, 0);
+                    output.Apply(false, false);
+                    MGTerrainSceneAssets.Create(output, terrain, "Density_LoftsCleared");
+                    replacements.Add(source, output);
+                    long total = 0;
+                    foreach (ushort value in result.Value) total += value;
+                    counts.Add(output, total);
+                }
+                Undo.RecordObject(terrain, "Clear MG Terrain Details Under Lofts");
+                serializedObject.Update();
+                SerializedProperty property = serializedObject.GetIterator();
+                while (property.Next(true))
+                    if (property.propertyType == SerializedPropertyType.ObjectReference && property.objectReferenceValue is Texture2D original && replacements.TryGetValue(original, out Texture2D replacement))
+                        property.objectReferenceValue = replacement;
+                for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
+                {
+
+            SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+                    var map = layer.FindPropertyRelative("m_DensityMap").objectReferenceValue as Texture2D;
+                    if (map != null && counts.TryGetValue(map, out long total)) layer.FindPropertyRelative("m_RepresentedInstanceCount").longValue = total;
+                }
+                serializedObject.ApplyModifiedProperties();
+                terrain.InvalidateRenderCache();
+                EditorUtility.SetDirty(terrain);
+                EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+                SceneView.RepaintAll();
+            }
+            finally { EditorUtility.ClearProgressBar(); }
+        }
+
+        void FeatherInsideLoft(float[] keep, int width, int height, float dx, float dz, float minX, float minZ)
+        {
+            // Distance to the outside of the entire projected footprint, not to
+            // individual triangle edges: internal mesh seams must stay cleared.
+            var distance = new float[keep.Length];
+            for (int i = 0; i < distance.Length; i++) distance[i] = keep[i] == 0f ? float.PositiveInfinity : 0f;
+            float diagonal = Mathf.Sqrt(dx * dx + dz * dz);
+            for (int z = 0; z < height; z++)
+            for (int x = 0; x < width; x++)
+            {
+                int i = z * width + x;
+                if (x > 0) distance[i] = Mathf.Min(distance[i], distance[i - 1] + dx);
+                if (z > 0)
+                {
+                    distance[i] = Mathf.Min(distance[i], distance[i - width] + dz);
+                    if (x > 0) distance[i] = Mathf.Min(distance[i], distance[i - width - 1] + diagonal);
+                    if (x + 1 < width) distance[i] = Mathf.Min(distance[i], distance[i - width + 1] + diagonal);
+                }
+            }
+            for (int z = height - 1; z >= 0; z--)
+            for (int x = width - 1; x >= 0; x--)
+            {
+                int i = z * width + x;
+                if (x + 1 < width) distance[i] = Mathf.Min(distance[i], distance[i + 1] + dx);
+                if (z + 1 < height)
+                {
+                    distance[i] = Mathf.Min(distance[i], distance[i + width] + dz);
+                    if (x > 0) distance[i] = Mathf.Min(distance[i], distance[i + width - 1] + diagonal);
+                    if (x + 1 < width) distance[i] = Mathf.Min(distance[i], distance[i + width + 1] + diagonal);
+                }
+            }
+            for (int z = 0; z < height; z++)
+            for (int x = 0; x < width; x++)
+            {
+                int i = z * width + x;
+                if (keep[i] != 0f) continue;
+                float noise = Mathf.PerlinNoise((minX + (x + 0.5f) * dx) / m_LoftNoiseScale + (m_LoftEdgeSeed & 65535),
+                    (minZ + (z + 0.5f) * dz) / m_LoftNoiseScale + ((m_LoftEdgeSeed >> 16) & 65535));
+                float reach = -m_LoftEdgeWidth * Mathf.Lerp(1f, Mathf.Lerp(0.2f, 1f, noise), m_LoftEdgeVariation);
+                float insideDistance = Mathf.Max(0f, distance[i] - 0.5f * Mathf.Min(dx, dz));
+                keep[i] = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(insideDistance / reach));
+            }
+        }
+
+        static float LoftCross(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
+        static float LoftEdgeDistance(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 edge = b - a;
+            float t = edge.sqrMagnitude > 0f ? Mathf.Clamp01(Vector2.Dot(p - a, edge) / edge.sqrMagnitude) : 0f;
+            return Vector2.Distance(p, a + t * edge);
+        }
+
+        internal const float DefaultColliderCellSize = 50f;
+        float m_ColliderCellSize = DefaultColliderCellSize;
+
+        void DrawSurfaceColliders(MGTerrain terrain)
+        {
+            EditorGUILayout.LabelField("Surface Collision", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("m_UseColliderChunksAtRuntime"), new GUIContent("Use Chunks At Runtime"));
+            m_ColliderCellSize = EditorGUILayout.Slider("Collider Cell Size (Metres)", m_ColliderCellSize, 10f, 200f);
+            using (new EditorGUI.DisabledScope(Application.isPlaying))
+            {
+                if (GUILayout.Button("Build / Rebuild Child Colliders"))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    BuildSurfaceColliders(terrain);
+                    GUIUtility.ExitGUI();
+                }
+                if (terrain.SurfaceColliderChunks.Count > 0 && GUILayout.Button("Use Master Collider"))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    var source = terrain.MeshFilter;
+                    if (source == null || source.sharedMesh == null) return;
+                    MeshCollider master = terrain.MeshCollider;
+                    if (master == null) master = Undo.AddComponent<MeshCollider>(source.gameObject);
+                    Undo.RecordObject(master, "Restore Terrain Master Collider");
+                    master.sharedMesh = source.sharedMesh;
+                    master.enabled = true;
+                    foreach (var chunk in terrain.SurfaceColliderChunks)
+                        if (chunk != null) { Undo.RecordObject(chunk, "Restore Terrain Master Collider"); chunk.enabled = false; }
+                    serializedObject.Update();
+                    serializedObject.FindProperty("m_MeshCollider").objectReferenceValue = master;
+                    serializedObject.ApplyModifiedProperties();
+                    EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+                    Physics.SyncTransforms();
+                }
+            }
+            if (terrain.SurfaceColliderChunks.Count > 0)
+                EditorGUILayout.HelpBox($"{terrain.SurfaceColliderChunks.Count} saved child collider meshes. Detail, vertex and splat brushes resolve these to this terrain. Rebuild after changing surface geometry; collider meshes retain the original UV channels. Old mesh assets remain available for Undo/recovery.", MessageType.Info);
+        }
+
+        void BuildSurfaceColliders(MGTerrain terrain)
+        {
+            try
+            {
+                BuildSurfaceColliders(terrain, m_ColliderCellSize);
+            }
+            catch (InvalidOperationException exception)
+            {
+                EditorUtility.DisplayDialog("Terrain Colliders", exception.Message, "OK");
+            }
+            serializedObject.Update();
+        }
+
+        internal static void BuildSurfaceColliders(MGTerrain terrain, float cellSize, string assetFolder = null, List<string> createdAssets = null, bool saveAssets = true)
+        {
+            if (terrain == null) throw new ArgumentNullException(nameof(terrain));
+            if (float.IsNaN(cellSize) || float.IsInfinity(cellSize) || cellSize <= 0f)
+                throw new ArgumentOutOfRangeException(nameof(cellSize));
+            MeshFilter filter = terrain.MeshFilter;
+            Mesh source = filter != null ? filter.sharedMesh : null;
+            if (source == null || !source.isReadable)
+                throw new InvalidOperationException("A readable surface mesh is required.");
+            Vector3[] vertices = source.vertices;
+            int[] triangles = terrain.GetSurfaceTrianglesIncludingHoles();
+            if (triangles.Length == 0) throw new InvalidOperationException("The surface mesh has no triangles to build colliders from.");
+            float sx = Mathf.Max(.0001f, filter.transform.TransformVector(Vector3.right).magnitude);
+            float sz = Mathf.Max(.0001f, filter.transform.TransformVector(Vector3.forward).magnitude);
+            var groups = new Dictionary<Vector2Int, List<int>>();
+            for (int t = 0; t < triangles.Length; t += 3)
+            {
+                Vector3 center = (vertices[triangles[t]] + vertices[triangles[t + 1]] + vertices[triangles[t + 2]]) / 3f - source.bounds.min;
+                var key = new Vector2Int(Mathf.FloorToInt(center.x * sx / cellSize), Mathf.FloorToInt(center.z * sz / cellSize));
+                if (!groups.TryGetValue(key, out var indices)) groups.Add(key, indices = new List<int>());
+                indices.Add(triangles[t]); indices.Add(triangles[t + 1]); indices.Add(triangles[t + 2]);
+            }
+            if (groups.Count > 1024)
+                throw new InvalidOperationException("More than 1,024 chunks requested. Increase Collider Cell Size.");
+            var sourceUvs = new List<Vector4>[8];
+            for (int channel = 0; channel < 8; channel++) { sourceUvs[channel] = new List<Vector4>(); source.GetUVs(channel, sourceUvs[channel]); }
+            string folder = assetFolder ?? MGTerrainSceneAssets.Folder(terrain);
+            if (!AssetDatabase.IsValidFolder(folder))
+            {
+                if (assetFolder != null) throw new InvalidOperationException("The collider asset folder does not exist.");
+                AssetDatabase.CreateFolder("Assets", "MGTerrainColliders");
+            }
+            string assetPath = assetFolder == null ? MGTerrainSceneAssets.UniquePath(terrain, "Colliders")
+                : AssetDatabase.GenerateUniqueAssetPath(folder + "/TerrainColliders.asset");
+            // Track the asset before writing so conversion rollback also removes partial builds.
+            createdAssets?.Add(assetPath);
+            var root = new GameObject("MG Terrain Collider Chunks");
+            root.transform.SetParent(terrain.transform, false);
+            root.layer = terrain.gameObject.layer;
+            root.tag = terrain.gameObject.tag;
+            var colliders = new List<MeshCollider>();
+            var vertexMaps = new List<MGTerrain.SurfaceColliderVertexMap>();
+            MeshCollider original = terrain.MeshCollider;
+            foreach (var group in groups)
+            {
+                var remap = new Dictionary<int, int>();
+                var localVertices = new List<Vector3>();
+                var originalIndices = new List<int>();
+                var indices = new List<int>();
+                foreach (int sourceIndex in group.Value)
+                {
+                    if (!remap.TryGetValue(sourceIndex, out int index))
+                    {
+                        index = localVertices.Count;
+                        remap.Add(sourceIndex, index);
+                        originalIndices.Add(sourceIndex);
+                        localVertices.Add(terrain.transform.InverseTransformPoint(filter.transform.TransformPoint(vertices[sourceIndex])));
+                    }
+                    indices.Add(index);
+                }
+                var mesh = new Mesh { name = $"Terrain Collider {group.Key.x},{group.Key.y}", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                mesh.SetVertices(localVertices);
+                mesh.SetTriangles(indices, 0);
+                for (int channel = 0; channel < 8; channel++)
+                {
+                    if (sourceUvs[channel].Count != vertices.Length) continue;
+                    var uv = new List<Vector4>(originalIndices.Count);
+                    foreach (int index in originalIndices) uv.Add(sourceUvs[channel][index]);
+                    mesh.SetUVs(channel, uv);
+                }
+                mesh.RecalculateBounds();
+                if (colliders.Count == 0) AssetDatabase.CreateAsset(mesh, assetPath);
+                else AssetDatabase.AddObjectToAsset(mesh, assetPath);
+                var child = new GameObject(mesh.name);
+                child.transform.SetParent(root.transform, false);
+                child.layer = original != null ? original.gameObject.layer : terrain.gameObject.layer;
+                child.tag = original != null ? original.gameObject.tag : terrain.gameObject.tag;
+                var collider = child.AddComponent<MeshCollider>();
+                if (original != null) { collider.sharedMaterial = original.sharedMaterial; collider.cookingOptions = original.cookingOptions; collider.contactOffset = original.contactOffset; }
+                collider.sharedMesh = mesh;
+                colliders.Add(collider);
+                vertexMaps.Add(new MGTerrain.SurfaceColliderVertexMap(collider, originalIndices.ToArray()));
+            }
+            Undo.RegisterCreatedObjectUndo(root, "Build Terrain Child Colliders");
+            using var serializedObject = new SerializedObject(terrain);
+            serializedObject.Update();
+            var rootProperty = serializedObject.FindProperty("m_SurfaceColliderRoot");
+            if (rootProperty.objectReferenceValue is Transform oldRoot && oldRoot.parent == terrain.transform)
+                Undo.DestroyObjectImmediate(oldRoot.gameObject);
+            rootProperty.objectReferenceValue = root.transform;
+            var chunksProperty = serializedObject.FindProperty("m_SurfaceColliderChunks");
+            chunksProperty.arraySize = colliders.Count;
+            for (int i = 0; i < colliders.Count; i++) chunksProperty.GetArrayElementAtIndex(i).objectReferenceValue = colliders[i];
+            serializedObject.ApplyModifiedProperties();
+            Undo.RecordObject(terrain, "Build Terrain Child Colliders");
+            terrain.SetSurfaceColliderVertexMaps(vertexMaps.ToArray(), source.vertexCount);
+            terrain.ApplySurfaceHoles();
+            EditorUtility.SetDirty(terrain);
+            if (original != null) { Undo.RecordObject(original, "Build Terrain Child Colliders"); original.enabled = false; }
+            if (saveAssets) AssetDatabase.SaveAssets();
+            EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+            Physics.SyncTransforms();
+            SceneView.RepaintAll();
+        }
+
+        void DrawDetailLayerVisibility(MGTerrain terrain)
+        {
+            if (m_DensityDetailLayers.arraySize == 0) return;
+            EditorGUILayout.LabelField("Detail Layer Visibility", EditorStyles.boldLabel);
+            for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
+            {
+                var layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+                if (layer.FindPropertyRelative("m_PaletteSourceOnly").boolValue) continue;
+                int prototype = layer.FindPropertyRelative("m_PrototypeIndex").intValue;
+                string name = prototype >= 0 && prototype < terrain.Prototypes.Count
+                    && terrain.Prototypes[prototype]?.Prefab != null
+                    ? terrain.Prototypes[prototype].Prefab.name : "Prototype " + prototype;
+                bool shared = layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue != null;
+                if (shared) name += " / Population " + (layer.FindPropertyRelative("m_GrassPopulation").intValue == 0 ? "A" : "B");
+                else if (layer.FindPropertyRelative("m_UseGrassArray").boolValue) name += " / Sub-ID " + layer.FindPropertyRelative("m_TextureSlice").intValue;
+                EditorGUILayout.BeginHorizontal();
+                var disabled = layer.FindPropertyRelative("m_RenderDisabled");
+                EditorGUI.BeginChangeCheck();
+                bool enabled = EditorGUILayout.ToggleLeft(
+                    new GUIContent($"Layer {index + 1}: {name}", "Enable rendering for this detail layer. Turning it off preserves its painted density and size maps. Works in Edit and Play modes."),
+                    !disabled.boolValue);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    disabled.boolValue = !enabled;
+                    serializedObject.ApplyModifiedProperties();
+                    SetWorldDetailVisibility(terrain, index, !enabled);
+                    serializedObject.Update();
+                }
+                bool remove;
+                using (new EditorGUI.DisabledScope(Application.isPlaying || serializedObject.isEditingMultipleObjects))
+                    remove = GUILayout.Button(new GUIContent("Remove", "Remove this paint layer from the terrain. Its map assets are kept; Undo restores the layer."), GUILayout.Width(65));
+                EditorGUILayout.EndHorizontal();
+                if (remove)
+                {
+                    FinishDetailStroke();
+                    SetDetailPainting(false);
+                    serializedObject.ApplyModifiedProperties();
+                    Undo.RegisterCompleteObjectUndo(terrain, "Remove Terrain Detail Layer");
+                    serializedObject.Update();
+                    m_DensityDetailLayers.DeleteArrayElementAtIndex(index);
+                    serializedObject.ApplyModifiedProperties();
+                    if (m_PaintDetailIndex > index) m_PaintDetailIndex--;
+                    m_PaintDetailIndex = Mathf.Clamp(m_PaintDetailIndex, 0, Mathf.Max(0, terrain.DensityDetailLayerCount - 1));
+                    terrain.InvalidateRenderCache();
+                    EditorUtility.SetDirty(terrain);
+                    if (terrain.gameObject.scene.IsValid()) EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+                    SceneView.RepaintAll();
+                    GUIUtility.ExitGUI();
+                }
+            }
+            EditorGUILayout.Space();
+        }
+        void DrawDensityLayersWithFlood(MGTerrain terrain)
+        {
+            using (new EditorGUI.IndentLevelScope())
+            {
+                for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
+                {
+
+            SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+                    if (layer.FindPropertyRelative("m_PrototypeIndex").intValue != m_SelectedPrototype) continue;
+                    EditorGUILayout.LabelField("Density Layer " + (index + 1), EditorStyles.boldLabel);
+                    EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_UseGrassArray"), new GUIContent("Grass Array Sub-ID"));
+                    if (layer.FindPropertyRelative("m_UseGrassArray").boolValue && layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue == null)
+                    {
+                        var subId = layer.FindPropertyRelative("m_TextureSlice");
+                        subId.intValue = EditorGUILayout.IntSlider("Painted Sub-ID", subId.intValue, 0, 7);
+                        EditorGUILayout.HelpBox("This entire density layer uses the selected array slice. Add another Sub-ID layer to paint a different look with the same mesh and material.", MessageType.None);
+                    }
+                    if (!m_ShowPrototypeAdvanced) continue;
+                    DrawPrototypeFields(layer, "m_PrototypeIndex", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice");
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        using (new EditorGUI.DisabledScope(Application.isPlaying))
+                        if (GUILayout.Button("Start Empty (This Detail Only)..."))
+                        {
+                            if (EditorUtility.DisplayDialog("Start Detail Empty?", "Remove this element's density and size map assignments? Other details and the original texture assets are preserved. The first density stroke creates a new independent map. Undo restores the assignments.", "Start Empty", "Cancel"))
+                            {
+                                FinishDetailStroke();
+                                ResetDetailPainting(layer);
+                                serializedObject.ApplyModifiedProperties();
+                                terrain.InvalidateRenderCache();
+                                m_PaintDetailIndex = index;
+                                m_PaintChannel = 0;
+                                SceneView.RepaintAll();
+                            }
+                            GUIUtility.ExitGUI();
+                        }
+                        terrain.GetDetailSourceMaterials(layer.FindPropertyRelative("m_PrototypeIndex").intValue, m_DetailSourceMaterials);
+                        EditorGUILayout.LabelField("Detail Materials", EditorStyles.boldLabel);
+                        if (m_DetailSourceMaterials.Count == 0)
+                            EditorGUILayout.LabelField("No renderable materials assigned.");
+                        foreach (Material material in m_DetailSourceMaterials)
+                        {
+                            using (new EditorGUILayout.HorizontalScope())
+                            {
+                                using (new EditorGUI.DisabledScope(true))
+                                    EditorGUILayout.ObjectField(material, typeof(Material), false);
+                                if (GUILayout.Button("Ping", GUILayout.Width(45f)))
+                                    EditorGUIUtility.PingObject(material);
+                                if (GUILayout.Button("Select", GUILayout.Width(55f)))
+                                    Selection.activeObject = material;
+                            }
+                        }
+                        m_FloodDensity = EditorGUILayout.IntSlider(new GUIContent("Flood Density", "Instances per density texel. 65,535 is the maximum R16 value. Rendering still respects distance and instance budgets."), m_FloodDensity, 1, ushort.MaxValue);
+                        using (new EditorGUI.DisabledScope(Application.isPlaying || layer.FindPropertyRelative("m_DensityMap").objectReferenceValue == null))
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            if (GUILayout.Button(m_WorldDetailControls ? "Flood Detail Across World..." : "Flood This Detail..."))
+                            {
+                                FloodDensityLayer(terrain, index, false);
+                                GUIUtility.ExitGUI();
+                            }
+                            if (GUILayout.Button(m_WorldDetailControls ? "Flood World + Keep Only This Detail..." : "Flood + Keep Only This Detail..."))
+                            {
+                                FloodDensityLayer(terrain, index, true);
+                                GUIUtility.ExitGUI();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        static void ResetDetailPainting(SerializedProperty layer)
+        {
+            layer.FindPropertyRelative("m_DensityMap").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_SizeMap").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_RepresentedInstanceCount").longValue = 0;
+            layer.FindPropertyRelative("m_PaletteSourceOnly").boolValue = false;
+            layer.FindPropertyRelative("m_GeneratedByPalette").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_PaletteSourceMap").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_PaletteEntryIndex").intValue = -1;
+        }
+
+        int m_FarBakeResolution = 2048;
+        float m_FarBakeOcclusion = .25f;
+        float m_FarBakeClumpSize = 1.5f;
+        float m_FarBakeCoverage = 1f;
+        float m_CaptureExposure = 10f;
+        float m_CaptureDetailTilt = 30f;
+        float m_CaptureSunElevation = 75f;
+        bool m_CaptureSyncTimeOfDay = true;
+        Texture2D m_LastAppearanceCapture;
+        bool m_CaptureNormalMap;
+        Texture2D m_LastNormalCapture;
+
+        [Serializable]
+        internal sealed class AppearanceNormalPass : CustomPass
+        {
+            [NonSerialized] internal Camera captureCamera;
+            [NonSerialized] internal RenderTexture destination;
+            [NonSerialized] internal Material decoder;
+            [NonSerialized] internal bool captured;
+            protected override void Execute(CustomPassContext ctx)
+            {
+                if (ctx.hdCamera.camera != captureCamera || destination == null || decoder == null) return;
+                ctx.cmd.SetGlobalTexture("_MGCaptureNormalBuffer", ctx.cameraNormalBuffer);
+                CoreUtils.SetRenderTarget(ctx.cmd, destination);
+                ctx.cmd.SetViewport(new Rect(0, 0, destination.width, destination.height));
+                CoreUtils.DrawFullScreen(ctx.cmd, decoder);
+                captured = true;
+            }
+        }
+
+        void DrawFarGrassBake(MGTerrain terrain)
+        {
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Terrain Appearance Capture", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Captures terrain, painted details and visible geometry from above. All captured cells use the terrain's current close-range detail density; distance thinning is disabled. Reuses and overwrites the appearance PNGs assigned to the terrain material; missing maps are saved and assigned automatically. Assigned normal maps are always recaptured. Lighting and shadows are baked; fog and lens effects are excluded. UVs: terrain mesh local X/Z bounds, not mesh UV2.", MessageType.Info);
+            Material captureMaterial = terrain.MeshRenderer != null ? terrain.MeshRenderer.sharedMaterial : null;
+            Texture2D assignedColour = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty);
+            Texture2D assignedNormal = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty);
+            m_FarBakeResolution = EditorGUILayout.IntPopup("Capture Resolution", m_FarBakeResolution, new[] { "2K", "4K" }, new[] { 2048, 4096 });
+            m_CaptureExposure = EditorGUILayout.Slider(new GUIContent("Fixed Exposure (EV100)", "Higher values make the capture darker. Uses one fixed exposure across every tile; does not inherit automatic exposure."), m_CaptureExposure, -4f, 20f);
+            m_CaptureDetailTilt = EditorGUILayout.Slider(new GUIContent("Capture Detail Tilt (Degrees)", "Leans painted details around their base during capture to reveal more of their sides. 0 keeps them upright. Camera and terrain UV alignment stay top-down."), m_CaptureDetailTilt, 0f, 60f);
+            m_CaptureSyncTimeOfDay = EditorGUILayout.Toggle(new GUIContent("Sync Capture to Current Time of Day", "Uses the scene's current sun angle and lighting instead of overriding sun elevation. Recapture after changing time of day; the saved texture does not update automatically. Fixed capture exposure still applies."), m_CaptureSyncTimeOfDay);
+            using (new EditorGUI.DisabledScope(m_CaptureSyncTimeOfDay))
+                m_CaptureSunElevation = EditorGUILayout.Slider(new GUIContent("Capture Sun Elevation (Degrees)", "Temporarily raises the main directional light for shorter baked shadows. 90 is directly overhead. Restores its original rotation after capture, cancellation or failure."), m_CaptureSunElevation, 0f, 90f);
+            using (new EditorGUI.DisabledScope(assignedNormal != null))
+                m_CaptureNormalMap = EditorGUILayout.Toggle("Capture Normal Map (World Space)", m_CaptureNormalMap || assignedNormal != null);
+            if (m_CaptureNormalMap || assignedNormal != null)
+                EditorGUILayout.HelpBox("Saves _NormalWS.png as linear RGB (Default texture type, not Normal Map). Sample as Default, decode Normalize(RGB * 2 - 1), and use in world space. Upward normals appear green; this is correct. Uses the colour capture's X/Z UVs and requires no mesh tangents. Transparent objects that do not write normals are not represented. Rotating the terrain after capture requires rotating the sampled normals or recapturing.", MessageType.Info);
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField("Appearance Map", assignedColour != null ? assignedColour : m_LastAppearanceCapture, typeof(Texture2D), false);
+                if (m_CaptureNormalMap) EditorGUILayout.ObjectField("Normal Map", assignedNormal != null ? assignedNormal : m_LastNormalCapture, typeof(Texture2D), false);
+            }
+            using (new EditorGUI.DisabledScope(Application.isPlaying || !terrain.isActiveAndEnabled))
+                if (GUILayout.Button("Capture Terrain Appearance"))
+                { serializedObject.ApplyModifiedProperties(); CaptureTerrainAppearance(terrain); GUIUtility.ExitGUI(); }
+            DrawDistantSurfaceBake(terrain);
+        }
+
+
+        void CaptureTerrainAppearance(MGTerrain terrain, bool bakeDistant = false, string worldOutputPath = null)
+        {
+            if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null || !(RenderPipelineManager.currentPipeline is HDRenderPipeline))
+            { EditorUtility.DisplayDialog("Terrain Capture", "An active HDRP pipeline and a terrain mesh are required.", "OK"); return; }
+            Transform surface = terrain.MeshFilter.transform;
+            if (Vector3.Dot(surface.up, Vector3.up) < .999f || Mathf.Abs(Vector3.Dot(surface.right, surface.forward)) > .001f)
+            { EditorUtility.DisplayDialog("Terrain Capture", "Capture currently requires an upright terrain (Y rotation is supported).", "OK"); return; }
+            Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
+            float metresX = surface.TransformVector(Vector3.right * bounds.size.x).magnitude;
+            float metresZ = surface.TransformVector(Vector3.forward * bounds.size.z).magnitude;
+            if (metresX <= .01f || metresZ <= .01f) return;
+            Material captureMaterial = terrain.MeshRenderer != null ? terrain.MeshRenderer.sharedMaterial : null;
+            Texture2D assignedColour = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty);
+            Texture2D assignedNormal = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty);
+            bool captureNormals = m_CaptureNormalMap || assignedNormal != null || (bakeDistant && m_ApplyDistantMorph);
+            if (bakeDistant)
+            {
+                long nx = Mathf.Max(1, Mathf.CeilToInt(metresX / m_DistantSpacing));
+                long nz = Mathf.Max(1, Mathf.CeilToInt(metresZ / m_DistantSpacing));
+                if ((nx + 1) * (nz + 1) > 1048576)
+                { EditorUtility.DisplayDialog("Distant Mesh", "Increase Mesh Spacing: the mesh would exceed one million vertices.", "OK"); return; }
+                if (!SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RFloat) || !SystemInfo.SupportsTextureFormat(TextureFormat.RFloat))
+                { EditorUtility.DisplayDialog("Distant Mesh", "This GPU does not support floating-point height capture.", "OK"); return; }
+                if ((m_DistantLayers.value & (1 << terrain.MeshRenderer.gameObject.layer)) == 0)
+                { EditorUtility.DisplayDialog("Distant Mesh", "Capture Layers must include the terrain renderer's layer.", "OK"); return; }
+            }
+            string folderPreference = "MashBox.MGTerrain.AppearanceCapture.LastFolder." + Application.dataPath;
+            string captureFolder = EditorPrefs.GetString(folderPreference, "Assets");
+            if (!AssetDatabase.IsValidFolder(captureFolder)) captureFolder = "Assets";
+            string path = worldOutputPath ?? (bakeDistant ? null : MGTerrainAppearanceCaptureAssets.ReusablePath(assignedColour, terrain.name));
+            if (string.IsNullOrEmpty(path))
+            {
+                path = EditorUtility.SaveFilePanelInProject(bakeDistant ? "Save Distant Surface Appearance" : "Save Terrain Appearance PNG", MGTerrainAppearanceCaptureAssets.WithTerrainPrefix(bakeDistant ? "TerrainDistantSurface" : "TerrainAppearance", terrain.name), "png", bakeDistant ? "Choose the output location. A new set of distant surface assets will be created." : "Choose the appearance PNG. It will be assigned to the terrain material and reused on future captures.", captureFolder);
+                if (string.IsNullOrEmpty(path)) return;
+                path = System.IO.Path.ChangeExtension(path, ".png").Replace('\\', '/');
+                path = AssetDatabase.GenerateUniqueAssetPath(MGTerrainAppearanceCaptureAssets.WithTerrainPrefix(path, terrain.name));
+                EditorPrefs.SetString(folderPreference, System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
+            }
+            if (bakeDistant) path = AssetDatabase.GenerateUniqueAssetPath(path);
+            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(bakeDistant || worldOutputPath != null ? null : assignedNormal, path, terrain.name) : null;
+            int resolution = m_FarBakeResolution;
+            int tiles = Mathf.NextPowerOfTwo(Mathf.Max(4, Mathf.CeilToInt(Mathf.Max(metresX, metresZ) / 48f)));
+            if (tiles > 64)
+            { EditorUtility.DisplayDialog("Terrain Capture", "This terrain is too large for a single capture. Capture smaller terrain sections (up to 3072 metres per side).", "OK"); return; }
+            foreach (var layer in terrain.DensityDetailLayers)
+                if (layer != null && !layer.PaletteSourceOnly && layer.DensityMap != null && (!layer.DensityMap.isReadable || layer.DensityMap.format != TextureFormat.R16))
+                { EditorUtility.DisplayDialog("Terrain Capture", "All detail density maps must be readable R16 textures.", "OK"); return; }
+
+            GameObject captureObject = null;
+            VolumeProfile profile = null;
+            RenderTexture target = null;
+            Texture2D texture = null;
+            Texture2D normalTexture = null;
+            RenderTexture normalTarget = null;
+            Material normalDecoder = null;
+            AppearanceNormalPass normalPass = null;
+            Texture2D heightTexture = null;
+            RenderTexture heightTarget = null;
+            Material heightDecoder = null;
+            AppearanceHeightPass heightPass = null;
+            var hiddenSurfaces = new List<(GameObject obj, bool active)>();
+            bool bakeSucceeded = false;
+            RenderTexture previousActive = RenderTexture.active;
+            var lights = new List<(HDAdditionalLightData data, int resolution, bool useOverride, ShadowUpdateMode update)>();
+            bool captureStarted = false;
+            Light captureSun = null;
+            Quaternion previousSunLocalRotation = Quaternion.identity;
+            bool sunRotationChanged = false;
+            string appearanceBlendProperty = captureMaterial != null && captureMaterial.HasProperty("_FarRangeAppearanceMapBlend") ? "_FarRangeAppearanceMapBlend" : "_FarRangeAppearnceMapBlend";
+            string appearanceNormalProperty = captureMaterial != null && captureMaterial.HasProperty("_FarRangeAppearanceNormalStrength") ? "_FarRangeAppearanceNormalStrength" : "_FarRangeAppearnceNormalStrength";
+            bool hasAppearanceBlend = captureMaterial != null && captureMaterial.HasProperty(appearanceBlendProperty);
+            bool hasAppearanceNormal = captureMaterial != null && captureMaterial.HasProperty(appearanceNormalProperty);
+            float previousAppearanceBlend = hasAppearanceBlend ? captureMaterial.GetFloat(appearanceBlendProperty) : 0f;
+            float previousAppearanceNormal = hasAppearanceNormal ? captureMaterial.GetFloat(appearanceNormalProperty) : 0f;
+            float previousMorphStrength = captureMaterial != null && captureMaterial.HasProperty("_DistantSurfaceStrength") ? captureMaterial.GetFloat("_DistantSurfaceStrength") : 0;
+            void RestoreAppearanceInfluence()
+            {
+                if (captureMaterial == null) return;
+                if (captureMaterial.HasProperty("_DistantSurfaceStrength")) captureMaterial.SetFloat("_DistantSurfaceStrength", previousMorphStrength);
+                if (hasAppearanceBlend) captureMaterial.SetFloat(appearanceBlendProperty, previousAppearanceBlend);
+                if (hasAppearanceNormal) captureMaterial.SetFloat(appearanceNormalProperty, previousAppearanceNormal);
+            }
+            EditorApplication.LockReloadAssemblies();
+            try
+            {
+                // Exclude generated geometry from both ordinary and distant appearance recaptures.
+                foreach (var proxy in UnityEngine.Object.FindObjectsByType<MGTerrainDistantSurface>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                {
+                    hiddenSurfaces.Add((proxy.gameObject, proxy.gameObject.activeSelf));
+                    proxy.gameObject.SetActive(false);
+                }
+                captureSun = RenderSettings.sun;
+                if (captureSun == null || !captureSun.isActiveAndEnabled || captureSun.type != LightType.Directional)
+                {
+                    captureSun = null;
+                    foreach (Light candidate in UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+                        if (candidate.isActiveAndEnabled && candidate.type == LightType.Directional
+                            && (captureSun == null || candidate.intensity > captureSun.intensity))
+                            captureSun = candidate;
+                }
+                if (!m_CaptureSyncTimeOfDay && captureSun != null)
+                {
+                    previousSunLocalRotation = captureSun.transform.localRotation;
+                    Vector3 heading = Vector3.ProjectOnPlane(captureSun.transform.forward, Vector3.up);
+                    if (heading.sqrMagnitude < .000001f)
+                        heading = Quaternion.Euler(0f, captureSun.transform.eulerAngles.y, 0f) * Vector3.forward;
+                    float elevation = m_CaptureSunElevation * Mathf.Deg2Rad;
+                    Vector3 direction = heading.normalized * Mathf.Cos(elevation) - Vector3.up * Mathf.Sin(elevation);
+                    sunRotationChanged = true;
+                    captureSun.transform.rotation = Quaternion.LookRotation(direction, heading.normalized);
+                }
+                // Prevent the previous colour/normal bake from feeding into its replacement.
+                if (captureMaterial != null && captureMaterial.HasProperty("_DistantSurfaceStrength")) captureMaterial.SetFloat("_DistantSurfaceStrength", 0);
+                if (hasAppearanceBlend) captureMaterial.SetFloat(appearanceBlendProperty, 0f);
+                if (hasAppearanceNormal) captureMaterial.SetFloat(appearanceNormalProperty, 0f);
+                captureObject = new GameObject("MG Terrain Capture (Temporary)") { hideFlags = HideFlags.HideAndDontSave };
+                Camera camera = captureObject.AddComponent<Camera>();
+                camera.enabled = false;
+                camera.orthographic = true;
+                camera.allowHDR = true;
+                camera.allowMSAA = false;
+                camera.clearFlags = CameraClearFlags.SolidColor;
+                camera.backgroundColor = Color.black;
+                camera.cullingMask = bakeDistant ? m_DistantLayers.value : ~0;
+                camera.nearClipPlane = .1f;
+                float height = surface.TransformVector(Vector3.up * bounds.size.y).magnitude;
+                camera.farClipPlane = height + (bakeDistant ? m_DistantHeadroom : 20f) + 80f;
+                camera.transform.rotation = Quaternion.LookRotation(-surface.up, surface.forward);
+                var hd = captureObject.AddComponent<HDAdditionalCameraData>();
+                hd.volumeLayerMask = ~0;
+                hd.customRenderingSettings = true;
+                if (captureNormals)
+                {
+                    Shader normalShader = Shader.Find("Hidden/MashBox/TerrainCaptureNormals");
+                    if (normalShader == null || !normalShader.isSupported)
+                        throw new InvalidOperationException("The terrain normal capture shader is missing or unsupported. Allow Unity to finish importing the SDK shaders.");
+                    normalDecoder = CoreUtils.CreateEngineMaterial(normalShader);
+                    var normalVolume = captureObject.AddComponent<CustomPassVolume>();
+                    normalVolume.isGlobal = true;
+                    normalVolume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
+                    normalPass = new AppearanceNormalPass { name = "Terrain world normal export", captureCamera = camera,
+                        decoder = normalDecoder, targetColorBuffer = CustomPass.TargetBuffer.None, targetDepthBuffer = CustomPass.TargetBuffer.None };
+                    normalVolume.customPasses.Add(normalPass);
+                    hd.renderingPathCustomFrameSettings.SetEnabled(FrameSettingsField.CustomPass, true);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)FrameSettingsField.CustomPass] = true;
+                    normalTexture = new Texture2D(resolution, resolution, TextureFormat.RGB24, true, true)
+                    { name = terrain.name + "_NormalWS", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear };
+                }
+                if (bakeDistant)
+                {
+                    Shader heightShader = Shader.Find("Hidden/MashBox/TerrainCaptureHeight");
+                    Shader surfaceShader = Shader.Find("MashBox/Terrain Distant Surface");
+                    if (heightShader == null || !heightShader.isSupported || surfaceShader == null || !surfaceShader.isSupported)
+                        throw new InvalidOperationException("The distant terrain shaders are missing or unsupported. Allow Unity to finish importing the SDK shaders.");
+                    heightDecoder = CoreUtils.CreateEngineMaterial(heightShader);
+                    heightDecoder.SetMatrix("_MGHeightWorldToLocal", surface.worldToLocalMatrix);
+                    var heightVolume = captureObject.GetComponent<CustomPassVolume>();
+                    if (heightVolume == null) heightVolume = captureObject.AddComponent<CustomPassVolume>();
+                    heightVolume.isGlobal = true;
+                    heightVolume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
+                    heightPass = new AppearanceHeightPass { name = "Terrain surface height export", captureCamera = camera,
+                        decoder = heightDecoder, targetColorBuffer = CustomPass.TargetBuffer.None, targetDepthBuffer = CustomPass.TargetBuffer.None };
+                    heightVolume.customPasses.Add(heightPass);
+                    hd.renderingPathCustomFrameSettings.SetEnabled(FrameSettingsField.CustomPass, true);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)FrameSettingsField.CustomPass] = true;
+                    heightTexture = new Texture2D(resolution, resolution, TextureFormat.RFloat, false, true)
+                    { name = terrain.name + "_SurfaceHeight", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+                    // Transparent colour without matching depth would project onto the wrong surface.
+                    hd.renderingPathCustomFrameSettings.SetEnabled(FrameSettingsField.TransparentObjects, false);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)FrameSettingsField.TransparentObjects] = true;
+                }
+                foreach (FrameSettingsField field in new[] { FrameSettingsField.AtmosphericScattering, FrameSettingsField.Volumetrics,
+                    FrameSettingsField.DepthOfField, FrameSettingsField.MotionBlur, FrameSettingsField.Bloom,
+                    FrameSettingsField.ChromaticAberration, FrameSettingsField.Vignette, FrameSettingsField.FilmGrain,
+                    FrameSettingsField.LensDistortion, FrameSettingsField.ColorGrading, FrameSettingsField.Tonemapping })
+                {
+                    hd.renderingPathCustomFrameSettings.SetEnabled(field, false);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)field] = true;
+                }
+                foreach (FrameSettingsField field in new[] { FrameSettingsField.ShadowMaps, FrameSettingsField.ExposureControl, FrameSettingsField.Postprocess })
+                {
+                    hd.renderingPathCustomFrameSettings.SetEnabled(field, true);
+                    hd.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)field] = true;
+                }
+                var volume = captureObject.AddComponent<Volume>();
+                volume.isGlobal = true;
+                volume.priority = float.MaxValue;
+                profile = ScriptableObject.CreateInstance<VolumeProfile>();
+                profile.hideFlags = HideFlags.HideAndDontSave;
+                volume.sharedProfile = profile;
+                var exposure = profile.Add<Exposure>();
+                exposure.mode.Override(ExposureMode.Fixed);
+                exposure.fixedExposure.Override(m_CaptureExposure);
+                exposure.compensation.Override(0f);
+                var shadows = profile.Add<HDShadowSettings>();
+                shadows.maxShadowDistance.Override(camera.farClipPlane + Mathf.Max(metresX, metresZ) / tiles);
+                // A single cascade concentrates the shadow map on this small orthographic tile.
+                shadows.cascadeShadowSplitCount.Override(1);
+                foreach (HDAdditionalLightData light in UnityEngine.Object.FindObjectsByType<HDAdditionalLightData>(FindObjectsSortMode.None))
+                {
+                    if (!light.TryGetComponent<Light>(out var source) || !source.enabled || source.type != LightType.Directional || source.shadows == LightShadows.None) continue;
+                    lights.Add((light, light.shadowResolution.@override, light.shadowResolution.useOverride, light.shadowUpdateMode));
+                    light.SetShadowResolution(4096);
+                    light.SetShadowResolutionOverride(true);
+                    light.shadowUpdateMode = ShadowUpdateMode.EveryFrame;
+                }
+                int tilePixels = resolution / tiles;
+                const int border = 32;
+                int capturePixels = tilePixels + border * 2;
+                float expansion = capturePixels / (float)tilePixels;
+                camera.aspect = metresX / metresZ;
+                camera.orthographicSize = metresZ / tiles * expansion * .5f;
+                target = new RenderTexture(capturePixels, capturePixels, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB)
+                { name = "MG Terrain Capture Tile", hideFlags = HideFlags.HideAndDontSave };
+                target.Create();
+                texture = new Texture2D(resolution, resolution, TextureFormat.RGB24, true, false)
+                { name = terrain.name + "_Appearance", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
+                var request = new UnityRenderPipeline.StandardRequest { destination = target };
+                if (!UnityRenderPipeline.SupportsRenderRequest(camera, request)) throw new InvalidOperationException("The active render pipeline does not support camera capture requests.");
+                terrain.BeginAppearanceCapture(camera, bakeDistant ? 0f : m_CaptureDetailTilt);
+                captureStarted = true;
+                long completedPixels = 0;
+                var layerSubmissions = new long[terrain.DensityDetailLayerCount];
+                bool CaptureTile(int pixelX, int pixelZ, int pixels)
+                {
+                    if (EditorUtility.DisplayCancelableProgressBar("Terrain Appearance Capture", "Rendering all cells at the terrain's current close-range density (oversized tiles subdivide automatically)", completedPixels / (float)(resolution * resolution))) return false;
+                    int paddedPixels = pixels + border * 2;
+                    if (target.width != paddedPixels)
+                    {
+                        if (RenderTexture.active == target) RenderTexture.active = previousActive;
+                        target.Release();
+                        DestroyImmediate(target);
+                        target = new RenderTexture(paddedPixels, paddedPixels, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB)
+                        { name = "MG Terrain Capture Tile", hideFlags = HideFlags.HideAndDontSave };
+                        target.Create();
+                        request.destination = target;
+                    }
+                    camera.orthographicSize = metresZ * paddedPixels / resolution * .5f;
+                    camera.transform.position = surface.TransformPoint(new Vector3(bounds.min.x + (pixelX + pixels * .5f) * bounds.size.x / resolution,
+                        bounds.max.y, bounds.min.z + (pixelZ + pixels * .5f) * bounds.size.z / resolution)) + surface.up * (bakeDistant ? m_DistantHeadroom : 20f);
+                    terrain.PrepareAppearanceCaptureTile();
+                    if (normalPass != null)
+                    {
+                        if (normalTarget == null || normalTarget.width != paddedPixels)
+                        {
+                            if (normalTarget != null) { normalTarget.Release(); DestroyImmediate(normalTarget); }
+                            normalTarget = new RenderTexture(paddedPixels, paddedPixels, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
+                            { name = "MG Terrain Normal Tile", hideFlags = HideFlags.HideAndDontSave };
+                            normalTarget.Create();
+                        }
+                        normalPass.destination = normalTarget;
+                        normalPass.captured = false;
+                    }
+                    if (heightPass != null)
+                    {
+                        if (heightTarget == null || heightTarget.width != paddedPixels)
+                        {
+                            if (heightTarget != null) { heightTarget.Release(); DestroyImmediate(heightTarget); }
+                            heightTarget = new RenderTexture(paddedPixels, paddedPixels, 0, RenderTextureFormat.RFloat, RenderTextureReadWrite.Linear)
+                            { name = "MG Terrain Height Tile", hideFlags = HideFlags.HideAndDontSave };
+                            heightTarget.Create();
+                        }
+                        heightPass.destination = heightTarget;
+                        heightPass.captured = false;
+                    }
+                    UnityRenderPipeline.SubmitRenderRequest(camera, request);
+                    if (!terrain.AppearanceCaptureNeedsSubdivision)
+                        UnityRenderPipeline.SubmitRenderRequest(camera, request);
+                    if (terrain.AppearanceCaptureNeedsSubdivision)
+                    {
+                        if (pixels <= 1) throw new InvalidOperationException("Even the smallest capture tile exceeds the safe detail capacity. No incomplete PNG was saved.");
+                        int half = pixels / 2;
+                        return CaptureTile(pixelX, pixelZ, half) && CaptureTile(pixelX + half, pixelZ, half)
+                            && CaptureTile(pixelX, pixelZ + half, half) && CaptureTile(pixelX + half, pixelZ + half, half);
+                    }
+                    if (!terrain.AppearanceCaptureTileComplete)
+                        throw new InvalidOperationException("The detail renderer did not submit every visible instance for this tile. No incomplete PNG was saved; check the Console for rendering errors.");
+                    for (int layer = 0; layer < layerSubmissions.Length; layer++)
+                        layerSubmissions[layer] += terrain.AppearanceCaptureLayerSubmissions[layer];
+                    RenderTexture.active = target;
+                    texture.ReadPixels(new Rect(border, border, pixels, pixels), pixelX, pixelZ, false);
+                    if (normalPass != null)
+                    {
+                        if (!normalPass.captured)
+                            throw new InvalidOperationException("HDRP did not execute normal capture. Enable Custom Pass support in the active HDRP asset. No incomplete capture was saved.");
+                        RenderTexture.active = normalTarget;
+                        normalTexture.ReadPixels(new Rect(border, border, pixels, pixels), pixelX, pixelZ, false);
+                    }
+                    if (heightPass != null)
+                    {
+                        if (!heightPass.captured) throw new InvalidOperationException("HDRP did not execute height capture. Enable Custom Pass support in the active HDRP asset.");
+                        RenderTexture.active = heightTarget;
+                        heightTexture.ReadPixels(new Rect(border, border, pixels, pixels), pixelX, pixelZ, false);
+                    }
+                    completedPixels += (long)pixels * pixels;
+                    return true;
+                }
+                for (int z = 0; z < tiles; z++)
+                    for (int x = 0; x < tiles; x++)
+                        if (!CaptureTile(x * tilePixels, z * tilePixels, tilePixels)) return;
+                // Restore before assigning/saving textures and recording material Undo.
+                RestoreAppearanceInfluence();
+                texture.Apply(true, false);
+                byte[] png = texture.EncodeToPNG();
+                if (png == null || png.Length == 0)
+                    throw new InvalidOperationException("Could not encode the terrain capture as PNG.");
+                MGTerrainAppearanceCaptureAssets.WritePng(path, png);
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+                var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                if (importer == null)
+                    throw new InvalidOperationException("The PNG was saved, but Unity could not import it as a texture: " + path);
+                importer.textureType = TextureImporterType.Default;
+                importer.sRGBTexture = true;
+                importer.alphaSource = TextureImporterAlphaSource.None;
+                importer.mipmapEnabled = true;
+                importer.fadeout = false;
+                importer.mipmapFilter = TextureImporterMipFilter.BoxFilter;
+                importer.mipMapsPreserveCoverage = false;
+                importer.wrapMode = TextureWrapMode.Clamp;
+                importer.filterMode = FilterMode.Trilinear;
+                importer.anisoLevel = 4;
+                importer.maxTextureSize = resolution;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.isReadable = false;
+                importer.SaveAndReimport();
+                m_LastAppearanceCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                if (!bakeDistant) MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty, m_LastAppearanceCapture);
+                EditorGUIUtility.PingObject(m_LastAppearanceCapture);
+                if (normalTexture != null)
+                {
+                    normalTexture.Apply(true, false);
+                    byte[] normalPng = normalTexture.EncodeToPNG();
+                    if (normalPng == null || normalPng.Length == 0) throw new InvalidOperationException("Normal PNG encoding failed. The colour PNG was saved successfully.");
+                    MGTerrainAppearanceCaptureAssets.WritePng(normalPath, normalPng);
+                    AssetDatabase.ImportAsset(normalPath, ImportAssetOptions.ForceSynchronousImport);
+                    var normalImporter = AssetImporter.GetAtPath(normalPath) as TextureImporter;
+                    if (normalImporter == null) throw new InvalidOperationException("Normal PNG saved but could not be imported: " + normalPath);
+                    normalImporter.textureType = TextureImporterType.Default;
+                    normalImporter.convertToNormalmap = false;
+                    normalImporter.flipGreenChannel = false;
+                    normalImporter.sRGBTexture = false;
+                    normalImporter.alphaSource = TextureImporterAlphaSource.None;
+                    normalImporter.mipmapEnabled = true;
+                    normalImporter.fadeout = false;
+                    normalImporter.mipmapFilter = TextureImporterMipFilter.BoxFilter;
+                    normalImporter.mipMapsPreserveCoverage = false;
+                    normalImporter.wrapMode = TextureWrapMode.Clamp;
+                    normalImporter.filterMode = FilterMode.Trilinear;
+                    normalImporter.anisoLevel = 4;
+                    normalImporter.maxTextureSize = resolution;
+                    normalImporter.textureCompression = TextureImporterCompression.Uncompressed;
+                    normalImporter.isReadable = false;
+                    normalImporter.userData = "MG Terrain World Space Normals: normalize(RGB * 2 - 1). Sample as Default linear RGB using colour capture X/Z UVs. Not tangent-space normal data.";
+                    normalImporter.SaveAndReimport();
+                    m_LastNormalCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath);
+                    if (!bakeDistant) MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty, m_LastNormalCapture);
+                    Debug.Log($"World-space normal capture saved to {normalPath}. Imported as Default linear RGB; decode normalize(RGB * 2 - 1) and use in world space.", terrain);
+                }
+                if (bakeDistant)
+                {
+                    heightTexture.Apply(false, false);
+                    // Capture is finished. Restore visibility before recording replacement Undo.
+                    foreach (var hidden in hiddenSurfaces) if (hidden.obj != null) hidden.obj.SetActive(hidden.active);
+                    SaveDistantSurface(terrain, heightTexture, m_LastAppearanceCapture, path);
+                }
+                bakeSucceeded = true;
+                if (bakeDistant && m_ApplyDistantMorph && captureMaterial != null && captureMaterial.HasProperty("_DistantSurfaceHeightMap"))
+                    ApplyDistantMorph(terrain, m_LastMorphHeight);
+                for (int layer = 0; layer < layerSubmissions.Length; layer++)
+                    Debug.Log($"[MG Terrain Capture] Layer {layer}: {layerSubmissions[layer]:N0} instance submissions across completed tiles (includes overlapping borders).", terrain);
+                if (!bakeDistant) Debug.Log($"Terrain appearance saved to {path}. RGB maps local X/Z bounds {bounds.min} to {bounds.max}; lighting and shadows are baked. Captures are assigned to the material's appearance slots when supported and reused on the next capture.", terrain);
+            }
+            catch (OperationCanceledException exception) { Debug.Log(exception.Message, terrain); }
+            catch (Exception exception) { Debug.LogException(exception, terrain); EditorUtility.DisplayDialog("Terrain Capture Failed", exception.Message, "OK"); }
+            finally
+            {
+                RestoreAppearanceInfluence();
+                if (sunRotationChanged && captureSun != null)
+                    captureSun.transform.localRotation = previousSunLocalRotation;
+                if (captureStarted) terrain.EndAppearanceCapture();
+                foreach (var hidden in hiddenSurfaces) if (hidden.obj != null) hidden.obj.SetActive(hidden.active);
+                if (bakeDistant && !bakeSucceeded)
+                {
+                    if (AssetDatabase.LoadAssetAtPath<Texture2D>(path) != null) AssetDatabase.DeleteAsset(path);
+                    if (normalPath != null && AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath) != null) AssetDatabase.DeleteAsset(normalPath);
+                }
+                foreach (var light in lights)
+                    if (light.data != null)
+                    {
+                        light.data.SetShadowResolution(light.resolution);
+                        light.data.SetShadowResolutionOverride(light.useOverride);
+                        light.data.shadowUpdateMode = light.update;
+                        light.data.RequestShadowMapRendering();
+                    }
+                RenderTexture.active = previousActive;
+                if (captureObject != null) DestroyImmediate(captureObject);
+                if (profile != null)
+                {
+                    foreach (var component in profile.components) if (component != null) DestroyImmediate(component);
+                    DestroyImmediate(profile);
+                }
+                if (target != null) { target.Release(); DestroyImmediate(target); }
+                if (texture != null) DestroyImmediate(texture);
+                if (normalTexture != null) DestroyImmediate(normalTexture);
+                if (normalTarget != null) { normalTarget.Release(); DestroyImmediate(normalTarget); }
+                if (normalDecoder != null) CoreUtils.Destroy(normalDecoder);
+                if (heightTexture != null) DestroyImmediate(heightTexture);
+                if (heightTarget != null) { heightTarget.Release(); DestroyImmediate(heightTarget); }
+                if (heightDecoder != null) CoreUtils.Destroy(heightDecoder);
+                EditorUtility.ClearProgressBar();
+                EditorApplication.UnlockReloadAssemblies();
+                SceneView.RepaintAll();
+            }
+        }
+
+        void BakeFarGrass(MGTerrain terrain)
+        {
+            if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null) return;
+            var layers = new List<MGTerrain.DensityDetailLayer>();
+            foreach (var layer in terrain.DensityDetailLayers)
+            {
+                if (layer == null || layer.PaletteSourceOnly || layer.DensityMap == null) continue;
+                if (!layer.DensityMap.isReadable || layer.DensityMap.format != TextureFormat.R16)
+                { EditorUtility.DisplayDialog("Far Grass Bake", "All participating density maps must be readable R16 textures.", "OK"); return; }
+                layers.Add(layer);
+            }
+            if (layers.Count == 0) return;
+            int size = m_FarBakeResolution;
+            var pixels = new Color32[size * size];
+            Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
+            float metresX = terrain.MeshFilter.transform.TransformVector(Vector3.right * bounds.size.x).magnitude;
+            float metresZ = terrain.MeshFilter.transform.TransformVector(Vector3.forward * bounds.size.z).magnitude;
+            try
+            {
+                for (int y = 0; y < size; y++)
+                {
+                    if ((y & 31) == 0 && EditorUtility.DisplayCancelableProgressBar("Far Grass Bake", "Building colour / coverage and soft clump occlusion", y / (float)size)) return;
+                    float v = (y + .5f) / size;
+                    for (int x = 0; x < size; x++)
+                    {
+                        float u = (x + .5f) / size;
+                        Color colour = Color.black;
+                        float total = 0f;
+                        foreach (var layer in layers)
+                        {
+                            float density = layer.DensityMap.GetPixelBilinear(u, v).r * 65535f;
+                            if (density <= 0) continue;
+                            float weight = Mathf.Clamp01(density / 2000f) * m_FarBakeCoverage;
+                            float seed = (layer.Seed & 65535) * .013f;
+                            float noise = Mathf.PerlinNoise(u * metresX / m_FarBakeClumpSize + seed, v * metresZ / m_FarBakeClumpSize + seed * .73f);
+                            float darkening = 1f - m_FarBakeOcclusion * (1f - noise);
+                            Color albedo = layer.FarBakeColor.linear * layer.ShaderTint.linear;
+                            colour += albedo * (weight * darkening);
+                            total += weight;
+                        }
+                        // RGB remains unpremultiplied, including low-coverage edges.
+                        colour = total > 0 ? (colour / total).gamma : layers[0].FarBakeColor;
+                        colour.a = Mathf.Clamp01(total);
+                        pixels[y * size + x] = colour;
+                    }
+                }
+                var texture = new Texture2D(size, size, TextureFormat.RGBA32, true, false)
+                { name = terrain.name + "_FarGrass", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
+                texture.SetPixels32(pixels);
+                texture.Apply(true, false);
+                MGTerrainSceneAssets.Create(texture, terrain, "FarGrass");
+                Undo.RecordObject(terrain, "Bake Far Grass");
+                serializedObject.Update();
+                serializedObject.FindProperty("m_FarGrassBake").objectReferenceValue = texture;
+                serializedObject.ApplyModifiedProperties();
+                EditorUtility.SetDirty(terrain);
+                EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+                AssetDatabase.SaveAssets();
+                SceneView.RepaintAll();
+            }
+            finally { EditorUtility.ClearProgressBar(); }
+        }
+
+        void DrawPaintModeToggle(MGTerrain terrain)
+        {
+            bool hasLayer = false;
+            for (int i = 0; i < m_DensityDetailLayers.arraySize; i++)
+                hasLayer |= m_DensityDetailLayers.GetArrayElementAtIndex(i).FindPropertyRelative("m_PrototypeIndex").intValue == m_SelectedPrototype;
+            using (new EditorGUI.DisabledScope(Application.isPlaying || !hasLayer))
+                if (GUILayout.Button(m_DetailPainting ? "Stop Painting" : "Paint", GUILayout.Height(28)))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    if (!m_DetailPainting && ((uint)m_PaintDetailIndex >= terrain.DensityDetailLayerCount
+                        || terrain.DensityDetailLayers[m_PaintDetailIndex].PrototypeIndex != m_SelectedPrototype))
+                        SelectPrototype(m_SelectedPrototype);
+                    SetDetailPainting(!m_DetailPainting);
+                }
+        }
+
+        void DrawLoftDetailOperations(MGTerrain terrain)
+        {
+                EditorGUILayout.LabelField("Clear Details Under Lofts", EditorStyles.boldLabel);
+                m_LoftEdgeWidth = EditorGUILayout.Slider(new GUIContent("Edge Feather (Metres)", "Positive feathers outside the loft; negative feathers inside, preserving grass near its edge. Reapply from the original map to restore previously removed grass."), m_LoftEdgeWidth, -10f, 10f);
+                m_LoftEdgeVariation = EditorGUILayout.Slider("Edge Variation", m_LoftEdgeVariation, 0f, 1f);
+                m_LoftNoiseScale = Mathf.Max(0.01f, EditorGUILayout.FloatField("Edge Patch Size (Metres)", m_LoftNoiseScale));
+                m_LoftEdgeSeed = EditorGUILayout.IntField("Edge Seed", m_LoftEdgeSeed);
+                using (new EditorGUI.DisabledScope(Application.isPlaying))
+                    if (GUILayout.Button(terrain.World != null ? "Remove World Details Under Lofts..." : "Remove Density Details Under Lofts..."))
+                    {
+                        if (terrain.World != null) ClearWorldDetailsUnderLofts(terrain.World);
+                        else ClearDetailsUnderLofts(terrain);
+                        GUIUtility.ExitGUI();
+                    }
+
+        }
+
+        void ClearWorldDetailsUnderLofts(MGTerrainWorld world)
+        {
+            serializedObject.ApplyModifiedProperties();
+            if (!EditorUtility.DisplayDialog("Clear World Details Under Lofts?",
+                "Remove density under active lofts across this world's tiles? All density layers are affected. Original maps are preserved and Undo restores assignments.", "Clear Under Lofts", "Cancel")) return;
+            SetDetailPainting(false);
+            Undo.IncrementCurrentGroup();
+            int group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Clear World Details Under Lofts");
+            try
+            {
+                foreach (var tile in world.GetComponentsInChildren<MGTerrain>(true))
+                {
+                    if (tile.GetComponentInParent<MGTerrainWorld>(true) != world) continue;
+                    var editor = (MGTerrainEditor)CreateEditor(tile);
+                    try
+                    {
+                        editor.m_LoftEdgeWidth = m_LoftEdgeWidth;
+                        editor.m_LoftEdgeVariation = m_LoftEdgeVariation;
+                        editor.m_LoftNoiseScale = m_LoftNoiseScale;
+                        editor.m_LoftEdgeSeed = m_LoftEdgeSeed;
+                        editor.ClearDetailsUnderLofts(tile, true);
+                    }
+                    finally { DestroyImmediate(editor); }
+                }
+                Undo.CollapseUndoOperations(group);
+            }
+            catch (OperationCanceledException) { Undo.RevertAllDownToGroup(group); }
+            catch (Exception error) { Undo.RevertAllDownToGroup(group); Debug.LogException(error); }
+            finally { EditorUtility.ClearProgressBar(); serializedObject.Update(); SceneView.RepaintAll(); }
+        }
+
+        void DrawDetailPainter(MGTerrain terrain)
+        {
+            EditorGUILayout.Space();
+            if (!m_DetailPainting) return;
+            var labels = new string[terrain.DensityDetailLayerCount];
+            for (int i = 0; i < labels.Length; i++)
+            {
+                var detail = terrain.DensityDetailLayers[i];
+                int p = detail.PrototypeIndex;
+                string name = p >= 0 && p < terrain.Prototypes.Count && terrain.Prototypes[p] != null && terrain.Prototypes[p].Prefab != null
+                    ? terrain.Prototypes[p].Prefab.name : "Prototype " + p;
+                labels[i] = i + ": " + name + (detail.GrassIdMap != null ? " / Population " + (detail.GrassPopulation == 0 ? "A" : "B") : detail.UsesGrassArray ? " / Sub-ID " + detail.TextureSlice : "");
+            }
+            if (labels.Length == 0) { SetDetailPainting(false); return; }
+            m_PaintDetailIndex = EditorGUILayout.Popup("Detail", Mathf.Clamp(m_PaintDetailIndex, 0, labels.Length - 1), labels);
+            m_PaintChannel = GUILayout.Toolbar(m_PaintChannel, new[] { "Density", "Size" });
+            var selectedDetail = terrain.DensityDetailLayers[m_PaintDetailIndex];
+            if (selectedDetail.GrassIdMap != null)
+            {
+                m_GrassPaintPopulation = selectedDetail.GrassPopulation;
+                EditorGUI.BeginChangeCheck();
+                bool idOnly = EditorGUILayout.Toggle(new GUIContent("Replace ID Only", "Change the grass type without changing density. Leave off to paint towards Target Density / Texel."), m_GrassIdOnly);
+                if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassIdOnly = idOnly; }
+                EditorGUI.BeginChangeCheck();
+                int id = EditorGUILayout.IntSlider("Paint Grass Sub-ID", m_GrassPaintSubId, 0, 7);
+                if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassPaintSubId = id; }
+            }
+            m_SelectedPrototype = selectedDetail.PrototypeIndex;
+            EditorGUILayout.LabelField("Selected Detail Density", selectedDetail.RepresentedInstanceCount.ToString("N0"));
+            terrain.GetDetailSourceMaterials(selectedDetail.PrototypeIndex, m_DetailSourceMaterials);
+            if (m_DetailSourceMaterials.Count == 0)
+                EditorGUILayout.HelpBox("This prototype has no renderable mesh/material. Check its Prefab, enabled MeshRenderer and MeshFilter (including LOD0), or assign Mesh and Material directly. Painting cannot display this detail until that is fixed.", MessageType.Warning);
+            if (selectedDetail.DensityMap == null)
+                EditorGUILayout.HelpBox("No density map yet. A density stroke on this terrain will create it automatically.", MessageType.Info);
+            MBEditorToolState.BrushRadius = EditorGUILayout.Slider("Brush Radius", MBEditorToolState.BrushRadius, .1f, MBEditorToolState.MaxBrushRadius);
+            MBEditorToolState.BrushStrength = EditorGUILayout.Slider("Brush Strength", MBEditorToolState.BrushStrength, .01f, 1f);
+            if (m_PaintChannel == 0)
+            {
+                m_PaintDensity = EditorGUILayout.IntSlider("Target Density / Texel", m_PaintDensity, 1, 2000);
+                var layer = m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex);
+                EditorGUILayout.Space(4f);
+                EditorGUILayout.LabelField("Random Size", EditorStyles.boldLabel);
+                DrawDensitySizeRange(layer, "Width", "m_MinWidth", "m_MaxWidth");
+                DrawDensitySizeRange(layer, "Height", "m_MinHeight", "m_MaxHeight");
+                EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_SizeMultiplier"),
+                    new GUIContent("Overall Size", "Multiplies both the random width and height."));
+                EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_Seed"),
+                    new GUIContent("Variation Seed", "Controls the repeatable random placement, rotation and size of this detail layer."));
+                EditorGUILayout.HelpBox("Each instance gets a random width and height within these ranges. Equal minimum and maximum values give a fixed size. These settings affect all foliage in this detail layer, including existing painting. The Size brush adds a local multiplier.", MessageType.None);
+            }
+            else
+            {
+                m_RandomPaintSize = EditorGUILayout.Toggle("Random Size", m_RandomPaintSize);
+                if (m_RandomPaintSize)
+                {
+                    m_PaintSizeMin = EditorGUILayout.Slider("Minimum Size Multiplier", m_PaintSizeMin, .05f, 4f);
+                    m_PaintSizeMax = EditorGUILayout.Slider("Maximum Size Multiplier", Mathf.Max(m_PaintSizeMin, m_PaintSizeMax), m_PaintSizeMin, 4f);
+                    m_PaintSizeSeed = EditorGUILayout.IntField("Size Random Seed", m_PaintSizeSeed);
+                    EditorGUILayout.HelpBox("Paints a repeatable random size per size-map texel. Overlapping dabs keep the same targets; change the seed for a different pattern. Brush strength and falloff blend toward those sizes. Shift restores size to 1.", MessageType.None);
+                }
+                else
+                    m_PaintSize = EditorGUILayout.Slider("Target Size Multiplier", m_PaintSize, .05f, 4f);
+            }
+            EditorGUILayout.HelpBox("Drag to paint with soft falloff. Shift erases density or restores size to 1. Ctrl + middle-drag: horizontal = radius, vertical = strength. Alt navigates; Esc stops. Size multiplies existing width and height; it does not change density. Painted cells refresh live during the stroke. The first stroke makes a working copy; original maps are preserved.", MessageType.Info);
+            if (terrain.DensityDetailLayers[m_PaintDetailIndex].GeneratedByPalette != null)
+                EditorGUILayout.HelpBox("This is a palette-generated layer. Baking the palette again can replace this layer and its painting.", MessageType.Warning);
+            if (!terrain.HasSurfaceCollider)
+                EditorGUILayout.HelpBox("Enable the terrain's Mesh Collider to brush its surface.", MessageType.Warning);
+            if (terrain.DensityDetailLayers[m_PaintDetailIndex].PaletteSourceOnly)
+                EditorGUILayout.HelpBox("This layer is a palette source, not rendered directly. Paint its density with the palette workflow and bake it, or select a rendered detail layer here.", MessageType.Warning);
+        }
+
+        void SetDetailPainting(bool enabled)
+        {
+            if (enabled == m_DetailPainting) return;
+            if (enabled) SetHolePainting(false);
+            FinishDetailStroke();
+            m_DetailPainting = enabled;
+            if (enabled)
+            {
+                m_PreviousTool = Tools.current;
+                m_PreviousEditing = MBEditorToolState.ActiveEditing;
+                MBEditorToolState.ActiveEditing = false;
+                Tools.current = Tool.None;
+            }
+            else
+            {
+                EndDetailBrushAdjustment();
+                GUIUtility.hotControl = 0;
+                Tools.current = m_PreviousTool;
+                MBEditorToolState.ActiveEditing = m_PreviousEditing;
+            }
+            SceneView.RepaintAll();
+            Repaint();
+        }
+
+        void OnDisable()
+        {
+            SetHolePainting(false);
+            SetDetailPainting(false);
+            Undo.undoRedoPerformed -= RefreshPaintUndo;
+            EditorApplication.update -= UpdateDetailPaintPreview;
+        }
+
+        void RefreshPaintUndo()
+        {
+            foreach (Texture2D map in m_PaintCopies)
+                if (map != null && map.isReadable) { map.Apply(false, false); EditorUtility.SetDirty(map); }
+            if (target is MGTerrain terrain) terrain.InvalidateRenderCache();
+            SceneView.RepaintAll();
+            Repaint();
+        }
+
+        void OnSceneGUI()
+        {
+            if (targets.Length > 1) return;
+            DrawHoleSceneGUI();
+            if (!m_DetailPainting) return;
+            var terrain = (MGTerrain)target;
+            if (Application.isPlaying || MBEditorToolState.ActiveEditing || Tools.current != Tool.None)
+            { SetDetailPainting(false); return; }
+            Event e = Event.current;
+            int control = GUIUtility.GetControlID("MGDetailPaint".GetHashCode(), FocusType.Passive);
+            MBEditorToolVisuals.RepaintBrushModifiers(e, SceneView.currentDrawingSceneView);
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+            { SetDetailPainting(false); e.Use(); return; }
+            if (e.type == EventType.Layout && !e.alt) HandleUtility.AddDefaultControl(control);
+            if (e.type == EventType.MouseDown && e.button == 2 && e.control && !e.alt)
+            {
+                FinishDetailStroke();
+                m_AdjustDetailBrush = true;
+                m_DetailAdjustMouse = e.mousePosition;
+                Physics.SyncTransforms();
+                var surface = terrain.MeshCollider;
+                m_HasDetailAdjustSurface = false;
+                if (RaycastDetailWorld(terrain, HandleUtility.GUIPointToWorldRay(e.mousePosition), out RaycastHit anchor))
+                {
+                    m_HasDetailAdjustSurface = true;
+                    m_DetailAdjustPoint = anchor.point;
+                    m_DetailAdjustNormal = anchor.normal;
+                }
+                GUIUtility.hotControl = control;
+                EditorGUIUtility.SetWantsMouseJumping(1);
+                e.Use();
+                SceneView.RepaintAll();
+            }
+            if (m_AdjustDetailBrush && e.type == EventType.MouseDrag && e.button == 2)
+            {
+                MBEditorToolState.BrushRadius *= Mathf.Exp(e.delta.x * .01f);
+                MBEditorToolState.BrushStrength -= e.delta.y * .005f;
+                e.Use(); Repaint(); SceneView.RepaintAll();
+            }
+            if (e.rawType == EventType.MouseUp || e.type == EventType.Ignore)
+            {
+                FinishDetailStroke();
+                EndDetailBrushAdjustment();
+                if (GUIUtility.hotControl == control) { GUIUtility.hotControl = 0; e.Use(); }
+                SceneView.RepaintAll();
+            }
+            if (m_AdjustDetailBrush)
+            {
+                DrawDetailBrushAdjustment();
+                return;
+            }
+            if (e.alt) return;
+            // Only hit the selected terrain, not nearby props or loft colliders.
+            Physics.SyncTransforms();
+            var collider = terrain.MeshCollider;
+            if (!RaycastDetailWorld(terrain, HandleUtility.GUIPointToWorldRay(e.mousePosition), out RaycastHit hit)) return;
+            var sceneView = SceneView.currentDrawingSceneView;
+            if (sceneView != null && !Tools.viewToolActive
+                && MBEditorToolVisuals.FocusBrushSurface(e, sceneView, hit.point, MBEditorToolState.BrushRadius)) return;
+            Handles.color = m_PaintChannel == 0 ? Color.green : Color.cyan;
+            Handles.DrawWireDisc(hit.point, hit.normal, MBEditorToolState.BrushRadius);
+            MBEditorToolVisuals.DrawBrushAction(m_PaintChannel == 0
+                ? (e.shift ? "Thin / Erase Detail Density" : "Paint Detail Density")
+                : (e.shift ? "Restore Detail Size Ã—1" : m_RandomPaintSize
+                    ? $"Paint Random Size Ã—{m_PaintSizeMin:0.00}â€“{m_PaintSizeMax:0.00}"
+                    : $"Paint Detail Size Ã—{m_PaintSize:0.00}"));
+            if (e.type == EventType.MouseMove) SceneView.RepaintAll();
+            if (e.button != 0 || (e.type != EventType.MouseDown && e.type != EventType.MouseDrag)) return;
+            if (e.type == EventType.MouseDown)
+            {
+                if (!BeginDetailStroke(terrain)) return;
+                GUIUtility.hotControl = control;
+                m_LastDetailDab = hit.point;
+                PaintDetailDab(terrain, hit.point, e.shift);
+            }
+            else if (m_StrokeMap != null)
+            {
+                float spacing = Mathf.Max(.05f, MBEditorToolState.BrushRadius * .2f);
+                float distance = Vector3.Distance(m_LastDetailDab, hit.point);
+                int steps = Mathf.Min(128, Mathf.FloorToInt(distance / spacing));
+                Vector3 start = m_LastDetailDab;
+                for (int i = 1; i <= steps; i++)
+                {
+                    m_LastDetailDab = Vector3.MoveTowards(start, hit.point, i * spacing);
+                    PaintDetailDab(terrain, m_LastDetailDab, e.shift);
+                }
+            }
+            e.Use();
+        }
+
+        void EndDetailBrushAdjustment()
+        {
+            if (!m_AdjustDetailBrush) return;
+            m_AdjustDetailBrush = false;
+            m_HasDetailAdjustSurface = false;
+            EditorGUIUtility.SetWantsMouseJumping(0);
+        }
+
+        void DrawDetailBrushAdjustment()
+        {
+            float radius = MBEditorToolState.BrushRadius;
+            float strength = MBEditorToolState.BrushStrength;
+            if (m_HasDetailAdjustSurface)
+            {
+                Color previousColor = Handles.color;
+                Handles.color = new Color(1f, .82f, .12f, 1f);
+                Handles.DrawWireDisc(m_DetailAdjustPoint, m_DetailAdjustNormal, radius);
+                Handles.color = Color.Lerp(new Color(1f, .25f, .12f, .9f), new Color(.2f, 1f, .35f, .95f), strength);
+                Handles.DrawWireDisc(m_DetailAdjustPoint + m_DetailAdjustNormal * HandleUtility.GetHandleSize(m_DetailAdjustPoint) * .002f,
+                    m_DetailAdjustNormal, radius * strength);
+                Handles.color = previousColor;
+            }
+            Handles.BeginGUI();
+            var panel = new Rect(m_DetailAdjustMouse.x + 18f, m_DetailAdjustMouse.y + 18f, 250f, 50f);
+            // Keep feedback visible when adjustment starts near a Scene view edge.
+            var view = SceneView.currentDrawingSceneView;
+            if (view != null)
+            {
+                panel.x = Mathf.Clamp(panel.x, 0f, Mathf.Max(0f, view.position.width - panel.width));
+                panel.y = Mathf.Clamp(panel.y, 0f, Mathf.Max(0f, view.position.height - panel.height - 30f));
+            }
+            GUI.Box(panel, GUIContent.none, EditorStyles.helpBox);
+            GUI.Label(new Rect(panel.x + 8f, panel.y + 4f, panel.width - 16f, 18f),
+                $"Radius  {radius:0.00}   (drag horizontally)", EditorStyles.miniBoldLabel);
+            EditorGUI.ProgressBar(new Rect(panel.x + 8f, panel.y + 27f, panel.width - 16f, 16f),
+                strength, $"Strength  {strength:0.00}   (drag vertically)");
+            Handles.EndGUI();
+        }
+
+        static void DrawDensitySizeRange(SerializedProperty layer, string label, string minimumName, string maximumName)
+        {
+            var minimum = layer.FindPropertyRelative(minimumName);
+            var maximum = layer.FindPropertyRelative(maximumName);
+            Rect row = EditorGUILayout.GetControlRect();
+            Rect fields = EditorGUI.PrefixLabel(row, new GUIContent(label + " Range"));
+            float gap = 6f;
+            float width = (fields.width - gap) * .5f;
+            float oldLabelWidth = EditorGUIUtility.labelWidth;
+            EditorGUIUtility.labelWidth = 30f;
+            EditorGUI.BeginChangeCheck();
+            float min = EditorGUI.FloatField(new Rect(fields.x, fields.y, width, fields.height), "Min", minimum.floatValue);
+            float max = EditorGUI.FloatField(new Rect(fields.x + width + gap, fields.y, width, fields.height), "Max", maximum.floatValue);
+            if (EditorGUI.EndChangeCheck())
+            {
+                minimum.floatValue = Mathf.Max(.001f, min);
+                maximum.floatValue = Mathf.Max(minimum.floatValue, max);
+            }
+            EditorGUIUtility.labelWidth = oldLabelWidth;
+        }
+
+        bool BeginDetailStroke(MGTerrain terrain)
+        {
+            if ((uint)m_PaintDetailIndex >= terrain.DensityDetailLayerCount) return false;
+            var detail = terrain.DensityDetailLayers[m_PaintDetailIndex];
+            if (detail.PaletteSourceOnly || detail.PrototypeIndex < 0 || detail.PrototypeIndex >= terrain.Prototypes.Count)
+            { EditorUtility.DisplayDialog("Cannot Paint Detail", "Select a rendered detail layer with a valid prototype, not a palette source-only layer.", "OK"); return false; }
+            Texture2D source = m_PaintChannel == 0 ? detail.DensityMap : detail.SizeMap;
+            TextureFormat format = m_PaintChannel == 0 ? TextureFormat.R16 : TextureFormat.RHalf;
+            if (source != null && (!source.isReadable || source.format != format))
+            { EditorUtility.DisplayDialog("Cannot Paint Detail", $"The map must be readable {format}.", "OK"); return false; }
+            Undo.IncrementCurrentGroup();
+            m_StrokeUndo = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Paint MG Terrain Detail");
+            Undo.RegisterCompleteObjectUndo(terrain, "Paint MG Terrain Detail");
+            bool shared = false;
+            foreach (var other in terrain.DensityDetailLayers)
+                if (other != detail && source != null && (other.DensityMap == source || other.SizeMap == source)) shared = true;
+            if (source == null || shared || !m_PaintCopies.Contains(source))
+            {
+                int width = detail.DensityMap != null ? detail.DensityMap.width : 512;
+                int height = detail.DensityMap != null ? detail.DensityMap.height : 512;
+                var copy = source != null ? Instantiate(source) : new Texture2D(width, height, format, false, true);
+                copy.name = terrain.name + (m_PaintChannel == 0 ? "_DetailDensity" : "_DetailSize");
+                copy.wrapMode = TextureWrapMode.Clamp;
+                copy.filterMode = FilterMode.Bilinear;
+                if (source == null)
+                {
+                    var pixels = copy.GetPixelData<ushort>(0);
+                    ushort neutral = m_PaintChannel == 0 ? (ushort)0 : Mathf.FloatToHalf(1f);
+                    for (int i = 0; i < pixels.Length; i++) pixels[i] = neutral;
+                    copy.Apply(false, false);
+                }
+                MGTerrainSceneAssets.Create(copy, terrain, $"Layer_{m_PaintDetailIndex}_" + (m_PaintChannel == 0 ? "Density" : "Size"));
+                serializedObject.Update();
+                var layer = m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex);
+                layer.FindPropertyRelative(m_PaintChannel == 0 ? "m_DensityMap" : "m_SizeMap").objectReferenceValue = copy;
+                serializedObject.ApplyModifiedProperties();
+                source = copy;
+                m_PaintCopies.Add(copy);
+            }
+            m_GrassStrokeIds = null;
+            if (m_PaintChannel == 0 && detail.GrassIdMap != null)
+            {
+                var ids = detail.GrassIdMap;
+                if (!m_PaintCopies.Contains(ids))
+                {
+                    ids = Instantiate(ids);
+                    MGTerrainSceneAssets.Create(ids, terrain, $"Layer_{m_PaintDetailIndex}_GrassIDs");
+                    serializedObject.Update();
+                    m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex).FindPropertyRelative("m_GrassIdMap").objectReferenceValue = ids;
+                    serializedObject.ApplyModifiedProperties();
+                    m_PaintCopies.Add(ids);
+                }
+                m_GrassStrokeIds = ids;
+                Undo.RegisterCompleteObjectUndo(ids, "Paint Grass IDs");
+            }
+            m_StrokeMap = source;
+            m_HasPendingPaint = false;
+            m_NextPaintPreview = 0;
+            Undo.RegisterCompleteObjectUndo(m_StrokeMap, "Paint MG Terrain Detail");
+            return true;
+        }
+
+        float GetPaintSizeTarget(int x, int z)
+        {
+            if (!m_RandomPaintSize) return m_PaintSize;
+            // Stable spatial randomness avoids averaging toward one size as dabs overlap.
+            unchecked
+            {
+                uint hash = (uint)x * 0x9E3779B9u ^ (uint)z * 0x85EBCA6Bu ^ (uint)m_PaintSizeSeed;
+                hash ^= hash >> 16;
+                hash *= 0x7FEB352Du;
+                hash ^= hash >> 15;
+                hash *= 0x846CA68Bu;
+                hash ^= hash >> 16;
+                return Mathf.Lerp(m_PaintSizeMin, m_PaintSizeMax, (hash & 0xFFFFFFu) / 16777215f);
+            }
+        }
+
+        void PaintDetailDab(MGTerrain terrain, Vector3 point, bool erase)
+        {
+            if (m_StrokeMap == null || terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null) return;
+            Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
+            Vector3 center = terrain.transform.InverseTransformPoint(point);
+            float radius = MBEditorToolState.BrushRadius;
+            float rx = radius / Mathf.Max(.0001f, terrain.transform.TransformVector(Vector3.right).magnitude);
+            float rz = radius / Mathf.Max(.0001f, terrain.transform.TransformVector(Vector3.forward).magnitude);
+            int w = m_StrokeMap.width, h = m_StrokeMap.height;
+            int x0 = Mathf.Clamp(Mathf.FloorToInt((center.x - rx - bounds.min.x) / bounds.size.x * w), 0, w - 1);
+            int x1 = Mathf.Clamp(Mathf.CeilToInt((center.x + rx - bounds.min.x) / bounds.size.x * w), 0, w - 1);
+            int z0 = Mathf.Clamp(Mathf.FloorToInt((center.z - rz - bounds.min.z) / bounds.size.z * h), 0, h - 1);
+            int z1 = Mathf.Clamp(Mathf.CeilToInt((center.z + rz - bounds.min.z) / bounds.size.z * h), 0, h - 1);
+            var pixels = m_StrokeMap.GetPixelData<ushort>(0);
+            for (int z = z0; z <= z1; z++) for (int x = x0; x <= x1; x++)
+            {
+                Vector3 delta = new Vector3(bounds.min.x + (x + .5f) / w * bounds.size.x - center.x, 0, bounds.min.z + (z + .5f) / h * bounds.size.z - center.z);
+                float d = terrain.transform.TransformVector(delta).magnitude / radius;
+                if (d >= 1) continue;
+                float influence = Mathf.SmoothStep(1, 0, d) * MBEditorToolState.BrushStrength;
+                int index = z * w + x;
+                float previous = m_PaintChannel == 0 ? pixels[index] : Mathf.HalfToFloat(pixels[index]);
+                float goal = m_PaintChannel == 0 ? (erase ? 0 : Mathf.Clamp(m_PaintDensity, 1, 2000)) : (erase ? 1 : GetPaintSizeTarget(x, z));
+                if (m_GrassStrokeIds != null && !erase && influence > 0)
+                {
+                    var ids = m_GrassStrokeIds.GetPixelData<byte>(0); ids[index] = (byte)m_GrassPaintSubId;
+
+                }
+                if (m_GrassStrokeIds != null && m_GrassIdOnly) goal = previous;
+                float next = Mathf.Lerp(previous, goal, influence);
+                pixels[index] = m_PaintChannel == 0 ? (ushort)Mathf.RoundToInt(next) : Mathf.FloatToHalf(next);
+            }
+            Rect region = Rect.MinMaxRect(x0 / (float)w, z0 / (float)h, (x1 + 1f) / w, (z1 + 1f) / h);
+            m_PendingPaintRegion = m_HasPendingPaint
+                ? Rect.MinMaxRect(Mathf.Min(m_PendingPaintRegion.xMin, region.xMin), Mathf.Min(m_PendingPaintRegion.yMin, region.yMin), Mathf.Max(m_PendingPaintRegion.xMax, region.xMax), Mathf.Max(m_PendingPaintRegion.yMax, region.yMax))
+                : region;
+            m_HasPendingPaint = true;
+            PaintWorldNeighbours(terrain, point, erase);
+        }
+
+        void UpdateDetailPaintPreview()
+        {
+            if (m_StrokeMap == null || !m_HasPendingPaint || EditorApplication.timeSinceStartup < m_NextPaintPreview) return;
+            FlushDetailPaintPreview();
+        }
+
+        void FlushDetailPaintPreview()
+        {
+            if (m_StrokeMap == null || !m_HasPendingPaint) return;
+            m_StrokeMap.Apply(false, false);
+            if (m_GrassStrokeIds != null) { m_GrassStrokeIds.Apply(false, false); EditorUtility.SetDirty(m_GrassStrokeIds); }
+            if (target is MGTerrain terrain) terrain.RefreshDetailPaintRegion(m_PaintDetailIndex, m_PendingPaintRegion);
+            m_HasPendingPaint = false;
+            m_NextPaintPreview = EditorApplication.timeSinceStartup + .1;
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+
+        void FinishDetailStroke()
+        {
+            FinishWorldPaintStroke();
+            if (m_StrokeMap == null) return;
+            FlushDetailPaintPreview();
+            m_StrokeMap.Apply(false, false);
+            EditorUtility.SetDirty(m_StrokeMap);
+            if (target is MGTerrain terrain)
+            {
+                if (m_PaintChannel == 0)
+                {
+                    terrain.RefreshDetailPaintRegion(m_PaintDetailIndex, default, true);
+                }
+                EditorUtility.SetDirty(terrain);
+                if (terrain.gameObject.scene.IsValid()) EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+            }
+            // Leave the texture dirty for the normal project save workflow.
+            // Saving here stalls the editor after every brush stroke.
+            Undo.CollapseUndoOperations(m_StrokeUndo);
+            m_StrokeMap = null;
+            m_GrassStrokeIds = null;
+            m_StrokeUndo = -1;
+            SceneView.RepaintAll();
+        }
+
+        void FloodDensityLayer(MGTerrain terrain, int index, bool onlyThisDetail, bool confirmed = false)
+        {
+            serializedObject.ApplyModifiedProperties();
+
+            if (m_WorldDetailControls && terrain.World != null && !confirmed)
+            {
+                FloodWorldDetail(terrain, index, onlyThisDetail);
+                return;
+            }
+            SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+            var source = layer.FindPropertyRelative("m_DensityMap").objectReferenceValue as Texture2D;
+            if (source == null) return;
+            int prototype = layer.FindPropertyRelative("m_PrototypeIndex").intValue;
+            if (prototype < 0 || prototype >= terrain.Prototypes.Count)
+            {
+                EditorUtility.DisplayDialog("Cannot Flood Detail", "Assign a valid Prototype Index first.", "OK");
+                return;
+            }
+            long represented = (long)source.width * source.height * m_FloodDensity;
+            string isolation = onlyThisDetail
+                ? "Other density layer entries will be removed from this terrain (their texture assets are kept). Palette bindings remain; rebaking them can add layers again.\n\n"
+                : "Other density layers will remain active.\n\n";
+            if (!confirmed && !EditorUtility.DisplayDialog("Flood MG Terrain Detail?",
+                $"Fill Element {index}, prototype {prototype}, across the entire {source.width} Ã— {source.height} map at {m_FloodDensity:N0} per texel?\n\n"
+                + $"This represents {represented:N0} instances; draw budgets and distance limits still apply.\n\n"
+                + isolation + "A new density texture will be created, preserving the original painting. Undo restores the terrain assignment; the new texture asset remains available.",
+                "Flood Density", "Cancel")) return;
+
+            var filled = new Texture2D(source.width, source.height, TextureFormat.R16, false, true)
+            {
+                name = source.name + "_Flood",
+                filterMode = source.filterMode,
+                wrapMode = source.wrapMode
+            };
+            var pixels = filled.GetPixelData<ushort>(0);
+            for (int pixel = 0; pixel < pixels.Length; pixel++) pixels[pixel] = (ushort)m_FloodDensity;
+            filled.Apply(false, false);
+            MGTerrainSceneAssets.Create(filled, terrain, $"Layer_{index}_Density_Flood");
+            Undo.RecordObject(terrain, "Flood MG Terrain Detail");
+            serializedObject.Update();
+            layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
+            layer.FindPropertyRelative("m_DensityMap").objectReferenceValue = filled;
+            layer.FindPropertyRelative("m_RepresentedInstanceCount").longValue = represented;
+            layer.FindPropertyRelative("m_PaletteSourceOnly").boolValue = false;
+            layer.FindPropertyRelative("m_GeneratedByPalette").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_PaletteSourceMap").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_PaletteEntryIndex").intValue = -1;
+            if (onlyThisDetail)
+                for (int other = m_DensityDetailLayers.arraySize - 1; other >= 0; other--)
+                    if (other != index) m_DensityDetailLayers.DeleteArrayElementAtIndex(other);
+            serializedObject.ApplyModifiedProperties();
+            terrain.InvalidateRenderCache();
+            EditorUtility.SetDirty(terrain);
+            if (terrain.gameObject.scene.IsValid()) EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+            SceneView.RepaintAll();
+        }
+
+        void DrawDetailFoliagePalettes(MGTerrain terrain)
+        {
+            EditorGUILayout.Space(5f);
+            EditorGUILayout.LabelField("Detail Foliage Palettes", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Paint one R16 master density map, then bake it into natural variant layers. The bake adds broad density breakup, coherent clumps, soft edges, slope/height filtering and rare hero plants without adding runtime procedural work.",
+                MessageType.Info);
+            EditorGUILayout.PropertyField(m_DetailFoliagePalettes, true);
+
+            bool needsBake = false;
+            int missingSources = 0;
+            for (int index = 0; index < terrain.DetailFoliagePalettes.Count; index++)
+            {
+                MGTerrain.DetailFoliagePaletteBinding binding = terrain.DetailFoliagePalettes[index];
+                if (binding != null && binding.Enabled && binding.SourceDensityMap == null)
+                    missingSources++;
+                if (binding != null && binding.Enabled && binding.NeedsBake)
+                {
+                    needsBake = true;
+                }
+            }
+            if (missingSources > 0)
+            {
+                bool canAutoAssign = terrain.TryGetAutomaticDetailFoliageSource(out Texture2D automaticSource, out int sourceCount);
+                if (canAutoAssign)
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        EditorGUILayout.HelpBox(
+                            $"{missingSources:N0} palette binding(s) need a source mask. The existing '{automaticSource.name}' density map can be assigned automatically.",
+                            MessageType.Warning);
+                        if (GUILayout.Button("Use Existing", GUILayout.Width(92f), GUILayout.Height(38f)))
+                        {
+                            serializedObject.ApplyModifiedProperties();
+                            Undo.RecordObject(terrain, "Assign Detail Foliage Source Map");
+                            for (int index = 0; index < terrain.DetailFoliagePalettes.Count; index++)
+                                terrain.TryAssignAutomaticDetailFoliageSource(terrain.DetailFoliagePalettes[index], out _);
+                            EditorUtility.SetDirty(terrain);
+                            serializedObject.Update();
+                        }
+                    }
+                }
+                else if (sourceCount > 1)
+                {
+                    EditorGUILayout.HelpBox(
+                        $"This terrain has {sourceCount:N0} possible master density maps. Assign the intended one to Source Density Map above.",
+                        MessageType.Warning);
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox(
+                        "No painted density map exists yet. Create or paint a density detail layer, then use that R16 map as Source Density Map.",
+                        MessageType.Warning);
+                }
+            }
+            if (needsBake)
+                EditorGUILayout.HelpBox("A palette or painted source mask has changed. Preview / Bake to refresh its generated density layers.", MessageType.Warning);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Create Palette..."))
+                    CreateDetailFoliagePalette(terrain);
+                using (new EditorGUI.DisabledScope(terrain.DetailFoliagePalettes.Count == 0))
+                {
+                    if (GUILayout.Button("Preview / Bake"))
+                        BakeDetailFoliagePalettes(terrain, false);
+                    if (GUILayout.Button("Reseed + Bake"))
+                        BakeDetailFoliagePalettes(terrain, true);
+                }
+            }
+
+            int generatedLayers = MGDetailFoliagePaletteBaker.CountExistingGeneratedLayers(terrain);
+            using (new EditorGUI.DisabledScope(generatedLayers == 0))
+            {
+                if (GUILayout.Button($"Clear Generated Layers... ({generatedLayers:N0})")
+                    && EditorUtility.DisplayDialog(
+                        "Clear Generated Detail Foliage?",
+                        $"Remove {generatedLayers:N0} generated density layers from '{terrain.name}'? The source masks and generated texture assets will be preserved.",
+                        "Clear Generated Layers",
+                        "Cancel"))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    int removed = MGDetailFoliagePaletteBaker.ClearGeneratedLayers(terrain);
+                    serializedObject.Update();
+                    m_HasMemoryUsageSnapshot = false;
+                    Debug.Log($"MG Terrain removed {removed:N0} generated foliage-palette layers from '{terrain.name}'.", terrain);
+                }
+            }
+            EditorGUILayout.Space(3f);
+        }
+
+        void CreateDetailFoliagePalette(MGTerrain terrain)
+        {
+            string path = EditorUtility.SaveFilePanelInProject(
+                "Create MG Detail Foliage Palette",
+                $"{terrain.name}_DetailFoliagePalette",
+                "asset",
+                "Choose where to save the reusable foliage palette asset.");
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            var palette = CreateInstance<MGDetailFoliagePalette>();
+            palette.name = System.IO.Path.GetFileNameWithoutExtension(path);
+            palette.ConfigureNaturalStarterSet();
+            terrain.TryGetAutomaticDetailFoliageSource(out Texture2D automaticSource, out _);
+            if (terrain.TryGetDensityDetailPrototype(automaticSource, out MGTerrain.Prototype sourcePrototype))
+                palette.TrySeedPrimaryPrototype(sourcePrototype);
+            AssetDatabase.CreateAsset(palette, path);
+            AssetDatabase.SaveAssets();
+            Undo.RecordObject(terrain, "Add MG Detail Foliage Palette");
+            terrain.AddDetailFoliagePalette(palette, automaticSource);
+            EditorUtility.SetDirty(terrain);
+            serializedObject.Update();
+            Selection.activeObject = palette;
+            EditorGUIUtility.PingObject(palette);
+        }
+
+        void BakeDetailFoliagePalettes(MGTerrain terrain, bool randomizeSeeds)
+        {
+            serializedObject.ApplyModifiedProperties();
+            int existing = MGDetailFoliagePaletteBaker.CountExistingGeneratedLayers(terrain);
+            if (existing > 0
+                && !EditorUtility.DisplayDialog(
+                    randomizeSeeds ? "Reseed Detail Foliage?" : "Refresh Detail Foliage Bake?",
+                    $"Replace {existing:N0} generated density layers on '{terrain.name}'? The master masks remain untouched and this terrain change can be undone.",
+                    randomizeSeeds ? "Reseed + Bake" : "Bake",
+                    "Cancel"))
+            {
+                serializedObject.Update();
+                return;
+            }
+
+            MGDetailFoliagePaletteBaker.BakeResult result = MGDetailFoliagePaletteBaker.BakeAll(terrain, randomizeSeeds);
+            serializedObject.Update();
+            m_HasMemoryUsageSnapshot = false;
+            if (!string.IsNullOrEmpty(result.error))
+                EditorUtility.DisplayDialog("Detail Foliage Palette Bake", result.error, "OK");
+            if (result.layerCount > 0)
+            {
+                Debug.Log(
+                    $"MG Terrain baked {result.paletteCount:N0} foliage palette(s) into {result.layerCount:N0} compact density layers "
+                    + $"representing {result.instanceCount:N0} details on '{terrain.name}'.",
+                    terrain);
+            }
+        }
+
+        static void DrawDetailInstanceCapSlider(SerializedProperty property)
+        {
+            var label = new GUIContent(
+                "Max Instances Per Cell",
+                "Hard safety cap for one streamed HLOD cell. Larger values preserve very dense grass in larger cells, but require more build time, upload bandwidth, GPU memory, and rendering work.");
+            int selectedIndex = FindNearestDetailInstanceCapIndex(property.intValue);
+            Rect row = EditorGUILayout.GetControlRect();
+            Rect controls = EditorGUI.PrefixLabel(row, label);
+            const float popupWidth = 82f;
+            const float gap = 5f;
+            var sliderRect = new Rect(
+                controls.x,
+                controls.y,
+                Mathf.Max(1f, controls.width - popupWidth - gap),
+                controls.height);
+            var popupRect = new Rect(
+                sliderRect.xMax + gap,
+                controls.y,
+                popupWidth,
+                controls.height);
+
+            EditorGUI.showMixedValue = property.hasMultipleDifferentValues;
+            EditorGUI.BeginChangeCheck();
+            selectedIndex = Mathf.RoundToInt(GUI.HorizontalSlider(
+                sliderRect,
+                selectedIndex,
+                0,
+                DetailInstanceCapSteps.Length - 1));
+            selectedIndex = EditorGUI.Popup(
+                popupRect,
+                Mathf.Clamp(selectedIndex, 0, DetailInstanceCapSteps.Length - 1),
+                DetailInstanceCapLabels);
+            if (EditorGUI.EndChangeCheck())
+                property.intValue = DetailInstanceCapSteps[selectedIndex];
+            EditorGUI.showMixedValue = false;
+        }
+
+        static int FindNearestDetailInstanceCapIndex(int value)
+        {
+            int nearestIndex = 0;
+            long nearestDistance = long.MaxValue;
+            for (int i = 0; i < DetailInstanceCapSteps.Length; i++)
+            {
+                long distance = Math.Abs((long)value - DetailInstanceCapSteps[i]);
+                if (distance >= nearestDistance)
+                    continue;
+
+                nearestDistance = distance;
+                nearestIndex = i;
+            }
+
+            return nearestIndex;
+        }
+
+        void DrawDetailQualityPresets(MGTerrain terrain)
+        {
+            EditorGUILayout.Space(2f);
+            EditorGUILayout.LabelField(
+                new GUIContent(
+                    "Detail Quality Preset",
+                    "Applies a balanced group of distance, HLOD density, cell-cache, streaming, shadow, and visible-instance settings. Every field remains editable after applying a preset."),
+                EditorStyles.boldLabel);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(new GUIContent("Low", "60 m, 25k visible details, aggressively thinned distance grass, no detail shadows.")))
+                    ApplyDetailQualityPreset(terrain, DetailQualityPreset.Low);
+                if (GUILayout.Button(new GUIContent("Medium", "90 m, 50k visible details, dense foreground and economical distance grass, no detail shadows.")))
+                    ApplyDetailQualityPreset(terrain, DetailQualityPreset.Medium);
+                if (GUILayout.Button(new GUIContent("High", "130 m, 100k visible details, dense foreground with smoother middle-distance coverage, no detail shadows.")))
+                    ApplyDetailQualityPreset(terrain, DetailQualityPreset.High);
+                if (GUILayout.Button(new GUIContent("Ultra", "180 m, 200k visible details, high distance density and detail shadows where the prototype permits them.")))
+                    ApplyDetailQualityPreset(terrain, DetailQualityPreset.Ultra);
+            }
+        }
+
+        void ApplyDetailQualityPreset(MGTerrain terrain, DetailQualityPreset preset)
+        {
+            Undo.RecordObject(terrain, $"Apply MG Terrain {preset} Detail Quality");
+            terrain.ApplyDetailQualityPreset(preset);
+            serializedObject.Update();
+            EditorUtility.SetDirty(terrain);
+            m_HasMemoryUsageSnapshot = false;
+            SceneView.RepaintAll();
+        }
+
+        void DrawMemoryUsage(MGTerrain terrain)
+        {
+            m_ShowMemoryUsage = EditorGUILayout.Foldout(
+                m_ShowMemoryUsage,
+                "Memory Usage (Estimated)",
+                true);
+            if (!m_ShowMemoryUsage)
+                return;
+
+            bool refreshMemoryUsage = GUILayout.Button("Refresh Memory Usage");
+            if (!m_HasMemoryUsageSnapshot || refreshMemoryUsage)
+            {
+                m_MemoryUsageSnapshot = terrain.CaptureMemoryUsageSnapshot();
+                m_HasMemoryUsageSnapshot = true;
+            }
+
+            EditorGUI.indentLevel++;
+            DrawMemoryRow("Surface Mesh", m_MemoryUsageSnapshot.SurfaceMeshBytes);
+            DrawMemoryRow("Control Maps", m_MemoryUsageSnapshot.ControlMapBytes);
+            DrawMemoryRow("Density Maps", m_MemoryUsageSnapshot.DensityMapBytes);
+            DrawMemoryRow("Serialized Instances", m_MemoryUsageSnapshot.SerializedInstanceBytes);
+            DrawMemoryRow("Streamed Mesh Cache", m_MemoryUsageSnapshot.StreamedCombinedMeshBytes);
+            DrawMemoryRow("Matrix Buffers", m_MemoryUsageSnapshot.MatrixBufferBytes);
+            DrawMemoryRow("Compact Cell Spans", m_MemoryUsageSnapshot.ProceduralCellDataBytes);
+            DrawMemoryRow("Pending Worker Builds", m_MemoryUsageSnapshot.PendingBuildBytes);
+            DrawMemoryRow("CPU Source Caches", m_MemoryUsageSnapshot.CpuSourceCacheBytes);
+            DrawMemoryRow("Runtime Materials", m_MemoryUsageSnapshot.RuntimeMaterialBytes);
+            EditorGUILayout.LabelField(
+                "Cached Detail Cells",
+                m_MemoryUsageSnapshot.CachedDetailCellCount.ToString("N0"));
+            EditorGUILayout.LabelField(
+                "Combined Mesh Slices",
+                m_MemoryUsageSnapshot.CombinedMeshSliceCount.ToString("N0"));
+            EditorGUILayout.LabelField(
+                "Pending Build Slices",
+                m_MemoryUsageSnapshot.PendingBuildCount.ToString("N0"));
+            EditorGUILayout.LabelField(
+                "Estimated Total",
+                FormatBytes(m_MemoryUsageSnapshot.TotalBytes),
+                EditorStyles.boldLabel);
+            EditorGUI.indentLevel--;
+
+            long transientDetailBytes = m_MemoryUsageSnapshot.StreamedCombinedMeshBytes
+                + m_MemoryUsageSnapshot.MatrixBufferBytes
+                + m_MemoryUsageSnapshot.PendingBuildBytes
+                + m_MemoryUsageSnapshot.CpuSourceCacheBytes;
+            if (transientDetailBytes >= 512L * 1024L * 1024L)
+            {
+                EditorGUILayout.HelpBox(
+                    $"The streamed detail working set is about {FormatBytes(transientDetailBytes)}. Lower Max Cached Detail Chunks and/or Max Instances Per Cell to reduce it.",
+                    MessageType.Warning);
+            }
+            EditorGUILayout.HelpBox(
+                "This is this terrain's referenced/streamed estimate. Unity's Total Allocated Memory also includes the editor, the full scene, render targets, packages, and other loaded assets, so the two numbers will not match exactly.",
+                MessageType.None);
+        }
+
+        static void DrawMemoryRow(string label, long bytes) =>
+            EditorGUILayout.LabelField(label, FormatBytes(bytes));
+
+        static string FormatBytes(long bytes)
+        {
+            const double kilo = 1024.0;
+            const double mega = kilo * 1024.0;
+            const double giga = mega * 1024.0;
+            if (bytes >= giga)
+                return $"{bytes / giga:0.00} GB";
+            if (bytes >= mega)
+                return $"{bytes / mega:0.0} MB";
+            if (bytes >= kilo)
+                return $"{bytes / kilo:0.0} KB";
+            return $"{bytes:N0} B";
+        }
+
+        static void DrawVisibleInstanceBudgetSlider(SerializedProperty property)
+        {
+            var label = new GUIContent(
+                "Visible Instance Budget",
+                "Maximum density-map details this terrain submits to one camera. Full-density nearby cells are kept first; middle and far cells share the remaining budget. Higher values cost more GPU rendering time.");
+            int selectedIndex = FindNearestVisibleInstanceBudgetIndex(property.intValue);
+            Rect row = EditorGUILayout.GetControlRect();
+            Rect controls = EditorGUI.PrefixLabel(row, label);
+            const float popupWidth = 88f;
+            const float gap = 5f;
+            var sliderRect = new Rect(
+                controls.x,
+                controls.y,
+                Mathf.Max(1f, controls.width - popupWidth - gap),
+                controls.height);
+            var popupRect = new Rect(
+                sliderRect.xMax + gap,
+                controls.y,
+                popupWidth,
+                controls.height);
+
+            EditorGUI.showMixedValue = property.hasMultipleDifferentValues;
+            EditorGUI.BeginChangeCheck();
+            selectedIndex = Mathf.RoundToInt(GUI.HorizontalSlider(
+                sliderRect,
+                selectedIndex,
+                0,
+                VisibleInstanceBudgetSteps.Length - 1));
+            selectedIndex = EditorGUI.Popup(
+                popupRect,
+                Mathf.Clamp(selectedIndex, 0, VisibleInstanceBudgetSteps.Length - 1),
+                VisibleInstanceBudgetLabels);
+            if (EditorGUI.EndChangeCheck())
+                property.intValue = VisibleInstanceBudgetSteps[selectedIndex];
+            EditorGUI.showMixedValue = false;
+        }
+
+        static int FindNearestVisibleInstanceBudgetIndex(int value)
+        {
+            if (value <= 0)
+                return VisibleInstanceBudgetSteps.Length - 1;
+
+            int nearestIndex = 0;
+            long nearestDistance = long.MaxValue;
+            // The final entry is Unlimited (serialized as zero), so only compare
+            // finite presets when snapping an existing numeric value.
+            for (int i = 0; i < VisibleInstanceBudgetSteps.Length - 1; i++)
+            {
+                long distance = Math.Abs((long)value - VisibleInstanceBudgetSteps[i]);
+                if (distance >= nearestDistance)
+                    continue;
+
+                nearestDistance = distance;
+                nearestIndex = i;
+            }
+
+            return nearestIndex;
+        }
+
+        static void DrawMappyToolLauncher(MGTerrain terrain)
+        {
+            EditorGUILayout.Space(2f);
+            EditorGUILayout.LabelField("Edit With MashBox Mappy", EditorStyles.boldLabel);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(new GUIContent(
+                        "Paint",
+                        "Activate the MashBox Mappy panel in Splat Map mode for this terrain.")))
+                {
+                    ActivateMappyBrush(terrain, MBBrushMode.SplatMap);
+                }
+
+                if (GUILayout.Button(new GUIContent(
+                        "Sculpt",
+                        "Activate mesh sculpting in the MashBox Mappy panel for this terrain.")))
+                {
+                    ActivateMappy(terrain, MBEditorAuthoringMode.MeshSculpt);
+                }
+
+                if (GUILayout.Button(new GUIContent(
+                        "Decor",
+                        "Activate the MashBox Mappy panel's Decor brush for instanced details and trees.")))
+                {
+                    ActivateMappyBrush(terrain, MBBrushMode.Decor);
+                }
+            }
+
+            if (GUILayout.Button(new GUIContent("Seam Fit", "Fit terrain vertices to nearby lofts or a chosen mesh root, with optional normal blending.")))
+            {
+                MBEditorToolState.SculptMode = MBSculptMode.SeamFit;
+                ActivateMappy(terrain, MBEditorAuthoringMode.MeshSculpt);
+            }
+
+            if (GUILayout.Button(new GUIContent(
+                    "Vertex Paint",
+                    "Activate vertex-color painting in the MashBox Mappy panel for this terrain mesh.")))
+            {
+                ActivateMappyBrush(terrain, MBBrushMode.Painter);
+            }
+
+            EditorGUILayout.Space(4f);
+        }
+
+        static void ActivateMappyBrush(MGTerrain terrain, MBBrushMode brushMode)
+        {
+            MBEditorToolState.BrushMode = brushMode;
+            ActivateMappy(terrain, MBEditorAuthoringMode.Brush);
+        }
+
+        static void ActivateMappy(MGTerrain terrain, MBEditorAuthoringMode mode)
+        {
+            if (terrain == null)
+                return;
+
+            // The Scene overlay and its headless tool host are driven entirely
+            // by shared state. Do not create/focus MashBoxMapToolsWindow here;
+            // these component shortcuts should stay inside the Mappy panel.
+            if (Selection.activeGameObject != terrain.gameObject)
+                Selection.activeGameObject = terrain.gameObject;
+            MBEditorToolState.RequestMode(mode);
+            MBEditorToolState.ActiveEditing = true;
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+
+        [MenuItem("GameObject/MashBox/Terrain/Convert Selected Unity Terrain to MG Terrain...", false, 10)]
+        static void ConvertSelectedTerrain()
+        {
+            Terrain source = Selection.activeGameObject != null
+                ? Selection.activeGameObject.GetComponent<Terrain>()
+                : null;
+            if (source == null || source.terrainData == null)
+                return;
+
+            string absoluteFolder = EditorUtility.SaveFolderPanel(
+                "Choose MG Terrain Asset Folder",
+                Application.dataPath,
+                source.name + "_MGTerrain");
+            if (string.IsNullOrEmpty(absoluteFolder))
+                return;
+            string assetFolder = TerrainToMeshConverter.ToProjectAssetPath(absoluteFolder);
+            if (string.IsNullOrEmpty(assetFolder))
+            {
+                EditorUtility.DisplayDialog("MG Terrain", "Choose a folder inside this project's Assets folder.", "OK");
+                return;
+            }
+
+            var options = new TerrainConversionOptions
+            {
+                ConvertMesh = true,
+                AddMeshCollider = true,
+                ExportSplatMaps = true,
+                ConvertTrees = true,
+                ConvertDetails = true,
+                DisableSourceTerrain = true,
+                MaximumMeshResolution = 513
+            };
+            TerrainConversionSummary summary = TerrainToMeshConverter.Analyze(source);
+            if (summary.TreeCount > TerrainToMeshConverter.MaxTreeGameObjects)
+            {
+                EditorUtility.DisplayDialog(
+                    "MG Terrain Instance Limit",
+                    $"This Terrain has {summary.TreeCount:N0} trees. Tree conversion is limited to {TerrainToMeshConverter.MaxTreeGameObjects:N0} serialized instances. Dense details do not count against this limit because they use density maps.",
+                    "OK");
+                return;
+            }
+            if (!TerrainToMeshConverter.ConfirmLargeGameObjectConversions(summary, options))
+                return;
+
+            try
+            {
+                GameObject result = TerrainToMeshConverter.Convert(source, assetFolder, options);
+                Selection.activeGameObject = result;
+                EditorGUIUtility.PingObject(result);
+                EditorSceneManager.MarkSceneDirty(result.scene);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception, source);
+                EditorUtility.DisplayDialog("MG Terrain Conversion Failed", exception.Message, "OK");
+            }
+        }
+
+        [MenuItem("GameObject/MashBox/Terrain/Convert Selected Unity Terrain to MG Terrain...", true)]
+        static bool ValidateConvertSelectedTerrain()
+        {
+            return Selection.activeGameObject != null
+                && Selection.activeGameObject.GetComponent<Terrain>() != null;
+        }
+    }
+}
+
+#endif

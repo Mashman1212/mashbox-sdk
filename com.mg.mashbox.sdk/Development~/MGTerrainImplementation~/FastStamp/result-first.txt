@@ -1,0 +1,32 @@
+Running GPU stamp validation
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceMap' does not match filename 'Direct stamp validation target_Stamp_FarRangeAppearanceMap'
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceMap' does not match filename 'Direct stamp validation target_Stamp_FarRangeAppearanceMap'
+
+Prefab stamp total: 1.02s (1 tiles).
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceMap' does not match filename 'Direct stamp validation target_Stamp 1_FarRangeAppearanceMap'
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceMap' does not match filename 'Direct stamp validation target_Stamp 1_FarRangeAppearanceMap'
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceNormalMap' does not match filename 'Direct stamp validation target_Stamp 1_FarRangeAppearanceNormalMap'
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceNormalMap' does not match filename 'Direct stamp validation target_Stamp 1_FarRangeAppearanceNormalMap'
+
+Prefab stamp total: 0.86s (1 tiles).
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceMap' does not match filename 'Direct stamp validation target_Stamp 2_FarRangeAppearanceMap'
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceMap' does not match filename 'Direct stamp validation target_Stamp 2_FarRangeAppearanceMap'
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceNormalMap' does not match filename 'Direct stamp validation target_Stamp 2_FarRangeAppearanceNormalMap'
+
+Main Object Name 'Direct stamp validation target_FarRangeAppearanceNormalMap' does not match filename 'Direct stamp validation target_Stamp 2_FarRangeAppearanceNormalMap'
+
+Prefab stamp total: 1.90s (1 tiles).
+
+GPU stamp benchmark: actual hills prefab, 2048x2048 RGB + WS normal, including save/import: 1.90s.
+
+Direct prefab stamp PASS: unlit UV RGB, normals, non-readable sources, footprint preservation, original-map preservation, saved-map references after reimport, and project prefab sampling.
+
+COMPLETE

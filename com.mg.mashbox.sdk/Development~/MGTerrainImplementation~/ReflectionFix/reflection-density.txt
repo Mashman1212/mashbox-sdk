@@ -1,0 +1,59 @@
+        bool m_BuildingReflectionDetails;
+        readonly List<DetailCandidateChunk> m_ReflectionCandidates = new List<DetailCandidateChunk>();
+
+        void RenderCachedReflectionDetails(Camera camera)
+        {
+            m_ReflectionDetailCameraIds.Add(camera.GetInstanceID());
+            if (m_RenderCacheDirty || m_DetailRenderCacheDirty) return;
+            GeometryUtility.CalculateFrustumPlanes(camera, m_InstanceFrustumPlanes);
+            foreach (var batch in m_DrawBatches) DrawBatchInstances(batch, camera);
+#if UNITY_6000_0_OR_NEWER
+            if (m_DetailBrgUsesGpuGeneration) return; // Resident GPU cells are selected in BRG culling.
+#endif
+            if (MeshFilter == null || MeshFilter.sharedMesh == null) return;
+            // A one-shot capture cannot wait for frame-budgeted CPU mesh builds.
+            // Generate temporary instanced batches for the probe's own view, without
+            // replacing, evicting or advancing the gameplay detail cache.
+            Bounds bounds = MeshFilter.sharedMesh.bounds;
+            int remaining = UsesWorldBudget ? m_World.VisibleDetailBudget
+                : m_MaxVisibleDenseDetailInstances > 0 ? m_MaxVisibleDenseDetailInstances : int.MaxValue;
+            int previousDrawCalls = m_LastDensityDetailDrawCalls;
+            m_BuildingReflectionDetails = true;
+            ResetDenseDetailBatchAccumulators();
+            try
+            {
+                for (int layerIndex = 0; layerIndex < m_DensityDetailLayers.Count && remaining > 0; layerIndex++)
+                {
+                    var layer = m_DensityDetailLayers[layerIndex];
+                    if (layer == null || !layer.RenderingEnabled || layer.PaletteSourceOnly || layer.DensityMap == null
+                        || (uint)layer.PrototypeIndex >= m_Prototypes.Count) continue;
+                    var prototype = m_Prototypes[layer.PrototypeIndex];
+                    if (prototype == null || prototype.ShadowCasting == ShadowCastingMode.ShadowsOnly) continue;
+                    float distance = prototype.MaximumDrawDistance > 0 ? prototype.MaximumDrawDistance : camera.farClipPlane;
+                    if (EffectiveDetailDistance > 0) distance = Mathf.Min(distance, EffectiveDetailDistance);
+                    BuildDetailHierarchyCandidates(camera, m_InstanceFrustumPlanes, camera.transform.position,
+                        layerIndex, layer, bounds, layer.DensityMap.width, layer.DensityMap.height,
+                        Mathf.Clamp(m_DetailChunkCells, 2, 64), distance, m_ReflectionCandidates);
+                    m_ReflectionCandidates.Sort((a, b) => a.distance.CompareTo(b.distance));
+                    foreach (var candidate in m_ReflectionCandidates)
+                    {
+                        if (remaining <= 0) break;
+                        var chunk = BuildDensityDetailChunk(layerIndex, layer, prototype, bounds, candidate.cellSize,
+                            candidate.firstX, candidate.firstZ, candidate.densityLod, GetDetailDensityScale(candidate.densityLod));
+                        int allowed = Mathf.Min(remaining, chunk.instanceCount);
+                        foreach (var batch in chunk.batches)
+                            QueueDenseDetailBatch(batch, camera, allowed, ShadowCastingMode.Off,
+                                chunk.instanceCount, false, layerIndex);
+                        remaining -= allowed;
+                    }
+                }
+                FlushDenseDetailBatchAccumulators(camera);
+            }
+            finally
+            {
+                ResetDenseDetailBatchAccumulators();
+                m_BuildingReflectionDetails = false;
+                m_LastDensityDetailDrawCalls = previousDrawCalls;
+            }
+        }
+

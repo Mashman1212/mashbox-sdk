@@ -272,7 +272,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     return false;
                 }
 
-                float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                float scale = (visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0) ? nearScale : distantScale;
                 int allowed = Mathf.Min(
                     remaining,
                     GetBudgetedDetailInstanceCount(visible, scale));
@@ -280,6 +280,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     continue;
                 signature = unchecked(signature * 31 + RuntimeHelpers.GetHashCode(visible.chunk));
                 signature = unchecked(signature * 31 + allowed);
+                signature = unchecked(signature * 31 + visible.densityLod);
                 signature = unchecked(signature * 31 + visible.chunk.batches.Count);
                 for (int batchIndex = 0; batchIndex < visible.chunk.batches.Count; batchIndex++)
                 {
@@ -323,18 +324,19 @@ namespace MashBoxSDK.Maps.TerrainSystem
             for (int visibleIndex = 0; visibleIndex < m_VisibleDensityDetails.Count && remaining > 0; visibleIndex++)
             {
                 VisibleDensityDetail visible = m_VisibleDensityDetails[visibleIndex];
-                float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                float scale = (visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0) ? nearScale : distantScale;
                 int allowed = Mathf.Min(
                     remaining,
                     GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowed <= 0)
                     continue;
 
-                ShadowCastingMode shadowCasting = m_DenseDetailShadows
+                ShadowCastingMode shadowCasting = visible.prototype.Kind == InstanceKind.Tree || m_DenseDetailShadows
                     ? visible.prototype.ShadowCasting
                     : ShadowCastingMode.Off;
                 for (int batchIndex = 0; batchIndex < visible.chunk.batches.Count; batchIndex++)
-                    AppendBrgMatrices(visible.chunk.batches[batchIndex], shadowCasting, allowed, visible.chunk.layerIndex, visible.chunk.instanceCount, CanFadeDetail(visible.prototype));
+                    if (TreeBatchVisible(visible.chunk.batches[batchIndex], visible.densityLod))
+                        AppendBrgMatrices(visible.chunk.batches[batchIndex], shadowCasting, allowed, visible.chunk.layerIndex, visible.chunk.instanceCount, CanFadeDetail(visible.prototype));
                 remaining -= allowed;
             }
 
@@ -520,6 +522,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         sealed class ResidentGpuCell
         {
             internal DensityDetailChunk chunk;
+            internal ResidentGpuCell transformSource;
             internal GpuProceduralBuildGroup group;
             internal int start, capacity, population, requested, visible, tick;
             internal int generation = -1;
@@ -533,6 +536,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal FreeGpuRange(int start, int count) { this.start = start; this.count = count; }
         }
 
+        readonly Dictionary<(DensityDetailChunk, Matrix4x4), ResidentGpuCell> m_TreeTransformSources = new Dictionary<(DensityDetailChunk, Matrix4x4), ResidentGpuCell>();
+        readonly Dictionary<DensityDetailChunk, int> m_ResidentTreeLods = new Dictionary<DensityDetailChunk, int>();
         readonly List<ResidentGpuCell> m_ResidentGpuCells = new List<ResidentGpuCell>();
         readonly List<FreeGpuRange> m_FreeGpuRanges = new List<FreeGpuRange>();
         readonly Dictionary<DensityDetailChunk, int> m_ResidentVisibleCounts = new Dictionary<DensityDetailChunk, int>();
@@ -569,7 +574,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 ResidentGpuCell cell = m_ResidentGpuCells[i];
                 if (cell.tick == m_ResidentGpuTick) continue;
                 cell.group.residentCells.Remove(cell.chunk);
-                if (cell.capacity > 0) m_FreeGpuRanges.Add(new FreeGpuRange(cell.start, cell.capacity));
+                if (cell.transformSource == null)
+                {
+                    if (cell.capacity > 0) m_FreeGpuRanges.Add(new FreeGpuRange(cell.start, cell.capacity));
+                    if (cell.group.batch.prototype.Kind == InstanceKind.Tree)
+                        m_TreeTransformSources.Remove((cell.chunk, cell.group.relativeMatrix));
+                }
                 m_ResidentGpuCells.RemoveAt(i);
             }
             // Coalesce holes when movement releases cells. Rotation keeps all slots.
@@ -671,13 +681,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_IndirectVisibilityRanges.Clear(); m_IndirectArguments.Clear(); m_IndirectTopologies.Clear();
                 ResetGpuProceduralBuildGroups();
                 m_ResidentVisibleCounts.Clear();
+                m_ResidentTreeLods.Clear();
                 int remaining = budget, submitted = 0;
                 foreach (VisibleDensityDetail visible in m_VisibleDensityDetails)
                 {
-                    float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                    float scale = (visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0) ? nearScale : distantScale;
                     int allowed = Mathf.Min(remaining, GetBudgetedDetailInstanceCount(visible, scale));
                     if (allowed <= 0) continue;
                     m_ResidentVisibleCounts[visible.chunk] = allowed;
+                    m_ResidentTreeLods[visible.chunk] = visible.densityLod;
                     remaining -= allowed;
                     submitted += allowed;
                 }
@@ -688,7 +700,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 // distance-density cap. Visibility budgets only select its indices.
                 foreach (VisibleDensityDetail resident in m_ResidentDensityDetails)
                 {
-                    int population = keepAllResident ? resident.chunk.instanceCount : GetVisibleDensityDetailInstanceCount(resident);
+                    int population = keepAllResident || resident.prototype.Kind == InstanceKind.Tree ? resident.chunk.instanceCount : GetVisibleDensityDetailInstanceCount(resident);
                     if (population <= 0 || !resident.chunk.gpuProcedural) continue;
                     m_ResidentVisibleCounts.TryGetValue(resident.chunk, out int allowed);
                     if (!m_GpuPrototypeGroups.TryGetValue(resident.prototype, out var prototypeGroups))
@@ -709,10 +721,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
                                 FailDensityDetailBrg($"Material '{material?.name}' has no DOTS_INSTANCING_ON keyword.");
                                 return false;
                             }
-                            var shadow = m_DenseDetailShadows ? resident.prototype.ShadowCasting : ShadowCastingMode.Off;
+                            var shadow = resident.prototype.Kind == InstanceKind.Tree || m_DenseDetailShadows ? resident.prototype.ShadowCasting : ShadowCastingMode.Off;
                             var group = GetGpuProceduralBuildGroup(part.mesh, part.subMesh, material,
                                 resident.prototype, shadow, part.relativeMatrix);
-                            prototypeGroups.groups.Add(group);
+                            group.batch.treeLodMask |= part.treeLodMask;
+                            if (!prototypeGroups.groups.Contains(group)) prototypeGroups.groups.Add(group);
                         }
                     }
                     foreach (var group in prototypeGroups.groups)
@@ -720,20 +733,27 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         if (!group.residentCells.TryGetValue(resident.chunk, out ResidentGpuCell cell))
                         {
                             cell = new ResidentGpuCell { chunk = resident.chunk, group = group };
+                            if (resident.prototype.Kind == InstanceKind.Tree)
+                            {
+                                var transformKey = (resident.chunk, group.relativeMatrix);
+                                if (m_TreeTransformSources.TryGetValue(transformKey, out var source)) cell.transformSource = source;
+                                else m_TreeTransformSources.Add(transformKey, cell);
+                            }
                             group.residentCells.Add(resident.chunk, cell);
                             m_ResidentGpuCells.Add(cell);
                         }
                         cell.tick = m_ResidentGpuTick;
                         cell.requested = population;
-                        cell.visible = allowed;
-                        group.outputCount += allowed;
-                        visibleInstances += allowed;
+                        m_ResidentTreeLods.TryGetValue(resident.chunk, out int selectedLod);
+                        cell.visible = TreeBatchVisible(group.batch, selectedLod) ? allowed : 0;
+                        group.outputCount += cell.visible;
+                        visibleInstances += cell.visible;
                     }
                 }
                 ReleaseUnusedResidentGpuCells();
                 foreach (ResidentGpuCell cell in m_ResidentGpuCells)
                 {
-                    if (cell.capacity >= cell.requested) continue;
+                    if (cell.transformSource != null || cell.capacity >= cell.requested) continue;
                     if (cell.capacity > 0) m_FreeGpuRanges.Add(new FreeGpuRange(cell.start, cell.capacity));
                     cell.capacity = Mathf.NextPowerOfTwo(cell.requested);
                     cell.start = AllocateResidentGpuRange(cell.capacity);
@@ -746,7 +766,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 int commandCount = 0;
                 foreach (ResidentGpuCell cell in m_ResidentGpuCells)
                 {
-                    if (cell.generation == m_DetailGpuGeneration && cell.population >= cell.requested) continue;
+                    if (cell.transformSource != null || (cell.generation == m_DetailGpuGeneration && cell.population >= cell.requested)) continue;
                     cell.population = Mathf.Max(cell.population, cell.requested);
                     AppendGpuProceduralSpawns(cell.group, cell.chunk, cell.population, cell.start);
                     LastRegeneratedDetailInstances += cell.population;
@@ -788,6 +808,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     }
                     foreach (ResidentGpuCell cell in m_ResidentGpuCells) cell.generation = m_DetailGpuGeneration;
                 }
+                foreach (var cell in m_ResidentGpuCells)
+                    if (cell.transformSource != null)
+                    {
+                        var source = cell.transformSource;
+                        cell.start = source.start; cell.capacity = source.capacity;
+                        cell.population = source.population; cell.generation = source.generation;
+                    }
                 bool prepared = FinalizeResidentGpuVisibility(submitted, false);
                 if (prepared) m_GpuDetailCellSelectionVersion = m_DetailCellSelectionVersion;
                 return prepared;
@@ -812,12 +839,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
             int remaining = budget, selectedCells = 0;
             foreach (var visible in m_VisibleDensityDetails)
             {
-                float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                float scale = (visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0) ? nearScale : distantScale;
                 int allowed = Mathf.Min(remaining, GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowed <= 0 || !m_GpuPrototypeGroups.ContainsKey(visible.prototype)) continue;
                 // One changed population is enough to require rebuilding. Continuing to
                 // compare every other cell repeats work that the rebuild must do anyway.
                 if (!m_ResidentVisibleCounts.TryGetValue(visible.chunk, out int previous) || previous != allowed) return false;
+                if (visible.prototype.Kind == InstanceKind.Tree && (!m_ResidentTreeLods.TryGetValue(visible.chunk, out int lod) || lod != visible.densityLod)) return false;
                 remaining -= allowed;
                 submitted += allowed;
                 selectedCells++;
@@ -840,18 +868,20 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_IndirectDetailDrawsReady = false;
             m_IndirectVisibilityRanges.Clear(); m_IndirectArguments.Clear(); m_IndirectTopologies.Clear();
             m_ResidentVisibleCounts.Clear();
+            m_ResidentTreeLods.Clear();
             foreach (var group in m_ActiveDetailGpuBuildGroups) group.visibleCells.Clear();
             int remaining = budget, submitted = 0;
             foreach (var visible in m_VisibleDensityDetails)
             {
-                float scale = visible.densityLod == 0 ? nearScale : distantScale;
+                float scale = (visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0) ? nearScale : distantScale;
                 int allowed = Mathf.Min(remaining, GetBudgetedDetailInstanceCount(visible, scale));
                 if (allowed <= 0) continue;
                 if (!m_GpuPrototypeGroups.TryGetValue(visible.prototype, out var groups)) continue;
                 m_ResidentVisibleCounts[visible.chunk] = allowed;
+                m_ResidentTreeLods[visible.chunk] = visible.densityLod;
                 foreach (var group in groups.groups)
                 {
-                    if (!group.residentCells.TryGetValue(visible.chunk, out var cell)) continue;
+                    if (!TreeBatchVisible(group.batch, visible.densityLod) || !group.residentCells.TryGetValue(visible.chunk, out var cell)) continue;
                     cell.visible = allowed;
                     group.visibleCells.Add(cell);
                 }
@@ -946,6 +976,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (!group.active)
             {
                 group.active = true;
+                group.batch.treeLodMask = 0;
                 group.batch.mesh = mesh;
                 group.batch.subMesh = subMesh;
                 group.batch.material = material;
@@ -1104,7 +1135,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
             {
                 DensityDetailLayer layer = m_DensityDetailLayers[layerIndex];
                 if (layer != null)
-                    maximum = Mathf.Max(maximum, layer.MaxHeight);
+                {
+                    maximum = Mathf.Max(maximum, layer.MaximumPaintedHeight);
+                    if (TryGetTreeLayerBounds(layer, out Bounds treeBounds))
+                        maximum = Mathf.Max(maximum, (treeBounds.center.magnitude + treeBounds.extents.magnitude + Mathf.Abs(layer.YOffset))
+                            * transform.localToWorldMatrix.lossyScale.magnitude);
+                }
             }
             return maximum;
         }
@@ -1453,6 +1489,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ResetGpuProceduralBuildGroups();
             m_DetailGpuBuildGroups.Clear();
             m_GpuPrototypeGroups.Clear();
+            m_TreeTransformSources.Clear();
+            m_ResidentTreeLods.Clear();
             m_ResidentGpuCells.Clear();
             m_FreeGpuRanges.Clear();
             m_ResidentVisibleCounts.Clear();

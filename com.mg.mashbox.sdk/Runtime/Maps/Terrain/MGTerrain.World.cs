@@ -64,7 +64,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             if (!m_WorldPendingDraw) return;
             foreach (var visible in m_VisibleDensityDetails)
-                if (visible.densityLod == 0) near += GetVisibleDensityDetailInstanceCount(visible);
+                if ((visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0)) near += GetVisibleDensityDetailInstanceCount(visible);
                 else distant += GetVisibleDensityDetailInstanceCount(visible);
         }
         readonly Dictionary<DensityDetailChunk, int> m_WorldCellAllocations = new Dictionary<DensityDetailChunk, int>();
@@ -87,7 +87,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             foreach (var visible in m_VisibleDensityDetails)
             {
                 int population = GetVisibleDensityDetailInstanceCount(visible);
-                int count = visible.densityLod == 0
+                int count = (visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0)
                     ? MGTerrainWorld.AllocateCellShare(population, nearScale, budget - allocated, ref nearRemainder)
                     : MGTerrainWorld.AllocateCellShare(population, distantScale, budget - allocated, ref distantRemainder);
                 m_WorldCellAllocations[visible.chunk] = count;
@@ -113,6 +113,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 bool canStream = !Application.isPlaying || !m_UseBatchRendererGroup || IsDensityDetailStreamingCamera(camera);
                 m_WorldReuseSelection = UsesWorldBudget && Application.isPlaying && canStream
                     && !m_DetailRenderCacheDirty && CanReuseDensityDetailStreamingSet(camera);
+                // Grass streaming distance must not unload a tile that still has visible trees.
+                foreach (var layer in m_DensityDetailLayers)
+                {
+                    if (layer == null || !layer.RenderingEnabled || layer.PaletteSourceOnly
+                        || (uint)layer.PrototypeIndex >= m_Prototypes.Count) continue;
+                    var prototype = m_Prototypes[layer.PrototypeIndex];
+                    if (prototype == null || prototype.Kind != InstanceKind.Tree) continue;
+                    float treeDistance = prototype.MaximumDrawDistance > 0f ? prototype.MaximumDrawDistance : camera.farClipPlane;
+                    unloadDistance = Mathf.Max(unloadDistance, treeDistance + 64f);
+                }
                 bool outside = UsesWorldBudget && canStream && !KeepAllDetailCellsResident && MeshRenderer != null
                     && MeshRenderer.bounds.SqrDistance(camera.transform.position) > unloadDistance * unloadDistance;
                 if (outside && !m_WorldDetailsSleeping)

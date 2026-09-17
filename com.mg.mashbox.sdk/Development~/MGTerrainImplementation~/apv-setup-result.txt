@@ -1,0 +1,11 @@
+SUCCESS
+Scene saved: Assets/Maps/Cotswold Ridge/COTSWOLD RIDGE [MATT] [V02].unity
+Environment meshes contributing and receiving probes: 27452
+Baking set: Assets/Maps/Cotswold Ridge/APV/Cotswold APV Baking Set.asset
+Lighting: Assets/Maps/Cotswold Ridge/APV/Cotswold APV Lighting.asset
+Volumes: 2
+Coverage: scene, 3m minimum; tunnel detail: 1m minimum
+Sun: Mixed / Baked Indirect
+Bake has not been started.
+VERIFIED: active HDRP APV enabled, L2 retained, default scenario and virtual-offset/dilation settings initialized.
+VERIFIED: active HDRP APV enabled, L2 retained, default scenario and virtual-offset/dilation settings initialized.

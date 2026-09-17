@@ -1,0 +1,21 @@
+Playing=False
+
+CAMERA Reflection Probe RenderCamera (WORLD REFLECTION: PositiveX) (134.78, 74.24, 889.08) (1.00, 0.00, 0.00)
+Terrain_(0.00, -250.00, 512.00)_MGTerrain dirty=False/False cache cpu=1073 gpu=0 face cells=395 draws=415 resident=0
+
+CAMERA Reflection Probe RenderCamera (WORLD REFLECTION: NegativeX) (134.78, 74.24, 889.08) (-1.00, 0.00, 0.00)
+Terrain_(0.00, -250.00, 512.00)_MGTerrain dirty=False/False cache cpu=1073 gpu=0 face cells=66 draws=66 resident=0
+
+CAMERA Reflection Probe RenderCamera (WORLD REFLECTION: PositiveY) (134.78, 74.24, 889.08) (0.00, 1.00, 0.00)
+Terrain_(0.00, -250.00, 512.00)_MGTerrain dirty=False/False cache cpu=1073 gpu=0 face cells=0 draws=0 resident=0
+
+CAMERA Reflection Probe RenderCamera (WORLD REFLECTION: NegativeY) (134.78, 74.24, 889.08) (0.00, -1.00, 0.00)
+Terrain_(0.00, -250.00, 512.00)_MGTerrain dirty=False/False cache cpu=1073 gpu=0 face cells=0 draws=0 resident=0
+
+CAMERA Reflection Probe RenderCamera (WORLD REFLECTION: PositiveZ) (134.78, 74.24, 889.08) (0.00, 0.00, 1.00)
+Terrain_(0.00, -250.00, 512.00)_MGTerrain dirty=False/False cache cpu=1073 gpu=0 face cells=677 draws=742 resident=0
+
+CAMERA Reflection Probe RenderCamera (WORLD REFLECTION: NegativeZ) (134.78, 74.24, 889.08) (0.00, 0.00, -1.00)
+Terrain_(0.00, -250.00, 512.00)_MGTerrain dirty=False/False cache cpu=1073 gpu=0 face cells=0 draws=0 resident=0
+
+Faces observed=6

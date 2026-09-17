@@ -1,0 +1,24 @@
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Utility\RuntimeMeshCombiner.cs(510,25): warning CS0108: 'RuntimeMeshCombiner.DestroyObject(Object)' hides inherited member 'Object.DestroyObject(Object)'. Use the new keyword if hiding was intended.
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Rendering\Instancer\InstancingManager.cs(17,32): warning CS0618: 'Object.FindObjectOfType<T>()' is obsolete: 'Object.FindObjectOfType has been deprecated. Use Object.FindAnyObjectByType instead.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Spline\MBSplineMeshGenerator.cs(283,21): warning CS0162: Unreachable code detected
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Spline\MBSplineMeshGenerator.cs(413,21): warning CS0162: Unreachable code detected
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Spline\MBSplineMeshGenerator.cs(276,23): warning CS0219: The variable 'UVMiterAccum' is assigned but its value is never used
+Assets\MGTerrainImplementation~\WorldCellStartup\MGTerrain.BRG.cs(1338,24): warning CS0618: 'BatchPackedCullingViewID.GetInstanceID()' is obsolete: 'GetInstanceID() is obsolete, use GetEntityId() instead.'
+Assets\MGTerrainImplementation~\WorldCellStartup\MGTerrain.BRG.cs(1338,65): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+Assets\MGTerrainImplementation~\WorldCellStartup\MGTerrain.Details.cs(1930,17): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+Assets\MGTerrainImplementation~\WorldCellStartup\MGTerrain.Details.cs(1947,41): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+Assets\MGTerrainImplementation~\WorldCellStartup\MGTerrain.Details.cs(2181,45): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Terrain\MGTerrain.SurfaceTiles.cs(335,69): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Terrain\MGTerrain.SurfaceTiles.cs(336,87): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Terrain\MGTerrain.cs(789,45): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Terrain\MGTerrain.cs(846,53): warning CS0618: 'BatchPackedCullingViewID.GetInstanceID()' is obsolete: 'GetInstanceID() is obsolete, use GetEntityId() instead.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Terrain\MGTerrainWorld.BRG.cs(142,20): warning CS0618: 'BatchPackedCullingViewID.GetInstanceID()' is obsolete: 'GetInstanceID() is obsolete, use GetEntityId() instead.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Terrain\MGTerrainWorld.BRG.cs(142,54): warning CS0618: 'Object.GetInstanceID()' is obsolete: 'GetInstanceID is deprecated. Use GetEntityId instead. This will be removed in a future version.'
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Audio\MBSimpleFmodEventAudio.cs(24,39): warning CS0414: The field 'MBSimpleFmodEventAudio.allowFadeOutOnStop' is assigned but its value is never used
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Audio\MBSimpleFmodEventAudio.cs(27,39): warning CS0414: The field 'MBSimpleFmodEventAudio.updatePositionWhilePlaying' is assigned but its value is never used
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Audio\MBPhysicsAudioEventEmitter.cs(28,41): warning CS0414: The field 'MBPhysicsAudioEventEmitter.continuousParameterName' is assigned but its value is never used
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Audio\MBSimpleFmodBankLoader.cs(14,39): warning CS0414: The field 'MBSimpleFmodBankLoader.loadSamples' is assigned but its value is never used
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\MBExpertLine.cs(24,56): warning CS0414: The field 'MBExpertLine.allowGroundedTouches' is assigned but its value is never used
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Audio\MBPhysicsAudioEventEmitter.cs(30,39): warning CS0414: The field 'MBPhysicsAudioEventEmitter.startContinuousEventOnStart' is assigned but its value is never used
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\Audio\MBSimpleFmodEventAudio.cs(15,40): warning CS0414: The field 'MBSimpleFmodEventAudio.volume' is assigned but its value is never used
+D:\mashbox-sdk\com.mg.mashbox.sdk\Runtime\Maps\MBFourCross.cs(12,55): warning CS0414: The field 'MBFourCross.minimumRiders' is assigned but its value is never used

@@ -1,0 +1,381 @@
+using System;
+using MashBoxSDK.Maps.Spline;
+using UnityEditor;
+using UnityEngine;
+
+namespace MashBoxSDK.MapTools
+{
+    public enum MBEditorAuthoringMode
+    {
+        Brush,
+        SplineLoft,
+        Spline,
+        MeshSculpt,
+        UVSpline,
+        Terrain,
+        UVInspector,
+        Mesh
+    }
+
+    public enum MBEditorAuthoringCategory { Brush, Spline, Terrain, Mesh, UVInspector }
+
+    public enum MBBrushMode { Decor, Painter, SplatMap }
+    public enum MBSculptMode { Displace, Smooth, Flatten, SeamFit = 4, MeshStamp = 5, SetHeight = 6 }
+    public enum MBUvHandleMode { MoveAndUv, SideOffset, UvScale }
+    public enum MBEditorToolAction { CreateSpline, CreateLoftSpline }
+    public enum MBSplatPaintMode { Color, TextureId }
+
+    [InitializeOnLoad]
+    internal static class MBEditorToolState
+    {
+        const string ModePreferenceKey = "MashBoxSDK.SelectedMapAuthoringToolTab";
+        const string ModeOrderPreferenceKey = "MashBoxSDK.SelectedMapAuthoringToolTab.Order";
+        const string ActiveEditingPreferenceKey = "MashBoxSDK.EditorTools.ActiveEditing";
+        const string BrushModePreferenceKey = "MashBoxSDK.EditorTools.BrushMode";
+        const string BrushRadiusPreferenceKey = "MashBoxSDK.EditorTools.BrushRadius";
+        const string BrushStrengthPreferenceKey = "MashBoxSDK.EditorTools.BrushStrength";
+        const string PaintColorPreferenceKey = "MashBoxSDK.EditorTools.PaintColor";
+        const string SplatUvChannelPreferenceKey = "MashBoxSDK.EditorTools.SplatUvChannel";
+        const string SplatPaintModePreferenceKey = "MashBoxSDK.EditorTools.SplatPaintMode";
+        const string SplatTextureIdPreferenceKey = "MashBoxSDK.EditorTools.SplatTextureId";
+        const string SculptModePreferenceKey = "MashBoxSDK.EditorTools.SculptMode";
+        const string UvModePreferenceKey = "MashBoxSDK.EditorTools.UvMode";
+        const string LastBrushModePreferenceKey = "MashBoxSDK.EditorTools.LastBrushMode";
+        const string LastSplineModePreferenceKey = "MashBoxSDK.EditorTools.LastSplineMode";
+        const string CurrentModeOrder = "SplineAfterLoft";
+        static bool s_LoftUndoRefreshQueued;
+
+        static MBEditorToolState()
+        {
+            Undo.undoRedoPerformed += QueueLoftUndoRefresh;
+        }
+
+        internal static event Action ModeChanged;
+        internal static event Action ActiveEditingChanged;
+        internal static event Action BrushModeChanged;
+        internal static event Action BrushSettingsChanged;
+        internal static event Action PaintColorChanged;
+        internal static event Action SplatUvChannelChanged;
+        internal static event Action SplatPaintSettingsChanged;
+        internal static event Action SculptModeChanged;
+        internal static event Action SculptableOnlyChanged;
+        internal static event Action UvModeChanged;
+        internal static event Action<MBEditorToolAction> ActionRequested;
+
+        internal static bool SculptableOnly
+        {
+            get => EditorPrefs.GetBool("MashBoxSDK.EditorTools.SculptableOnly", true);
+            set
+            {
+                if (SculptableOnly == value) return;
+                EditorPrefs.SetBool("MashBoxSDK.EditorTools.SculptableOnly", value);
+                SculptableOnlyChanged?.Invoke();
+                SceneView.RepaintAll();
+            }
+        }
+
+        internal static MBEditorAuthoringMode Mode
+        {
+            get
+            {
+                int savedMode = GetMigratedModeIndex();
+                return Enum.IsDefined(typeof(MBEditorAuthoringMode), savedMode)
+                    ? (MBEditorAuthoringMode)savedMode
+                    : MBEditorAuthoringMode.Brush;
+            }
+            set => RequestMode(value);
+        }
+
+        internal static MBEditorAuthoringCategory Category => Mode switch
+        {
+            MBEditorAuthoringMode.Terrain => MBEditorAuthoringCategory.Terrain,
+            MBEditorAuthoringMode.SplineLoft => MBEditorAuthoringCategory.Spline,
+            MBEditorAuthoringMode.Spline => MBEditorAuthoringCategory.Spline,
+            MBEditorAuthoringMode.UVSpline => MBEditorAuthoringCategory.Spline,
+            MBEditorAuthoringMode.UVInspector => MBEditorAuthoringCategory.UVInspector,
+            MBEditorAuthoringMode.Mesh => MBEditorAuthoringCategory.Mesh,
+            _ => MBEditorAuthoringCategory.Brush
+        };
+
+        internal static bool ActiveEditing
+        {
+            get => EditorPrefs.GetBool(ActiveEditingPreferenceKey, false);
+            set
+            {
+                if (ActiveEditing == value)
+                    return;
+
+                EditorPrefs.SetBool(ActiveEditingPreferenceKey, value);
+                UVSplineEditor.SceneEditingEnabled = value && Mode == MBEditorAuthoringMode.UVSpline;
+                ActiveEditingChanged?.Invoke();
+            }
+        }
+
+        internal static void RequestMode(MBEditorAuthoringMode mode)
+        {
+            if (Mode == mode)
+                return;
+
+            EditorPrefs.SetInt(ModePreferenceKey, (int)mode);
+            EditorPrefs.SetString(ModeOrderPreferenceKey, CurrentModeOrder);
+            if (IsSplineMode(mode))
+                EditorPrefs.SetInt(LastSplineModePreferenceKey, (int)mode);
+            else if (IsBrushMode(mode))
+                EditorPrefs.SetInt(LastBrushModePreferenceKey, (int)mode);
+            UVSplineEditor.SceneEditingEnabled = ActiveEditing && mode == MBEditorAuthoringMode.UVSpline;
+            ModeChanged?.Invoke();
+        }
+
+        internal static void RequestCategory(MBEditorAuthoringCategory category)
+        {
+            if (Category == category)
+                return;
+
+            MBEditorAuthoringMode currentMode = Mode;
+            if (IsSplineMode(currentMode))
+                EditorPrefs.SetInt(LastSplineModePreferenceKey, (int)currentMode);
+            else if (IsBrushMode(currentMode))
+                EditorPrefs.SetInt(LastBrushModePreferenceKey, (int)currentMode);
+
+            if (category == MBEditorAuthoringCategory.Terrain)
+            {
+                RequestMode(MBEditorAuthoringMode.Terrain);
+                return;
+            }
+            if (category == MBEditorAuthoringCategory.UVInspector)
+            {
+                RequestMode(MBEditorAuthoringMode.UVInspector);
+                return;
+            }
+            if (category == MBEditorAuthoringCategory.Mesh)
+            {
+                RequestMode(MBEditorAuthoringMode.Mesh);
+                return;
+            }
+
+            bool splineCategory = category == MBEditorAuthoringCategory.Spline;
+            string preferenceKey = splineCategory ? LastSplineModePreferenceKey : LastBrushModePreferenceKey;
+            MBEditorAuthoringMode fallback = splineCategory
+                ? MBEditorAuthoringMode.SplineLoft
+                : MBEditorAuthoringMode.Brush;
+            MBEditorAuthoringMode requestedMode = (MBEditorAuthoringMode)EditorPrefs.GetInt(
+                preferenceKey,
+                (int)fallback);
+
+            if (splineCategory != IsSplineMode(requestedMode))
+                requestedMode = fallback;
+
+            RequestMode(requestedMode);
+        }
+
+        internal static bool IsBrushMode(MBEditorAuthoringMode mode)
+        {
+            return mode == MBEditorAuthoringMode.Brush
+                || mode == MBEditorAuthoringMode.MeshSculpt;
+        }
+
+        internal static bool IsSplineMode(MBEditorAuthoringMode mode)
+        {
+            return mode == MBEditorAuthoringMode.SplineLoft
+                || mode == MBEditorAuthoringMode.Spline
+                || mode == MBEditorAuthoringMode.UVSpline;
+        }
+
+        internal static MBBrushMode BrushMode
+        {
+            get => (MBBrushMode)EditorPrefs.GetInt(BrushModePreferenceKey, (int)MBBrushMode.Decor);
+            set
+            {
+                if (BrushMode == value) return;
+                EditorPrefs.SetInt(BrushModePreferenceKey, (int)value);
+                BrushModeChanged?.Invoke();
+            }
+        }
+
+        internal const float MaxBrushRadius = 100f;
+
+        internal static float BrushRadius
+        {
+            get => Mathf.Clamp(EditorPrefs.GetFloat(BrushRadiusPreferenceKey, 2f), 0.1f, MaxBrushRadius);
+            set
+            {
+                float clamped = Mathf.Clamp(value, 0.1f, MaxBrushRadius);
+                if (Mathf.Approximately(BrushRadius, clamped))
+                    return;
+
+                EditorPrefs.SetFloat(BrushRadiusPreferenceKey, clamped);
+                BrushSettingsChanged?.Invoke();
+            }
+        }
+
+        internal static float BrushStrength
+        {
+            get => Mathf.Clamp(EditorPrefs.GetFloat(BrushStrengthPreferenceKey, 0.5f), 0.01f, 1f);
+            set
+            {
+                float clamped = Mathf.Clamp(value, 0.01f, 1f);
+                if (Mathf.Approximately(BrushStrength, clamped))
+                    return;
+
+                EditorPrefs.SetFloat(BrushStrengthPreferenceKey, clamped);
+                BrushSettingsChanged?.Invoke();
+            }
+        }
+
+        internal static Color PaintColor
+        {
+            get
+            {
+                string savedColor = EditorPrefs.GetString(PaintColorPreferenceKey, "#FFFFFFFF");
+                return ColorUtility.TryParseHtmlString(savedColor, out Color color)
+                    ? color
+                    : Color.white;
+            }
+            set
+            {
+                Color clamped = new Color(
+                    Mathf.Clamp01(value.r),
+                    Mathf.Clamp01(value.g),
+                    Mathf.Clamp01(value.b),
+                    Mathf.Clamp01(value.a));
+                if (PaintColor == clamped)
+                    return;
+
+                EditorPrefs.SetString(PaintColorPreferenceKey, "#" + ColorUtility.ToHtmlStringRGBA(clamped));
+                PaintColorChanged?.Invoke();
+            }
+        }
+
+        internal static int SplatUvChannel
+        {
+            get => Mathf.Clamp(EditorPrefs.GetInt(SplatUvChannelPreferenceKey, 2), 0, 3);
+            set
+            {
+                int clamped = Mathf.Clamp(value, 0, 3);
+                if (SplatUvChannel == clamped)
+                    return;
+
+                EditorPrefs.SetInt(SplatUvChannelPreferenceKey, clamped);
+                SplatUvChannelChanged?.Invoke();
+            }
+        }
+
+        internal static MBSplatPaintMode SplatPaintMode
+        {
+            get
+            {
+                int savedMode = EditorPrefs.GetInt(
+                    SplatPaintModePreferenceKey,
+                    (int)MBSplatPaintMode.Color);
+                return Enum.IsDefined(typeof(MBSplatPaintMode), savedMode)
+                    ? (MBSplatPaintMode)savedMode
+                    : MBSplatPaintMode.Color;
+            }
+            set
+            {
+                if (SplatPaintMode == value)
+                    return;
+
+                EditorPrefs.SetInt(SplatPaintModePreferenceKey, (int)value);
+                SplatPaintSettingsChanged?.Invoke();
+            }
+        }
+
+        internal static int SplatTextureId
+        {
+            get => Mathf.Clamp(EditorPrefs.GetInt(SplatTextureIdPreferenceKey, 0), 0, 7);
+            set
+            {
+                int clamped = Mathf.Clamp(value, 0, 7);
+                if (SplatTextureId == clamped)
+                    return;
+
+                EditorPrefs.SetInt(SplatTextureIdPreferenceKey, clamped);
+                SplatPaintSettingsChanged?.Invoke();
+            }
+        }
+
+        internal static MBSculptMode SculptMode
+        {
+            get => (MBSculptMode)EditorPrefs.GetInt(SculptModePreferenceKey, (int)MBSculptMode.Displace);
+            set
+            {
+                if (SculptMode == value) return;
+                EditorPrefs.SetInt(SculptModePreferenceKey, (int)value);
+                SculptModeChanged?.Invoke();
+            }
+        }
+
+        internal static MBUvHandleMode UvMode
+        {
+            get => (MBUvHandleMode)EditorPrefs.GetInt(UvModePreferenceKey, (int)MBUvHandleMode.MoveAndUv);
+            set
+            {
+                if (UvMode == value) return;
+                EditorPrefs.SetInt(UvModePreferenceKey, (int)value);
+                UvModeChanged?.Invoke();
+            }
+        }
+
+        internal static void RequestAction(MBEditorToolAction action)
+        {
+            if (ActiveEditing)
+                ActionRequested?.Invoke(action);
+        }
+
+        static void QueueLoftUndoRefresh()
+        {
+            if (!IsSplineMode(Mode) || s_LoftUndoRefreshQueued)
+                return;
+
+            s_LoftUndoRefreshQueued = true;
+            EditorApplication.delayCall -= RefreshLoftsAfterUndo;
+            EditorApplication.delayCall += RefreshLoftsAfterUndo;
+        }
+
+        static void RefreshLoftsAfterUndo()
+        {
+            EditorApplication.delayCall -= RefreshLoftsAfterUndo;
+            s_LoftUndoRefreshQueued = false;
+
+            MultiSplineLoft[] lofts = UnityEngine.Object.FindObjectsByType<MultiSplineLoft>(
+                UnityEngine.FindObjectsInactive.Include,
+                UnityEngine.FindObjectsSortMode.None);
+            for (int i = 0; i < lofts.Length; i++)
+            {
+                MultiSplineLoft loft = lofts[i];
+                if (loft == null || EditorUtility.IsPersistent(loft) || !loft.gameObject.scene.IsValid())
+                    continue;
+
+                try
+                {
+                    loft.Regenerate();
+                }
+                catch (Exception exception)
+                {
+                    UnityEngine.Debug.LogException(exception, loft);
+                }
+            }
+
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+
+        static int GetMigratedModeIndex()
+        {
+            int savedMode = EditorPrefs.GetInt(ModePreferenceKey, (int)MBEditorAuthoringMode.Brush);
+            string savedOrder = EditorPrefs.GetString(ModeOrderPreferenceKey, string.Empty);
+            if (string.Equals(savedOrder, CurrentModeOrder, StringComparison.Ordinal))
+                return savedMode;
+
+            // Spline was inserted after Spline Loft. Preserve the meaning of
+            // previously saved Mesh Sculpt, UV Spline, and Terrain indices.
+            if (savedMode >= 2)
+                savedMode++;
+
+            EditorPrefs.SetInt(ModePreferenceKey, savedMode);
+            EditorPrefs.SetString(ModeOrderPreferenceKey, CurrentModeOrder);
+            return savedMode;
+        }
+    }
+}

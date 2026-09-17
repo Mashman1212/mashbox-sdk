@@ -651,6 +651,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             bool usesLinkedMaterial = MGLitTrailLinkedMaterialUtility.UsesLinkedMaterial(material);
             using (new EditorGUI.DisabledScope(usesLinkedMaterial))
             {
+                DrawCliffControls(materialEditor, properties);
                 DrawPuddleControls(materialEditor, properties);
                 DrawGlobalHeightControls(materialEditor, properties);
                 DrawAuxiliaryNormals(materialEditor, properties);
@@ -1313,6 +1314,23 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             string path = AssetDatabase.GetAssetPath(texture);
             if (!string.IsNullOrEmpty(path))
                 paths.Add(path);
+        }
+
+        private static void DrawCliffControls(MaterialEditor materialEditor, MaterialProperty[] properties)
+        {
+            MaterialProperty cliffBaseMap = FindOptionalProperty("_CliffBaseMap", properties);
+            MaterialProperty cliffHeightMap = FindOptionalProperty("_CliffHeightMap", properties);
+            if (cliffBaseMap == null && cliffHeightMap == null)
+                return;
+
+            GUILayout.Space(8f);
+            EditorGUILayout.LabelField("Cliff", EditorStyles.boldLabel);
+            if (cliffBaseMap != null)
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Cliff Base Map", "Base texture used by the cliff surface."), cliffBaseMap);
+            if (cliffHeightMap != null)
+                materialEditor.TexturePropertySingleLine(
+                    new GUIContent("Cliff Height Map", "Height texture used by the cliff surface."), cliffHeightMap);
         }
 
         private static void DrawPuddleControls(MaterialEditor materialEditor, MaterialProperty[] properties)

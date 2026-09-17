@@ -1,0 +1,12 @@
+Running GPU stamp validation
+Prefab stamp total: 0.83s (1 tiles).
+
+Prefab stamp total: 0.79s (1 tiles).
+
+Prefab stamp total: 1.53s (1 tiles).
+
+GPU stamp benchmark: actual hills prefab, 2048x2048 RGB + WS normal, including save/import: 1.53s.
+
+Direct prefab stamp PASS: unlit UV RGB, normals, non-readable sources, footprint preservation, original-map preservation, saved-map references after reimport, and project prefab sampling.
+
+COMPLETE

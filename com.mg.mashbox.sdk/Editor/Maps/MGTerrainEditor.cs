@@ -218,8 +218,9 @@ namespace MashBoxSDK.MapTools
             DrawMappyToolLauncher(terrain);
 
             DrawDetailLayerVisibility(terrain);
-            DrawPrototypeGrid(terrain);
+            DrawPaintModeToggle(terrain);
             DrawDetailPainter(terrain);
+            DrawPrototypeGrid(terrain);
             DrawHolePainter(terrain);
             DrawFarGrassBake(terrain);
             m_ShowAdvanced = EditorGUILayout.Foldout(m_ShowAdvanced, "Advanced", true);
@@ -444,17 +445,7 @@ namespace MashBoxSDK.MapTools
 
                 EditorGUILayout.Space();
                 }
-                EditorGUILayout.LabelField("Clear Details Under Lofts", EditorStyles.boldLabel);
-                m_LoftEdgeWidth = EditorGUILayout.Slider(new GUIContent("Edge Feather (Metres)", "Positive feathers outside the loft; negative feathers inside, preserving grass near its edge. Reapply from the original map to restore previously removed grass."), m_LoftEdgeWidth, -10f, 10f);
-                m_LoftEdgeVariation = EditorGUILayout.Slider("Edge Variation", m_LoftEdgeVariation, 0f, 1f);
-                m_LoftNoiseScale = Mathf.Max(0.01f, EditorGUILayout.FloatField("Edge Patch Size (Metres)", m_LoftNoiseScale));
-                m_LoftEdgeSeed = EditorGUILayout.IntField("Edge Seed", m_LoftEdgeSeed);
-                using (new EditorGUI.DisabledScope(Application.isPlaying))
-                    if (GUILayout.Button("Remove Density Details Under Lofts..."))
-                    {
-                        ClearDetailsUnderLofts(terrain);
-                        GUIUtility.ExitGUI();
-                    }
+                DrawLoftDetailOperations(terrain);
 
             } // Advanced
 
@@ -502,15 +493,15 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        void ClearDetailsUnderLofts(MGTerrain terrain)
+        int ClearDetailsUnderLofts(MGTerrain terrain, bool confirmed = false)
         {
             serializedObject.ApplyModifiedProperties();
-            if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null) return;
+            if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null) return 0;
             var triangles = new List<Vector2>();
             Vector3 scaleX = terrain.transform.TransformVector(Vector3.right);
             Vector3 scaleZ = terrain.transform.TransformVector(Vector3.forward);
             float sx = scaleX.magnitude, sz = scaleZ.magnitude;
-            if (sx < 0.00001f || sz < 0.00001f) return;
+            if (sx < 0.00001f || sz < 0.00001f) return 0;
             var lofts = UnityEngine.Object.FindObjectsByType<MashBoxSDK.Maps.Spline.MultiSplineLoft>(FindObjectsSortMode.None);
             foreach (var loft in lofts)
             {
@@ -520,8 +511,9 @@ namespace MashBoxSDK.MapTools
                 if (mesh == null) continue;
                 if (!mesh.isReadable)
                 {
+                    if (confirmed) throw new InvalidOperationException($"Cannot read loft {loft.name}; world operation reverted.");
                     EditorUtility.DisplayDialog("Cannot Read Loft", $"Enable mesh Read/Write for '{loft.name}' and try again. No maps were changed.", "OK");
-                    return;
+                    return 0;
                 }
                 Matrix4x4 matrix = terrain.transform.worldToLocalMatrix * filter.transform.localToWorldMatrix;
                 Vector3[] vertices = mesh.vertices;
@@ -533,8 +525,9 @@ namespace MashBoxSDK.MapTools
             }
             if (triangles.Count == 0)
             {
+                if (confirmed) return 0;
                 EditorUtility.DisplayDialog("No Lofts Found", "No active Multi Spline Loft meshes were found in this terrain's scene.", "OK");
-                return;
+                return 0;
             }
             var maps = new HashSet<Texture2D>();
             foreach (var layer in terrain.DensityDetailLayers)
@@ -545,22 +538,23 @@ namespace MashBoxSDK.MapTools
                 }
             foreach (var binding in terrain.DetailFoliagePalettes)
                 if (binding != null && binding.SourceDensityMap != null) maps.Add(binding.SourceDensityMap);
-            if (maps.Count == 0) return;
+            if (maps.Count == 0) return 0;
             foreach (Texture2D map in maps)
-                if (!map.isReadable || map.format != TextureFormat.R16)
+                if (!map.isReadable || (map.format != TextureFormat.R16 && map.format != TextureFormat.RHalf))
                 {
-                    EditorUtility.DisplayDialog("Cannot Read Density Map", $"'{map.name}' must be a readable R16 texture. No maps were changed.", "OK");
-                    return;
+                    if (confirmed) throw new InvalidOperationException($"Cannot read density map {map.name} ({map.format}). Use a readable R16 or RHalf texture; world operation reverted.");
+                    EditorUtility.DisplayDialog("Cannot Read Density Map", $"'{map.name}' must be a readable R16 or RHalf texture. No maps were changed.", "OK");
+                    return 0;
                 }
-            if (!EditorUtility.DisplayDialog("Clear Density Under Lofts?",
-                $"Clear the projected footprints of active Multi Spline Lofts in this scene, including raised lofts, from this terrain's {maps.Count} density/source maps?\n\nThe edge feathers {(m_LoftEdgeWidth < 0f ? "inward" : "outward")} over up to {Mathf.Abs(m_LoftEdgeWidth)} metres with seeded variation. Individual Decor instances and trees are unchanged. New maps preserve the original painting; Undo restores assignments but keeps the created assets. This only removes density; use the original map to restore grass.", "Clear Under Lofts", "Cancel")) return;
+            if (!confirmed && !EditorUtility.DisplayDialog("Clear Density Under Lofts?",
+                $"Clear the projected footprints of active Multi Spline Lofts in this scene, including raised lofts, from this terrain's {maps.Count} density/source maps?\n\nThe edge feathers {(m_LoftEdgeWidth < 0f ? "inward" : "outward")} over up to {Mathf.Abs(m_LoftEdgeWidth)} metres with seeded variation. Individual Decor instances and trees are unchanged. New maps preserve the original painting; Undo restores assignments but keeps the created assets. This only removes density; use the original map to restore grass.", "Clear Under Lofts", "Cancel")) return 0;
             var results = new Dictionary<Texture2D, ushort[]>();
             var replacements = new Dictionary<Texture2D, Texture2D>();
             var counts = new Dictionary<Texture2D, long>();
             Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
             float minX = bounds.min.x * sx, minZ = bounds.min.z * sz;
             float sizeX = bounds.size.x * sx, sizeZ = bounds.size.z * sz;
-            if (sizeX <= 0f || sizeZ <= 0f) return;
+            if (sizeX <= 0f || sizeZ <= 0f) return 0;
             try
             {
                 foreach (Texture2D map in maps)
@@ -570,7 +564,8 @@ namespace MashBoxSDK.MapTools
                     for (int p = 0; p < keep.Length; p++) keep[p] = 1f;
                     for (int t = 0; t < triangles.Count; t += 3)
                     {
-                        if (t % 768 == 0 && EditorUtility.DisplayCancelableProgressBar("Clear Details Under Lofts", map.name, t / (float)triangles.Count)) return;
+                        if (t % 768 == 0 && EditorUtility.DisplayCancelableProgressBar("Clear Details Under Lofts", map.name, t / (float)triangles.Count))
+                        { if (confirmed) throw new OperationCanceledException(); return 0; }
                         Vector2 a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
                         if (Mathf.Abs(LoftCross(b - a, c - a)) < 0.000001f) continue;
                         float feather = Mathf.Max(0f, m_LoftEdgeWidth);
@@ -599,31 +594,35 @@ namespace MashBoxSDK.MapTools
                     bool changed = false;
                     for (int p = 0; p < values.Length; p++)
                     {
-                        ushort value = (ushort)Mathf.RoundToInt(values[p] * keep[p]);
+                        ushort value = ApplyLoftDensityMask(values[p], keep[p], map.format);
                         changed |= value != values[p];
                         values[p] = value;
                     }
                     if (changed) results.Add(map, values);
                 }
-                if (results.Count == 0) { EditorUtility.DisplayDialog("Clear Details Under Lofts", "No occupied density texels overlap the loft footprints or feathered edges.", "OK"); return; }
+                if (results.Count == 0) { if (confirmed) return 0; EditorUtility.DisplayDialog("Clear Details Under Lofts", "No occupied density texels overlap the loft footprints or feathered edges.", "OK"); return 0; }
                 foreach (var result in results)
                 {
                     Texture2D source = result.Key;
-                    var output = new Texture2D(source.width, source.height, TextureFormat.R16, false, true)
+                    var output = new Texture2D(source.width, source.height, source.format, false, true)
                     { name = source.name + "_LoftsCleared", filterMode = source.filterMode, wrapMode = source.wrapMode };
                     output.SetPixelData(result.Value, 0);
                     output.Apply(false, false);
                     MGTerrainSceneAssets.Create(output, terrain, "Density_LoftsCleared");
                     replacements.Add(source, output);
                     long total = 0;
-                    foreach (ushort value in result.Value) total += value;
+                    foreach (ushort value in result.Value)
+                        total += source.format == TextureFormat.RHalf
+                            ? Mathf.RoundToInt(Mathf.HalfToFloat(value) * 65535f) : value;
                     counts.Add(output, total);
                 }
                 Undo.RecordObject(terrain, "Clear MG Terrain Details Under Lofts");
                 serializedObject.Update();
                 SerializedProperty property = serializedObject.GetIterator();
                 while (property.Next(true))
-                    if (property.propertyType == SerializedPropertyType.ObjectReference && property.objectReferenceValue is Texture2D original && replacements.TryGetValue(original, out Texture2D replacement))
+                    if (property.propertyType == SerializedPropertyType.ObjectReference
+                        && (property.name == "m_DensityMap" || property.name == "m_PaletteSourceMap" || property.name == "m_SourceDensityMap")
+                        && property.objectReferenceValue is Texture2D original && replacements.TryGetValue(original, out Texture2D replacement))
                         property.objectReferenceValue = replacement;
                 for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
                 {
@@ -637,8 +636,20 @@ namespace MashBoxSDK.MapTools
                 EditorUtility.SetDirty(terrain);
                 EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
                 SceneView.RepaintAll();
+                return results.Count;
             }
             finally { EditorUtility.ClearProgressBar(); }
+        }
+
+        // RHalf stores floating-point red values, not unsigned integer counts.
+        // Preserve the original bits outside the cut, including values above one.
+        internal static ushort ApplyLoftDensityMask(ushort bits, float keep, TextureFormat format)
+        {
+            if (keep >= 1f) return bits;
+            if (keep <= 0f) return 0;
+            return format == TextureFormat.RHalf
+                ? Mathf.FloatToHalf(Mathf.HalfToFloat(bits) * keep)
+                : (ushort)Mathf.RoundToInt(bits * keep);
         }
 
         void FeatherInsideLoft(float[] keep, int width, int height, float dx, float dz, float minX, float minZ)
@@ -912,13 +923,6 @@ namespace MashBoxSDK.MapTools
             SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
                     if (layer.FindPropertyRelative("m_PrototypeIndex").intValue != m_SelectedPrototype) continue;
                     EditorGUILayout.LabelField("Density Layer " + (index + 1), EditorStyles.boldLabel);
-                    if (GUILayout.Button("Paint This Layer"))
-                    {
-                        FinishDetailStroke();
-                        serializedObject.ApplyModifiedProperties();
-                        m_PaintDetailIndex = index;
-                        SetDetailPainting(true);
-                    }
                     EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_UseGrassArray"), new GUIContent("Grass Array Sub-ID"));
                     if (layer.FindPropertyRelative("m_UseGrassArray").boolValue && layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue == null)
                     {
@@ -927,7 +931,9 @@ namespace MashBoxSDK.MapTools
                         EditorGUILayout.HelpBox("This entire density layer uses the selected array slice. Add another Sub-ID layer to paint a different look with the same mesh and material.", MessageType.None);
                     }
                     if (!m_ShowPrototypeAdvanced) continue;
-                    DrawPrototypeFields(layer, "m_PrototypeIndex", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice");
+                    if (m_WorldDetailControls)
+                        DrawPrototypeFields(layer, "m_PrototypeIndex", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_DensityMap", "m_SizeMap", "m_GrassIdMap");
+                    else DrawPrototypeFields(layer, "m_PrototypeIndex", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice");
                     using (new EditorGUI.IndentLevelScope())
                     {
                         using (new EditorGUI.DisabledScope(Application.isPlaying))
@@ -936,6 +942,7 @@ namespace MashBoxSDK.MapTools
                             if (EditorUtility.DisplayDialog("Start Detail Empty?", "Remove this element's density and size map assignments? Other details and the original texture assets are preserved. The first density stroke creates a new independent map. Undo restores the assignments.", "Start Empty", "Cancel"))
                             {
                                 FinishDetailStroke();
+                                if (m_WorldDetailControls) ResetSharedWorldPainting(terrain, index);
                                 ResetDetailPainting(layer);
                                 serializedObject.ApplyModifiedProperties();
                                 terrain.InvalidateRenderCache();
@@ -962,7 +969,7 @@ namespace MashBoxSDK.MapTools
                             }
                         }
                         m_FloodDensity = EditorGUILayout.IntSlider(new GUIContent("Flood Density", "Instances per density texel. 65,535 is the maximum R16 value. Rendering still respects distance and instance budgets."), m_FloodDensity, 1, ushort.MaxValue);
-                        using (new EditorGUI.DisabledScope(Application.isPlaying || layer.FindPropertyRelative("m_DensityMap").objectReferenceValue == null))
+                        using (new EditorGUI.DisabledScope(Application.isPlaying))
                         using (new EditorGUILayout.HorizontalScope())
                         {
                             if (GUILayout.Button(m_WorldDetailControls ? "Flood Detail Across World..." : "Flood This Detail..."))
@@ -1530,15 +1537,85 @@ namespace MashBoxSDK.MapTools
             finally { EditorUtility.ClearProgressBar(); }
         }
 
+        void DrawPaintModeToggle(MGTerrain terrain)
+        {
+            bool hasLayer = false;
+            for (int i = 0; i < m_DensityDetailLayers.arraySize; i++)
+                hasLayer |= m_DensityDetailLayers.GetArrayElementAtIndex(i).FindPropertyRelative("m_PrototypeIndex").intValue == m_SelectedPrototype;
+            using (new EditorGUI.DisabledScope(Application.isPlaying || !hasLayer))
+                if (GUILayout.Button(m_DetailPainting ? "Stop Painting" : "Paint", GUILayout.Height(28)))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    if (!m_DetailPainting && ((uint)m_PaintDetailIndex >= terrain.DensityDetailLayerCount
+                        || terrain.DensityDetailLayers[m_PaintDetailIndex].PrototypeIndex != m_SelectedPrototype))
+                        SelectPrototype(m_SelectedPrototype);
+                    SetDetailPainting(!m_DetailPainting);
+                }
+        }
+
+        void DrawLoftDetailOperations(MGTerrain terrain)
+        {
+                EditorGUILayout.LabelField("Clear Details Under Lofts", EditorStyles.boldLabel);
+                m_LoftEdgeWidth = EditorGUILayout.Slider(new GUIContent("Edge Feather (Metres)", "Positive feathers outside the loft; negative feathers inside, preserving grass near its edge. Reapply from the original map to restore previously removed grass."), m_LoftEdgeWidth, -10f, 10f);
+                m_LoftEdgeVariation = EditorGUILayout.Slider("Edge Variation", m_LoftEdgeVariation, 0f, 1f);
+                m_LoftNoiseScale = Mathf.Max(0.01f, EditorGUILayout.FloatField("Edge Patch Size (Metres)", m_LoftNoiseScale));
+                m_LoftEdgeSeed = EditorGUILayout.IntField("Edge Seed", m_LoftEdgeSeed);
+                using (new EditorGUI.DisabledScope(Application.isPlaying))
+                    if (GUILayout.Button(terrain.World != null ? "Remove World Details Under Lofts..." : "Remove Density Details Under Lofts..."))
+                    {
+                        if (terrain.World != null) ClearWorldDetailsUnderLofts(terrain.World);
+                        else ClearDetailsUnderLofts(terrain);
+                        GUIUtility.ExitGUI();
+                    }
+
+        }
+
+        void ClearWorldDetailsUnderLofts(MGTerrainWorld world)
+        {
+            serializedObject.ApplyModifiedProperties();
+            if (!EditorUtility.DisplayDialog("Clear World Details Under Lofts?",
+                "Remove density under active lofts across this world's tiles? All density layers are affected. Original maps are preserved and Undo restores assignments.", "Clear Under Lofts", "Cancel")) return;
+            SetDetailPainting(false);
+            Undo.IncrementCurrentGroup();
+            int group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Clear World Details Under Lofts");
+            int changedTiles = 0, changedMaps = 0;
+            try
+            {
+                foreach (var tile in world.GetComponentsInChildren<MGTerrain>(true))
+                {
+                    if (tile.GetComponentInParent<MGTerrainWorld>(true) != world) continue;
+                    var editor = (MGTerrainEditor)CreateEditor(tile);
+                    try
+                    {
+                        editor.m_LoftEdgeWidth = m_LoftEdgeWidth;
+                        editor.m_LoftEdgeVariation = m_LoftEdgeVariation;
+                        editor.m_LoftNoiseScale = m_LoftNoiseScale;
+                        editor.m_LoftEdgeSeed = m_LoftEdgeSeed;
+                        int changed = editor.ClearDetailsUnderLofts(tile, true);
+                        changedMaps += changed;
+                        if (changed > 0) changedTiles++;
+                    }
+                    finally { DestroyImmediate(editor); }
+                }
+                Undo.CollapseUndoOperations(group);
+                EditorUtility.DisplayDialog("Clear Details Under Lofts", changedMaps > 0
+                    ? $"Cleared loft footprints from {changedMaps} density maps across {changedTiles} terrain tiles. Original maps are preserved; Undo restores the painting."
+                    : "No density was changed. Check that active Multi Spline Loft meshes overlap painted terrain in this scene. Edge Feather can widen the cleared area.", "OK");
+            }
+            catch (OperationCanceledException) { Undo.RevertAllDownToGroup(group); EditorUtility.DisplayDialog("Clear Details Cancelled", "Changes were reverted.", "OK"); }
+            catch (Exception error)
+            {
+                Undo.RevertAllDownToGroup(group);
+                Debug.LogException(error);
+                EditorUtility.DisplayDialog("Could Not Clear Details", error.Message + "\n\nChanges were reverted. Original maps are preserved.", "OK");
+            }
+            finally { EditorUtility.ClearProgressBar(); serializedObject.Update(); SceneView.RepaintAll(); }
+        }
+
         void DrawDetailPainter(MGTerrain terrain)
         {
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Paint Details", EditorStyles.boldLabel);
-            using (new EditorGUI.DisabledScope(Application.isPlaying || terrain.DensityDetailLayerCount == 0))
-            {
-                if (GUILayout.Button(m_DetailPainting ? "Stop Painting Details" : "Paint Details in Scene"))
-                    SetDetailPainting(!m_DetailPainting);
-            }
             if (!m_DetailPainting) return;
             var labels = new string[terrain.DensityDetailLayerCount];
             for (int i = 0; i < labels.Length; i++)
@@ -1564,7 +1641,17 @@ namespace MashBoxSDK.MapTools
                 if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassPaintSubId = id; }
             }
             m_SelectedPrototype = selectedDetail.PrototypeIndex;
-            EditorGUILayout.LabelField("Selected Detail Density", selectedDetail.RepresentedInstanceCount.ToString("N0"));
+            long totalDensity = selectedDetail.RepresentedInstanceCount;
+            if (m_WorldDetailControls && terrain.World != null)
+            {
+                totalDensity = 0;
+                foreach (var tile in SharedTiles(terrain))
+                {
+                    int match = FindWorldPaintLayer(terrain, m_PaintDetailIndex, tile);
+                    if (match >= 0) totalDensity += tile.DensityDetailLayers[match].RepresentedInstanceCount;
+                }
+            }
+            EditorGUILayout.LabelField(m_WorldDetailControls ? "World Detail Density" : "Selected Detail Density", totalDensity.ToString("N0"));
             terrain.GetDetailSourceMaterials(selectedDetail.PrototypeIndex, m_DetailSourceMaterials);
             if (m_DetailSourceMaterials.Count == 0)
                 EditorGUILayout.HelpBox("This prototype has no renderable mesh/material. Check its Prefab, enabled MeshRenderer and MeshFilter (including LOD0), or assign Mesh and Material directly. Painting cannot display this detail until that is fixed.", MessageType.Warning);
@@ -1644,7 +1731,11 @@ namespace MashBoxSDK.MapTools
         {
             foreach (Texture2D map in m_PaintCopies)
                 if (map != null && map.isReadable) { map.Apply(false, false); EditorUtility.SetDirty(map); }
-            if (target is MGTerrain terrain) terrain.InvalidateRenderCache();
+            if (target is MGTerrain terrain)
+            {
+                terrain.InvalidateRenderCache();
+                if (m_SharedDefinitionSignature != null) RememberSharedDefinitions(terrain);
+            }
             SceneView.RepaintAll();
             Repaint();
         }
@@ -1832,10 +1923,8 @@ namespace MashBoxSDK.MapTools
                     copy.Apply(false, false);
                 }
                 MGTerrainSceneAssets.Create(copy, terrain, $"Layer_{m_PaintDetailIndex}_" + (m_PaintChannel == 0 ? "Density" : "Size"));
+                detail.AssignPaintMapCopy(copy, m_PaintChannel == 0 ? MGTerrain.DetailPaintMap.Density : MGTerrain.DetailPaintMap.Size);
                 serializedObject.Update();
-                var layer = m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex);
-                layer.FindPropertyRelative(m_PaintChannel == 0 ? "m_DensityMap" : "m_SizeMap").objectReferenceValue = copy;
-                serializedObject.ApplyModifiedProperties();
                 source = copy;
                 m_PaintCopies.Add(copy);
             }
@@ -1847,9 +1936,8 @@ namespace MashBoxSDK.MapTools
                 {
                     ids = Instantiate(ids);
                     MGTerrainSceneAssets.Create(ids, terrain, $"Layer_{m_PaintDetailIndex}_GrassIDs");
+                    detail.AssignPaintMapCopy(ids, MGTerrain.DetailPaintMap.GrassIds);
                     serializedObject.Update();
-                    m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex).FindPropertyRelative("m_GrassIdMap").objectReferenceValue = ids;
-                    serializedObject.ApplyModifiedProperties();
                     m_PaintCopies.Add(ids);
                 }
                 m_GrassStrokeIds = ids;
@@ -1892,6 +1980,7 @@ namespace MashBoxSDK.MapTools
             int z0 = Mathf.Clamp(Mathf.FloorToInt((center.z - rz - bounds.min.z) / bounds.size.z * h), 0, h - 1);
             int z1 = Mathf.Clamp(Mathf.CeilToInt((center.z + rz - bounds.min.z) / bounds.size.z * h), 0, h - 1);
             var pixels = m_StrokeMap.GetPixelData<ushort>(0);
+            bool changed = false;
             for (int z = z0; z <= z1; z++) for (int x = x0; x <= x1; x++)
             {
                 Vector3 delta = new Vector3(bounds.min.x + (x + .5f) / w * bounds.size.x - center.x, 0, bounds.min.z + (z + .5f) / h * bounds.size.z - center.z);
@@ -1903,19 +1992,24 @@ namespace MashBoxSDK.MapTools
                 float goal = m_PaintChannel == 0 ? (erase ? 0 : Mathf.Clamp(m_PaintDensity, 1, 2000)) : (erase ? 1 : GetPaintSizeTarget(x, z));
                 if (m_GrassStrokeIds != null && !erase && influence > 0)
                 {
-                    var ids = m_GrassStrokeIds.GetPixelData<byte>(0); ids[index] = (byte)m_GrassPaintSubId;
+                    var ids = m_GrassStrokeIds.GetPixelData<byte>(0);
+                    changed |= ids[index] != (byte)m_GrassPaintSubId;
+                    ids[index] = (byte)m_GrassPaintSubId;
 
                 }
                 if (m_GrassStrokeIds != null && m_GrassIdOnly) goal = previous;
                 float next = Mathf.Lerp(previous, goal, influence);
-                pixels[index] = m_PaintChannel == 0 ? (ushort)Mathf.RoundToInt(next) : Mathf.FloatToHalf(next);
+                ushort value = m_PaintChannel == 0 ? (ushort)Mathf.RoundToInt(next) : Mathf.FloatToHalf(next);
+                changed |= pixels[index] != value;
+                pixels[index] = value;
             }
+            PaintWorldNeighbours(terrain, point, erase);
+            if (!changed) return;
             Rect region = Rect.MinMaxRect(x0 / (float)w, z0 / (float)h, (x1 + 1f) / w, (z1 + 1f) / h);
             m_PendingPaintRegion = m_HasPendingPaint
                 ? Rect.MinMaxRect(Mathf.Min(m_PendingPaintRegion.xMin, region.xMin), Mathf.Min(m_PendingPaintRegion.yMin, region.yMin), Mathf.Max(m_PendingPaintRegion.xMax, region.xMax), Mathf.Max(m_PendingPaintRegion.yMax, region.yMax))
                 : region;
             m_HasPendingPaint = true;
-            PaintWorldNeighbours(terrain, point, erase);
         }
 
         void UpdateDetailPaintPreview()
@@ -1972,28 +2066,29 @@ namespace MashBoxSDK.MapTools
             }
             SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
             var source = layer.FindPropertyRelative("m_DensityMap").objectReferenceValue as Texture2D;
-            if (source == null) return;
+            int width = source != null ? source.width : 512;
+            int height = source != null ? source.height : 512;
             int prototype = layer.FindPropertyRelative("m_PrototypeIndex").intValue;
             if (prototype < 0 || prototype >= terrain.Prototypes.Count)
             {
                 EditorUtility.DisplayDialog("Cannot Flood Detail", "Assign a valid Prototype Index first.", "OK");
                 return;
             }
-            long represented = (long)source.width * source.height * m_FloodDensity;
+            long represented = (long)width * height * m_FloodDensity;
             string isolation = onlyThisDetail
                 ? "Other density layer entries will be removed from this terrain (their texture assets are kept). Palette bindings remain; rebaking them can add layers again.\n\n"
                 : "Other density layers will remain active.\n\n";
             if (!confirmed && !EditorUtility.DisplayDialog("Flood MG Terrain Detail?",
-                $"Fill Element {index}, prototype {prototype}, across the entire {source.width} Ã— {source.height} map at {m_FloodDensity:N0} per texel?\n\n"
+                $"Fill Element {index}, prototype {prototype}, across the entire {width} Ã— {height} map at {m_FloodDensity:N0} per texel?\n\n"
                 + $"This represents {represented:N0} instances; draw budgets and distance limits still apply.\n\n"
                 + isolation + "A new density texture will be created, preserving the original painting. Undo restores the terrain assignment; the new texture asset remains available.",
                 "Flood Density", "Cancel")) return;
 
-            var filled = new Texture2D(source.width, source.height, TextureFormat.R16, false, true)
+            var filled = new Texture2D(width, height, TextureFormat.R16, false, true)
             {
-                name = source.name + "_Flood",
-                filterMode = source.filterMode,
-                wrapMode = source.wrapMode
+                name = (source != null ? source.name : "Density") + "_Flood",
+                filterMode = source != null ? source.filterMode : FilterMode.Bilinear,
+                wrapMode = source != null ? source.wrapMode : TextureWrapMode.Clamp
             };
             var pixels = filled.GetPixelData<ushort>(0);
             for (int pixel = 0; pixel < pixels.Length; pixel++) pixels[pixel] = (ushort)m_FloodDensity;

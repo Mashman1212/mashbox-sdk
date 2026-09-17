@@ -1,0 +1,17 @@
+Running GPU stamp validation
+Prefab stamp total: 0.99s (1 tiles).
+
+Prefab stamp total: 0.77s (1 tiles).
+
+Prefab stamp total: 2.02s (1 tiles).
+
+System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation. ---> System.InvalidOperationException: Direct prefab stamp validation failed: Saved texture uses compact binary serialization
+  at MashBoxSDK.MapTools.PrefabStampValidation.Check (System.Boolean pass, System.String message) [0x00014] in D:\mashbox-sdk\com.mg.mashbox.sdk\Editor\Maps\Sculpting\PrefabStampValidation.cs:179 
+  at MashBoxSDK.MapTools.PrefabStampValidation.Benchmark (MashBoxSDK.Maps.TerrainSystem.MGTerrain tile, UnityEngine.Material terrainMaterial, System.Collections.Generic.List`1[T] resources, System.Collections.Generic.List`1[T] paths) [0x002ec] in D:\mashbox-sdk\com.mg.mashbox.sdk\Editor\Maps\Sculpting\PrefabStampValidation.cs:176 
+  at MashBoxSDK.MapTools.PrefabStampValidation.Run () [0x009ca] in D:\mashbox-sdk\com.mg.mashbox.sdk\Editor\Maps\Sculpting\PrefabStampValidation.cs:112 
+  at (wrapper managed-to-native) System.Reflection.RuntimeMethodInfo.InternalInvoke(System.Reflection.RuntimeMethodInfo,object,object[],System.Exception&)
+  at System.Reflection.RuntimeMethodInfo.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x0006a] in <f713e1c3c5f545ce9b1df47230f4f853>:0 
+   --- End of inner exception stack trace ---
+  at System.Reflection.RuntimeMethodInfo.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00083] in <f713e1c3c5f545ce9b1df47230f4f853>:0 
+  at System.Reflection.MethodBase.Invoke (System.Object obj, System.Object[] parameters) [0x00000] in <f713e1c3c5f545ce9b1df47230f4f853>:0 
+  at MGStampPerformanceCheck+<>c.<.cctor>b__1_0 () [0x0004e] in D:\MappyX\Assets\Editor\MGStampPerformanceCheck.cs:16 

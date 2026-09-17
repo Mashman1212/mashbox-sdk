@@ -1,0 +1,83 @@
+Assets/Maps/Cotswold Ridge/COTSWOLD RIDGE [MATT] [V02].unity
+ROOT LIGHTING_New active=True renderers=0
+ROOT GAMEPLAY_New active=True renderers=10
+ CHILD WORLD BORDERS count=4 bounds=Center: (512.00, 0.00, 512.00), Extents: (512.00, 512.00, 512.00)
+ROOT LIGHTING_Old active=False renderers=0
+ROOT GAMEPLAY_Old active=False renderers=0
+ROOT Challenges active=True renderers=0
+ROOT MODELS [DO NOT MOVE] active=True renderers=11443
+ CHILD TRAILS count=4366 bounds=Center: (418.95, -7.15, 552.83), Extents: (413.87, 100.63, 460.01)
+ CHILD PROPS count=5506 bounds=Center: (214.01, 39.90, 633.97), Extents: (210.66, 60.61, 388.64)
+ CHILD MINOR TRAILS count=1529 bounds=Center: (97.90, 68.27, 822.42), Extents: (81.69, 29.34, 194.27)
+ROOT WORLD active=True renderers=16292
+ CHILD ROCKS count=15694 bounds=Center: (240.31, 26.80, 615.75), Extents: (243.57, 73.16, 410.06)
+ CHILD STONE WALLS count=218 bounds=Center: (174.12, 31.18, 661.97), Extents: (173.95, 48.17, 277.53)
+ CHILD LOGS count=4 bounds=Center: (265.66, -40.05, 243.55), Extents: (10.33, 3.87, 28.39)
+ CHILD ROOTS count=7 bounds=Center: (244.35, -37.91, 248.59), Extents: (18.36, 5.45, 19.46)
+ CHILD BRANCHES count=153 bounds=Center: (229.41, -34.39, 266.25), Extents: (7.41, 2.41, 5.55)
+ CHILD WATER count=6 bounds=Center: (176.57, 35.71, 668.16), Extents: (156.56, 53.53, 308.56)
+ CHILD CLIFFS count=24 bounds=Center: (186.73, 7.96, 509.74), Extents: (67.09, 27.72, 104.58)
+ CHILD SKI RUNS count=160 bounds=Center: (305.80, 26.22, 805.80), Extents: (177.90, 59.37, 205.59)
+ CHILD CONCRETE TUNNELS count=2 bounds=Center: (273.27, 33.08, 833.09), Extents: (3.83, 1.68, 3.18)
+ CHILD SIGNAGE count=6 bounds=Center: (104.98, 39.18, 660.89), Extents: (99.71, 58.87, 340.12)
+ROOT TERRAIN [DO NOT MOVE] active=True renderers=6
+ CHILD Terrain_(0.00, -250.00, 512.00)_MGTerrain count=1 bounds=Center: (256.00, 28.85, 768.00), Extents: (256.00, 69.68, 256.00)
+ROOT SceneIDMap active=True renderers=0
+ROOT CHAIRLIFTS active=False renderers=1570
+ROOT StaticLightingSky active=True renderers=0
+ROOT SceneIDMap active=True renderers=0
+ROOT SAMPLES active=False renderers=1786
+ROOT Scan MG Terrain active=False renderers=1
+ROOT Global Grass Wind active=True renderers=0
+ROOT !ftraceLightmaps active=True renderers=0
+ROOT APV Lighting active=True renderers=0
+ROOT ProbeVolumePerSceneData active=True renderers=0
+LIGHT [BAKERY] Directional Light Directional Mixed active=True
+LIGHT Directional Light Directional Realtime active=False
+APV APV - Environment Coverage Scene (839.09, 230.86, 936.00)
+APV APV - Tunnel Detail Local (19.66, 11.35, 18.36)
+MG Terrain_(0.00, -250.00, 512.00)_MGTerrain active=True bounds=Center: (256.00, 28.85, 768.00), Extents: (256.00, 69.68, 256.00) instances=0 prototypes=5
+MG Terrain_(0.00, -250.00, 0.00)_MGTerrain active=False bounds=Center: (256.00, -30.77, 256.00), Extents: (256.00, 50.89, 256.00) instances=0 prototypes=2
+MG Scan MG Terrain active=False bounds=Center: (1314.00, -91.16, -186.00), Extents: (804.28, 31.70, 804.28) instances=0 prototypes=0
+GROUP WOODEN FENCE count=3188 GI=3188 sample=ME_WoodBeam_41
+GROUP ME_Rock_16 count=3183 GI=3183 sample=mountain_rock_big_01_2_LOD2
+GROUP ME_Rock_17 count=3150 GI=3150 sample=mountain_rock_big_01_3_LOD2
+GROUP ME_Rock_15 count=3129 GI=3129 sample=mountain_rock_big_01_1_LOD2
+GROUP ME_Rock_18 count=3126 GI=3126 sample=mountain_rock_big_01_4_LOD2
+GROUP ME_Rock_19 count=3051 GI=3051 sample=mountain_rock_big_01_5_LOD2
+GROUP Top Planks count=2765 GI=2765 sample=ME_WoodBeam_40
+GROUP RFMP_Log 01 count=2037 GI=2037 sample=Aset_nature_tree_L_wcjebgs_00_LOD2
+GROUP PJX BARRIER count=885 GI=885 sample=Cylinder
+GROUP TRAIL EDGE POLE count=550 GI=550 sample=POLE
+GROUP MOSSY STONE WALL_NORMAL count=218 GI=0 sample=MOSSY STONE WALL_NORMAL
+GROUP TOP PLANKS count=201 GI=201 sample=ME_WoodBeam_40
+GROUP SKI RUN POLE count=160 GI=160 sample=POLE
+GROUP PLANKS (2) count=153 GI=153 sample=ME_WoodBeam_07
+GROUP PLANKS (1) count=153 GI=153 sample=ME_WoodBeam_07
+GROUP CAR BRIDGE count=126 GI=126 sample=ME_WoodBeam_35 (3)
+GROUP CAR BRIDGE (1) count=126 GI=126 sample=ME_WoodBeam_35 (3)
+GROUP PLASTIC BARRIER count=96 GI=96 sample=Cylinder
+GROUP PLANKS count=85 GI=85 sample=ME_WoodBeam_07
+GROUP BARRELS count=77 GI=77 sample=BARREL
+GROUP TOP count=68 GI=68 sample=ME_WoodBeam_07 (6)
+GROUP CAR BRIDGE (2) count=63 GI=63 sample=ME_WoodBeam_35 (3)
+GROUP FLOOR PLANKS count=60 GI=60 sample=ME_WoodBeam_40
+GROUP WOODEN FENCE POST count=57 GI=57 sample=ME_WoodBeam_41
+GROUP ME_Branch_04 count=42 GI=42 sample=beech_forest_branch_01_4_LOD0
+GROUP SIDE 01 count=36 GI=36 sample=ME_WoodBeam_07 (6)
+GROUP ME_Bridge_04 count=36 GI=36 sample=wood_beam_01 (1)
+GROUP ME_Bridge_04 (1) count=36 GI=36 sample=wood_beam_01 (1)
+GROUP ME_Bridge_04 (2) count=36 GI=36 sample=wood_beam_01 (1)
+GROUP ME_Branch_03 count=36 GI=36 sample=beech_forest_branch_01_3_LOD0
+GROUP RFMP_Log 01 (7) count=35 GI=35 sample=Aset_nature_tree_L_wcjebgs_00_LOD2
+GROUP RFMP_Log 01 (1) count=33 GI=33 sample=Aset_nature_tree_L_wcjebgs_00_LOD2
+GROUP RFMP_Log 01 (5) count=33 GI=33 sample=Aset_nature_tree_L_wcjebgs_00_LOD2
+GROUP RFMP_Log 01 (10) count=30 GI=30 sample=Aset_nature_tree_L_wcjebgs_00_LOD2
+GROUP SIDE 02 count=30 GI=30 sample=ME_WoodBeam_07 (1)
+GROUP ME_Branch_05 count=30 GI=30 sample=beech_forest_branch_01_5_LOD0
+GROUP ME_Branch_02 count=27 GI=27 sample=beech_forest_branch_01_2_LOD0
+GROUP RFMP_Log 01 (8) count=26 GI=26 sample=Aset_nature_tree_L_wcjebgs_00_LOD2
+GROUP RFMP_Log 01 (6) count=26 GI=26 sample=Aset_nature_tree_L_wcjebgs_00_LOD2
+GROUP RAILINGS count=20 GI=20 sample=ME_WoodBeam_40
+PIPELINE Assets/Settings/HDRP High Fidelity.asset
+LIGHTING {"LightingSettings":{"m_Name":"Cotswold APV Lighting","serializedVersion":"10","m_EnableBakedLightmaps":true,"m_EnableRealtimeLightmaps":false,"m_RealtimeEnvironmentLighting":true,"m_BounceScale":1.0,"m_AlbedoBoost":1.0,"m_IndirectOutputScale":1.0,"m_UsingShadowmask":false,"m_BakeBackend":2,"m_LightmapMaxSize":1024,"m_LightmapSizeFixed":false,"m_UseMipmapLimits":true,"m_BakeResolution":40.0,"m_Padding":2,"m_LightmapCompression":3,"m_LightmapPackingMode":0,"m_LightmapPackingMethod":1,"m_XAtlasPackingAttempts":16384,"m_XAtlasBruteForce":false,"m_XAtlasBlockAlign":false,"m_XAtlasRepackUnderutilizedLightmaps":true,"m_AO":false,"m_AOMaxDistance":1.0,"m_CompAOExponent":1.0,"m_CompAOExponentDirect":0.0,"m_ExtractAO":false,"m_MixedBakeMode":0,"m_LightmapsBakeMode":1,"m_FilterMode":1,"m_LightmapParameters":{"fileID":15204,"guid":"0000000000000000f000000000000000","type":0},"m_ExportTrainingData":false,"m_EnableWorkerProcessBaking":true,"m_TrainingDataDestination":"TrainingData","m_RealtimeResolution":2.0,"m_ForceWhiteAlbedo":false,"m_ForceUpdates":false,"m_PVRCulling":true,"m_PVRSampling":1,"m_PVRDirectSampleCount":32,"m_PVRSampleCount":512,"m_PVREnvironmentSampleCount":256,"m_PVREnvironmentReferencePointCount":2048,"m_LightProbeSampleCountMultiplier":4.0,"m_PVRBounces":2,"m_PVRMinBounces":2,"m_PVREnvironmentImportanceSampling":true,"m_PVRFilteringMode":1,"m_PVRDenoiserTypeDirect":1,"m_PVRDenoiserTypeIndirect":1,"m_PVRDenoiserTypeAO":1,"m_PVRFilterTypeDirect":0,"m_PVRFilterTypeIndirect":0,"m_PVRFilterTypeAO":0,"m_PVRFilteringGaussRadiusDirect":1.0,"m_PVRFilteringGaussRadiusIndirect":1.0,"m_PVRFilteringGaussRadiusAO":1.0,"m_PVRFilteringAtrousPositionSigmaDirect":0.5,"m_PVRFilteringAtrousPositionSigmaIndirect":2.0,"m_PVRFilteringAtrousPositionSigmaAO":1.0,"m_RespectSceneVisibilityWhenBakingGI":false}}

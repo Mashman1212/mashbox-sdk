@@ -1,0 +1,77 @@
+Baking running: False
+Has baked data: True
+Active baking set: Cotswold APV Baking Set (UnityEngine.Rendering.ProbeVolumeBakingSet)
+SH bands: SphericalHarmonicsL2
+Cells loaded: True
+Volume: Tree Line Test Local center=(894.60, 93.74, 900.36) size=(1798.72, 307.03, 1618.08)
+Pine meshes contributing=True: 7
+Pine meshes contributing=False: 69
+Tree renderer Pine_roots_03_LOD0: 2, GI=1
+Tree renderer Pine_roots_03_LOD1: 2, GI=1
+Tree renderer Pine_roots_03_LOD2: 2, GI=1
+Tree renderer Pine_roots_01_LOD0: 2, GI=1
+Tree renderer Pine_roots_01_LOD1: 2, GI=1
+Tree renderer Pine_roots_01_LOD2: 2, GI=1
+Tree renderer Pine_roots_01_LOD3: 2, GI=1
+Tree renderer dwarf_pine_small_04_LOD0: 1, GI=0
+Tree renderer dwarf_pine_small_04_LOD1: 1, GI=0
+Tree renderer dwarf_pine_small_04_LOD2: 1, GI=0
+Tree renderer dwarf_pine_small_03_LOD0: 1, GI=0
+Tree renderer dwarf_pine_small_03_LOD1: 1, GI=0
+Tree renderer dwarf_pine_small_03_LOD2: 1, GI=0
+Tree renderer dwarf_pine_small_02_LOD0: 1, GI=0
+Tree renderer dwarf_pine_small_02_LOD1: 1, GI=0
+Tree renderer dwarf_pine_small_02_LOD2: 1, GI=0
+Tree renderer dwarf_pine_small_01_LOD0: 1, GI=0
+Tree renderer dwarf_pine_small_01_LOD1: 1, GI=0
+Tree renderer dwarf_pine_small_01_LOD2: 1, GI=0
+Tree renderer dwarf_pine_medium_04_LOD0: 1, GI=0
+Tree renderer dwarf_pine_medium_04_LOD1: 1, GI=0
+Tree renderer dwarf_pine_medium_04_LOD2: 1, GI=0
+Tree renderer dwarf_pine_medium_03_LOD0: 1, GI=0
+Tree renderer dwarf_pine_medium_03_LOD1: 1, GI=0
+Tree renderer dwarf_pine_medium_03_LOD2: 1, GI=0
+Tree renderer dwarf_pine_medium_02_LOD0: 1, GI=0
+Tree renderer dwarf_pine_medium_02_LOD1: 1, GI=0
+Tree renderer dwarf_pine_medium_02_LOD2: 1, GI=0
+Tree renderer dwarf_pine_medium_01_LOD0: 1, GI=0
+Tree renderer dwarf_pine_medium_01_LOD1: 1, GI=0
+Tree renderer dwarf_pine_medium_01_LOD2: 1, GI=0
+Tree renderer dwarf_pine_big_04_LOD0: 1, GI=0
+Tree renderer dwarf_pine_big_04_LOD1: 1, GI=0
+Tree renderer dwarf_pine_big_04_LOD2: 1, GI=0
+Tree renderer dwarf_pine_big_03_LOD0: 1, GI=0
+Tree renderer dwarf_pine_big_03_LOD1: 1, GI=0
+Tree renderer dwarf_pine_big_03_LOD2: 1, GI=0
+Tree renderer dwarf_pine_big_02_LOD0: 1, GI=0
+Tree renderer dwarf_pine_big_02_LOD1: 1, GI=0
+Tree renderer dwarf_pine_big_02_LOD2: 1, GI=0
+Tree renderer dwarf_pine_big_01_LOD0: 1, GI=0
+Tree renderer dwarf_pine_big_01_LOD1: 1, GI=0
+Tree renderer dwarf_pine_big_01_LOD2: 1, GI=0
+Tree renderer Forest_pine_06_roots_LOD0: 1, GI=0
+Tree renderer Forest_pine_06_roots_LOD1: 1, GI=0
+Tree renderer Forest_pine_06_roots_LOD2: 1, GI=0
+Tree renderer Pine_roots_02_LOD0: 1, GI=0
+Tree renderer Pine_roots_02_LOD1: 1, GI=0
+Tree renderer Pine_roots_02_LOD2: 1, GI=0
+Tree renderer Pine_roots_04_LOD0: 1, GI=0
+Tree renderer Pine_roots_04_LOD1: 1, GI=0
+Tree renderer Pine_roots_04_LOD2: 1, GI=0
+Tree renderer Pine_roots_05_LOD0: 1, GI=0
+Tree renderer Pine_roots_05_LOD1: 1, GI=0
+Tree renderer Pine_roots_05_LOD2: 1, GI=0
+Tree renderer Pine_roots_06_LOD0: 1, GI=0
+Tree renderer Pine_roots_06_LOD1: 1, GI=0
+Tree renderer pine_stump_05_LOD0: 1, GI=0
+Tree renderer pine_stump_05_LOD1: 1, GI=0
+Tree renderer pine_stump_04_LOD0: 1, GI=0
+Tree renderer pine_stump_04_LOD1: 1, GI=0
+Tree renderer pine_stump_03_LOD0: 1, GI=0
+Tree renderer pine_stump_03_LOD1: 1, GI=0
+Tree renderer pine_stump_02_LOD0: 1, GI=0
+Tree renderer pine_stump_02_LOD1: 1, GI=0
+Tree renderer pine_stump_01_LOD0: 1, GI=0
+Tree renderer pine_stump_01_LOD1: 1, GI=0
+Tree renderer Pine_broken_branch_01_LOD0: 1, GI=0
+Tree renderer Pine_broken_branch_01_LOD1: 1, GI=0

@@ -21,6 +21,22 @@ namespace MashBoxSDK.MapTools
             }
         }
         int m_SelectedPrototype;
+        readonly System.Collections.Generic.List<Mesh> m_TreeLodSourceMeshes = new System.Collections.Generic.List<Mesh>();
+
+        void DrawDetectedTreeLod(MGTerrain terrain, int lod, string label, SerializedProperty overridePrefab = null)
+        {
+            bool automatic = overridePrefab == null || overridePrefab.objectReferenceValue == null;
+            terrain.GetTreeLodSourceMeshes(m_SelectedPrototype, lod, m_TreeLodSourceMeshes);
+            if (m_TreeLodSourceMeshes.Count == 0)
+            {
+                EditorGUILayout.HelpBox(label + ": no usable mesh found in the prefab.", MessageType.Warning);
+                return;
+            }
+            using (new EditorGUI.DisabledScope(true))
+                for (int index = 0; index < m_TreeLodSourceMeshes.Count; index++)
+                    EditorGUILayout.ObjectField(index == 0 ? label + (automatic ? " (Automatic)" : " (Override)") : "",
+                        m_TreeLodSourceMeshes[index], typeof(Mesh), false);
+        }
 
         static void DrawPrototypeFields(SerializedProperty parent, params string[] hidden)
         {
@@ -446,7 +462,33 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_Material"));
             }
 
-            DrawPrototypeFields(selected, "m_Prefab", "m_Mesh", "m_Material");
+            bool isTree = selected.FindPropertyRelative("m_Kind").enumValueIndex == (int)MGTerrain.InstanceKind.Tree;
+            DrawPrototypeFields(selected, "m_Prefab", "m_Mesh", "m_Material", "m_TreeLodCount", "m_TreeLod1Distance", "m_TreeLod2Distance", "m_TreeLodHysteresis", "m_TreeLod1Prefab", "m_TreeLod2Prefab");
+            if (isTree)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Tree LODs", EditorStyles.boldLabel);
+                var lodCount = selected.FindPropertyRelative("m_TreeLodCount");
+                EditorGUILayout.PropertyField(lodCount, new GUIContent("LOD Count"));
+                DrawDetectedTreeLod(terrain, 0, "Close Mesh");
+                if (lodCount.intValue > 1)
+                {
+                    EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLod1Distance"), new GUIContent("Medium Distance"));
+                    EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLod1Prefab"), new GUIContent("Medium Prefab Override", "Optional. Leave empty to discover the mesh inside the source prefab automatically."));
+                    DrawDetectedTreeLod(terrain, 1, "Medium Mesh", selected.FindPropertyRelative("m_TreeLod1Prefab"));
+                }
+                if (lodCount.intValue > 2)
+                {
+                    EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLod2Distance"), new GUIContent("Far Distance"));
+                    EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLod2Prefab"), new GUIContent("Far Prefab Override", "Optional. Leave empty to discover the mesh inside the source prefab automatically."));
+                    DrawDetectedTreeLod(terrain, 2, "Far Mesh", selected.FindPropertyRelative("m_TreeLod2Prefab"));
+                }
+                if (lodCount.intValue > 1)
+                {
+                    EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLodHysteresis"), new GUIContent("Transition Hysteresis"));
+                    EditorGUILayout.HelpBox("LOD meshes are discovered automatically inside the source prefab, including child LODGroups. Empty override slots use the meshes shown above. With only two mesh levels, Medium and Far reuse the same last level. Overrides must share the source pivot and scale.", MessageType.Info);
+                }
+            }
             if (found) DrawDensityLayersWithFlood(terrain);
             else if (!found && !grassArrayMaterial && selected.FindPropertyRelative("m_Kind").enumValueIndex == (int)MGTerrain.InstanceKind.Detail)
             {

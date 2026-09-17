@@ -1,0 +1,4537 @@
+using UnityEngine;
+using UnityEditor;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using MashBoxSDK.Maps;
+using MashBoxSDK.Maps.Painting;
+using MashBoxSDK.Maps.Spline;
+using MashBoxSDK.Maps.TerrainSystem;
+using MashBoxSDK.SDKMain;
+
+namespace MashBoxSDK.MapTools
+{
+    public class MGBrushWindow : EditorWindow
+    {
+        static MGBrushWindow s_ActiveSceneToolOwner;
+        static MGBrushWindow s_DecorPaletteOwner;
+        Vector2 decorPaletteScroll;
+
+        void SyncDecorPalette()
+        {
+            if (s_DecorPaletteOwner == null)
+            {
+                // Recover an existing populated window before initializing the
+                // empty hidden brush created by Mappy.
+                s_DecorPaletteOwner = Resources.FindObjectsOfTypeAll<MGBrushWindow>()
+                    .Where(w => w.prefabPalette != null && w.prefabPalette.Count > 0)
+                    .OrderBy(w => (w.hideFlags & HideFlags.HideInHierarchy) != 0)
+                    .FirstOrDefault() ?? this;
+            }
+            if (s_DecorPaletteOwner.prefabPalette.Count == 0 && prefabPalette.Count > 0)
+            {
+                PublishDecorPalette();
+                return;
+            }
+            if (s_DecorPaletteOwner != this) CopyDecorPalette(s_DecorPaletteOwner);
+        }
+
+        void CopyDecorPalette(MGBrushWindow source)
+        {
+            prefabPalette = new List<GameObject>(source.prefabPalette);
+            selectedPrefabIndex = Mathf.Clamp(source.selectedPrefabIndex, 0, Mathf.Max(0, prefabPalette.Count - 1));
+            mixDecorPalette = source.mixDecorPalette;
+            decorReferenceRoot = source.decorReferenceRoot;
+        }
+
+        void PublishDecorPalette()
+        {
+            s_DecorPaletteOwner = this;
+            foreach (var window in Resources.FindObjectsOfTypeAll<MGBrushWindow>())
+            {
+                if (window != this) window.CopyDecorPalette(this);
+                window.Repaint();
+            }
+            SceneView.RepaintAll();
+        }
+
+
+        private enum ToolMode { Decor, Painter, SplatMap }
+        [SerializeField] private ToolMode currentMode = ToolMode.Decor;
+
+        // --- Common Settings ---
+        private float brushRadius
+        {
+            get => MBEditorToolState.BrushRadius;
+            set => MBEditorToolState.BrushRadius = value;
+        }
+        private float brushStrength
+        {
+            get => MBEditorToolState.BrushStrength;
+            set => MBEditorToolState.BrushStrength = value;
+        }
+
+        // --- Decor Settings ---
+        [SerializeField] private List<GameObject> prefabPalette = new List<GameObject>();
+        [SerializeField] private bool prefabPaletteExpanded;
+        [SerializeField] private int selectedPrefabIndex = 0;
+        [SerializeField] private bool mixDecorPalette = true;
+        [SerializeField] private Transform decorReferenceRoot;
+        private bool scatterMode = true;
+        private bool alignToSurface = true;
+        private bool gridSnapping = false;
+        private float gridSize = 1.0f;
+        private Vector2 scaleRange = new Vector2(0.8f, 1.2f);
+        private bool randomizeRotationY = true;
+        private float scatterDensity = 0.5f;
+        private float yOffset = 0f;
+        [SerializeField] private MGTerrain.InstanceKind mgTerrainInstanceKind = MGTerrain.InstanceKind.Detail;
+        [SerializeField] private bool paintMGTerrainDensityDetails;
+        [SerializeField] private int mgTerrainDensityLayerIndex;
+        [SerializeField] private int mgGrassSubId;
+        [SerializeField] private bool mgGrassIdOnly;
+
+        // --- Painter Settings ---
+        private enum UVChannel { UV0 = 0, UV1 = 1, UV2 = 2, UV3 = 3 }
+        private enum PainterEditMode { CloneOnTarget, ProxyCopy }
+        private const string PaintProxyName = "MG Brush Paint Proxy";
+        private PainterEditMode painterEditMode = PainterEditMode.ProxyCopy;
+        private bool hideSourceRendererForProxy = true;
+        private UVChannel targetUVChannel = UVChannel.UV1;
+        private Color paintColor
+        {
+            get => MBEditorToolState.PaintColor;
+            set => MBEditorToolState.PaintColor = value;
+        }
+        private bool useFalloff = true;
+        [SerializeField, Range(0.05f, 1f)] private float vertexPaintSpacing = 0.2f;
+        private bool painterBrushActive = true;
+        private bool wPauseHeld;
+        [SerializeField] private List<GameObject> paintTargets = new List<GameObject>();
+        private string painterStatusMessage = "Add mesh objects here before painting. Only listed targets can be cloned or modified.";
+
+        // --- Splat Map Settings ---
+        private enum SplatTextureId
+        {
+            Texture0,
+            Texture1,
+            Texture2,
+            Texture3,
+            Texture4,
+            Texture5,
+            Texture6,
+            Texture7
+        }
+        private const string ControlMap1PropertyName = "_ControlMap1";
+        private const string ControlMap2PropertyName = "_ControlMap2";
+        private static readonly int ControlMap1PropertyId = Shader.PropertyToID(ControlMap1PropertyName);
+        private static readonly int ControlMap2PropertyId = Shader.PropertyToID(ControlMap2PropertyName);
+        [SerializeField] private bool splatAutoFindTexture = true;
+        [SerializeField] private Texture2D splatMapTexture;
+        [SerializeField] private Texture2D splatCompanionMapTexture;
+        [SerializeField] private Material splatSourceMaterial;
+        private UVChannel splatUVChannel
+        {
+            get => (UVChannel)MBEditorToolState.SplatUvChannel;
+            set => MBEditorToolState.SplatUvChannel = (int)value;
+        }
+        private MBSplatPaintMode splatPaintMode
+        {
+            get => MBEditorToolState.SplatPaintMode;
+            set => MBEditorToolState.SplatPaintMode = value;
+        }
+        private int splatTextureId
+        {
+            get => MBEditorToolState.SplatTextureId;
+            set => MBEditorToolState.SplatTextureId = value;
+        }
+        [SerializeField, Range(1, 512)] private int splatBrushPixels = 48;
+        [SerializeField] private bool normalizeSplatWeights = true;
+        [SerializeField] private bool splatUseFalloff = true;
+        [SerializeField] private int newSplatResolution = 1024;
+        [SerializeField] private bool splatAutoSaveAfterStroke = true;
+        private string splatStatusMessage = "Assign a splat-map texture, then paint through a MeshCollider's selected UV channel.";
+        private bool splatTextureDirty;
+        private bool splatCompanionTextureDirty;
+        private bool splatTextureUploadPending;
+        private Texture2D splatPreviewUploadTexture;
+        private Texture2D splatCompanionPreviewUploadTexture;
+        private bool splatPartialPreviewUploadUnavailable;
+        private readonly HashSet<Texture2D> splatStrokeModifiedTextures = new HashSet<Texture2D>();
+        private readonly HashSet<Texture2D> splatTexturesPendingSave = new HashSet<Texture2D>();
+        private readonly HashSet<Texture2D> splatStrokeUndoTextures = new HashSet<Texture2D>();
+        private readonly Dictionary<Texture2D, float> splatPreviewMipBiases =
+            new Dictionary<Texture2D, float>();
+        private bool splatUndoRegistered;
+        private readonly Dictionary<SplatIslandCacheKey, Rect[]> splatIslandBoundsCache =
+            new Dictionary<SplatIslandCacheKey, Rect[]>();
+        private readonly Dictionary<SplatIslandCacheKey, SplatMeshData> splatMeshDataCache =
+            new Dictionary<SplatIslandCacheKey, SplatMeshData>();
+        private readonly List<Material> hitMaterialBuffer = new List<Material>(4);
+        private readonly List<int> splatTriangleCandidates = new List<int>(256);
+        private readonly HashSet<int> splatTriangleCandidateSet = new HashSet<int>();
+
+        private sealed class SplatMeshData
+        {
+            private readonly Mesh mesh;
+            internal readonly int[] triangles;
+            internal readonly List<Vector4> uvs;
+            private Vector3[] cachedVertices;
+            private SplatTriangleGrid triangleGrid;
+            private bool? normalizedPlanarXZUvs;
+
+            internal SplatMeshData(Mesh mesh, int channel)
+            {
+                this.mesh = mesh;
+                // Unity returns copies for both APIs. Keep one copy while the
+                // brush is active instead of copying an entire terrain mesh for
+                // every hover event (and several times within that event).
+                triangles = mesh.triangles;
+                uvs = new List<Vector4>(mesh.vertexCount);
+                mesh.GetUVs(channel, uvs);
+            }
+
+            internal Vector3[] GetVertices()
+            {
+                // Hover picking does not need positions. Defer this additional
+                // large allocation until an actual world-footprint stroke.
+                return cachedVertices ??= mesh.vertices;
+            }
+
+            internal void GetTrianglesNear(
+                Vector3 localCenter,
+                float localRadius,
+                List<int> results,
+                HashSet<int> seen)
+            {
+                triangleGrid ??= new SplatTriangleGrid(GetVertices(), triangles, mesh.bounds);
+                triangleGrid.Query(localCenter, localRadius, results, seen);
+            }
+
+            internal bool HasNormalizedPlanarXZUvs()
+            {
+                if (normalizedPlanarXZUvs.HasValue)
+                    return normalizedPlanarXZUvs.Value;
+
+                Vector3[] vertices = GetVertices();
+                if (vertices.Length == 0 || uvs.Count != vertices.Length)
+                    return false;
+
+                Bounds localBounds = mesh.bounds;
+                if (localBounds.size.x <= 0.0001f || localBounds.size.z <= 0.0001f)
+                    return false;
+
+                int sampleCount = Mathf.Min(vertices.Length, 128);
+                int stride = Mathf.Max(1, vertices.Length / sampleCount);
+                for (int index = 0; index < vertices.Length; index += stride)
+                {
+                    float expectedU = (vertices[index].x - localBounds.min.x) / localBounds.size.x;
+                    float expectedV = (vertices[index].z - localBounds.min.z) / localBounds.size.z;
+                    if (Mathf.Abs(uvs[index].x - expectedU) > 0.0001f
+                        || Mathf.Abs(uvs[index].y - expectedV) > 0.0001f)
+                    {
+                        normalizedPlanarXZUvs = false;
+                        return false;
+                    }
+                }
+
+                normalizedPlanarXZUvs = true;
+                return true;
+            }
+        }
+
+        private sealed class SplatTriangleGrid
+        {
+            private const int TargetTrianglesPerCell = 64;
+            private const int MaximumCellsPerTriangle = 64;
+            private readonly Bounds bounds;
+            private readonly int cellsX;
+            private readonly int cellsY;
+            private readonly int cellsZ;
+            private readonly Dictionary<int, List<int>> trianglesByCell =
+                new Dictionary<int, List<int>>();
+            private readonly List<int> largeTriangles = new List<int>();
+
+            internal SplatTriangleGrid(Vector3[] vertices, int[] triangles, Bounds meshBounds)
+            {
+                bounds = meshBounds;
+                Vector3 size = bounds.size;
+                float largestExtent = Mathf.Max(size.x, size.y, size.z);
+                float minimumExtent = Mathf.Max(largestExtent * 0.0001f, 0.0001f);
+                int targetCells = Mathf.Max(1, triangles.Length / 3 / TargetTrianglesPerCell);
+                int dimensions = (size.x > minimumExtent ? 1 : 0)
+                    + (size.y > minimumExtent ? 1 : 0)
+                    + (size.z > minimumExtent ? 1 : 0);
+                dimensions = Mathf.Max(1, dimensions);
+
+                float activeExtentProduct = 1f;
+                if (size.x > minimumExtent) activeExtentProduct *= size.x;
+                if (size.y > minimumExtent) activeExtentProduct *= size.y;
+                if (size.z > minimumExtent) activeExtentProduct *= size.z;
+                float cellsPerUnit = Mathf.Pow(targetCells / activeExtentProduct, 1f / dimensions);
+                cellsX = GetCellCount(size.x, minimumExtent, cellsPerUnit);
+                cellsY = GetCellCount(size.y, minimumExtent, cellsPerUnit);
+                cellsZ = GetCellCount(size.z, minimumExtent, cellsPerUnit);
+
+                for (int triangleStart = 0; triangleStart + 2 < triangles.Length; triangleStart += 3)
+                {
+                    int a = triangles[triangleStart];
+                    int b = triangles[triangleStart + 1];
+                    int c = triangles[triangleStart + 2];
+                    if ((uint)a >= vertices.Length || (uint)b >= vertices.Length || (uint)c >= vertices.Length)
+                        continue;
+
+                    Vector3 minimum = Vector3.Min(vertices[a], Vector3.Min(vertices[b], vertices[c]));
+                    Vector3 maximum = Vector3.Max(vertices[a], Vector3.Max(vertices[b], vertices[c]));
+                    GetCellRange(minimum, maximum, out Vector3Int minCell, out Vector3Int maxCell);
+                    int coveredCells = (maxCell.x - minCell.x + 1)
+                        * (maxCell.y - minCell.y + 1)
+                        * (maxCell.z - minCell.z + 1);
+                    int triangleIndex = triangleStart / 3;
+                    if (coveredCells > MaximumCellsPerTriangle)
+                    {
+                        largeTriangles.Add(triangleIndex);
+                        continue;
+                    }
+
+                    for (int z = minCell.z; z <= maxCell.z; z++)
+                    for (int y = minCell.y; y <= maxCell.y; y++)
+                    for (int x = minCell.x; x <= maxCell.x; x++)
+                    {
+                        int key = GetCellKey(x, y, z);
+                        if (!trianglesByCell.TryGetValue(key, out List<int> cellTriangles))
+                        {
+                            cellTriangles = new List<int>(TargetTrianglesPerCell);
+                            trianglesByCell.Add(key, cellTriangles);
+                        }
+                        cellTriangles.Add(triangleIndex);
+                    }
+                }
+            }
+
+            internal void Query(
+                Vector3 center,
+                float radius,
+                List<int> results,
+                HashSet<int> seen)
+            {
+                results.Clear();
+                seen.Clear();
+                Vector3 radiusVector = Vector3.one * radius;
+                GetCellRange(center - radiusVector, center + radiusVector, out Vector3Int minCell, out Vector3Int maxCell);
+                for (int z = minCell.z; z <= maxCell.z; z++)
+                for (int y = minCell.y; y <= maxCell.y; y++)
+                for (int x = minCell.x; x <= maxCell.x; x++)
+                {
+                    if (!trianglesByCell.TryGetValue(GetCellKey(x, y, z), out List<int> cellTriangles))
+                        continue;
+                    for (int index = 0; index < cellTriangles.Count; index++)
+                    {
+                        int triangle = cellTriangles[index];
+                        if (seen.Add(triangle))
+                            results.Add(triangle);
+                    }
+                }
+
+                for (int index = 0; index < largeTriangles.Count; index++)
+                {
+                    int triangle = largeTriangles[index];
+                    if (seen.Add(triangle))
+                        results.Add(triangle);
+                }
+            }
+
+            private static int GetCellCount(float extent, float minimumExtent, float cellsPerUnit)
+            {
+                return extent > minimumExtent
+                    ? Mathf.Clamp(Mathf.CeilToInt(extent * cellsPerUnit), 1, 512)
+                    : 1;
+            }
+
+            private void GetCellRange(Vector3 minimum, Vector3 maximum, out Vector3Int minCell, out Vector3Int maxCell)
+            {
+                minCell = new Vector3Int(
+                    GetCellCoordinate(minimum.x, bounds.min.x, bounds.size.x, cellsX),
+                    GetCellCoordinate(minimum.y, bounds.min.y, bounds.size.y, cellsY),
+                    GetCellCoordinate(minimum.z, bounds.min.z, bounds.size.z, cellsZ));
+                maxCell = new Vector3Int(
+                    GetCellCoordinate(maximum.x, bounds.min.x, bounds.size.x, cellsX),
+                    GetCellCoordinate(maximum.y, bounds.min.y, bounds.size.y, cellsY),
+                    GetCellCoordinate(maximum.z, bounds.min.z, bounds.size.z, cellsZ));
+            }
+
+            private static int GetCellCoordinate(float value, float minimum, float extent, int cellCount)
+            {
+                if (cellCount <= 1 || extent <= 0.000001f)
+                    return 0;
+                return Mathf.Clamp(Mathf.FloorToInt((value - minimum) / extent * cellCount), 0, cellCount - 1);
+            }
+
+            private int GetCellKey(int x, int y, int z)
+            {
+                return x + cellsX * (y + cellsY * z);
+            }
+        }
+
+        private readonly struct SplatIslandCacheKey : System.IEquatable<SplatIslandCacheKey>
+        {
+            readonly int meshId;
+            readonly int uvChannel;
+            readonly int generationVersion;
+
+            internal SplatIslandCacheKey(Mesh mesh, int channel, int version)
+            {
+                meshId = mesh != null ? mesh.GetInstanceID() : 0;
+                uvChannel = channel;
+                generationVersion = version;
+            }
+
+            public bool Equals(SplatIslandCacheKey other)
+            {
+                return meshId == other.meshId
+                    && uvChannel == other.uvChannel
+                    && generationVersion == other.generationVersion;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is SplatIslandCacheKey other && Equals(other);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = meshId;
+                    hash = hash * 397 ^ uvChannel;
+                    hash = hash * 397 ^ generationVersion;
+                    return hash;
+                }
+            }
+        }
+
+        // --- Internal State ---
+        private Vector2 scrollPos;
+        private GameObject previewObject;
+        private Vector3 lastHitPoint;
+        private Vector3 lastHitNormal;
+        private bool isPainting = false;
+        private float lastScatterTime = 0f;
+        private HashSet<Mesh> strokeMeshes = new HashSet<Mesh>();
+        private bool sceneToolActive;
+        private bool sceneCameraRightMouseHeld;
+        private bool isAdjustingBrush;
+        private Vector2 brushAdjustMousePosition;
+        private bool hasBrushAdjustSurface;
+        private Vector3 brushAdjustHitPoint;
+        private Vector3 brushAdjustHitNormal;
+        private bool paintTargetCacheDirty = true;
+        private int cachedValidPaintTargetCount;
+        private int paintUndoGroup = -1;
+        private bool hasLastLoftPaintPoint;
+        private Vector3 lastLoftPaintPoint;
+        private UnityEngine.Object[] lastVisualEditingSelection = System.Array.Empty<UnityEngine.Object>();
+        private GameObject splatHoverCandidate;
+
+        internal static void DrawDecorOverlay()
+        {
+            var tool = s_ActiveSceneToolOwner;
+            if (tool == null) return;
+            float previousLabelWidth = EditorGUIUtility.labelWidth;
+            EditorGUIUtility.labelWidth = 90f;
+            try
+            {
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    EditorGUILayout.LabelField("Decor Source", EditorStyles.boldLabel);
+                    tool.SyncDecorPalette();
+                    EditorGUI.BeginChangeCheck();
+                    tool.DrawDecorPaletteControls(true);
+                    GameObject source = tool.prefabPalette.Count > 0
+                        ? tool.prefabPalette[tool.selectedPrefabIndex] : null;
+                    if (source != null)
+                    {
+                        Texture preview = AssetPreview.GetAssetPreview(source) ?? AssetPreview.GetMiniThumbnail(source);
+                        Rect rect = GUILayoutUtility.GetRect(0, 58, GUILayout.ExpandWidth(true));
+                        if (preview != null) GUI.DrawTexture(rect, preview, ScaleMode.ScaleToFit);
+                    }
+                    tool.DrawDecorReferenceRoot();
+                    if (EditorGUI.EndChangeCheck()) tool.PublishDecorPalette();
+                }
+            }
+            finally { EditorGUIUtility.labelWidth = previousLabelWidth; }
+        }
+
+        void DrawDecorReferenceRoot()
+        {
+            var root = (Transform)EditorGUILayout.ObjectField("Reference Root", decorReferenceRoot, typeof(Transform), true);
+            if (root != decorReferenceRoot && (root == null || (!EditorUtility.IsPersistent(root) && root.gameObject.scene.IsValid())))
+                decorReferenceRoot = root;
+            if (GUILayout.Button("Create Reference Root"))
+            {
+                var created = new GameObject("Decor Reference Root");
+                Undo.RegisterCreatedObjectUndo(created, "Create Decor Reference Root");
+                decorReferenceRoot = created.transform;
+                EditorGUIUtility.PingObject(created);
+                Repaint();
+            }
+            if (decorReferenceRoot != null)
+                EditorGUILayout.HelpBox("Paints GameObjects under this root, including on MG Terrain. Clear the root to use terrain instances.", MessageType.None);
+        }
+
+        public static void ShowWindow()
+        {
+            GetWindow<MGBrushWindow>("MG Brush");
+        }
+
+        internal static bool HasActiveSceneTool =>
+            s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.sceneToolActive;
+
+        internal static void DeactivateActiveSceneTool()
+        {
+            if (s_ActiveSceneToolOwner != null)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+        }
+
+        private void OnEnable()
+        {
+            SyncDecorPalette();
+            splatPartialPreviewUploadUnavailable = false;
+            currentMode = (ToolMode)MBEditorToolState.BrushMode;
+            ClearPaintTargetsForModeExit();
+            MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
+            MBEditorToolState.BrushModeChanged += OnSharedBrushModeChanged;
+            MBEditorToolState.BrushSettingsChanged -= OnSharedBrushSettingsChanged;
+            MBEditorToolState.BrushSettingsChanged += OnSharedBrushSettingsChanged;
+            MBEditorToolState.PaintColorChanged -= OnSharedPaintColorChanged;
+            MBEditorToolState.PaintColorChanged += OnSharedPaintColorChanged;
+            MBEditorToolState.SplatUvChannelChanged -= OnSharedSplatUvChannelChanged;
+            MBEditorToolState.SplatUvChannelChanged += OnSharedSplatUvChannelChanged;
+            MBEditorToolState.SplatPaintSettingsChanged -= OnSharedSplatPaintSettingsChanged;
+            MBEditorToolState.SplatPaintSettingsChanged += OnSharedSplatPaintSettingsChanged;
+            EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
+            EditorApplication.hierarchyChanged += InvalidatePaintTargetCache;
+            InvalidatePaintTargetCache();
+            if (MBEditorToolState.ActiveEditing)
+                ActivateSceneTool();
+            else
+                DeactivateSceneTool();
+        }
+
+        private void OnDisable()
+        {
+            CommitSplatSessionOnExit();
+            ClearPaintTargetsForModeExit();
+
+            MBEditorToolState.BrushModeChanged -= OnSharedBrushModeChanged;
+            MBEditorToolState.BrushSettingsChanged -= OnSharedBrushSettingsChanged;
+            MBEditorToolState.PaintColorChanged -= OnSharedPaintColorChanged;
+            MBEditorToolState.SplatUvChannelChanged -= OnSharedSplatUvChannelChanged;
+            MBEditorToolState.SplatPaintSettingsChanged -= OnSharedSplatPaintSettingsChanged;
+            EditorApplication.hierarchyChanged -= InvalidatePaintTargetCache;
+            RestoreSplatPreviewMipBias();
+            DestroySplatPreviewUploadTextures();
+            ClearSplatMeshCaches();
+            DeactivateSceneTool();
+        }
+
+        public void ActivateSceneTool()
+        {
+            SyncDecorPalette();
+            if (s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner != this)
+                s_ActiveSceneToolOwner.DeactivateSceneTool();
+            s_ActiveSceneToolOwner = this;
+            sceneToolActive = true;
+            // Re-register idempotently so B can recover after Unity drops a
+            // Scene-view callback during a focus/tool-context transition.
+            SceneView.duringSceneGui -= OnSceneGUI;
+            SceneView.duringSceneGui += OnSceneGUI;
+            Undo.undoRedoPerformed -= OnUndoRedoPerformed;
+            Undo.undoRedoPerformed += OnUndoRedoPerformed;
+            Selection.selectionChanged -= OnVisualEditingSelectionChanged;
+            Selection.selectionChanged += OnVisualEditingSelectionChanged;
+            RememberVertexPaintSelection();
+        }
+
+        public void DeactivateSceneTool()
+        {
+            if (currentMode == ToolMode.SplatMap)
+                CommitSplatSessionOnExit();
+            FinishPaintUndoGroup();
+            hasLastLoftPaintPoint = false;
+            EndBrushAdjustment();
+            ClearPaintTargetsForModeExit();
+            if (!sceneToolActive)
+                return;
+
+            sceneToolActive = false;
+            sceneCameraRightMouseHeld = false;
+            wPauseHeld = false;
+            splatHoverCandidate = null;
+            SceneView.duringSceneGui -= OnSceneGUI;
+            Undo.undoRedoPerformed -= OnUndoRedoPerformed;
+            Selection.selectionChanged -= OnVisualEditingSelectionChanged;
+            if (s_ActiveSceneToolOwner == this)
+                s_ActiveSceneToolOwner = null;
+            CleanupPreview();
+        }
+
+        private void OnGUI()
+        {
+            Draw();
+        }
+
+        public void Draw(bool embeddedInParentWindow = false)
+        {
+            EditorGUILayout.BeginVertical("box");
+            GUILayout.Label("MG Brush", EditorStyles.boldLabel);
+
+            ToolMode requestedMode = (ToolMode)MashBoxTabDrawer.DrawTabs(
+                (int)currentMode,
+                new[] { "Decor (Scatter)", "Vertex Painter", "Splat Map" },
+                MashBoxTabDrawer.TabVisualStyle.Secondary);
+            if (requestedMode != currentMode)
+                SetToolMode(requestedMode);
+            EditorGUILayout.EndVertical();
+
+            if (!embeddedInParentWindow)
+                scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
+
+            EditorGUILayout.Space(5);
+            brushRadius = EditorGUILayout.Slider("Brush Radius", brushRadius, 0.1f, MBEditorToolState.MaxBrushRadius);
+            brushStrength = EditorGUILayout.Slider("Brush Strength", brushStrength, 0.01f, 1f);
+
+            if (currentMode == ToolMode.Decor)
+            {
+                SyncDecorPalette();
+                EditorGUI.BeginChangeCheck();
+                DrawDecorSettings();
+                if (EditorGUI.EndChangeCheck()) PublishDecorPalette();
+            }
+            else if (currentMode == ToolMode.Painter)
+                DrawPainterSettings();
+            else
+                DrawSplatMapSettings();
+
+            if (!embeddedInParentWindow)
+                EditorGUILayout.EndScrollView();
+        }
+
+        private void SetToolMode(ToolMode mode)
+        {
+            bool leavingSplatMode = currentMode == ToolMode.SplatMap && mode != ToolMode.SplatMap;
+            if (isPainting && currentMode == ToolMode.SplatMap)
+                FinishSplatPaintStroke();
+            if (leavingSplatMode)
+                CommitSplatSessionOnExit();
+
+            ClearPaintTargetsForModeExit();
+
+            currentMode = mode;
+            MBEditorToolState.BrushMode = (MBBrushMode)mode;
+            isPainting = false;
+            FinishPaintUndoGroup();
+            hasLastLoftPaintPoint = false;
+            EndBrushAdjustment();
+            strokeMeshes.Clear();
+            splatHoverCandidate = null;
+            GUIUtility.hotControl = 0;
+
+            if (mode == ToolMode.Painter || mode == ToolMode.SplatMap)
+            {
+                CleanupPreview();
+                wPauseHeld = false;
+                painterBrushActive = true;
+                if (mode == ToolMode.Painter)
+                    painterStatusMessage = "Brush active. Paint listed targets, or Shift-click a mesh to add it.";
+            }
+
+            if (MBEditorToolState.ActiveEditing)
+                ActivateSceneTool();
+            else
+                DeactivateSceneTool();
+            GUI.FocusControl(null);
+            GUI.changed = true;
+            EditorUtility.SetDirty(this);
+            Repaint();
+            SceneView.RepaintAll();
+            RememberVertexPaintSelection();
+        }
+
+        private void ClearPaintTargetsForModeExit()
+        {
+            if (paintTargets.Count == 0)
+                return;
+
+            paintTargets.Clear();
+            InvalidatePaintTargetCache();
+            painterStatusMessage = "Add mesh objects here before painting. Only listed targets can be cloned or modified.";
+            splatStatusMessage = "Add a Splat Paint Target before painting.";
+            EditorUtility.SetDirty(this);
+        }
+
+        private void CommitSplatSessionOnExit()
+        {
+            if (isPainting)
+                FinishSplatPaintStroke();
+            if (!splatTextureDirty)
+                return;
+
+            if (splatAutoSaveAfterStroke)
+                TrySaveAllDirtySplatTextures();
+            else
+                FlushPendingSplatTextureUploads();
+        }
+
+        private void OnVisualEditingSelectionChanged()
+        {
+            RememberVertexPaintSelection();
+        }
+
+        private void RememberVertexPaintSelection()
+        {
+            if (currentMode != ToolMode.Painter
+                || Selection.objects == null
+                || Selection.objects.Length == 0)
+            {
+                return;
+            }
+
+            lastVisualEditingSelection = Selection.objects;
+        }
+
+        private void OnSharedBrushModeChanged()
+        {
+            ToolMode mode = (ToolMode)MBEditorToolState.BrushMode;
+            if (currentMode != mode)
+                SetToolMode(mode);
+            Repaint();
+        }
+
+        private void OnSharedBrushSettingsChanged()
+        {
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private void OnSharedPaintColorChanged()
+        {
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private void OnSharedSplatUvChannelChanged()
+        {
+            ClearSplatMeshCaches();
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private void OnSharedSplatPaintSettingsChanged()
+        {
+            splatUndoRegistered = false;
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private void DrawSplatMapSettings()
+        {
+            EditorGUILayout.LabelField("Splat Map Texture", EditorStyles.boldLabel);
+            splatAutoFindTexture = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Auto From Material",
+                    "Automatically uses _ControlMap1 or _ControlMap2 from the material under the Scene brush, based on the selected Texture ID."),
+                splatAutoFindTexture);
+            EditorGUI.BeginChangeCheck();
+            using (new EditorGUI.DisabledScope(splatAutoFindTexture))
+                splatMapTexture = (Texture2D)EditorGUILayout.ObjectField(
+                    splatAutoFindTexture ? $"Detected {GetActiveControlMapPropertyName()}" : "Texture",
+                    splatMapTexture,
+                    typeof(Texture2D),
+                    false);
+            if (EditorGUI.EndChangeCheck())
+            {
+                splatSourceMaterial = null;
+                splatTextureDirty = false;
+                splatCompanionTextureDirty = false;
+                splatTextureUploadPending = false;
+                splatStatusMessage = splatMapTexture != null
+                    ? "Texture assigned. Paint in the Scene view through a MeshCollider."
+                    : "Assign a splat-map texture, then paint through a MeshCollider's selected UV channel.";
+            }
+
+            splatUVChannel = (UVChannel)EditorGUILayout.EnumPopup(
+                new GUIContent(
+                    "Projection UV Channel",
+                    "The mesh UV channel used to convert the world-space brush hit into splat-map texture coordinates."),
+                splatUVChannel);
+            splatPaintMode = (MBSplatPaintMode)EditorGUILayout.EnumPopup("Paint Mode", splatPaintMode);
+            if (splatPaintMode == MBSplatPaintMode.Color)
+            {
+                paintColor = EditorGUILayout.ColorField(
+                    new GUIContent(
+                        "Paint Color",
+                        "Shared with the Vertex Painter. The picker's RGB is converted to normalized Control Map 1 red/green/blue layer weights."),
+                    paintColor);
+            }
+            else
+            {
+                splatTextureId = (int)(SplatTextureId)EditorGUILayout.EnumPopup(
+                    "Texture ID",
+                    (SplatTextureId)splatTextureId);
+                EditorGUILayout.HelpBox(
+                    $"Texture {splatTextureId} writes {GetActiveControlMapPropertyName()} " +
+                    $"{GetActiveSplatChannelName()}. Combined weights across both control maps " +
+                    "are normalized automatically.",
+                    MessageType.None);
+                if (!splatAutoFindTexture)
+                {
+                    splatCompanionMapTexture = (Texture2D)EditorGUILayout.ObjectField(
+                        "Other Control Map",
+                        splatCompanionMapTexture,
+                        typeof(Texture2D),
+                        false);
+                }
+            }
+            splatBrushPixels = EditorGUILayout.IntSlider(
+                new GUIContent(
+                    "Fallback Brush (Pixels)",
+                    "Pixel radius used for terrain and other targets without a readable MeshCollider. Mesh splat painting uses the world-space Brush Radius."),
+                splatBrushPixels,
+                1,
+                512);
+            splatUseFalloff = EditorGUILayout.Toggle("Use Falloff", splatUseFalloff);
+            splatAutoSaveAfterStroke = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Save When Leaving Splat Mode",
+                    "Keeps strokes in memory while painting, then writes all changed control maps when you leave Splat mode or deactivate the brush tool."),
+                splatAutoSaveAfterStroke);
+            if (splatPaintMode == MBSplatPaintMode.Color)
+            {
+                normalizeSplatWeights = EditorGUILayout.Toggle(
+                    new GUIContent("Normalize RGBA Weights", "Keeps the four splat channels adding up to one while painting."),
+                    normalizeSplatWeights);
+            }
+
+            EditorGUILayout.HelpBox(splatStatusMessage, splatTextureDirty ? MessageType.Warning : MessageType.Info);
+            EditorGUILayout.HelpBox(
+                "Scene View: Shift-click an unlisted loft or mesh to add it as a Splat Paint Target. On an active target, Left Mouse paints and Shift erases. Mesh hits are projected through the selected UV channel; Terrain supports UV0 only.",
+                MessageType.None);
+
+            DrawPaintTargetSettings(splatMode: true);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(splatMapTexture == null))
+                {
+                    if (GUILayout.Button("Make Readable"))
+                        MakeSplatTextureReadable();
+                    if (GUILayout.Button(
+                            splatPaintMode == MBSplatPaintMode.TextureId
+                                ? "Save Control Maps"
+                                : "Save Texture"))
+                        TrySaveSplatTexture(false);
+                    if (GUILayout.Button("Save As PNG"))
+                        TrySaveSplatTexture(true);
+                }
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                newSplatResolution = EditorGUILayout.IntPopup(
+                    "New Resolution",
+                    newSplatResolution,
+                    new[] { "256", "512", "1024", "2048", "4096" },
+                    new[] { 256, 512, 1024, 2048, 4096 });
+                if (GUILayout.Button("Create New Splat Map", GUILayout.Width(180f)))
+                    CreateSplatTexture();
+            }
+
+            if (splatMapTexture != null)
+            {
+                Rect previewRect = GUILayoutUtility.GetAspectRect(4f, GUILayout.MaxHeight(180f));
+                EditorGUI.DrawPreviewTexture(previewRect, splatMapTexture, null, ScaleMode.ScaleToFit);
+            }
+        }
+
+        private void OnUndoRedoPerformed()
+        {
+            ClearSplatMeshCaches();
+            RebuildLoftVertexPaintModifiers();
+            RefreshPaintTargetMeshes();
+        }
+
+        private void DrawDecorSettings()
+        {
+            EditorGUILayout.LabelField("Placement Settings", EditorStyles.boldLabel);
+            scatterMode = EditorGUILayout.Toggle("Scatter Mode", scatterMode);
+            alignToSurface = EditorGUILayout.Toggle("Align to Surface", alignToSurface);
+            gridSnapping = EditorGUILayout.Toggle("Grid Snapping", gridSnapping);
+            if (gridSnapping) gridSize = EditorGUILayout.FloatField("Grid Size", gridSize);
+            
+            yOffset = EditorGUILayout.FloatField("Y Offset", yOffset);
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Randomization", EditorStyles.boldLabel);
+            randomizeRotationY = EditorGUILayout.Toggle("Randomize Rotation (Y)", randomizeRotationY);
+            scaleRange = EditorGUILayout.Vector2Field("Scale Range (Min/Max)", scaleRange);
+            if (scatterMode) scatterDensity = EditorGUILayout.Slider("Scatter Density", scatterDensity, 0.01f, 1f);
+            mgTerrainInstanceKind = (MGTerrain.InstanceKind)EditorGUILayout.EnumPopup(
+                new GUIContent(
+                    "MG Terrain Instance",
+                    "When the brush hits an MG Terrain, store the palette prefab as an instanced Detail or Tree instead of creating a GameObject."),
+                mgTerrainInstanceKind);
+
+            if (mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail)
+            {
+                paintMGTerrainDensityDetails = EditorGUILayout.Toggle(
+                    new GUIContent("Paint Density Layer", "Paint compact high-density grass data instead of adding individually serialized instances."),
+                    paintMGTerrainDensityDetails);
+                if (paintMGTerrainDensityDetails)
+                {
+                    MGTerrain selectedTerrain = Selection.activeGameObject != null
+                        ? Selection.activeGameObject.GetComponentInParent<MGTerrain>()
+                        : null;
+                    if (selectedTerrain != null && selectedTerrain.DensityDetailLayerCount > 0)
+                    {
+                        var layerNames = new string[selectedTerrain.DensityDetailLayerCount];
+                        for (int layerIndex = 0; layerIndex < layerNames.Length; layerIndex++)
+                        {
+                            MGTerrain.DensityDetailLayer layer = selectedTerrain.DensityDetailLayers[layerIndex];
+                            MGTerrain.Prototype prototype = layer != null && (uint)layer.PrototypeIndex < selectedTerrain.Prototypes.Count
+                                ? selectedTerrain.Prototypes[layer.PrototypeIndex]
+                                : null;
+                            string prototypeName = prototype != null && prototype.Prefab != null
+                                ? prototype.Prefab.name
+                                : prototype != null && prototype.Material != null ? prototype.Material.name : "Missing Prototype";
+                            layerNames[layerIndex] = $"{layerIndex}: {prototypeName}" + (layer != null && layer.GrassIdMap != null ? " / Population " + (layer.GrassPopulation == 0 ? "A" : "B") : layer != null && layer.UsesGrassArray ? " / Sub-ID " + layer.TextureSlice : "");
+                        }
+                        mgTerrainDensityLayerIndex = EditorGUILayout.Popup(
+                            "Density Layer",
+                            Mathf.Clamp(mgTerrainDensityLayerIndex, 0, layerNames.Length - 1),
+                            layerNames);
+                        var selectedLayer = selectedTerrain.DensityDetailLayers[mgTerrainDensityLayerIndex];
+                        if (selectedLayer.GrassIdMap != null)
+                        {
+                            mgGrassSubId = EditorGUILayout.IntSlider("Paint Grass Sub-ID", mgGrassSubId, 0, 7);
+                            mgGrassIdOnly = EditorGUILayout.Toggle("Replace ID Only", mgGrassIdOnly);
+                        }
+                        else if (selectedLayer.UsesGrassArray)
+                            EditorGUILayout.HelpBox("Painting grass Sub-ID " + selectedLayer.TextureSlice + ". Choose another density layer to paint another slice; source textures are shared arrays.", MessageType.None);
+                        EditorGUILayout.HelpBox("Choose Population A or B in MG Terrain, then paint a Sub-ID. Each population shares one density map across all IDs.", MessageType.None);
+                    }
+                    else
+                    {
+                        mgTerrainDensityLayerIndex = Mathf.Max(0, EditorGUILayout.IntField("Density Layer", mgTerrainDensityLayerIndex));
+                        EditorGUILayout.HelpBox("Select an MG Terrain to choose one of its imported density layers.", MessageType.None);
+                    }
+                }
+            }
+
+            EditorGUILayout.HelpBox(
+                paintMGTerrainDensityDetails && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail
+                    ? "The same Scene brush now adds grass density to the selected layer. Shift-drag removes density. No individual grass objects are serialized."
+                    : "On an MG Terrain this brush writes lightweight GPU instances. Shift-drag erases the selected palette prefab. Other surfaces keep the normal GameObject placement workflow.",
+                MessageType.None);
+
+            EditorGUILayout.Space(5);
+            DrawDecorReferenceRoot();
+            DrawDecorPaletteControls(false);
+            if (GUILayout.Button("Simulate & Settle (Physics)"))
+            {
+                SimulatePhysics();
+            }
+        }
+
+
+        void DrawDecorPaletteControls(bool compact)
+        {
+            using var so = new SerializedObject(this);
+            so.Update();
+            if (compact) decorPaletteScroll = EditorGUILayout.BeginScrollView(decorPaletteScroll, GUILayout.MaxHeight(200));
+            DrawPrefabPalette(so.FindProperty("prefabPalette"));
+            if (compact) EditorGUILayout.EndScrollView();
+            so.ApplyModifiedProperties();
+            selectedPrefabIndex = Mathf.Clamp(selectedPrefabIndex, 0, Mathf.Max(0, prefabPalette.Count - 1));
+            if (prefabPalette.Count > 0)
+            {
+                string[] names = prefabPalette.Select((p, i) => (i + 1) + ": " + (p != null ? p.name : "(Empty)")).ToArray();
+                selectedPrefabIndex = EditorGUILayout.Popup("Selected Prefab", selectedPrefabIndex, names);
+            }
+            mixDecorPalette = EditorGUILayout.Toggle("Mix Palette", mixDecorPalette);
+            if (mixDecorPalette)
+                EditorGUILayout.HelpBox("Scatter randomly chooses from the palette. Selected Prefab controls single placement and erasing.", MessageType.None);
+        }
+
+        private void DrawPrefabPalette(SerializedProperty paletteProperty)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                prefabPaletteExpanded = EditorGUILayout.Foldout(
+                    prefabPaletteExpanded,
+                    "Prefab Palette",
+                    true);
+
+                int requestedSize = Mathf.Max(0, EditorGUILayout.IntField(
+                    paletteProperty.arraySize,
+                    GUILayout.Width(60f)));
+                if (requestedSize != paletteProperty.arraySize)
+                    paletteProperty.arraySize = requestedSize;
+            }
+
+            if (!prefabPaletteExpanded)
+                return;
+
+            EditorGUI.indentLevel++;
+            for (int index = 0; index < paletteProperty.arraySize; index++)
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.PropertyField(
+                        paletteProperty.GetArrayElementAtIndex(index),
+                        new GUIContent($"Prefab {index + 1}"));
+
+                    if (GUILayout.Button("−", GUILayout.Width(24f)))
+                    {
+                        int previousSize = paletteProperty.arraySize;
+                        paletteProperty.DeleteArrayElementAtIndex(index);
+                        if (paletteProperty.arraySize == previousSize)
+                            paletteProperty.DeleteArrayElementAtIndex(index);
+                        break;
+                    }
+                }
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Add Prefab", GUILayout.Width(110f)))
+                {
+                    int newIndex = paletteProperty.arraySize;
+                    paletteProperty.InsertArrayElementAtIndex(newIndex);
+                    paletteProperty.GetArrayElementAtIndex(newIndex).objectReferenceValue = null;
+                }
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        private void DrawPainterSettings()
+        {
+            EditorGUILayout.LabelField("Vertex Color Settings", EditorStyles.boldLabel);
+            bool hasLoftTarget = HasLoftPaintTarget();
+            if (hasLoftTarget && painterEditMode != PainterEditMode.CloneOnTarget)
+            {
+                painterEditMode = PainterEditMode.CloneOnTarget;
+                ApplyProxyRendererVisibility();
+            }
+
+            EditorGUI.BeginChangeCheck();
+            using (new EditorGUI.DisabledScope(hasLoftTarget))
+                painterEditMode = (PainterEditMode)EditorGUILayout.EnumPopup("Edit Mode", painterEditMode);
+            if (painterEditMode == PainterEditMode.ProxyCopy)
+                hideSourceRendererForProxy = EditorGUILayout.Toggle("Hide Source Renderer", hideSourceRendererForProxy);
+            if (EditorGUI.EndChangeCheck())
+                ApplyProxyRendererVisibility();
+
+            if (hasLoftTarget)
+                EditorGUILayout.HelpBox("Loft painting uses Clone On Target. Brush strokes are stored locally and replayed after loft regeneration.", MessageType.Info);
+
+            paintColor = EditorGUILayout.ColorField("Paint Color", paintColor);
+            useFalloff = EditorGUILayout.Toggle("Use Falloff", useFalloff);
+            if (hasLoftTarget)
+                vertexPaintSpacing = EditorGUILayout.Slider("Stroke Spacing", vertexPaintSpacing, 0.05f, 1f);
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("UV Generation", EditorStyles.boldLabel);
+            targetUVChannel = (UVChannel)EditorGUILayout.EnumPopup("Target UV Channel", targetUVChannel);
+
+            EditorGUILayout.HelpBox("Painting modifies vertex colors. Auto UV will generate unwrapped coordinates for the selected channel.", MessageType.Info);
+            EditorGUILayout.HelpBox("Scene View: Ctrl+Middle-drag adjusts the brush horizontally for radius and vertically for strength.", MessageType.None);
+
+            DrawPaintTargetSettings();
+            if (hasLoftTarget)
+                DrawLoftVertexPaintHistory();
+
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(GetValidPaintTargetCount() == 0))
+            {
+                if (GUILayout.Button("Flood Color"))
+                    FloodPaintTargets();
+
+                if (GUILayout.Button("Auto UV Targets"))
+                    GenerateAutoUVsForPaintTargets();
+            }
+            if (GUILayout.Button("Save Mesh"))
+            {
+                SaveSelectedMesh();
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawLoftVertexPaintHistory()
+        {
+            MultiSplineLoft loft = GetFocusedPaintTargetLoft();
+            VertexPaintModifier modifier = loft != null ? loft.VertexPaintModifier : null;
+
+            EditorGUILayout.Space(5f);
+            EditorGUILayout.LabelField("Loft Paint History", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                loft != null
+                    ? $"{loft.gameObject.name}: {(modifier != null ? modifier.StrokeCount : 0)} recorded strokes"
+                    : "No loft target selected.",
+                EditorStyles.miniLabel);
+
+            using (new EditorGUI.DisabledScope(modifier == null || modifier.StrokeCount == 0))
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Remove Last"))
+                {
+                    Undo.RecordObject(modifier, "Remove Vertex Paint Stroke");
+                    modifier.RemoveLastStroke();
+                    modifier.Rebuild();
+                    EditorUtility.SetDirty(modifier);
+                }
+
+                if (GUILayout.Button("Clear Strokes"))
+                {
+                    Undo.RecordObject(modifier, "Clear Vertex Paint Strokes");
+                    modifier.ClearStrokes();
+                    modifier.Rebuild();
+                    EditorUtility.SetDirty(modifier);
+                }
+            }
+        }
+
+        private void DrawPaintTargetSettings(bool splatMode = false)
+        {
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField(splatMode ? "Splat Paint Targets" : "Paint Targets", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(splatMode
+                ? "Only listed meshes can be splat-painted. Hover another loft and Shift-click to add it."
+                : painterStatusMessage, MessageType.None);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Add Selection", GUILayout.Height(24f)))
+                    AddSelectedPaintTargets();
+
+                using (new EditorGUI.DisabledScope(paintTargets.Count == 0))
+                {
+                    if (GUILayout.Button("Clean", GUILayout.Width(72f), GUILayout.Height(24f)))
+                        CleanPaintTargets();
+
+                    if (GUILayout.Button("Clear", GUILayout.Width(72f), GUILayout.Height(24f)))
+                    {
+                        Undo.RecordObject(this, "Clear Paint Targets");
+                        paintTargets.Clear();
+                        InvalidatePaintTargetCache();
+                        painterStatusMessage = "Paint target list cleared.";
+                        if (splatMode)
+                            splatStatusMessage = "Splat paint target list cleared.";
+                    }
+                }
+            }
+
+            DrawPaintTargetDropZone();
+
+            SerializedObject so = new SerializedObject(this);
+            SerializedProperty targetsProperty = so.FindProperty("paintTargets");
+            EditorGUILayout.PropertyField(targetsProperty, true);
+            if (so.ApplyModifiedProperties())
+                InvalidatePaintTargetCache();
+        }
+
+        private void DrawPaintTargetDropZone()
+        {
+            Rect dropRect = GUILayoutUtility.GetRect(0f, 42f, GUILayout.ExpandWidth(true));
+            GUI.Box(dropRect, "Drag paint target objects here");
+
+            Event current = Event.current;
+            if (!dropRect.Contains(current.mousePosition))
+                return;
+
+            if (current.type == EventType.DragUpdated)
+            {
+                DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                current.Use();
+            }
+            else if (current.type == EventType.DragPerform)
+            {
+                DragAndDrop.AcceptDrag();
+                AddPaintTargets(DragAndDrop.objectReferences);
+                current.Use();
+            }
+        }
+
+        private void AddSelectedPaintTargets()
+        {
+            UnityEngine.Object[] selectedObjects = Selection.objects != null && Selection.objects.Length > 0
+                ? Selection.objects
+                : lastVisualEditingSelection;
+            AddPaintTargets(selectedObjects);
+        }
+
+        private void AddPaintTargets(Object[] objects)
+        {
+            if (objects == null || objects.Length == 0)
+            {
+                painterStatusMessage = "No objects were added.";
+                return;
+            }
+
+            Undo.RecordObject(this, "Add Paint Targets");
+            int added = 0;
+            for (int i = 0; i < objects.Length; i++)
+            {
+                if (TryAddPaintTarget(objects[i]))
+                    added++;
+            }
+
+            painterStatusMessage = added > 0
+                ? $"Added {added} paint target{(added == 1 ? string.Empty : "s")}."
+                : "No new mesh targets were added.";
+        }
+
+        private bool TryAddPaintTarget(Object obj)
+        {
+            GameObject gameObject = obj switch
+            {
+                GameObject go => go,
+                Component component => component.gameObject,
+                _ => null
+            };
+
+            if (!gameObject || !HasPaintableMesh(gameObject) || paintTargets.Contains(gameObject))
+                return false;
+
+            paintTargets.Add(gameObject);
+            if (ResolvePaintTargetLoft(gameObject) != null)
+            {
+                painterEditMode = PainterEditMode.CloneOnTarget;
+                ApplyProxyRendererVisibility();
+            }
+            InvalidatePaintTargetCache();
+            return true;
+        }
+
+        private void AddPaintTargetFromHit(RaycastHit hit)
+        {
+            MeshFilter meshFilter = GetPaintMeshFilter(hit);
+            if (!meshFilter)
+                return;
+
+            if (TryAddPaintTarget(meshFilter.gameObject))
+                painterStatusMessage = $"Added '{meshFilter.gameObject.name}' to Paint Targets.";
+            else
+                painterStatusMessage = $"'{meshFilter.gameObject.name}' is already in Paint Targets.";
+        }
+
+        private GameObject ResolveSplatPaintTarget(RaycastHit hit)
+        {
+            if (!hit.collider)
+                return null;
+
+            var mgTerrain = hit.collider.GetComponentInParent<MGTerrain>();
+            if (mgTerrain != null) return mgTerrain.MeshFilter != null ? mgTerrain.MeshFilter.gameObject : mgTerrain.gameObject;
+
+            MultiSplineLoft loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
+            if (loft != null)
+                return loft.gameObject;
+
+            if (hit.collider is TerrainCollider)
+            {
+                Terrain terrain = hit.collider.GetComponent<Terrain>();
+                return terrain != null ? terrain.gameObject : hit.collider.gameObject;
+            }
+
+            MeshFilter meshFilter = GetPaintMeshFilter(hit);
+            return meshFilter != null ? meshFilter.gameObject : null;
+        }
+
+        private void AddSplatPaintTarget(GameObject target)
+        {
+            if (!target)
+                return;
+
+            Undo.RecordObject(this, "Add Splat Paint Target");
+            bool added = TryAddPaintTarget(target);
+            MultiSplineLoft loft = ResolvePaintTargetLoft(target);
+            if (loft != null)
+            {
+                if (!loft.UpdateMeshCollider)
+                {
+                    Undo.RecordObject(loft, "Enable Loft Collider Chunks For Splat Painting");
+                    loft.UpdateMeshCollider = true;
+                    EditorUtility.SetDirty(loft);
+                }
+                loft.RebuildColliderChunks();
+            }
+
+            splatStatusMessage = added
+                ? $"Added '{target.name}' as a Splat Paint Target."
+                : $"'{target.name}' is already a Splat Paint Target.";
+            InvalidatePaintTargetCache();
+            EditorUtility.SetDirty(this);
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private void AddSplatPaintTargetFromHit(RaycastHit hit)
+        {
+            AddSplatPaintTarget(ResolveSplatPaintTarget(hit));
+        }
+
+        private Color GetPainterBrushColor(RaycastHit hit, bool shiftPressed)
+        {
+            MeshFilter meshFilter = GetPaintMeshFilter(hit);
+            if (!meshFilter)
+                return new Color(0.7f, 0.7f, 0.7f, 0.85f);
+
+            if (IsPaintTarget(meshFilter.gameObject))
+                return new Color(0.25f, 1f, 0.45f, 0.95f);
+
+            return shiftPressed
+                ? new Color(0.2f, 0.75f, 1f, 0.95f)
+                : new Color(1f, 0.55f, 0.15f, 0.9f);
+        }
+
+        private void DrawPainterHoverLabel(RaycastHit hit, bool shiftPressed)
+        {
+            MeshFilter meshFilter = GetPaintMeshFilter(hit);
+            string label;
+
+            if (!meshFilter)
+            {
+                label = "No Mesh";
+            }
+            else if (IsPaintTarget(meshFilter.gameObject))
+            {
+                label = shiftPressed ? "Click · Add Paint Target" : "Paint Vertex Color";
+            }
+            else
+            {
+                label = shiftPressed
+                    ? $"Click to Add: {meshFilter.gameObject.name}"
+                    : "Shift+Click Add Target";
+            }
+
+            MBEditorToolVisuals.DrawBrushAction(label);
+        }
+
+        private void CleanPaintTargets()
+        {
+            for (int i = paintTargets.Count - 1; i >= 0; i--)
+            {
+                if (!paintTargets[i] || !HasPaintableMesh(paintTargets[i]))
+                    paintTargets.RemoveAt(i);
+            }
+
+            cachedValidPaintTargetCount = 0;
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                if (paintTargets[i] && HasPaintableMesh(paintTargets[i]))
+                    cachedValidPaintTargetCount++;
+            }
+            paintTargetCacheDirty = false;
+        }
+
+        private int GetValidPaintTargetCount()
+        {
+            if (paintTargetCacheDirty)
+                CleanPaintTargets();
+            return cachedValidPaintTargetCount;
+        }
+
+        private void InvalidatePaintTargetCache()
+        {
+            paintTargetCacheDirty = true;
+            ClearSplatMeshCaches();
+        }
+
+        private void ClearSplatMeshCaches()
+        {
+            splatMeshDataCache.Clear();
+            splatIslandBoundsCache.Clear();
+        }
+
+        private void DestroySplatPreviewUploadTextures()
+        {
+            if (splatPreviewUploadTexture != null)
+                DestroyImmediate(splatPreviewUploadTexture);
+            if (splatCompanionPreviewUploadTexture != null)
+                DestroyImmediate(splatCompanionPreviewUploadTexture);
+            splatPreviewUploadTexture = null;
+            splatCompanionPreviewUploadTexture = null;
+        }
+
+        private void UseBaseMipForSplatPreview(Texture2D texture, bool companion)
+        {
+            if (texture == null || texture.mipmapCount <= 1)
+                return;
+            if (splatPreviewMipBiases.ContainsKey(texture))
+                return;
+            splatPreviewMipBiases.Add(texture, texture.mipMapBias);
+            texture.mipMapBias = -10f;
+        }
+
+        private void RestoreSplatPreviewMipBias()
+        {
+            foreach (KeyValuePair<Texture2D, float> pair in splatPreviewMipBiases)
+            {
+                if (pair.Key != null)
+                    pair.Key.mipMapBias = pair.Value;
+            }
+            splatPreviewMipBiases.Clear();
+        }
+
+        private void UploadSplatPreviewRegion(
+            Texture2D destination,
+            Color[] pixels,
+            int destinationX,
+            int destinationY,
+            int width,
+            int height,
+            bool companion)
+        {
+            if (splatPartialPreviewUploadUnavailable
+                || destination == null
+                || pixels == null
+                || width <= 0
+                || height <= 0
+                || SystemInfo.copyTextureSupport == UnityEngine.Rendering.CopyTextureSupport.None)
+            {
+                return;
+            }
+
+            Texture2D uploadTexture = companion
+                ? splatCompanionPreviewUploadTexture
+                : splatPreviewUploadTexture;
+            if (uploadTexture == null
+                || uploadTexture.width < width
+                || uploadTexture.height < height)
+            {
+                if (uploadTexture != null)
+                    DestroyImmediate(uploadTexture);
+                int uploadWidth = Mathf.NextPowerOfTwo(width);
+                int uploadHeight = Mathf.NextPowerOfTwo(height);
+                uploadTexture = new Texture2D(
+                    uploadWidth,
+                    uploadHeight,
+                    TextureFormat.RGBA32,
+                    false,
+                    true)
+                {
+                    name = companion ? "Splat Companion Preview Upload" : "Splat Preview Upload",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                if (companion)
+                    splatCompanionPreviewUploadTexture = uploadTexture;
+                else
+                    splatPreviewUploadTexture = uploadTexture;
+            }
+
+            try
+            {
+                UseBaseMipForSplatPreview(destination, companion);
+                uploadTexture.SetPixels(0, 0, width, height, pixels);
+                uploadTexture.Apply(false, false);
+                Graphics.CopyTexture(
+                    uploadTexture,
+                    0,
+                    0,
+                    0,
+                    0,
+                    width,
+                    height,
+                    destination,
+                    0,
+                    0,
+                    destinationX,
+                    destinationY);
+            }
+            catch (System.Exception exception)
+            {
+                splatPartialPreviewUploadUnavailable = true;
+                DestroySplatPreviewUploadTextures();
+                Debug.LogWarning(
+                    $"Splat live preview fell back to stroke-end updates because partial texture uploads are unavailable: {exception.Message}");
+            }
+        }
+
+        private static bool HasPaintableMesh(GameObject gameObject)
+        {
+            return gameObject && gameObject.GetComponentInChildren<MeshFilter>() != null;
+        }
+
+        private bool HasLoftPaintTarget()
+        {
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                if (ResolvePaintTargetLoft(paintTargets[i]) != null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private MultiSplineLoft GetFocusedPaintTargetLoft()
+        {
+            MultiSplineLoft selectedLoft = ResolvePaintTargetLoft(Selection.activeGameObject);
+            if (selectedLoft != null)
+            {
+                for (int i = 0; i < paintTargets.Count; i++)
+                {
+                    GameObject target = paintTargets[i];
+                    if (target && (selectedLoft.gameObject == target || selectedLoft.transform.IsChildOf(target.transform)))
+                        return selectedLoft;
+                }
+            }
+
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                MultiSplineLoft loft = ResolvePaintTargetLoft(paintTargets[i]);
+                if (loft != null)
+                    return loft;
+            }
+
+            return null;
+        }
+
+        private static MultiSplineLoft ResolvePaintTargetLoft(GameObject gameObject)
+        {
+            if (!gameObject)
+                return null;
+
+            return gameObject.GetComponent<MultiSplineLoft>()
+                ?? gameObject.GetComponentInParent<MultiSplineLoft>()
+                ?? gameObject.GetComponentInChildren<MultiSplineLoft>();
+        }
+
+        private static MultiSplineLoft ResolvePaintTargetLoft(MeshFilter meshFilter)
+        {
+            if (!meshFilter)
+                return null;
+
+            return meshFilter.GetComponent<MultiSplineLoft>()
+                ?? meshFilter.GetComponentInParent<MultiSplineLoft>();
+        }
+
+        private bool IsPaintTarget(GameObject gameObject)
+        {
+            if (!gameObject)
+                return false;
+
+            // MG Terrain is intrinsically paintable. It should work with the
+            // shared vertex/splat brush without a separate terrain paint mode or
+            // the Shift-click target-registration step used by arbitrary meshes.
+            if (gameObject.GetComponent<MGTerrain>() != null
+                || gameObject.GetComponentInParent<MGTerrain>() != null)
+                return true;
+
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                GameObject target = paintTargets[i];
+                if (!target)
+                    continue;
+
+                if (gameObject == target || gameObject.transform.IsChildOf(target.transform))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void FloodPaintTargets()
+        {
+            int floodedMeshes = 0;
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                GameObject target = paintTargets[i];
+                if (!target)
+                    continue;
+
+                MeshFilter[] meshFilters = target.GetComponentsInChildren<MeshFilter>();
+                for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
+                {
+                    if (meshFilters[meshIndex]
+                        && !IsPaintProxyMeshFilter(meshFilters[meshIndex])
+                        && !IsGeneratedMeshMicroBumpFilter(meshFilters[meshIndex]))
+                    {
+                        FillMesh(meshFilters[meshIndex].gameObject);
+                        floodedMeshes++;
+                    }
+                }
+            }
+
+            painterStatusMessage = floodedMeshes > 0
+                ? $"Flooded {floodedMeshes} target mesh{(floodedMeshes == 1 ? string.Empty : "es")}."
+                : "No paint target meshes were flooded.";
+            RefreshPaintTargetMeshes();
+        }
+
+        private void GenerateAutoUVsForPaintTargets()
+        {
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                GameObject target = paintTargets[i];
+                if (!target)
+                    continue;
+
+                MeshFilter[] meshFilters = target.GetComponentsInChildren<MeshFilter>();
+                for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
+                {
+                    if (meshFilters[meshIndex]
+                        && !IsPaintProxyMeshFilter(meshFilters[meshIndex])
+                        && !IsGeneratedMeshMicroBumpFilter(meshFilters[meshIndex]))
+                        GenerateAutoUVs(meshFilters[meshIndex].gameObject);
+                }
+            }
+        }
+
+        private static MeshFilter GetPaintMeshFilter(RaycastHit hit)
+        {
+            if (!hit.collider)
+                return null;
+
+            var terrain = hit.collider.GetComponentInParent<MGTerrain>();
+            if (terrain != null) return terrain.MeshFilter;
+
+            if (TryGetMeshMicroBumpGenerator(hit.collider, out MicroBumpMeshColliderGenerator microBumpGenerator))
+                return microBumpGenerator.GetComponent<MeshFilter>();
+
+            MeshFilter meshFilter = hit.collider.GetComponent<MeshFilter>();
+            return meshFilter ? meshFilter : hit.collider.GetComponentInParent<MeshFilter>();
+        }
+
+        private static bool IsGeneratedMeshMicroBumpFilter(MeshFilter meshFilter)
+        {
+            if (meshFilter == null)
+                return false;
+            var terrain = meshFilter.GetComponentInParent<MGTerrain>();
+            if (terrain != null && terrain.IsSurfaceRenderTile(meshFilter)) return true;
+            MicroBumpMeshColliderGenerator generator =
+                meshFilter.GetComponentInParent<MicroBumpMeshColliderGenerator>();
+            return generator != null
+                && generator.GeneratedRoot != null
+                && meshFilter.transform.IsChildOf(generator.GeneratedRoot.transform);
+        }
+
+        private Mesh EnsureEditableMesh(MeshFilter meshFilter, string undoName, out MeshFilter editableMeshFilter)
+        {
+            editableMeshFilter = null;
+            if (!meshFilter || !meshFilter.sharedMesh)
+                return null;
+
+            MultiSplineLoft loft = ResolvePaintTargetLoft(meshFilter);
+            if (loft != null)
+            {
+                painterEditMode = PainterEditMode.CloneOnTarget;
+                editableMeshFilter = loft.GetComponent<MeshFilter>();
+                return loft.GeneratedMesh;
+            }
+
+            MGTerrain terrain = meshFilter.GetComponent<MGTerrain>()
+                ?? meshFilter.GetComponentInParent<MGTerrain>();
+            bool isMGTerrain = terrain != null;
+            if (isMGTerrain && terrain.MeshFilter != null)
+                meshFilter = terrain.MeshFilter;
+
+            // MG Terrain's render mesh is its paint surface. A proxy would hide
+            // the painted data from its collider and from the terrain material.
+            editableMeshFilter = !isMGTerrain && painterEditMode == PainterEditMode.ProxyCopy
+                ? EnsurePaintProxyMeshFilter(meshFilter, undoName)
+                : meshFilter;
+
+            if (!editableMeshFilter || !editableMeshFilter.sharedMesh)
+                return null;
+
+            Mesh mesh = editableMeshFilter.sharedMesh;
+            Undo.RecordObject(editableMeshFilter, undoName);
+
+            if (!mesh.name.Contains("(Clone)"))
+            {
+                mesh = Instantiate(editableMeshFilter.sharedMesh);
+                mesh.name = editableMeshFilter.sharedMesh.name + " (Clone)";
+                editableMeshFilter.sharedMesh = mesh;
+                painterStatusMessage = !isMGTerrain && painterEditMode == PainterEditMode.ProxyCopy
+                    ? $"Created paint proxy mesh for '{meshFilter.gameObject.name}'."
+                    : $"Created editable mesh clone for '{meshFilter.gameObject.name}'.";
+            }
+
+            if (isMGTerrain && terrain.MeshCollider != null && terrain.MeshCollider.sharedMesh != mesh)
+            {
+                Undo.RecordObject(terrain.MeshCollider, undoName);
+                terrain.MeshCollider.sharedMesh = mesh;
+                EditorUtility.SetDirty(terrain.MeshCollider);
+            }
+
+            return mesh;
+        }
+
+        private MeshFilter EnsurePaintProxyMeshFilter(MeshFilter sourceMeshFilter, string undoName)
+        {
+            Transform proxyTransform = sourceMeshFilter.transform.Find(PaintProxyName);
+            GameObject proxyObject = proxyTransform ? proxyTransform.gameObject : null;
+            if (!proxyObject)
+            {
+                proxyObject = new GameObject(PaintProxyName);
+                Undo.RegisterCreatedObjectUndo(proxyObject, undoName);
+                proxyTransform = proxyObject.transform;
+                proxyTransform.SetParent(sourceMeshFilter.transform, false);
+                proxyTransform.localPosition = Vector3.zero;
+                proxyTransform.localRotation = Quaternion.identity;
+                proxyTransform.localScale = Vector3.one;
+                proxyObject.hideFlags = HideFlags.NotEditable;
+            }
+
+            MeshFilter proxyMeshFilter = proxyObject.GetComponent<MeshFilter>();
+            if (!proxyMeshFilter)
+                proxyMeshFilter = Undo.AddComponent<MeshFilter>(proxyObject);
+
+            MeshRenderer proxyRenderer = proxyObject.GetComponent<MeshRenderer>();
+            if (!proxyRenderer)
+                proxyRenderer = Undo.AddComponent<MeshRenderer>(proxyObject);
+
+            Renderer sourceRenderer = sourceMeshFilter.GetComponent<Renderer>();
+            if (sourceRenderer)
+            {
+                Undo.RecordObject(proxyRenderer, undoName);
+                proxyRenderer.sharedMaterials = sourceRenderer.sharedMaterials;
+
+                Undo.RecordObject(sourceRenderer, undoName);
+                sourceRenderer.enabled = !hideSourceRendererForProxy;
+            }
+
+            if (proxyMeshFilter.sharedMesh == null)
+            {
+                Mesh proxyMesh = Instantiate(sourceMeshFilter.sharedMesh);
+                proxyMesh.name = sourceMeshFilter.sharedMesh.name + " (Clone)";
+                proxyMeshFilter.sharedMesh = proxyMesh;
+            }
+
+            proxyObject.SetActive(true);
+            return proxyMeshFilter;
+        }
+
+        private static bool IsPaintProxyMeshFilter(MeshFilter meshFilter)
+        {
+            return meshFilter && string.Equals(meshFilter.gameObject.name, PaintProxyName, System.StringComparison.Ordinal);
+        }
+
+        private MeshFilter GetEditableMeshFilter(MeshFilter sourceMeshFilter)
+        {
+            if (!sourceMeshFilter)
+                return null;
+
+            if (painterEditMode != PainterEditMode.ProxyCopy)
+                return sourceMeshFilter;
+
+            Transform proxyTransform = sourceMeshFilter.transform.Find(PaintProxyName);
+            return proxyTransform ? proxyTransform.GetComponent<MeshFilter>() : sourceMeshFilter;
+        }
+
+        private void ApplyProxyRendererVisibility()
+        {
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                GameObject target = paintTargets[i];
+                if (!target)
+                    continue;
+
+                MeshFilter[] meshFilters = target.GetComponentsInChildren<MeshFilter>(true);
+                for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
+                {
+                    MeshFilter meshFilter = meshFilters[meshIndex];
+                    if (!meshFilter
+                        || IsPaintProxyMeshFilter(meshFilter)
+                        || IsGeneratedMeshMicroBumpFilter(meshFilter))
+                        continue;
+
+                    Transform proxyTransform = meshFilter.transform.Find(PaintProxyName);
+                    if (!proxyTransform)
+                        continue;
+
+                    Renderer proxyRenderer = proxyTransform.GetComponent<Renderer>();
+                    if (proxyRenderer)
+                        proxyRenderer.enabled = painterEditMode == PainterEditMode.ProxyCopy;
+
+                    Renderer sourceRenderer = meshFilter.GetComponent<Renderer>();
+                    if (sourceRenderer)
+                        sourceRenderer.enabled = !(painterEditMode == PainterEditMode.ProxyCopy && hideSourceRendererForProxy);
+                }
+            }
+        }
+
+        private Mesh EnsureEditableMesh(MeshFilter meshFilter, string undoName)
+        {
+            return EnsureEditableMesh(meshFilter, undoName, out _);
+        }
+
+        private void RefreshPaintTargetMeshes()
+        {
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                GameObject target = paintTargets[i];
+                if (!target)
+                    continue;
+
+                MeshFilter[] meshFilters = target.GetComponentsInChildren<MeshFilter>(true);
+                for (int meshIndex = 0; meshIndex < meshFilters.Length; meshIndex++)
+                {
+                    if (!IsGeneratedMeshMicroBumpFilter(meshFilters[meshIndex]))
+                        RefreshPaintMesh(meshFilters[meshIndex]);
+                }
+            }
+
+            SceneView.RepaintAll();
+            Repaint();
+        }
+
+        private static void RefreshPaintMesh(MeshFilter meshFilter)
+        {
+            if (!meshFilter || !meshFilter.sharedMesh)
+                return;
+
+            Mesh mesh = meshFilter.sharedMesh;
+            EditorUtility.SetDirty(mesh);
+            EditorUtility.SetDirty(meshFilter);
+            EditorUtility.SetDirty(meshFilter.gameObject);
+            mesh.UploadMeshData(false);
+            var terrain = meshFilter.GetComponentInParent<MGTerrain>();
+            if (terrain != null && terrain.MeshFilter == meshFilter)
+                terrain.NotifySurfaceMeshChanged();
+        }
+
+        private void GenerateAutoUVs(GameObject go)
+        {
+            if (go == null) return;
+            if (!IsPaintTarget(go))
+            {
+                painterStatusMessage = $"Skipped '{go.name}'. Add it to Paint Targets before generating UVs.";
+                return;
+            }
+
+            if (ResolvePaintTargetLoft(go) != null)
+            {
+                painterStatusMessage = $"Skipped '{go.name}'. Loft UVs are controlled by the loft generator.";
+                return;
+            }
+
+            MeshFilter mf = go.GetComponent<MeshFilter>();
+            if (mf == null || mf.sharedMesh == null) return;
+
+            Mesh mesh = EnsureEditableMesh(mf, "Generate Auto UVs", out MeshFilter editableMeshFilter);
+            if (mesh == null)
+                return;
+
+            Undo.RegisterCompleteObjectUndo(mesh, "Generate Auto UVs");
+
+            // Unity's Unwrapping.GenerateSecondaryUVSet always targets the 'UV1' (index 1) channel.
+            // We use it as our "Auto UV" generator.
+            Unwrapping.GenerateSecondaryUVSet(mesh);
+
+            // If the user wanted a different channel, we copy the generated data there.
+            if (targetUVChannel != UVChannel.UV1)
+            {
+                List<Vector2> generatedUVs = new List<Vector2>();
+                mesh.GetUVs(1, generatedUVs);
+                mesh.SetUVs((int)targetUVChannel, generatedUVs);
+                
+                // Optional: Clear UV1 if it wasn't intended to be modified? 
+                // Usually better to leave it unless requested, as UV1 is the "standard" place.
+            }
+            
+            Debug.Log($"Generated Auto UVs for {go.name} on channel {targetUVChannel}");
+            RefreshPaintMesh(editableMeshFilter);
+        }
+
+        private void FillMesh(GameObject go)
+        {
+            if (go == null) return;
+            if (!IsPaintTarget(go))
+            {
+                painterStatusMessage = $"Skipped '{go.name}'. Add it to Paint Targets before filling colors.";
+                return;
+            }
+
+            MeshFilter mf = go.GetComponent<MeshFilter>();
+            if (mf == null || mf.sharedMesh == null) return;
+
+            MultiSplineLoft loft = ResolvePaintTargetLoft(mf);
+            if (loft != null)
+            {
+                VertexPaintModifier modifier = EnsureLoftVertexPaintModifier(loft);
+                if (modifier == null)
+                    return;
+
+                Undo.RecordObject(modifier, "Fill Loft Vertex Color");
+                modifier.AddStrokeAndApply(modifier.CreateFill(paintColor));
+                EditorUtility.SetDirty(modifier);
+                return;
+            }
+
+            Mesh mesh = EnsureEditableMesh(mf, "Fill Vertex Color", out MeshFilter editableMeshFilter);
+            if (mesh == null)
+                return;
+
+            Undo.RegisterCompleteObjectUndo(mesh, "Fill Vertex Color");
+
+            Color[] colors = new Color[mesh.vertexCount];
+            for (int i = 0; i < colors.Length; i++) colors[i] = paintColor;
+            mesh.colors = colors;
+
+            RefreshPaintMesh(editableMeshFilter);
+        }
+
+        private void SaveSelectedMesh()
+        {
+            if (Selection.activeGameObject == null) return;
+            if (!IsPaintTarget(Selection.activeGameObject))
+            {
+                painterStatusMessage = $"Skipped '{Selection.activeGameObject.name}'. Add it to Paint Targets before saving its mesh.";
+                return;
+            }
+
+            MeshFilter mf = Selection.activeGameObject.GetComponent<MeshFilter>();
+            if (mf == null || mf.sharedMesh == null) return;
+            MeshFilter editableMeshFilter = GetEditableMeshFilter(mf);
+            if (editableMeshFilter == null || editableMeshFilter.sharedMesh == null) return;
+
+            string path = EditorUtility.SaveFilePanelInProject("Save Painted Mesh", editableMeshFilter.sharedMesh.name, "asset", "Save your painted mesh as an asset.");
+            if (!string.IsNullOrEmpty(path))
+            {
+                AssetDatabase.CreateAsset(Instantiate(editableMeshFilter.sharedMesh), path);
+                AssetDatabase.SaveAssets();
+            }
+        }
+
+        private void OnSceneGUI(SceneView sceneView)
+        {
+            Event e = Event.current;
+            MBEditorToolVisuals.RepaintBrushModifiers(e, sceneView);
+
+            if ((e.type == EventType.MouseDown || e.rawType == EventType.MouseDown) && e.button == 1)
+                sceneCameraRightMouseHeld = true;
+            else if ((e.type == EventType.MouseUp || e.rawType == EventType.MouseUp) && e.button == 1)
+                sceneCameraRightMouseHeld = false;
+
+            if (e.type == EventType.MouseLeaveWindow || e.type == EventType.Ignore)
+            {
+                bool interruptedSplatStroke = isPainting && currentMode == ToolMode.SplatMap;
+                sceneCameraRightMouseHeld = false;
+                wPauseHeld = false;
+                painterBrushActive = true;
+                isPainting = false;
+                splatHoverCandidate = null;
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
+                EndBrushAdjustment();
+                strokeMeshes.Clear();
+                GUIUtility.hotControl = 0;
+                if (interruptedSplatStroke)
+                    FinishSplatPaintStroke();
+            }
+
+            if (isPainting && e.button == 0 && (e.type == EventType.MouseUp || e.rawType == EventType.MouseUp))
+            {
+                isPainting = false;
+                splatUndoRegistered = false;
+                strokeMeshes.Clear();
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
+                GUIUtility.hotControl = 0;
+                if (currentMode == ToolMode.SplatMap)
+                    FinishSplatPaintStroke();
+                if (e.type != EventType.Used)
+                    e.Use();
+                sceneView.Repaint();
+                return;
+            }
+
+            if (MBEditorToolVisuals.IsBrushFocusEvent(e)
+                && !sceneCameraRightMouseHeld
+                && !Tools.viewToolActive)
+            {
+                Ray focusRay = HandleUtility.GUIPointToWorldRay(e.mousePosition);
+                if (TryGetBrushHit(focusRay, out RaycastHit focusHit))
+                {
+                    MBEditorToolVisuals.FocusBrushSurface(e, sceneView, focusHit.point, brushRadius);
+                    return;
+                }
+            }
+            
+            bool usesMomentaryPause = currentMode == ToolMode.Painter || currentMode == ToolMode.SplatMap;
+            if (usesMomentaryPause && !EditorGUIUtility.editingTextField
+                && e.keyCode == KeyCode.W)
+            {
+                if (e.type == EventType.KeyDown)
+                {
+                    bool cameraNavigation = sceneCameraRightMouseHeld
+                        || Tools.viewToolActive
+                        || e.shift
+                        || e.alt
+                        || e.control
+                        || e.command;
+                    if (cameraNavigation)
+                        return;
+
+                    if (!wPauseHeld)
+                    {
+                        wPauseHeld = true;
+                        SetPainterBrushActive(false);
+                        Tools.current = Tool.Move;
+                    }
+                    e.Use();
+                    sceneView.Repaint();
+                    return;
+                }
+
+                if (e.type == EventType.KeyUp && wPauseHeld)
+                {
+                    wPauseHeld = false;
+                    SetPainterBrushActive(true);
+                    e.Use();
+                    sceneView.Repaint();
+                    return;
+                }
+            }
+
+            if (sceneCameraRightMouseHeld || Tools.viewToolActive)
+            {
+                splatHoverCandidate = null;
+                return;
+            }
+
+            // Handle Hotkeys
+            if (e.type == EventType.KeyDown)
+            {
+                if (e.keyCode >= KeyCode.Alpha1 && e.keyCode <= KeyCode.Alpha9)
+                {
+                    int index = e.keyCode - KeyCode.Alpha1;
+                    if (index < prefabPalette.Count)
+                    {
+                        selectedPrefabIndex = index;
+                        PublishDecorPalette();
+                        Repaint();
+                    }
+                }
+                if (e.keyCode == KeyCode.RightArrow)
+                {
+                    selectedPrefabIndex = (selectedPrefabIndex + 1) % Mathf.Max(1, prefabPalette.Count);
+                    PublishDecorPalette();
+                    Repaint();
+                }
+                if (e.keyCode == KeyCode.LeftArrow)
+                {
+                    selectedPrefabIndex = (selectedPrefabIndex - 1 + prefabPalette.Count) % Mathf.Max(1, prefabPalette.Count);
+                    PublishDecorPalette();
+                    Repaint();
+                }
+            }
+
+            int brushAdjustControlId = GUIUtility.GetControlID("MGBrushAdjust".GetHashCode(), FocusType.Passive);
+            if (HandleBrushAdjustment(e, brushAdjustControlId, sceneView))
+                return;
+
+            if (usesMomentaryPause)
+            {
+                if (!painterBrushActive)
+                {
+                    if (e.type == EventType.MouseMove)
+                        sceneView.Repaint();
+
+                    return;
+                }
+            }
+
+            Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
+            RaycastHit hit;
+
+            if (TryGetBrushHit(ray, out hit))
+            {
+                lastHitPoint = hit.point;
+                lastHitNormal = hit.normal;
+                
+                // Draw Brush Disc
+                Color brushColor = currentMode == ToolMode.Decor
+                    ? Color.cyan
+                    : currentMode == ToolMode.SplatMap ? GetSplatBrushColor(hit, e.shift) : GetPainterBrushColor(hit, e.shift);
+                Handles.color = brushColor;
+                Handles.DrawWireDisc(hit.point, hit.normal, brushRadius);
+                if (currentMode == ToolMode.Painter)
+                    DrawPainterHoverLabel(hit, e.shift);
+                else if (currentMode == ToolMode.SplatMap)
+                    DrawSplatHoverLabel(hit, e.shift, brushColor);
+                else
+                {
+                    var terrain = hit.collider != null ? hit.collider.GetComponentInParent<MGTerrain>() : null;
+                    bool density = terrain != null && decorReferenceRoot == null
+                        && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails;
+                    MBEditorToolVisuals.DrawBrushAction(density
+                        ? (e.shift ? "Thin / Erase Detail Density" : "Paint Detail Density")
+                        : (e.shift ? "Erase Decor" : "Paint Decor"));
+                }
+
+                // Handle Input
+                int controlID = GUIUtility.GetControlID(FocusType.Passive);
+
+                if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+                {
+                    if (currentMode == ToolMode.Painter && e.shift)
+                    {
+                        AddPaintTargetFromHit(hit);
+                        e.Use();
+                        sceneView.Repaint();
+                        return;
+                    }
+
+                    if (currentMode == ToolMode.SplatMap)
+                    {
+                        GameObject splatTarget = ResolveSplatPaintTarget(hit);
+                        if (splatTarget != null && !IsPaintTarget(splatTarget))
+                        {
+                            if (e.shift)
+                            {
+                                AddSplatPaintTargetFromHit(hit);
+                                e.Use();
+                                sceneView.Repaint();
+                            }
+                            else
+                                SetSplatStatus($"'{splatTarget.name}' is not a Splat Paint Target. Shift-click to add it.");
+                            return;
+                        }
+                    }
+
+                    isPainting = true;
+                    splatUndoRegistered = false;
+                    if (currentMode == ToolMode.SplatMap)
+                    {
+                        splatStrokeModifiedTextures.Clear();
+                        splatStrokeUndoTextures.Clear();
+                    }
+                    strokeMeshes.Clear();
+                    hasLastLoftPaintPoint = false;
+                    Undo.IncrementCurrentGroup();
+                    paintUndoGroup = Undo.GetCurrentGroup();
+                    Undo.SetCurrentGroupName(currentMode == ToolMode.Decor
+                        ? "Scatter Decor"
+                        : currentMode == ToolMode.Painter ? "Paint Vertex Color" : "Paint Splat Map");
+                    
+                    GUIUtility.hotControl = controlID;
+                    ExecuteAction(hit);
+                    e.Use();
+                }
+
+                if (isPainting && e.type == EventType.MouseDrag && e.button == 0)
+                {
+                    ExecuteAction(hit);
+                    e.Use();
+                }
+
+            }
+            else if (currentMode == ToolMode.SplatMap)
+            {
+                // PickGameObject is not safe during Layout/Repaint. Cache its
+                // result from input events and use that cache while drawing.
+                if (e.type == EventType.MouseMove || e.type == EventType.MouseDown)
+                {
+                    TryGetSplatHoverCandidate(e.mousePosition, out splatHoverCandidate);
+                }
+
+                if (splatHoverCandidate != null)
+                {
+                    DrawSplatActivationPreview(splatHoverCandidate, e.shift);
+                    if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+                    {
+                        if (e.shift)
+                        {
+                            AddSplatPaintTarget(splatHoverCandidate);
+                            e.Use();
+                            sceneView.Repaint();
+                        }
+                        else
+                            SetSplatStatus($"'{splatHoverCandidate.name}' has no active paint collider. Shift-click to add it and build collider chunks.");
+                        return;
+                    }
+                }
+            }
+            
+            if (e.type == EventType.MouseMove) sceneView.Repaint();
+        }
+
+        private bool HandleBrushAdjustment(Event e, int controlId, SceneView sceneView)
+        {
+            if (e.type == EventType.MouseDown && e.button == 2 && e.control && !e.alt)
+            {
+                if (isPainting && currentMode == ToolMode.SplatMap)
+                    FinishSplatPaintStroke();
+                isPainting = false;
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
+                strokeMeshes.Clear();
+                isAdjustingBrush = true;
+                brushAdjustMousePosition = e.mousePosition;
+                CaptureBrushAdjustmentSurface(e.mousePosition);
+                GUIUtility.hotControl = controlId;
+                EditorGUIUtility.SetWantsMouseJumping(1);
+                e.Use();
+            }
+            else if (isAdjustingBrush && e.type == EventType.MouseDrag && e.button == 2)
+            {
+                brushRadius = Mathf.Clamp(brushRadius * Mathf.Exp(e.delta.x * 0.01f), 0.1f, MBEditorToolState.MaxBrushRadius);
+                brushStrength = Mathf.Clamp(brushStrength - e.delta.y * 0.005f, 0.01f, 1f);
+                e.Use();
+                Repaint();
+                sceneView.Repaint();
+            }
+            else if (isAdjustingBrush && e.type == EventType.MouseUp && e.button == 2)
+            {
+                EndBrushAdjustment();
+                GUIUtility.hotControl = 0;
+                e.Use();
+                Repaint();
+                sceneView.Repaint();
+                return true;
+            }
+
+            if (!isAdjustingBrush)
+                return false;
+
+            DrawBrushAdjustmentGizmo();
+
+            Handles.BeginGUI();
+            Rect panelRect = new Rect(
+                brushAdjustMousePosition.x + 18f,
+                brushAdjustMousePosition.y + 18f,
+                250f,
+                50f);
+            GUI.Box(panelRect, GUIContent.none, EditorStyles.helpBox);
+            GUI.Label(
+                new Rect(panelRect.x + 8f, panelRect.y + 4f, panelRect.width - 16f, 18f),
+                $"Radius  {brushRadius:0.00}   (drag horizontally)",
+                EditorStyles.miniBoldLabel);
+            EditorGUI.ProgressBar(
+                new Rect(panelRect.x + 8f, panelRect.y + 27f, panelRect.width - 16f, 16f),
+                brushStrength,
+                $"Strength  {brushStrength:0.00}   (drag vertically)");
+            Handles.EndGUI();
+            return true;
+        }
+
+        private void CaptureBrushAdjustmentSurface(Vector2 mousePosition)
+        {
+            Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
+            hasBrushAdjustSurface = Physics.Raycast(ray, out RaycastHit hit);
+            if (!hasBrushAdjustSurface)
+                return;
+
+            brushAdjustHitPoint = hit.point;
+            brushAdjustHitNormal = hit.normal;
+            lastHitPoint = brushAdjustHitPoint;
+            lastHitNormal = brushAdjustHitNormal;
+        }
+
+        private void DrawBrushAdjustmentGizmo()
+        {
+            if (!hasBrushAdjustSurface)
+                return;
+
+            Handles.color = new Color(1f, 0.82f, 0.12f, 1f);
+            Handles.DrawWireDisc(brushAdjustHitPoint, brushAdjustHitNormal, brushRadius);
+
+            Color strengthColor = Color.Lerp(
+                new Color(1f, 0.25f, 0.12f, 0.9f),
+                new Color(0.2f, 1f, 0.35f, 0.95f),
+                brushStrength);
+            Handles.color = strengthColor;
+            Handles.DrawWireDisc(
+                brushAdjustHitPoint
+                    + brushAdjustHitNormal * HandleUtility.GetHandleSize(brushAdjustHitPoint) * 0.002f,
+                brushAdjustHitNormal,
+                brushRadius * brushStrength);
+        }
+
+        private void EndBrushAdjustment()
+        {
+            if (!isAdjustingBrush)
+                return;
+
+            isAdjustingBrush = false;
+            hasBrushAdjustSurface = false;
+            EditorGUIUtility.SetWantsMouseJumping(0);
+            GUIUtility.hotControl = 0;
+        }
+
+        private void SetPainterBrushActive(bool active)
+        {
+            if (active)
+            {
+                ActivateSceneTool();
+                GUIUtility.hotControl = 0;
+                if (isPainting && currentMode == ToolMode.SplatMap)
+                    FinishSplatPaintStroke();
+                isPainting = false;
+                FinishPaintUndoGroup();
+                hasLastLoftPaintPoint = false;
+                EndBrushAdjustment();
+                splatUndoRegistered = false;
+                strokeMeshes.Clear();
+                painterBrushActive = true;
+                Repaint();
+                SceneView.RepaintAll();
+                return;
+            }
+
+            if (!painterBrushActive)
+                return;
+
+            painterBrushActive = false;
+            if (isPainting && currentMode == ToolMode.SplatMap)
+                FinishSplatPaintStroke();
+            isPainting = false;
+            FinishPaintUndoGroup();
+            hasLastLoftPaintPoint = false;
+            EndBrushAdjustment();
+            splatUndoRegistered = false;
+            strokeMeshes.Clear();
+            GUIUtility.hotControl = 0;
+
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private void ExecuteAction(RaycastHit hit)
+        {
+            if (currentMode == ToolMode.Decor)
+            {
+                if (Event.current.shift)
+                    ErasePrefabs(hit);
+                else
+                    PlacePrefabs(hit);
+            }
+            else if (currentMode == ToolMode.Painter)
+            {
+                PaintVertexColors(hit);
+            }
+            else
+            {
+                PaintSplatTexture(hit, Event.current.shift);
+            }
+        }
+
+        private bool TryGetBrushHit(Ray ray, out RaycastHit hit)
+        {
+            // MappyX disables Physics.autoSyncTransforms. Loft collider chunks
+            // are regenerated in edit mode, so synchronize before every brush
+            // pick or all brush modes can temporarily lose their hover gizmo.
+            Physics.SyncTransforms();
+
+            if (currentMode == ToolMode.Decor)
+                return Physics.Raycast(ray, out hit);
+
+            if (currentMode == ToolMode.Painter)
+            {
+                RaycastHit[] painterHits = Physics.RaycastAll(
+                    ray,
+                    float.MaxValue,
+                    GetPaintRaycastLayerMask(),
+                    QueryTriggerInteraction.Ignore);
+                System.Array.Sort(painterHits, (a, b) => a.distance.CompareTo(b.distance));
+                for (int index = 0; index < painterHits.Length; index++)
+                {
+                    if (IsMicroBumpPaintCollider(painterHits[index].collider))
+                        continue;
+                    if (isPainting)
+                    {
+                        MeshFilter candidate = GetPaintMeshFilter(painterHits[index]);
+                        if (candidate == null || !IsPaintTarget(candidate.gameObject))
+                            continue;
+                    }
+                    hit = painterHits[index];
+                    return true;
+                }
+
+                hit = default;
+                return false;
+            }
+
+            RaycastHit[] hits = Physics.RaycastAll(
+                ray,
+                float.MaxValue,
+                GetPaintRaycastLayerMask(),
+                QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            string firstUvError = null;
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                if (IsMicroBumpPaintCollider(hits[i].collider))
+                    continue;
+
+                GameObject target = ResolveSplatPaintTarget(hits[i]);
+                if (target == null)
+                    continue;
+                if (isPainting && !IsPaintTarget(target))
+                    continue;
+
+                bool hasUv = TryGetSplatUv(hits[i], out _, out string uvError);
+                if (!hasUv)
+                {
+                    firstUvError ??= uvError;
+                }
+
+                // Return eligible splat surfaces even before registration or
+                // when their collider is missing the selected UV. This keeps
+                // the hover preview visible and lets its label explain the fix.
+                if (hasUv && IsPaintTarget(target))
+                    TryAutoAssignSplatTexture(hits[i], out _);
+                hit = hits[i];
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(firstUvError) && splatStatusMessage != firstUvError)
+            {
+                splatStatusMessage = firstUvError;
+                Repaint();
+            }
+
+            hit = default;
+            return false;
+        }
+
+        private static bool IsMicroBumpPaintCollider(Collider collider)
+        {
+            if (collider == null)
+                return false;
+
+            // Loft MicroBump meshes remain visual/paint-opaque. Terrain-mesh
+            // MicroBump chunks carry source UVs and deliberately participate in
+            // brush picking, resolving back to their owning source mesh.
+            if (TryGetMeshMicroBumpGenerator(collider, out _))
+                return false;
+            if (collider.GetComponentInParent<LoftHeightOverlayModifier>() != null)
+                return true;
+            int microBumpLayer = LayerMask.NameToLayer("MicroBump");
+            return microBumpLayer >= 0 && collider.gameObject.layer == microBumpLayer;
+        }
+
+        private static bool TryGetMeshMicroBumpGenerator(
+            Collider collider,
+            out MicroBumpMeshColliderGenerator generator)
+        {
+            generator = collider != null
+                ? collider.GetComponentInParent<MicroBumpMeshColliderGenerator>()
+                : null;
+            return generator != null
+                && generator.GeneratedRoot != null
+                && collider.transform.IsChildOf(generator.GeneratedRoot.transform);
+        }
+
+        private static int GetPaintRaycastLayerMask()
+        {
+            int layerMask = Physics.AllLayers;
+            int ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
+            if (ignoreRaycastLayer >= 0)
+                layerMask &= ~(1 << ignoreRaycastLayer);
+            return layerMask;
+        }
+
+        private bool TryGetSplatUv(RaycastHit hit, out Vector2 uv, out string error)
+        {
+            uv = default;
+            error = null;
+
+            if (hit.collider is TerrainCollider)
+            {
+                if (splatUVChannel != UVChannel.UV0)
+                {
+                    error = $"Terrain hits only expose UV0; select UV0 instead of {splatUVChannel}.";
+                    return false;
+                }
+
+                uv = hit.textureCoord;
+                return true;
+            }
+
+            if (!(hit.collider is MeshCollider meshCollider))
+            {
+                error = "The hit collider is not a MeshCollider.";
+                return false;
+            }
+
+            Mesh mesh = meshCollider.sharedMesh;
+            if (mesh == null || !mesh.isReadable)
+            {
+                error = "The hit MeshCollider has no readable mesh.";
+                return false;
+            }
+
+            int channel = (int)splatUVChannel;
+            var attribute = (UnityEngine.Rendering.VertexAttribute)(
+                (int)UnityEngine.Rendering.VertexAttribute.TexCoord0 + channel);
+            if (!mesh.HasVertexAttribute(attribute) || mesh.GetVertexAttributeDimension(attribute) < 2)
+            {
+                error = $"The hit MeshCollider does not contain {splatUVChannel}. Regenerate the loft collider or select another UV channel.";
+                return false;
+            }
+
+            if (!TryGetSplatMeshData(hit, channel, out SplatMeshData meshData))
+            {
+                error = $"{splatUVChannel} does not contain coordinates for every collider vertex.";
+                return false;
+            }
+
+            int triangleStart = hit.triangleIndex * 3;
+            int[] triangles = meshData.triangles;
+            if (triangleStart < 0 || triangleStart + 2 >= triangles.Length)
+            {
+                error = "The hit triangle could not be resolved on the collider mesh.";
+                return false;
+            }
+
+            List<Vector4> uvs = meshData.uvs;
+            int a = triangles[triangleStart];
+            int b = triangles[triangleStart + 1];
+            int c = triangles[triangleStart + 2];
+            if ((uint)a >= uvs.Count || (uint)b >= uvs.Count || (uint)c >= uvs.Count)
+            {
+                error = $"{splatUVChannel} does not contain coordinates for every collider vertex.";
+                return false;
+            }
+
+            Vector3 barycentric = hit.barycentricCoordinate;
+            Vector4 interpolated = uvs[a] * barycentric.x
+                + uvs[b] * barycentric.y
+                + uvs[c] * barycentric.z;
+            uv = new Vector2(interpolated.x, interpolated.y);
+            return true;
+        }
+
+        private bool TryGetSplatMeshData(
+            RaycastHit hit,
+            int channel,
+            out SplatMeshData meshData)
+        {
+            if (!(hit.collider is MeshCollider meshCollider))
+            {
+                meshData = null;
+                return false;
+            }
+
+            return TryGetSplatMeshData(meshCollider, channel, out meshData);
+        }
+
+        private bool TryGetSplatMeshData(
+            MeshCollider meshCollider,
+            int channel,
+            out SplatMeshData meshData)
+        {
+            meshData = null;
+            Mesh mesh = meshCollider.sharedMesh;
+            if (mesh == null || !mesh.isReadable)
+                return false;
+
+            MultiSplineLoft loft = meshCollider.GetComponentInParent<MultiSplineLoft>();
+            int generationVersion = loft != null ? loft.GenerationVersion : 0;
+            var key = new SplatIslandCacheKey(mesh, channel, generationVersion);
+            if (!splatMeshDataCache.TryGetValue(key, out meshData))
+            {
+                meshData = new SplatMeshData(mesh, channel);
+                if (meshData.uvs.Count != mesh.vertexCount)
+                {
+                    meshData = null;
+                    return false;
+                }
+
+                splatMeshDataCache.Add(key, meshData);
+            }
+
+            return true;
+        }
+
+        private bool TryGetSplatUvIslandBounds(RaycastHit hit, out Rect bounds)
+        {
+            bounds = default;
+            if (!(hit.collider is MeshCollider meshCollider) || meshCollider.sharedMesh == null)
+                return false;
+
+            int channel = (int)splatUVChannel;
+            int triangleIndex = hit.triangleIndex;
+            if (triangleIndex < 0)
+                return false;
+
+            if (!TryGetSplatMeshData(hit, channel, out SplatMeshData meshData))
+                return false;
+
+            Mesh mesh = meshCollider.sharedMesh;
+            MultiSplineLoft loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
+            var key = new SplatIslandCacheKey(
+                mesh,
+                channel,
+                loft != null ? loft.GenerationVersion : 0);
+            if (!splatIslandBoundsCache.TryGetValue(key, out Rect[] triangleBounds))
+            {
+                triangleBounds = BuildSplatUvIslandBounds(meshData);
+                if (triangleBounds == null)
+                    return false;
+                splatIslandBoundsCache[key] = triangleBounds;
+            }
+
+            if ((uint)triangleIndex >= triangleBounds.Length)
+                return false;
+
+            bounds = triangleBounds[triangleIndex];
+            return bounds.width >= 0f && bounds.height >= 0f;
+        }
+
+        private static Rect[] BuildSplatUvIslandBounds(SplatMeshData meshData)
+        {
+            int[] triangles = meshData.triangles;
+            int triangleCount = triangles.Length / 3;
+            if (triangleCount == 0)
+                return null;
+
+            List<Vector4> uvs = meshData.uvs;
+
+            var parents = new int[triangleCount];
+            var firstTriangleByVertex = new Dictionary<int, int>();
+            var firstTriangleByUv = new Dictionary<long, int>();
+            for (int triangle = 0; triangle < triangleCount; triangle++)
+            {
+                parents[triangle] = triangle;
+                int triangleStart = triangle * 3;
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int vertex = triangles[triangleStart + corner];
+                    if (firstTriangleByVertex.TryGetValue(vertex, out int connectedTriangle))
+                        UnionSplatTriangles(parents, triangle, connectedTriangle);
+                    else
+                        firstTriangleByVertex.Add(vertex, triangle);
+
+                    Vector4 uv = uvs[vertex];
+                    int quantizedX = Mathf.RoundToInt(uv.x * 1000000f);
+                    int quantizedY = Mathf.RoundToInt(uv.y * 1000000f);
+                    long uvKey = ((long)quantizedX << 32) | (uint)quantizedY;
+                    if (firstTriangleByUv.TryGetValue(uvKey, out int uvConnectedTriangle))
+                        UnionSplatTriangles(parents, triangle, uvConnectedTriangle);
+                    else
+                        firstTriangleByUv.Add(uvKey, triangle);
+                }
+            }
+
+            var minimums = new Vector2[triangleCount];
+            var maximums = new Vector2[triangleCount];
+            for (int index = 0; index < triangleCount; index++)
+            {
+                minimums[index] = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
+                maximums[index] = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
+            }
+
+            for (int triangle = 0; triangle < triangleCount; triangle++)
+            {
+                int root = FindSplatTriangleRoot(parents, triangle);
+                int triangleStart = triangle * 3;
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    Vector4 uv = uvs[triangles[triangleStart + corner]];
+                    minimums[root] = Vector2.Min(minimums[root], new Vector2(uv.x, uv.y));
+                    maximums[root] = Vector2.Max(maximums[root], new Vector2(uv.x, uv.y));
+                }
+            }
+
+            var result = new Rect[triangleCount];
+            for (int triangle = 0; triangle < triangleCount; triangle++)
+            {
+                int root = FindSplatTriangleRoot(parents, triangle);
+                Vector2 minimum = minimums[root];
+                Vector2 maximum = maximums[root];
+                result[triangle] = Rect.MinMaxRect(minimum.x, minimum.y, maximum.x, maximum.y);
+            }
+
+            return result;
+        }
+
+        private static int FindSplatTriangleRoot(int[] parents, int triangle)
+        {
+            int root = triangle;
+            while (parents[root] != root)
+                root = parents[root];
+            while (parents[triangle] != triangle)
+            {
+                int next = parents[triangle];
+                parents[triangle] = root;
+                triangle = next;
+            }
+            return root;
+        }
+
+        private static void UnionSplatTriangles(int[] parents, int a, int b)
+        {
+            int rootA = FindSplatTriangleRoot(parents, a);
+            int rootB = FindSplatTriangleRoot(parents, b);
+            if (rootA != rootB)
+                parents[rootB] = rootA;
+        }
+
+        private string GetActiveControlMapPropertyName()
+        {
+            return splatPaintMode == MBSplatPaintMode.TextureId && splatTextureId >= 4
+                ? ControlMap2PropertyName
+                : ControlMap1PropertyName;
+        }
+
+        private int GetActiveControlMapPropertyId()
+        {
+            return splatPaintMode == MBSplatPaintMode.TextureId && splatTextureId >= 4
+                ? ControlMap2PropertyId
+                : ControlMap1PropertyId;
+        }
+
+        private int GetCompanionControlMapPropertyId()
+        {
+            return GetActiveControlMapPropertyId() == ControlMap1PropertyId
+                ? ControlMap2PropertyId
+                : ControlMap1PropertyId;
+        }
+
+        private int GetActiveSplatChannel()
+        {
+            return Mathf.Clamp(splatTextureId, 0, 7) & 3;
+        }
+
+        private string GetActiveSplatChannelName()
+        {
+            return GetActiveSplatChannel() switch
+            {
+                0 => "Red",
+                1 => "Green",
+                2 => "Blue",
+                _ => "Alpha"
+            };
+        }
+
+        private bool TryAutoAssignSplatTexture(RaycastHit hit, out string error)
+        {
+            error = null;
+            if (!splatAutoFindTexture)
+                return splatMapTexture != null;
+
+            string propertyName = GetActiveControlMapPropertyName();
+            int propertyId = GetActiveControlMapPropertyId();
+            Material material = ResolveHitMaterial(hit, propertyId);
+            if (material == null)
+            {
+                error = $"No rendered material was found for '{hit.collider.name}'.";
+                SetSplatStatus(error);
+                return false;
+            }
+
+            if (!material.HasProperty(propertyId))
+            {
+                error = $"Material '{material.name}' does not expose {propertyName}.";
+                SetSplatStatus(error);
+                return false;
+            }
+
+            Texture assignedTexture = material.GetTexture(propertyId);
+            if (!(assignedTexture is Texture2D detectedTexture))
+            {
+                error = assignedTexture == null
+                    ? $"Material '{material.name}' has no texture assigned to {propertyName}."
+                    : $"{propertyName} on '{material.name}' is not an editable Texture2D.";
+                SetSplatStatus(error);
+                return false;
+            }
+
+            splatCompanionMapTexture = null;
+            if (splatPaintMode == MBSplatPaintMode.TextureId)
+            {
+                int companionPropertyId = GetCompanionControlMapPropertyId();
+                if (material.HasProperty(companionPropertyId))
+                    splatCompanionMapTexture = material.GetTexture(companionPropertyId) as Texture2D;
+            }
+
+            if (detectedTexture == splatMapTexture)
+            {
+                splatSourceMaterial = material;
+                return true;
+            }
+
+            bool switchingWithinSameMaterial = splatSourceMaterial == material;
+            if (splatTextureDirty
+                && splatMapTexture != null
+                && !switchingWithinSameMaterial
+                && !isPainting)
+            {
+                error = $"Save '{splatMapTexture.name}' before switching automatically to '{detectedTexture.name}'.";
+                SetSplatStatus(error);
+                return false;
+            }
+
+            splatMapTexture = detectedTexture;
+            splatSourceMaterial = material;
+            if (!switchingWithinSameMaterial && !isPainting)
+            {
+                splatTextureDirty = false;
+                splatCompanionTextureDirty = false;
+                splatTextureUploadPending = false;
+            }
+            splatUndoRegistered = false;
+            SetSplatStatus(
+                $"Using {propertyName} '{detectedTexture.name}' from material '{material.name}'.");
+            Repaint();
+            return true;
+        }
+
+        private Material ResolveHitMaterial(RaycastHit hit, int controlMapPropertyId)
+        {
+            if (hit.collider == null)
+                return null;
+
+            if (hit.collider is TerrainCollider)
+            {
+                Terrain terrain = hit.collider.GetComponent<Terrain>();
+                return terrain != null ? terrain.materialTemplate : null;
+            }
+
+            Renderer renderer = hit.collider.GetComponent<Renderer>();
+            if (renderer == null)
+                renderer = hit.collider.GetComponentInParent<Renderer>();
+            if (renderer == null)
+                return null;
+
+            hitMaterialBuffer.Clear();
+            renderer.GetSharedMaterials(hitMaterialBuffer);
+            Material firstMaterial = null;
+            for (int index = 0; index < hitMaterialBuffer.Count; index++)
+            {
+                Material material = hitMaterialBuffer[index];
+                if (material == null)
+                    continue;
+
+                firstMaterial ??= material;
+                if (material.HasProperty(controlMapPropertyId)
+                    && material.GetTexture(controlMapPropertyId) != null)
+                    return material;
+            }
+
+            return firstMaterial;
+        }
+
+        private void SetSplatStatus(string message)
+        {
+            if (splatStatusMessage == message)
+                return;
+
+            splatStatusMessage = message;
+            Repaint();
+        }
+
+        private void PlacePrefabs(RaycastHit hit)
+        {
+            MGTerrain hitTerrain = hit.collider != null
+                ? hit.collider.GetComponentInParent<MGTerrain>()
+                : null;
+            if (decorReferenceRoot == null && hitTerrain != null && mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails)
+            {
+                PaintMGTerrainDensity(hitTerrain, hit, false);
+                return;
+            }
+            if (prefabPalette.Count == 0 || prefabPalette.All(p => p == null)) return;
+
+            if (!scatterMode)
+            {
+                // Single Place: Only on MouseDown
+                if (Event.current.type == EventType.MouseDown)
+                {
+                    SpawnPrefab(hit, prefabPalette[selectedPrefabIndex]);
+                }
+                return;
+            }
+
+            // Scatter Mode: Drag support
+            float effectiveScatterDensity = Mathf.Max(
+                0.01f,
+                scatterDensity * Mathf.Lerp(0.2f, 1.8f, brushStrength));
+            if (Time.realtimeSinceStartup - lastScatterTime < 0.1f / effectiveScatterDensity) return;
+            lastScatterTime = Time.realtimeSinceStartup;
+
+            int count = Mathf.Max(1, (int)(brushRadius * 2f * effectiveScatterDensity));
+            for (int i = 0; i < count; i++)
+            {
+                Vector2 randomPoint = Random.insideUnitCircle * brushRadius;
+                Vector3 origin = hit.point + new Vector3(randomPoint.x, 10f, randomPoint.y);
+                Ray scatterRay = new Ray(origin, Vector3.down);
+                RaycastHit scatterHit;
+
+                if (Physics.Raycast(scatterRay, out scatterHit, 20f))
+                {
+                    GameObject prefab = prefabPalette[mixDecorPalette ? Random.Range(0, prefabPalette.Count) : Mathf.Clamp(selectedPrefabIndex, 0, prefabPalette.Count - 1)];
+                    if (prefab != null) SpawnPrefab(scatterHit, prefab);
+                }
+            }
+        }
+
+        private void SpawnPrefab(RaycastHit hit, GameObject prefab)
+        {
+            if (prefab == null)
+                return;
+
+            Vector3 pos = hit.point;
+            if (gridSnapping)
+            {
+                pos.x = Mathf.Round(pos.x / gridSize) * gridSize;
+                pos.z = Mathf.Round(pos.z / gridSize) * gridSize;
+            }
+            Vector3 position = pos + hit.normal * yOffset;
+            Quaternion rotation = alignToSurface
+                ? Quaternion.FromToRotation(Vector3.up, hit.normal)
+                : Quaternion.identity;
+            if (randomizeRotationY)
+                rotation *= Quaternion.AngleAxis(Random.Range(0f, 360f), Vector3.up);
+            Vector3 scale = Vector3.one * Random.Range(
+                Mathf.Min(scaleRange.x, scaleRange.y),
+                Mathf.Max(scaleRange.x, scaleRange.y));
+
+            MGTerrain terrain = hit.collider != null
+                ? hit.collider.GetComponentInParent<MGTerrain>()
+                : null;
+            if (terrain != null && decorReferenceRoot == null)
+            {
+                Undo.RecordObject(terrain, "Paint MG Terrain Instance");
+                float localSurfaceOffset = terrain.transform
+                    .InverseTransformVector(hit.normal * yOffset).y;
+                terrain.AddInstance(
+                    prefab,
+                    mgTerrainInstanceKind,
+                    position,
+                    rotation,
+                    scale,
+                    localSurfaceOffset);
+                EditorUtility.SetDirty(terrain);
+                SceneView.RepaintAll();
+                return;
+            }
+
+            GameObject instance = PrefabUtility.IsPartOfPrefabAsset(prefab)
+                ? (GameObject)PrefabUtility.InstantiatePrefab(prefab, decorReferenceRoot != null ? decorReferenceRoot.gameObject.scene : hit.collider.gameObject.scene)
+                : Instantiate(prefab);
+            if (instance == null)
+                return;
+            Undo.RegisterCreatedObjectUndo(instance, "Place Prefab");
+            instance.transform.SetPositionAndRotation(position, rotation);
+            instance.transform.localScale = scale;
+            var destinationScene = decorReferenceRoot != null ? decorReferenceRoot.gameObject.scene : hit.collider.gameObject.scene;
+            if (instance.scene != destinationScene)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(instance, destinationScene);
+            if (decorReferenceRoot != null) instance.transform.SetParent(decorReferenceRoot, true);
+        }
+
+        private void ErasePrefabs(RaycastHit hit)
+        {
+            MGTerrain terrain = hit.collider != null
+                ? hit.collider.GetComponentInParent<MGTerrain>()
+                : null;
+            if (terrain != null && decorReferenceRoot == null)
+            {
+                if (mgTerrainInstanceKind == MGTerrain.InstanceKind.Detail && paintMGTerrainDensityDetails)
+                {
+                    PaintMGTerrainDensity(terrain, hit, true);
+                    return;
+                }
+                GameObject selectedPrefab = selectedPrefabIndex >= 0 && selectedPrefabIndex < prefabPalette.Count
+                    ? prefabPalette[selectedPrefabIndex]
+                    : null;
+                Undo.RecordObject(terrain, "Erase MG Terrain Instances");
+                int removed = terrain.RemoveInstances(
+                    hit.point,
+                    brushRadius,
+                    selectedPrefab,
+                    mgTerrainInstanceKind);
+                if (removed > 0)
+                {
+                    EditorUtility.SetDirty(terrain);
+                    SceneView.RepaintAll();
+                }
+                return;
+            }
+
+            Collider[] colliders = Physics.OverlapSphere(hit.point, brushRadius);
+            foreach (var col in colliders)
+            {
+                if (col == null) continue;
+                if (decorReferenceRoot != null)
+                {
+                    Transform placed = col.transform;
+                    while (placed.parent != null && placed.parent != decorReferenceRoot) placed = placed.parent;
+                    if (placed.parent == decorReferenceRoot && placed != hit.collider.transform)
+                        Undo.DestroyObjectImmediate(placed.gameObject);
+                    continue;
+                }
+                if (col.gameObject != hit.collider.gameObject)
+                {
+                    Undo.DestroyObjectImmediate(col.gameObject);
+                }
+            }
+        }
+
+        private void PaintMGTerrainDensity(MGTerrain terrain, RaycastHit hit, bool erase)
+        {
+            if (terrain == null || terrain.DensityDetailLayerCount == 0)
+                return;
+            if (!scatterMode && Event.current.type != EventType.MouseDown)
+                return;
+            float interval = 0.05f / Mathf.Max(0.05f, scatterDensity);
+            if (scatterMode && Time.realtimeSinceStartup - lastScatterTime < interval)
+                return;
+            lastScatterTime = Time.realtimeSinceStartup;
+
+            MGTerrain sourceTerrain = Selection.activeGameObject != null
+                ? Selection.activeGameObject.GetComponentInParent<MGTerrain>()
+                : null;
+            int layerIndex = Mathf.Clamp(mgTerrainDensityLayerIndex, 0, terrain.DensityDetailLayerCount - 1);
+            if (sourceTerrain != null && sourceTerrain != terrain)
+            {
+                layerIndex = MGTerrainEditor.FindWorldPaintLayer(sourceTerrain, mgTerrainDensityLayerIndex, terrain);
+                if (layerIndex < 0)
+                {
+                    painterStatusMessage = "This terrain has no unique matching detail layer and grass Sub-ID. Add the matching layer before painting here.";
+                    return;
+                }
+            }
+            Texture2D densityMap = terrain.DensityDetailLayers[layerIndex].DensityMap;
+            if (densityMap == null)
+                return;
+            Undo.RecordObject(terrain, erase ? "Erase MG Terrain Detail Density" : "Paint MG Terrain Detail Density");
+            Undo.RecordObject(densityMap, erase ? "Erase MG Terrain Detail Density" : "Paint MG Terrain Detail Density");
+            var idMap = terrain.DensityDetailLayers[layerIndex].GrassIdMap;
+            if (idMap != null) Undo.RegisterCompleteObjectUndo(idMap, "Paint Grass IDs");
+            int magnitude = Mathf.Max(1, Mathf.RoundToInt(Mathf.Lerp(1f, 32f, scatterDensity) * Mathf.Clamp01(brushStrength)));
+            int changedCells = terrain.PaintDensityDetailLayer(
+                layerIndex,
+                hit.point,
+                brushRadius,
+                erase ? -magnitude : magnitude,
+                1.5f, idMap != null ? mgGrassSubId : -1, mgGrassIdOnly);
+            if (changedCells <= 0)
+                return;
+            if (idMap != null) EditorUtility.SetDirty(idMap);
+            EditorUtility.SetDirty(densityMap);
+            EditorUtility.SetDirty(terrain);
+            SceneView.RepaintAll();
+        }
+
+        private void PaintVertexColors(RaycastHit hit)
+        {
+            MeshFilter mf = GetPaintMeshFilter(hit);
+            if (mf == null || mf.sharedMesh == null) return;
+            if (!IsPaintTarget(mf.gameObject))
+            {
+                painterStatusMessage = $"'{mf.gameObject.name}' is not a Paint Target. Shift-click it or add it to the list before painting.";
+                return;
+            }
+
+            MultiSplineLoft loft = ResolvePaintTargetLoft(mf);
+            if (loft != null)
+            {
+                PaintLoftVertexColors(loft, hit);
+                return;
+            }
+
+            Mesh mesh = EnsureEditableMesh(mf, "Clone Mesh for Painting", out MeshFilter editableMeshFilter);
+            if (mesh == null)
+                return;
+
+            // 2. Register Undo for the mesh once per stroke
+            if (!strokeMeshes.Contains(mesh))
+            {
+                Undo.RegisterCompleteObjectUndo(mesh, "Paint Vertex Color");
+                strokeMeshes.Add(mesh);
+            }
+
+            Vector3[] vertices = mesh.vertices;
+            Color[] colors = mesh.colors;
+            if (colors.Length == 0)
+            {
+                colors = new Color[vertices.Length];
+                for (int i = 0; i < colors.Length; i++) colors[i] = Color.white;
+            }
+
+            Matrix4x4 localToWorld = mf.transform.localToWorldMatrix;
+            bool changed = false;
+
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                Vector3 worldV = localToWorld.MultiplyPoint3x4(vertices[i]);
+                float dist = Vector3.Distance(worldV, hit.point);
+
+                if (dist < brushRadius)
+                {
+                    float falloff = useFalloff ? Mathf.Clamp01(1.0f - (dist / brushRadius)) : 1.0f;
+                    float influence = brushStrength * falloff;
+                    colors[i] = Color.Lerp(colors[i], paintColor, influence);
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                mesh.colors = colors;
+                RefreshPaintMesh(editableMeshFilter);
+            }
+        }
+
+        private void PaintLoftVertexColors(MultiSplineLoft loft, RaycastHit hit)
+        {
+            if (hasLastLoftPaintPoint && Vector3.Distance(hit.point, lastLoftPaintPoint) < brushRadius * vertexPaintSpacing)
+                return;
+
+            VertexPaintModifier modifier = EnsureLoftVertexPaintModifier(loft);
+            if (modifier == null)
+                return;
+
+            Undo.RecordObject(modifier, "Paint Loft Vertex Color");
+            modifier.AddStrokeAndApply(modifier.CreateStroke(loft.GeneratedMesh, hit.point, paintColor, brushRadius, brushStrength, useFalloff));
+            EditorUtility.SetDirty(modifier);
+            lastLoftPaintPoint = hit.point;
+            hasLastLoftPaintPoint = true;
+            painterStatusMessage = $"Painting '{loft.gameObject.name}' non-destructively ({modifier.StrokeCount} recorded strokes).";
+        }
+
+        private void FinishPaintUndoGroup()
+        {
+            if (paintUndoGroup < 0)
+                return;
+
+            Undo.CollapseUndoOperations(paintUndoGroup);
+            paintUndoGroup = -1;
+        }
+
+        private static VertexPaintModifier EnsureLoftVertexPaintModifier(MultiSplineLoft loft)
+        {
+            if (loft == null)
+                return null;
+
+            VertexPaintModifier modifier = loft.VertexPaintModifier;
+            if (modifier == null)
+                modifier = loft.GetComponent<VertexPaintModifier>();
+
+            bool created = modifier == null;
+            if (created)
+                modifier = Undo.AddComponent<VertexPaintModifier>(loft.gameObject);
+
+            bool needsLink = modifier.LinkedLoft != loft || modifier.Target != loft.GetComponent<MeshFilter>();
+            if (needsLink)
+            {
+                Undo.RecordObject(modifier, "Link Vertex Paint Modifier To Loft");
+                modifier.LinkToLoft(loft);
+                EditorUtility.SetDirty(modifier);
+            }
+
+            if (loft.VertexPaintModifier != modifier)
+            {
+                Undo.RecordObject(loft, "Link Vertex Paint Modifier To Loft");
+                loft.VertexPaintModifier = modifier;
+                EditorUtility.SetDirty(loft);
+            }
+
+            if (created || needsLink)
+                loft.Regenerate();
+
+            return modifier;
+        }
+
+        private void RebuildLoftVertexPaintModifiers()
+        {
+            var rebuilt = new HashSet<VertexPaintModifier>();
+            for (int i = 0; i < paintTargets.Count; i++)
+            {
+                MultiSplineLoft loft = ResolvePaintTargetLoft(paintTargets[i]);
+                if (loft == null)
+                    continue;
+
+                VertexPaintModifier modifier = loft.VertexPaintModifier != null
+                    ? loft.VertexPaintModifier
+                    : loft.GetComponent<VertexPaintModifier>();
+                if (modifier != null && rebuilt.Add(modifier))
+                    modifier.Rebuild();
+                else if (modifier == null)
+                    loft.Regenerate();
+            }
+        }
+
+        private Color GetSplatChannelColor(bool erasing)
+        {
+            if (erasing)
+                return new Color(1f, 0.25f, 0.25f, 1f);
+
+            if (splatPaintMode == MBSplatPaintMode.Color)
+                return paintColor;
+
+            return GetActiveSplatChannel() switch
+            {
+                0 => Color.red,
+                1 => Color.green,
+                2 => new Color(0.2f, 0.55f, 1f, 1f),
+                _ => Color.white
+            };
+        }
+
+        private Color GetSplatBrushColor(RaycastHit hit, bool shiftPressed)
+        {
+            GameObject target = ResolveSplatPaintTarget(hit);
+            if (target != null && !IsPaintTarget(target))
+            {
+                return shiftPressed
+                    ? new Color(0.2f, 0.75f, 1f, 1f)
+                    : new Color(1f, 0.55f, 0.15f, 0.95f);
+            }
+
+            return TryGetSplatUv(hit, out _, out _)
+                ? GetSplatChannelColor(shiftPressed)
+                : new Color(1f, 0.7f, 0.1f, 1f);
+        }
+
+        private void DrawSplatHoverLabel(RaycastHit hit, bool shiftPressed, Color brushColor)
+        {
+            GameObject target = ResolveSplatPaintTarget(hit);
+            string label;
+            if (target != null && !IsPaintTarget(target))
+            {
+                label = shiftPressed
+                    ? $"Click to Add Splat Target: {target.name}"
+                    : $"Shift+Click Add Splat Target: {target.name}";
+            }
+            else if (!TryGetSplatUv(hit, out Vector2 uv, out string uvError))
+            {
+                label = uvError ?? "Selected projection UV is unavailable.";
+            }
+            else
+            {
+                string action = shiftPressed ? "Erase" : "Paint";
+                Color colorWeights = GetSplatColorWeights(paintColor);
+                string paintTarget = splatPaintMode == MBSplatPaintMode.Color
+                    ? $"Weights R {colorWeights.r:0.##}  G {colorWeights.g:0.##}  B {colorWeights.b:0.##}"
+                    : $"Texture {splatTextureId}  {GetActiveControlMapPropertyName()} {GetActiveSplatChannelName()}";
+                label = $"{action} {paintTarget}   {splatUVChannel} {uv.x:0.000}, {uv.y:0.000}";
+            }
+            MBEditorToolVisuals.DrawBrushAction(label);
+        }
+
+        private bool TryGetSplatHoverCandidate(Vector2 mousePosition, out GameObject target)
+        {
+            target = null;
+            Event current = Event.current;
+            if (current == null
+                || current.type == EventType.Layout
+                || current.type == EventType.Repaint)
+            {
+                return false;
+            }
+
+            MultiSplineLoft[] lofts = Object.FindObjectsByType<MultiSplineLoft>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+            if (lofts == null || lofts.Length == 0)
+                return false;
+
+            var candidates = new List<GameObject>();
+            var seen = new HashSet<GameObject>();
+            for (int index = 0; index < lofts.Length; index++)
+            {
+                MultiSplineLoft loft = lofts[index];
+                if (loft == null || !loft.gameObject.scene.IsValid())
+                    continue;
+                Renderer[] renderers = loft.GetComponentsInChildren<Renderer>(true);
+                for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
+                {
+                    Renderer renderer = renderers[rendererIndex];
+                    if (renderer != null
+                        && renderer.gameObject.activeInHierarchy
+                        && renderer.enabled
+                        && seen.Add(renderer.gameObject))
+                    {
+                        candidates.Add(renderer.gameObject);
+                    }
+                }
+            }
+
+            if (candidates.Count == 0)
+                return false;
+            GameObject picked = HandleUtility.PickGameObject(
+                mousePosition,
+                false,
+                null,
+                candidates.ToArray());
+            MultiSplineLoft pickedLoft = picked != null
+                ? picked.GetComponent<MultiSplineLoft>() ?? picked.GetComponentInParent<MultiSplineLoft>()
+                : null;
+            if (pickedLoft == null)
+                return false;
+            target = pickedLoft.gameObject;
+            return true;
+        }
+
+        private void DrawSplatActivationPreview(GameObject target, bool shiftPressed)
+        {
+            if (!target)
+                return;
+            bool active = IsPaintTarget(target);
+            Color previewColor = shiftPressed
+                ? new Color(0.2f, 0.75f, 1f, 1f)
+                : new Color(1f, 0.55f, 0.15f, 0.95f);
+            Renderer renderer = target.GetComponent<Renderer>() ?? target.GetComponentInChildren<Renderer>();
+            if (renderer != null)
+            {
+                Handles.color = previewColor;
+                Handles.DrawWireCube(renderer.bounds.center, renderer.bounds.size);
+            }
+
+            Handles.BeginGUI();
+            var style = new GUIStyle(EditorStyles.helpBox);
+            style.normal.textColor = previewColor;
+            string label = active
+                ? $"{target.name}: no active paint collider. Shift+Click rebuilds collider chunks."
+                : shiftPressed
+                    ? $"Click to Add Splat Target: {target.name}"
+                    : $"Shift+Click Add Splat Target: {target.name}";
+            Vector2 mouse = Event.current.mousePosition;
+            GUI.Label(new Rect(mouse.x + 18f, mouse.y + 18f, 380f, 38f), label, style);
+            Handles.EndGUI();
+        }
+
+        private void PaintSplatTexture(RaycastHit hit, bool erase)
+        {
+            GameObject target = ResolveSplatPaintTarget(hit);
+            if (target != null && !IsPaintTarget(target))
+            {
+                SetSplatStatus($"'{target.name}' is not a Splat Paint Target. Shift-click it before painting.");
+                return;
+            }
+
+            if (!TryAutoAssignSplatTexture(hit, out _))
+                return;
+
+            // Texture2D.isReadable is not enough here. A BC-compressed texture can
+            // be readable, but Unity still rejects SetPixels on it. Control maps
+            // are authoring data, so transparently restore an editable import
+            // format before a stroke regardless of how the map was assigned.
+            if (splatMapTexture != null && !IsSplatTextureCpuWritable(splatMapTexture))
+                splatMapTexture = ConfigureSplatTextureForPainting(splatMapTexture);
+            if (splatPaintMode == MBSplatPaintMode.TextureId
+                && splatCompanionMapTexture != null
+                && !IsSplatTextureCpuWritable(splatCompanionMapTexture))
+            {
+                splatCompanionMapTexture =
+                    ConfigureSplatTextureForPainting(splatCompanionMapTexture);
+            }
+
+            if (splatMapTexture == null)
+            {
+                splatStatusMessage = splatAutoFindTexture
+                    ? $"The hit material does not provide an editable {GetActiveControlMapPropertyName()} Texture2D."
+                    : "Assign a splat-map Texture2D before painting.";
+                return;
+            }
+
+            if (!IsSplatTextureCpuWritable(splatMapTexture))
+            {
+                splatStatusMessage =
+                    $"'{splatMapTexture.name}' cannot be edited with SetPixels. Use an imported, readable, uncompressed RGBA control map.";
+                return;
+            }
+            if (splatPaintMode == MBSplatPaintMode.TextureId)
+            {
+                if (splatCompanionMapTexture == null)
+                {
+                    splatStatusMessage = "Texture ID mode requires both _ControlMap1 and _ControlMap2 on the hit material.";
+                    return;
+                }
+                if (!IsSplatTextureCpuWritable(splatCompanionMapTexture))
+                {
+                    splatStatusMessage =
+                        $"Companion map '{splatCompanionMapTexture.name}' cannot be edited with SetPixels. Use an imported, readable, uncompressed RGBA control map.";
+                    return;
+                }
+                if (splatCompanionMapTexture.width != splatMapTexture.width
+                    || splatCompanionMapTexture.height != splatMapTexture.height)
+                {
+                    splatStatusMessage = "Control Map 1 and Control Map 2 must use the same resolution for Texture ID painting.";
+                    return;
+                }
+            }
+
+            if (!TryGetSplatUv(hit, out Vector2 uv, out string uvError))
+            {
+                splatStatusMessage = uvError;
+                return;
+            }
+
+            if (splatStrokeUndoTextures.Add(splatMapTexture))
+                Undo.RegisterCompleteObjectUndo(splatMapTexture, "Paint Splat Map");
+            if (splatPaintMode == MBSplatPaintMode.TextureId
+                && splatStrokeUndoTextures.Add(splatCompanionMapTexture))
+            {
+                Undo.RegisterCompleteObjectUndo(splatCompanionMapTexture, "Paint Splat Map");
+            }
+            splatUndoRegistered = true;
+
+            if (TryPaintStaticPlanarSplat(hit, uv, erase))
+            {
+                MarkCurrentSplatTexturesModified();
+                return;
+            }
+
+            if (hit.collider is MeshCollider && PaintSplatTextureFromWorldFootprint(hit, erase))
+            {
+                if (splatPaintMode == MBSplatPaintMode.TextureId)
+                {
+                    splatCompanionTextureDirty = true;
+                }
+                splatTextureUploadPending = true;
+                MarkCurrentSplatTexturesModified();
+                return;
+            }
+
+            int centerX = Mathf.Clamp(Mathf.RoundToInt(uv.x * (splatMapTexture.width - 1)), 0, splatMapTexture.width - 1);
+            int centerY = Mathf.Clamp(Mathf.RoundToInt(uv.y * (splatMapTexture.height - 1)), 0, splatMapTexture.height - 1);
+            int radius = Mathf.Max(1, splatBrushPixels);
+            int minX = Mathf.Max(0, centerX - radius);
+            int minY = Mathf.Max(0, centerY - radius);
+            int maxX = Mathf.Min(splatMapTexture.width - 1, centerX + radius);
+            int maxY = Mathf.Min(splatMapTexture.height - 1, centerY + radius);
+            if (TryGetSplatUvIslandBounds(hit, out Rect islandBounds))
+            {
+                minX = Mathf.Max(
+                    minX,
+                    Mathf.CeilToInt(Mathf.Clamp01(islandBounds.xMin) * (splatMapTexture.width - 1)));
+                minY = Mathf.Max(
+                    minY,
+                    Mathf.CeilToInt(Mathf.Clamp01(islandBounds.yMin) * (splatMapTexture.height - 1)));
+                maxX = Mathf.Min(
+                    maxX,
+                    Mathf.FloorToInt(Mathf.Clamp01(islandBounds.xMax) * (splatMapTexture.width - 1)));
+                maxY = Mathf.Min(
+                    maxY,
+                    Mathf.FloorToInt(Mathf.Clamp01(islandBounds.yMax) * (splatMapTexture.height - 1)));
+            }
+
+            if (minX > maxX || minY > maxY)
+                return;
+
+            int width = maxX - minX + 1;
+            int height = maxY - minY + 1;
+            Color[] pixels = splatMapTexture.GetPixels(minX, minY, width, height);
+            Color[] companionPixels = splatPaintMode == MBSplatPaintMode.TextureId
+                ? splatCompanionMapTexture.GetPixels(minX, minY, width, height)
+                : null;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float distance = Vector2.Distance(new Vector2(minX + x, minY + y), new Vector2(centerX, centerY));
+                    if (distance > radius)
+                        continue;
+
+                    float falloff = splatUseFalloff ? Mathf.Clamp01(1f - distance / radius) : 1f;
+                    float influence = Mathf.Clamp01(brushStrength * falloff);
+                    int pixelIndex = y * width + x;
+                    Color color = pixels[pixelIndex];
+                    if (companionPixels != null)
+                    {
+                        Color companionColor = companionPixels[pixelIndex];
+                        ApplyTextureIdSplatPaint(
+                            ref color,
+                            ref companionColor,
+                            influence,
+                            erase);
+                        companionPixels[pixelIndex] = companionColor;
+                    }
+                    else
+                    {
+                        ApplySplatPaint(ref color, influence, erase);
+                    }
+                    pixels[pixelIndex] = color;
+                }
+            }
+
+            splatMapTexture.SetPixels(minX, minY, width, height, pixels);
+            UploadSplatPreviewRegion(
+                splatMapTexture,
+                pixels,
+                minX,
+                minY,
+                width,
+                height,
+                false);
+            if (companionPixels != null)
+            {
+                splatCompanionMapTexture.SetPixels(minX, minY, width, height, companionPixels);
+                UploadSplatPreviewRegion(
+                    splatCompanionMapTexture,
+                    companionPixels,
+                    minX,
+                    minY,
+                    width,
+                    height,
+                    true);
+                splatCompanionTextureDirty = true;
+            }
+            splatTextureUploadPending = true;
+            MarkCurrentSplatTexturesModified();
+        }
+
+        private void MarkCurrentSplatTexturesModified()
+        {
+            if (splatMapTexture != null)
+                splatStrokeModifiedTextures.Add(splatMapTexture);
+            if (splatPaintMode == MBSplatPaintMode.TextureId && splatCompanionMapTexture != null)
+                splatStrokeModifiedTextures.Add(splatCompanionMapTexture);
+            splatTextureDirty = splatStrokeModifiedTextures.Count > 0
+                || splatTexturesPendingSave.Count > 0;
+        }
+
+        private bool TryPaintStaticPlanarSplat(RaycastHit hit, Vector2 uv, bool erase)
+        {
+            if (!(hit.collider is MeshCollider meshCollider)
+                || hit.collider.GetComponentInParent<MultiSplineLoft>() != null
+                || TryGetMeshMicroBumpGenerator(hit.collider, out _)
+                || !TryGetSplatMeshData(meshCollider, (int)splatUVChannel, out SplatMeshData meshData)
+                || !meshData.HasNormalizedPlanarXZUvs())
+            {
+                return false;
+            }
+
+            Bounds meshBounds = meshCollider.sharedMesh.bounds;
+            float worldWidth = meshCollider.transform.TransformVector(
+                Vector3.right * meshBounds.size.x).magnitude;
+            float worldDepth = meshCollider.transform.TransformVector(
+                Vector3.forward * meshBounds.size.z).magnitude;
+            if (worldWidth <= 0.0001f || worldDepth <= 0.0001f)
+                return false;
+
+            int textureWidth = splatMapTexture.width;
+            int textureHeight = splatMapTexture.height;
+            float radiusPixelsX = Mathf.Max(1f, brushRadius / worldWidth * (textureWidth - 1));
+            float radiusPixelsY = Mathf.Max(1f, brushRadius / worldDepth * (textureHeight - 1));
+            float centerX = uv.x * (textureWidth - 1);
+            float centerY = uv.y * (textureHeight - 1);
+            int minX = Mathf.Max(0, Mathf.FloorToInt(centerX - radiusPixelsX));
+            int minY = Mathf.Max(0, Mathf.FloorToInt(centerY - radiusPixelsY));
+            int maxX = Mathf.Min(textureWidth - 1, Mathf.CeilToInt(centerX + radiusPixelsX));
+            int maxY = Mathf.Min(textureHeight - 1, Mathf.CeilToInt(centerY + radiusPixelsY));
+            if (minX > maxX || minY > maxY)
+                return true;
+
+            int width = maxX - minX + 1;
+            int height = maxY - minY + 1;
+            Color[] pixels = splatMapTexture.GetPixels(minX, minY, width, height);
+            Color[] companionPixels = splatPaintMode == MBSplatPaintMode.TextureId
+                ? splatCompanionMapTexture.GetPixels(minX, minY, width, height)
+                : null;
+            float inverseRadiusX = 1f / radiusPixelsX;
+            float inverseRadiusY = 1f / radiusPixelsY;
+            for (int y = 0; y < height; y++)
+            {
+                float normalizedY = (minY + y + 0.5f - centerY) * inverseRadiusY;
+                float normalizedYSquared = normalizedY * normalizedY;
+                for (int x = 0; x < width; x++)
+                {
+                    float normalizedX = (minX + x + 0.5f - centerX) * inverseRadiusX;
+                    float distanceSquared = normalizedX * normalizedX + normalizedYSquared;
+                    if (distanceSquared > 1f)
+                        continue;
+
+                    float distance = Mathf.Sqrt(distanceSquared);
+                    float falloff = splatUseFalloff ? 1f - distance : 1f;
+                    float influence = Mathf.Clamp01(brushStrength * falloff);
+                    int pixelIndex = y * width + x;
+                    Color color = pixels[pixelIndex];
+                    if (companionPixels != null)
+                    {
+                        Color companionColor = companionPixels[pixelIndex];
+                        ApplyTextureIdSplatPaint(ref color, ref companionColor, influence, erase);
+                        companionPixels[pixelIndex] = companionColor;
+                    }
+                    else
+                    {
+                        ApplySplatPaint(ref color, influence, erase);
+                    }
+                    pixels[pixelIndex] = color;
+                }
+            }
+
+            splatMapTexture.SetPixels(minX, minY, width, height, pixels);
+            UploadSplatPreviewRegion(
+                splatMapTexture,
+                pixels,
+                minX,
+                minY,
+                width,
+                height,
+                false);
+            if (companionPixels != null)
+            {
+                splatCompanionMapTexture.SetPixels(minX, minY, width, height, companionPixels);
+                UploadSplatPreviewRegion(
+                    splatCompanionMapTexture,
+                    companionPixels,
+                    minX,
+                    minY,
+                    width,
+                    height,
+                    true);
+                splatCompanionTextureDirty = true;
+            }
+            splatTextureUploadPending = true;
+            return true;
+        }
+
+        private bool PaintSplatTextureFromWorldFootprint(RaycastHit hit, bool erase)
+        {
+            var influences = new Dictionary<int, float>();
+            var colliders = new List<MeshCollider>();
+            var uniqueColliders = new HashSet<MeshCollider>();
+            MultiSplineLoft loft = hit.collider.GetComponentInParent<MultiSplineLoft>();
+            if (loft != null)
+            {
+                MeshCollider[] loftColliders = loft.GetComponentsInChildren<MeshCollider>(true);
+                for (int index = 0; index < loftColliders.Length; index++)
+                {
+                    MeshCollider collider = loftColliders[index];
+                    if (collider != null
+                        && collider.enabled
+                        && collider.sharedMesh != null
+                        && !IsMicroBumpPaintCollider(collider)
+                        && collider.bounds.SqrDistance(hit.point) <= brushRadius * brushRadius
+                        && uniqueColliders.Add(collider))
+                    {
+                        colliders.Add(collider);
+                    }
+                }
+            }
+            else if (TryGetMeshMicroBumpGenerator(hit.collider, out MicroBumpMeshColliderGenerator microBumpGenerator))
+            {
+                GameObject generatedRoot = microBumpGenerator.GeneratedRoot;
+                if (generatedRoot != null)
+                {
+                    MeshCollider[] microBumpColliders =
+                        generatedRoot.GetComponentsInChildren<MeshCollider>(true);
+                    for (int index = 0; index < microBumpColliders.Length; index++)
+                    {
+                        MeshCollider collider = microBumpColliders[index];
+                        if (collider != null
+                            && collider.enabled
+                            && collider.sharedMesh != null
+                            && collider.bounds.SqrDistance(hit.point) <= brushRadius * brushRadius
+                            && uniqueColliders.Add(collider))
+                        {
+                            colliders.Add(collider);
+                        }
+                    }
+                }
+            }
+            else if (hit.collider.GetComponentInParent<MGTerrain>() is MGTerrain terrain)
+            {
+                foreach (var chunk in terrain.SurfaceColliderChunks)
+                    if (chunk != null && chunk.enabled && chunk.gameObject.activeInHierarchy && chunk.sharedMesh != null
+                        && chunk.bounds.SqrDistance(hit.point) <= brushRadius * brushRadius && uniqueColliders.Add(chunk))
+                        colliders.Add(chunk);
+                if (hit.collider is MeshCollider terrainHit && uniqueColliders.Add(terrainHit)) colliders.Add(terrainHit);
+            }
+            else if (hit.collider is MeshCollider hitCollider)
+            {
+                colliders.Add(hitCollider);
+            }
+
+            int textureWidth = splatMapTexture.width;
+            int textureHeight = splatMapTexture.height;
+            float radius = Mathf.Max(0.0001f, brushRadius);
+            int uvChannel = (int)splatUVChannel;
+            for (int colliderIndex = 0; colliderIndex < colliders.Count; colliderIndex++)
+            {
+                MeshCollider collider = colliders[colliderIndex];
+                if (!TryGetSplatMeshData(collider, uvChannel, out SplatMeshData meshData))
+                    continue;
+
+                List<Vector4> uvs = meshData.uvs;
+                Vector3[] vertices = meshData.GetVertices();
+                int[] triangles = meshData.triangles;
+                Matrix4x4 localToWorld = collider.transform.localToWorldMatrix;
+                bool staticMesh = loft == null;
+                if (staticMesh)
+                {
+                    Vector3 scale = collider.transform.lossyScale;
+                    float minimumScale = Mathf.Min(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+                    if (minimumScale > 0.00001f)
+                    {
+                        meshData.GetTrianglesNear(
+                            collider.transform.InverseTransformPoint(hit.point),
+                            radius / minimumScale,
+                            splatTriangleCandidates,
+                            splatTriangleCandidateSet);
+                    }
+                    else
+                    {
+                        splatTriangleCandidates.Clear();
+                        for (int triangleIndex = 0; triangleIndex < triangles.Length / 3; triangleIndex++)
+                            splatTriangleCandidates.Add(triangleIndex);
+                    }
+                }
+
+                int triangleIterations = staticMesh
+                    ? splatTriangleCandidates.Count
+                    : triangles.Length / 3;
+                for (int iteration = 0; iteration < triangleIterations; iteration++)
+                {
+                    int triangle = (staticMesh ? splatTriangleCandidates[iteration] : iteration) * 3;
+                    int indexA = triangles[triangle];
+                    int indexB = triangles[triangle + 1];
+                    int indexC = triangles[triangle + 2];
+                    if ((uint)indexA >= vertices.Length
+                        || (uint)indexB >= vertices.Length
+                        || (uint)indexC >= vertices.Length)
+                        continue;
+
+                    Vector3 worldA = localToWorld.MultiplyPoint3x4(vertices[indexA]);
+                    Vector3 worldB = localToWorld.MultiplyPoint3x4(vertices[indexB]);
+                    Vector3 worldC = localToWorld.MultiplyPoint3x4(vertices[indexC]);
+                    Vector3 closest = ClosestPointOnTriangle(hit.point, worldA, worldB, worldC);
+                    if ((closest - hit.point).sqrMagnitude > radius * radius)
+                        continue;
+
+                    Vector2 uvA = new Vector2(uvs[indexA].x, uvs[indexA].y);
+                    Vector2 uvB = new Vector2(uvs[indexB].x, uvs[indexB].y);
+                    Vector2 uvC = new Vector2(uvs[indexC].x, uvs[indexC].y);
+                    RasterizeSplatTriangle(
+                        uvA,
+                        uvB,
+                        uvC,
+                        worldA,
+                        worldB,
+                        worldC,
+                        hit.point,
+                        radius,
+                        textureWidth,
+                        textureHeight,
+                        influences);
+                }
+            }
+
+            if (influences.Count == 0)
+                return false;
+
+            DilateSplatInfluences(influences, textureWidth, textureHeight, 2);
+
+            int minX = textureWidth - 1;
+            int minY = textureHeight - 1;
+            int maxX = 0;
+            int maxY = 0;
+            foreach (int pixelIndex in influences.Keys)
+            {
+                int x = pixelIndex % textureWidth;
+                int y = pixelIndex / textureWidth;
+                minX = Mathf.Min(minX, x);
+                minY = Mathf.Min(minY, y);
+                maxX = Mathf.Max(maxX, x);
+                maxY = Mathf.Max(maxY, y);
+            }
+
+            if (splatPaintMode == MBSplatPaintMode.TextureId)
+            {
+                ApplyTextureIdSplatInfluences(
+                    influences,
+                    textureWidth,
+                    minX,
+                    minY,
+                    maxX,
+                    maxY,
+                    erase);
+            }
+            else
+            {
+                ApplySplatInfluencesToTexture(
+                    splatMapTexture,
+                    influences,
+                    textureWidth,
+                    minX,
+                    minY,
+                    maxX,
+                    maxY,
+                    erase);
+            }
+            return true;
+        }
+
+        private void ApplySplatInfluencesToTexture(
+            Texture2D texture,
+            Dictionary<int, float> influences,
+            int textureWidth,
+            int minX,
+            int minY,
+            int maxX,
+            int maxY,
+            bool erase)
+        {
+            int blockWidth = maxX - minX + 1;
+            int blockHeight = maxY - minY + 1;
+            Color[] pixels = texture.GetPixels(minX, minY, blockWidth, blockHeight);
+            foreach (KeyValuePair<int, float> pair in influences)
+            {
+                int x = pair.Key % textureWidth;
+                int y = pair.Key / textureWidth;
+                int localIndex = (y - minY) * blockWidth + (x - minX);
+                Color color = pixels[localIndex];
+                ApplySplatPaint(ref color, pair.Value, erase);
+                pixels[localIndex] = color;
+            }
+
+            texture.SetPixels(minX, minY, blockWidth, blockHeight, pixels);
+            UploadSplatPreviewRegion(
+                texture,
+                pixels,
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                false);
+        }
+
+        private void ApplyTextureIdSplatInfluences(
+            Dictionary<int, float> influences,
+            int textureWidth,
+            int minX,
+            int minY,
+            int maxX,
+            int maxY,
+            bool erase)
+        {
+            int blockWidth = maxX - minX + 1;
+            int blockHeight = maxY - minY + 1;
+            Color[] pixels = splatMapTexture.GetPixels(minX, minY, blockWidth, blockHeight);
+            Color[] companionPixels = splatCompanionMapTexture.GetPixels(
+                minX,
+                minY,
+                blockWidth,
+                blockHeight);
+            foreach (KeyValuePair<int, float> pair in influences)
+            {
+                int x = pair.Key % textureWidth;
+                int y = pair.Key / textureWidth;
+                int localIndex = (y - minY) * blockWidth + (x - minX);
+                Color color = pixels[localIndex];
+                Color companionColor = companionPixels[localIndex];
+                ApplyTextureIdSplatPaint(
+                    ref color,
+                    ref companionColor,
+                    pair.Value,
+                    erase);
+                pixels[localIndex] = color;
+                companionPixels[localIndex] = companionColor;
+            }
+
+            splatMapTexture.SetPixels(minX, minY, blockWidth, blockHeight, pixels);
+            splatCompanionMapTexture.SetPixels(
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                companionPixels);
+            UploadSplatPreviewRegion(
+                splatMapTexture,
+                pixels,
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                false);
+            UploadSplatPreviewRegion(
+                splatCompanionMapTexture,
+                companionPixels,
+                minX,
+                minY,
+                blockWidth,
+                blockHeight,
+                true);
+        }
+
+        private static void DilateSplatInfluences(
+            Dictionary<int, float> influences,
+            int textureWidth,
+            int textureHeight,
+            int paddingPixels)
+        {
+            paddingPixels = Mathf.Max(0, paddingPixels);
+            for (int pass = 0; pass < paddingPixels; pass++)
+            {
+                var additions = new Dictionary<int, float>();
+                foreach (KeyValuePair<int, float> pair in influences)
+                {
+                    int sourceX = pair.Key % textureWidth;
+                    int sourceY = pair.Key / textureWidth;
+                    for (int offsetY = -1; offsetY <= 1; offsetY++)
+                    {
+                        int y = sourceY + offsetY;
+                        if ((uint)y >= textureHeight)
+                            continue;
+
+                        for (int offsetX = -1; offsetX <= 1; offsetX++)
+                        {
+                            if (offsetX == 0 && offsetY == 0)
+                                continue;
+
+                            int x = sourceX + offsetX;
+                            if ((uint)x >= textureWidth)
+                                continue;
+
+                            int pixelIndex = y * textureWidth + x;
+                            if (influences.ContainsKey(pixelIndex))
+                                continue;
+
+                            if (!additions.TryGetValue(pixelIndex, out float existing)
+                                || pair.Value > existing)
+                            {
+                                additions[pixelIndex] = pair.Value;
+                            }
+                        }
+                    }
+                }
+
+                foreach (KeyValuePair<int, float> addition in additions)
+                    influences[addition.Key] = addition.Value;
+            }
+        }
+
+        private void RasterizeSplatTriangle(
+            Vector2 uvA,
+            Vector2 uvB,
+            Vector2 uvC,
+            Vector3 worldA,
+            Vector3 worldB,
+            Vector3 worldC,
+            Vector3 brushCenter,
+            float radius,
+            int textureWidth,
+            int textureHeight,
+            Dictionary<int, float> influences)
+        {
+            Vector2 pixelA = new Vector2(uvA.x * (textureWidth - 1), uvA.y * (textureHeight - 1));
+            Vector2 pixelB = new Vector2(uvB.x * (textureWidth - 1), uvB.y * (textureHeight - 1));
+            Vector2 pixelC = new Vector2(uvC.x * (textureWidth - 1), uvC.y * (textureHeight - 1));
+            int minX = Mathf.Clamp(
+                Mathf.FloorToInt(Mathf.Min(pixelA.x, pixelB.x, pixelC.x)),
+                0,
+                textureWidth - 1);
+            int minY = Mathf.Clamp(
+                Mathf.FloorToInt(Mathf.Min(pixelA.y, pixelB.y, pixelC.y)),
+                0,
+                textureHeight - 1);
+            int maxX = Mathf.Clamp(
+                Mathf.CeilToInt(Mathf.Max(pixelA.x, pixelB.x, pixelC.x)),
+                0,
+                textureWidth - 1);
+            int maxY = Mathf.Clamp(
+                Mathf.CeilToInt(Mathf.Max(pixelA.y, pixelB.y, pixelC.y)),
+                0,
+                textureHeight - 1);
+
+            for (int y = minY; y <= maxY; y++)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    if (!TryGetTriangleBarycentric(
+                            new Vector2(x + 0.5f, y + 0.5f),
+                            pixelA,
+                            pixelB,
+                            pixelC,
+                            out Vector3 barycentric))
+                        continue;
+
+                    Vector3 worldPosition = worldA * barycentric.x
+                        + worldB * barycentric.y
+                        + worldC * barycentric.z;
+                    float distance = Vector3.Distance(worldPosition, brushCenter);
+                    if (distance > radius)
+                        continue;
+
+                    float falloff = splatUseFalloff ? Mathf.Clamp01(1f - distance / radius) : 1f;
+                    float influence = Mathf.Clamp01(brushStrength * falloff);
+                    int pixelIndex = y * textureWidth + x;
+                    if (!influences.TryGetValue(pixelIndex, out float existing)
+                        || influence > existing)
+                    {
+                        influences[pixelIndex] = influence;
+                    }
+                }
+            }
+        }
+
+        private static bool TryGetTriangleBarycentric(
+            Vector2 point,
+            Vector2 a,
+            Vector2 b,
+            Vector2 c,
+            out Vector3 barycentric)
+        {
+            Vector2 v0 = b - a;
+            Vector2 v1 = c - a;
+            Vector2 v2 = point - a;
+            float denominator = v0.x * v1.y - v1.x * v0.y;
+            if (Mathf.Abs(denominator) <= 0.000001f)
+            {
+                barycentric = default;
+                return false;
+            }
+
+            float inverse = 1f / denominator;
+            float weightB = (v2.x * v1.y - v1.x * v2.y) * inverse;
+            float weightC = (v0.x * v2.y - v2.x * v0.y) * inverse;
+            float weightA = 1f - weightB - weightC;
+            const float tolerance = -0.0001f;
+            barycentric = new Vector3(weightA, weightB, weightC);
+            return weightA >= tolerance && weightB >= tolerance && weightC >= tolerance;
+        }
+
+        private static Vector3 ClosestPointOnTriangle(
+            Vector3 point,
+            Vector3 a,
+            Vector3 b,
+            Vector3 c)
+        {
+            Vector3 ab = b - a;
+            Vector3 ac = c - a;
+            Vector3 ap = point - a;
+            float d1 = Vector3.Dot(ab, ap);
+            float d2 = Vector3.Dot(ac, ap);
+            if (d1 <= 0f && d2 <= 0f)
+                return a;
+
+            Vector3 bp = point - b;
+            float d3 = Vector3.Dot(ab, bp);
+            float d4 = Vector3.Dot(ac, bp);
+            if (d3 >= 0f && d4 <= d3)
+                return b;
+
+            float vc = d1 * d4 - d3 * d2;
+            if (vc <= 0f && d1 >= 0f && d3 <= 0f)
+                return a + ab * (d1 / (d1 - d3));
+
+            Vector3 cp = point - c;
+            float d5 = Vector3.Dot(ab, cp);
+            float d6 = Vector3.Dot(ac, cp);
+            if (d6 >= 0f && d5 <= d6)
+                return c;
+
+            float vb = d5 * d2 - d1 * d6;
+            if (vb <= 0f && d2 >= 0f && d6 <= 0f)
+                return a + ac * (d2 / (d2 - d6));
+
+            float va = d3 * d6 - d5 * d4;
+            if (va <= 0f && (d4 - d3) >= 0f && (d5 - d6) >= 0f)
+                return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+
+            float denominator = 1f / (va + vb + vc);
+            float v = vb * denominator;
+            float w = vc * denominator;
+            return a + ab * v + ac * w;
+        }
+
+        private void ApplySplatPaint(
+            ref Color color,
+            float influence,
+            bool erase)
+        {
+            if (splatPaintMode == MBSplatPaintMode.Color)
+            {
+                Color targetColor = erase ? Color.clear : GetSplatColorWeights(paintColor);
+                color = Color.Lerp(color, targetColor, influence);
+                if (normalizeSplatWeights && !erase)
+                    NormalizeAllSplatChannels(ref color);
+                return;
+            }
+
+            int channel = GetActiveSplatChannel();
+            float selectedWeight = erase
+                ? Mathf.Lerp(GetColorChannel(color, channel), 0f, influence)
+                : Mathf.Lerp(GetColorChannel(color, channel), 1f, influence);
+            SetColorChannel(ref color, channel, selectedWeight);
+        }
+
+        private void ApplyTextureIdSplatPaint(
+            ref Color activeColor,
+            ref Color companionColor,
+            float influence,
+            bool erase)
+        {
+            int selectedChannel = GetActiveSplatChannel();
+            if (!erase)
+            {
+                Color targetColor = Color.clear;
+                SetColorChannel(ref targetColor, selectedChannel, 1f);
+                activeColor = Color.Lerp(activeColor, targetColor, influence);
+                companionColor = Color.Lerp(companionColor, Color.clear, influence);
+            }
+            else
+            {
+                float selectedWeight = Mathf.Lerp(
+                    GetColorChannel(activeColor, selectedChannel),
+                    0f,
+                    influence);
+                SetColorChannel(ref activeColor, selectedChannel, selectedWeight);
+            }
+
+            NormalizeEightSplatChannels(
+                ref activeColor,
+                ref companionColor,
+                erase ? selectedChannel : -1);
+        }
+
+        private static Color GetSplatColorWeights(Color pickerColor)
+        {
+            // Unity's color picker normally supplies alpha = 1 for an opaque
+            // display color. A control map uses alpha as a fourth material
+            // weight, so treating that opacity as a weight would make ordinary
+            // red become 50% red + 50% alpha after normalization.
+            float rgbTotal = pickerColor.r + pickerColor.g + pickerColor.b;
+            if (rgbTotal <= 0.00001f)
+                return new Color(0f, 0f, 0f, 1f);
+
+            return new Color(
+                pickerColor.r / rgbTotal,
+                pickerColor.g / rgbTotal,
+                pickerColor.b / rgbTotal,
+                0f);
+        }
+
+        private static float GetColorChannel(Color color, int channel)
+        {
+            return channel switch
+            {
+                0 => color.r,
+                1 => color.g,
+                2 => color.b,
+                _ => color.a
+            };
+        }
+
+        private static void SetColorChannel(ref Color color, int channel, float value)
+        {
+            value = Mathf.Clamp01(value);
+            switch (channel)
+            {
+                case 0: color.r = value; break;
+                case 1: color.g = value; break;
+                case 2: color.b = value; break;
+                default: color.a = value; break;
+            }
+        }
+
+        private static void NormalizeAllSplatChannels(ref Color color)
+        {
+            float total = color.r + color.g + color.b + color.a;
+            if (total <= 0.00001f)
+                return;
+
+            color.r /= total;
+            color.g /= total;
+            color.b /= total;
+            color.a /= total;
+        }
+
+        private static void NormalizeEightSplatChannels(
+            ref Color activeColor,
+            ref Color companionColor,
+            int excludedActiveChannel)
+        {
+            float total =
+                activeColor.r + activeColor.g + activeColor.b + activeColor.a +
+                companionColor.r + companionColor.g + companionColor.b + companionColor.a;
+            if (total > 0.00001f)
+            {
+                float inverseTotal = 1f / total;
+                activeColor *= inverseTotal;
+                companionColor *= inverseTotal;
+                return;
+            }
+
+            activeColor = Color.clear;
+            companionColor = Color.clear;
+            if (excludedActiveChannel < 0)
+            {
+                activeColor.r = 1f;
+                return;
+            }
+
+            const float fallbackWeight = 1f / 7f;
+            for (int channel = 0; channel < 4; channel++)
+            {
+                if (channel != excludedActiveChannel)
+                    SetColorChannel(ref activeColor, channel, fallbackWeight);
+                SetColorChannel(ref companionColor, channel, fallbackWeight);
+            }
+        }
+
+        private void FinishSplatPaintStroke()
+        {
+            if (splatStrokeModifiedTextures.Count == 0)
+                return;
+
+            foreach (Texture2D texture in splatStrokeModifiedTextures)
+            {
+                if (texture == null)
+                    continue;
+                splatTexturesPendingSave.Add(texture);
+            }
+            splatStrokeModifiedTextures.Clear();
+            splatStrokeUndoTextures.Clear();
+            splatTextureDirty = splatTexturesPendingSave.Count > 0;
+            splatStatusMessage = splatAutoSaveAfterStroke
+                ? "Splat changes are held in memory and will save when you leave Splat mode."
+                : "Splat changes are held in memory. Use Save before leaving if you want them written to disk.";
+
+            Repaint();
+        }
+
+        private void FlushPendingSplatTextureUploads()
+        {
+            if (!splatTextureUploadPending && splatPreviewMipBiases.Count == 0)
+                return;
+
+            foreach (Texture2D texture in splatTexturesPendingSave)
+            {
+                if (texture == null)
+                    continue;
+                texture.Apply(texture.mipmapCount > 1, false);
+                EditorUtility.SetDirty(texture);
+            }
+            splatTextureUploadPending = false;
+            RestoreSplatPreviewMipBias();
+        }
+
+        private void TrySaveAllDirtySplatTextures()
+        {
+            FlushPendingSplatTextureUploads();
+            if (splatTexturesPendingSave.Count == 0)
+            {
+                TrySaveSplatTexture(false, false, false);
+                return;
+            }
+
+            var savedTextures = new List<Texture2D>();
+            var importPaths = new List<string>();
+            bool saveAssetDatabase = false;
+            foreach (Texture2D texture in splatTexturesPendingSave)
+            {
+                if (texture == null)
+                    continue;
+                string path = AssetDatabase.GetAssetPath(texture);
+                string extension = Path.GetExtension(path).ToLowerInvariant();
+                if (string.IsNullOrEmpty(path)
+                    || (extension != ".png" && extension != ".tga" && extension != ".asset"))
+                {
+                    continue;
+                }
+
+                if (extension == ".asset")
+                {
+                    EditorUtility.SetDirty(texture);
+                    saveAssetDatabase = true;
+                    savedTextures.Add(texture);
+                    continue;
+                }
+
+                if (!AssetDatabase.MakeEditable(path))
+                    continue;
+                byte[] bytes = extension == ".tga" ? texture.EncodeToTGA() : texture.EncodeToPNG();
+                File.WriteAllBytes(Path.GetFullPath(path), bytes);
+                importPaths.Add(path);
+                savedTextures.Add(texture);
+            }
+
+            if (saveAssetDatabase)
+                AssetDatabase.SaveAssets();
+            for (int index = 0; index < importPaths.Count; index++)
+                AssetDatabase.ImportAsset(importPaths[index], ImportAssetOptions.ForceUpdate);
+            for (int index = 0; index < savedTextures.Count; index++)
+                splatTexturesPendingSave.Remove(savedTextures[index]);
+
+            splatTextureDirty = splatTexturesPendingSave.Count > 0;
+            splatCompanionTextureDirty = false;
+            splatStatusMessage = splatTextureDirty
+                ? "Some painted control maps could not be auto-saved. Check that they are editable PNG, TGA, or Texture2D assets."
+                : $"Saved {savedTextures.Count} painted control map{(savedTextures.Count == 1 ? string.Empty : "s")}.";
+            Repaint();
+        }
+
+        private void MakeSplatTextureReadable()
+        {
+            if (splatMapTexture == null)
+                return;
+
+            splatMapTexture = ConfigureSplatTextureForPainting(splatMapTexture);
+            if (splatPaintMode == MBSplatPaintMode.TextureId && splatCompanionMapTexture != null)
+                splatCompanionMapTexture = ConfigureSplatTextureForPainting(splatCompanionMapTexture);
+            splatStatusMessage = "Control map texture(s) are readable and configured as linear splat-weight data.";
+        }
+
+        private Texture2D ConfigureSplatTextureForPainting(Texture2D texture)
+        {
+            if (texture == null)
+                return null;
+
+            string path = AssetDatabase.GetAssetPath(texture);
+            if (string.IsNullOrEmpty(path) || !(AssetImporter.GetAtPath(path) is TextureImporter importer))
+                return texture;
+
+            bool importerChanged = false;
+            if (!importer.isReadable)
+            {
+                importer.isReadable = true;
+                importerChanged = true;
+            }
+            if (importer.sRGBTexture)
+            {
+                importer.sRGBTexture = false;
+                importerChanged = true;
+            }
+            if (importer.textureCompression != TextureImporterCompression.Uncompressed)
+            {
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importerChanged = true;
+            }
+
+            // "Apply BC7 to Control Maps" uses a Standalone override. Changing
+            // only the default compression above leaves that override in force,
+            // producing a readable BC7 texture that still cannot use SetPixels.
+            TextureImporterPlatformSettings standaloneSettings =
+                importer.GetPlatformTextureSettings("Standalone");
+            if (standaloneSettings.overridden)
+            {
+                standaloneSettings.overridden = false;
+                importer.SetPlatformTextureSettings(standaloneSettings);
+                importerChanged = true;
+            }
+            if (importerChanged)
+                importer.SaveAndReimport();
+
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        private static bool IsSplatTextureCpuWritable(Texture2D texture)
+        {
+            if (texture == null || !texture.isReadable)
+                return false;
+
+            // Texture2D.SetPixels supports this set of CPU-side formats. In
+            // particular, compressed formats such as BC7 are deliberately not
+            // included even when the importer exposes readable pixel data.
+            switch (texture.format)
+            {
+                case TextureFormat.RGBA32:
+                case TextureFormat.ARGB32:
+                case TextureFormat.RGB24:
+                case TextureFormat.Alpha8:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private void CreateSplatTexture()
+        {
+            string path = EditorUtility.SaveFilePanelInProject(
+                "Create Splat Map",
+                "SplatMap",
+                "png",
+                "Choose where to create the RGBA splat-weight texture.");
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            int resolution = Mathf.Clamp(newSplatResolution, 16, 8192);
+            var texture = new Texture2D(resolution, resolution, TextureFormat.RGBA32, false, true);
+            var pixels = new Color[resolution * resolution];
+            for (int index = 0; index < pixels.Length; index++)
+                pixels[index] = new Color(1f, 0f, 0f, 0f);
+            texture.SetPixels(pixels);
+            texture.Apply(false, false);
+            File.WriteAllBytes(Path.GetFullPath(path), texture.EncodeToPNG());
+            DestroyImmediate(texture);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            MakeSplatTextureReadable();
+            splatTextureDirty = false;
+            splatCompanionTextureDirty = false;
+            splatTextureUploadPending = false;
+            splatStatusMessage = $"Created {resolution} x {resolution} splat map. Red is the initial full-weight layer.";
+        }
+
+        private void TrySaveSplatTexture(
+            bool saveAs,
+            bool allowSaveAsPrompt = true,
+            bool reimportAssets = true)
+        {
+            try
+            {
+                SaveSplatTexture(saveAs, allowSaveAsPrompt, reimportAssets);
+            }
+            catch (System.Exception exception)
+            {
+                splatStatusMessage = $"Control map save failed: {exception.Message}";
+                Debug.LogException(exception);
+                Repaint();
+            }
+        }
+
+        private void SaveSplatTexture(
+            bool saveAs,
+            bool allowSaveAsPrompt = true,
+            bool reimportAssets = true)
+        {
+            if (splatMapTexture == null)
+                return;
+
+            FlushPendingSplatTextureUploads();
+            Texture2D savedPrimaryTexture = splatMapTexture;
+            Texture2D savedCompanionTexture = splatCompanionMapTexture;
+
+            string companionPath = string.Empty;
+            string companionExtension = string.Empty;
+            byte[] companionBytes = null;
+            bool companionIsAsset = false;
+            if (!saveAs && splatCompanionTextureDirty && splatCompanionMapTexture == null)
+            {
+                splatStatusMessage = "The modified companion control map is no longer assigned; it was not saved.";
+                return;
+            }
+
+            if (!saveAs
+                && splatCompanionTextureDirty
+                && splatCompanionMapTexture != null)
+            {
+                companionPath = AssetDatabase.GetAssetPath(splatCompanionMapTexture);
+                companionExtension = Path.GetExtension(companionPath).ToLowerInvariant();
+                if (string.IsNullOrEmpty(companionPath))
+                {
+                    splatStatusMessage = "The companion control map is not a saved asset.";
+                    return;
+                }
+
+                if (companionExtension == ".png" || companionExtension == ".tga")
+                {
+                    if (!AssetDatabase.MakeEditable(companionPath))
+                    {
+                        splatStatusMessage = $"Companion control map '{companionPath}' is read-only.";
+                        return;
+                    }
+                    companionBytes = companionExtension == ".tga"
+                        ? splatCompanionMapTexture.EncodeToTGA()
+                        : splatCompanionMapTexture.EncodeToPNG();
+                }
+                else if (companionExtension == ".asset")
+                {
+                    companionIsAsset = true;
+                }
+                else
+                {
+                    splatStatusMessage =
+                        $"Companion control map '{companionPath}' must be a PNG, TGA, or Texture2D asset.";
+                    return;
+                }
+            }
+
+            string path = saveAs ? string.Empty : AssetDatabase.GetAssetPath(splatMapTexture);
+            string extension = Path.GetExtension(path).ToLowerInvariant();
+            if (saveAs || (extension != ".png" && extension != ".tga" && extension != ".asset"))
+            {
+                if (!allowSaveAsPrompt)
+                {
+                    splatStatusMessage =
+                        "Auto-save needs a PNG, TGA, or Texture2D asset. Use Save As PNG for this texture.";
+                    Repaint();
+                    return;
+                }
+
+                path = EditorUtility.SaveFilePanelInProject(
+                    "Save Splat Map",
+                    splatMapTexture.name + "_Painted",
+                    "png",
+                    "Save the painted splat map as a PNG asset.");
+                extension = ".png";
+            }
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            if (extension == ".asset")
+            {
+                EditorUtility.SetDirty(splatMapTexture);
+                AssetDatabase.SaveAssets();
+            }
+            else
+            {
+                if (!AssetDatabase.MakeEditable(path))
+                {
+                    splatStatusMessage = "The texture asset is read-only. Check it out from version control or use Save As PNG.";
+                    return;
+                }
+
+                byte[] bytes = extension == ".tga" ? splatMapTexture.EncodeToTGA() : splatMapTexture.EncodeToPNG();
+                File.WriteAllBytes(Path.GetFullPath(path), bytes);
+                if (reimportAssets)
+                {
+                    AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                    splatMapTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                    MakeSplatTextureReadable();
+                }
+            }
+
+            if (companionBytes != null)
+            {
+                File.WriteAllBytes(Path.GetFullPath(companionPath), companionBytes);
+                if (reimportAssets)
+                {
+                    AssetDatabase.ImportAsset(companionPath, ImportAssetOptions.ForceUpdate);
+                    splatCompanionMapTexture = ConfigureSplatTextureForPainting(
+                        AssetDatabase.LoadAssetAtPath<Texture2D>(companionPath));
+                }
+            }
+            else if (companionIsAsset)
+            {
+                EditorUtility.SetDirty(splatCompanionMapTexture);
+                AssetDatabase.SaveAssets();
+            }
+
+            splatTexturesPendingSave.Remove(savedPrimaryTexture);
+            if (savedCompanionTexture != null)
+                splatTexturesPendingSave.Remove(savedCompanionTexture);
+            splatTextureDirty = splatTexturesPendingSave.Count > 0;
+            splatCompanionTextureDirty = false;
+            splatTextureUploadPending = false;
+            splatStatusMessage = companionBytes != null || companionIsAsset
+                ? $"Saved both control maps: {path} and {companionPath}."
+                : $"Saved splat map to {path}.";
+            Repaint();
+        }
+
+        private void SimulatePhysics()
+        {
+            GameObject[] selected = Selection.gameObjects;
+            foreach (var go in selected)
+            {
+                if (go.GetComponent<Rigidbody>() == null)
+                {
+                    var rb = Undo.AddComponent<Rigidbody>(go);
+                    rb.mass = 1f;
+                }
+            }
+            Debug.Log("Simulate & Settle: Rigidbodies added. Use Play Mode to settle.");
+        }
+
+        private void CleanupPreview()
+        {
+            if (previewObject != null) DestroyImmediate(previewObject);
+        }
+    }
+}
+
