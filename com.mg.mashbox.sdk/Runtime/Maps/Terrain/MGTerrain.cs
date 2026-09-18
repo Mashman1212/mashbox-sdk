@@ -42,6 +42,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             GameObject m_TreeLod1Prefab;
             [SerializeField, Tooltip("Optional far-distance prefab or mesh impostor. Empty uses the source prefab's last mesh LOD.")]
             GameObject m_TreeLod2Prefab;
+            [SerializeField, Range(0f, 1f)] float m_TreeMidDensity = 1f;
+            [SerializeField, Range(0f, 1f)] float m_TreeFarDensity = 1f;
+            [SerializeField, HideInInspector] bool m_TreeDensityInitialized = true;
+            public float TreeMidDensity => Mathf.Clamp01(m_TreeMidDensity);
+            public float TreeFarDensity => Mathf.Clamp01(m_TreeFarDensity);
+            // Density bands remain available when two mesh LODs reuse the same far impostor.
+            internal float TreeDensityAtDistance(float distance) => distance < TreeLod1Distance ? 1f
+                : distance < TreeLod2Distance ? TreeMidDensity : TreeFarDensity;
             public int TreeLodCount => Kind == InstanceKind.Tree ? Mathf.Clamp(m_TreeLodCount, 1, 3) : 1;
             public float TreeLod1Distance => Mathf.Max(0f, m_TreeLod1Distance);
             public float TreeLod2Distance => Mathf.Max(TreeLod1Distance, m_TreeLod2Distance);
@@ -51,6 +59,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
             public void OnBeforeSerialize() { }
             public void OnAfterDeserialize()
             {
+                if (!m_TreeDensityInitialized)
+                {
+                    m_TreeMidDensity = m_TreeFarDensity = 1f;
+                    m_TreeDensityInitialized = true;
+                }
                 // Existing nested prototypes may deserialize new fields as zero.
                 // Zero is reserved for migration; one remains an explicit no-LOD choice.
                 if (m_TreeLodCount > 0) return;
@@ -680,7 +693,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     }
                     Matrix4x4 matrix = instanceMatrix * part.relativeMatrix;
                     matrices.Add(matrix);
-                    Bounds partBounds = TransformBounds(part.mesh.bounds, matrix);
+                    Bounds partBounds = TransformBounds(TreeDistanceBounds(part.mesh, part.material), matrix);
                     if (!hasBounds) { bounds = partBounds; hasBounds = true; }
                     else bounds.Encapsulate(partBounds);
                 }
@@ -889,7 +902,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         if (remaining <= 0) break;
                         var chunk = BuildDensityDetailChunk(layerIndex, layer, prototype, bounds, candidate.cellSize,
                             candidate.firstX, candidate.firstZ, candidate.densityLod, GetDetailDensityScale(candidate.densityLod));
-                        int allowed = Mathf.Min(remaining, chunk.instanceCount);
+                        int population = prototype.Kind == InstanceKind.Tree
+                            ? GetVisibleDensityDetailInstanceCount(new VisibleDensityDetail(chunk, prototype, candidate.distance, candidate.densityLod)) : chunk.instanceCount;
+                        int allowed = Mathf.Min(remaining, population);
                         int treeLod = SelectTreeLod(prototype, candidate.distance);
                         foreach (var batch in chunk.batches)
                             if (TreeBatchVisible(batch, treeLod)) QueueDenseDetailBatch(batch, camera, allowed, ShadowCastingMode.Off,
@@ -977,6 +992,20 @@ namespace MashBoxSDK.Maps.TerrainSystem
 {
     public sealed partial class MGTerrain
     {
+        static Bounds TreeDistanceBounds(Mesh mesh, Material material)
+        {
+            Bounds bounds = mesh.bounds;
+            if (material != null && material.HasProperty("_ImpostorFarWidth"))
+            {
+                float width = Mathf.Clamp(material.GetFloat("_ImpostorFarWidth"), .1f, 4f);
+                float height = Mathf.Clamp(material.GetFloat("_ImpostorFarHeight"), .1f, 4f);
+                var scale = new Vector3(width, height, width);
+                bounds.Encapsulate(Vector3.Scale(bounds.min, scale));
+                bounds.Encapsulate(Vector3.Scale(mesh.bounds.max, scale));
+            }
+            return bounds;
+        }
+
         bool TryGetTreeLayerBounds(DensityDetailLayer layer, out Bounds bounds)
         {
             bounds = default;
@@ -1062,7 +1091,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     foreach (var chunk in chunks)
                         foreach (var matrix in chunk)
                         {
-                            var bounds = TransformBounds(part.mesh.bounds, matrix);
+                            var bounds = TransformBounds(TreeDistanceBounds(part.mesh, part.material), matrix);
                             if (!cell.hasBounds) { cell.bounds = bounds; cell.hasBounds = true; }
                             else cell.bounds.Encapsulate(bounds);
                         }

@@ -930,7 +930,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         m_IndirectArguments.Add(0);
                         m_IndirectTopologies.Add(mesh.GetTopology(submesh));
                     }
-                    Bounds meshBounds = group.batch.mesh.bounds;
+                    Bounds meshBounds = TreeDistanceBounds(group.batch.mesh, group.batch.material);
                     m_OcclusionDraws.Add(new OcclusionDraw { center = meshBounds.center, extents = meshBounds.extents, offset = (uint)offset });
                     m_DetailBrgPreparedGroups.Add(new BrgPreparedGroup(GetOrRegisterBrgMesh(group.batch.mesh),
                         GetOrRegisterBrgMaterial(group.batch.material), group.batch.subMesh, offset, destination - offset,

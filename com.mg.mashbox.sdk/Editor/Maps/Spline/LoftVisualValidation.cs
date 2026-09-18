@@ -172,8 +172,34 @@ namespace MashBoxSDK.MapTools
                 loft.ReleaseEditorVisualChunks();
                 loft.enabled = true;
                 Check(loft.RegenerateUvSpline(out string error), "UV spline generation failed: " + error);
+                UVSpline uvSpline = loft.GeneratedUvSpline;
+                uvSpline.ControlPoints[0].sideOffset = 0.23f;
+                uvSpline.ControlPoints[1].widthScale = 1.7f;
+                uvSpline.ControlPoints[1].alongOffset = 0.31f;
+                uvSpline.ControlPoints[1].mirrorSplitToNext = true;
+                Mesh preview = uvSpline.RebuildOutputMesh(true);
+                Vector3[] expectedPositions = preview.vertices;
+                Vector2[] expectedUvs = preview.uv;
+                string savedControls = JsonUtility.ToJson(uvSpline);
+                // Reproduce scene-load initialization resetting the rendered mesh.
+                Lifecycle(loft, "EnsureMesh");
+                Check(go.GetComponent<MeshFilter>().sharedMesh == loft.GeneratedMesh,
+                    "Did not reproduce loss of the UV preview before export.");
                 Mesh[] authoringColliderMeshes = colliders.Select(c => c.sharedMesh).ToArray();
-                loft.BuildVisualChunks(true);
+                LoftVisualBuildProcessor.BakeVisuals(loft);
+                Check(uvSpline.OutputMesh == preview && JsonUtility.ToJson(uvSpline) == savedControls,
+                    "Build baking modified the saved UV output or controls.");
+                Check(go.GetComponent<MeshFilter>().sharedMesh == loft.GeneratedMesh,
+                    "Build baking did not restore the original mesh reference.");
+                foreach (MeshFilter chunk in go.GetComponentInChildren<LoftVisualChunks>(true).GetComponentsInChildren<MeshFilter>())
+                {
+                    Vector3[] positions = chunk.sharedMesh.vertices;
+                    Vector2[] uvs = chunk.sharedMesh.uv;
+                    for (int i = 0; i < positions.Length; i++)
+                        Check(Enumerable.Range(0, expectedPositions.Length).Any(j =>
+                            positions[i] == expectedPositions[j] && (uvs[i] - expectedUvs[j]).sqrMagnitude < 1e-10f),
+                            "Baked visual lost authored UV edits or a mirrored seam.");
+                }
                 owner = go.GetComponentInChildren<LoftVisualChunks>(true);
                 Check(loft.VisualsBaked && owner.ChunkCount == 4, "UV-edited loft did not bake into four sections.");
                 Check(!go.GetComponent<MeshRenderer>().enabled, "Baked monolithic renderer must be disabled.");

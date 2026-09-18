@@ -1786,7 +1786,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         int GetVisibleDensityDetailInstanceCount(VisibleDensityDetail visible)
         {
-            if (visible.prototype.Kind == InstanceKind.Tree || !UseFixedDetailCells)
+            if (visible.prototype.Kind == InstanceKind.Tree)
+            {
+                // Retain full resident transforms; submit a stable prefix shared by
+                // all submeshes/LODs. Painted maps and survivor positions never change.
+                float density = m_AppearanceCaptureCamera != null ? 1f
+                    : visible.prototype.TreeDensityAtDistance(visible.distance);
+                return Mathf.Clamp(Mathf.FloorToInt(visible.chunk.instanceCount * density), 0, visible.chunk.instanceCount);
+            }
+            if (!UseFixedDetailCells)
                 return visible.chunk.instanceCount;
             if (CanFadeDetail(visible.prototype))
             {
@@ -2819,7 +2827,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 bool first = true;
                 foreach (var part in result.parts)
                 {
-                    var bounds = TransformBounds(part.mesh.bounds, part.relativeMatrix);
+                    var bounds = TransformBounds(TreeDistanceBounds(part.mesh, part.material), part.relativeMatrix);
                     if (first) { result.treeBounds = bounds; first = false; }
                     else result.treeBounds.Encapsulate(bounds);
                 }

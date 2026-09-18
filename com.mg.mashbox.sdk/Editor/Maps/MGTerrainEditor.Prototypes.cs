@@ -463,7 +463,7 @@ namespace MashBoxSDK.MapTools
             }
 
             bool isTree = selected.FindPropertyRelative("m_Kind").enumValueIndex == (int)MGTerrain.InstanceKind.Tree;
-            DrawPrototypeFields(selected, "m_Prefab", "m_Mesh", "m_Material", "m_TreeLodCount", "m_TreeLod1Distance", "m_TreeLod2Distance", "m_TreeLodHysteresis", "m_TreeLod1Prefab", "m_TreeLod2Prefab");
+            DrawPrototypeFields(selected, "m_Prefab", "m_Mesh", "m_Material", "m_TreeLodCount", "m_TreeLod1Distance", "m_TreeLod2Distance", "m_TreeLodHysteresis", "m_TreeLod1Prefab", "m_TreeLod2Prefab", "m_TreeMidDensity", "m_TreeFarDensity", "m_TreeDensityInitialized");
             if (isTree)
             {
                 EditorGUILayout.Space();
@@ -483,6 +483,15 @@ namespace MashBoxSDK.MapTools
                     EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLod2Prefab"), new GUIContent("Far Prefab Override", "Optional. Leave empty to discover the mesh inside the source prefab automatically."));
                     DrawDetectedTreeLod(terrain, 2, "Far Mesh", selected.FindPropertyRelative("m_TreeLod2Prefab"));
                 }
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Tree Density by Distance", EditorStyles.boldLabel);
+                if (lodCount.intValue <= 1)
+                    EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLod1Distance"), new GUIContent("Medium Distance"));
+                if (lodCount.intValue <= 2)
+                    EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLod2Distance"), new GUIContent("Far Density Distance"));
+                EditorGUILayout.Slider(selected.FindPropertyRelative("m_TreeMidDensity"), 0f, 1f, new GUIContent("Mid Density", "Fraction of painted trees retained after Medium Distance. Near density remains 100%."));
+                EditorGUILayout.Slider(selected.FindPropertyRelative("m_TreeFarDensity"), 0f, 1f, new GUIContent("Far Density", "Fraction of painted trees retained after Far Distance, even with only one or two mesh LODs."));
+                EditorGUILayout.HelpBox("Density changes the drawn population, not the painted maps. 1 = all trees; 0 = none. Surviving trees keep their positions. Changes occur at the distance bands without a dither fade.", MessageType.Info);
                 if (lodCount.intValue > 1)
                 {
                     EditorGUILayout.PropertyField(selected.FindPropertyRelative("m_TreeLodHysteresis"), new GUIContent("Transition Hysteresis"));

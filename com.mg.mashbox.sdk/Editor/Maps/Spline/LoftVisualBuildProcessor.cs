@@ -25,6 +25,38 @@ namespace MashBoxSDK.MapTools
 
         public int callbackOrder => 1000;
 
+        // Scene loading calls MultiSplineLoft.EnsureMesh, which can put the base
+        // mesh back on the renderer before the queued editor UV preview runs.
+        // Evaluate the saved UV controls explicitly; never rely on that preview.
+        public static void BakeVisuals(MultiSplineLoft loft)
+        {
+            if (loft.VisualsBaked) return;
+            MeshFilter filter = loft.GetComponent<MeshFilter>();
+            Mesh original = filter.sharedMesh;
+            Mesh uvMesh = null;
+            try
+            {
+                UVSpline uv = loft.GetComponentsInChildren<UVSpline>(true)
+                    .FirstOrDefault(candidate => candidate.Target == filter);
+                if (uv != null && uv.ControlPoints.Count > 0)
+                {
+                    // Create a fresh result without replacing/destroying the saved
+                    // output mesh, which may be shared with the author's scene.
+                    uvMesh = uv.CreateUvMesh();
+                    if (uvMesh == null)
+                        throw new System.InvalidOperationException("Saved UV spline could not be evaluated. Check its source mesh, UV channel, and knots before exporting.");
+                    filter.sharedMesh = uvMesh;
+                }
+                loft.BuildVisualChunks(true);
+            }
+            finally
+            {
+                // The chunk meshes now own the evaluated UVs. Keep authoring mesh
+                // references intact even when a later part of the bake fails.
+                filter.sharedMesh = original;
+                if (uvMesh != null) UnityEngine.Object.DestroyImmediate(uvMesh);
+            }
+        }
         public void OnProcessScene(Scene scene, BuildReport report)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode) return;
@@ -48,7 +80,7 @@ namespace MashBoxSDK.MapTools
                                 chunks.GetComponentsInChildren<MeshCollider>(true).Any(c => c.sharedMesh == null || c.sharedMesh.vertexCount == 0))
                                 throw new System.InvalidOperationException("Loft collision is missing and could not be regenerated. Rebuild the loft in the source map before exporting.");
                         }
-                        loft.BuildVisualChunks(true);
+                        BakeVisuals(loft);
                     }
                     catch (System.Exception exception)
                     {
