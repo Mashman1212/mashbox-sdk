@@ -23,7 +23,7 @@
   "precompiledReferences": [],
   "overrideReferences": false,
   "name": "MashBoxSDK.Tools.Editor",
-  "autoReferenced": false,
+  "autoReferenced": true,
   "includePlatforms": [
     "Editor"
   ]
