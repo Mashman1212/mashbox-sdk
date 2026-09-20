@@ -1,0 +1,295 @@
+Submesh 0: BARK | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+Submesh 1: LEAFS | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 at (473.34, 235.00, 1134.33)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (470.47, 235.00, 1143.42)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (1) at (131.09, 61.79, 766.63)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (12) at (149.25, 45.70, 658.69)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (19) at (216.94, 33.37, 627.52)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (11) at (145.73, 51.10, 678.35)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (30) at (242.02, 46.14, 723.97)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (51) at (262.26, 31.32, 712.16)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (33) at (228.39, 48.91, 727.33)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (21) at (206.97, 33.78, 616.16)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (46) at (240.49, 36.83, 696.04)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (40) at (217.10, 41.11, 728.23)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (22) at (200.17, 35.00, 625.67)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (55) at (244.86, 41.42, 712.20)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (47) at (237.33, 34.54, 690.24)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (35) at (227.32, 42.58, 733.48)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (53) at (243.94, 29.70, 685.21)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (13) at (166.10, 42.00, 634.20)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (9) at (105.45, 52.19, 674.16)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (17) at (198.79, 38.02, 612.25)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (4) at (170.07, 49.50, 709.79)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (16) at (196.13, 39.84, 627.50)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 at (114.20, 63.77, 801.00)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (18) at (205.81, 30.22, 601.66)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (7) at (107.38, 58.08, 722.94)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (29) at (238.97, 45.22, 717.20)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (41) at (239.75, 48.10, 737.85)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (45) at (244.72, 36.30, 698.31)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (2) at (145.58, 60.49, 739.65)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (8) at (97.66, 55.75, 693.55)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (37) at (218.91, 40.58, 707.19)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (42) at (248.15, 42.93, 732.53)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (38) at (216.09, 39.99, 715.02)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (3) at (153.69, 61.09, 753.70)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (25) at (203.39, 36.65, 621.04)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (26) at (200.74, 37.16, 628.49)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (27) at (199.99, 38.64, 623.91)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (20) at (207.71, 32.97, 613.48)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (6) at (179.07, 49.31, 729.73)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 at (-115.61, 88.53, 870.54)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (54) at (219.28, 36.99, 693.87)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (23) at (205.62, 34.87, 615.29)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (24) at (207.64, 32.66, 610.54)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (31) at (241.25, 46.96, 729.30)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (5) at (177.82, 44.00, 709.79)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (15) at (190.25, 40.14, 620.50)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (39) at (214.15, 40.02, 722.16)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (43) at (240.43, 47.90, 742.12)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (10) at (118.98, 51.40, 679.54)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (48) at (247.79, 33.28, 695.07)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (44) at (250.14, 37.34, 705.77)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (36) at (224.28, 45.84, 715.59)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (28) at (236.83, 44.55, 710.88)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (49) at (245.00, 32.72, 691.46)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (34) at (226.32, 47.58, 731.73)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (56) at (215.33, 35.49, 684.74)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (50) at (256.76, 32.33, 704.84)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (32) at (244.72, 45.23, 727.83)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (14) at (187.35, 38.92, 609.80)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 (52) at (253.07, 31.08, 696.87)
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/BARK.mat | Assets/Temp Shaders/MG_Lit_BulitIn.shadergraph
+  Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/[01] TREES/Materials/LEAFS.mat | Assets/Maps/Cotswold Ridge/[09] ASSET PACKS/Rorys Forest Mega Pack/UNSORTED/_MATERIALS/Miscellaneous/Foliage/tree v1/MG_Grass.shadergraph
+Scene renderer: RFMP_Connifer_06 at (217.10, 41.11, 728.23)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (200.17, 35.00, 625.67)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (205.62, 34.87, 615.29)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (199.99, 38.64, 623.91)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (226.32, 47.58, 731.73)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (262.26, 31.32, 712.16)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (253.07, 31.08, 696.87)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (206.97, 33.78, 616.16)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (240.43, 47.90, 742.12)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (236.83, 44.55, 710.88)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (203.39, 36.65, 621.04)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (240.49, 36.83, 696.04)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (241.25, 46.96, 729.30)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (131.09, 61.79, 766.63)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (166.10, 42.00, 634.20)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (228.39, 48.91, 727.33)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (145.58, 60.49, 739.65)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (198.79, 38.02, 612.25)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (247.79, 33.28, 695.07)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (153.69, 61.09, 753.70)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (145.73, 51.10, 678.35)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (107.38, 58.08, 722.94)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (179.07, 49.31, 729.73)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (114.20, 63.77, 801.00)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (216.09, 39.99, 715.02)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (239.75, 48.10, 737.85)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (238.97, 45.22, 717.20)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (244.72, 36.30, 698.31)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (196.13, 39.84, 627.50)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (149.25, 45.70, 658.69)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (207.71, 32.97, 613.48)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (118.98, 51.40, 679.54)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (244.72, 45.23, 727.83)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (190.25, 40.14, 620.50)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (177.82, 44.00, 709.79)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (229.30, 45.18, 737.25)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (242.02, 46.14, 723.97)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (187.35, 38.92, 609.80)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (205.81, 30.22, 601.66)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (256.76, 32.33, 704.84)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (218.91, 40.58, 707.19)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (97.66, 55.75, 693.55)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (219.28, 36.99, 693.87)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (170.07, 49.50, 709.79)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (250.14, 37.34, 705.77)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (200.74, 37.16, 628.49)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (207.64, 32.66, 610.54)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (237.33, 34.54, 690.24)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (244.86, 41.42, 712.20)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (215.33, 35.49, 684.74)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (243.94, 29.70, 685.21)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (105.45, 52.19, 674.16)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (248.15, 42.93, 732.53)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (216.94, 33.37, 627.52)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (245.00, 32.72, 691.46)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (224.28, 45.84, 715.59)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph
+Scene renderer: RFMP_Connifer_06 at (214.15, 40.02, 722.16)
+  Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.mat | Assets/MapiX/MashBox/ImpostorBaker/Resources/ImpostorRuntime/MashBoxFoliageImpostor.shadergraph

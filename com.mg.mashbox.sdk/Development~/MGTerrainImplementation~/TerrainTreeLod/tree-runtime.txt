@@ -1,0 +1,116 @@
+namespace MashBoxSDK.Maps.TerrainSystem
+{
+    public sealed partial class MGTerrain
+    {
+        bool TryGetTreeLayerBounds(DensityDetailLayer layer, out Bounds bounds)
+        {
+            bounds = default;
+            if (layer == null || (uint)layer.PrototypeIndex >= m_Prototypes.Count) return false;
+            var prototype = m_Prototypes[layer.PrototypeIndex];
+            if (prototype == null || prototype.Kind != InstanceKind.Tree) return false;
+            bounds = GetDenseDetailRenderParts(prototype).treeBounds;
+            float painted = layer.SizeMap != null ? 4f : 1f;
+            float width = Mathf.Max(Mathf.Abs(layer.MinWidth), Mathf.Abs(layer.MaxWidth)) * painted;
+            float height = Mathf.Max(Mathf.Abs(layer.MinHeight), Mathf.Abs(layer.MaxHeight)) * painted;
+            bounds = new Bounds(Vector3.Scale(bounds.center, new Vector3(width, height, width)),
+                Vector3.Scale(bounds.size, new Vector3(width, height, width)));
+            return true;
+        }
+
+        static bool TreeBatchVisible(DrawBatch batch, int lod) => batch.prototype.Kind != InstanceKind.Tree
+            || (batch.treeLodMask & (1 << Mathf.Clamp(lod, 0, batch.prototype.TreeLodCount - 1))) != 0;
+
+        static int SelectTreeLod(Prototype prototype, float distance, int previous = -1)
+        {
+            if (prototype.TreeLodCount <= 1) return 0;
+            float near = prototype.TreeLod1Distance;
+            float far = prototype.TreeLodCount > 2 ? prototype.TreeLod2Distance : float.MaxValue;
+            float hysteresis = prototype.TreeLodHysteresis;
+            if (previous < 0) return distance <= near ? 0 : distance <= far ? 1 : 2;
+            if (previous == 0) return distance > near + hysteresis ? (distance > far + hysteresis ? 2 : 1) : 0;
+            if (previous == 1) return distance < near - hysteresis ? 0 : distance > far + hysteresis ? 2 : 1;
+            return distance < far - hysteresis ? (distance < near - hysteresis ? 0 : 1) : 2;
+        }
+
+        sealed class TreeInstanceCell
+        {
+            internal Prototype prototype;
+            internal Bounds bounds;
+            internal bool hasBounds;
+            internal readonly List<DrawBatch> batches = new List<DrawBatch>();
+            internal readonly Dictionary<int, int> cameraLods = new Dictionary<int, int>();
+        }
+        readonly List<TreeInstanceCell> m_TreeInstanceCells = new List<TreeInstanceCell>();
+
+        void BuildTreeInstanceCells(Matrix4x4 terrainLocalToWorld)
+        {
+            // Serialized trees use small world-space cells rather than one tile-wide draw.
+            // All LODs reuse a cached matrix array when their child transforms match.
+            var cells = new Dictionary<(int prototype, int x, int z), (TreeInstanceCell cell, List<Matrix4x4> roots)>();
+            foreach (var instance in m_Instances)
+            {
+                if ((uint)instance.PrototypeIndex >= m_Prototypes.Count) continue;
+                var prototype = m_Prototypes[instance.PrototypeIndex];
+                if (prototype == null || prototype.Kind != InstanceKind.Tree) continue;
+                var matrix = terrainLocalToWorld * Matrix4x4.TRS(instance.LocalPosition, instance.LocalRotation, instance.LocalScale);
+                Vector3 position = matrix.GetColumn(3);
+                var key = (instance.PrototypeIndex, Mathf.FloorToInt(position.x / 32f), Mathf.FloorToInt(position.z / 32f));
+                if (!cells.TryGetValue(key, out var entry))
+                {
+                    entry = (new TreeInstanceCell { prototype = prototype }, new List<Matrix4x4>());
+                    cells.Add(key, entry);
+                    m_TreeInstanceCells.Add(entry.cell);
+                }
+                entry.roots.Add(matrix);
+            }
+            foreach (var entry in cells.Values)
+            {
+                var cell = entry.cell;
+                var transforms = new Dictionary<Matrix4x4, List<Matrix4x4[]>>();
+                foreach (var part in GetDenseDetailRenderParts(cell.prototype).parts)
+                {
+                    if (!transforms.TryGetValue(part.relativeMatrix, out var chunks))
+                    {
+                        chunks = new List<Matrix4x4[]>();
+                        for (int start = 0; start < entry.roots.Count; start += 1023)
+                        {
+                            var chunk = new Matrix4x4[Mathf.Min(1023, entry.roots.Count - start)];
+                            for (int i = 0; i < chunk.Length; i++) chunk[i] = entry.roots[start + i] * part.relativeMatrix;
+                            chunks.Add(chunk);
+                        }
+                        transforms.Add(part.relativeMatrix, chunks);
+                    }
+                    var batch = new DrawBatch { mesh = part.mesh, subMesh = part.subMesh,
+                        material = GetInstancedMaterial(part.material), prototype = cell.prototype, treeLodMask = part.treeLodMask };
+                    batch.matrixChunks.AddRange(chunks);
+                    cell.batches.Add(batch);
+                    foreach (var chunk in chunks)
+                        foreach (var matrix in chunk)
+                        {
+                            var bounds = TransformBounds(part.mesh.bounds, matrix);
+                            if (!cell.hasBounds) { cell.bounds = bounds; cell.hasBounds = true; }
+                            else cell.bounds.Encapsulate(bounds);
+                        }
+                }
+            }
+        }
+
+        void DrawTreeInstanceCells(Camera camera, Plane[] planes)
+        {
+            Vector3 position = camera.transform.position;
+            int cameraId = camera.GetInstanceID();
+            foreach (var cell in m_TreeInstanceCells)
+            {
+                if (!cell.hasBounds || !GeometryUtility.TestPlanesAABB(planes, cell.bounds)) continue;
+                float distance = Mathf.Sqrt(cell.bounds.SqrDistance(position));
+                if (m_AppearanceCaptureCamera == null && cell.prototype.MaximumDrawDistance > 0f
+                    && distance > cell.prototype.MaximumDrawDistance) continue;
+                int previous = cell.cameraLods.TryGetValue(cameraId, out int saved) ? saved : -1;
+                int lod = m_AppearanceCaptureCamera != null ? 0 : SelectTreeLod(cell.prototype, distance, previous);
+                cell.cameraLods[cameraId] = lod;
+                foreach (var batch in cell.batches)
+                    if (TreeBatchVisible(batch, lod)) DrawBatchInstances(batch, camera);
+            }
+        }
+    }
+}

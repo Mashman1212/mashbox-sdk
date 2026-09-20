@@ -13,7 +13,6 @@ namespace MashBoxSDK.MapTools
     public sealed partial class MGTerrainEditor
     {
         string m_SharedDefinitionSignature;
-        readonly HashSet<string> m_SharedPrototypeIds = new HashSet<string>();
         readonly HashSet<string> m_SharedLayerIds = new HashSet<string>();
         readonly HashSet<MGTerrain> m_SharedTiles = new HashSet<MGTerrain>();
 
@@ -43,10 +42,8 @@ namespace MashBoxSDK.MapTools
             if (signature == m_SharedDefinitionSignature) return;
             var remaining = new HashSet<string>(source.DensityDetailLayers.Select(l => l.WorldDetailId));
             var removed = new HashSet<string>(m_SharedLayerIds.Where(id => !remaining.Contains(id)));
-            var remainingPrototypes = new HashSet<string>(source.Prototypes.Select(p => p.WorldDetailId));
-            var removedPrototypes = new HashSet<string>(m_SharedPrototypeIds.Where(id => !remainingPrototypes.Contains(id)));
             foreach (var tile in SharedTiles(source))
-                if (tile != source) MergeSharedDefinitions(source, tile, true, removed, removedPrototypes);
+                if (tile != source) MergeSharedDefinitions(source, tile, true, removed);
             RememberSharedDefinitions(source);
             SceneView.RepaintAll();
         }
@@ -68,8 +65,6 @@ namespace MashBoxSDK.MapTools
         void RememberSharedDefinitions(MGTerrain source)
         {
             m_SharedDefinitionSignature = SharedSignature(source);
-            m_SharedPrototypeIds.Clear();
-            foreach (var prototype in source.Prototypes) m_SharedPrototypeIds.Add(prototype.WorldDetailId);
             m_SharedLayerIds.Clear();
             foreach (var layer in source.DensityDetailLayers) m_SharedLayerIds.Add(layer.WorldDetailId);
         }
@@ -108,29 +103,11 @@ namespace MashBoxSDK.MapTools
         static bool SharedSame(SerializedProperty a, SerializedProperty b, string field)
         { return SerializedProperty.DataEquals(a.FindPropertyRelative(field), b.FindPropertyRelative(field)); }
 
-        static void MergeSharedDefinitions(MGTerrain source, MGTerrain destination, bool overwrite, HashSet<string> removed, HashSet<string> removedPrototypes = null)
+        static void MergeSharedDefinitions(MGTerrain source, MGTerrain destination, bool overwrite, HashSet<string> removed)
         {
             using var from = new SerializedObject(source);
             using var to = new SerializedObject(destination);
             var prototypes = to.FindProperty("m_Prototypes");
-            // Remove by shared identity before building the source-to-destination remap.
-            // Tile prototype orders can differ, and both kinds of references use local indices.
-            if (removedPrototypes != null && removedPrototypes.Count > 0)
-                for (int index = prototypes.arraySize - 1; index >= 0; index--)
-                {
-                    if (!removedPrototypes.Contains(SharedId(prototypes.GetArrayElementAtIndex(index)))) continue;
-                    foreach (string name in new[] { "m_DensityDetailLayers", "m_Instances" })
-                    {
-                        var items = to.FindProperty(name);
-                        for (int item = items.arraySize - 1; item >= 0; item--)
-                        {
-                            var reference = items.GetArrayElementAtIndex(item).FindPropertyRelative("m_PrototypeIndex");
-                            if (reference.intValue == index) items.DeleteArrayElementAtIndex(item);
-                            else if (reference.intValue > index) reference.intValue--;
-                        }
-                    }
-                    prototypes.DeleteArrayElementAtIndex(index);
-                }
             var sourcePrototypes = from.FindProperty("m_Prototypes");
             var used = new HashSet<int>();
             var remap = new Dictionary<int, int>();

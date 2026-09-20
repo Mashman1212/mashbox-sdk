@@ -1,0 +1,6 @@
+Synthetic Play Mode fixed-cell selection, 24 moving-camera queries after 24 warmups.
+Time total ms: 163.061
+Bytes (includes reflection harness): 0
+Bounds rebuilt: 0
+Candidates: 9676
+Fingerprint: 2377283685

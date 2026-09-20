@@ -1,0 +1,1 @@
+Captured raw and padded source normals. Source entries: 2

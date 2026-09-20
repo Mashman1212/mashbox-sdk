@@ -1,0 +1,7 @@
+Synthetic Play Mode fixed-cell selection, 24 moving-camera queries after 24 warmups.
+Time total ms: 153.915
+Bytes counter: 0 (Unity may not support this counter; not an allocation guarantee)
+Bounds rebuilt: 0
+Candidates: 9676
+Fingerprint: 2377283685
+PASS: nearest build-budget prefix, terrain transform invalidation, bounds match uncached height scans, paint invalidation.

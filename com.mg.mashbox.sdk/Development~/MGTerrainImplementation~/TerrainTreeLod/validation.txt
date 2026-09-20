@@ -1,0 +1,21 @@
+PASS: LOD selection, 1/2/3-level caps, hysteresis and camera teleports.
+PASS: Impostor bounds remain unchanged at neutral size and contain enlarged/shrunk endpoints.
+PASS: Prefab LODGroup extraction selects the requested mesh and ignores terminal cull-only LOD.
+PASS: Unity null override references resolve the source prefab's medium/far meshes.
+PASS: Serialized trees use separate spatial cells, shared LOD matrix arrays, and full canopy bounds.
+PASS: Independent near/mid/far density with 1/2/3 mesh LODs, zero density, migration, unchanged painted maps and resident transforms.
+PASS: Painted trees preserve population across all distance bands and share matrix arrays; exactly one LOD is selected.
+PASS: Fixed-cell tree LOD switching works with grass density LOD disabled.
+PASS: Actual GPU density updates submit 2/1/4 trees at mid/far/near while retaining the same transform buffer.
+PASS: Real GPU dispatch creates four transforms once, shares them across three LODs, switches mesh without regeneration or buffer replacement, and frees the shared range once.
+PASS: Single-mesh prefabs safely reuse one part for all LOD bands.
+PASS: RFMP_Connifer_06 automatically resolves its full tree for Close and its impostor for Medium/Far, without overlapping representations.
+Scene conifer source: Assets/MapiX/MashBox/ImpostorBakes/RFMP_Connifer_06/RFMP_Connifer_06.prefab | direct mesh=null | direct material=null | children=1 | groups=1 | parent=null
+Terrain Tile (0, 0) raw LOD 0: LOD2,LOD2
+Terrain Tile (0, 0) raw LOD 1: ImpostorMesh
+Terrain Tile (1, 0) raw LOD 0: LOD2,LOD2
+Terrain Tile (1, 0) raw LOD 1: ImpostorMesh
+Terrain Tile (0, 1) raw LOD 0: LOD2,LOD2
+Terrain Tile (0, 1) raw LOD 1: ImpostorMesh
+Terrain Tile (0, 1) raw LOD 0: LOD2,LOD2
+Terrain Tile (0, 1) raw LOD 1: ImpostorMesh

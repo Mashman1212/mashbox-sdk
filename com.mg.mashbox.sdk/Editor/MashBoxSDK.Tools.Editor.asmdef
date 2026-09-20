@@ -1,0 +1,30 @@
+{
+  "versionDefines": [],
+  "allowUnsafeCode": false,
+  "excludePlatforms": [],
+  "references": [
+    "MashBoxSDK",
+    "MashBox.Exporting",
+    "MashBoxSDK.ContentTools.Editor",
+    "MashBoxSDK.Maching.Editor",
+    "MashBoxSDK.ContentTools",
+    "MashBox.SDKMain",
+    "Unity.RenderPipelines.HighDefinition.Runtime",
+    "Unity.RenderPipelines.HighDefinition.Editor",
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.RenderPipelines.Core.Editor",
+    "Unity.Splines",
+    "Unity.Splines.Editor",
+    "Unity.Mathematics"
+  ],
+  "rootNamespace": "",
+  "noEngineReferences": false,
+  "defineConstraints": [],
+  "precompiledReferences": [],
+  "overrideReferences": false,
+  "name": "MashBoxSDK.Tools.Editor",
+  "autoReferenced": false,
+  "includePlatforms": [
+    "Editor"
+  ]
+}

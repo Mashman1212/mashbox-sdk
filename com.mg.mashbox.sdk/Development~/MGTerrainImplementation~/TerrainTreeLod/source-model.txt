@@ -1,0 +1,8 @@
+LOD2 id=736115405485880582 triangles=1341 submeshes=2 bounds=Center: (0.47, 11.97, 0.12), Extents: (6.22, 12.26, 6.04)
+Conifer_Final_6_Billboard_LOD3 id=233521524290790061 triangles=16 submeshes=1 bounds=Center: (0.48, 11.84, -0.07), Extents: (5.95, 12.14, 5.50)
+LOD0 id=-1633821710574564935 triangles=12177 submeshes=2 bounds=Center: (0.04, 11.82, 0.12), Extents: (5.88, 12.12, 5.38)
+LOD1 id=-179393741545503174 triangles=3219 submeshes=2 bounds=Center: (0.45, 11.87, 0.03), Extents: (5.85, 12.17, 5.60)
+Renderer Conifer_Final_6_Billboard_LOD3: mesh=Conifer_Final_6_Billboard_LOD3, position=(0.00, 0.00, 0.00), rotation=(0.00, 0.00, 0.00), scale=(1.00, 1.00, 1.00)
+Renderer LOD0: mesh=LOD0, position=(0.00, 0.00, 0.00), rotation=(0.00, 0.00, 0.00), scale=(1.00, 1.00, 1.00)
+Renderer LOD1: mesh=LOD1, position=(0.00, 0.00, 0.00), rotation=(0.00, 0.00, 0.00), scale=(1.00, 1.00, 1.00)
+Renderer LOD2: mesh=LOD2, position=(0.00, 0.00, 0.00), rotation=(0.00, 0.00, 0.00), scale=(1.00, 1.00, 1.00)

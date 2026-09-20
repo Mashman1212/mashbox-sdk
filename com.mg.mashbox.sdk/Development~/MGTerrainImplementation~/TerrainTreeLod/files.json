@@ -1,0 +1,8 @@
+[
+  "Runtime/Maps/Terrain/MGTerrain.cs",
+  "Runtime/Maps/Terrain/MGTerrain.Details.cs",
+  "Runtime/Maps/Terrain/MGTerrain.Residency.cs",
+  "Runtime/Maps/Terrain/MGTerrain.BRG.cs",
+  "Editor/Maps/MGTerrainEditor.Prototypes.cs",
+  "Runtime/Maps/Terrain/MGTerrain.World.cs"
+]

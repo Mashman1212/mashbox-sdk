@@ -1,0 +1,6 @@
+{
+  "Runtime/Maps/Terrain/MGTerrain.cs": "b8b9941e0924bd9c1cd2c9ebd7ed0bad3c58eb13b718a1fa0e99e6a47393195f",
+  "Runtime/Maps/Terrain/MGTerrain.Details.cs": "f5ce3d6444afa7afaaadabb4a92c04c783acdf7c6f196d3e1f35ad699b277acb",
+  "Editor/Maps/MGTerrainEditor.Prototypes.cs": "be64446a50c27f75761249d32205aa2d05e6cabb84a11eeaa6c75b2437af29fd",
+  "Runtime/Maps/Terrain/MGTerrain.BRG.cs": "99e4a3670e9db693a98fbff7cea2f32ad79be41d9a27aa065ede6cc6b0475a50"
+}

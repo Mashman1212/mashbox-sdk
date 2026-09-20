@@ -248,7 +248,23 @@ namespace MashBoxSDK.Maps.Trail.Editor
             if (importedAssets == null || importedAssets.Length == 0)
                 return;
 
-            var imported = new HashSet<string>(importedAssets, StringComparer.OrdinalIgnoreCase);
+            // Script-only refreshes cannot change a texture reference. Avoid finding
+            // and loading every trail library for ordinary code edits.
+            var imported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string importedPath in importedAssets)
+            {
+                string extension = System.IO.Path.GetExtension(importedPath);
+                if (extension.Equals(".cs", StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals(".dll", StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals(".asmdef", StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals(".asmref", StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals(".pdb", StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals(".rsp", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                imported.Add(importedPath);
+            }
+            if (imported.Count == 0)
+                return;
             foreach (string guid in AssetDatabase.FindAssets("t:MGTrailLayerLibrary"))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
