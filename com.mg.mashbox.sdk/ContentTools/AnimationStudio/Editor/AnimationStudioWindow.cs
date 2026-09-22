@@ -165,17 +165,30 @@ namespace MashBoxSDK.AnimationStudio
             EditorApplication.delayCall -= Restore;
             ReleaseRig();
         }
+        internal static void RestoreExistingViewport(AnimationStudioViewport view)
+        {
+            if (!view || EditorApplication.isPlayingOrWillChangePlaymode) return;
+            var window = view.Studio;
+            if (!window) window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().FirstOrDefault();
+            if (!window) window = CreateInstance<AnimationStudioWindow>();
+            window.viewport = view;
+            window.Restore();
+        }
         private void Restore()
         {
-            if (!this || rig != null) return;
+            if (!this || rig != null || EditorApplication.isPlayingOrWillChangePlaymode) return;
+            // A hidden controller can survive closing the viewport. Never recreate it on reload or Play.
+            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().FirstOrDefault(view => view.Studio == this);
+            if (!viewport) return;
             if (take && take.character) { character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>(); }
             if (character) Guard(BuildRig);
+            else OpenViewport();
         }
         private void PlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.ExitingPlayMode)
                 ReleaseRig();
-            else EditorApplication.delayCall += Restore;
+            else if (state == PlayModeStateChange.EnteredEditMode) EditorApplication.delayCall += Restore;
         }
         private void ReleaseRig()
         {

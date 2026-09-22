@@ -65,7 +65,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissiveColorMap:
-        m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
+        m_Texture: {fileID: 2800000, guid: ebac80f65d25cd0488cee01948d228af, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissiveMap:
@@ -97,7 +97,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MudBaseMap:
-        m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
+        m_Texture: {fileID: 2800000, guid: ebac80f65d25cd0488cee01948d228af, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MudNormalMap:
@@ -121,7 +121,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_13b347d8e184474e9d7225b63ae8f920_Texture_1_Texture2D:
-        m_Texture: {fileID: 2800000, guid: 0f288251aac55b345997da7e101d14c8, type: 3}
+        m_Texture: {fileID: 2800000, guid: c324271d7a680db43a90c386aead0974, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_14a884bb3e5344a5894956de750dfc64_Texture_1_Texture2D:
@@ -129,7 +129,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SidewallMaskMap:
-        m_Texture: {fileID: 2800000, guid: 21be9d29042caa9499db45311d5d1a5d, type: 3}
+        m_Texture: {fileID: 2800000, guid: ebac80f65d25cd0488cee01948d228af, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SpecularColorMap:

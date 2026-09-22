@@ -47,6 +47,8 @@ namespace MashBoxSDK.Maps.Sculpting
         [SerializeField, HideInInspector] Mesh m_SourceMesh;
         [SerializeField, HideInInspector] Mesh m_OutputMesh;
 
+        [NonSerialized] readonly List<Vector3> m_DirectVertexReadback = new List<Vector3>();
+        [NonSerialized] Vector3[] m_DirectVertices;
         [NonSerialized] Vector3[] m_BaseVertices;
         [NonSerialized] Mesh m_BaseMesh;
         [NonSerialized] List<int>[] m_Neighbours;
@@ -175,7 +177,12 @@ namespace MashBoxSDK.Maps.Sculpting
                 if (m_TerrainStroke == null || m_Target.sharedMesh == null) return;
                 Mesh directMesh = m_Target.sharedMesh;
                 if (m_BaseMesh != directMesh) { ClearBaseCache(); m_BaseMesh = directMesh; }
-                var directVertices = directMesh.vertices;
+                // Always refresh from the mesh: Undo and seam joining can change it between dabs.
+                directMesh.GetVertices(m_DirectVertexReadback);
+                if (m_DirectVertices == null || m_DirectVertices.Length != m_DirectVertexReadback.Count)
+                    m_DirectVertices = new Vector3[m_DirectVertexReadback.Count];
+                m_DirectVertexReadback.CopyTo(m_DirectVertices);
+                var directVertices = m_DirectVertices;
                 ApplyStroke(directVertices, directMesh, m_TerrainStroke);
                 directMesh.vertices = directVertices;
                 directMesh.RecalculateNormals();
@@ -255,7 +262,9 @@ namespace MashBoxSDK.Maps.Sculpting
 
             if (m_UpdateMeshCollider && m_LinkedLoft != null)
                 m_LinkedLoft.RebuildColliderChunks();
-            else if (m_UpdateMeshCollider && m_Target.TryGetComponent(out MeshCollider collider))
+            else if (m_UpdateMeshCollider && (!IsDirectTerrain
+                || m_Target.GetComponentInParent<MGTerrain>().SurfaceColliderChunks.Count == 0)
+                && m_Target.TryGetComponent(out MeshCollider collider))
             {
                 collider.sharedMesh = null;
                 collider.sharedMesh = m_Target.sharedMesh;
@@ -272,7 +281,9 @@ namespace MashBoxSDK.Maps.Sculpting
             {
                 m_TerrainStroke = null;
 #if UNITY_EDITOR
-                UnityEditor.AssetDatabase.SaveAssetIfDirty(m_Target.sharedMesh);
+                // Leave terrain assets dirty for Unity's normal explicit save workflow.
+                // Saving here stalls each tile at stroke finalization.
+                UnityEditor.EditorUtility.SetDirty(m_Target.sharedMesh);
 #endif
             }
 
@@ -548,22 +559,26 @@ namespace MashBoxSDK.Maps.Sculpting
             if (stroke.mode == SculptMode.Smooth && m_Neighbours == null)
                 BuildNeighbours(mesh);
 
-            float worldUnitsPerLocalY = targetTransform.TransformVector(Vector3.up).magnitude;
+            Matrix4x4 localToWorld = targetTransform.localToWorldMatrix;
+            Vector3 worldUp = localToWorld.MultiplyVector(Vector3.up);
+            float radiusSquared = stroke.radius * stroke.radius;
+            float worldUnitsPerLocalY = worldUp.magnitude;
             float localStrength = stroke.strength / Mathf.Max(0.00001f, worldUnitsPerLocalY);
             for (int index = 0; index < vertices.Length; index++)
             {
                 Vector3 planarDelta = vertices[index] - localCenter;
                 planarDelta.y = 0f;
-                float distance = targetTransform.TransformVector(planarDelta).magnitude;
-                if (distance >= stroke.radius)
+                float distanceSquared = localToWorld.MultiplyVector(planarDelta).sqrMagnitude;
+                if (distanceSquared >= radiusSquared)
                     continue;
+                float distance = Mathf.Sqrt(distanceSquared);
                 float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff);
                 Vector3 vertex = vertices[index];
 
                 if (stroke.mode == SculptMode.SetHeight)
                 {
-                    Vector3 world = targetTransform.TransformPoint(vertex);
-                    float yScale = targetTransform.TransformVector(Vector3.up).y;
+                    Vector3 world = localToWorld.MultiplyPoint3x4(vertex);
+                    float yScale = worldUp.y;
                     if (Mathf.Abs(yScale) > 0.00001f)
                         vertex.y += (stroke.targetHeight - world.y) / yScale * Mathf.Clamp01(Mathf.Abs(stroke.strength) * influence);
                 }

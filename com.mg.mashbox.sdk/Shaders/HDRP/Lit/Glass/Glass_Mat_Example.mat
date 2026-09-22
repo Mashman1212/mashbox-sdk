@@ -24,7 +24,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Glass_Mat_Example
-  m_Shader: {fileID: -6465566751694194690, guid: 08b2cf64d20631245b55f1d299b8a388,
+  m_Shader: {fileID: -6465566751694194690, guid: 24281da30f2513f42b6d3e5bcee1967b,
     type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0

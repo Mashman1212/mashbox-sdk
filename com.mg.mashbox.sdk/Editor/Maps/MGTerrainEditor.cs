@@ -36,7 +36,11 @@ namespace MashBoxSDK.MapTools
         double m_NextPaintPreview;
         int m_StrokeUndo = -1;
         Vector3 m_LastDetailDab;
-        readonly HashSet<Texture2D> m_PaintCopies = new HashSet<Texture2D>();
+        // Neighbor editors are recreated between strokes. Keep ownership with the
+        // terrain so crossing the same seam does not create fresh assets every time.
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MGTerrain, HashSet<Texture2D>> PaintCopiesByTerrain =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<MGTerrain, HashSet<Texture2D>>();
+        HashSet<Texture2D> m_PaintCopies = new HashSet<Texture2D>();
         Tool m_PreviousTool;
         float m_LoftEdgeWidth = 1f;
         float m_LoftEdgeVariation = 0.5f;
@@ -137,8 +141,14 @@ namespace MashBoxSDK.MapTools
         bool m_HasMemoryUsageSnapshot;
         MGTerrain.MemoryUsageSnapshot m_MemoryUsageSnapshot;
 
+        bool m_HasMultipleTargets;
+
         void OnEnable()
         {
+            // Unity forbids reading Editor.targets inside OnSceneGUI.
+            m_HasMultipleTargets = targets.Length > 1;
+            if (target is MGTerrain terrain)
+                m_PaintCopies = PaintCopiesByTerrain.GetOrCreateValue(terrain);
             Undo.undoRedoPerformed += RefreshPaintUndo;
             EditorApplication.update += UpdateDetailPaintPreview;
             m_HeightOnlySculpt = serializedObject.FindProperty("m_HeightOnlySculpt");
@@ -187,6 +197,7 @@ namespace MashBoxSDK.MapTools
         }
         public override void OnInspectorGUI()
         {
+            MGTerrainGizmos.DrawSettings();
             if (targets.Length > 1)
             {
                 DrawMultipleTileInspector();
@@ -1086,20 +1097,18 @@ namespace MashBoxSDK.MapTools
                 if ((m_DistantLayers.value & (1 << terrain.MeshRenderer.gameObject.layer)) == 0)
                 { EditorUtility.DisplayDialog("Distant Mesh", "Capture Layers must include the terrain renderer's layer.", "OK"); return; }
             }
-            string folderPreference = "MashBox.MGTerrain.AppearanceCapture.LastFolder." + Application.dataPath;
-            string captureFolder = EditorPrefs.GetString(folderPreference, "Assets");
-            if (!AssetDatabase.IsValidFolder(captureFolder)) captureFolder = "Assets";
+            string captureFolder = MGTerrainSceneAssets.Folder(terrain);
             string path = worldOutputPath ?? (bakeDistant ? null : MGTerrainAppearanceCaptureAssets.ReusablePath(assignedColour, terrain.name));
-            if (string.IsNullOrEmpty(path))
-            {
-                path = EditorUtility.SaveFilePanelInProject(bakeDistant ? "Save Distant Surface Appearance" : "Save Terrain Appearance PNG", MGTerrainAppearanceCaptureAssets.WithTerrainPrefix(bakeDistant ? "TerrainDistantSurface" : "TerrainAppearance", terrain.name), "png", bakeDistant ? "Choose the output location. A new set of distant surface assets will be created." : "Choose the appearance PNG. It will be assigned to the terrain material and reused on future captures.", captureFolder);
-                if (string.IsNullOrEmpty(path)) return;
-                path = System.IO.Path.ChangeExtension(path, ".png").Replace('\\', '/');
-                path = AssetDatabase.GenerateUniqueAssetPath(MGTerrainAppearanceCaptureAssets.WithTerrainPrefix(path, terrain.name));
-                EditorPrefs.SetString(folderPreference, System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
-            }
+            // Reuse captures only inside this scene's data folder.
+            if (worldOutputPath == null && (string.IsNullOrEmpty(path)
+                || System.IO.Path.GetDirectoryName(path).Replace('\\', '/') != captureFolder))
+                path = AssetDatabase.GenerateUniqueAssetPath(captureFolder + "/" +
+                    MGTerrainAppearanceCaptureAssets.WithTerrainPrefix(bakeDistant ? "TerrainDistantSurface.png" : "TerrainAppearance.png", terrain.name));
             if (bakeDistant) path = AssetDatabase.GenerateUniqueAssetPath(path);
-            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(bakeDistant || worldOutputPath != null ? null : assignedNormal, path, terrain.name) : null;
+            string assignedNormalPath = AssetDatabase.GetAssetPath(assignedNormal);
+            bool reuseNormal = !bakeDistant && worldOutputPath == null && !string.IsNullOrEmpty(assignedNormalPath)
+                && System.IO.Path.GetDirectoryName(assignedNormalPath).Replace('\\', '/') == captureFolder;
+            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(reuseNormal ? assignedNormal : null, path, terrain.name) : null;
             int resolution = m_FarBakeResolution;
             int tiles = Mathf.NextPowerOfTwo(Mathf.Max(4, Mathf.CeilToInt(Mathf.Max(metresX, metresZ) / 48f)));
             if (tiles > 64)
@@ -1749,7 +1758,7 @@ namespace MashBoxSDK.MapTools
 
         void OnSceneGUI()
         {
-            if (targets.Length > 1) return;
+            if (m_HasMultipleTargets) return;
             DrawHoleSceneGUI();
             if (!m_DetailPainting) return;
             var terrain = (MGTerrain)target;

@@ -72,8 +72,7 @@ namespace MashBoxSDK.MapTools
 
         static void BakeWorld(MGTerrainWorld world, bool distant)
         {
-            string folder = TerrainToMeshConverter.ToProjectAssetPath(EditorUtility.OpenFolderPanel("World Bake Output Folder", Application.dataPath, ""));
-            if (string.IsNullOrEmpty(folder) || !AssetDatabase.IsValidFolder(folder)) return;
+
             var chunks = world.Chunks.Where(t => t != null && t.isActiveAndEnabled && t.MeshRenderer != null).ToArray();
             // A per-tile capture cannot safely assign its result to a shared material.
             var shared = chunks.GroupBy(t => t.MeshRenderer.sharedMaterial).Where(g => g.Key != null && g.Count() > 1).Select(g => g.Key).ToHashSet();

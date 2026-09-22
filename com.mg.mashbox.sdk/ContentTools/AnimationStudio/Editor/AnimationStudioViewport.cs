@@ -16,7 +16,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 foreach (var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>())
 #if MashBoxDev
-                    if (view) AnimationStudioWindow.OpenInStudio(null);
+                    if (view) AnimationStudioWindow.RestoreExistingViewport(view);
 #else
                     if (view) view.Close();
 #endif

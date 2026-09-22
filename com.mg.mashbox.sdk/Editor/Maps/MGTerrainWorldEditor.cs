@@ -119,6 +119,7 @@ namespace MashBoxSDK.MapTools
             MashBoxSDK.EditorResources.MashBoxInspectorHeaderUtility.DrawScriptHeader();
             EditorGUILayout.LabelField("MG Terrain World", EditorStyles.boldLabel);
             DrawTabBar();
+            MGTerrainGizmos.DrawSettings();
             EditorGUILayout.Space(6);
             switch (m_Tab)
             {
@@ -299,15 +300,18 @@ namespace MashBoxSDK.MapTools
             if (terrains.Length == 0) { Debug.LogWarning("Select enabled Unity Terrain objects to convert.", world); return; }
             if (terrains.Any(terrain => terrain.gameObject.scene != world.gameObject.scene))
             { Debug.LogError("Source terrains and the destination world must be in the same scene.", world); return; }
-            string folder = TerrainToMeshConverter.ToProjectAssetPath(EditorUtility.OpenFolderPanel("Terrain Output Assets", Application.dataPath, ""));
-            if (string.IsNullOrEmpty(folder)) return;
+
             var options = new TerrainConversionOptions { DestinationWorld = world, ConvertMesh = true,
                 AddMeshCollider = true, ConvertTrees = true, ConvertDetails = true, DisableSourceTerrain = true };
             // Use the established converter's defaults for mesh resolution and splat maps.
             options.MaximumMeshResolution = 513;
             options.ExportSplatMaps = true;
             if (!TerrainToMeshConverter.ConfirmLargeGameObjectConversions(TerrainToMeshConverter.Analyze(terrains), options)) return;
-            try { foreach (var terrain in terrains) TerrainToMeshConverter.Convert(terrain, folder, options); }
+            try
+            {
+                string folder = MGTerrainSceneAssets.Folder(world.gameObject.scene);
+                foreach (var terrain in terrains) TerrainToMeshConverter.Convert(terrain, folder, options);
+            }
             catch (Exception error) { Debug.LogException(error, world); }
             world.RefreshChunks();
         }

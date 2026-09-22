@@ -44,6 +44,11 @@ namespace MashBoxSDK.SDKMain
         private long _lastChosenAppId;
 
         private const string PREF_KEY_LAST_APP = "ContentPackBuilder.LastChosenAppId";
+        private const string PREF_BUILD_LOCATION = "BuildLocation";
+        private const string PREF_CUSTOM_BUILD_LOCATIONS = "MashBoxSDK.CustomBuildLocations";
+        private const int MAX_CUSTOM_BUILD_LOCATIONS = 12;
+        private readonly List<string> _customBuildLocations = new();
+        private int _selectedCustomBuildLocation;
 
         // -------------------------------
         // STEAM
@@ -94,7 +99,8 @@ namespace MashBoxSDK.SDKMain
             _lastChosenAppId = long.TryParse( EditorPrefs.GetString(PREF_KEY_LAST_APP, "0"),
                 out var v) ? v : 0;
             
-            _buildLocation = EditorPrefs.GetString("BuildLocation", "");
+            _buildLocation = EditorPrefs.GetString(PREF_BUILD_LOCATION, "");
+            LoadCustomBuildLocations();
             
             _steamRoot = EditorPrefs.GetString(PREF_STEAM_ROOT, "");
             _emailInput = EditorPrefs.GetString(PREF_KEY_MODIO_EMAIL, "");
@@ -140,7 +146,91 @@ namespace MashBoxSDK.SDKMain
 
             _buildLocation = final;
 
-            EditorPrefs.SetString("BuildLocation", _buildLocation);
+            EditorPrefs.SetString(PREF_BUILD_LOCATION, _buildLocation);
+        }
+
+        private void LoadCustomBuildLocations()
+        {
+            _customBuildLocations.Clear();
+
+            var saved = EditorPrefs.GetString(PREF_CUSTOM_BUILD_LOCATIONS, string.Empty);
+            foreach (var path in saved.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var normalized = NormalizeBuildLocation(path);
+                if (!string.IsNullOrEmpty(normalized) &&
+                    !_customBuildLocations.Any(existing =>
+                        string.Equals(existing, normalized, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _customBuildLocations.Add(normalized);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_buildLocation) &&
+                string.Equals(EditorPrefs.GetString("ModIo.CurrentGame", string.Empty), "Custom Folder",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                RememberCustomBuildLocation(_buildLocation);
+            }
+
+            _selectedCustomBuildLocation = Mathf.Clamp(
+                _customBuildLocations.FindIndex(path =>
+                    string.Equals(path, _buildLocation, StringComparison.OrdinalIgnoreCase)),
+                0,
+                Math.Max(0, _customBuildLocations.Count - 1));
+        }
+
+        private void RememberCustomBuildLocation(string path)
+        {
+            var normalized = NormalizeBuildLocation(path);
+            if (string.IsNullOrEmpty(normalized))
+                return;
+
+            _customBuildLocations.RemoveAll(existing =>
+                string.Equals(existing, normalized, StringComparison.OrdinalIgnoreCase));
+            _customBuildLocations.Insert(0, normalized);
+
+            if (_customBuildLocations.Count > MAX_CUSTOM_BUILD_LOCATIONS)
+                _customBuildLocations.RemoveRange(
+                    MAX_CUSTOM_BUILD_LOCATIONS,
+                    _customBuildLocations.Count - MAX_CUSTOM_BUILD_LOCATIONS);
+
+            _selectedCustomBuildLocation = 0;
+            SaveCustomBuildLocations();
+        }
+
+        private void SaveCustomBuildLocations()
+        {
+            EditorPrefs.SetString(PREF_CUSTOM_BUILD_LOCATIONS, string.Join("\n", _customBuildLocations));
+        }
+
+        private void ActivateCustomBuildLocation(string path)
+        {
+            var normalized = NormalizeBuildLocation(path);
+            if (string.IsNullOrEmpty(normalized))
+                return;
+
+            var previousGame = EditorPrefs.GetString("ModIo.CurrentGame", string.Empty);
+            if (!string.Equals(previousGame, "Custom Folder", StringComparison.OrdinalIgnoreCase))
+            {
+                ModIoAuth.ClearForCurrentGame();
+                _statusMsg = "Switched to Custom Folder. Please log in again.";
+            }
+
+            _buildLocation = normalized;
+            _lastChosenAppId = 0;
+
+            EditorPrefs.SetString(PREF_BUILD_LOCATION, _buildLocation);
+            EditorPrefs.SetString(PREF_KEY_LAST_APP, "0");
+            EditorPrefs.SetString("ModIo.CurrentGame", "Custom Folder");
+            RememberCustomBuildLocation(_buildLocation);
+            Repaint();
+        }
+
+        private static string NormalizeBuildLocation(string path)
+        {
+            return string.IsNullOrWhiteSpace(path)
+                ? string.Empty
+                : path.Trim().TrimEnd('/', '\\').Replace("\\", "/");
         }
         // -------------------------------
         // MAIN DRAW
@@ -1153,25 +1243,39 @@ namespace MashBoxSDK.SDKMain
                     if (GUILayout.Button("Set Custom Target Folder...", GUILayout.Height(24)))
                     {
                         string path = EditorUtility.OpenFolderPanel("Select Build Folder", _buildLocation, "");
-
-                        string previousGame = EditorPrefs.GetString("ModIo.CurrentGame", "");
-
-                        if (!string.Equals(previousGame, "Custom Folder", StringComparison.OrdinalIgnoreCase))
-                        {
-                            ModIoAuth.ClearForCurrentGame();
-                            _statusMsg = "Switched to Custom Folder. Please log in again.";
-                        }
-
                         if (!string.IsNullOrEmpty(path))
+                            ActivateCustomBuildLocation(path);
+                    }
+
+                    if (_customBuildLocations.Count > 0)
+                    {
+                        var labels = _customBuildLocations
+                            .Select(path =>
+                            {
+                                var folderName = Path.GetFileName(path.TrimEnd('/', '\\'));
+                                return string.IsNullOrEmpty(folderName) ? path : $"{folderName} — {path}";
+                            })
+                            .ToArray();
+
+                        _selectedCustomBuildLocation = EditorGUILayout.Popup(
+                            "Saved Custom Folder",
+                            Mathf.Clamp(_selectedCustomBuildLocation, 0, labels.Length - 1),
+                            labels);
+
+                        using (new EditorGUILayout.HorizontalScope())
                         {
-                            _buildLocation = path.Replace("\\", "/");
-                            _lastChosenAppId = 0;
+                            if (GUILayout.Button("Use Selected", GUILayout.Height(22)))
+                                ActivateCustomBuildLocation(_customBuildLocations[_selectedCustomBuildLocation]);
 
-                            EditorPrefs.SetString("BuildLocation", _buildLocation);
-                            EditorPrefs.SetString(PREF_KEY_LAST_APP, "0");
-                            EditorPrefs.SetString("ModIo.CurrentGame", "Custom Folder");
-
-                            Repaint();
+                            if (GUILayout.Button("Forget", GUILayout.Width(90), GUILayout.Height(22)))
+                            {
+                                _customBuildLocations.RemoveAt(_selectedCustomBuildLocation);
+                                _selectedCustomBuildLocation = Mathf.Clamp(
+                                    _selectedCustomBuildLocation,
+                                    0,
+                                    Math.Max(0, _customBuildLocations.Count - 1));
+                                SaveCustomBuildLocations();
+                            }
                         }
                     }
                     
@@ -1328,7 +1432,7 @@ namespace MashBoxSDK.SDKMain
                 : StreamingAssetsResolver.AppendSubfolder(streamingAssets, STREAMING_SUBPATH);
             _lastChosenAppId = game.Definition.SteamAppId;
 
-            EditorPrefs.SetString("BuildLocation", _buildLocation);
+            EditorPrefs.SetString(PREF_BUILD_LOCATION, _buildLocation);
             EditorPrefs.SetString(PREF_KEY_LAST_APP, _lastChosenAppId.ToString());
             EditorPrefs.SetString("ModIo.ApiBase", game.Definition.ModIoApiBase ?? string.Empty);
             EditorPrefs.SetString("ModIo.CurrentGame", game.Definition.DisplayName);

@@ -598,6 +598,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, Range(1, 16)] int m_MaxPendingDetailBuilds = 4;
         [SerializeField, Min(2)] int m_SurfaceGridWidth = 2;
         [SerializeField, Min(2)] int m_SurfaceGridHeight = 2;
+        public int SurfaceGridWidth => m_SurfaceGridWidth;
+        public int SurfaceGridHeight => m_SurfaceGridHeight;
         [SerializeField, HideInInspector] int m_DetailSettingsVersion;
 
         [NonSerialized] readonly Dictionary<DetailChunkKey, DensityDetailChunk> m_DensityDetailCache = new Dictionary<DetailChunkKey, DensityDetailChunk>();
@@ -928,10 +930,22 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
+        // Original local X/Z footprint, independent of subsequent vertex edits.
+        [SerializeField, HideInInspector] Vector4 m_SurfaceGridFootprint;
+        [SerializeField, HideInInspector] bool m_HasSurfaceGridFootprint;
+
         public void ConfigureSurfaceGrid(int width, int height)
         {
             m_SurfaceGridWidth = Mathf.Max(2, width);
             m_SurfaceGridHeight = Mathf.Max(2, height);
+            var mesh = MeshFilter != null ? MeshFilter.sharedMesh : null;
+            if (mesh != null && mesh.vertexCount == (long)m_SurfaceGridWidth * m_SurfaceGridHeight)
+            {
+                var bounds = mesh.bounds;
+                m_SurfaceGridFootprint = new Vector4(bounds.min.x, bounds.min.z, bounds.size.x, bounds.size.z);
+                m_HasSurfaceGridFootprint = bounds.size.x > 0f && bounds.size.z > 0f;
+            }
+            else m_HasSurfaceGridFootprint = false;
             InvalidateRenderCache();
         }
 

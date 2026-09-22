@@ -16,13 +16,19 @@ namespace MashBoxSDK.MapTools
             return string.IsNullOrEmpty(name) ? "Terrain" : name;
         }
         internal static string Folder(MGTerrain terrain)
+            => Folder(terrain.gameObject.scene);
+
+        internal static string Folder(UnityEngine.SceneManagement.Scene scene)
         {
-            var scene = terrain.gameObject.scene;
             string path = scene.path;
             string parent = !string.IsNullOrEmpty(path) && path.StartsWith("Assets/", StringComparison.Ordinal)
                 ? Path.GetDirectoryName(path).Replace('\\', '/') : "Assets";
             string sceneName = string.IsNullOrEmpty(path) ? "Unsaved Scene" : Path.GetFileNameWithoutExtension(path);
-            string folderName = SafeName(sceneName) + "_MG Terrain Data";
+            string sceneFolder = EnsureFolder(parent, sceneName);
+            return EnsureFolder(sceneFolder, "MG Terrain Data");
+        }
+        static string EnsureFolder(string parent, string folderName)
+        {
             string folder = parent + "/" + folderName;
             if (!AssetDatabase.IsValidFolder(folder))
             {

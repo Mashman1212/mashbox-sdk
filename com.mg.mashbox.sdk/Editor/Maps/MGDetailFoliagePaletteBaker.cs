@@ -260,7 +260,7 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
-            string folder = Path.GetDirectoryName(sourcePath)?.Replace('\\', '/');
+            string folder = MGTerrainSceneAssets.Folder(terrain);
             for (int entryIndex = 0; entryIndex < entries.Count; entryIndex++)
             {
                 MGDetailFoliagePalette.Entry entry = entries[entryIndex];

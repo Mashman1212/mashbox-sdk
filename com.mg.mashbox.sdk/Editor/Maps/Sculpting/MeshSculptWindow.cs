@@ -835,8 +835,8 @@ namespace MashBoxSDK.MapTools
             if (!m_IsSculpting || !IsUsableSceneModifier(modifier) || modifier == m_Modifier)
                 return;
 
-            if (m_Modifier != null)
-                m_Modifier.FinalizeStrokePreview();
+            // All touched modifiers remain in m_StrokeModifiers. Finalize once on
+            // mouse-up, not at every seam crossing (collider cooking and disk I/O).
             DestroySculptPickingCollider();
             m_Modifier = modifier;
             m_SeamBrush = null;
@@ -1224,7 +1224,7 @@ namespace MashBoxSDK.MapTools
                         RecordStroke(hit, control, shift);
                         MeshSeamFitBrush.TrackUndo(m_Modifier);
                     }
-                    MGTerrainTileAuthoring.JoinBrushEdges(affected, hit.point, m_Radius);
+                    MGTerrainTileAuthoring.JoinBrushEdges(affected, hit.point, m_Radius, preparedMeshes: true);
                 }
                 finally { m_Modifier = active; m_ApplyingWorldDab = false; m_SeamBrush = null; }
                 return;

@@ -4517,10 +4517,15 @@ namespace MashBoxSDK.MapTools
 
         private string ResolveDocumentsMapsFolderForGame(string currentGame)
         {
-            if (string.IsNullOrWhiteSpace(currentGame) ||
-                string.Equals(currentGame, "Custom Folder", StringComparison.OrdinalIgnoreCase))
-            {
+            if (string.IsNullOrWhiteSpace(currentGame))
                 return null;
+
+            if (string.Equals(currentGame, "Custom Folder", StringComparison.OrdinalIgnoreCase))
+            {
+                var customFolder = EditorPrefs.GetString("BuildLocation", string.Empty);
+                return string.IsNullOrWhiteSpace(customFolder)
+                    ? null
+                    : customFolder.Trim().TrimEnd('/', '\\').Replace("\\", "/");
             }
 
             var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);

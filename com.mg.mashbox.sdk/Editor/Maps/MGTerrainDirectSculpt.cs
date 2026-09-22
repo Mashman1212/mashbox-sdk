@@ -14,10 +14,13 @@ namespace MashBoxSDK.MapTools
     {
         static readonly Dictionary<MGTerrain, int> UndoGroups = new Dictionary<MGTerrain, int>();
         static readonly HashSet<MGTerrain> EditedTerrains = new HashSet<MGTerrain>();
+        // No update/tool-exit/reload autosaves: importing mesh assets can stall the editor.
+        // Meshes and scenes stay dirty until the user saves through Unity.
         static MGTerrainDirectSculpt()
         {
             MeshSculptModifier.PrepareTerrainEdit += Prepare;
             Undo.undoRedoPerformed += RefreshUndo;
+
         }
 
         static void Prepare(MeshSculptModifier modifier)
@@ -29,6 +32,7 @@ namespace MashBoxSDK.MapTools
             int group = Undo.GetCurrentGroup();
             if (!UndoGroups.TryGetValue(terrain, out int previous) || previous != group)
             {
+                MGTerrainGridRepair.Repair(terrain);
                 Mesh mesh = filter.sharedMesh;
                 // Undo must reference a persistent pre-stroke mesh. Legacy sculpt outputs
                 // are scene-only objects and can disappear when Undo restores references.
@@ -36,7 +40,7 @@ namespace MashBoxSDK.MapTools
                 {
                     mesh.hideFlags = HideFlags.None;
                     MGTerrainSceneAssets.Create(mesh, terrain, "BeforeSculpt");
-                    AssetDatabase.SaveAssetIfDirty(mesh);
+                    // CreateAsset already persisted the pre-stroke geometry.
                 }
                 bool shared = Object.FindObjectsByType<MGTerrain>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                     .Any(t => t != terrain && t.MeshFilter != null && t.MeshFilter.sharedMesh == mesh);
@@ -60,7 +64,9 @@ namespace MashBoxSDK.MapTools
             }
             // The brush uses this worker only during editor sessions. Mesh assets carry the result.
             modifier.ClearStrokes();
-            modifier.hideFlags = HideFlags.HideInInspector | HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+            const HideFlags workerFlags = HideFlags.HideInInspector | HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+            // Reassigning even identical flags invalidates Unity's gizmo registry.
+            if (modifier.hideFlags != workerFlags) modifier.hideFlags = workerFlags;
             EditorUtility.SetDirty(filter.sharedMesh);
             EditorUtility.SetDirty(filter);
             EditorUtility.SetDirty(terrain);
@@ -77,10 +83,10 @@ namespace MashBoxSDK.MapTools
                 terrain.RefreshSurfaceCollidersFromMesh();
             }
             UndoGroups.Clear();
-            // Undo dirties asset geometry too; keep the on-disk mesh consistent with the session.
+            // Keep Undo changes dirty in memory for Unity's normal explicit save workflow.
             foreach (var terrain in EditedTerrains)
                 if (terrain != null && terrain.MeshFilter != null && terrain.MeshFilter.sharedMesh != null)
-                    AssetDatabase.SaveAssetIfDirty(terrain.MeshFilter.sharedMesh);
+                    EditorUtility.SetDirty(terrain.MeshFilter.sharedMesh);
             SceneView.RepaintAll();
         }
     }

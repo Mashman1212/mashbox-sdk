@@ -182,9 +182,12 @@ namespace MashBoxSDK.MapTools
             var filter = tile.MeshFilter;
             var modifier = filter.GetComponent<MeshSculptModifier>();
             if (modifier == null) modifier = Undo.AddComponent<MeshSculptModifier>(filter.gameObject);
-            Undo.RecordObject(modifier, "Edit Terrain Height");
-            modifier.SetTarget(filter);
-            modifier.UpdateMeshCollider = true;
+            if (modifier.Target != filter || !modifier.UpdateMeshCollider)
+            {
+                Undo.RecordObject(modifier, "Edit Terrain Height");
+                modifier.SetTarget(filter);
+                modifier.UpdateMeshCollider = true;
+            }
             return modifier;
         }
 
@@ -336,48 +339,144 @@ namespace MashBoxSDK.MapTools
         struct EdgeSample
         {
             internal MGTerrain tile;
+            internal EdgeMeshData buffer;
             internal int index;
             internal Vector3 local, world, normal;
         }
 
-        internal static void JoinBrushEdges(List<MGTerrain> tiles, Vector3 center, float radius)
+        sealed class EdgeMeshData
+        {
+            public EdgeMeshData() { }
+            internal Matrix4x4 worldToLocal, worldNormalToLocal;
+            internal readonly List<Vector3> vertices = new List<Vector3>();
+            internal readonly List<Vector3> normals = new List<Vector3>();
+            internal readonly List<MeshSculptModifier.SeamVertex> changes = new List<MeshSculptModifier.SeamVertex>();
+        }
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MGTerrain, EdgeMeshData> EdgeBuffers =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<MGTerrain, EdgeMeshData>();
+        static readonly Dictionary<Vector2Int, List<EdgeSample>> EdgeGroups = new Dictionary<Vector2Int, List<EdgeSample>>();
+        static readonly Stack<List<EdgeSample>> EdgeGroupPool = new Stack<List<EdgeSample>>();
+        static readonly Unity.Profiling.ProfilerMarker JoinEdgesMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.JoinBrushEdges");
+
+        // The world brush has already prepared/registered Undo for every affected
+        // mesh. Standalone commands retain ApplyDeltas' copy-on-write preparation.
+        internal static void JoinBrushEdges(List<MGTerrain> tiles, Vector3 center, float radius, bool preparedMeshes = false)
         {
             if (tiles.Count < 2) return;
-            var edges = new Dictionary<Vector2Int, List<EdgeSample>>();
-            foreach (var tile in tiles)
+            using var profile = JoinEdgesMarker.Auto();
+            try
             {
-                var mesh = tile.MeshFilter.sharedMesh;
-                var vertices = mesh.vertices; var normals = mesh.normals; var bounds = mesh.bounds;
-                for (int i = 0; i < vertices.Length; i++)
+                foreach (var tile in tiles)
                 {
-                    if (!Border(vertices[i], bounds)) continue;
-                    var world = tile.MeshFilter.transform.TransformPoint(vertices[i]);
-                    float dx = world.x - center.x, dz = world.z - center.z;
-                    if (dx * dx + dz * dz > radius * radius) continue;
-                    var key = Key(world);
-                    if (!edges.TryGetValue(key, out var samples)) edges.Add(key, samples = new List<EdgeSample>(4));
-                    samples.Add(new EdgeSample { tile = tile, index = i, local = vertices[i], world = world,
-                        normal = normals.Length == vertices.Length ? tile.MeshFilter.transform.worldToLocalMatrix.transpose.MultiplyVector(normals[i]).normalized : Vector3.up });
+                    var mesh = tile.MeshFilter.sharedMesh;
+                    var buffer = EdgeBuffers.GetOrCreateValue(tile);
+                    buffer.changes.Clear();
+                    mesh.GetVertices(buffer.vertices);
+                    mesh.GetNormals(buffer.normals);
+                    var bounds = mesh.bounds;
+                    var transform = tile.MeshFilter.transform;
+                    var localToWorld = transform.localToWorldMatrix;
+                    buffer.worldToLocal = transform.worldToLocalMatrix;
+                    buffer.worldNormalToLocal = localToWorld.transpose;
+                    var normalMatrix = buffer.worldToLocal.transpose;
+                    void AddSample(int i)
+                    {
+                        var vertex = buffer.vertices[i];
+                        if (!Border(vertex, bounds)) return;
+                        var world = localToWorld.MultiplyPoint3x4(vertex);
+                        float dx = world.x - center.x, dz = world.z - center.z;
+                        if (dx * dx + dz * dz > radius * radius) return;
+                        var key = Key(world);
+                        if (!EdgeGroups.TryGetValue(key, out var samples))
+                        {
+                            samples = EdgeGroupPool.Count > 0 ? EdgeGroupPool.Pop() : new List<EdgeSample>(4);
+                            EdgeGroups.Add(key, samples);
+                        }
+                        samples.Add(new EdgeSample { tile = tile, buffer = buffer, index = i, local = vertex, world = world,
+                            normal = buffer.normals.Count == buffer.vertices.Count ? normalMatrix.MultiplyVector(buffer.normals[i]).normalized : Vector3.up });
+                    }
+                    int width = tile.SurfaceGridWidth;
+                    int height = tile.SurfaceGridHeight;
+                    if (width >= 2 && height >= 2 && (long)width * height == buffer.vertices.Count)
+                    {
+                        for (int x = 0; x < width; x++)
+                        {
+                            AddSample(x);
+                            AddSample((height - 1) * width + x);
+                        }
+                        for (int z = 1; z < height - 1; z++)
+                        {
+                            AddSample(z * width);
+                            AddSample(z * width + width - 1);
+                        }
+                    }
+                    else for (int i = 0; i < buffer.vertices.Count; i++) AddSample(i);
+                }
+                foreach (var samples in EdgeGroups.Values)
+                {
+                    if (samples.Count < 2) continue;
+                    bool multipleTiles = false;
+                    float height = 0; Vector3 normal = Vector3.zero;
+                    foreach (var s in samples)
+                    {
+                        multipleTiles |= s.tile != samples[0].tile;
+                        height += s.world.y; normal += s.normal;
+                    }
+                    if (!multipleTiles) continue;
+                    height /= samples.Count; normal.Normalize();
+                    foreach (var s in samples)
+                    {
+                        var buffer = s.buffer;
+                        var position = s.world; position.y = height;
+                        var delta = buffer.worldToLocal.MultiplyPoint3x4(position) - s.local;
+                        var localNormal = buffer.worldNormalToLocal.MultiplyVector(normal).normalized;
+                        // Idempotent joins need neither uploads nor new sculpt/Undo records.
+                        if (delta.sqrMagnitude <= 1e-12f && buffer.normals.Count == buffer.vertices.Count
+                            && (buffer.normals[s.index] - localNormal).sqrMagnitude <= 1e-10f) continue;
+                        buffer.changes.Add(new MeshSculptModifier.SeamVertex { index = s.index,
+                            delta = delta, normal = localNormal, normalWeight = 1 });
+                    }
+                }
+                foreach (var tile in tiles)
+                {
+                    var buffer = EdgeBuffers.GetOrCreateValue(tile);
+                    if (buffer.changes.Count == 0) continue;
+                    if (!preparedMeshes) { ApplyDeltas(tile, buffer.changes); continue; }
+                    var mesh = tile.MeshFilter.sharedMesh;
+                    bool positionsChanged = false;
+                    foreach (var change in buffer.changes)
+                    {
+                        if (change.delta.sqrMagnitude <= 1e-12f) continue;
+                        buffer.vertices[change.index] += change.delta;
+                        positionsChanged = true;
+                    }
+                    if (positionsChanged)
+                    {
+                        mesh.SetVertices(buffer.vertices);
+                        mesh.RecalculateBounds();
+                        mesh.RecalculateNormals();
+                        mesh.GetNormals(buffer.normals);
+                    }
+                    else if (buffer.normals.Count != buffer.vertices.Count)
+                    {
+                        mesh.RecalculateNormals();
+                        mesh.GetNormals(buffer.normals);
+                    }
+                    foreach (var change in buffer.changes) buffer.normals[change.index] = change.normal;
+                    mesh.SetNormals(buffer.normals);
+                    if (mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) mesh.RecalculateTangents();
+                    mesh.UploadMeshData(false);
+                    tile.NotifySurfaceMeshChanged();
+                    EditorUtility.SetDirty(mesh);
                 }
             }
-            var changes = new Dictionary<MGTerrain, List<MeshSculptModifier.SeamVertex>>();
-            foreach (var samples in edges.Values)
+            finally
             {
-                if (samples.Count < 2 || samples.All(s => s.tile == samples[0].tile)) continue;
-                float height = 0; Vector3 normal = Vector3.zero;
-                foreach (var s in samples) { height += s.world.y; normal += s.normal; }
-                height /= samples.Count; normal.Normalize();
-                foreach (var s in samples)
-                {
-                    if (!changes.TryGetValue(s.tile, out var list)) changes.Add(s.tile, list = new List<MeshSculptModifier.SeamVertex>());
-                    var p = s.world; p.y = height;
-                    list.Add(new MeshSculptModifier.SeamVertex { index = s.index,
-                        delta = s.tile.MeshFilter.transform.InverseTransformPoint(p) - s.local,
-                        normal = s.tile.MeshFilter.transform.localToWorldMatrix.transpose.MultiplyVector(normal).normalized, normalWeight = 1 });
-                }
+                foreach (var samples in EdgeGroups.Values) { samples.Clear(); EdgeGroupPool.Push(samples); }
+                EdgeGroups.Clear();
             }
-            foreach (var change in changes) ApplyDeltas(change.Key, change.Value);
         }
+
 
         static bool Border(Vector3 p, Bounds b) => Mathf.Abs(p.x - b.min.x) < .001f || Mathf.Abs(p.x - b.max.x) < .001f
             || Mathf.Abs(p.z - b.min.z) < .001f || Mathf.Abs(p.z - b.max.z) < .001f;
