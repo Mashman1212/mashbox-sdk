@@ -12,6 +12,8 @@ namespace MashBoxSDK.MapTools
         [SerializeField] StampSourceKind m_StampSourceKind;
         [SerializeField] GameObject m_StampPrefab;
         [SerializeField] bool m_PrefabMaterialPreview = true;
+        [SerializeField] bool m_StampTerrainWireframe;
+        readonly PrefabStampSurfaceSampler m_PreviewSurface = new PrefabStampSurfaceSampler();
         [SerializeField] bool m_StampColour, m_StampNormals;
         PrefabStampSource m_PrefabStamp;
         [SerializeField] Texture m_LastStampedNormal;
@@ -38,6 +40,13 @@ namespace MashBoxSDK.MapTools
                 catch (Exception error) { m_StampReadError = error.Message; }
             }
             m_PrefabMaterialPreview = EditorGUILayout.Toggle(new GUIContent("Materials", "Show the prefab materials on the live stamp preview."), m_PrefabMaterialPreview);
+            if (m_PrefabMaterialPreview)
+            {
+                m_StampTerrainWireframe = EditorGUILayout.Toggle(new GUIContent("Terrain Wireframe", "Also calculate the deformed terrain wireframe. This can be expensive on dense terrain."), m_StampTerrainWireframe);
+                var view = SceneView.lastActiveSceneView;
+                if (view != null && view.cameraMode.drawMode != DrawCameraMode.Textured && view.cameraMode.drawMode != DrawCameraMode.TexturedWire)
+                    EditorGUILayout.HelpBox("Material preview follows Scene view shading. Use Shaded mode to see the prefab textures.", MessageType.Info);
+            }
             m_StampColour = EditorGUILayout.Toggle(new GUIContent("Stamp RGB", "Transfer prefab base colour into each affected tile's far-range appearance map when the stroke ends."), m_StampColour);
             m_StampNormals = EditorGUILayout.Toggle(new GUIContent("Stamp Normals", "Project the prefab material normal into world space and replace the far-range normal map inside the stamp. Falloff blends the edges."), m_StampNormals);
             if (m_StampColour || m_StampNormals)
@@ -75,7 +84,7 @@ namespace MashBoxSDK.MapTools
                 if (!string.IsNullOrEmpty(m_LastAppearanceResult)) EditorGUILayout.HelpBox(m_LastAppearanceResult, MessageType.None);
                 if (m_LastStampedNormal != null)
                     using (new EditorGUI.DisabledScope(true))
-                        EditorGUILayout.ObjectField(new GUIContent("Last Normal Map", "The new map assigned by your last normal stamp. Click to inspect it. Original source textures remain unchanged."), m_LastStampedNormal, typeof(Texture), false);
+                        EditorGUILayout.ObjectField(new GUIContent("Last Normal Map", "The tile normal map updated by your last stamp. Click to inspect it."), m_LastStampedNormal, typeof(Texture), false);
                 EditorGUILayout.HelpBox("Maps apply on release into assigned terrain maps, preserving their resolution. RGB transfers unlit base colour; normals follow the stamp surface. Undo restores the previous maps.", MessageType.None);
             }
         }
@@ -111,7 +120,7 @@ namespace MashBoxSDK.MapTools
                         break;
                     }
                 m_LastAppearanceResult = (m_StampNormals ? "Normal map" + (m_StampColour ? " and RGB" : "") : "RGB map")
-                    + " updated on " + tiles.Count + " tile(s). New maps assigned; original textures unchanged.";
+                    + " updated on " + tiles.Count + " tile(s). Tile appearance maps updated in place.";
                 Repaint(); SceneView.RepaintAll();
             }
             catch (Exception error)
@@ -125,17 +134,8 @@ namespace MashBoxSDK.MapTools
         void DrawPrefabStampPreview(Vector3 center, bool invert, List<MGTerrain> tiles)
         {
             if (m_StampSourceKind != StampSourceKind.Prefab || !m_PrefabMaterialPreview || m_PrefabStamp == null) return;
-            float? Surface(Vector3 point)
-            {
-                foreach (var tile in tiles)
-                {
-                    var b = MGTerrainTileAuthoring.BoundsOf(tile);
-                    if (point.x < b.min.x || point.x > b.max.x || point.z < b.min.z || point.z > b.max.z) continue;
-                    if (tile.RaycastSurface(new Ray(new Vector3(point.x, b.max.y + 1, point.z), Vector3.down), out var hit, b.size.y + 2)) return hit.point.y + .02f;
-                }
-                return null;
-            }
-            m_PrefabStamp.Draw(center, m_Radius, m_StampHeight, m_StampRotation, m_Falloff, invert, Surface);
+            m_PreviewSurface.Prepare(tiles);
+            m_PrefabStamp.Draw(center, m_Radius, m_StampHeight, m_StampRotation, m_Falloff, invert, m_PreviewSurface.Sample);
         }
     }
 }

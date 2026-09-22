@@ -1047,7 +1047,10 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Terrain Appearance Capture", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Captures terrain, painted details and visible geometry from above. All captured cells use the terrain's current close-range detail density; distance thinning is disabled. Reuses and overwrites the appearance PNGs assigned to the terrain material; missing maps are saved and assigned automatically. Assigned normal maps are always recaptured. Lighting and shadows are baked; fog and lens effects are excluded. UVs: terrain mesh local X/Z bounds, not mesh UV2.", MessageType.Info);
-            Material captureMaterial = terrain.MeshRenderer != null ? terrain.MeshRenderer.sharedMaterial : null;
+            using var assetTransaction = new MGTerrainAssetTransaction();
+            var previousSlots = terrain.MeshRenderer.sharedMaterials;
+            assetTransaction.OnRollback(() => terrain.MeshRenderer.sharedMaterials = previousSlots);
+            Material captureMaterial = MGTerrainAssetStore.Material(terrain, assetTransaction);
             Texture2D assignedColour = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty);
             Texture2D assignedNormal = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty);
             m_FarBakeResolution = EditorGUILayout.IntPopup("Capture Resolution", m_FarBakeResolution, new[] { "2K", "4K" }, new[] { 2048, 4096 });
@@ -1072,8 +1075,10 @@ namespace MashBoxSDK.MapTools
         }
 
 
+        bool m_LastCaptureSucceeded;
         void CaptureTerrainAppearance(MGTerrain terrain, bool bakeDistant = false, string worldOutputPath = null)
         {
+            m_LastCaptureSucceeded = false;
             if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null || !(RenderPipelineManager.currentPipeline is HDRenderPipeline))
             { EditorUtility.DisplayDialog("Terrain Capture", "An active HDRP pipeline and a terrain mesh are required.", "OK"); return; }
             Transform surface = terrain.MeshFilter.transform;
@@ -1097,7 +1102,10 @@ namespace MashBoxSDK.MapTools
                 }
             float captureElevationOffset = Mathf.Max(0f, captureTopWorldY - localTopWorldY);
             if (metresX <= .01f || metresZ <= .01f) return;
-            Material captureMaterial = terrain.MeshRenderer != null ? terrain.MeshRenderer.sharedMaterial : null;
+            using var assetTransaction = new MGTerrainAssetTransaction();
+            var previousSlots = terrain.MeshRenderer.sharedMaterials;
+            assetTransaction.OnRollback(() => terrain.MeshRenderer.sharedMaterials = previousSlots);
+            Material captureMaterial = MGTerrainAssetStore.Material(terrain, assetTransaction);
             Texture2D assignedColour = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty);
             Texture2D assignedNormal = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty);
             bool captureNormals = m_CaptureNormalMap || assignedNormal != null || (bakeDistant && m_ApplyDistantMorph);
@@ -1112,18 +1120,8 @@ namespace MashBoxSDK.MapTools
                 if ((m_DistantLayers.value & (1 << terrain.MeshRenderer.gameObject.layer)) == 0)
                 { EditorUtility.DisplayDialog("Distant Mesh", "Capture Layers must include the terrain renderer's layer.", "OK"); return; }
             }
-            string captureFolder = MGTerrainSceneAssets.Folder(terrain);
-            string path = worldOutputPath ?? (bakeDistant ? null : MGTerrainAppearanceCaptureAssets.ReusablePath(assignedColour, terrain.name));
-            // Reuse captures only inside this scene's data folder.
-            if (worldOutputPath == null && (string.IsNullOrEmpty(path)
-                || System.IO.Path.GetDirectoryName(path).Replace('\\', '/') != captureFolder))
-                path = AssetDatabase.GenerateUniqueAssetPath(captureFolder + "/" +
-                    MGTerrainAppearanceCaptureAssets.WithTerrainPrefix(bakeDistant ? "TerrainDistantSurface.png" : "TerrainAppearance.png", terrain.name));
-            if (bakeDistant) path = AssetDatabase.GenerateUniqueAssetPath(path);
-            string assignedNormalPath = AssetDatabase.GetAssetPath(assignedNormal);
-            bool reuseNormal = !bakeDistant && worldOutputPath == null && !string.IsNullOrEmpty(assignedNormalPath)
-                && System.IO.Path.GetDirectoryName(assignedNormalPath).Replace('\\', '/') == captureFolder;
-            string normalPath = captureNormals ? MGTerrainAppearanceCaptureAssets.NormalPath(reuseNormal ? assignedNormal : null, path, terrain.name) : null;
+            string path = MGTerrainAssetStore.MapPath(terrain, bakeDistant ? "Distant" : "Appearance");
+            string normalPath = captureNormals ? MGTerrainAssetStore.MapPath(terrain, bakeDistant ? "Distant_NormalWS" : "Appearance_NormalWS") : null;
             int resolution = m_FarBakeResolution;
             int tiles = Mathf.NextPowerOfTwo(Mathf.Max(4, Mathf.CeilToInt(Mathf.Max(metresX, metresZ) / 48f)));
             if (tiles > 64)
@@ -1145,7 +1143,6 @@ namespace MashBoxSDK.MapTools
             Material heightDecoder = null;
             AppearanceHeightPass heightPass = null;
             var hiddenSurfaces = new List<(GameObject obj, bool active)>();
-            bool bakeSucceeded = false;
             RenderTexture previousActive = RenderTexture.active;
             var lights = new List<(HDAdditionalLightData data, int resolution, bool useOverride, ShadowUpdateMode update)>();
             bool captureStarted = false;
@@ -1387,71 +1384,26 @@ namespace MashBoxSDK.MapTools
                 // Restore before assigning/saving textures and recording material Undo.
                 RestoreAppearanceInfluence();
                 texture.Apply(true, false);
-                byte[] png = texture.EncodeToPNG();
-                if (png == null || png.Length == 0)
-                    throw new InvalidOperationException("Could not encode the terrain capture as PNG.");
-                MGTerrainAppearanceCaptureAssets.WritePng(path, png);
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
-                var importer = AssetImporter.GetAtPath(path) as TextureImporter;
-                if (importer == null)
-                    throw new InvalidOperationException("The PNG was saved, but Unity could not import it as a texture: " + path);
-                importer.textureType = TextureImporterType.Default;
-                importer.sRGBTexture = true;
-                importer.alphaSource = TextureImporterAlphaSource.None;
-                importer.mipmapEnabled = true;
-                importer.fadeout = false;
-                importer.mipmapFilter = TextureImporterMipFilter.BoxFilter;
-                importer.mipMapsPreserveCoverage = false;
-                importer.wrapMode = TextureWrapMode.Clamp;
-                importer.filterMode = FilterMode.Trilinear;
-                importer.anisoLevel = 4;
-                importer.maxTextureSize = resolution;
-                importer.textureCompression = TextureImporterCompression.Uncompressed;
-                importer.isReadable = false;
-                importer.SaveAndReimport();
-                m_LastAppearanceCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                m_LastAppearanceCapture = MGTerrainAssetStore.SaveMap(texture, path, false, assetTransaction);
+                if (m_LastAppearanceCapture == texture) texture = null;
                 if (!bakeDistant) MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty, m_LastAppearanceCapture);
-                EditorGUIUtility.PingObject(m_LastAppearanceCapture);
                 if (normalTexture != null)
                 {
                     normalTexture.Apply(true, false);
-                    byte[] normalPng = normalTexture.EncodeToPNG();
-                    if (normalPng == null || normalPng.Length == 0) throw new InvalidOperationException("Normal PNG encoding failed. The colour PNG was saved successfully.");
-                    MGTerrainAppearanceCaptureAssets.WritePng(normalPath, normalPng);
-                    AssetDatabase.ImportAsset(normalPath, ImportAssetOptions.ForceSynchronousImport);
-                    var normalImporter = AssetImporter.GetAtPath(normalPath) as TextureImporter;
-                    if (normalImporter == null) throw new InvalidOperationException("Normal PNG saved but could not be imported: " + normalPath);
-                    normalImporter.textureType = TextureImporterType.Default;
-                    normalImporter.convertToNormalmap = false;
-                    normalImporter.flipGreenChannel = false;
-                    normalImporter.sRGBTexture = false;
-                    normalImporter.alphaSource = TextureImporterAlphaSource.None;
-                    normalImporter.mipmapEnabled = true;
-                    normalImporter.fadeout = false;
-                    normalImporter.mipmapFilter = TextureImporterMipFilter.BoxFilter;
-                    normalImporter.mipMapsPreserveCoverage = false;
-                    normalImporter.wrapMode = TextureWrapMode.Clamp;
-                    normalImporter.filterMode = FilterMode.Trilinear;
-                    normalImporter.anisoLevel = 4;
-                    normalImporter.maxTextureSize = resolution;
-                    normalImporter.textureCompression = TextureImporterCompression.Uncompressed;
-                    normalImporter.isReadable = false;
-                    normalImporter.userData = "MG Terrain World Space Normals: normalize(RGB * 2 - 1). Sample as Default linear RGB using colour capture X/Z UVs. Not tangent-space normal data.";
-                    normalImporter.SaveAndReimport();
-                    m_LastNormalCapture = AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath);
+                    m_LastNormalCapture = MGTerrainAssetStore.SaveMap(normalTexture, normalPath, true, assetTransaction);
+                    if (m_LastNormalCapture == normalTexture) normalTexture = null;
                     if (!bakeDistant) MGTerrainAppearanceCaptureAssets.Assign(captureMaterial, MGTerrainAppearanceCaptureAssets.NormalProperty, m_LastNormalCapture);
-                    Debug.Log($"World-space normal capture saved to {normalPath}. Imported as Default linear RGB; decode normalize(RGB * 2 - 1) and use in world space.", terrain);
                 }
                 if (bakeDistant)
                 {
                     heightTexture.Apply(false, false);
                     // Capture is finished. Restore visibility before recording replacement Undo.
                     foreach (var hidden in hiddenSurfaces) if (hidden.obj != null) hidden.obj.SetActive(hidden.active);
-                    SaveDistantSurface(terrain, heightTexture, m_LastAppearanceCapture, path);
+                    SaveDistantSurface(terrain, heightTexture, m_LastAppearanceCapture, path, assetTransaction);
                 }
-                bakeSucceeded = true;
                 if (bakeDistant && m_ApplyDistantMorph && captureMaterial != null && captureMaterial.HasProperty("_DistantSurfaceHeightMap"))
                     ApplyDistantMorph(terrain, m_LastMorphHeight);
+                assetTransaction.Commit(); m_LastCaptureSucceeded = true;
                 for (int layer = 0; layer < layerSubmissions.Length; layer++)
                     Debug.Log($"[MG Terrain Capture] Layer {layer}: {layerSubmissions[layer]:N0} instance submissions across completed tiles (includes overlapping borders).", terrain);
                 if (!bakeDistant) Debug.Log($"Terrain appearance saved to {path}. RGB maps local X/Z bounds {bounds.min} to {bounds.max}; lighting and shadows are baked. Captures are assigned to the material's appearance slots when supported and reused on the next capture.", terrain);
@@ -1465,11 +1417,7 @@ namespace MashBoxSDK.MapTools
                     captureSun.transform.localRotation = previousSunLocalRotation;
                 if (captureStarted) terrain.EndAppearanceCapture();
                 foreach (var hidden in hiddenSurfaces) if (hidden.obj != null) hidden.obj.SetActive(hidden.active);
-                if (bakeDistant && !bakeSucceeded)
-                {
-                    if (AssetDatabase.LoadAssetAtPath<Texture2D>(path) != null) AssetDatabase.DeleteAsset(path);
-                    if (normalPath != null && AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath) != null) AssetDatabase.DeleteAsset(normalPath);
-                }
+                // Transaction rollback restores previous files and removes only newly created outputs.
                 foreach (var light in lights)
                     if (light.data != null)
                     {
@@ -1549,7 +1497,7 @@ namespace MashBoxSDK.MapTools
                 { name = terrain.name + "_FarGrass", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
                 texture.SetPixels32(pixels);
                 texture.Apply(true, false);
-                MGTerrainSceneAssets.Create(texture, terrain, "FarGrass");
+                texture = MGTerrainAssetStore.SaveGenerated(texture, terrain, "FarGrass");
                 Undo.RecordObject(terrain, "Bake Far Grass");
                 serializedObject.Update();
                 serializedObject.FindProperty("m_FarGrassBake").objectReferenceValue = texture;
@@ -1953,7 +1901,7 @@ namespace MashBoxSDK.MapTools
                     for (int i = 0; i < pixels.Length; i++) pixels[i] = neutral;
                     copy.Apply(false, false);
                 }
-                MGTerrainSceneAssets.Create(copy, terrain, $"Layer_{m_PaintDetailIndex}_" + (m_PaintChannel == 0 ? "Density" : "Size"));
+                copy = MGTerrainAssetStore.SaveDetailMap(copy, terrain, m_PaintDetailIndex, m_PaintChannel == 0 ? "Density" : "Size");
                 detail.AssignPaintMapCopy(copy, m_PaintChannel == 0 ? MGTerrain.DetailPaintMap.Density : MGTerrain.DetailPaintMap.Size);
                 serializedObject.Update();
                 source = copy;
@@ -1966,7 +1914,7 @@ namespace MashBoxSDK.MapTools
                 if (!m_PaintCopies.Contains(ids))
                 {
                     ids = Instantiate(ids);
-                    MGTerrainSceneAssets.Create(ids, terrain, $"Layer_{m_PaintDetailIndex}_GrassIDs");
+                    ids = MGTerrainAssetStore.SaveDetailMap(ids, terrain, m_PaintDetailIndex, "GrassIDs");
                     detail.AssignPaintMapCopy(ids, MGTerrain.DetailPaintMap.GrassIds);
                     serializedObject.Update();
                     m_PaintCopies.Add(ids);
@@ -2138,7 +2086,7 @@ namespace MashBoxSDK.MapTools
             var pixels = filled.GetPixelData<ushort>(0);
             for (int pixel = 0; pixel < pixels.Length; pixel++) pixels[pixel] = (ushort)m_FloodDensity;
             filled.Apply(false, false);
-            MGTerrainSceneAssets.Create(filled, terrain, $"Layer_{index}_Density_Flood");
+            filled = MGTerrainAssetStore.SaveDetailMap(filled, terrain, index, "Density");
             Undo.RecordObject(terrain, "Flood MG Terrain Detail");
             serializedObject.Update();
             layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);

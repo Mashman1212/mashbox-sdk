@@ -29,10 +29,11 @@ namespace MashBoxSDK.MapTools
                 for (int i = 0; i < pixels.Length; i++) pixels[i] = fill;
                 texture.SetPixels32(pixels);
                 texture.Apply(true, false);
-                string path = MGTerrainSceneAssets.UniquePath(tile, normal ? "BlankNormalWS" : "BlankRGB");
-                texture.name = System.IO.Path.GetFileNameWithoutExtension(path);
-                AssetDatabase.CreateAsset(texture, path);
-                return texture;
+                using var transaction = new MGTerrainAssetTransaction();
+                var saved = MGTerrainAssetStore.SaveMap(texture, MGTerrainAssetStore.MapPath(tile, normal ? "Appearance_NormalWS" : "Appearance"), normal, transaction);
+                transaction.Commit();
+                if (saved != texture) UnityEngine.Object.DestroyImmediate(texture);
+                return saved;
             }
             catch { if (!EditorUtility.IsPersistent(texture)) UnityEngine.Object.DestroyImmediate(texture); throw; }
         }
@@ -47,50 +48,29 @@ namespace MashBoxSDK.MapTools
             MGTerrainTileAuthoring.Validate(tile);
             var colour = original.GetTexture(MGTerrainAppearanceCaptureAssets.ColourProperty);
             var normal = original.GetTexture(MGTerrainAppearanceCaptureAssets.NormalProperty);
+            using var transaction = new MGTerrainAssetTransaction();
             var slots = renderer.sharedMaterials;
-            var working = new Material(original) { name = tile.name + " Appearance" };
-            var temporarySlots = (Material[])slots.Clone(); temporarySlots[0] = working;
-            MGTerrainEditor editor = null;
-            try
+            transaction.OnRollback(() => renderer.sharedMaterials = slots);
+            var working = MGTerrainAssetStore.Material(tile, transaction);
+            if (blank)
             {
-                renderer.sharedMaterials = temporarySlots;
-                if (blank)
-                {
-                    int resolution = tile.World != null ? Mathf.Clamp(tile.World.CaptureResolution, 32, 4096) : 2048;
-                    var existing = colour != null ? colour : normal;
-                    int width = existing != null ? existing.width : resolution;
-                    int height = existing != null ? existing.height : resolution;
-                    if (colour == null) working.SetTexture(MGTerrainAppearanceCaptureAssets.ColourProperty,
-                        CreateBlank(tile, width, height, false));
-                    if (normal == null) working.SetTexture(MGTerrainAppearanceCaptureAssets.NormalProperty,
-                        CreateBlank(tile, width, height, true));
-                }
-                else
-                {
-                    editor = (MGTerrainEditor)Editor.CreateEditor(tile);
-                    string path = MGTerrainSceneAssets.UniquePath(tile, "BaseAppearance", ".png");
-                    editor.BakeStampBaseMaps(tile.World, path);
-                }
-                if (working.GetTexture(MGTerrainAppearanceCaptureAssets.ColourProperty) == null
-                    || working.GetTexture(MGTerrainAppearanceCaptureAssets.NormalProperty) == null)
-                    throw new InvalidOperationException("Appearance-map generation did not complete. Check the terrain capture message and try again.");
-                // The capture produces a matched pair, but never replace an existing authored map.
+                int resolution = tile.World != null ? tile.World.CaptureResolution : 2048;
+                var existing = colour != null ? colour : normal;
+                int width = existing != null ? existing.width : resolution, height = existing != null ? existing.height : resolution;
+                if (colour == null) working.SetTexture(MGTerrainAppearanceCaptureAssets.ColourProperty, CreateBlank(tile, width, height, false));
+                if (normal == null) working.SetTexture(MGTerrainAppearanceCaptureAssets.NormalProperty, CreateBlank(tile, width, height, true));
+            }
+            else
+            {
+                var editor = (MGTerrainEditor)Editor.CreateEditor(tile);
+                try { editor.BakeStampBaseMaps(tile.World, MGTerrainAssetStore.MapPath(tile, "Appearance")); }
+                finally { UnityEngine.Object.DestroyImmediate(editor); }
                 if (colour != null) working.SetTexture(MGTerrainAppearanceCaptureAssets.ColourProperty, colour);
                 if (normal != null) working.SetTexture(MGTerrainAppearanceCaptureAssets.NormalProperty, normal);
-                AssetDatabase.CreateAsset(working, MGTerrainSceneAssets.UniquePath(tile, "Appearance", ".mat"));
-                renderer.sharedMaterials = slots;
-                Undo.RecordObject(renderer, "Generate Terrain Appearance Maps");
-                renderer.sharedMaterials = temporarySlots;
-                EditorUtility.SetDirty(renderer);
-                PrefabUtility.RecordPrefabInstancePropertyModifications(renderer);
-                EditorSceneManager.MarkSceneDirty(renderer.gameObject.scene);
             }
-            catch { renderer.sharedMaterials = slots; throw; }
-            finally
-            {
-                if (editor != null) UnityEngine.Object.DestroyImmediate(editor);
-                if (!EditorUtility.IsPersistent(working)) UnityEngine.Object.DestroyImmediate(working);
-            }
+            if (NeedsMaps(tile)) throw new InvalidOperationException("Appearance generation did not complete.");
+            EditorUtility.SetDirty(working); AssetDatabase.SaveAssetIfDirty(working);
+            EditorSceneManager.MarkSceneDirty(tile.gameObject.scene); transaction.Commit();
         }
     }
 
@@ -100,6 +80,8 @@ namespace MashBoxSDK.MapTools
         {
             m_FarBakeResolution = world != null ? world.CaptureResolution : 2048;
             m_CaptureExposure = world != null ? world.CaptureExposure : 10;
+            if (world != null && world.CaptureSyncSceneExposure && !MGTerrainSceneExposure.TryGet(out m_CaptureExposure, out string error))
+                throw new InvalidOperationException(error);
             m_CaptureDetailTilt = world != null ? world.CaptureDetailTilt : 0;
             m_CaptureSyncTimeOfDay = true;
             m_CaptureNormalMap = true;

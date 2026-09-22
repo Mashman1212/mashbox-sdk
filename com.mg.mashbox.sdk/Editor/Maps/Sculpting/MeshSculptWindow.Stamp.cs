@@ -5,6 +5,7 @@ namespace MashBoxSDK.MapTools
 {
     public sealed partial class MeshSculptWindow
     {
+        static readonly Unity.Profiling.ProfilerMarker StampWireframeMarker = new Unity.Profiling.ProfilerMarker("MG.Stamp.TerrainWireframe");
         [SerializeField] Mesh m_StampMesh;
         [SerializeField] float m_StampHeight = 1f;
         [SerializeField] float m_StampRotation;
@@ -173,8 +174,10 @@ namespace MashBoxSDK.MapTools
                 && m_Modifier.Target.sharedMesh != null && m_Modifier.Target.sharedMesh.isReadable)
                 targets.Add(m_Modifier.Target);
             DrawPrefabStampPreview(center, invert, tiles);
-            m_MeshStampBrush.DrawPreview(targets, center, m_Radius, m_StampHeight, m_StampRotation,
-                invert ? -1f : 1f, m_Falloff);
+            if (m_StampSourceKind != StampSourceKind.Prefab || !m_PrefabMaterialPreview || m_StampTerrainWireframe)
+                using (StampWireframeMarker.Auto())
+                    m_MeshStampBrush.DrawPreview(targets, center, m_Radius, m_StampHeight, m_StampRotation,
+                        invert ? -1f : 1f, m_Falloff);
         }
     }
 }

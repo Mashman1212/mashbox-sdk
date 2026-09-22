@@ -113,13 +113,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 packingMaterial = new Material(packingShader) { hideFlags = HideFlags.HideAndDontSave };
 
                 Texture2DArray baseMapArray = EnsureArray(
-                    $"{materialDirectory}/{materialName}_BaseMapArray.asset",
+                    MashBoxSDK.MapTools.MGTerrainAssetStore.MaterialTexturePath(material, "BaseMapArray", $"{materialDirectory}/{materialName}_BaseMapArray.asset", ".asset"),
                     $"{materialName} Base Map Array", resolution, TextureFormat.BC7, false);
                 Texture2DArray heightArray = EnsureArray(
-                    $"{materialDirectory}/{materialName}_HeightMapArray.asset",
+                    MashBoxSDK.MapTools.MGTerrainAssetStore.MaterialTexturePath(material, "HeightMapArray", $"{materialDirectory}/{materialName}_HeightMapArray.asset", ".asset"),
                     $"{materialName} Height Map Array", resolution, TextureFormat.BC4, true);
                 Texture2DArray surfaceArray = EnsureArray(
-                    $"{materialDirectory}/{materialName}_SurfaceMapArray.asset",
+                    MashBoxSDK.MapTools.MGTerrainAssetStore.MaterialTexturePath(material, "SurfaceMapArray", $"{materialDirectory}/{materialName}_SurfaceMapArray.asset", ".asset"),
                     $"{materialName} Surface Map Array", resolution, TextureFormat.BC7, true);
 
                 for (int index = 0; index < LayerCount; index++)
@@ -327,7 +327,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 ArrayKind.Height => "HeightMapArray",
                 _ => "SurfaceMapArray"
             };
-            return AssetDatabase.LoadAssetAtPath<Texture2DArray>($"{directory}/{materialName}_{suffix}.asset");
+            return AssetDatabase.LoadAssetAtPath<Texture2DArray>(MashBoxSDK.MapTools.MGTerrainAssetStore.MaterialTexturePath(material, suffix, $"{directory}/{materialName}_{suffix}.asset", ".asset"));
         }
 
         private static void BuildPending()
@@ -375,22 +375,22 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                 return current;
             }
 
-            UnityEngine.Object existing = AssetDatabase.LoadMainAssetAtPath(assetPath);
-            if (existing != null)
-            {
-                if (!AssetDatabase.MakeEditable(assetPath))
-                    throw new IOException($"The generated array is read-only: {assetPath}");
-                if (!AssetDatabase.DeleteAsset(assetPath))
-                    throw new IOException($"Could not replace the generated array: {assetPath}");
-            }
-
             var replacement = new Texture2DArray(
                 resolution, resolution, LayerCount, format, true, linear)
             {
                 name = displayName
             };
-            AssetDatabase.CreateAsset(replacement, assetPath);
-            return replacement;
+            try
+            {
+                using var transaction = new MashBoxSDK.MapTools.MGTerrainAssetTransaction();
+                var saved = MashBoxSDK.MapTools.MGTerrainAssetStore.Save(replacement, assetPath, transaction);
+                transaction.Commit();
+                return saved;
+            }
+            finally
+            {
+                if (!EditorUtility.IsPersistent(replacement)) UnityEngine.Object.DestroyImmediate(replacement);
+            }
         }
 
         private static void BakeBaseMapSlice(

@@ -272,23 +272,14 @@ namespace MashBoxSDK.MapTools
                 if (prototypeIndex < 0)
                     continue;
 
-                string assetName = $"{Sanitize(source.name)}__{Sanitize(palette.name)}__{entryIndex:00}_{Sanitize(entry.Name)}";
-                string assetPath = $"{folder}/{assetName}.asset";
-                Texture2D output = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-                if (output == null || output.format != TextureFormat.R16 || output.width != width || output.height != height)
+                string assetPath = MGTerrainAssetStore.PathFor(terrain, DensityAssetRole(palette, source, entryIndex));
+                var generated = new Texture2D(width, height, TextureFormat.R16, false, true);
+                generated.SetPixelData(outputValues[entryIndex], 0); generated.Apply(false, false);
+                Texture2D output;
+                using (var transaction = new MGTerrainAssetTransaction())
                 {
-                    if (output != null)
-                        assetPath = AssetDatabase.GenerateUniqueAssetPath(assetPath);
-                    output = new Texture2D(width, height, TextureFormat.R16, false, true) { name = assetName };
-                    output.SetPixelData(outputValues[entryIndex], 0);
-                    output.Apply(false, false);
-                    AssetDatabase.CreateAsset(output, assetPath);
-                }
-                else
-                {
-                    output.SetPixelData(outputValues[entryIndex], 0);
-                    output.Apply(false, false);
-                    EditorUtility.SetDirty(output);
+                    try { output = MGTerrainAssetStore.Save(generated, assetPath, transaction, true); transaction.Commit(); }
+                    finally { if (!EditorUtility.IsPersistent(generated)) UnityEngine.Object.DestroyImmediate(generated); }
                 }
 
                 terrain.AddGeneratedDensityDetailLayer(
@@ -398,6 +389,12 @@ namespace MashBoxSDK.MapTools
             value ^= value >> 15;
             value *= 0x846ca68bu;
             return value ^ (value >> 16);
+        }
+
+        internal static string DensityAssetRole(MGDetailFoliagePalette palette, Texture2D source, int entryIndex)
+        {
+            string entryName = entryIndex >= 0 && entryIndex < palette.Entries.Count ? palette.Entries[entryIndex].Name : "Foliage";
+            return $"Palette_{Sanitize(palette.name)}_{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(source))}_{entryIndex:00}_{Sanitize(entryName)}_Density";
         }
 
         static string Sanitize(string value)

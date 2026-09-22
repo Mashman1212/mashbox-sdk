@@ -1190,8 +1190,8 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             }
 
             string materialName = Path.GetFileNameWithoutExtension(materialPath);
-            string controlMap1Path = $"{materialDirectory}/{materialName}_ControlMap1.png";
-            string controlMap2Path = $"{materialDirectory}/{materialName}_ControlMap2.png";
+            string controlMap1Path = MashBoxSDK.MapTools.MGTerrainAssetStore.MaterialTexturePath(material, "ControlMap1", $"{materialDirectory}/{materialName}_ControlMap1.png", ".png");
+            string controlMap2Path = MashBoxSDK.MapTools.MGTerrainAssetStore.MaterialTexturePath(material, "ControlMap2", $"{materialDirectory}/{materialName}_ControlMap2.png", ".png");
             bool replacesExistingAssets = File.Exists(Path.GetFullPath(controlMap1Path)) ||
                                           File.Exists(Path.GetFullPath(controlMap2Path));
             if (replacesExistingAssets &&
@@ -1249,11 +1249,20 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
                 texture.SetPixels32(pixels);
                 texture.Apply(false, false);
-                File.WriteAllBytes(Path.GetFullPath(assetPath), texture.EncodeToPNG());
+                using var transaction = new MashBoxSDK.MapTools.MGTerrainAssetTransaction();
+                if (assetPath.EndsWith(".asset", System.StringComparison.OrdinalIgnoreCase))
+                    MashBoxSDK.MapTools.MGTerrainAssetStore.Save(texture, assetPath, transaction);
+                else
+                {
+                    transaction.Track(assetPath);
+                    File.WriteAllBytes(Path.GetFullPath(assetPath), texture.EncodeToPNG());
+                    AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+                }
+                transaction.Commit();
             }
             finally
             {
-                Object.DestroyImmediate(texture);
+                if (!EditorUtility.IsPersistent(texture)) Object.DestroyImmediate(texture);
             }
 
             AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);

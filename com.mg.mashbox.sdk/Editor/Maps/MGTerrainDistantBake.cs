@@ -38,9 +38,9 @@ namespace MashBoxSDK.MapTools
         void DrawDistantSurfaceBake(MGTerrain terrain)
         {
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Distant Surface Mesh", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("Bakes a separate canopy/rooftop surface with its own appearance textures. Captures actual upright geometry (detail tilt is disabled). Only the topmost depth-writing surface is represented. Originals keep their current draw distances; match the fade below to those distances. Generated surfaces are excluded from captures.", MessageType.Info);
-            m_DistantSpacing = Mathf.Max(.25f, EditorGUILayout.FloatField("Mesh Spacing (Metres)", m_DistantSpacing));
+            EditorGUILayout.LabelField("Distant Surface Bake", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Bakes canopy/rooftop height and appearance maps. Apply Bake to Trail Shader reuses the terrain mesh; disabling it generates a separate surface mesh. Captures actual upright geometry (detail tilt is disabled). Only the topmost depth-writing surface is represented. Originals keep their current draw distances; match the fade below to those distances. Generated surfaces are excluded from captures.", MessageType.Info);
+            m_DistantSpacing = Mathf.Max(.25f, EditorGUILayout.FloatField("Height Sampling Spacing (Metres)", m_DistantSpacing));
             m_DistantSmoothing = EditorGUILayout.IntSlider("Height Smoothing Passes", m_DistantSmoothing, 0, 4);
             m_DistantHeadroom = Mathf.Max(20f, EditorGUILayout.FloatField(new GUIContent("Capture Headroom (Metres)", "Height above the terrain's highest vertex. Increase for unusually tall trees or buildings."), m_DistantHeadroom));
             // LayerField cannot represent a mask; map the named-layer popup back to actual layer bits.
@@ -62,7 +62,7 @@ namespace MashBoxSDK.MapTools
             m_DistantFadeEnd = Mathf.Max(m_DistantFadeStart + 1, EditorGUILayout.FloatField("Fade In End (Metres)", m_DistantFadeEnd));
             DrawDistantMorph(terrain);
             using (new EditorGUI.DisabledScope(Application.isPlaying || !terrain.isActiveAndEnabled))
-                if (GUILayout.Button("Bake Distant Mesh"))
+                if (GUILayout.Button(m_ApplyDistantMorph ? "Bake Distant Morph Maps" : "Bake Distant Mesh"))
                 {
                     serializedObject.ApplyModifiedProperties();
                     CaptureTerrainAppearance(terrain, true);
@@ -70,10 +70,12 @@ namespace MashBoxSDK.MapTools
                 }
         }
 
-        void SaveDistantSurface(MGTerrain terrain, Texture2D heightMap, Texture2D appearance, string colourPath)
+        void SaveDistantSurface(MGTerrain terrain, Texture2D heightMap, Texture2D appearance, string colourPath, MGTerrainAssetTransaction transaction)
         {
-            Shader shader = Shader.Find("MashBox/Terrain Distant Surface");
-            if (shader == null || !shader.isSupported) throw new InvalidOperationException("The distant surface shader is missing or unsupported.");
+            bool heightOnly = m_ApplyDistantMorph && terrain.MeshRenderer != null
+                && terrain.MeshRenderer.sharedMaterial != null && terrain.MeshRenderer.sharedMaterial.HasProperty("_DistantSurfaceHeightMap");
+            Shader shader = heightOnly ? null : Shader.Find("MashBox/Terrain Distant Surface");
+            if (!heightOnly && (shader == null || !shader.isSupported)) throw new InvalidOperationException("The distant surface shader is missing or unsupported.");
             Transform surface = terrain.MeshFilter.transform;
             Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
             int nx = Mathf.Max(1, Mathf.CeilToInt(surface.TransformVector(Vector3.right * bounds.size.x).magnitude / m_DistantSpacing));
@@ -123,22 +125,43 @@ namespace MashBoxSDK.MapTools
             bool complete = false;
             try
             {
+                var savedHeight = MGTerrainHeightEncoding.EncodeDifference(terrain.MeshFilter.sharedMesh, bounds, heights,
+                    nx, nz, width, height, out Vector4 heightDecode);
+                savedHeight.name = terrain.name + " Surface Height Difference";
+                string heightPath = MGTerrainAssetStore.PathFor(terrain, "Distant_Height");
+                var heightAsset = MGTerrainAssetStore.Save(savedHeight, heightPath, transaction, true);
+                if (savedHeight != heightAsset) DestroyImmediate(savedHeight);
+                savedHeight = heightAsset;
+                MGTerrainHeightEncoding.SaveMetadata(heightPath, heightDecode);
+                m_LastMorphHeight = savedHeight;
+                if (heightOnly)
+                {
+                    // The shader deforms the existing terrain mesh. No proxy geometry or
+                    // proxy material is needed; retire old generated scene proxies on success.
+                    foreach (var proxy in terrain.GetComponentsInChildren<MGTerrainDistantSurface>(true))
+                        if (proxy.Source == terrain)
+                        {
+                            var oldRoot = proxy.gameObject;
+                            transaction.OnCommit(() => { if (oldRoot != null) Undo.DestroyObjectImmediate(oldRoot); });
+                        }
+                    complete = true;
+                    Debug.Log("Distant morph maps baked. Reuses the terrain mesh; no separate distant mesh or surface material generated.", terrain);
+                    return;
+                }
                 var material = new Material(shader) { name = terrain.name + " Distant Surface" };
                 material.SetTexture("_BaseMap", appearance);
                 material.SetFloat("_FadeStart", m_DistantFadeStart);
                 material.SetFloat("_FadeEnd", m_DistantFadeEnd);
-                string materialPath = AssetDatabase.GenerateUniqueAssetPath(stem + "_Surface.mat");
-                AssetDatabase.CreateAsset(material, materialPath); createdPaths.Add(materialPath);
-                var savedHeight = MGTerrainHeightEncoding.EncodeDifference(terrain.MeshFilter.sharedMesh, bounds, heights,
-                    nx, nz, width, height, out Vector4 heightDecode);
-                savedHeight.name = terrain.name + " Surface Height Difference";
-                string heightPath = AssetDatabase.GenerateUniqueAssetPath(stem + "_Height.asset");
-                AssetDatabase.CreateAsset(savedHeight, heightPath); createdPaths.Add(heightPath);
-                MGTerrainHeightEncoding.SaveMetadata(heightPath, heightDecode);
+                string materialPath = MGTerrainAssetStore.PathFor(terrain, "Distant_Surface", ".mat");
+                var savedMaterial = MGTerrainAssetStore.Save(material, materialPath, transaction, true);
+                if (savedMaterial != material) DestroyImmediate(material);
+                material = savedMaterial;
                 root = new GameObject(terrain.name + " Distant Surface");
                 root.SetActive(false);
                 root.transform.SetParent(surface, false);
                 root.AddComponent<MGTerrainDistantSurface>().SetSource(terrain);
+                var createdRoot = root;
+                transaction.OnRollback(() => { if (createdRoot != null) DestroyImmediate(createdRoot); });
                 const int chunkCells = 128;
                 string meshPath = null;
                 int triangles = 0, chunks = 0;
@@ -173,12 +196,10 @@ namespace MashBoxSDK.MapTools
                     if (indices.Count == 0) continue;
                     var mesh = new Mesh { name = $"Surface_{x0}_{z0}", vertices = vertices, normals = normals, uv = uv };
                     mesh.SetTriangles(indices, 0); mesh.RecalculateBounds();
-                    if (meshPath == null)
-                    {
-                        meshPath = AssetDatabase.GenerateUniqueAssetPath(stem + "_Meshes.asset");
-                        AssetDatabase.CreateAsset(mesh, meshPath); createdPaths.Add(meshPath);
-                    }
-                    else AssetDatabase.AddObjectToAsset(mesh, meshPath);
+                    meshPath = MGTerrainAssetStore.PathFor(terrain, $"Distant_Mesh_{x0}_{z0}");
+                    var savedMesh = MGTerrainAssetStore.Save(mesh, meshPath, transaction, true);
+                    if (mesh != savedMesh) DestroyImmediate(mesh);
+                    mesh = savedMesh;
                     var child = new GameObject(mesh.name);
                     child.layer = terrain.gameObject.layer;
                     child.transform.SetParent(root.transform, false);
@@ -195,21 +216,27 @@ namespace MashBoxSDK.MapTools
                 AssetDatabase.SaveAssets();
                 // Replace only this terrain's scene proxy, after the new assets are complete. Old assets remain reusable.
                 foreach (var old in terrain.GetComponentsInChildren<MGTerrainDistantSurface>(true))
-                    if (old.Source == terrain && old.gameObject != root) Undo.DestroyObjectImmediate(old.gameObject);
+                    if (old.Source == terrain && old.gameObject != root)
+                    {
+                        var oldRoot = old.gameObject; bool wasActive = oldRoot.activeSelf;
+                        oldRoot.SetActive(false);
+                        transaction.OnRollback(() => { if (oldRoot != null) oldRoot.SetActive(wasActive); });
+                        transaction.OnCommit(() => { if (oldRoot != null) Undo.DestroyObjectImmediate(oldRoot); });
+                    }
                 root.SetActive(true);
                 Undo.RegisterCreatedObjectUndo(root, "Bake Distant Terrain Surface");
                 EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
                 complete = true;
                 m_LastMorphHeight = savedHeight;
                 EditorGUIUtility.PingObject(root);
-                Debug.Log($"Distant surface baked: {chunks} chunks, {triangles:N0} triangles. Fade {m_DistantFadeStart}–{m_DistantFadeEnd} metres; edit the generated material to adjust. Originals keep their existing draw distances. Assets: {materialPath}", terrain);
+                Debug.Log($"Distant surface baked: {chunks} chunks, {triangles:N0} triangles. Fade {m_DistantFadeStart}â€“{m_DistantFadeEnd} metres; edit the generated material to adjust. Originals keep their existing draw distances. Assets: {materialPath}", terrain);
             }
             finally
             {
                 if (!complete)
                 {
                     if (root != null) DestroyImmediate(root);
-                    foreach (string asset in createdPaths) AssetDatabase.DeleteAsset(asset);
+                    // Capture transaction restores old assets or removes new ones.
                 }
             }
         }

@@ -57,50 +57,46 @@ namespace MashBoxSDK.MapTools
             serializedObject.Update();
             var resolution = serializedObject.FindProperty("CaptureResolution");
             resolution.intValue = EditorGUILayout.IntPopup("Capture Resolution Per Tile", resolution.intValue, new[] { "2K", "4K" }, new[] { 2048, 4096 });
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("CaptureExposure"));
+            var syncExposure = serializedObject.FindProperty("CaptureSyncSceneExposure");
+            EditorGUILayout.PropertyField(syncExposure, new GUIContent("Sync Exposure to Scene"));
+            using (new EditorGUI.DisabledScope(syncExposure.boolValue))
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("CaptureExposure"));
+            if (syncExposure.boolValue) EditorGUILayout.HelpBox(MGTerrainSceneExposure.Description(), MessageType.None);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("CaptureDetailTilt"));
             var spacing = serializedObject.FindProperty("DistantMeshSpacing");
-            spacing.floatValue = Mathf.Max(.25f, EditorGUILayout.FloatField("Distant Mesh Spacing (m)", spacing.floatValue));
+            spacing.floatValue = Mathf.Max(.25f, EditorGUILayout.FloatField("Distant Height Sampling Spacing (m)", spacing.floatValue));
             serializedObject.ApplyModifiedProperties();
-            EditorGUILayout.HelpBox("Shared settings, separate outputs per tile. Appearance captures include normal maps. Distant surface captures also generate height maps and meshes. Uses current scene sunlight with fixed exposure.", MessageType.None);
+            EditorGUILayout.HelpBox("Shared settings, separate outputs per tile. Appearance captures include normal maps. Distant captures generate height maps for shader morphing; no separate distant meshes are generated. Uses current scene sunlight with fixed exposure.", MessageType.None);
             using (new EditorGUI.DisabledScope(Application.isPlaying || world.Chunks.Count == 0))
             {
-                if (GUILayout.Button("Bake All Top-Down Terrain Appearance Maps")) BakeWorld(world, false);
-                if (GUILayout.Button("Bake All Distant Surfaces + Height Maps")) BakeWorld(world, true);
+                if (GUILayout.Button("Bake All Maps (Appearance, then Distant Morph Maps)"))
+                    if (BakeWorld(world, false)) BakeWorld(world, true);
+                if (GUILayout.Button("Clean Terrain Data...")) MGTerrainDataCleanup.Show(world);
             }
         }
 
-        static void BakeWorld(MGTerrainWorld world, bool distant)
+        internal static bool BakeWorld(MGTerrainWorld world, bool distant)
         {
 
             var chunks = world.Chunks.Where(t => t != null && t.isActiveAndEnabled && t.MeshRenderer != null).ToArray();
-            // A per-tile capture cannot safely assign its result to a shared material.
-            var shared = chunks.GroupBy(t => t.MeshRenderer.sharedMaterial).Where(g => g.Key != null && g.Count() > 1).Select(g => g.Key).ToHashSet();
             try
             {
                 for (int i = 0; i < chunks.Length; i++)
                 {
                     var tile = chunks[i];
-                    if (EditorUtility.DisplayCancelableProgressBar("World Terrain Bake", tile.name, i / (float)chunks.Length)) break;
-                    if (shared.Contains(tile.MeshRenderer.sharedMaterial))
-                    {
-                        var material = new Material(tile.MeshRenderer.sharedMaterial);
-                        string materialPath = MGTerrainSceneAssets.UniquePath(tile, "Capture", ".mat");
-                        AssetDatabase.CreateAsset(material, materialPath);
-                        Undo.RecordObject(tile.MeshRenderer, "Tile Capture Material");
-                        tile.MeshRenderer.sharedMaterial = material;
-                    }
+                    if (EditorUtility.DisplayCancelableProgressBar("World Terrain Bake", (distant ? "Distant: " : "Appearance: ") + tile.name, i / (float)chunks.Length)) return false;
                     var editor = (MGTerrainEditor)CreateEditor(tile);
                     try
                     {
-                        string path = MGTerrainSceneAssets.UniquePath(tile, distant ? "Distant" : "Appearance", ".png");
-                        editor.BakeWorldTile(world, distant, path);
+                        string path = MGTerrainAssetStore.MapPath(tile, distant ? "Distant" : "Appearance");
+                        if (!editor.BakeWorldTile(world, distant, path)) return false;
                     }
                     finally { DestroyImmediate(editor); }
                 }
                 AssetDatabase.SaveAssets();
+                return true;
             }
-            catch (Exception error) { Debug.LogException(error, world); }
+            catch (Exception error) { Debug.LogException(error, world); return false; }
             finally { EditorUtility.ClearProgressBar(); }
         }
     }
@@ -203,15 +199,18 @@ namespace MashBoxSDK.MapTools
                 }
         }
 
-        internal void BakeWorldTile(MGTerrainWorld world, bool distant, string path)
+        internal bool BakeWorldTile(MGTerrainWorld world, bool distant, string path)
         {
             m_FarBakeResolution = world.CaptureResolution;
             m_CaptureExposure = world.CaptureExposure;
+            if (world.CaptureSyncSceneExposure && !MGTerrainSceneExposure.TryGet(out m_CaptureExposure, out string exposureError))
+                throw new InvalidOperationException(exposureError);
             m_CaptureDetailTilt = world.CaptureDetailTilt;
             m_CaptureSyncTimeOfDay = true;
             m_CaptureNormalMap = true;
             m_DistantSpacing = world.DistantMeshSpacing;
             CaptureTerrainAppearance((MGTerrain)target, distant, path);
+            return m_LastCaptureSucceeded;
         }
     }
 }

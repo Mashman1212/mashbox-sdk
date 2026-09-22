@@ -40,9 +40,7 @@ namespace MashBoxSDK.MapTools
         }
         internal static string UniquePath(MGTerrain terrain, string purpose, string extension = ".asset")
         {
-            var world = terrain.World != null ? terrain.World : terrain.GetComponentInParent<MGTerrainWorld>(true);
-            string prefix = SafeName(world != null ? world.name : "MG Terrain") + "_" + SafeName(terrain.name);
-            return AssetDatabase.GenerateUniqueAssetPath(Folder(terrain) + "/" + prefix + "_" + SafeName(purpose) + extension);
+            return AssetDatabase.GenerateUniqueAssetPath(MGTerrainAssetStore.PathFor(terrain, purpose, extension));
         }
         internal static void Create(UnityEngine.Object asset, MGTerrain terrain, string purpose)
         {

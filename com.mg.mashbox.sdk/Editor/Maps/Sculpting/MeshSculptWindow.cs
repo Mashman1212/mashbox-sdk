@@ -145,6 +145,7 @@ namespace MashBoxSDK.MapTools
         public void Draw(bool embeddedInParentWindow = false)
         {
             if (!embeddedInParentWindow) m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll);
+            EditorGUI.BeginChangeCheck();
 
             EditorGUILayout.LabelField("Non-Destructive Mesh Sculpt", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Brush strokes are stored as instructions and replayed from the clean mesh. A linked loft replays them after every regeneration.", MessageType.Info);
@@ -287,6 +288,7 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
+            if (EditorGUI.EndChangeCheck()) SceneView.RepaintAll();
             if (!embeddedInParentWindow) EditorGUILayout.EndScrollView();
         }
 
@@ -662,14 +664,12 @@ namespace MashBoxSDK.MapTools
                 {
                     DrawBrushFalloff(hit.point, Vector3.up, Color.green);
                     if (IsMeshStamp) DrawMeshStampPreview(hit.point, current.control);
-                    sceneView.Repaint();
                     return;
                 }
                 if (MBEditorToolState.SculptableOnly)
                     return;
                 DrawBrushFalloff(hit.point, hit.normal, new Color(1f, 0.55f, 0.12f, 0.95f));
                 DrawActivationLabel(hitMeshFilter);
-                sceneView.Repaint();
 
                 if (current.type == EventType.MouseDown
                     && current.button == 0
@@ -703,7 +703,7 @@ namespace MashBoxSDK.MapTools
                 }
             }
             MBEditorToolVisuals.DrawBrushAction(GetBrushAction(previewMode, current.control));
-            sceneView.Repaint();
+            // Mouse/modifier changes request repaint above. Never perpetuate an idle repaint loop.
 
             if (current.type == EventType.MouseDown && current.button == 0 && !current.alt)
             {

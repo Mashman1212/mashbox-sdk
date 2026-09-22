@@ -20,7 +20,7 @@ namespace MashBoxSDK.MapTools
             public bool invert;
         }
 
-        // Material snapshots make map edits undoable without overwriting source textures.
+        // Composite in memory, then update tile-owned maps with Undo and rollback.
         internal static void Apply(PrefabStampSource source, MeshStampBrush brush, List<Dab> dabs,
             bool colour, bool normals)
         {
@@ -66,36 +66,26 @@ namespace MashBoxSDK.MapTools
                     }
                 }
 
-                // Publish assignments only after every texture transfer has succeeded.
+                using var transaction = new MGTerrainAssetTransaction();
                 foreach (var pair in outputs)
                 {
-                    string path = MGTerrainSceneAssets.UniquePath(pair.Key, "Stamp", ".mat");
-
+                    var renderer = pair.Key.MeshRenderer; var previous = renderer.sharedMaterials;
+                    transaction.OnRollback(() => renderer.sharedMaterials = previous);
+                    var material = MGTerrainAssetStore.Material(pair.Key, transaction);
+                    Undo.RecordObject(material, "Stamp Terrain Appearance");
                     foreach (var property in new[] { MGTerrainAppearanceCaptureAssets.ColourProperty, MGTerrainAppearanceCaptureAssets.NormalProperty })
                     {
                         if (!pair.Value.HasProperty(property)) continue;
-                        var texture = pair.Value.GetTexture(property);
-                        if (texture != null && !EditorUtility.IsPersistent(texture))
-                        {
-
-                            string texturePath = AssetDatabase.GenerateUniqueAssetPath(path.Replace(".mat", property + ".asset"));
-                            texture.name = System.IO.Path.GetFileNameWithoutExtension(texturePath);
-                            AssetDatabase.CreateAsset(texture, texturePath);
-                            pair.Value.SetTexture(property, texture);
-                        }
+                        var texture = pair.Value.GetTexture(property) as Texture2D;
+                        if (texture == null || EditorUtility.IsPersistent(texture)) continue;
+                        bool normal = property == MGTerrainAppearanceCaptureAssets.NormalProperty;
+                        string path = MGTerrainAssetStore.MapPath(pair.Key, normal ? "Appearance_NormalWS" : "Appearance");
+                        material.SetTexture(property, MGTerrainAssetStore.SaveMap(texture, path, normal, transaction, true));
                     }
-                    AssetDatabase.CreateAsset(pair.Value, path);
-                    EditorUtility.SetDirty(pair.Value);
-                    AssetDatabase.SaveAssetIfDirty(pair.Value);
-                }
-                foreach (var pair in outputs)
-                {
-                    var renderer = pair.Key.MeshRenderer;
-                    Undo.RecordObject(renderer, "Stamp Terrain Appearance");
-                    var slots = renderer.sharedMaterials; slots[0] = pair.Value; renderer.sharedMaterials = slots;
-                    EditorUtility.SetDirty(renderer); PrefabUtility.RecordPrefabInstancePropertyModifications(renderer);
+                    EditorUtility.SetDirty(material); AssetDatabase.SaveAssetIfDirty(material);
                     EditorSceneManager.MarkSceneDirty(renderer.gameObject.scene);
                 }
+                transaction.Commit();
             }
             finally { Debug.Log($"Prefab stamp total: {timer.Elapsed.TotalSeconds:F2}s ({outputs.Count} tiles)."); foreach (var resource in resources) if (resource != null && !EditorUtility.IsPersistent(resource)) Object.DestroyImmediate(resource); }
         }

@@ -25,6 +25,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, HideInInspector] bool m_QualityInitialized;
         [HideInInspector] public int CaptureResolution = 2048;
         [HideInInspector] public float CaptureExposure = 10f;
+        [HideInInspector] public bool CaptureSyncSceneExposure;
         [HideInInspector] public float CaptureDetailTilt;
         [HideInInspector] public float DistantMeshSpacing = 2f;
         [HideInInspector] public float TileSize = 512f;
