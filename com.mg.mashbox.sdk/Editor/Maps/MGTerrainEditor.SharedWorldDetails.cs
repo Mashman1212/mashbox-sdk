@@ -221,8 +221,13 @@ namespace MashBoxSDK.MapTools
             if (to.ApplyModifiedProperties())
             {
                 destination.InvalidateRenderCache();
-                EditorUtility.SetDirty(destination);
-                if (destination.gameObject.scene.IsValid()) EditorSceneManager.MarkSceneDirty(destination.gameObject.scene);
+                // Shared settings still propagate in Play Mode, but Unity only
+                // permits marking an editor scene dirty outside Play Mode.
+                if (!Application.isPlaying)
+                {
+                    EditorUtility.SetDirty(destination);
+                    if (destination.gameObject.scene.IsValid()) EditorSceneManager.MarkSceneDirty(destination.gameObject.scene);
+                }
             }
         }
 

@@ -935,6 +935,7 @@ namespace MashBoxSDK.MapTools
             SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
                     if (layer.FindPropertyRelative("m_PrototypeIndex").intValue != m_SelectedPrototype) continue;
                     EditorGUILayout.LabelField("Density Layer " + (index + 1), EditorStyles.boldLabel);
+                    EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_MaxInstancesPerSquareMetre"), new GUIContent("Max Instances / m²"));
                     EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_UseGrassArray"), new GUIContent("Grass Array Sub-ID"));
                     if (layer.FindPropertyRelative("m_UseGrassArray").boolValue && layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue == null)
                     {
@@ -944,8 +945,8 @@ namespace MashBoxSDK.MapTools
                     }
                     if (!m_ShowPrototypeAdvanced) continue;
                     if (m_WorldDetailControls)
-                        DrawPrototypeFields(layer, "m_PrototypeIndex", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_DensityMap", "m_SizeMap", "m_GrassIdMap");
-                    else DrawPrototypeFields(layer, "m_PrototypeIndex", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice");
+                        DrawPrototypeFields(layer, "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_DensityMap", "m_SizeMap", "m_GrassIdMap");
+                    else DrawPrototypeFields(layer, "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice");
                     using (new EditorGUI.IndentLevelScope())
                     {
                         using (new EditorGUI.DisabledScope(Application.isPlaying))
@@ -1081,6 +1082,20 @@ namespace MashBoxSDK.MapTools
             Bounds bounds = terrain.MeshFilter.sharedMesh.bounds;
             float metresX = surface.TransformVector(Vector3.right * bounds.size.x).magnitude;
             float metresZ = surface.TransformVector(Vector3.forward * bounds.size.z).magnitude;
+            // Distance-dependent grass sizing/alpha must not change at a world-tile
+            // boundary simply because one tile contains a taller hill. Use one camera
+            // elevation for the whole world, including single-tile recaptures.
+            float localTopWorldY = surface.TransformPoint(bounds.center.x, bounds.max.y, bounds.center.z).y;
+            float captureTopWorldY = localTopWorldY;
+            if (terrain.World != null)
+                foreach (var tile in terrain.World.Chunks)
+                {
+                    if (tile == null || !tile.isActiveAndEnabled || tile.MeshFilter == null || tile.MeshFilter.sharedMesh == null) continue;
+                    Bounds tileBounds = tile.MeshFilter.sharedMesh.bounds;
+                    captureTopWorldY = Mathf.Max(captureTopWorldY, tile.MeshFilter.transform.TransformPoint(
+                        tileBounds.center.x, tileBounds.max.y, tileBounds.center.z).y);
+                }
+            float captureElevationOffset = Mathf.Max(0f, captureTopWorldY - localTopWorldY);
             if (metresX <= .01f || metresZ <= .01f) return;
             Material captureMaterial = terrain.MeshRenderer != null ? terrain.MeshRenderer.sharedMaterial : null;
             Texture2D assignedColour = MGTerrainAppearanceCaptureAssets.Assigned(captureMaterial, MGTerrainAppearanceCaptureAssets.ColourProperty);
@@ -1195,7 +1210,7 @@ namespace MashBoxSDK.MapTools
                 camera.cullingMask = bakeDistant ? m_DistantLayers.value : ~0;
                 camera.nearClipPlane = .1f;
                 float height = surface.TransformVector(Vector3.up * bounds.size.y).magnitude;
-                camera.farClipPlane = height + (bakeDistant ? m_DistantHeadroom : 20f) + 80f;
+                camera.farClipPlane = height + captureElevationOffset + (bakeDistant ? m_DistantHeadroom : 20f) + 80f;
                 camera.transform.rotation = Quaternion.LookRotation(-surface.up, surface.forward);
                 var hd = captureObject.AddComponent<HDAdditionalCameraData>();
                 hd.volumeLayerMask = ~0;
@@ -1308,7 +1323,7 @@ namespace MashBoxSDK.MapTools
                     }
                     camera.orthographicSize = metresZ * paddedPixels / resolution * .5f;
                     camera.transform.position = surface.TransformPoint(new Vector3(bounds.min.x + (pixelX + pixels * .5f) * bounds.size.x / resolution,
-                        bounds.max.y, bounds.min.z + (pixelZ + pixels * .5f) * bounds.size.z / resolution)) + surface.up * (bakeDistant ? m_DistantHeadroom : 20f);
+                        bounds.max.y, bounds.min.z + (pixelZ + pixels * .5f) * bounds.size.z / resolution)) + Vector3.up * captureElevationOffset + surface.up * (bakeDistant ? m_DistantHeadroom : 20f);
                     terrain.PrepareAppearanceCaptureTile();
                     if (normalPass != null)
                     {

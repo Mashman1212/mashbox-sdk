@@ -20,7 +20,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             Ultra
         }
 
-        const double MaximumDetailInstancesPerSquareMetre = 32768.0 / (50.0 * 50.0);
         const int DetailDensityReferenceChunkCells = 32;
         const int CombinedVertexStrideBytes = 52;
         MaterialPropertyBlock m_CombinedDetailDefinitionProperties;
@@ -83,6 +82,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             public bool RenderingEnabled => !m_RenderDisabled;
             [SerializeField] int m_PrototypeIndex;
             [SerializeField] Texture2D m_DensityMap;
+            [SerializeField, Range(0f, 32f), Tooltip("Maximum instances per square metre of terrain footprint, in world units. Applies before distance thinning, so all ranges share the same cap. Painted maps are preserved. 0 hides the layer.")]
+            float m_MaxInstancesPerSquareMetre = 20f;
+            public float MaxInstancesPerSquareMetre => Mathf.Clamp(m_MaxInstancesPerSquareMetre, 0f, 32f);
             [SerializeField, Tooltip("Spatial size multipliers painted by the detail brush. No map means 1. Readable RHalf, values 0.05 to 4.")]
             Texture2D m_SizeMap;
             [SerializeField, Min(0), Tooltip("Texture2DArray slice used by the MG Detail Data shader function.")]
@@ -2583,6 +2585,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 gpuProcedural = ShouldBuildGpuProceduralDetailCells()
             };
             chunk.worldBounds = CalculateDetailChunkBounds(surfaceBounds, layer.DensityMap.width, layer.DensityMap.height, chunkCells, firstX, firstZ, layer.MaximumPaintedHeight, layer.YOffset, null, layer);
+            if (layer.MaxInstancesPerSquareMetre <= 0f) return chunk;
             DenseDetailPrototypeParts prototypeParts = GetDenseDetailRenderParts(prototype);
             List<RenderPart> parts = prototypeParts.parts;
             m_LastDensityDetailSourceParts = Mathf.Max(m_LastDensityDetailSourceParts, prototypeParts.sourcePartCount);
@@ -2612,7 +2615,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 transform.TransformVector(Vector3.forward)).magnitude;
             int densityNormalizedLimit = (int)Math.Min(
                 int.MaxValue,
-                Math.Floor(cellWidth * cellDepth * areaScale * MaximumDetailInstancesPerSquareMetre));
+                Math.Floor(cellWidth * cellDepth * areaScale * layer.MaxInstancesPerSquareMetre));
             // Thin the area-based population by the density multiplier. Larger
             // HLOD cells get proportionally larger populations before thinning.
             double requestedGenerationScale = Math.Min(

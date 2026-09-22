@@ -65,9 +65,13 @@ namespace MashBoxSDK.MapTools
                 layers.GetArrayElementAtIndex(index).FindPropertyRelative("m_RenderDisabled").boolValue = disabled;
                 data.ApplyModifiedProperties();
                 tile.InvalidateRenderCache();
-                EditorUtility.SetDirty(tile);
-                if (tile.gameObject.scene.IsValid())
-                    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(tile.gameObject.scene);
+                // Play-mode visibility is a live test, not an edit to the saved scene.
+                if (!Application.isPlaying)
+                {
+                    EditorUtility.SetDirty(tile);
+                    if (tile.gameObject.scene.IsValid())
+                        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(tile.gameObject.scene);
+                }
             }
             SceneView.RepaintAll();
         }
