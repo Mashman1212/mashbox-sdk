@@ -511,6 +511,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (changed) InvalidateRenderCache();
         }
 
+        /// <summary>Rediscover changed foliage source assets without modifying painted data.</summary>
+        public void RefreshPrototypeAssets()
+        {
+            // Inspector LOD diagnostics also read this cache before any camera draws.
+            ReleaseDetailRenderCache();
+            InvalidateRenderCache();
+        }
+
         public void InvalidateRenderCache()
         {
             m_RenderCacheDirty = true;
@@ -724,10 +732,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (materials == null) throw new ArgumentNullException(nameof(materials));
             materials.Clear();
             if ((uint)prototypeIndex >= m_Prototypes.Count || m_Prototypes[prototypeIndex] == null) return;
-            // Share the renderer's mesh/submesh and LOD selection so the inspector
-            // exposes source assets actually used, rather than runtime material copies.
-            foreach (RenderPart part in GetRenderParts(m_Prototypes[prototypeIndex]))
-                if (part.material != null && !materials.Contains(part.material)) materials.Add(part.material);
+            // Collect source assets from every enabled LOD, including prefab overrides.
+            // Read source parts directly: combined render parts can use generated material
+            // copies. Shared materials (including medium/far fallback) appear only once.
+            Prototype prototype = m_Prototypes[prototypeIndex];
+            for (int lod = 0; lod < prototype.TreeLodCount; lod++)
+                foreach (RenderPart part in GetRenderParts(prototype, lod))
+                    if (part.material != null && !materials.Contains(part.material)) materials.Add(part.material);
         }
 
         // Inspector diagnostics use the same cached parts and fallback policy as rendering.
@@ -763,7 +774,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
             {
                 MeshRenderer renderer = renderers[rendererIndex];
-                if (!renderer.enabled || !allowedRenderers.Contains(renderer)) continue;
+                if (!renderer.enabled || !IsActiveInPrefab(renderer.transform, prefab.transform) || !allowedRenderers.Contains(renderer)) continue;
                 MeshFilter filter = renderer.GetComponent<MeshFilter>();
                 if (filter == null || filter.sharedMesh == null) continue;
                 Material[] materials = renderer.sharedMaterials;
@@ -773,6 +784,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     if (materials[subMesh] != null) result.Add(new RenderPart(filter.sharedMesh, subMesh, materials[subMesh], relative));
             }
             return result;
+        }
+
+        static bool IsActiveInPrefab(Transform child, Transform root)
+        {
+            // Prefab assets do not have scene activeInHierarchy semantics. Respect
+            // activeSelf through the child hierarchy, independent of the source
+            // root's scene/asset state (the terrain supplies the actual instances).
+            for (Transform current = child; current != null && current != root; current = current.parent)
+                if (!current.gameObject.activeSelf) return false;
+            return true;
         }
 
         static HashSet<MeshRenderer> GetHighestDetailRenderers(GameObject prefab, int requestedLod = 0)

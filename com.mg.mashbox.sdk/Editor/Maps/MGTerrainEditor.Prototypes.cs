@@ -385,6 +385,13 @@ namespace MashBoxSDK.MapTools
         {
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Foliage Prototypes", EditorStyles.boldLabel);
+            if (GUILayout.Button(new GUIContent("Refresh Foliage Prefabs",
+                "Reload prefab meshes, LODs and materials for all loaded terrain tiles. Painted maps and placements are preserved.")))
+            {
+                serializedObject.ApplyModifiedProperties();
+                MGTerrainPrototypeRefresh.RefreshAllLoaded();
+                GUIUtility.ExitGUI();
+            }
             EditorGUILayout.LabelField(Application.isPlaying ? "Select a thumbnail to tune its settings." : "Drag thumbnails to reorder IDs.", EditorStyles.miniLabel);
             if (Event.current.type == EventType.DragExited)
             {

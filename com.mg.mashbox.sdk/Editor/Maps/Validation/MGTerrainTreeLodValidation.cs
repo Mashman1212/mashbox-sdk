@@ -91,6 +91,29 @@ static class MGTerrainTreeLodValidation
             Check(sizeBounds.Contains(new Vector3(10,1.5f,10)) && sizeBounds.Contains(sizeMesh.bounds.min), "Bounds cover both original and scaled endpoints including off-origin shrink");
             results.Add("PASS: Impostor bounds remain unchanged at neutral size and contain enlarged/shrunk endpoints.");
 
+            // Simulate an already-cached prefab whose LOD renderer assignments changed.
+            var sourceMeshes = new List<Mesh>();
+            terrain.GetTreeLodSourceMeshes(prototypeIndex, 0, sourceMeshes);
+            Check(sourceMeshes.Count == 1 && sourceMeshes[0] == renderers[0].GetComponent<MeshFilter>().sharedMesh, "Prime close LOD cache");
+            var group = prefab.GetComponent<LODGroup>();
+            var originalLods = group.GetLODs();
+            var changedLods = group.GetLODs();
+            changedLods[0].renderers = new Renderer[] { renderers[1] };
+            changedLods[1].renderers = new Renderer[] { renderers[0] };
+            group.SetLODs(changedLods);
+            string paintedState = EditorJsonUtility.ToJson(terrain);
+            terrain.RefreshPrototypeAssets();
+            terrain.GetTreeLodSourceMeshes(prototypeIndex, 0, sourceMeshes);
+            Check(sourceMeshes.Count == 1 && sourceMeshes[0] == renderers[1].GetComponent<MeshFilter>().sharedMesh,
+                "Refresh exposes new close mesh before any camera render");
+            terrain.GetTreeLodSourceMeshes(prototypeIndex, 1, sourceMeshes);
+            Check(sourceMeshes.Count == 1 && sourceMeshes[0] == renderers[0].GetComponent<MeshFilter>().sharedMesh,
+                "Refresh exposes new medium mesh before any camera render");
+            Check(EditorJsonUtility.ToJson(terrain) == paintedState, "Refresh preserves serialized terrain data");
+            group.SetLODs(originalLods);
+            terrain.RefreshPrototypeAssets();
+            results.Add("PASS: Cached prefab LOD edits refresh before rendering and preserve serialized terrain data.");
+
             var parts = (IList)Get(Call(terrain, "GetDenseDetailRenderParts", prototype), "parts");
             Check(parts.Count == 3, "Three distinct mesh levels (terminal cull level skipped)");
             for (int lod = 0; lod < 3; lod++)
@@ -99,6 +122,41 @@ static class MGTerrainTreeLodValidation
                 Check(selected.Count == 1 && (Mesh)Get(selected[0], "mesh") == renderers[lod].GetComponent<MeshFilter>().sharedMesh, "Correct LOD mesh");
             }
             results.Add("PASS: Prefab LODGroup extraction selects the requested mesh and ignores terminal cull-only LOD.");
+            // Match a two-level tree prefab with an old, disabled impostor left
+            // outside its LODGroup. Medium and far must contain only the voxel LOD.
+            var hiddenImpostor = NewObject("Disabled old impostor");
+            hiddenImpostor.transform.SetParent(prefab.transform, false);
+            hiddenImpostor.AddComponent<MeshFilter>().sharedMesh = renderers[2].GetComponent<MeshFilter>().sharedMesh;
+            hiddenImpostor.AddComponent<MeshRenderer>().sharedMaterial = material;
+            hiddenImpostor.SetActive(false);
+            var hiddenParent = NewObject("Disabled old impostor parent");
+            hiddenParent.transform.SetParent(prefab.transform, false);
+            hiddenParent.SetActive(false);
+            var hiddenChild = NewObject("Enabled renderer under disabled parent");
+            hiddenChild.transform.SetParent(hiddenParent.transform, false);
+            hiddenChild.AddComponent<MeshFilter>().sharedMesh = renderers[2].GetComponent<MeshFilter>().sharedMesh;
+            hiddenChild.AddComponent<MeshRenderer>().sharedMaterial = material;
+            renderers[2].gameObject.SetActive(false);
+            group.SetLODs(new[] { originalLods[0], originalLods[1] });
+            terrain.RefreshPrototypeAssets();
+            for (int lod = 0; lod < 3; lod++)
+            {
+                terrain.GetTreeLodSourceMeshes(prototypeIndex, lod, sourceMeshes);
+                Check(sourceMeshes.Count == 1 && sourceMeshes[0] == renderers[Math.Min(lod, 1)].GetComponent<MeshFilter>().sharedMesh,
+                    "Two-level tree excludes inactive impostors and reuses medium mesh for far");
+            }
+            // An active, ungrouped attachment must still be included normally.
+            hiddenImpostor.SetActive(true);
+            terrain.RefreshPrototypeAssets();
+            terrain.GetTreeLodSourceMeshes(prototypeIndex, 1, sourceMeshes);
+            Check(sourceMeshes.Count == 2, "Active ungrouped attachments remain supported");
+            Object.DestroyImmediate(hiddenImpostor);
+            Object.DestroyImmediate(hiddenParent);
+            renderers[2].gameObject.SetActive(true);
+            group.SetLODs(originalLods);
+            terrain.RefreshPrototypeAssets();
+            results.Add("PASS: Inactive children/ancestors excluded; two-level trees reuse only LOD 1 at medium/far; active attachments retained.");
+
             var missingOverride = NewObject("Removed LOD override");
             Set(prototype, "m_TreeLod1Prefab", missingOverride);
             Set(prototype, "m_TreeLod2Prefab", missingOverride);
