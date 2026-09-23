@@ -9,6 +9,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
     {
         [SerializeField] bool m_UseSurfaceTiles = true;
         [SerializeField, Min(8f)] float m_SurfaceTileSize = 32f;
+        [SerializeField, Min(0f), Tooltip("Distance from the nearest point of a terrain tile at which its surface uses the original mesh instead of small render chunks. Preserves geometry and materials while reducing distant draw submissions. Zero keeps chunks at all distances.")]
+        float m_SurfaceChunkDistance = 256f;
+        [NonSerialized] bool m_CombinedSurface;
+        static readonly Unity.Profiling.ProfilerMarker s_SurfaceRenderingMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.SurfaceRendering");
         [NonSerialized] readonly List<SurfaceTile> m_SurfaceTiles = new List<SurfaceTile>();
         [NonSerialized] GameObject m_SurfaceTileRoot;
         [NonSerialized] Mesh m_TiledSource;
@@ -77,7 +81,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             var owners = new List<GameObject>();
             foreach (MGTerrain terrain in s_PickableTerrains)
             {
-                if (terrain == null || !terrain.isActiveAndEnabled || !terrain.m_MasterRenderingSuppressed
+                if (terrain == null || !terrain.isActiveAndEnabled || !terrain.m_MasterRenderingSuppressed || terrain.m_CombinedSurface
                     || terrain.m_MasterWasForceRenderingOff || terrain.MeshRenderer == null || !terrain.MeshRenderer.enabled)
                     continue;
                 GameObject owner = terrain.gameObject;
@@ -137,7 +141,35 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public bool IsSurfaceRenderTile(MeshFilter filter) => filter != null && m_SurfaceTileRoot != null
             && filter.transform.parent == m_SurfaceTileRoot.transform;
 
+        public int ActiveSurfaceRendererCount => MeshRenderer == null || !MeshRenderer.enabled
+            || (m_MasterRenderingSuppressed ? m_MasterWasForceRenderingOff : MeshRenderer.forceRenderingOff)
+            ? 0 : m_CombinedSurface || m_SurfaceTiles.Count == 0 ? 1 : m_SurfaceTiles.Count;
+
         void LateUpdate() => RefreshSurfaceTiles();
+
+        void PrepareSurfaceForCamera(Camera camera)
+        {
+            using var profile = s_SurfaceRenderingMarker.Auto();
+            ApplyFarGrassProperties();
+            RefreshDistantMorphBounds();
+            RefreshSurfaceTiles();
+            SelectSurfaceRendering(camera);
+        }
+
+        // Select before this camera's culling; scene, game and reflection cameras
+        // may need different granularity. Neither path changes geometry or paint.
+        void SelectSurfaceRendering(Camera camera)
+        {
+            if (camera == null || !m_MasterRenderingSuppressed || m_SurfaceTiles.Count == 0) return;
+            float distance = m_World != null ? m_World.SurfaceChunkDistance : Mathf.Max(0f, m_SurfaceChunkDistance);
+            bool combined = distance > 0f && MeshRenderer.bounds.SqrDistance(camera.transform.position) > distance * distance;
+            if (combined == m_CombinedSurface) return;
+            m_CombinedSurface = combined;
+            if (!combined) SyncSurfaceTileRenderers(MeshRenderer);
+            MeshRenderer.forceRenderingOff = !combined || m_MasterWasForceRenderingOff;
+            foreach (SurfaceTile tile in m_SurfaceTiles)
+                if (tile.renderer != null) tile.renderer.forceRenderingOff = combined || m_MasterWasForceRenderingOff;
+        }
 
         // The original MeshFilter stays the sole editable surface. These meshes are
         // disposable render caches, regenerated after reload and never painted directly.
@@ -183,8 +215,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_MasterWasForceRenderingOff = master.forceRenderingOff;
                 m_MasterRenderingSuppressed = true;
             }
-            master.forceRenderingOff = true;
-            SyncSurfaceTileRenderers(master);
+            master.forceRenderingOff = !m_CombinedSurface || m_MasterWasForceRenderingOff;
+            if (!m_CombinedSurface) SyncSurfaceTileRenderers(master);
 #if UNITY_EDITOR
             m_SurfaceMeshDirtyCount = dirtyCount;
 #endif
@@ -365,7 +397,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (!settingsChanged) continue;
                 renderer.gameObject.layer = master.gameObject.layer;
                 renderer.enabled = master.enabled;
-                renderer.forceRenderingOff = m_MasterWasForceRenderingOff;
+                renderer.forceRenderingOff = m_CombinedSurface || m_MasterWasForceRenderingOff;
                 renderer.shadowCastingMode = master.shadowCastingMode;
                 renderer.receiveShadows = master.receiveShadows;
                 renderer.lightProbeUsage = master.lightProbeUsage;
@@ -482,6 +514,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (m_MasterRenderingSuppressed && m_MeshRenderer != null)
                 m_MeshRenderer.forceRenderingOff = m_MasterWasForceRenderingOff;
             m_MasterRenderingSuppressed = false;
+            m_CombinedSurface = false;
             foreach (SurfaceTile tile in m_SurfaceTiles)
             {
                 if (tile.renderer != null)

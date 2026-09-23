@@ -149,10 +149,14 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.LabelField("Shared Renderers", world.SharedRendererCount.ToString());
 #endif
             EditorGUILayout.LabelField("Submitted Details", world.LastSubmittedDetailInstances.ToString("N0"));
+            EditorGUILayout.LabelField(new GUIContent("Enabled Surface Renderers", "For the last prepared camera, before frustum and occlusion culling."),
+                new GUIContent(world.Chunks.Sum(chunk => chunk != null ? chunk.ActiveSurfaceRendererCount : 0).ToString("N0")));
         }
 
         void DrawTilesTab(MGTerrainWorld world)
         {
+            m_CurrentMeasurements.Draw(world.GetComponentsInChildren<MGTerrain>(true)
+                .Where(tile => tile.GetComponentInParent<MGTerrainWorld>(true) == world).ToArray());
             DrawTileCreation(world);
             DrawWorldDataEstimator(world);
             EditorGUILayout.Space();

@@ -11,8 +11,94 @@ using UnityEngine.Rendering;
 
 namespace MashBoxSDK.MapTools
 {
+    // Bounds are inexpensive; scanning all triangles is explicitly requested and cached.
+    internal sealed class MGTerrainMeasurements
+    {
+        double surfaceArea;
+        bool scanned;
+        int skipped;
+        int lastSignature;
+        static void DrawArea(string label, double value, string tooltip = "")
+        {
+            EditorGUILayout.LabelField(new GUIContent(label + " (km²)", tooltip), new GUIContent($"{value / 1000000d:N3} km²"));
+            EditorGUILayout.LabelField(new GUIContent(label + " (m²)", tooltip), new GUIContent($"{value:N0} m²"));
+        }
+
+        internal void Draw(MGTerrain[] tiles)
+        {
+            Bounds bounds = default;
+            bool hasBounds = false;
+            double footprint = 0;
+            int valid = 0, active = 0, signature = 17;
+            foreach (var tile in tiles)
+            {
+                if (tile == null) continue;
+                if (tile.isActiveAndEnabled) active++;
+                var filter = tile.MeshFilter;
+                if (filter == null || filter.sharedMesh == null) continue;
+                var mesh = filter.sharedMesh;
+                var matrix = filter.transform.localToWorldMatrix;
+                unchecked { signature = signature * 31 + mesh.GetInstanceID(); signature = signature * 31 + matrix.GetHashCode(); signature = signature * 31 + EditorUtility.GetDirtyCount(mesh); }
+                var local = mesh.bounds;
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    var p = matrix.MultiplyPoint3x4(local.center + Vector3.Scale(local.extents,
+                        new Vector3((corner & 1) == 0 ? -1 : 1, (corner & 2) == 0 ? -1 : 1, (corner & 4) == 0 ? -1 : 1)));
+                    if (!hasBounds) { bounds = new Bounds(p, Vector3.zero); hasBounds = true; }
+                    else bounds.Encapsulate(p);
+                }
+                var x = matrix.MultiplyVector(Vector3.right * local.size.x);
+                var z = matrix.MultiplyVector(Vector3.forward * local.size.z);
+                footprint += Math.Abs((double)x.x * z.z - (double)x.z * z.x);
+                valid++;
+            }
+            if (lastSignature != signature) { scanned = false; lastSignature = signature; }
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Current Terrain Dimensions", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Tiles", $"{tiles.Length:N0} total / {active:N0} active / {valid:N0} with meshes");
+            if (!hasBounds) { EditorGUILayout.LabelField("No terrain meshes to measure."); return; }
+            EditorGUILayout.LabelField("Width × Depth (X × Z)", $"{bounds.size.x:N1} × {bounds.size.z:N1} m");
+            EditorGUILayout.LabelField("Width × Depth (km)", $"{bounds.size.x / 1000f:0.###} × {bounds.size.z / 1000f:0.###} km");
+            EditorGUILayout.LabelField("Elevation Range (Y)", $"{bounds.min.y:N1} to {bounds.max.y:N1} m ({bounds.size.y:N1} m)");
+            DrawArea("Bounding Rectangle", (double)bounds.size.x * bounds.size.z, "Includes empty gaps between tiles.");
+            DrawArea("Tile Footprint Sum", footprint, "Sum of horizontal tile footprints. Gaps between tiles are excluded; overlapping tiles count separately. Cut-out holes are included in footprints.");
+            if (GUILayout.Button(scanned ? "Refresh Mesh Surface Area" : "Calculate Mesh Surface Area (Including Slopes)"))
+            {
+                surfaceArea = 0; skipped = 0;
+                foreach (var tile in tiles)
+                {
+                    var filter = tile != null ? tile.MeshFilter : null;
+                    var mesh = filter != null ? filter.sharedMesh : null;
+                    if (mesh == null || !mesh.isReadable) { skipped++; continue; }
+                    var vertices = mesh.vertices;
+                    var matrix = filter.transform.localToWorldMatrix;
+                    for (int submesh = 0; submesh < mesh.subMeshCount; submesh++)
+                    {
+                        if (mesh.GetTopology(submesh) != MeshTopology.Triangles) continue;
+                        var indices = mesh.GetTriangles(submesh);
+                        for (int i = 0; i + 2 < indices.Length; i += 3)
+                        {
+                            var a = matrix.MultiplyVector(vertices[indices[i + 1]] - vertices[indices[i]]);
+                            var b = matrix.MultiplyVector(vertices[indices[i + 2]] - vertices[indices[i]]);
+                            surfaceArea += Vector3.Cross(a, b).magnitude * .5d;
+                        }
+                    }
+                }
+                scanned = true;
+            }
+            if (scanned)
+            {
+                DrawArea(skipped == 0 ? "Mesh Surface Area" : "Mesh Surface Area (Partial)", surfaceArea);
+                if (skipped > 0) EditorGUILayout.HelpBox($"{skipped} tile(s) have missing or unreadable meshes and were excluded from surface area.", MessageType.Info);
+            }
+            EditorGUILayout.HelpBox("Measures existing tiles, including inactive tiles. X × Z is the overall horizontal span. Mesh surface area sums triangles including slopes; overlapping surfaces count separately.", MessageType.None);
+        }
+    }
+
     public sealed partial class MGTerrainWorldEditor
     {
+        readonly MGTerrainMeasurements m_CurrentMeasurements = new MGTerrainMeasurements();
+
         bool m_ShowDataEstimator = true, m_ShowEstimatorMaps;
         float m_EstimateKilometres = 10;
         int m_EstimateTileCount, m_EstimateMapCount, m_EstimateUniqueCount;

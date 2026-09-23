@@ -12,7 +12,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool m_AmortizeResidentVisibility = false;
         // Full residency builds the population before rendering and retains it.
         // World visible-instance budgets still apply; streaming build budgets do not.
-        bool KeepAllDetailCellsResident => m_KeepAllDetailCellsResident && ShouldBuildGpuProceduralDetailCells();
+        // A tile's legacy residency flag must not silently bypass the world's scheduler.
+        // Captures keep their separate unbudgeted path; standalone terrains retain their setting.
+        bool KeepAllDetailCellsResident => m_KeepAllDetailCellsResident
+            && (!UsesWorldBudget || m_World.PreloadAllDetailCells)
+            && ShouldBuildGpuProceduralDetailCells();
         bool m_FullResidentReady;
         Camera m_CachedGameplayCamera;
         Matrix4x4 m_ResidentProjection;

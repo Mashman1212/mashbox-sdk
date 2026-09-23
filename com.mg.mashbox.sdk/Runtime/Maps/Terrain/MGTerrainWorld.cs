@@ -21,6 +21,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
         float m_DetailDistance = 250f;
         [SerializeField, Min(0), Tooltip("Extra distance before releasing a chunk's detail resources.")]
         float m_UnloadMargin = 64f;
+        [SerializeField, Tooltip("Opt in to preparing ALL GPU detail cells across this world before the first gameplay render. Bypasses streaming limits and can cause long startup stalls and high GPU memory use on large worlds. Leave off to stream nearby cells within the world build budget.")]
+        bool m_PreloadAllDetailCells = false;
+        internal bool PreloadAllDetailCells => m_PreloadAllDetailCells;
+        [SerializeField, Min(0f), Tooltip("Distance from the nearest point of a terrain tile at which its surface uses the original mesh instead of small render chunks. Preserves geometry and materials while reducing distant draw submissions. Zero keeps chunks at all distances.")]
+        float m_SurfaceChunkDistance = 256f;
+        public float SurfaceChunkDistance => Mathf.Max(0f, m_SurfaceChunkDistance);
         [SerializeField] MGTerrainWorldQuality m_Quality;
         [SerializeField, HideInInspector] bool m_QualityInitialized;
         [HideInInspector] public int CaptureResolution = 2048;

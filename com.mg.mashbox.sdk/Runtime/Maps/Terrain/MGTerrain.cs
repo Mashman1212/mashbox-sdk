@@ -360,9 +360,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnBeginCameraRendering(ScriptableRenderContext context, Camera camera)
         {
-            ApplyFarGrassProperties();
-            RefreshDistantMorphBounds();
-            RefreshSurfaceTiles();
+            PrepareSurfaceForCamera(camera);
             RenderInstances(camera);
         }
 

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using MashBoxSDK.Maps.TerrainSystem;
 using DetailQualityPreset = MashBoxSDK.Maps.TerrainSystem.MGTerrain.DetailQualityPreset;
 using UnityEditor;
+using System.Linq;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -195,9 +196,12 @@ namespace MashBoxSDK.MapTools
             try { OnInspectorGUI(); }
             finally { m_InspectFromWorld = false; }
         }
+        readonly MGTerrainMeasurements m_CurrentMeasurements = new MGTerrainMeasurements();
+
         public override void OnInspectorGUI()
         {
             MGTerrainGizmos.DrawSettings();
+            m_CurrentMeasurements.Draw(targets.Cast<MGTerrain>().ToArray());
             if (targets.Length > 1)
             {
                 DrawMultipleTileInspector();
@@ -253,7 +257,10 @@ namespace MashBoxSDK.MapTools
                     new GUIContent("Tile Size (Metres)", "Render tile size in 32-metre steps. Default: 32 metres."));
                 if (EditorGUI.EndChangeCheck())
                     tileSize.floatValue = Mathf.Clamp(Mathf.Round(tileSize.floatValue / 32f) * 32f, 32f, 256f);
-                EditorGUILayout.LabelField("Active Render Tiles", terrain.SurfaceTileCount.ToString());
+                using (new EditorGUI.DisabledScope(terrain.World != null))
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SurfaceChunkDistance"));
+                EditorGUILayout.LabelField("Cached Render Chunks", terrain.SurfaceTileCount.ToString());
+                EditorGUILayout.LabelField("Enabled Surface Renderers", terrain.ActiveSurfaceRendererCount.ToString());
                 EditorGUILayout.HelpBox("Paint and sculpt the whole terrain as usual. Render tiles share the master mesh's UVs, vertex colors and materials, and update with edits.", MessageType.Info);
                 DrawSurfaceColliders(terrain);
                 EditorGUILayout.PropertyField(m_HeightOnlySculpt);
