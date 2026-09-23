@@ -143,6 +143,7 @@ namespace MashBoxSDK.MapTools
             DrawPropertiesExcluding(serializedObject, "m_Script", "m_Quality");
             if (serializedObject.ApplyModifiedProperties()) world.ApplySharedQuality();
             DrawWorldQuality(world);
+            DrawWorldFarRangeMaterials(world);
             EditorGUILayout.LabelField("Registered Chunks", world.Chunks.Count.ToString());
 #if UNITY_6000_0_OR_NEWER
             EditorGUILayout.LabelField("Shared Renderers", world.SharedRendererCount.ToString());

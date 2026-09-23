@@ -206,8 +206,9 @@ namespace MashBoxSDK.MapTools
             MGTerrain terrain = (MGTerrain)target;
             if (terrain.World != null && !m_InspectFromWorld)
             {
-                EditorGUILayout.HelpBox("This tile is managed by MG Terrain World. Edit terrain from the world inspector.", MessageType.Info);
+                EditorGUILayout.HelpBox("This tile is managed by MG Terrain World. Edit shared settings from the world inspector, or bake this tile below.", MessageType.Info);
                 if (GUILayout.Button("Edit Terrain World")) Selection.activeGameObject = terrain.World.gameObject;
+                DrawManagedTileBakes(terrain);
                 DrawFlattenTile(terrain);
                 return;
             }

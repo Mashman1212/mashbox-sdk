@@ -52,6 +52,7 @@ namespace MashBoxSDK.MapTools
 
         void DrawWorldBakes(MGTerrainWorld world)
         {
+            DrawWorldFarRangeMaterials(world);
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Bake All World Tiles", EditorStyles.boldLabel);
             serializedObject.Update();
@@ -74,6 +75,62 @@ namespace MashBoxSDK.MapTools
                 if (GUILayout.Button("Validate and Repair Tile Control Maps")) MGTerrainControlMapOwnership.Repair(world);
                 if (GUILayout.Button("Clean Terrain Data...")) MGTerrainDataCleanup.Show(world);
             }
+        }
+
+        void DrawWorldFarRangeMaterials(MGTerrainWorld world)
+        {
+            var materials = world.GetComponentsInChildren<MGTerrain>(true)
+                .Where(tile => tile.World == world && tile.MeshRenderer != null)
+                .SelectMany(tile => tile.MeshRenderer.sharedMaterials)
+                .Where(material => material != null).Distinct().ToArray();
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Master Far Range Appearance", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Changes apply immediately to every compatible tile material in this world, including inactive tiles. Each tile keeps its own baked textures. A dash means the tiles currently have different values. Undo restores the previous values.", MessageType.None);
+            int compatible = materials.Count(material => material.HasProperty("_FarRangeAppearanceMap"));
+            EditorGUILayout.LabelField("Tile Materials", compatible + " with far-range appearance / " + materials.Length + " total");
+            using (new EditorGUI.DisabledScope(Application.isPlaying))
+            {
+                DrawWorldFarRangeProperty(materials, "Normal Strength", "_FarRangeAppearanceNormalStrength", "_FarRangeAppearnceNormalStrength");
+                DrawWorldFarRangeProperty(materials, "Map Blend", "_FarRangeAppearanceMapBlend", "_FarRangeAppearnceMapBlend");
+                DrawWorldFarRangeProperty(materials, "Blend Start (m)", "_FarRangeAppearanceBlendStart", minimum: 0f);
+                DrawWorldFarRangeProperty(materials, "Lighten", "_FarRangeAppearanceMapLighten", "_FarRangeAppearnceMapLighten");
+                DrawWorldFarRangeProperty(materials, "Hue", "_FarRangeAppearanceMapHue");
+                DrawWorldFarRangeProperty(materials, "Saturation", "_FarRangeAppearanceMapSaturation");
+            }
+        }
+
+        static void DrawWorldFarRangeProperty(Material[] materials, string label, string property, string legacy = null, float minimum = float.NegativeInfinity)
+        {
+            string PropertyFor(Material material) => material.HasProperty(property) ? property
+                : legacy != null && material.HasProperty(legacy) ? legacy : null;
+            var compatible = materials.Where(material => PropertyFor(material) != null).ToArray();
+            if (compatible.Length == 0) return;
+            var first = compatible[0];
+            string firstProperty = PropertyFor(first);
+            float value = first.GetFloat(firstProperty);
+            bool previousMixed = EditorGUI.showMixedValue;
+            EditorGUI.showMixedValue = compatible.Any(material => !Mathf.Approximately(material.GetFloat(PropertyFor(material)), value));
+            EditorGUI.BeginChangeCheck();
+            int index = first.shader.FindPropertyIndex(firstProperty);
+            var content = new GUIContent(label, "Apply this value to " + compatible.Length + " tile materials. Baked maps remain unchanged.");
+            if (index >= 0 && first.shader.GetPropertyType(index) == UnityEngine.Rendering.ShaderPropertyType.Range)
+            {
+                Vector2 limits = first.shader.GetPropertyRangeLimits(index);
+                value = EditorGUILayout.Slider(content, value, Mathf.Max(minimum, limits.x), limits.y);
+            }
+            else value = EditorGUILayout.FloatField(content, value);
+            bool changed = EditorGUI.EndChangeCheck();
+            EditorGUI.showMixedValue = previousMixed;
+            if (!changed || float.IsNaN(value) || float.IsInfinity(value)) return;
+            value = Mathf.Max(minimum, value);
+            Undo.RecordObjects(compatible.Cast<UnityEngine.Object>().ToArray(), "World Far Range " + label);
+            foreach (var material in compatible)
+            {
+                material.SetFloat(PropertyFor(material), value);
+                EditorUtility.SetDirty(material);
+            }
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
         }
 
         internal static bool BakeWorld(MGTerrainWorld world, bool distant)
@@ -198,6 +255,71 @@ namespace MashBoxSDK.MapTools
                     EditorGUILayout.LabelField("Layers " + string.Join(", ", usage.Layers.OrderBy(i => i))
                         + $" / {usage.Areas.Count} area(s)" + (usage.Layers.Count > 1 ? " / Shared asset" : ""), EditorStyles.miniLabel);
                 }
+        }
+
+        void DrawManagedTileBakes(MGTerrain tile)
+        {
+            var world = tile.World;
+            if (world == null) return;
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Bake This Terrain Tile", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Tile", tile.name);
+            EditorGUILayout.HelpBox("Uses the parent world's capture settings. Only this tile's appearance, normal and distant morph maps are updated.", MessageType.None);
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.IntField("Capture Resolution", world.CaptureResolution);
+                EditorGUILayout.Toggle("Sync Exposure to Scene", world.CaptureSyncSceneExposure);
+                if (!world.CaptureSyncSceneExposure) EditorGUILayout.FloatField("Capture Exposure", world.CaptureExposure);
+                EditorGUILayout.FloatField("Capture Detail Tilt", world.CaptureDetailTilt);
+                EditorGUILayout.FloatField("Distant Height Sampling Spacing (m)", world.DistantMeshSpacing);
+            }
+            if (world.CaptureSyncSceneExposure)
+                EditorGUILayout.HelpBox(MGTerrainSceneExposure.Description(), MessageType.None);
+            bool ready = !Application.isPlaying && tile.isActiveAndEnabled
+                && tile.MeshFilter != null && tile.MeshFilter.sharedMesh != null
+                && tile.MeshRenderer != null && tile.MeshRenderer.sharedMaterial != null;
+            using (new EditorGUI.DisabledScope(!ready))
+            {
+                if (GUILayout.Button("Bake All Maps for This Tile"))
+                { BakeSelectedTileMaps(tile, true, true); GUIUtility.ExitGUI(); }
+                if (GUILayout.Button("Bake Appearance + Normals for This Tile"))
+                { BakeSelectedTileMaps(tile, true, false); GUIUtility.ExitGUI(); }
+                if (GUILayout.Button("Bake Distant Morph Maps for This Tile"))
+                { BakeSelectedTileMaps(tile, false, true); GUIUtility.ExitGUI(); }
+            }
+            if (!ready)
+                EditorGUILayout.HelpBox("Baking requires an active tile with a surface mesh and material, outside Play mode.", MessageType.Info);
+        }
+
+        void BakeSelectedTileMaps(MGTerrain tile, bool appearance, bool distant)
+        {
+            // Deliberately invoke the single-target capture, never BakeWorld or world.Chunks.
+            if (tile == null || tile != target || tile.World == null || targets.Length != 1) return;
+            var world = tile.World;
+            try
+            {
+                if (appearance)
+                {
+                    if (EditorUtility.DisplayCancelableProgressBar("Bake Terrain Tile", "Appearance: " + tile.name, 0f)) return;
+                    if (!BakeWorldTile(world, false, MGTerrainAssetStore.MapPath(tile, "Appearance"))) return;
+                    AssetDatabase.SaveAssets();
+                }
+                if (distant)
+                {
+                    if (EditorUtility.DisplayCancelableProgressBar("Bake Terrain Tile", "Distant: " + tile.name, appearance ? .5f : 0f)) return;
+                    if (!BakeWorldTile(world, true, MGTerrainAssetStore.MapPath(tile, "Distant"))) return;
+                    AssetDatabase.SaveAssets();
+                }
+                Debug.Log("Terrain tile bake completed: " + tile.name, tile);
+            }
+            catch (Exception error) { Debug.LogException(error, tile); }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+                serializedObject.UpdateIfRequiredOrScript();
+                Repaint();
+                SceneView.RepaintAll();
+            }
         }
 
         internal bool BakeWorldTile(MGTerrainWorld world, bool distant, string path)
