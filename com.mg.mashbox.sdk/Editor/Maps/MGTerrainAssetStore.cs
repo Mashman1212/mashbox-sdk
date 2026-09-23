@@ -70,34 +70,15 @@ namespace MashBoxSDK.MapTools
     {
         internal static string TileIdentity(MGTerrain tile)
         {
-            // The editor's displayed tile coordinates are authoritative. A tile's
-            // pivot may be offset, and sibling order is not part of its identity.
-            var match = System.Text.RegularExpressions.Regex.Match(tile.name,
-                @"(?:^|\s)Tile\s*(?:\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)|_(-?\d+)_(-?\d+))$",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            if (match.Success)
-            {
-                string x = match.Groups[1].Success ? match.Groups[1].Value : match.Groups[3].Value;
-                string z = match.Groups[2].Success ? match.Groups[2].Value : match.Groups[4].Value;
-                return "Tile_" + int.Parse(x) + "_" + int.Parse(z);
-            }
-            // Adopted/non-grid terrains retain their authored names rather than
-            // inventing coordinates from a transform that may not be a grid origin.
+            if (MGTerrainTileNames.TryCoordinates(tile, out var coordinates))
+                return "Tile_" + coordinates.x + "_" + coordinates.y;
             return MGTerrainSceneAssets.SafeName(tile.name);
         }
         internal static string Prefix(MGTerrain tile)
         {
             var world = tile.World != null ? tile.World : tile.GetComponentInParent<MGTerrainWorld>(true);
             string identity = TileIdentity(tile);
-            // Labels are not unique: older tile creation and duplicated GameObjects
-            // can legitimately share them. Keep a stable object key separate from X/Z.
-            // Always include it, so adding/removing a duplicate never renames its peers.
-            var objectId = GlobalObjectId.GetGlobalObjectIdSlow(tile);
-            string key = objectId.targetObjectId != 0 ? objectId.targetObjectId.ToString("x")
-                : "Unsaved" + tile.GetInstanceID().ToString("x");
-            if (objectId.targetPrefabId != 0) key += "P" + objectId.targetPrefabId.ToString("x");
-            return MGTerrainSceneAssets.SafeName(world != null ? world.name : "MG Terrain")
-                + "_T" + key + "_" + identity;
+            return MGTerrainSceneAssets.SafeName(world != null ? world.name : "MG Terrain") + "_" + identity;
         }
         internal static string PathFor(MGTerrain tile, string role, string extension = ".asset")
             => MGTerrainSceneAssets.Folder(tile) + "/" + Prefix(tile) + "_" + MGTerrainSceneAssets.SafeName(role) + extension;

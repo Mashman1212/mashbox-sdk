@@ -235,7 +235,8 @@ namespace MashBoxSDK.MapTools
             Undo.SetCurrentGroupName("Add MG Terrain Tile");
             try
             {
-                var go = new GameObject("Terrain Tile " + direction);
+                var coordinate = MGTerrainTileNames.TryCoordinates(source, out var sourceCoordinate) ? sourceCoordinate + direction : direction;
+                var go = new GameObject($"Terrain Tile ({coordinate.x}, {coordinate.y})");
                 UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, source.gameObject.scene);
                 Undo.RegisterCreatedObjectUndo(go, "Add Terrain Tile");
                 go.transform.SetParent(source.World.transform, false);
