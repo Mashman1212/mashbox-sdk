@@ -2,10 +2,10 @@
 
 ## Setup
 
-1. Select the terrain world, then **Tools > MashBox > MG Terrain > Interaction > Add Map to Selected World**.
-2. Set **Follow Target** to the player (preferable to a trailing camera). Without a target the main camera is preferred; an active Game-view camera is used when no main camera is tagged. The map transform is the final fallback.
+1. Enter Play Mode: each enabled MG Terrain World automatically adds an MG Grass Interaction Map if one is missing. This also works for worlds loaded or enabled later and with domain/scene reload disabled. Existing attached maps retain their settings and enabled state. For edit-time authoring, use **Tools > MashBox > MG Terrain > Interaction > Add Map to Selected World**.
+2. The window follows the camera tagged **MainCamera**; interaction pauses if none is available. New maps default to resolution **512**, world size **256 m**, update rate **60 Hz**, recovery **30 s**, maximum bend **82.9 degrees**, compression **0.797**, height tolerance **1.83 m**, edge fade **2 m**, and **Preview In Edit Mode** enabled. The paint shader loads automatically from Resources.
 3. Select the wheel, foot, character, or prop objects and use **Add Brush to Selected Objects**. Assign a collider or use the manual world-metre radius. All enabled brushes automatically register with the global active map (`MGGrassInteractionMap.Active`), regardless of which scene loads first. No map reference is stored on the player/interactor. Unloading a world releases its map; a replacement world picks up the registered brushes automatically and starts fresh strokes. `MGGrassInteractor.InteractionMap` exposes the currently active map read-only.
-4. Play. For authoring, opt into **Preview In Edit Mode** and move a brush. Inspector preview shows pressure. **Clear Interaction Map** resets marks and stroke history.
+4. Play. For authoring, attach a map before Play Mode and move a brush with **Preview In Edit Mode** enabled. Inspector preview shows pressure. **Clear Interaction Map** resets marks and stroke history.
 
 God Grass V2 has a dedicated `MGGrassInteractionBend` Custom Function node between wind and distance sizing. Interaction remains active with wind strength zero. Root Height and Bend Height reuse the material's existing wind stem settings. Maximum Bend Angle, Compression, Recovery Seconds and Height Tolerance are on the map controller. The graph's current stylized normal/wind-normal treatment is retained; this stage deforms positions, not the shading normal/tangent.
 

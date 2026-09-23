@@ -96,8 +96,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public int VisibleDetailBudget => Mathf.Max(1, m_VisibleDetailBudget);
         public long LastSubmittedDetailInstances { get; private set; }
 
+        // Runtime-only: existing authored maps keep their settings and enabled state.
+        internal void EnsureGrassInteractionMap()
+        {
+            if (Application.isPlaying && GetComponent<MGGrassInteractionMap>() == null)
+                gameObject.AddComponent<MGGrassInteractionMap>();
+        }
+
         void OnEnable()
         {
+            EnsureGrassInteractionMap();
             RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
             RefreshChunks();
         }

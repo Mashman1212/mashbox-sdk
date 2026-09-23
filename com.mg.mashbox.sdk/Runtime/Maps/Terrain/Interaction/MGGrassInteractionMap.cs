@@ -10,17 +10,17 @@ namespace MashBoxSDK.Maps.TerrainSystem
     public sealed class MGGrassInteractionMap : MonoBehaviour
     {
         [Range(64, 2048)] public int resolution = 512;
-        [Min(4)] public float worldSize = 64;
-        [Range(1, 120)] public float updateRate = 30;
+        [Min(4)] public float worldSize = 256;
+        [Range(1, 120)] public float updateRate = 60;
         [Min(0.05f), Tooltip("Seconds for a full-strength impression to recover completely.")]
-        public float recoverySeconds = 4;
-        [Range(0, 85)] public float maximumBendAngle = 75;
-        [Range(0, 0.8f)] public float compression = 0.15f;
+        public float recoverySeconds = 30;
+        [Range(0, 85)] public float maximumBendAngle = 82.9f;
+        [Range(0, 0.8f)] public float compression = 0.797f;
         [Min(0.05f), Tooltip("Maximum root/contact height difference. Fade begins at half this distance.")]
-        public float heightTolerance = 1.5f;
+        public float heightTolerance = 1.83f;
         [Min(0.01f)] public float edgeFadeMetres = 2;
-        [Tooltip("Opt in to painting while editing. Off by default.")]
-        public bool previewInEditMode;
+        [Tooltip("Paint while editing when a map is manually attached.")]
+        public bool previewInEditMode = true;
         [SerializeField] ComputeShader paintShader;
 
         /// <summary>Optional source-time clock for frame-stepped capture. Restore after capture.
@@ -61,6 +61,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void ResetLoadedMaps()
         {
+            // Also provision worlds when Enter Play Mode skips scene/domain reload.
+            foreach (var world in Object.FindObjectsByType<MGTerrainWorld>(FindObjectsSortMode.None))
+                if (world.isActiveAndEnabled) world.EnsureGrassInteractionMap();
+
             // Enter Play Mode with both domain and scene reload disabled.
             foreach (var map in Object.FindObjectsByType<MGGrassInteractionMap>(FindObjectsSortMode.None))
                 if (map.isActiveAndEnabled) { map.elapsed = 0; map.OnEnable(); }
