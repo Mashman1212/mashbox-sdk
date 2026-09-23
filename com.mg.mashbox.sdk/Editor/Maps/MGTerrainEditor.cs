@@ -812,6 +812,7 @@ namespace MashBoxSDK.MapTools
                 : AssetDatabase.GenerateUniqueAssetPath(folder + "/TerrainColliders.asset");
             // Track the asset before writing so conversion rollback also removes partial builds.
             createdAssets?.Add(assetPath);
+            terrain.ApplyWorldSurfaceTag();
             var root = new GameObject("MG Terrain Collider Chunks");
             root.transform.SetParent(terrain.transform, false);
             root.layer = terrain.gameObject.layer;

@@ -923,6 +923,11 @@ namespace MashBoxSDK.MapTools
 
         private void DrawMapAuthoringToolsSection()
         {
+            if (GUILayout.Button("Road Tool - Road Networks", GUILayout.Height(28)))
+            {
+                MBEditorToolState.ActiveEditing = false;
+                MashBoxSDK.Maps.Roads.Editor.MGRoadTool.Open();
+            }
             EnsureAuthoringToolInstances();
 
 

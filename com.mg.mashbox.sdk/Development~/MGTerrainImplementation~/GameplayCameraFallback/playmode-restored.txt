@@ -1,0 +1,137 @@
+play=True frame=3528
+CAM CBBrain active=True tag=EditorOnly type=Game pos=(598.70, 271.54, 1218.70) mask=-1 depth=0
+WORLD Terrain Word active=True chunks=12 submitted=37520 budget=100000 renderers=1
+TILE Terrain Tile (2, 0) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=True
+  m_DetailStreamingSettled=True
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=False
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=1
+  m_GpuDetailCellSelectionVersion=-1
+TILE Terrain Tile (0, 1) active=True world=Terrain Word visible=3939 submitted=3939 calls=1
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=True
+  m_DetailStreamingSettled=True
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=False
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=331
+  m_GpuDetailCellSelectionVersion=331
+TILE Terrain Tile (1, 1) active=True world=Terrain Word visible=23054 submitted=23054 calls=1
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=True
+  m_DetailStreamingSettled=True
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=False
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=525
+  m_GpuDetailCellSelectionVersion=525
+TILE Terrain Tile (2, -2) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=False
+  m_DetailStreamingSettled=False
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=True
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=0
+  m_GpuDetailCellSelectionVersion=-1
+TILE Terrain Tile (-2, 2) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=False
+  m_DetailStreamingSettled=False
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=True
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=0
+  m_GpuDetailCellSelectionVersion=-1
+TILE Terrain Tile (0, 0) active=True world=Terrain Word visible=963 submitted=963 calls=1
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=True
+  m_DetailStreamingSettled=True
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=False
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=294
+  m_GpuDetailCellSelectionVersion=294
+TILE Terrain Tile (-2, 0) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=False
+  m_DetailStreamingSettled=False
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=True
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=0
+  m_GpuDetailCellSelectionVersion=-1
+TILE Terrain Tile (0, 2) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=False
+  m_DetailStreamingSettled=False
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=True
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=0
+  m_GpuDetailCellSelectionVersion=-1
+TILE Terrain Tile (1, 0) active=True world=Terrain Word visible=9564 submitted=9564 calls=1
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=True
+  m_DetailStreamingSettled=True
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=False
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=496
+  m_GpuDetailCellSelectionVersion=496
+TILE Terrain Tile (-2, -2) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=False
+  m_DetailStreamingSettled=False
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=True
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=0
+  m_GpuDetailCellSelectionVersion=-1
+TILE Terrain Tile (2, 2) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=False
+  m_DetailStreamingSettled=False
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=True
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=0
+  m_GpuDetailCellSelectionVersion=-1
+TILE Terrain Tile (0, -2) active=True world=Terrain Word visible=0 submitted=0 calls=0
+  m_CachedGameplayCamera=CBBrain (UnityEngine.Camera)
+  m_DrawInstances=True
+  m_WorldPendingDraw=False
+  m_DetailStreamingSettled=False
+  m_UseBatchRendererGroup=True
+  m_DetailBrgUnavailable=False
+  m_WorldDetailsSleeping=True
+  m_DetailRenderCacheDirty=False
+  m_DetailCellSelectionVersion=0
+  m_GpuDetailCellSelectionVersion=-1
+MAP Terrain Word active=True texture=MG Grass Interaction Scratch (UnityEngine.RenderTexture) stamps=1
+params=(1.00, 1.31, 0.15, 1.50)

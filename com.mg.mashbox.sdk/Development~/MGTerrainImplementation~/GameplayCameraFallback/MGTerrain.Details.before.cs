@@ -1990,15 +1990,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (!CanCameraRenderDensityDetails(camera))
                 return false;
 
-            // Authoring/test rigs can render the Game view without a MainCamera tag.
-            // Use the first eligible backbuffer camera until a tagged main renders.
-            // Offscreen captures must not steal streaming from the gameplay view.
-            bool isMain = camera.CompareTag("MainCamera");
-            if (!isMain && camera.targetTexture != null) return false;
-            if (!CanCameraRenderDensityDetails(m_CachedGameplayCamera)
-                || (!m_CachedGameplayCamera.CompareTag("MainCamera") && m_CachedGameplayCamera.targetTexture != null)
-                || (isMain && !m_CachedGameplayCamera.CompareTag("MainCamera")))
+            // Cache the camera supplied by the render callback; never search the scene.
+            if (m_CachedGameplayCamera == null)
+            {
+                if (!camera.CompareTag("MainCamera")) return false;
                 m_CachedGameplayCamera = camera;
+            }
             return camera == m_CachedGameplayCamera;
         }
         bool CanCameraRenderDensityDetails(Camera camera)

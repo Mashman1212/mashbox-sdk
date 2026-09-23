@@ -1,0 +1,72 @@
+#ifndef MG_GRASS_INTERACTION_INCLUDED
+#define MG_GRASS_INTERACTION_INCLUDED
+
+// Globals only: do not add these to a Shader Graph blackboard / UnityPerMaterial.
+TEXTURE2D(_MGGrassInteractionMap);
+SAMPLER(sampler_MGGrassInteractionMap);
+float4 _MGGrassInteractionRect; // minimum XZ, reciprocal world size, texel metres
+float4 _MGGrassInteractionActiveRect; // conservative touched bounds: min XZ, max XZ
+float4 _MGGrassInteractionParams; // enabled, max radians, compression, height tolerance
+float _MGGrassInteractionHeightOrigin;
+float _MGGrassInteractionEdgeFade;
+
+void MGGrassInteractionSample_float(float3 AbsolutePositionWS, out float2 Direction, out float Strength)
+{
+    Direction = float2(1, 0);
+    Strength = 0;
+#ifndef SHADERGRAPH_PREVIEW
+    [branch] if (_MGGrassInteractionParams.x < 0.5) return;
+    [branch] if (any(AbsolutePositionWS.xz < _MGGrassInteractionActiveRect.xy)
+        || any(AbsolutePositionWS.xz > _MGGrassInteractionActiveRect.zw)) return;
+    float2 uv = (AbsolutePositionWS.xz - _MGGrassInteractionRect.xy) * _MGGrassInteractionRect.z;
+    [branch] if (any(uv <= 0) || any(uv >= 1)) return;
+    // Explicit LOD: this function is safe in the vertex stage.
+    float4 field = SAMPLE_TEXTURE2D_LOD(_MGGrassInteractionMap, sampler_MGGrassInteractionMap, uv, 0);
+    [branch] if (field.a <= 1e-5) return;
+    float directionLength = length(field.rg);
+    Direction = directionLength > 1e-6 ? field.rg / directionLength : float2(1, 0);
+    float contactHeight = field.b / field.a + _MGGrassInteractionHeightOrigin;
+    float tolerance = max(_MGGrassInteractionParams.w, 0.05);
+    float heightWeight = 1 - smoothstep(tolerance * 0.5, tolerance, abs(AbsolutePositionWS.y - contactHeight));
+    float2 edge = min(uv, 1 - uv) / max(_MGGrassInteractionRect.z, 1e-6);
+    float edgeWeight = smoothstep(0, max(_MGGrassInteractionEdgeFade, 0.01), min(edge.x, edge.y));
+    Strength = saturate(field.a) * heightWeight * edgeWeight;
+#endif
+}
+
+// PositionOS includes wind; RestPositionOS must be the undeformed object position.
+// Per-vertex root XZ preserves the entire root plane, including wide grass cards.
+// Works independently of wind strength, with instanced transforms and HDRP camera-relative rendering.
+void MGGrassInteractionBend_float(float3 PositionOS, float3 RestPositionOS, float RootHeight,
+    float BendHeight, float Weight, out float3 BentPositionOS)
+{
+    BentPositionOS = PositionOS;
+#ifndef SHADERGRAPH_PREVIEW
+    [branch] if (_MGGrassInteractionParams.x < 0.5 || RestPositionOS.y <= RootHeight || Weight <= 0) return;
+    float3 rootOS = float3(RestPositionOS.x, RootHeight, RestPositionOS.z);
+    float3 rootWS = GetAbsolutePositionWS(TransformObjectToWorld(rootOS));
+    float2 direction;
+    float pressure;
+    MGGrassInteractionSample_float(rootWS, direction, pressure);
+    pressure *= saturate(Weight);
+    [branch] if (pressure <= 1e-5) return;
+    float3 upWS = TransformObjectToWorldDir(float3(0, 1, 0), true);
+    float3 pushWS = float3(direction.x, 0, direction.y);
+    pushWS -= upWS * dot(pushWS, upWS);
+    float pushLength = length(pushWS);
+    [branch] if (pushLength <= 1e-6) return;
+    pushWS /= pushLength;
+    float3 axis = normalize(cross(upWS, pushWS));
+    float h = saturate((RestPositionOS.y - RootHeight) / max(BendHeight, 0.001));
+    float envelope = h * h * (3 - 2 * h);
+    float angle = _MGGrassInteractionParams.y * pressure * envelope;
+    // Flattening suppresses wind locally, preventing tips from thrashing under a wheel.
+    float3 offset = TransformObjectToWorldDir(lerp(PositionOS, RestPositionOS, pressure * 0.85) - rootOS, false);
+    offset -= upWS * dot(offset, upWS) * (_MGGrassInteractionParams.z * pressure * envelope);
+    float sine, cosine;
+    sincos(angle, sine, cosine);
+    float3 rotated = offset * cosine + cross(axis, offset) * sine + axis * dot(axis, offset) * (1 - cosine);
+    BentPositionOS = rootOS + TransformWorldToObjectDir(rotated, false);
+#endif
+}
+#endif

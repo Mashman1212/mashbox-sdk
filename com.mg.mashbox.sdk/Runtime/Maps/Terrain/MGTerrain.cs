@@ -369,6 +369,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_MeshFilter = meshFilter;
             m_MeshRenderer = meshRenderer;
             m_MeshCollider = meshCollider;
+            ApplyWorldSurfaceTag();
             InvalidateRenderCache();
         }
 

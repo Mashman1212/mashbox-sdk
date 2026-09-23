@@ -1,0 +1,1 @@
+PASS: untagged/EditorOnly Game camera fallback, stable selection, MainCamera promotion, disabled/layer-excluded camera replacement, offscreen capture rejection, MainCamera render-texture support, interaction-map camera following.

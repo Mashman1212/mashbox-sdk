@@ -1,0 +1,88 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace MashBoxSDK.Maps.TerrainSystem
+{
+    [ExecuteAlways, DisallowMultipleComponent]
+    [AddComponentMenu("MashBox/Maps/MG Grass Interactor")]
+    public sealed class MGGrassInteractor : MonoBehaviour
+    {
+        [Tooltip("Optional collider footprint. Approximates its world XZ bounds with a circle using the larger extent, and its bottom as contact height. Triggers work too.")]
+        public Collider sourceCollider;
+        // Resolved on demand; no reference into a separately loaded terrain scene is retained.
+        public MGGrassInteractionMap InteractionMap => MGGrassInteractionMap.Active;
+        [Min(0.02f)] public float radius = 0.5f;
+        public Vector3 localContactOffset;
+        [Range(0, 1)] public float strength = 1f;
+        [Range(0, 1), Tooltip("Moving brushes blend radial push toward their travel heading.")]
+        public float directionalBlend = 0.85f;
+        [Min(0.1f), Tooltip("Longer movements restart the stroke instead of drawing a teleport trail.")]
+        public float teleportDistance = 12f;
+        [Tooltip("Optional ground ray. Exclude the actor's layer from Ground Layers.")]
+        public bool requireGround;
+        public LayerMask groundLayers = ~0;
+        [Min(0.01f)] public float groundProbeDistance = 0.5f;
+
+        internal static readonly List<MGGrassInteractor> Instances = new List<MGGrassInteractor>();
+        Vector3 previous;
+        bool hasPrevious;
+        MGGrassInteractionMap previousMap;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetRegistry() => Instances.Clear();
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void RegisterLoaded()
+        {
+            foreach (var brush in Object.FindObjectsByType<MGGrassInteractor>(FindObjectsSortMode.None))
+                if (brush.isActiveAndEnabled) brush.OnEnable();
+        }
+        void OnEnable() { if (!Instances.Contains(this)) Instances.Add(this); ResetStroke(); }
+        void OnDisable() { Instances.Remove(this); ResetStroke(); }
+        public void ResetStroke() { hasPrevious = false; previousMap = null; }
+
+        internal bool GetStroke(MGGrassInteractionMap map, out Vector3 from, out Vector3 to,
+            out float brushRadius, out Vector2 heading, out float directionWeight)
+        {
+            from = to = transform.TransformPoint(localContactOffset);
+            brushRadius = Mathf.Max(0.02f, radius);
+            heading = Vector2.right;
+            directionWeight = 0;
+            if (!isActiveAndEnabled || strength <= 0 || map == null)
+            { ResetStroke(); return false; }
+#if UNITY_EDITOR
+            if (UnityEditor.SceneManagement.EditorSceneManager.IsPreviewScene(gameObject.scene)) return false;
+#endif
+            if (sourceCollider != null)
+            {
+                if (!sourceCollider.enabled || !sourceCollider.gameObject.activeInHierarchy)
+                { ResetStroke(); return false; }
+                Bounds bounds = sourceCollider.bounds;
+                to = new Vector3(bounds.center.x, bounds.min.y, bounds.center.z) + transform.TransformVector(localContactOffset);
+                brushRadius = Mathf.Max(0.02f, Mathf.Max(bounds.extents.x, bounds.extents.z));
+            }
+            if (requireGround)
+            {
+                float probe = Mathf.Max(0.01f, groundProbeDistance);
+                if (!Physics.Raycast(to + Vector3.up * probe, Vector3.down, out var hit,
+                    probe * 2, groundLayers, QueryTriggerInteraction.Ignore))
+                { ResetStroke(); return false; }
+                to.y = hit.point.y;
+            }
+            from = hasPrevious && previousMap == map && (to - previous).sqrMagnitude <= teleportDistance * teleportDistance ? previous : to;
+            Vector2 movement = new Vector2(to.x - from.x, to.z - from.z);
+            if (movement.sqrMagnitude > 0.000001f)
+            { heading = movement.normalized; directionWeight = Mathf.Clamp01(directionalBlend); }
+            previous = to;
+            previousMap = map;
+            hasPrevious = true;
+            return true;
+        }
+
+        void OnDrawGizmosSelected()
+        {
+            Gizmos.color = new Color(0.2f, 1f, 0.4f, 0.8f);
+            if (sourceCollider != null) Gizmos.DrawWireCube(sourceCollider.bounds.center, sourceCollider.bounds.size);
+            else Gizmos.DrawWireSphere(transform.TransformPoint(localContactOffset), Mathf.Max(0.02f, radius));
+        }
+    }
+}

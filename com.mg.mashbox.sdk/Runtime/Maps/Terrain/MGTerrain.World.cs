@@ -23,8 +23,19 @@ namespace MashBoxSDK.Maps.TerrainSystem
             !UsesWorldBudget || KeepAllDetailCellsResident || m_World.TryBuildCell(this, key, distance);
         bool TryUploadWorldMesh() => !UsesWorldBudget || m_World.TryUploadMesh();
 
+        /// <summary>World terrain surfaces currently use dirt, including saved collision chunks.</summary>
+        public void ApplyWorldSurfaceTag()
+        {
+            if (GetComponentInParent<MGTerrainWorld>(true) == null) return;
+            gameObject.tag = "dirt";
+            if (MeshCollider != null) MeshCollider.gameObject.tag = "dirt";
+            if (m_SurfaceColliderRoot != null) m_SurfaceColliderRoot.gameObject.tag = "dirt";
+            foreach (var collider in m_SurfaceColliderChunks)
+                if (collider != null) collider.gameObject.tag = "dirt";
+        }
         public void RefreshWorldOwnership()
         {
+            ApplyWorldSurfaceTag();
             MGTerrainWorld next = null;
             if (isActiveAndEnabled)
                 for (Transform parent = transform.parent; parent != null; parent = parent.parent)

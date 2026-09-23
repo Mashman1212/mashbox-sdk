@@ -1,0 +1,70 @@
+#pragma kernel ScrollRecover
+#pragma kernel Stamp
+#pragma kernel RecoverRegion
+
+// RG = direction * strength, B = relative contact height * strength, A = strength.
+Texture2D<float4> _Source;
+RWTexture2D<float4> _Map;
+int _Resolution;
+int4 _Scroll; // source offset xy, clear flag z
+int4 _DispatchRect;
+float _Recovery;
+float4 _MapWorld; // minimum XZ, metres per texel, height origin
+float4 _BrushFrom; // xyz contact, radius
+float4 _BrushTo; // xyz contact, strength
+float4 _BrushDirection; // xy heading, z directional blend, w height separation
+
+[numthreads(8,8,1)]
+void ScrollRecover(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id.xy >= (uint)_Resolution)) return;
+    int2 source = int2(id.xy) + _Scroll.xy;
+    float4 value = 0;
+    if (_Scroll.z == 0 && all(source >= 0) && all(source < _Resolution))
+        value = _Source.Load(int3(source, 0));
+    float strength = max(0, value.a - _Recovery);
+    _Map[id.xy] = value * (strength / max(value.a, 1e-6));
+}
+
+// Used only without scrolling. Each thread owns one texel, so no ping-pong copy is needed.
+[numthreads(8,8,1)]
+void RecoverRegion(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id.xy >= (uint2)_DispatchRect.zw)) return;
+    int2 pixel = _DispatchRect.xy + int2(id.xy);
+    if (any(pixel < 0) || any(pixel >= _Resolution)) return;
+    float4 value = _Map[pixel];
+    float strength = max(0, value.a - _Recovery);
+    _Map[pixel] = value * (strength / max(value.a, 1e-6));
+}
+
+[numthreads(8,8,1)]
+void Stamp(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id.xy >= (uint2)_DispatchRect.zw)) return;
+    int2 pixel = _DispatchRect.xy + int2(id.xy);
+    if (any(pixel < 0) || any(pixel >= _Resolution)) return;
+    float2 world = _MapWorld.xy + (float2(pixel) + 0.5) * _MapWorld.z;
+    float2 segment = _BrushTo.xz - _BrushFrom.xz;
+    float t = saturate(dot(world - _BrushFrom.xz, segment) / max(dot(segment, segment), 1e-8));
+    float3 contact = lerp(_BrushFrom.xyz, _BrushTo.xyz, t);
+    float2 radial = world - contact.xz;
+    // At least one texel: even a point on a four-texel corner must leave a mark.
+    float radius = max(_BrushFrom.w, _MapWorld.z);
+    float falloff = saturate(1.0 - length(radial) / radius);
+    falloff = falloff * falloff * (3.0 - 2.0 * falloff);
+    float strength = saturate(_BrushTo.w * falloff);
+    if (strength <= 0) return;
+    radial = dot(radial, radial) > 1e-8 ? normalize(radial) : float2(1, 0);
+    float2 direction = lerp(radial, _BrushDirection.xy, _BrushDirection.z);
+    direction = dot(direction, direction) > 1e-8 ? normalize(direction) : radial;
+    float4 previous = _Map[pixel];
+    float relativeHeight = contact.y - _MapWorld.w;
+    // One height layer per texel. A new, separated surface replaces the old layer.
+    if (previous.a > 1e-5 && abs(previous.b / previous.a - relativeHeight) > _BrushDirection.w)
+        previous = 0;
+    // Maximum pressure avoids frame-rate-dependent accumulation and prevents small
+    // brush tails from overwriting stronger impressions. Recovery lowers old pressure.
+    if (strength >= previous.a)
+        _Map[pixel] = float4(direction * strength, relativeHeight * strength, strength);
+}

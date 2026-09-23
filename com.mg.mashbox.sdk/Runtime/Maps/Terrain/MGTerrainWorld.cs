@@ -17,7 +17,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, Min(1)] int m_MaxPendingDetailBuilds = 8;
         [SerializeField, Min(32), Tooltip("Total soft cache target. Cells needed by the current view can exceed it.")]
         int m_CachedDetailCells = 512;
-        [SerializeField, Min(1), Tooltip("Maximum detail distance in metres. Chunk prototype distances may shorten it.")]
+        [SerializeField, Min(0), Tooltip("Maximum detail distance in metres. Zero uses each prototype distance. Chunk prototype distances may shorten it.")]
         float m_DetailDistance = 250f;
         [SerializeField, Min(0), Tooltip("Extra distance before releasing a chunk's detail resources.")]
         float m_UnloadMargin = 64f;
@@ -58,6 +58,26 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (chunk != null) chunk.SetDenseDetailShadows(enabled);
         }
 
+        /// <summary>Sets density without replacing the world's authored LOD and streaming settings.</summary>
+        public void SetDetailDensity(float density)
+        {
+            if (m_Quality == null)
+                m_Quality = m_Chunks.Count > 0 && m_Chunks[0] != null
+                    ? m_Chunks[0].CaptureWorldQuality() : new MGTerrainWorldQuality();
+            m_QualityInitialized = true;
+            m_Quality.m_OverallDetailDensity = Mathf.Clamp01(density);
+            ApplySharedQuality();
+        }
+
+        /// <summary>Sets the world detail distance ceiling. Zero uses each prototype's distance.</summary>
+        public void SetMaxDensityDetailDistance(float distance)
+        {
+            distance = Mathf.Max(0f, distance);
+            if (Mathf.Approximately(m_DetailDistance, distance)) return;
+            m_DetailDistance = distance;
+            foreach (var chunk in m_Chunks)
+                if (chunk != null) chunk.InvalidateRenderCache();
+        }
         public void ApplyQualityPreset(MGTerrain.DetailQualityPreset preset)
         {
             if (m_Chunks.Count == 0) return;
@@ -71,7 +91,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         int m_BudgetFrame = -1, m_RemainingBuilds, m_RemainingUploads, m_FirstChunk;
         bool m_Rendering;
         public IReadOnlyList<MGTerrain> Chunks => m_Chunks;
-        public float DetailDistance => Mathf.Max(1f, m_DetailDistance);
+        public float DetailDistance => m_DetailDistance > 0f ? m_DetailDistance : float.PositiveInfinity;
         internal int CacheAllowance => Mathf.Max(1, m_CachedDetailCells / Mathf.Max(1, m_RenderChunks.Count));
         public int VisibleDetailBudget => Mathf.Max(1, m_VisibleDetailBudget);
         public long LastSubmittedDetailInstances { get; private set; }
