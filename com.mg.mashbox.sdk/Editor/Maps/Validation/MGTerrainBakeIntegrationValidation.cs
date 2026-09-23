@@ -93,7 +93,7 @@ namespace MashBoxSDK.MapTools
                 Check(unused.Contains(data+"/Unused.asset"),"Unused data identified");
                 Check(!unused.Contains(data+"/ReferencedElsewhere.asset"),"External material reference protected");
                 MGTerrainDataCleanup.Execute(plan);
-                Check(!File.Exists(data+"/Unused.asset") && File.Exists(data+"/ReferencedElsewhere.asset"),"Cleanup removes only unused test data");
+                Check(!File.Exists(data+"/Unused.asset") && !File.Exists(data+"/ReferencedElsewhere.asset") && AssetDatabase.GetAssetPath(referenced).Contains("/Other Terrain Data/") && external.GetTexture("_BaseColorMap")==referenced,"Cleanup removes unused data and relocates externally referenced data without breaking bindings");
                 Check(renderer.sharedMaterial!=null && tile.MeshFilter.sharedMesh!=null,"Cleanup keeps tile references");
                 Check(tile.GetComponentsInChildren<MGTerrainDistantSurface>(true).Length==0,"Cleanup retires legacy proxy without rebaking");
                 Check(!File.Exists(legacyMaterial) && !File.Exists(legacyMesh),"Cleanup removes unreferenced legacy surface material and mesh");

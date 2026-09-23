@@ -71,6 +71,7 @@ namespace MashBoxSDK.MapTools
             {
                 if (GUILayout.Button("Bake All Maps (Appearance, then Distant Morph Maps)"))
                     if (BakeWorld(world, false)) BakeWorld(world, true);
+                if (GUILayout.Button("Validate and Repair Tile Control Maps")) MGTerrainControlMapOwnership.Repair(world);
                 if (GUILayout.Button("Clean Terrain Data...")) MGTerrainDataCleanup.Show(world);
             }
         }

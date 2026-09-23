@@ -71,7 +71,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (mesh == null || !mesh.isReadable) return false;
             int width = m_DetailGpuSurfaceWidth, height = m_DetailGpuSurfaceHeight;
             var vertices = m_CachedDetailSurfaceVertices;
-            if (vertices == null || vertices.Length != width * height || width < 2 || height < 2) return false;
+            if (vertices == null || !MatchesSurfaceGrid(vertices.Length, width, height) || width < 2 || height < 2) return false;
             // Only fully covered grid quads may occlude. A missing triangle is an
             // opening, even if the other half of the quad remains visible.
             var coverage = new byte[(width - 1) * (height - 1)];
@@ -82,6 +82,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 for (int t = 0; t < triangles.Length; t += 3)
                 {
                     int a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
+                    if (a >= width * height || b >= width * height || c >= width * height) continue; // Stitched rim is not an occluder.
                     int ax = a % width, az = a / width, bx = b % width, bz = b / width, cx = c % width, cz = c / width;
                     int x = Mathf.Min(ax, Mathf.Min(bx, cx)), z = Mathf.Min(az, Mathf.Min(bz, cz));
                     if (Mathf.Max(ax, Mathf.Max(bx, cx)) - x != 1 || Mathf.Max(az, Mathf.Max(bz, cz)) - z != 1) return false;

@@ -101,10 +101,13 @@ namespace MashBoxSDK.MapTools
         {
             m_Tab = (WorldTab)Mathf.Clamp(SessionState.GetInt(TabPreference, 0), 0, 3);
             SceneView.duringSceneGui += DrawScene;
+            Undo.undoRedoPerformed += ClearPlacementPreviews;
         }
         void OnDisable()
         {
             SceneView.duringSceneGui -= DrawScene;
+            Undo.undoRedoPerformed -= ClearPlacementPreviews;
+            DisposePlacementPreviews();
             if (m_ChunkEditor != null) DestroyImmediate(m_ChunkEditor);
         }
         void DrawScene(SceneView view)

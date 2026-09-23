@@ -22,6 +22,7 @@ namespace MashBoxSDK.Maps.Sculpting
             [Min(0.001f)] public float radius = 1f;
             public float strength = 0.1f;
             [Min(0.01f)] public float falloff = 2f;
+            public BrushMask brushMask;
             public int noiseSeed;
             public float targetHeight;
             [Range(1, 128)] public int smoothIterations = 1;
@@ -454,7 +455,8 @@ namespace MashBoxSDK.Maps.Sculpting
                 delta.y = 0f;
                 float distanceSquared = localToWorld.MultiplyVector(delta).sqrMagnitude;
                 if (distanceSquared >= radiusSquared) continue;
-                float influence = Mathf.Pow(1f - Mathf.Sqrt(distanceSquared) / stroke.radius, stroke.falloff);
+                float influence = Mathf.Pow(1f - Mathf.Sqrt(distanceSquared) / stroke.radius, stroke.falloff)
+                    * (stroke.brushMask?.Sample(localToWorld.MultiplyVector(delta), stroke.radius) ?? 1f);
                 m_SmoothAffected.Add(i);
                 m_SmoothWeights.Add(Mathf.Clamp01(strength * influence));
                 m_SmoothHeights.Add(0f);
@@ -519,7 +521,8 @@ namespace MashBoxSDK.Maps.Sculpting
                 float distance = stroke.mode == SculptMode.SetHeight
                     ? new Vector2(world.x - center.x, world.z - center.z).magnitude : Vector3.Distance(world, center);
                 if (distance >= stroke.radius) continue;
-                float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff);
+                float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff)
+                    * (stroke.brushMask?.Sample(world - center, stroke.radius) ?? 1f);
 
                 if (stroke.mode == SculptMode.SetHeight)
                     world.y = Mathf.Lerp(world.y, stroke.targetHeight, Mathf.Clamp01(Mathf.Abs(stroke.strength) * influence));
@@ -572,7 +575,8 @@ namespace MashBoxSDK.Maps.Sculpting
                 if (distanceSquared >= radiusSquared)
                     continue;
                 float distance = Mathf.Sqrt(distanceSquared);
-                float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff);
+                float influence = Mathf.Pow(1f - distance / stroke.radius, stroke.falloff)
+                    * (stroke.brushMask?.Sample(localToWorld.MultiplyVector(planarDelta), stroke.radius) ?? 1f);
                 Vector3 vertex = vertices[index];
 
                 if (stroke.mode == SculptMode.SetHeight)

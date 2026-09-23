@@ -220,6 +220,7 @@ namespace MashBoxSDK.MapTools
                 ? EditorGUILayout.Slider("Strength", m_Strength, -2f, 2f)
                 : EditorGUILayout.Slider("Strength", Mathf.Abs(m_Strength), 0.01f, 1f);
             m_Falloff = EditorGUILayout.Slider("Falloff", m_Falloff, IsMeshStamp ? 0f : 0.1f, 8f);
+            MBBrushMask.DrawSettings();
             m_Spacing = EditorGUILayout.Slider("Stroke Spacing", m_Spacing, 0.05f, 1f);
 
             if (IsMeshStamp) DrawMeshStampSettings();
@@ -542,6 +543,7 @@ namespace MashBoxSDK.MapTools
             sceneView.wantsMouseMove = true;
             Event current = Event.current;
             MBEditorToolVisuals.RepaintBrushModifiers(current, sceneView);
+            MBBrushMask.HandleKeys(current, m_SceneCameraRightMouseHeld);
             if (current.type == EventType.MouseDown && current.button == 1)
                 m_SceneCameraRightMouseHeld = true;
             else if (current.type == EventType.MouseUp && current.button == 1)
@@ -865,6 +867,7 @@ namespace MashBoxSDK.MapTools
         {
             Handles.color = brushColor;
             Handles.DrawWireDisc(center, normal, m_Radius);
+            MBBrushMask.DrawPreview(center, m_Modifier != null && IsTerrainSurface(m_Modifier.Target) ? Vector3.up : normal, m_Radius);
 
             // Stroke influence is Pow(1 - distance / radius, falloff). These rings
             // mark the 75%, 50%, and 25% influence contours of that exact curve.
@@ -1236,6 +1239,7 @@ namespace MashBoxSDK.MapTools
             var stroke = m_Modifier.CreateStroke(strokeMode,
                 strokeMode == MeshSculptModifier.SculptMode.SeamFit || strokeMode == MeshSculptModifier.SculptMode.MeshStamp ? MeshSculptModifier.StrokeSpace.TargetLocal : m_StrokeSpace,
                 hit.point, direction, m_Radius, strength, m_Falloff);
+            stroke.brushMask = MBBrushMask.Capture(IsTerrainSurface(m_Modifier.Target) || strokeMode == MeshSculptModifier.SculptMode.SetHeight || strokeMode == MeshSculptModifier.SculptMode.MeshStamp ? Vector3.up : hit.normal);
             stroke.targetHeight = m_SetHeight;
             // Store the terrain boost in new strokes so replaying older sculpt
             // histories keeps their original smoothing effect.
@@ -1285,6 +1289,17 @@ namespace MashBoxSDK.MapTools
                     ? "No terrain vertices within both the brush and snap distance of an eligible target."
                     : $"{(lower ? "Lowered" : "Fitted")} {stroke.seamVertices.Length} {(editingLoft ? "loft" : "terrain")} vertices in the latest sample.";
                 if (stroke.seamVertices.Length == 0) { Repaint(); return; }
+            }
+            if (stroke.brushMask != null && stroke.seamVertices != null)
+            {
+                var maskVertices = m_Modifier.Target.sharedMesh.vertices;
+                for (int i = 0; i < stroke.seamVertices.Length; i++)
+                {
+                    var sample = stroke.seamVertices[i];
+                    float weight = stroke.brushMask.Sample(m_Modifier.Target.transform.TransformPoint(maskVertices[sample.index]) - hit.point, m_Radius);
+                    sample.delta *= weight; sample.normalWeight *= weight;
+                    stroke.seamVertices[i] = sample;
+                }
             }
             Undo.RecordObject(m_Modifier, "Mesh Sculpt Stroke");
             MGTerrain terrain = EditingSeamLoft ? null : (m_Modifier.Target.GetComponent<MGTerrain>()

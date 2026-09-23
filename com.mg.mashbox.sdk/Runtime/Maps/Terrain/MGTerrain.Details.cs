@@ -600,6 +600,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, Range(1, 16)] int m_MaxPendingDetailBuilds = 4;
         [SerializeField, Min(2)] int m_SurfaceGridWidth = 2;
         [SerializeField, Min(2)] int m_SurfaceGridHeight = 2;
+        [SerializeField, HideInInspector] bool m_SurfaceGridHasStitchVertices;
+        internal bool MatchesSurfaceGrid(int count, int width, int height) => count == (long)width * height || (m_SurfaceGridHasStitchVertices && count > (long)width * height);
         public int SurfaceGridWidth => m_SurfaceGridWidth;
         public int SurfaceGridHeight => m_SurfaceGridHeight;
         [SerializeField, HideInInspector] int m_DetailSettingsVersion;
@@ -936,12 +938,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, HideInInspector] Vector4 m_SurfaceGridFootprint;
         [SerializeField, HideInInspector] bool m_HasSurfaceGridFootprint;
 
-        public void ConfigureSurfaceGrid(int width, int height)
+        public void ConfigureSurfaceGrid(int width, int height, bool hasStitchVertices = false)
         {
+            m_SurfaceGridHasStitchVertices = hasStitchVertices;
             m_SurfaceGridWidth = Mathf.Max(2, width);
             m_SurfaceGridHeight = Mathf.Max(2, height);
             var mesh = MeshFilter != null ? MeshFilter.sharedMesh : null;
-            if (mesh != null && mesh.vertexCount == (long)m_SurfaceGridWidth * m_SurfaceGridHeight)
+            if (mesh != null && MatchesSurfaceGrid(mesh.vertexCount, m_SurfaceGridWidth, m_SurfaceGridHeight))
             {
                 var bounds = mesh.bounds;
                 m_SurfaceGridFootprint = new Vector4(bounds.min.x, bounds.min.z, bounds.size.x, bounds.size.z);
@@ -1153,7 +1156,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             InvalidateDetailRenderCache();
         }
 
-        public int PaintDensityDetailLayer(int layerIndex, Vector3 worldCenter, float worldRadius, int densityDelta, float falloffPower = 1f, int grassSubId = -1, bool replaceGrassIdOnly = false)
+        public int PaintDensityDetailLayer(int layerIndex, Vector3 worldCenter, float worldRadius, int densityDelta, float falloffPower = 1f, int grassSubId = -1, bool replaceGrassIdOnly = false, BrushMask brushMask = null)
         {
             if ((uint)layerIndex >= m_DensityDetailLayers.Count || worldRadius <= 0f || densityDelta == 0)
                 return 0;
@@ -1190,6 +1193,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         if (distance >= worldRadius)
                             continue;
                         float influence = Mathf.Pow(1f - distance / worldRadius, Mathf.Max(0.01f, falloffPower));
+                        influence *= brushMask?.Sample(transform.TransformVector(planarDelta), worldRadius) ?? 1f;
                         int appliedDelta = Mathf.RoundToInt(densityDelta * influence);
                         if (appliedDelta == 0)
                             continue;
@@ -2501,7 +2505,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             var vertices = m_CachedDetailSurfaceVertices;
             int gridWidth = Mathf.Max(2, m_SurfaceGridWidth), gridHeight = Mathf.Max(2, m_SurfaceGridHeight);
-            if (vertices.Length != gridWidth * gridHeight)
+            if (!MatchesSurfaceGrid(vertices.Length, gridWidth, gridHeight))
             {
                 int square = Mathf.RoundToInt(Mathf.Sqrt(vertices.Length));
                 if (square < 2 || square * square != vertices.Length) return;
@@ -2513,6 +2517,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             int x1 = Mathf.Clamp(Mathf.CeilToInt(maxX * (gridWidth - 1)), x0, gridWidth - 1);
             int z0 = Mathf.Clamp(Mathf.FloorToInt(minZ * (gridHeight - 1)), 0, gridHeight - 1);
             int z1 = Mathf.Clamp(Mathf.CeilToInt(maxZ * (gridHeight - 1)), z0, gridHeight - 1);
+            // Rim samples may be higher/lower than the coarse grid endpoints.
+            if (m_SurfaceGridHasStitchVertices && (x0 == 0 || z0 == 0 || x1 == gridWidth-1 || z1 == gridHeight-1))
+            { minY = mesh.bounds.min.y; maxY = mesh.bounds.max.y; return; }
             minY = float.PositiveInfinity; maxY = float.NegativeInfinity;
             for (int z = z0; z <= z1; z++)
                 for (int x = x0; x <= x1; x++)
@@ -3224,7 +3231,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             Vector3[] vertices = m_CachedDetailSurfaceVertices;
             int width = Mathf.Max(2, m_SurfaceGridWidth);
             int height = Mathf.Max(2, m_SurfaceGridHeight);
-            if (vertices.Length != width * height)
+            if (!MatchesSurfaceGrid(vertices.Length, width, height))
             {
                 int square = Mathf.RoundToInt(Mathf.Sqrt(vertices.Length));
                 if (square * square != vertices.Length)

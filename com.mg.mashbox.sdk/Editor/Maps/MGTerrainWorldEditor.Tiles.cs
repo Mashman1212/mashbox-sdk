@@ -14,6 +14,7 @@ namespace MashBoxSDK.MapTools
     public sealed partial class MGTerrainWorldEditor
     {
         bool m_AddTiles;
+        int m_NewTileScale = 1;
         string m_TileError;
         string m_DensityTextureProperty;
         static readonly Vector2Int[] Directions = { Vector2Int.left, Vector2Int.right, Vector2Int.up, Vector2Int.down };
@@ -72,15 +73,21 @@ namespace MashBoxSDK.MapTools
             DrawCreationDensity(world);
             using (new EditorGUI.DisabledScope(Application.isPlaying || empty))
             {
+                EditorGUI.BeginChangeCheck();
+                m_NewTileScale = EditorGUILayout.IntPopup("New Tile Size", m_NewTileScale,
+                    new[] { "1x", "2x", "4x" }, new[] { 1, 2, 4 });
+                if (EditorGUI.EndChangeCheck()) SceneView.RepaintAll();
+                EditorGUILayout.LabelField("New Tile Footprint", $"{world.TileSize * m_NewTileScale:0.##} x {world.TileSize * m_NewTileScale:0.##} m");
                 bool next = GUILayout.Toggle(m_AddTiles, "Add Terrain Tile Mode", "Button");
                 if (next != m_AddTiles)
                 {
                     m_AddTiles = next;
+                    ClearPlacementPreviews();
                     if (next && MBEditorToolState.Mode == MBEditorAuthoringMode.MeshSculpt) MBEditorToolState.ActiveEditing = false;
                     SceneView.RepaintAll();
                 }
             }
-            if (m_AddTiles) EditorGUILayout.HelpBox("Hover an empty neighbouring square in the Scene view and click to add it. Esc exits. Alt + mouse still navigates. New tiles match the adjacent tile's size and border heights.", MessageType.Info);
+            if (m_AddTiles) EditorGUILayout.HelpBox("Hover an empty neighbouring square in the Scene view and click to add it. Esc exits. Alt + mouse still navigates. Size is relative to the world base tile. The main grid keeps its vertex budget; extra border vertices stitch different resolutions without changing existing tiles.", MessageType.Info);
             if (!string.IsNullOrEmpty(m_TileError)) EditorGUILayout.HelpBox(m_TileError, MessageType.Error);
         }
 
@@ -198,44 +205,45 @@ namespace MashBoxSDK.MapTools
                 if (m_AddTiles) { m_AddTiles = false; Repaint(); }
                 return false;
             }
-            if (!m_AddTiles || Application.isPlaying) return false;
+            if (!m_AddTiles || Application.isPlaying) { ClearPlacementPreviews(); return false; }
             var e = Event.current;
             if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
-            { m_AddTiles = false; e.Use(); Repaint(); view.Repaint(); return true; }
+            { m_AddTiles = false; ClearPlacementPreviews(); e.Use(); Repaint(); view.Repaint(); return true; }
             var world = (MGTerrainWorld)target;
             var tiles = OwnedTiles(world).Where(t => t.MeshFilter != null && t.MeshFilter.sharedMesh != null).ToArray();
             var candidates = new List<(MGTerrain tile, Vector2Int direction, Bounds bounds)>();
             foreach (var tile in tiles)
-            {
-                var bounds = MGTerrainTileAuthoring.BoundsOf(tile);
-                foreach (var direction in Directions)
+                foreach (var candidate in MGTerrainTileAuthoring.PlacementBounds(tile, world.TileSize * m_NewTileScale))
                 {
-                    var candidate = new Bounds(bounds.center + new Vector3(direction.x * bounds.size.x, 0, direction.y * bounds.size.z), bounds.size);
-                    if (tiles.Any(t => Overlaps(candidate, MGTerrainTileAuthoring.BoundsOf(t))) || candidates.Any(c => Overlaps(candidate, c.bounds))) continue;
-                    candidates.Add((tile, direction, candidate));
+                    if (tiles.Any(t => Overlaps(candidate.bounds, MGTerrainTileAuthoring.BoundsOf(t)))
+                        || candidates.Any(c => Overlaps(candidate.bounds, c.bounds))) continue;
+                    candidates.Add((tile, candidate.direction, candidate.bounds));
                 }
-            }
+            ValidatePlacementPreviews(tiles);
             var ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
             int hovered = -1; float closest = float.PositiveInfinity;
             for (int i = 0; i < candidates.Count; i++)
             {
-                var b = candidates[i].bounds;
-                if (new Plane(Vector3.up, b.center).Raycast(ray, out float distance))
+                var candidate=candidates[i];
+                try
                 {
-                    var p = ray.GetPoint(distance);
-                    if (p.x >= b.min.x && p.x <= b.max.x && p.z >= b.min.z && p.z <= b.max.z && distance < closest)
-                    { hovered = i; closest = distance; }
+                    var preview=PlacementPreview(candidate.tile,candidate.direction,candidate.bounds,tiles);
+                    if(preview.Hit(ray,out var hit) && hit.distance<closest) {hovered=i;closest=hit.distance;}
                 }
+                catch(Exception error) {m_TileError=error.Message;}
             }
             int control = GUIUtility.GetControlID(FocusType.Passive);
             if (e.type == EventType.Layout && !e.alt) HandleUtility.AddDefaultControl(control);
             if (e.type == EventType.Repaint)
                 for (int i = 0; i < candidates.Count; i++)
                 {
-                    var b = candidates[i].bounds; float y = b.center.y;
-                    var corners = new[] { new Vector3(b.min.x,y,b.min.z), new Vector3(b.min.x,y,b.max.z), new Vector3(b.max.x,y,b.max.z), new Vector3(b.max.x,y,b.min.z) };
-                    Handles.DrawSolidRectangleWithOutline(corners, i == hovered ? new Color(.2f,1,.4f,.3f) : new Color(.2f,.7f,1,.08f), i == hovered ? Color.green : Color.cyan);
-                    Handles.Label(b.center, "+ Add Terrain Tile");
+                    var candidate=candidates[i];
+                    try
+                    {
+                        DrawPlacementPreview(PlacementPreview(candidate.tile,candidate.direction,candidate.bounds,tiles),i==hovered,
+                            $"+ Add {m_NewTileScale}x Terrain Tile ({candidate.bounds.size.x:0} m)");
+                    }
+                    catch(Exception error) {m_TileError=error.Message;}
                 }
             if (e.type == EventType.MouseMove) view.Repaint();
             if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hovered >= 0 && HandleUtility.nearestControl == control)
@@ -243,7 +251,8 @@ namespace MashBoxSDK.MapTools
                 var chosen = candidates[hovered];
                 RunWorldTileAction(() =>
                 {
-                    MGTerrainTileAuthoring.AddTile(chosen.tile, chosen.direction);
+                    MGTerrainTileAuthoring.AddTile(chosen.tile, chosen.direction, chosen.bounds);
+                    ClearPlacementPreviews();
                     world.RefreshChunks(); world.ApplySharedQuality();
                     EditorSceneManager.MarkSceneDirty(world.gameObject.scene);
                 });

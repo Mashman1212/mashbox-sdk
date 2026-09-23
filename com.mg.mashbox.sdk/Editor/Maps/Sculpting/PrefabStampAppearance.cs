@@ -18,6 +18,7 @@ namespace MashBoxSDK.MapTools
             public Vector3 center;
             public float radius, height, rotation, falloff;
             public bool invert;
+            public MashBoxSDK.Maps.BrushMask brushMask;
         }
 
         // Composite in memory, then update tile-owned maps with Undo and rollback.
@@ -142,7 +143,8 @@ namespace MashBoxSDK.MapTools
                     ? (dab.falloff <= 0 ? 1 : Mathf.SmoothStep(0, 1, (1 - distance) / Mathf.Min(.5f, dab.falloff * .125f)))
                     : Mathf.Pow(1 - distance, dab.falloff);
 
-                int i = y * destination.width + x;
+                weight *= dab.brushMask?.Sample(world - dab.center, dab.radius) ?? 1f;
+                  int i = y * destination.width + x;
                 if (normal)
                 {
                     var a = new Vector3(pixels[i].r * 2 - 1, pixels[i].g * 2 - 1, pixels[i].b * 2 - 1).normalized;

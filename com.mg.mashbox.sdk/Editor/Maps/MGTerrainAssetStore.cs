@@ -161,7 +161,7 @@ namespace MashBoxSDK.MapTools
             var renderer = tile.MeshRenderer;
             if (renderer == null || renderer.sharedMaterial == null) throw new InvalidOperationException("Tile material is missing.");
             string path = PathFor(tile, "Material", ".mat");
-            if (AssetDatabase.GetAssetPath(renderer.sharedMaterial) == path) { transaction.Track(path); return renderer.sharedMaterial; }
+            if (AssetDatabase.GetAssetPath(renderer.sharedMaterial) == path) { transaction.Track(path); MGTerrainControlMapOwnership.Ensure(tile, renderer.sharedMaterial, transaction); return renderer.sharedMaterial; }
             var copy = new Material(renderer.sharedMaterial);
             try
             {
@@ -169,6 +169,7 @@ namespace MashBoxSDK.MapTools
                 Undo.RecordObject(renderer, "Assign Tile Material");
                 var slots = renderer.sharedMaterials; slots[0] = result; renderer.sharedMaterials = slots;
                 EditorUtility.SetDirty(renderer);
+                MGTerrainControlMapOwnership.Ensure(tile, result, transaction);
                 return result;
             }
             finally { if (!EditorUtility.IsPersistent(copy)) Object.DestroyImmediate(copy); }

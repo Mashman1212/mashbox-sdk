@@ -61,7 +61,7 @@ namespace MashBoxSDK.MapTools
     {
         // These scalar values describe the destination's geometry or serialization state, not setup.
         static readonly HashSet<string> LocalScalars = new HashSet<string>
-        { "m_SurfaceGridWidth", "m_SurfaceGridHeight", "m_HasSurfaceGridFootprint", "m_ColliderSourceVertexCount", "m_HoleVertexCount", "m_DetailSettingsVersion" };
+        { "m_SurfaceGridHasStitchVertices", "m_SurfaceGridWidth", "m_SurfaceGridHeight", "m_HasSurfaceGridFootprint", "m_ColliderSourceVertexCount", "m_HoleVertexCount", "m_DetailSettingsVersion" };
         static readonly HashSet<string> LayerData = new HashSet<string>
         { "m_PrototypeIndex", "m_DensityMap", "m_SizeMap", "m_PaletteSourceMap", "m_RepresentedInstanceCount" };
 

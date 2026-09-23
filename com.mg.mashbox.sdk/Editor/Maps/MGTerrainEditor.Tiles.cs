@@ -128,7 +128,7 @@ namespace MashBoxSDK.MapTools
     }
 
     // Editor-only geometry authoring; each child retains its own MGTerrain and sculpt history.
-    internal static class MGTerrainTileAuthoring
+    internal static partial class MGTerrainTileAuthoring
     {
         internal static void Flatten(MGTerrain tile, float worldHeight)
         {
@@ -203,7 +203,7 @@ namespace MashBoxSDK.MapTools
             EditorUtility.SetDirty(modifier);
         }
 
-        internal static MGTerrain AddTile(MGTerrain source, Vector2Int direction)
+        internal static MGTerrain AddTile(MGTerrain source, Vector2Int direction, Bounds? requestedBounds = null)
         {
             Validate(source);
             if (source.World == null) throw new InvalidOperationException("Convert to multi-tile first.");
@@ -211,7 +211,7 @@ namespace MashBoxSDK.MapTools
                 throw new InvalidOperationException("Use an unrotated, unit-scale terrain world for adding tiles.");
             var bounds = BoundsOf(source);
             var offset = new Vector3(direction.x * bounds.size.x, 0, direction.y * bounds.size.z);
-            var destination = new Bounds(bounds.center + offset, bounds.size);
+            var destination = requestedBounds ?? new Bounds(bounds.center + offset, bounds.size);
             foreach (var other in source.World.Chunks)
             {
                 Validate(other);
@@ -221,7 +221,14 @@ namespace MashBoxSDK.MapTools
                     throw new InvalidOperationException("A terrain tile already occupies that space.");
             }
             var mesh = source.MeshFilter.sharedMesh;
-            BuildTileVertices(mesh, direction, out var xs, out var zs, out var output, out var uv);
+            float[] xs, zs; Vector3[] output; Vector2[] uv;
+            if (requestedBounds.HasValue && source.SurfaceGridWidth > 2 && source.SurfaceGridHeight > 2
+                && (long)source.SurfaceGridWidth * source.SurfaceGridHeight <= mesh.vertexCount)
+            {
+                xs = new float[source.SurfaceGridWidth]; zs = new float[source.SurfaceGridHeight];
+                output = null; uv = null;
+            }
+            else BuildTileVertices(mesh, direction, out xs, out zs, out output, out uv);
             int[] triangles = new int[(xs.Length - 1) * (zs.Length - 1) * 6];
             int index = 0;
             for (int z = 0; z < zs.Length - 1; z++)
@@ -231,6 +238,9 @@ namespace MashBoxSDK.MapTools
                     triangles[index++] = i; triangles[index++] = i + xs.Length; triangles[index++] = i + 1;
                     triangles[index++] = i + 1; triangles[index++] = i + xs.Length; triangles[index++] = i + xs.Length + 1;
                 }
+            if (requestedBounds.HasValue)
+                BuildScaledGeometry(source, destination, source.World.Chunks, xs.Length, zs.Length,
+                    out output, out uv, out triangles);
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Add MG Terrain Tile");
             try
@@ -240,9 +250,10 @@ namespace MashBoxSDK.MapTools
                 UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, source.gameObject.scene);
                 Undo.RegisterCreatedObjectUndo(go, "Add Terrain Tile");
                 go.transform.SetParent(source.World.transform, false);
-                go.transform.position = source.MeshFilter.transform.position + offset;
+                go.transform.position = requestedBounds.HasValue ? new Vector3(destination.min.x, source.MeshFilter.transform.position.y, destination.min.z) : source.MeshFilter.transform.position + offset;
                 go.transform.localScale = Vector3.Scale(source.MeshFilter.transform.lossyScale,
                     new Vector3(1 / source.World.transform.lossyScale.x, 1 / source.World.transform.lossyScale.y, 1 / source.World.transform.lossyScale.z));
+                if (requestedBounds.HasValue) go.transform.localScale = Vector3.one;
                 go.layer = source.gameObject.layer;
                 var tile = Undo.AddComponent<MGTerrain>(go);
                 var result = new Mesh { name = go.name, indexFormat = output.Length > 65535
@@ -250,16 +261,22 @@ namespace MashBoxSDK.MapTools
                 Undo.RegisterCreatedObjectUndo(result, "Create Terrain Tile Mesh");
                 tile.MeshFilter.sharedMesh = result;
                 // Match every already occupied border, including corners, before exposing the new tile.
-                MatchNewEdges(tile, source.World.Chunks);
+                if (!requestedBounds.HasValue) MatchNewEdges(tile, source.World.Chunks);
                 result.RecalculateNormals(); result.RecalculateBounds(); result.RecalculateTangents();
+                if (MGTerrainTileNames.TryCoordinates(tile, out var actualCoordinate))
+                    go.name = result.name = $"Terrain Tile ({actualCoordinate.x}, {actualCoordinate.y})";
                 var collider = Undo.AddComponent<MeshCollider>(go); collider.sharedMesh = result;
                 tile.Configure(tile.MeshFilter, tile.MeshRenderer, collider);
-                tile.ConfigureSurfaceGrid(xs.Length, zs.Length);
+                tile.ConfigureSurfaceGrid(xs.Length, zs.Length, requestedBounds.HasValue);
                 var materials = source.MeshRenderer.sharedMaterials;
                 for (int i = 0; i < materials.Length; i++)
                     if (materials[i] != null)
                     {
                         materials[i] = new Material(materials[i]) { name = go.name + " Surface" };
+                        // Per-tile captures cannot be inherited by a different footprint.
+                        foreach (string property in new[]{"_FarRangeAppearanceMap", "_FarRangeAppearanceNormalMap", "_DistantSurfaceHeightMap"})
+                            if (materials[i].HasProperty(property)) materials[i].SetTexture(property, null);
+                        if (materials[i].HasProperty("_DistantSurfaceStrength")) materials[i].SetFloat("_DistantSurfaceStrength", 0);
                         Undo.RegisterCreatedObjectUndo(materials[i], "Create Tile Material");
                     }
                 tile.MeshRenderer.sharedMaterials = materials;
@@ -269,7 +286,7 @@ namespace MashBoxSDK.MapTools
                     var copy = Object.Instantiate(map); copy.name = go.name + " " + map.name;
                     Undo.RegisterCreatedObjectUndo(copy, "Create Tile Control Map"); return copy;
                 }
-                tile.SetControlMaps(CloneMap(source.ControlMap1), CloneMap(source.ControlMap2));
+                tile.SetControlMaps(CloneMap(MGTerrainControlMapOwnership.Source(source, 1)), CloneMap(MGTerrainControlMapOwnership.Source(source, 2)));
                 tile.ApplyControlMapsToMaterial();
                 MGTerrainSettingsCopy.Copy(source, tile);
                 tile.HeightOnlySculpt = true;

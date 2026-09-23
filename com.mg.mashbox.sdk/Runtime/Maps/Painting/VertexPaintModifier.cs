@@ -23,6 +23,7 @@ namespace MashBoxSDK.Maps.Painting
             [Min(0.001f)] public float radius = 1f;
             [Range(0f, 1f)] public float strength = 0.5f;
             public bool useFalloff = true;
+            public BrushMask brushMask;
         }
 
         [SerializeField] MeshFilter m_Target;
@@ -492,7 +493,7 @@ namespace MashBoxSDK.Maps.Painting
                     float falloff = stroke.useFalloff
                         ? Mathf.Clamp01(1f - Mathf.Sqrt(distanceSquared) / stroke.radius)
                         : 1f;
-                    colors[index] = Color.Lerp(colors[index], stroke.color, stroke.strength * falloff);
+                    colors[index] = Color.Lerp(colors[index], stroke.color, stroke.strength * falloff * (stroke.brushMask?.Sample(m_WorldVertices[index] - worldCenter, stroke.radius) ?? 1f));
                 });
             }
 

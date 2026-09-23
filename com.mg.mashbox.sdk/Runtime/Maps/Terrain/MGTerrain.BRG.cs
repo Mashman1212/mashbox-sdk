@@ -1091,7 +1091,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             Vector3[] vertices = mesh.vertices;
             int width = Mathf.Max(2, m_SurfaceGridWidth);
             int height = Mathf.Max(2, m_SurfaceGridHeight);
-            if (vertices.Length != width * height)
+            if (!MatchesSurfaceGrid(vertices.Length, width, height))
             {
                 int square = Mathf.RoundToInt(Mathf.Sqrt(vertices.Length));
                 if (square * square != vertices.Length)

@@ -133,6 +133,15 @@ void POMArrayStable_float(
             1.0 - currentHeight;
     }
 
+    // Height is white-high; the ray marches in depth from the top surface.
+    currentHeight = 1.0 - currentHeight;
+
+    if (currentHeight <= 0.0)
+    {
+        ParallaxUV = UV;
+        return;
+    }
+
     [loop]
     for (int i = 0; i < stepCount; i++)
     {
@@ -156,6 +165,8 @@ void POMArrayStable_float(
             currentHeight =
                 1.0 - currentHeight;
         }
+
+        currentHeight = 1.0 - currentHeight;
     }
 
     // The final two coarse positions bracket the surface intersection.
@@ -202,6 +213,8 @@ void POMArrayStable_float(
             middleHeight =
                 1.0 - middleHeight;
         }
+
+        middleHeight = 1.0 - middleHeight;
 
         if (middleDepth < middleHeight)
         {

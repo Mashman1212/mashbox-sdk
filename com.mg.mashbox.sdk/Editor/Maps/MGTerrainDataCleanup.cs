@@ -22,6 +22,8 @@ namespace MashBoxSDK.MapTools
         {
             internal UnityEngine.SceneManagement.Scene Scene;
             internal string Folder;
+            internal MGTerrainWorld World;
+            internal MGTerrain[] Tiles;
             internal readonly List<Item> Items = new List<Item>();
             internal readonly List<GameObject> ObsoleteSurfaces = new List<GameObject>();
             internal readonly HashSet<string> ProtectedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -46,9 +48,13 @@ namespace MashBoxSDK.MapTools
         {
             var scene = world.gameObject.scene;
             if (string.IsNullOrEmpty(scene.path)) throw new InvalidOperationException("Save the scene before organizing its terrain data.");
-            var plan = new Plan { Scene = scene, Folder = MGTerrainSceneAssets.Folder(scene) };
+            var plan = new Plan { Scene = scene, Folder = MGTerrainSceneAssets.Folder(scene), World = world };
             var items = new Dictionary<Object,Item>();
-            var terrains = scene.GetRootGameObjects().SelectMany(g=>g.GetComponentsInChildren<MGTerrain>(true)).ToArray();
+            var allTerrains = scene.GetRootGameObjects().SelectMany(g=>g.GetComponentsInChildren<MGTerrain>(true)).ToArray();
+            var terrains = allTerrains.Where(t => t.GetComponentInParent<MGTerrainWorld>(true) == world).ToArray();
+            plan.Tiles = terrains;
+            if (terrains.GroupBy(MGTerrainAssetStore.Prefix).Any(g => g.Count() > 1))
+                throw new InvalidOperationException("Two tiles in this world occupy the same asset coordinate. Resolve the overlap before cleaning.");
             var sourceTextures = new HashSet<Object>();
             void Protect(Texture texture)
             {
@@ -64,7 +70,7 @@ namespace MashBoxSDK.MapTools
                 if (layer == null) continue;
                 Protect(layer.diffuseTexture); Protect(layer.normalMapTexture); Protect(layer.maskMapTexture);
             }
-            foreach (var tile in terrains)
+            foreach (var tile in allTerrains)
             {
                 var material = tile.MeshRenderer != null ? tile.MeshRenderer.sharedMaterial : null;
                 if (material == null) continue;
@@ -101,13 +107,13 @@ namespace MashBoxSDK.MapTools
                 if(tile.MeshRenderer!=null)
                 {
                     var renderer=tile.MeshRenderer; var material=renderer.sharedMaterial;
-                    bool shared=material!=null && (terrains.Count(t=>t.MeshRenderer!=null && t.MeshRenderer.sharedMaterial==material)>1
+                    bool shared=material!=null && (allTerrains.Count(t=>t.MeshRenderer!=null && t.MeshRenderer.sharedMaterial==material)>1
                         || scene.GetRootGameObjects().SelectMany(g=>g.GetComponentsInChildren<MGTerrainWorld>(true)).Any(w=>w.TileMaterial==material));
                     Add(material,tile,"Material",o=>{var slots=renderer.sharedMaterials;slots[0]=(Material)o;renderer.sharedMaterials=slots;EditorUtility.SetDirty(renderer);},shared);
                     if(material!=null)
                         foreach(string property in material.GetTexturePropertyNames())
                         {
-                            if (!IsGeneratedMaterialTexture(property)) continue;
+                            if (!IsGeneratedMaterialTexture(property) || property == "_ControlMap1" || property == "_ControlMap2") continue;
                             var texture=material.GetTexture(property); string role=property.TrimStart('_');
                             if(property==MGTerrainAppearanceCaptureAssets.ColourProperty) role=IsDistant(texture)?"Distant":"Appearance";
                             if(property==MGTerrainAppearanceCaptureAssets.NormalProperty)role=IsDistant(texture)?"Distant_NormalWS":"Appearance_NormalWS";
@@ -117,6 +123,19 @@ namespace MashBoxSDK.MapTools
                                 Add(texture,tile,role,o=>{renderer.sharedMaterial.SetTexture(property,(Texture)o);EditorUtility.SetDirty(renderer.sharedMaterial);});
                         }
                 }
+                // Controls belong to the tile, even when the original shader maps were shared.
+                for (int channel = 1; channel <= 2; channel++)
+                {
+                    int slot = channel;
+                    var map = MGTerrainControlMapOwnership.Source(tile, channel);
+                    Add(map, tile, "ControlMap" + channel, o => {
+                        tile.SetControlMaps(slot == 1 ? (Texture2D)o : tile.ControlMap1,
+                            slot == 2 ? (Texture2D)o : tile.ControlMap2);
+                        EditorUtility.SetDirty(tile);
+                        if (tile.MeshRenderer != null && tile.MeshRenderer.sharedMaterial != null)
+                            EditorUtility.SetDirty(tile.MeshRenderer.sharedMaterial);
+                    }, true);
+                }
                 foreach(var component in tile.GetComponents<Component>())
                 {
                     if(component==null || component is Transform || component is Renderer)continue;
@@ -125,6 +144,7 @@ namespace MashBoxSDK.MapTools
                     {
                         if(iterator.propertyType!=SerializedPropertyType.ObjectReference)continue;
                         string property=iterator.propertyPath;
+                        if (component is MGTerrain && (property == "m_ControlMap1" || property == "m_ControlMap2")) continue;
                         // Never relocate foliage prefab source meshes or materials.
                         if(property.StartsWith("m_Prototypes",StringComparison.Ordinal))continue;
                         var value=iterator.objectReferenceValue;
@@ -239,7 +259,7 @@ namespace MashBoxSDK.MapTools
             {
                 var plan=Build(world);
                 string[] unused=Unused(plan);
-                string message=$"Organize {plan.Items.Count} terrain asset references for all tiles in this scene.\n\n{plan.Folder}\n\nMaterials and maps keep their references. Shared materials are separated per tile. The scene will be saved. {plan.ObsoleteSurfaces.Count} obsolete inactive distant-surface objects will be removed. Unused files are moved to the OS trash after checking references again.\n\nCurrently unused: {unused.Length} files.\n"+string.Join("\n",unused.Take(8).Select(Path.GetFileName));
+                string message=$"Clean {plan.Tiles.Length} tiles belonging to '{world.name}' only.\n\n{plan.Folder}\n\nThis folder will retain only this world's generated data. Files used elsewhere move to the sibling 'Other Terrain Data' folder with references intact; unused files go to the OS trash. Source textures are not renamed. The scene will be saved.\n\nCurrently unused: {unused.Length} files.";
                 if(!EditorUtility.DisplayDialog("Clean Terrain Data",message,"Clean and Save Scene","Cancel"))return;
                 Execute(plan);
             }
@@ -316,11 +336,8 @@ namespace MashBoxSDK.MapTools
                 if(!EditorSceneManager.SaveScene(plan.Scene))throw new IOException("Scene could not be saved. Cleanup stopped before removing unused files.");
                 transaction.Commit();committed=true;
                 if (retiredScene.IsValid()) EditorSceneManager.ClosePreviewScene(retiredScene);
-                string[] unused=Unused(plan);
-                int removed=0;
-                foreach(string path in unused)
-                    if(AssetDatabase.MoveAssetToTrash(path))removed++;
-                Debug.Log($"Terrain data cleanup complete: {plan.Items.Count} asset references organized; {removed} unused files moved to trash. {plan.Folder}");
+                var result = RemoveOtherData(plan);
+                Debug.Log($"Terrain data cleanup complete for '{plan.World.name}': {plan.Tiles.Length} tiles; {result.moved} files moved to Other Terrain Data; {result.removed} unused files moved to trash. {plan.Folder}");
             }
             finally
             {
@@ -331,6 +348,41 @@ namespace MashBoxSDK.MapTools
                     {var move=moves[i]; if(File.Exists(move.to) && !File.Exists(move.from))Move(move.to,move.from);}
                 EditorUtility.ClearProgressBar();
             }
+        }
+        internal static HashSet<string> WorldOutputs(Plan plan)
+        {
+            var keep = new HashSet<string>(plan.Items.Select(i => i.Destination), StringComparer.OrdinalIgnoreCase);
+            // Both appearance and morph bakes are retained, even when only one is currently bound.
+            foreach (var tile in plan.Tiles)
+                foreach (string role in new[]{"Appearance", "Appearance_NormalWS", "Distant", "Distant_NormalWS", "Distant_Height"})
+                    foreach (string extension in new[]{".png", ".asset"})
+                    {
+                        string path = MGTerrainAssetStore.PathFor(tile, role, extension);
+                        if (File.Exists(path)) keep.Add(path);
+                    }
+            return keep;
+        }
+        internal static (int moved, int removed) RemoveOtherData(Plan plan)
+        {
+            var keep = WorldOutputs(plan);
+            var referenced = Referenced(plan);
+            var surplus = AssetDatabase.FindAssets("", new[]{plan.Folder}).Select(AssetDatabase.GUIDToAssetPath)
+                .Where(p => !AssetDatabase.IsValidFolder(p) && !keep.Contains(p)).Distinct().ToArray();
+            string parent = Path.GetDirectoryName(plan.Folder).Replace('\\', '/');
+            string archive = parent + "/Other Terrain Data";
+            int moved = 0, removed = 0;
+            foreach (string path in surplus)
+            {
+                if (referenced.Contains(path))
+                {
+                    if (!AssetDatabase.IsValidFolder(archive)) AssetDatabase.CreateFolder(parent, "Other Terrain Data");
+                    string destination = AssetDatabase.GenerateUniqueAssetPath(archive + "/" + Path.GetFileName(path));
+                    Move(path, destination); moved++;
+                }
+                else if (AssetDatabase.MoveAssetToTrash(path)) removed++;
+                else throw new IOException("Could not move unused terrain data to trash: " + path);
+            }
+            return (moved, removed);
         }
         static void Move(string from,string to)
         {

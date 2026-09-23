@@ -434,7 +434,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             InvalidateRenderCache();
         }
 
-        public int RemoveInstances(Vector3 worldCenter, float worldRadius, GameObject prefab = null, InstanceKind? kind = null)
+        public int RemoveInstances(Vector3 worldCenter, float worldRadius, GameObject prefab = null, InstanceKind? kind = null, BrushMask brushMask = null)
         {
             float radiusSquared = worldRadius * worldRadius;
             int removed = 0;
@@ -446,6 +446,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (prototype == null || (prefab != null && prototype.Prefab != prefab) || (kind.HasValue && prototype.Kind != kind.Value)) continue;
                 Vector3 worldPosition = transform.TransformPoint(instance.LocalPosition);
                 if ((worldPosition - worldCenter).sqrMagnitude > radiusSquared) continue;
+                if (brushMask != null && UnityEngine.Random.value >= brushMask.Sample(worldPosition - worldCenter, worldRadius)) continue;
                 m_Instances.RemoveAt(index);
                 removed++;
             }

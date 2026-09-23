@@ -147,7 +147,6 @@ namespace MashBoxSDK.MapTools
         }
         [SerializeField, Range(1, 512)] private int splatBrushPixels = 48;
         [SerializeField] private bool normalizeSplatWeights = true;
-        [SerializeField] private bool splatUseFalloff = true;
         [SerializeField] private int newSplatResolution = 1024;
         [SerializeField] private bool splatAutoSaveAfterStroke = true;
         private string splatStatusMessage = "Assign a splat-map texture, then paint through a MeshCollider's selected UV channel.";
@@ -600,6 +599,7 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.Space(5);
             brushRadius = EditorGUILayout.Slider("Brush Radius", brushRadius, 0.1f, MBEditorToolState.MaxBrushRadius);
             brushStrength = EditorGUILayout.Slider("Brush Strength", brushStrength, 0.01f, 1f);
+            MBBrushMask.DrawSettings();
 
             if (currentMode == ToolMode.Decor)
             {
@@ -800,7 +800,7 @@ namespace MashBoxSDK.MapTools
                 splatBrushPixels,
                 1,
                 512);
-            splatUseFalloff = EditorGUILayout.Toggle("Use Falloff", splatUseFalloff);
+            // Shared falloff controls are drawn with the mask settings above.
             splatAutoSaveAfterStroke = EditorGUILayout.Toggle(
                 new GUIContent(
                     "Save When Leaving Splat Mode",
@@ -1911,6 +1911,7 @@ namespace MashBoxSDK.MapTools
         {
             Event e = Event.current;
             MBEditorToolVisuals.RepaintBrushModifiers(e, sceneView);
+            MBBrushMask.HandleKeys(e, sceneCameraRightMouseHeld);
 
             if ((e.type == EventType.MouseDown || e.rawType == EventType.MouseDown) && e.button == 1)
                 sceneCameraRightMouseHeld = true;
@@ -2060,6 +2061,7 @@ namespace MashBoxSDK.MapTools
                     : currentMode == ToolMode.SplatMap ? GetSplatBrushColor(hit, e.shift) : GetPainterBrushColor(hit, e.shift);
                 Handles.color = brushColor;
                 Handles.DrawWireDisc(hit.point, hit.normal, brushRadius);
+                MBBrushMask.DrawPreview(hit.point, currentMode == ToolMode.Decor ? Vector3.up : hit.normal, brushRadius, currentMode == ToolMode.SplatMap);
                 if (currentMode == ToolMode.Painter)
                     DrawPainterHoverLabel(hit, e.shift);
                 else if (currentMode == ToolMode.SplatMap)
@@ -2862,6 +2864,7 @@ namespace MashBoxSDK.MapTools
             for (int i = 0; i < count; i++)
             {
                 Vector2 randomPoint = Random.insideUnitCircle * brushRadius;
+                if (Random.value >= MBBrushMask.SampleUV(randomPoint.x / brushRadius, randomPoint.y / brushRadius)) continue;
                 Vector3 origin = hit.point + new Vector3(randomPoint.x, 10f, randomPoint.y);
                 Ray scatterRay = new Ray(origin, Vector3.down);
                 RaycastHit scatterHit;
@@ -2949,7 +2952,7 @@ namespace MashBoxSDK.MapTools
                     hit.point,
                     brushRadius,
                     selectedPrefab,
-                    mgTerrainInstanceKind);
+                    mgTerrainInstanceKind, MBBrushMask.Capture(Vector3.up));
                 if (removed > 0)
                 {
                     EditorUtility.SetDirty(terrain);
@@ -2962,6 +2965,7 @@ namespace MashBoxSDK.MapTools
             foreach (var col in colliders)
             {
                 if (col == null) continue;
+                if (Random.value >= MBBrushMask.Sample(col.transform.position - hit.point, brushRadius)) continue;
                 if (decorReferenceRoot != null)
                 {
                     Transform placed = col.transform;
@@ -3014,7 +3018,7 @@ namespace MashBoxSDK.MapTools
                 hit.point,
                 brushRadius,
                 erase ? -magnitude : magnitude,
-                1.5f, idMap != null ? mgGrassSubId : -1, mgGrassIdOnly);
+                1.5f, idMap != null ? mgGrassSubId : -1, mgGrassIdOnly, MBBrushMask.Capture(Vector3.up));
             if (changedCells <= 0)
                 return;
             if (idMap != null) EditorUtility.SetDirty(idMap);
@@ -3070,7 +3074,7 @@ namespace MashBoxSDK.MapTools
                 if (dist < brushRadius)
                 {
                     float falloff = useFalloff ? Mathf.Clamp01(1.0f - (dist / brushRadius)) : 1.0f;
-                    float influence = brushStrength * falloff;
+                    float influence = brushStrength * falloff * MBBrushMask.Sample(worldV - hit.point, brushRadius);
                     colors[i] = Color.Lerp(colors[i], paintColor, influence);
                     changed = true;
                 }
@@ -3093,7 +3097,9 @@ namespace MashBoxSDK.MapTools
                 return;
 
             Undo.RecordObject(modifier, "Paint Loft Vertex Color");
-            modifier.AddStrokeAndApply(modifier.CreateStroke(loft.GeneratedMesh, hit.point, paintColor, brushRadius, brushStrength, useFalloff));
+            var stroke = modifier.CreateStroke(loft.GeneratedMesh, hit.point, paintColor, brushRadius, brushStrength, useFalloff);
+            stroke.brushMask = MBBrushMask.Capture(hit.normal);
+            modifier.AddStrokeAndApply(stroke);
             EditorUtility.SetDirty(modifier);
             lastLoftPaintPoint = hit.point;
             hasLastLoftPaintPoint = true;
@@ -3435,8 +3441,8 @@ namespace MashBoxSDK.MapTools
                     if (distance > radius)
                         continue;
 
-                    float falloff = splatUseFalloff ? Mathf.Clamp01(1f - distance / radius) : 1f;
-                    float influence = Mathf.Clamp01(brushStrength * falloff);
+                    float falloff = MBBrushMask.SampleSplatFalloff(distance / radius);
+                    float influence = Mathf.Clamp01(brushStrength * falloff * MBBrushMask.SampleUV((minX + x - centerX) / (float)radius, (minY + y - centerY) / (float)radius));
                     int pixelIndex = y * width + x;
                     Color color = pixels[pixelIndex];
                     if (companionPixels != null)
@@ -3495,6 +3501,8 @@ namespace MashBoxSDK.MapTools
 
         private bool TryPaintStaticPlanarSplat(RaycastHit hit, Vector2 uv, bool erase)
         {
+            // Masked painting uses the triangle world positions, matching the surface preview.
+            if (MBBrushMask.Enabled) return false;
             if (!(hit.collider is MeshCollider meshCollider)
                 || hit.collider.GetComponentInParent<MultiSplineLoft>() != null
                 || TryGetMeshMicroBumpGenerator(hit.collider, out _)
@@ -3545,7 +3553,7 @@ namespace MashBoxSDK.MapTools
                         continue;
 
                     float distance = Mathf.Sqrt(distanceSquared);
-                    float falloff = splatUseFalloff ? 1f - distance : 1f;
+                    float falloff = MBBrushMask.SampleSplatFalloff(distance);
                     float influence = Mathf.Clamp01(brushStrength * falloff);
                     int pixelIndex = y * width + x;
                     Color color = pixels[pixelIndex];
@@ -3956,8 +3964,8 @@ namespace MashBoxSDK.MapTools
                     if (distance > radius)
                         continue;
 
-                    float falloff = splatUseFalloff ? Mathf.Clamp01(1f - distance / radius) : 1f;
-                    float influence = Mathf.Clamp01(brushStrength * falloff);
+                    float falloff = MBBrushMask.SampleSplatFalloff(distance / radius);
+                    float influence = Mathf.Clamp01(brushStrength * falloff * MBBrushMask.Sample(worldPosition - brushCenter, radius));
                     int pixelIndex = y * textureWidth + x;
                     if (!influences.TryGetValue(pixelIndex, out float existing)
                         || influence > existing)
@@ -4043,6 +4051,7 @@ namespace MashBoxSDK.MapTools
             float influence,
             bool erase)
         {
+            if (influence <= 0f) return;
             if (splatPaintMode == MBSplatPaintMode.Color)
             {
                 Color targetColor = erase ? Color.clear : GetSplatColorWeights(paintColor);
@@ -4065,6 +4074,7 @@ namespace MashBoxSDK.MapTools
             float influence,
             bool erase)
         {
+            if (influence <= 0f) return;
             int selectedChannel = GetActiveSplatChannel();
             if (!erase)
             {

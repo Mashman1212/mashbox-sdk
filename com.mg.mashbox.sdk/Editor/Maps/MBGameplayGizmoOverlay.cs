@@ -434,6 +434,7 @@ namespace MashBoxSDK.MapTools
             toolsContent.Add(new MBSplineLoftModeToggle());
             toolsContent.Add(new MBUvSplineModeToggle());
             root.Add(toolsRow);
+            root.Add(new IMGUIContainer(MBBrushMask.DrawOverlay));
 
             var actionsRow = CreateRow("Actions", out VisualElement actionsContent);
             actionsContent.style.flexDirection = FlexDirection.Column;

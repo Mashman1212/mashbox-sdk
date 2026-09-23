@@ -3250,7 +3250,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "FadeEnd",
     "m_StageCapability": 3,
-    "m_Value": 500.0,
+    "m_Value": 200.0,
     "m_DefaultValue": 0.0,
     "m_Labels": [],
     "m_LiteralMode": false
@@ -4022,7 +4022,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "FadeStart",
     "m_StageCapability": 3,
-    "m_Value": 100.0,
+    "m_Value": 50.0,
     "m_DefaultValue": 0.0,
     "m_Labels": [],
     "m_LiteralMode": false
@@ -5897,7 +5897,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "PlanarAmplitudeScale",
     "m_StageCapability": 3,
-    "m_Value": 0.10000000149011612,
+    "m_Value": 1.0,
     "m_DefaultValue": 0.0,
     "m_Labels": [],
     "m_LiteralMode": false
@@ -6423,7 +6423,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "FadeStart",
     "m_StageCapability": 3,
-    "m_Value": 100.0,
+    "m_Value": 50.0,
     "m_DefaultValue": 0.0,
     "m_Labels": [],
     "m_LiteralMode": false
@@ -9143,7 +9143,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "FadeEnd",
     "m_StageCapability": 3,
-    "m_Value": 500.0,
+    "m_Value": 200.0,
     "m_DefaultValue": 0.0,
     "m_Labels": [],
     "m_LiteralMode": false
@@ -10652,7 +10652,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "PlanarAmplitudeScale",
     "m_StageCapability": 3,
-    "m_Value": 0.10000000149011612,
+    "m_Value": 1.0,
     "m_DefaultValue": 0.0,
     "m_Labels": [],
     "m_LiteralMode": false

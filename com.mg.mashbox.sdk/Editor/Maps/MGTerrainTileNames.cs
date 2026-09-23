@@ -34,7 +34,7 @@ namespace MashBoxSDK.MapTools
             var min = matrix.MultiplyPoint3x4(bounds.min);
             var size = matrix.MultiplyVector(bounds.size);
             if (size.x <= .001f || size.z <= .001f) return false;
-            coordinate = new Vector2Int(Mathf.RoundToInt(min.x / size.x), Mathf.RoundToInt(min.z / size.z));
+            coordinate = new Vector2Int(Mathf.RoundToInt(min.x / Mathf.Max(.001f, world.TileSize)), Mathf.RoundToInt(min.z / Mathf.Max(.001f, world.TileSize)));
             return true;
         }
         internal static void Repair()

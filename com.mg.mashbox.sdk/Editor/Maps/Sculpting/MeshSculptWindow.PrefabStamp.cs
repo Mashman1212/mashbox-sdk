@@ -101,7 +101,7 @@ namespace MashBoxSDK.MapTools
         {
             if (terrain == null || m_StampSourceKind != StampSourceKind.Prefab || m_PrefabStamp == null || (!m_StampColour && !m_StampNormals)) return;
             m_AppearanceDabs.Add(new PrefabStampAppearance.Dab { tile = terrain, center = center, radius = m_Radius,
-                height = m_StampHeight, rotation = m_StampRotation, falloff = m_Falloff, invert = invert });
+                height = m_StampHeight, rotation = m_StampRotation, falloff = m_Falloff, invert = invert, brushMask = MBBrushMask.Capture(Vector3.up) });
         }
 
         void CommitStampAppearance()
