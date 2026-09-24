@@ -15,6 +15,7 @@ namespace MashBoxSDK.MapTools
     {
         static readonly Queue<MGTerrain> Pending = new Queue<MGTerrain>();
         static readonly HashSet<MGTerrain> Queued = new HashSet<MGTerrain>();
+        static readonly HashSet<Scene> SeamScenes = new HashSet<Scene>();
 
         static MGTerrainGridRepair()
         {
@@ -33,6 +34,7 @@ namespace MashBoxSDK.MapTools
         {
             if (!scene.IsValid() || !scene.isLoaded || EditorSceneManager.IsPreviewScene(scene)
                 || EditorApplication.isPlayingOrWillChangePlaymode) return;
+            SeamScenes.Add(scene);
             foreach (var root in scene.GetRootGameObjects())
                 foreach (var tile in root.GetComponentsInChildren<MGTerrain>(true))
                     if (Queued.Add(tile)) Pending.Enqueue(tile);
@@ -46,6 +48,7 @@ namespace MashBoxSDK.MapTools
             {
                 Pending.Clear();
                 Queued.Clear();
+                SeamScenes.Clear();
             }
             else if (!EditorApplication.isCompiling && !EditorApplication.isUpdating && Pending.Count > 0)
             {
@@ -55,7 +58,14 @@ namespace MashBoxSDK.MapTools
                 catch (Exception error) { Debug.LogException(error, tile); }
             }
             // No permanent update callback or per-frame mesh polling.
-            if (Pending.Count == 0) EditorApplication.update -= ProcessNext;
+            if (Pending.Count == 0)
+            {
+                EditorApplication.update -= ProcessNext;
+                foreach (var scene in SeamScenes)
+                    try { MGTerrainSeamRepair.Repair(scene); }
+                    catch (Exception error) { Debug.LogException(error); }
+                SeamScenes.Clear();
+            }
         }
 
         internal static bool Repair(MGTerrain tile)

@@ -23,10 +23,12 @@ namespace MashBoxSDK.MapTools
 
         }
 
-        static void Prepare(MeshSculptModifier modifier)
+        internal static void Prepare(MeshSculptModifier modifier) => Prepare(modifier, true);
+
+        internal static void Prepare(MeshSculptModifier modifier, bool clearStrokes)
         {
             var filter = modifier.Target;
-            var terrain = filter.GetComponentInParent<MGTerrain>();
+            var terrain = filter.GetComponentInParent<MGTerrain>(true);
             if (terrain == null || terrain.MeshFilter != filter || filter.sharedMesh == null) return;
             EditedTerrains.Add(terrain);
             int group = Undo.GetCurrentGroup();
@@ -63,7 +65,7 @@ namespace MashBoxSDK.MapTools
                 UndoGroups[terrain] = group;
             }
             // The brush uses this worker only during editor sessions. Mesh assets carry the result.
-            modifier.ClearStrokes();
+            if (clearStrokes) modifier.ClearStrokes();
             const HideFlags workerFlags = HideFlags.HideInInspector | HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
             // Reassigning even identical flags invalidates Unity's gizmo registry.
             if (modifier.hideFlags != workerFlags) modifier.hideFlags = workerFlags;

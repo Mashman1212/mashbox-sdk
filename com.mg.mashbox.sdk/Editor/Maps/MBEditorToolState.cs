@@ -192,7 +192,7 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        internal const float MaxBrushRadius = 100f;
+        internal static float MaxBrushRadius => Mode == MBEditorAuthoringMode.Brush && BrushMode == MBBrushMode.SplatMap ? 200f : 100f;
 
         internal static float BrushRadius
         {

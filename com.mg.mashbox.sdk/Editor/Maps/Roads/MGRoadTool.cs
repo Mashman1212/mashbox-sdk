@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using MashBoxSDK.Maps.Roads;
 using Unity.Mathematics;
@@ -15,9 +16,13 @@ namespace MashBoxSDK.Maps.Roads.Editor
         [SerializeField] MGRoadNetwork network;
         [SerializeField] MGRoad road;
         [SerializeField] int tab;
-        [SerializeField] bool draw, insert;
+        [SerializeField] bool draw;
+        Func<Vector3, Vector3> previewProjector;
+        MGRoad previewRoad;
         [SerializeField] float placementHeight;
         int selectedKnot = -1;
+        Tool knotTool = Tool.Move;
+        bool hidingObjectTools, previousToolsHidden;
         Vector2 scroll;
         string message;
         UnityEditor.Editor inspector;
@@ -30,7 +35,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
             window.network = value; window.road = selected; window.draw = false;
         }
         void OnEnable() { minSize = new Vector2(350, 440); SceneView.duringSceneGui += SceneGUI; }
-        void OnDisable() { SceneView.duringSceneGui -= SceneGUI; if (inspector != null) DestroyImmediate(inspector); }
+        void OnDisable() { RestoreObjectTools(); ClearPreview(); SceneView.duringSceneGui -= SceneGUI; if (inspector != null) DestroyImmediate(inspector); }
         void OnSelectionChange()
         {
             var go = Selection.activeGameObject;
@@ -48,7 +53,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
             {
                 network = (MGRoadNetwork)EditorGUILayout.ObjectField("Road Network", network, typeof(MGRoadNetwork), true);
                 if (GUILayout.Button("Create Road Network")) network = CreateNetwork();
-                if (network == null) { EditorGUILayout.HelpBox("Create a road network, assign its Terrain World, then create roads and click in the Scene view.", MessageType.Info); return; }
+                if (network == null) { EditorGUILayout.HelpBox("Create a road network, assign its Terrain World, then create roads and Shift-click in the Scene view.", MessageType.Info); return; }
                 tab = GUILayout.Toolbar(tab, new[] { "Roads", "Network", "Terrain" });
                 scroll = EditorGUILayout.BeginScrollView(scroll);
                 if (tab == 0) DrawRoads();
@@ -67,6 +72,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     }
                     if (so.ApplyModifiedProperties()) network.Rebuild();
                     if (tab == 2 && GUILayout.Button("Apply Terrain to Network Roads")) Apply(network.Roads);
+                    if (tab == 2) LayerButtons(network.Roads, network, ref message);
                 }
                 if (!string.IsNullOrEmpty(message)) EditorGUILayout.HelpBox(message, MessageType.Info);
                 EditorGUILayout.EndScrollView();
@@ -76,8 +82,8 @@ namespace MashBoxSDK.Maps.Roads.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("New Road")) { road = CreateRoad(network, false); draw = true; insert = false; }
-                if (GUILayout.Button("New Loop")) { road = CreateRoad(network, true); draw = true; insert = false; }
+                if (GUILayout.Button("New Road")) { road = CreateRoad(network, false); draw = true; }
+                if (GUILayout.Button("New Loop")) { road = CreateRoad(network, true); draw = true; }
             }
             foreach (var item in network.Roads)
             {
@@ -89,17 +95,27 @@ namespace MashBoxSDK.Maps.Roads.Editor
             using (new EditorGUILayout.HorizontalScope())
             {
                 draw = GUILayout.Toggle(draw, "Edit in Scene", "Button");
-                insert = GUILayout.Toggle(insert, "Insert", "Button");
+
                 if (GUILayout.Button("Frame")) { Selection.activeGameObject = road.gameObject; SceneView.lastActiveSceneView?.FrameSelected(); }
             }
             placementHeight = EditorGUILayout.FloatField("Fallback Plane Height", placementHeight);
-            EditorGUILayout.HelpBox("Click to append points; Insert clicks the nearest curve. Drag point handles to move them. Delete removes the selected point. Escape stops drawing; Alt navigates. Standard Unity spline tools can edit tangents.", MessageType.Info);
+            EditorGUILayout.HelpBox("Hold Shift to preview; Shift-click extends the nearest start or end. Ctrl-click inserts on the curve (Ctrl takes priority). Click points to select. W moves along the road; E rotates/banks the knot; R scales width (X), crown/shoulder height (Y), and tangent length (Z). Delete removes the selected point. Escape stops editing; Alt navigates. Closed loops extend from their last knot.", MessageType.Info);
             UnityEditor.Editor.CreateCachedEditor(road, typeof(MGRoadEditor), ref inspector);
             inspector.OnInspectorGUI();
         }
         internal static void Field(SerializedObject so, string name) => EditorGUILayout.PropertyField(so.FindProperty(name), true);
-        internal static void TerrainHelp() => EditorGUILayout.HelpBox("Road Follows Terrain updates the generated surface when the road moves. Terrain Follows Road uses Apply and supports Undo. Undo a previous Apply before moving a road if you want to remove its old terrain imprint. Only tiles belonging to the assigned MG Terrain World are edited. Overlapping roads apply in hierarchy order.", MessageType.Info);
-        void Apply(MGRoad[] roads)
+        internal static void TerrainHelp() => EditorGUILayout.HelpBox("Road Follows Terrain updates the generated surface when the road moves. Terrain Follows Road uses replaceable layers. Enable Auto Apply Terrain for live editing; Apply also updates a layer without accumulating imprints. Remove restores the terrain underneath. Bake keeps the result and removes every road layer in the assigned world. Baked/removed roads pause until Apply. Save the scene to persist the gameplay mesh; no runtime layer replay. Apply fully conforms the road and shoulders, their supporting terrain cells, and one extra cell on either side. Falloff Distance starts outside that margin. Strength and height-mode restrictions still apply. Only tiles belonging to the assigned MG Terrain World are edited. Overlapping roads apply in hierarchy order.", MessageType.Info);
+        internal static void LayerButtons(MGRoad[] roads, MGRoadNetwork network, ref string result)
+        {
+            if (roads.Any(r => r != null && !r.terrainLayerEnabled)) EditorGUILayout.HelpBox("Some road layers are paused after Remove/Bake. Apply resumes them.", MessageType.Info);
+            try
+            {
+                if (GUILayout.Button("Remove Terrain Layers")) result = MGRoadLayerService.Remove(roads);
+                using (new EditorGUI.DisabledScope(network == null || network.terrainWorld == null))
+                    if (GUILayout.Button("Bake All Road Layers in Terrain World")) result = MGRoadLayerService.Bake(network.terrainWorld);
+            }
+            catch (Exception ex) { result = ex.Message; Debug.LogException(ex); }
+        }        void Apply(MGRoad[] roads)
         {
             try { message = MGRoadTerrain.Apply(roads); }
             catch (Exception ex) { message = ex.Message; Debug.LogException(ex); }
@@ -128,66 +144,203 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         void SceneGUI(SceneView view)
         {
-            if (!draw || road == null || Application.isPlaying || PrefabStageUtility.GetPrefabStage(road.gameObject) != null) return;
+            if (!draw || road == null || Application.isPlaying || PrefabStageUtility.GetPrefabStage(road.gameObject) != null)
+            { RestoreObjectTools(); ClearPreview(); return; }
+            if (!hidingObjectTools) { previousToolsHidden = Tools.hidden; hidingObjectTools = true; Tools.hidden = true; }
+            view.wantsMouseMove = true;
             var spline = road.Container.Spline;
             var ev = Event.current;
-            if (ev.type == EventType.KeyDown && ev.keyCode == KeyCode.Escape) { draw = false; ev.Use(); Repaint(); return; }
-            if (ev.type == EventType.Layout && !ev.alt) HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
-            Handles.color = new Color(.1f, .85f, 1);
-            for (int i = 0; i < spline.Count; i++)
+            if (selectedKnot >= 0 && ev.type == EventType.KeyDown && !ev.alt && !ev.control && !ev.shift && !EditorGUIUtility.editingTextField)
             {
-                Vector3 p = road.transform.TransformPoint((Vector3)spline[i].Position);
-                float size = HandleUtility.GetHandleSize(p) * .07f;
-                if (Handles.Button(p, Quaternion.identity, size, size, Handles.DotHandleCap)) selectedKnot = i;
-                Handles.Label(p + Vector3.up * size * 2, i.ToString());
-                if (selectedKnot != i) continue;
-                EditorGUI.BeginChangeCheck();
-                Vector3 moved = Handles.PositionHandle(p, Quaternion.identity);
-                if (EditorGUI.EndChangeCheck())
+                if (ev.keyCode == KeyCode.W || ev.keyCode == KeyCode.E || ev.keyCode == KeyCode.R)
                 {
-                    Undo.RecordObject(road.Container, "Move Road Point");
-                    var knot = spline[i]; knot.Position = (float3)road.transform.InverseTransformPoint(moved); spline[i] = knot;
-                    Dirty();
+                    knotTool = ev.keyCode == KeyCode.W ? Tool.Move : ev.keyCode == KeyCode.E ? Tool.Rotate : Tool.Scale;
+                    ev.Use(); view.Repaint();
                 }
             }
+            bool inserting = ev.control && !ev.alt;
+            bool extending = ev.shift && !ev.control && !ev.alt;
+            if (ev.type == EventType.KeyDown && ev.keyCode == KeyCode.Escape)
+            { draw = false; RestoreObjectTools(); ClearPreview(); ev.Use(); view.Repaint(); Repaint(); return; }
+            if (!extending || previewRoad != road) ClearPreview();
+            if (ev.type == EventType.MouseMove || ev.type == EventType.KeyDown || ev.type == EventType.KeyUp || ev.type == EventType.MouseLeaveWindow)
+                view.Repaint();
+            int placementControl = GUIUtility.GetControlID(FocusType.Passive);
+            if (ev.type == EventType.Layout && (extending || inserting)) HandleUtility.AddDefaultControl(placementControl);
+            var oldColor = Handles.color;
+            Handles.color = new Color(.1f, .85f, 1);
+            // Modifier clicks belong to placement; they must not be swallowed by knot/position handles.
+            if (!extending && !inserting)
+                for (int i = 0; i < spline.Count; i++)
+                {
+                    Vector3 p = road.transform.TransformPoint((Vector3)spline[i].Position);
+                    float size = HandleUtility.GetHandleSize(p) * .07f;
+                    if (Handles.Button(p, Quaternion.identity, size, size, Handles.DotHandleCap)) selectedKnot = i;
+                    Handles.Label(p + Vector3.up * size * 2, i.ToString());
+                    if (selectedKnot != i) continue;
+                    int curveIndex = i == spline.Count - 1 && !spline.Closed ? Mathf.Max(0, i - 1) : i;
+                    float curveT = i == spline.Count - 1 && !spline.Closed ? 1 : 0;
+                    Quaternion frame = spline.Count > 1 ? MGRoadKnotShape.Frame(spline, curveIndex, curveT, road.transform) : road.transform.rotation;
+                    Handles.Label(p, "  W Move / E Rotate / R Scale");
+                    EditorGUI.BeginChangeCheck();
+                    if (knotTool == Tool.Rotate)
+                    {
+                        Quaternion rotated = Handles.RotationHandle(frame, p);
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            Undo.RecordObject(road.Container, "Rotate Road Knot");
+                            MGRoadKnotShape.Rotate(spline, i, rotated * Quaternion.Inverse(frame), road.transform); Dirty();
+                        }
+                    }
+                    else if (knotTool == Tool.Scale)
+                    {
+                        Vector3 scaled = Handles.ScaleHandle(MGRoadKnotShape.GetScale(spline, i), p, frame, HandleUtility.GetHandleSize(p));
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            Undo.RecordObject(road.Container, "Scale Road Knot");
+                            MGRoadKnotShape.Scale(spline, i, scaled); Dirty();
+                        }
+                    }
+                    else
+                    {
+                        Vector3 moved = Handles.PositionHandle(p, frame);
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            Undo.RecordObject(road.Container, "Move Road Point");
+                            var knot = spline[i]; knot.Position = (float3)road.transform.InverseTransformPoint(moved); spline[i] = knot; Dirty();
+                        }
+                    }
+                }
+            Handles.color = oldColor;
             if (ev.type == EventType.KeyDown && ev.keyCode == KeyCode.Delete && selectedKnot >= 0 && selectedKnot < spline.Count)
             {
                 Undo.RecordObject(road.Container, "Remove Road Point"); spline.RemoveAt(selectedKnot); selectedKnot = -1; Dirty(); ev.Use();
             }
-            if (ev.type != EventType.MouseDown || ev.button != 0 || ev.alt || GUIUtility.hotControl != 0) return;
+            if ((!extending && !inserting) || GUIUtility.hotControl != 0) return;
+            if (EditorWindow.mouseOverWindow != view) return;
             var ray = HandleUtility.GUIPointToWorldRay(ev.mousePosition);
-            if (insert && spline.Count >= 2)
+            bool click = ev.type == EventType.MouseDown && ev.button == 0 && HandleUtility.nearestControl == placementControl;
+            if (inserting)
             {
-                float best = float.PositiveInfinity, bestT = 0;
-                int samples = Mathf.Clamp(spline.Count * 64, 128, 8192);
-                for (int i = 0; i <= samples; i++)
+                if (spline.Count < 2 || !FindInsertion(spline, ray, ev.mousePosition, out int curve, out float curveT)) return;
+                Vector3 position = road.transform.TransformPoint((Vector3)CurveUtility.EvaluatePosition(spline.GetCurve(curve), curveT));
+                if (ev.type == EventType.Repaint)
                 {
-                    float t = i / (float)samples;
-                    Vector3 p = road.Container.EvaluatePosition(t);
-                    if (Vector3.Dot(p - ray.origin, ray.direction) <= 0) continue;
-                    float d = Vector2.Distance(HandleUtility.WorldToGUIPoint(p), ev.mousePosition);
-                    if (d < best) { best = d; bestT = t; }
+                    using (new Handles.DrawingScope(Color.yellow))
+                    { Handles.DrawWireDisc(position, Vector3.up, HandleUtility.GetHandleSize(position) * .08f); Handles.Label(position, "Ctrl-click: insert knot"); }
                 }
-                if (best > 30) return;
-                int curve = SplineUtility.SplineToCurveT(spline, bestT, out float curveT);
-                if (curveT < .001f || curveT > .999f) return;
-                Undo.RecordObject(road.Container, "Insert Road Point");
-                InsertPoint(spline, curve, curveT);
-                selectedKnot = curve + 1;
+                if (!click) return;
+                Undo.RecordObject(road.Container, "Insert Road Point"); InsertPoint(spline, curve, curveT); selectedKnot = curve + 1;
             }
             else
             {
-                Vector3? point = null;
-                float nearest = float.PositiveInfinity;
-                foreach (var hit in Physics.RaycastAll(ray, 100000, ~0, QueryTriggerInteraction.Ignore))
-                    if (hit.collider.GetComponentInParent<MGRoad>() == null && hit.distance < nearest) { nearest = hit.distance; point = hit.point; }
-                if (!point.HasValue && new Plane(Vector3.up, new Vector3(0, placementHeight, 0)).Raycast(ray, out float distance)) point = ray.GetPoint(distance);
-                if (!point.HasValue) return;
-                Undo.RecordObject(road.Container, "Add Road Point");
-                spline.Add(new BezierKnot((float3)road.transform.InverseTransformPoint(point.Value)), TangentMode.AutoSmooth);
-                selectedKnot = spline.Count - 1;
+                if (!TryPlacement(ray, out Vector3 point)) return;
+                bool prepend = ExtendFromStart(spline, road.transform, point);
+                if (ev.type == EventType.Repaint) DrawExtensionPreview(spline, point, prepend);
+                if (!click) return;
+                Undo.RecordObject(road.Container, prepend ? "Extend Road Start" : "Extend Road End");
+                selectedKnot = AddEndpoint(spline, (float3)road.transform.InverseTransformPoint(point), prepend);
             }
-            Dirty(); ev.Use();
+            ClearPreview(); Dirty(); ev.Use();
+        }
+        void RestoreObjectTools() { if (hidingObjectTools) { Tools.hidden = previousToolsHidden; hidingObjectTools = false; } }
+        void ClearPreview() { previewProjector = null; previewRoad = null; }
+        bool TryPlacement(Ray ray, out Vector3 point)
+        {
+            float nearest = float.PositiveInfinity; point = default;
+            foreach (var hit in Physics.RaycastAll(ray, 100000, ~0, QueryTriggerInteraction.Ignore))
+                if (hit.collider.GetComponentInParent<MGRoad>() == null && hit.distance < nearest)
+                { nearest = hit.distance; point = hit.point; }
+            if (!float.IsPositiveInfinity(nearest)) return true;
+            if (!new Plane(Vector3.up, new Vector3(0, placementHeight, 0)).Raycast(ray, out float distance)) return false;
+            point = ray.GetPoint(distance); return true;
+        }
+        internal static bool ExtendFromStart(UnitySpline spline, Transform transform, Vector3 point)
+        {
+            if (spline.Closed || spline.Count < 2) return false;
+            Vector3 start = transform.TransformPoint((Vector3)spline[0].Position);
+            Vector3 end = transform.TransformPoint((Vector3)spline[spline.Count - 1].Position);
+            return (point - start).sqrMagnitude < (point - end).sqrMagnitude;
+        }
+        internal static int AddEndpoint(UnitySpline spline, float3 localPoint, bool prepend)
+        {
+            Vector3 inheritedScale = spline.Count > 0 ? MGRoadKnotShape.GetScale(spline, prepend ? 0 : spline.Count - 1) : Vector3.one;
+            var knot = new BezierKnot(localPoint, float3.zero, float3.zero, spline.Count > 0 ? spline[prepend ? 0 : spline.Count - 1].Rotation : quaternion.identity);
+            if (prepend) { spline.Insert(0, knot, TangentMode.AutoSmooth); MGRoadKnotShape.SetScale(spline, 0, inheritedScale); return 0; }
+            spline.Add(knot, TangentMode.AutoSmooth); MGRoadKnotShape.SetScale(spline, spline.Count - 1, inheritedScale); return spline.Count - 1;
+        }
+        internal static UnitySpline ExtensionPreview(UnitySpline spline, float3 localPoint, bool prepend)
+        {
+            var preview = new UnitySpline(spline);
+            AddEndpoint(preview, localPoint, prepend);
+            return preview;
+        }
+        bool FindInsertion(UnitySpline spline, Ray ray, Vector2 mouse, out int curve, out float curveT)
+        {
+            float best = float.PositiveInfinity, bestT = 0;
+            int samples = Mathf.Clamp(spline.Count * 64, 128, 8192);
+            for (int i = 0; i <= samples; i++)
+            {
+                float t = i / (float)samples; Vector3 p = road.Container.EvaluatePosition(t);
+                if (Vector3.Dot(p - ray.origin, ray.direction) <= 0) continue;
+                float d = Vector2.Distance(HandleUtility.WorldToGUIPoint(p), mouse);
+                if (d < best) { best = d; bestT = t; }
+            }
+            curve = SplineUtility.SplineToCurveT(spline, bestT, out curveT);
+            return best <= 30 && curveT > .001f && curveT < .999f;
+        }
+        void DrawExtensionPreview(UnitySpline source, Vector3 point, bool prepend)
+        {
+            if (previewRoad != road)
+            {
+                previewRoad = road;
+                if (road.TerrainSettings.mode == RoadTerrainMode.RoadFollowsTerrain)
+                    previewProjector = MGRoadTerrain.CreatePreviewProjector(road);
+            }
+            var preview = ExtensionPreview(source, (float3)road.transform.InverseTransformPoint(point), prepend);
+            Vector3 marker = previewProjector != null ? previewProjector(point) : point;
+            using (new Handles.DrawingScope(new Color(.15f, .9f, 1, .9f)))
+            {
+                Handles.DrawWireDisc(marker, Vector3.up, HandleUtility.GetHandleSize(marker) * .1f);
+                Handles.Label(marker, source.Count == 0 ? "Shift-click: first knot" : prepend ? "Shift-click: extend START" : "Shift-click: extend END");
+            }
+            if (preview.Count < 2) return;
+            int curveCount = preview.Closed ? preview.Count : preview.Count - 1;
+            int first = prepend ? 0 : Mathf.Max(0, curveCount - 2);
+            int last = prepend ? Mathf.Min(curveCount, 2) : curveCount;
+            if (preview.Closed) first = 0;
+            var previous = new Vector3[5]; var current = new Vector3[5];
+            var triangle = new Vector3[3];
+            float half = Mathf.Max(.1f, road.width) * .5f, edge = half + Mathf.Max(0, road.shoulderWidth);
+            float[] offsets = { -edge, -half, 0, half, edge };
+            for (int curveIndex = first; curveIndex < last; curveIndex++)
+            {
+                // Only the closing span and its neighbours change when extending a loop.
+                if (preview.Closed && curveIndex > 0 && curveIndex < curveCount - 3) continue;
+                var curve = preview.GetCurve(curveIndex);
+                float length = Vector3.Distance(road.transform.TransformPoint((Vector3)curve.P0), road.transform.TransformPoint((Vector3)curve.P1))
+                    + Vector3.Distance(road.transform.TransformPoint((Vector3)curve.P1), road.transform.TransformPoint((Vector3)curve.P2))
+                    + Vector3.Distance(road.transform.TransformPoint((Vector3)curve.P2), road.transform.TransformPoint((Vector3)curve.P3));
+                int steps = Mathf.Clamp(Mathf.CeilToInt(length / Mathf.Max(.5f, road.sampleSpacing)), 8, 256);
+                for (int row = 0; row <= steps; row++)
+                {
+                    float t = row / (float)steps;
+                    MGRoadKnotShape.Ring(road, preview, curveIndex, t, previewProjector, current);
+                    if (row > 0)
+                    {
+                        using (new Handles.DrawingScope(new Color(.1f, .8f, 1f, .3f)))
+                            for (int col = 0; col < 4; col++)
+                            {
+                                if ((col == 0 || col == 3) && road.shoulderWidth <= 0) continue;
+                                triangle[0] = previous[col]; triangle[1] = current[col]; triangle[2] = previous[col + 1]; Handles.DrawAAConvexPolygon(triangle);
+                                triangle[0] = previous[col + 1]; triangle[1] = current[col]; triangle[2] = current[col + 1]; Handles.DrawAAConvexPolygon(triangle);
+                            }
+                        using (new Handles.DrawingScope(new Color(.1f, .9f, 1f, .95f)))
+                        { Handles.DrawLine(previous[0], current[0]); Handles.DrawLine(previous[4], current[4]); }
+                    }
+                    var swap = previous; previous = current; current = swap;
+                }
+            }
         }
         void Dirty()
         {
@@ -198,6 +351,8 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         internal static void InsertPoint(UnitySpline spline, int curve, float t)
         {
+            Vector3 insertedScale = MGRoadKnotShape.ScaleAt(spline, curve, t);
+            Quaternion insertedRotation = Quaternion.Slerp((Quaternion)spline[curve].Rotation, (Quaternion)spline[(curve + 1) % spline.Count].Rotation, t);
             CurveUtility.Split(spline.GetCurve(curve), t, out var left, out var right);
             int next = (curve + 1) % spline.Count;
             var a = spline[curve]; var b = spline[next];
@@ -206,7 +361,8 @@ namespace MashBoxSDK.Maps.Roads.Editor
             a.TangentOut = math.rotate(math.inverse(a.Rotation), left.P1 - left.P0);
             b.TangentIn = math.rotate(math.inverse(b.Rotation), right.P2 - right.P3);
             spline[curve] = a; spline[next] = b;
-            spline.Insert(curve + 1, new BezierKnot(left.P3, left.P2 - left.P3, right.P1 - right.P0, quaternion.identity), TangentMode.Broken);
+            spline.Insert(curve + 1, new BezierKnot(left.P3, math.rotate(math.inverse((quaternion)insertedRotation), left.P2 - left.P3), math.rotate(math.inverse((quaternion)insertedRotation), right.P1 - right.P0), (quaternion)insertedRotation), TangentMode.Broken);
+            MGRoadKnotShape.SetScale(spline, curve + 1, insertedScale);
         }
     }
 
@@ -229,7 +385,13 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 foreach (var field in fields) MGRoadTool.Field(serializedObject, field);
                 if (tab == 2)
                 {
-                    using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("overrideTerrain").boolValue && road.Network != null)) MGRoadTool.Field(serializedObject, "terrain");
+                    if (!serializedObject.FindProperty("overrideTerrain").boolValue && road.Network != null)
+                    {
+                        EditorGUILayout.LabelField("Inheriting network terrain settings", EditorStyles.miniLabel);
+                        var inherited = new SerializedObject(road.Network);
+                        using (new EditorGUI.DisabledScope(true)) MGRoadTool.Field(inherited, "terrain");
+                    }
+                    else MGRoadTool.Field(serializedObject, "terrain");
                     EditorGUILayout.LabelField("Effective Mode", road.TerrainSettings.mode.ToString());
                     MGRoadTool.TerrainHelp();
                 }
@@ -246,6 +408,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     try { message = MGRoadTerrain.Apply(new[] { road }); }
                     catch (Exception ex) { message = ex.Message; Debug.LogException(ex); }
                 }
+                if (tab == 2) MGRoadTool.LayerButtons(new[] { road }, road.Network, ref message);
                 if (!string.IsNullOrEmpty(road.LastBuildMessage)) EditorGUILayout.HelpBox(road.LastBuildMessage, MessageType.Warning);
                 if (!string.IsNullOrEmpty(message)) EditorGUILayout.HelpBox(message, MessageType.Info);
             }
@@ -276,6 +439,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     try { message = MGRoadTerrain.Apply(network.Roads); }
                     catch (Exception ex) { message = ex.Message; Debug.LogException(ex); }
                 }
+                if (tab == 1) MGRoadTool.LayerButtons(network.Roads, network, ref message);
                 if (!string.IsNullOrEmpty(message)) EditorGUILayout.HelpBox(message, MessageType.Info);
             }
         }

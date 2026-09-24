@@ -136,75 +136,105 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
             && value.gameObject.scene.IsValid() && value.gameObject.scene.isLoaded
             && !EditorUtility.IsPersistent(value) && PrefabStageUtility.GetPrefabStage(value.gameObject) == null;
 
-        internal List<Edit> BuildEdits(LoftSurface surface, IEnumerable<MGTerrain> meshTiles = null, IEnumerable<Terrain> heightTiles = null)
+        internal List<Edit> BuildEdits(LoftSurface surface, IEnumerable<MGTerrain> meshTiles = null, IEnumerable<Terrain> heightTiles = null, bool matchTerrainCells = false, float roadbedPaddingCells = 0)
         {
-            var edits = new List<Edit>();
-            if (mgTerrain)
-                foreach (var tile in meshTiles ?? Object.FindObjectsByType<MGTerrain>())
-                {
-                    if (!SceneObject(tile) || tile.MeshFilter == null || tile.MeshFilter.sharedMesh == null) continue;
-                    var filter = tile.MeshFilter;
-                    var mesh = filter.sharedMesh;
-                    if (!surface.Overlaps(WorldBounds(filter), blendDistance)) continue;
-                    if (!mesh.isReadable) throw new InvalidOperationException($"Terrain {tile.name} needs a readable mesh.");
-                    var vertices = mesh.vertices;
-                    var edit = new Edit { mg = tile, deltas = new List<MeshSculptModifier.SeamVertex>() };
-                    for (int i = 0; i < vertices.Length; i++)
+            try
+            {
+                var edits = new List<Edit>();
+                if (mgTerrain)
+                    foreach (var tile in meshTiles ?? Object.FindObjectsByType<MGTerrain>())
                     {
-                        if (i % 4096 == 0) Progress(tile.name, (float)i / vertices.Length);
-                        Vector3 p = filter.transform.TransformPoint(vertices[i]);
-                        if (!Target(surface, p, out float height)) continue;
-                        p.y = height;
-                        edit.deltas.Add(new MeshSculptModifier.SeamVertex { index = i, delta = filter.transform.InverseTransformPoint(p) - vertices[i] });
-                    }
-                    edit.count = edit.deltas.Count;
-                    if (edit.count > 0) edits.Add(edit);
-                }
-            if (unityTerrain)
-                foreach (var tile in heightTiles ?? Object.FindObjectsByType<Terrain>())
-                {
-                    if (!SceneObject(tile) || tile.terrainData == null) continue;
-                    var data = tile.terrainData;
-                    var origin = tile.transform.position;
-                    var bounds = new Bounds(origin + data.size * .5f, data.size);
-                    if (!surface.Overlaps(bounds, blendDistance)) continue;
-                    if (Quaternion.Angle(tile.transform.rotation, Quaternion.identity) > .001f || tile.transform.lossyScale != Vector3.one)
-                        throw new InvalidOperationException($"Unity Terrain {tile.name} must have identity rotation and unit scale.");
-                    // Editing shared TerrainData would also change a tile outside the footprint.
-                    foreach (var other in Resources.FindObjectsOfTypeAll<Terrain>())
-                        if (other != tile && other.gameObject.scene.IsValid() && other.terrainData == data)
-                            throw new InvalidOperationException($"{tile.name} shares TerrainData with {other.name}. Give each tile its own TerrainData before conforming.");
-                    int resolution = data.heightmapResolution;
-                    Vector3 min = surface.Bounds.min - Vector3.one * blendDistance;
-                    Vector3 max = surface.Bounds.max + Vector3.one * blendDistance;
-                    int x0 = Mathf.Clamp(Mathf.FloorToInt((min.x - origin.x) / data.size.x * (resolution - 1)), 0, resolution - 1);
-                    int z0 = Mathf.Clamp(Mathf.FloorToInt((min.z - origin.z) / data.size.z * (resolution - 1)), 0, resolution - 1);
-                    int x1 = Mathf.Clamp(Mathf.CeilToInt((max.x - origin.x) / data.size.x * (resolution - 1)), 0, resolution - 1);
-                    int z1 = Mathf.Clamp(Mathf.CeilToInt((max.z - origin.z) / data.size.z * (resolution - 1)), 0, resolution - 1);
-                    var edit = new Edit { unity = tile, x = x0, z = z0, heights = data.GetHeights(x0, z0, x1 - x0 + 1, z1 - z0 + 1) };
-                    for (int z = 0; z <= z1 - z0; z++)
-                    {
-                        Progress(tile.name, (float)z / (z1 - z0 + 1));
-                        for (int x = 0; x <= x1 - x0; x++)
+                        if (!SceneObject(tile) || tile.MeshFilter == null || tile.MeshFilter.sharedMesh == null) continue;
+                        var filter = tile.MeshFilter;
+                        var mesh = filter.sharedMesh;
+                        if (!matchTerrainCells && !surface.Overlaps(WorldBounds(filter), blendDistance)) continue;
+                        if (!mesh.isReadable) throw new InvalidOperationException($"Terrain {tile.name} needs a readable mesh.");
+                        var vertices = mesh.vertices;
+                        var supports = matchTerrainCells ? TerrainCellSupports(mesh, filter.transform, vertices) : null;
+                        // One cell supports triangles crossing the edge; the extra cell forms the full-height apron.
+                        if (supports != null) for (int i = 0; i < supports.Length; i++) supports[i] *= 1 + Mathf.Max(0, roadbedPaddingCells);
+                        float maximumSupport = 0;
+                        if (supports != null) foreach (float radius in supports) maximumSupport = Mathf.Max(maximumSupport, radius);
+                        if (!surface.Overlaps(WorldBounds(filter), blendDistance + maximumSupport)) continue;
+                        var edit = new Edit { mg = tile, deltas = new List<MeshSculptModifier.SeamVertex>() };
+                        for (int i = 0; i < vertices.Length; i++)
                         {
-                            var p = origin + new Vector3((x + x0) * data.size.x / (resolution - 1), edit.heights[z, x] * data.size.y, (z + z0) * data.size.z / (resolution - 1));
-                            if (!Target(surface, p, out float height)) continue;
-                            float normalized = (height - origin.y) / data.size.y;
-                            if (normalized < 0 || normalized > 1)
-                                throw new InvalidOperationException($"Target height exceeds {tile.name}'s height range. Adjust its height range or the offset first. No terrain was changed.");
-                            edit.heights[z, x] = normalized;
-                            edit.count++;
+                            if (i % 4096 == 0) Progress(tile.name, (float)i / vertices.Length);
+                            Vector3 p = filter.transform.TransformPoint(vertices[i]);
+                            if (!Target(surface, p, out float height, supports == null ? 0 : supports[i])) continue;
+                            p.y = height;
+                            edit.deltas.Add(new MeshSculptModifier.SeamVertex { index = i, delta = filter.transform.InverseTransformPoint(p) - vertices[i] });
                         }
+                        edit.count = edit.deltas.Count;
+                        if (edit.count > 0) edits.Add(edit);
                     }
-                    if (edit.count > 0) edits.Add(edit);
-                }
-            return edits;
+                if (unityTerrain)
+                    foreach (var tile in heightTiles ?? Object.FindObjectsByType<Terrain>())
+                    {
+                        if (!SceneObject(tile) || tile.terrainData == null) continue;
+                        var data = tile.terrainData;
+                        var origin = tile.transform.position;
+                        var bounds = new Bounds(origin + data.size * .5f, data.size);
+                        if (!surface.Overlaps(bounds, blendDistance)) continue;
+                        if (Quaternion.Angle(tile.transform.rotation, Quaternion.identity) > .001f || tile.transform.lossyScale != Vector3.one)
+                            throw new InvalidOperationException($"Unity Terrain {tile.name} must have identity rotation and unit scale.");
+                        // Editing shared TerrainData would also change a tile outside the footprint.
+                        foreach (var other in Resources.FindObjectsOfTypeAll<Terrain>())
+                            if (other != tile && other.gameObject.scene.IsValid() && other.terrainData == data)
+                                throw new InvalidOperationException($"{tile.name} shares TerrainData with {other.name}. Give each tile its own TerrainData before conforming.");
+                        int resolution = data.heightmapResolution;
+                        Vector3 min = surface.Bounds.min - Vector3.one * blendDistance;
+                        Vector3 max = surface.Bounds.max + Vector3.one * blendDistance;
+                        int x0 = Mathf.Clamp(Mathf.FloorToInt((min.x - origin.x) / data.size.x * (resolution - 1)), 0, resolution - 1);
+                        int z0 = Mathf.Clamp(Mathf.FloorToInt((min.z - origin.z) / data.size.z * (resolution - 1)), 0, resolution - 1);
+                        int x1 = Mathf.Clamp(Mathf.CeilToInt((max.x - origin.x) / data.size.x * (resolution - 1)), 0, resolution - 1);
+                        int z1 = Mathf.Clamp(Mathf.CeilToInt((max.z - origin.z) / data.size.z * (resolution - 1)), 0, resolution - 1);
+                        var edit = new Edit { unity = tile, x = x0, z = z0, heights = data.GetHeights(x0, z0, x1 - x0 + 1, z1 - z0 + 1) };
+                        for (int z = 0; z <= z1 - z0; z++)
+                        {
+                            Progress(tile.name, (float)z / (z1 - z0 + 1));
+                            for (int x = 0; x <= x1 - x0; x++)
+                            {
+                                var p = origin + new Vector3((x + x0) * data.size.x / (resolution - 1), edit.heights[z, x] * data.size.y, (z + z0) * data.size.z / (resolution - 1));
+                                if (!Target(surface, p, out float height)) continue;
+                                float normalized = (height - origin.y) / data.size.y;
+                                if (normalized < 0 || normalized > 1)
+                                    throw new InvalidOperationException($"Target height exceeds {tile.name}'s height range. Adjust its height range or the offset first. No terrain was changed.");
+                                edit.heights[z, x] = normalized;
+                                edit.count++;
+                            }
+                        }
+                        if (edit.count > 0) edits.Add(edit);
+                    }
+                return edits;
+            }
+            finally { EditorUtility.ClearProgressBar(); }
         }
 
-        internal bool Target(LoftSurface surface, Vector3 p, out float height)
+        internal static float[] TerrainCellSupports(Mesh mesh, Transform transform, Vector3[] vertices)
+        {
+            var radii = new float[vertices.Length];
+            var toWorld = transform.localToWorldMatrix;
+            var indices = mesh.triangles;
+            for (int i = 0; i < indices.Length; i += 3)
+            {
+                int a = indices[i], b = indices[i + 1], c = indices[i + 2];
+                Vector3 ab = toWorld.MultiplyVector(vertices[a] - vertices[b]); ab.y = 0;
+                Vector3 bc = toWorld.MultiplyVector(vertices[b] - vertices[c]); bc.y = 0;
+                Vector3 ca = toWorld.MultiplyVector(vertices[c] - vertices[a]); ca.y = 0;
+                float radius = Mathf.Sqrt(Mathf.Max(ab.sqrMagnitude, Mathf.Max(bc.sqrMagnitude, ca.sqrMagnitude)));
+                radii[a] = Mathf.Max(radii[a], radius);
+                radii[b] = Mathf.Max(radii[b], radius);
+                radii[c] = Mathf.Max(radii[c], radius);
+            }
+            return radii;
+        }
+
+        internal bool Target(LoftSurface surface, Vector3 p, out float height, float support = 0)
         {
             height = p.y;
-            if (!surface.Sample(p, blendDistance, out float loftHeight, out float distance)) return false;
+            if (!surface.Sample(p, blendDistance + support, out float loftHeight, out float distance)) return false;
+            distance = Mathf.Max(0, distance - support);
             float weight = distance <= 0 ? 1 : falloffCurve != null
                 ? Mathf.Clamp01(falloffCurve.Evaluate(distance / blendDistance))
                 : 1 - Mathf.SmoothStep(0, 1, distance / blendDistance);
@@ -289,8 +319,8 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
     // XZ triangle tree: exact footprint sampling, independent of colliders and winding.
     internal sealed class LoftSurface
     {
-        struct Triangle { internal Vector3 a, b, c; internal Bounds bounds; }
-        sealed class Node { internal Bounds bounds; internal Node left, right; internal int start, count; }
+        struct Triangle { internal Vector3 a, b, c; internal Bounds bounds; internal float centerX, centerZ; }
+        sealed class Node { internal Bounds bounds; internal Node left, right; internal int start, count; internal float minX, maxX, minZ, maxZ; }
         readonly Triangle[] triangles;
         readonly Node root;
         internal Bounds Bounds => root.bounds;
@@ -311,6 +341,7 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
                     var t = new Triangle { a = vertices[indices[i]], b = vertices[indices[i + 1]], c = vertices[indices[i + 2]] };
                     if (Mathf.Abs(Cross(t.b - t.a, t.c - t.a)) < 1e-8f) continue;
                     t.bounds = new Bounds(t.a, Vector3.zero); t.bounds.Encapsulate(t.b); t.bounds.Encapsulate(t.c);
+                    t.centerX = t.bounds.center.x; t.centerZ = t.bounds.center.z;
                     list.Add(t);
                 }
             }
@@ -323,10 +354,12 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
         {
             var node = new Node { start = start, count = count, bounds = triangles[start].bounds };
             for (int i = start + 1; i < start + count; i++) node.bounds.Encapsulate(triangles[i].bounds);
+            var min = node.bounds.min; var max = node.bounds.max;
+            node.minX = min.x; node.maxX = max.x; node.minZ = min.z; node.maxZ = max.z;
             if (count <= 12) return node;
             bool x = node.bounds.size.x > node.bounds.size.z;
             Array.Sort(triangles, start, count, Comparer<Triangle>.Create((a, b) =>
-                (x ? a.bounds.center.x : a.bounds.center.z).CompareTo(x ? b.bounds.center.x : b.bounds.center.z)));
+                (x ? a.centerX : a.centerZ).CompareTo(x ? b.centerX : b.centerZ)));
             int half = count / 2;
             node.left = Build(start, half); node.right = Build(start + half, count - half);
             return node;
@@ -346,10 +379,15 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
 
         void Search(Node node, Vector3 p, ref float best, ref float height)
         {
-            float dx = Mathf.Max(Mathf.Max(node.bounds.min.x - p.x, 0), p.x - node.bounds.max.x);
-            float dz = Mathf.Max(Mathf.Max(node.bounds.min.z - p.z, 0), p.z - node.bounds.max.z);
-            if (dx * dx + dz * dz > best + 1e-8f) return;
-            if (node.left != null) { Search(node.left, p, ref best, ref height); Search(node.right, p, ref best, ref height); return; }
+            if (NodeDistance(node, p) > best + 1e-8f) return;
+            if (node.left != null)
+            {
+                // Find a close triangle first so the remaining tree can be pruned early.
+                // Still visit ties: overlapping road surfaces select the highest height.
+                var first = node.left; var second = node.right;
+                if (NodeDistance(second, p) < NodeDistance(first, p)) { first = node.right; second = node.left; }
+                Search(first, p, ref best, ref height); Search(second, p, ref best, ref height); return;
+            }
             for (int i = node.start; i < node.start + node.count; i++)
             {
                 var t = triangles[i];
@@ -375,6 +413,12 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
             }
         }
 
+        static float NodeDistance(Node node, Vector3 p)
+        {
+            float dx = p.x < node.minX ? node.minX - p.x : p.x > node.maxX ? p.x - node.maxX : 0;
+            float dz = p.z < node.minZ ? node.minZ - p.z : p.z > node.maxZ ? p.z - node.maxZ : 0;
+            return dx * dx + dz * dz;
+        }
         static float Cross(Vector3 a, Vector3 b) => a.x * b.z - a.z * b.x;
         static float Distance(Vector3 a, Vector3 b) => (a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z);
         static Vector3 ClosestEdge(Vector3 p, Vector3 a, Vector3 b)

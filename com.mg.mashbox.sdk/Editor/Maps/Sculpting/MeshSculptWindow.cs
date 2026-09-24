@@ -1227,7 +1227,15 @@ namespace MashBoxSDK.MapTools
                         RecordStroke(hit, control, shift);
                         MeshSeamFitBrush.TrackUndo(m_Modifier);
                     }
-                    MGTerrainTileAuthoring.JoinBrushEdges(affected, hit.point, m_Radius, preparedMeshes: true);
+                    // Each dab recalculates whole-mesh normals. Rejoin all touched
+                    // perimeters, including neighbouring tiles and T-junction corners.
+                    var neighbours = MGTerrainSeams.Neighbours(worldTerrain.World.Chunks, affected);
+                    MGTerrainSeams.Join(neighbours, hit.point, float.PositiveInfinity, false, tile =>
+                    {
+                        var modifier = MGTerrainTileAuthoring.Modifier(tile);
+                        m_StrokeModifiers.Add(modifier);
+                        MeshSeamFitBrush.TrackUndo(modifier);
+                    }, new HashSet<MGTerrain>(affected), worldTerrain.World.Chunks);
                 }
                 finally { m_Modifier = active; m_ApplyingWorldDab = false; m_SeamBrush = null; }
                 return;

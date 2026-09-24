@@ -16,9 +16,16 @@ namespace MashBoxSDK.Maps.Roads
     public class RoadTerrainSettings
     {
         public RoadTerrainMode mode;
+        [Tooltip("In edit mode, replace the non-destructive terrain layer after releasing a road edit. Gameplay uses the saved terrain mesh.")] public bool autoApplyTerrain;
+        // Retained for serialized compatibility. Road Apply always includes terrain-cell support.
+        [HideInInspector] public bool matchTerrainCells = true;
         [Tooltip("Road clearance above terrain when following it.")] public float clearance = .05f;
         [Tooltip("Terrain height relative to the road surface.")] public float terrainOffset = -.05f;
-        [Min(0)] public float falloffDistance = 5;
+        [Tooltip("Blend distance measured beyond the road, its supporting terrain cells, and one extra full-height cell. The roadbed inside that margin receives full strength.")] [Min(0)] public float falloffDistance = 5;
+        [Tooltip("Average heights only in the transition. The full-height roadbed stays fixed.")] public bool smoothFalloff = true;
+        [Range(0, 1)] public float falloffSmoothing = .65f;
+        [Range(1, 12)] public int falloffSmoothingPasses = 4;
+        [Tooltip("When smoothing is enabled, widen short falloffs to at least this many local terrain-cell spans. Set zero to use only Falloff Distance.")] [Range(0, 8)] public float minimumFalloffCells = 6;
         public AnimationCurve falloff = AnimationCurve.EaseInOut(0, 1, 1, 0);
         [Range(0, 1)] public float strength = 1;
         public RoadHeightMode heightMode;

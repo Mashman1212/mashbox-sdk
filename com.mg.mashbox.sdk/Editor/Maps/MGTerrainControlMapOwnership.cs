@@ -9,6 +9,41 @@ namespace MashBoxSDK.MapTools
 {
     internal static class MGTerrainControlMapOwnership
     {
+        internal static void CreateForNewTile(MGTerrain tile, MGTerrain source, MGTerrainAssetTransaction transaction)
+        {
+            // Inherit resolution only. A new footprint has no painted layer weights yet.
+            var reference = Source(source, 1) ?? Source(source, 2);
+            int width = reference != null ? reference.width : 1024;
+            int height = reference != null ? reference.height : 1024;
+            Texture2D Create(int channel)
+            {
+                var map = new Texture2D(width, height, TextureFormat.RGBA32, true, true)
+                {
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Trilinear,
+                    anisoLevel = 4
+                };
+                try
+                {
+                    var pixels = new Color32[width * height];
+                    if (channel == 1)
+                        for (int i = 0; i < pixels.Length; i++) pixels[i] = new Color32(255, 0, 0, 0);
+                    map.SetPixels32(pixels);
+                    map.Apply(true, false);
+                    return MGTerrainAssetStore.Save(map, MGTerrainAssetStore.PathFor(tile, "ControlMap" + channel), transaction, true);
+                }
+                finally { if (!EditorUtility.IsPersistent(map)) UnityEngine.Object.DestroyImmediate(map); }
+            }
+            tile.SetControlMaps(Create(1), Create(2));
+            foreach (var material in tile.MeshRenderer.sharedMaterials)
+            {
+                if (material == null) continue;
+                if (material.HasProperty("_ControlMap1")) material.SetTexture("_ControlMap1", tile.ControlMap1);
+                if (material.HasProperty("_ControlMap2")) material.SetTexture("_ControlMap2", tile.ControlMap2);
+            }
+            EditorUtility.SetDirty(tile);
+        }
+
         internal static Texture2D Source(MGTerrain tile, int channel)
         {
             var map = channel == 1 ? tile.ControlMap1 : tile.ControlMap2;

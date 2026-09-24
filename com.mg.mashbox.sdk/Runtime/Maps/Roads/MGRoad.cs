@@ -26,11 +26,13 @@ namespace MashBoxSDK.Maps.Roads
         public bool swapUV;
         public bool generateCollider = true;
         public bool overrideTerrain;
+        [HideInInspector] public bool terrainLayerEnabled = true;
         public RoadTerrainSettings terrain = new RoadTerrainSettings();
         [NonSerialized] Mesh generatedMesh;
         [NonSerialized] Mesh ownedMesh;
         [NonSerialized] bool dirty = true;
         Matrix4x4 lastMatrix;
+        static Material defaultMaterial;
         public MGRoadNetwork Network => GetComponentInParent<MGRoadNetwork>();
         public SplineContainer Container => GetComponent<SplineContainer>();
         public RoadTerrainSettings TerrainSettings => !overrideTerrain && Network != null ? Network.terrain : terrain;
@@ -96,6 +98,7 @@ namespace MashBoxSDK.Maps.Roads
             float half = Mathf.Max(.1f, width) * .5f;
             float edge = half + Mathf.Max(0, shoulderWidth);
             float[] offsets = { -edge, -half, 0, half, edge };
+            var ring = new Vector3[5];
             int lookup = 1;
             for (int row = 0; row <= segments; row++)
             {
@@ -105,20 +108,14 @@ namespace MashBoxSDK.Maps.Roads
                 float t = (lookup - 1 + fraction) / lookupCount;
                 // Exactly duplicate the first ring at a closed seam (except its longitudinal UV).
                 if (spline.Closed && row == segments) t = 0;
-                Vector3 p = Container.EvaluatePosition(t);
-                Vector3 forward = Container.EvaluateTangent(t);
-                if (forward.sqrMagnitude < 1e-8f) forward = transform.forward;
-                Vector3 right = Vector3.Cross(Vector3.up, forward.normalized).normalized;
-                if (right.sqrMagnitude < .1f) right = transform.right;
-                right = Quaternion.AngleAxis(bankAngle, forward.normalized) * right;
+                int curve = SplineUtility.SplineToCurveT(spline, t, out float curveT);
+                MGRoadKnotShape.Ring(this, spline, curve, curveT, project, ring);
+                float widthScale = MGRoadKnotShape.ScaleAt(spline, curve, curveT).x;
                 for (int col = 0; col < 5; col++)
                 {
-                    Vector3 v = p + right * offsets[col];
-                    if (project != null) v = project(v);
-                    v.y += col == 2 ? crown : (col == 0 || col == 4 ? -shoulderDrop : 0);
                     int index = row * 5 + col;
-                    vertices[index] = transform.InverseTransformPoint(v);
-                    Vector2 tex = new Vector2((offsets[col] + half) / Mathf.Max(.01f, uvMetresAcross), distance / Mathf.Max(.01f, uvMetresAlong));
+                    vertices[index] = transform.InverseTransformPoint(ring[col]);
+                    Vector2 tex = new Vector2((offsets[col] + half) * widthScale / Mathf.Max(.01f, uvMetresAcross), distance / Mathf.Max(.01f, uvMetresAlong));
                     uv[index] = (swapUV ? new Vector2(tex.y, tex.x) : tex) + uvOffset;
                 }
                 if (row == 0) continue;
@@ -143,6 +140,11 @@ namespace MashBoxSDK.Maps.Roads
             ownedMesh.RecalculateTangents(); ownedMesh.RecalculateBounds();
             var network = Network;
             var surface = roadMaterial != null ? roadMaterial : network != null ? network.defaultRoadMaterial : null;
+            if (surface == null)
+            {
+                if (defaultMaterial == null) defaultMaterial = Resources.Load<Material>("DefaultRoad_Mat");
+                surface = defaultMaterial;
+            }
             var shoulder = shoulderMaterial != null ? shoulderMaterial : network != null ? network.defaultShoulderMaterial : null;
             GetComponent<MeshRenderer>().sharedMaterials = new[] { surface, shoulder != null ? shoulder : surface };
             if (generateCollider && collider == null) collider = gameObject.AddComponent<MeshCollider>();

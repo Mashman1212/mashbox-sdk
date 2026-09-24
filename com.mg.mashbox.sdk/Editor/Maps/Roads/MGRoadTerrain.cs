@@ -39,13 +39,40 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 bounds.Encapsulate(road.transform.TransformPoint((Vector3)curve.P2));
                 bounds.Encapsulate(road.transform.TransformPoint((Vector3)curve.P3));
             }
-            bounds.Expand((road.width + road.shoulderWidth * 2 + 2) * 2);
+            float maxWidthScale = 1f;
+            for (int i = 0; i < spline.Count; i++) maxWidthScale = Mathf.Max(maxWidthScale, MGRoadKnotShape.GetScale(spline, i).x);
+            bounds.Expand(((road.width + road.shoulderWidth * 2) * maxWidthScale + 2) * 2);
             var filters = world.Chunks.Where(t => t != null && t.isActiveAndEnabled && t.MeshFilter != null && t.MeshFilter.sharedMesh != null)
                 .Select(t => t.MeshFilter).Where(f => OverlapsXZ(bounds, WorldBounds(f))).ToArray();
             if (filters.Length == 0) return null;
             var surface = new LoftSurface(filters, true);
             float clearance = road.TerrainSettings.clearance;
             return p => { if (surface.Sample(p, 0, out float height, out _)) p.y = height + clearance; return p; };
+        }
+        // Build spatial indexes lazily for tiles touched by this Shift gesture. No scene objects or mesh edits.
+        internal static Func<Vector3, Vector3> CreatePreviewProjector(MGRoad road)
+        {
+            if (road.Network == null || road.Network.terrainWorld == null) return null;
+            var world = road.Network.terrainWorld;
+            world.RefreshChunks();
+            var filters = world.Chunks.Where(t => t != null && t.isActiveAndEnabled && t.MeshFilter != null && t.MeshFilter.sharedMesh != null && t.MeshFilter.sharedMesh.isReadable)
+                .Select(t => t.MeshFilter).ToArray();
+            var bounds = filters.Select(WorldBounds).ToArray();
+            var surfaces = new LoftSurface[filters.Length];
+            float clearance = road.TerrainSettings.clearance;
+            return point =>
+            {
+                float highest = float.NegativeInfinity;
+                for (int i = 0; i < filters.Length; i++)
+                {
+                    var b = bounds[i];
+                    if (point.x < b.min.x || point.x > b.max.x || point.z < b.min.z || point.z > b.max.z) continue;
+                    if (surfaces[i] == null) surfaces[i] = new LoftSurface(new[] { filters[i] }, true);
+                    if (surfaces[i].Sample(point, 0, out float height, out _)) highest = Mathf.Max(highest, height);
+                }
+                if (!float.IsNegativeInfinity(highest)) point.y = highest + clearance;
+                return point;
+            };
         }
         static Bounds WorldBounds(MeshFilter filter)
         {
@@ -57,48 +84,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         static bool OverlapsXZ(Bounds a, Bounds b) => a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.z <= b.max.z && a.max.z >= b.min.z;
 
-        public static string Apply(IEnumerable<MGRoad> roads)
-        {
-            Undo.IncrementCurrentGroup();
-            int group = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Conform Terrain to Roads");
-            int tileEdits = 0;
-            try
-            {
-                foreach (var road in roads)
-                {
-                    if (road == null || !road.isActiveAndEnabled || road.TerrainSettings.mode != RoadTerrainMode.TerrainFollowsRoad) continue;
-                    if (!road.gameObject.scene.IsValid() || PrefabStageUtility.GetPrefabStage(road.gameObject) != null)
-                        throw new InvalidOperationException("Apply roads in a loaded scene, outside Prefab Mode.");
-                    var network = road.Network;
-                    if (network == null || network.terrainWorld == null) throw new InvalidOperationException("Assign a Terrain World on the road network first.");
-                    network.terrainWorld.RefreshChunks();
-                    road.Rebuild();
-                    var settings = road.TerrainSettings;
-                    var worker = ScriptableObject.CreateInstance<LoftTerrainConformer>();
-                    try
-                    {
-                        var so = new SerializedObject(worker);
-                        so.FindProperty("offset").floatValue = settings.terrainOffset;
-                        so.FindProperty("blendDistance").floatValue = Mathf.Max(0, settings.falloffDistance);
-                        so.FindProperty("strength").floatValue = Mathf.Clamp01(settings.strength);
-                        so.FindProperty("falloffCurve").animationCurveValue = settings.falloff;
-                        so.FindProperty("mode").enumValueIndex = (int)settings.heightMode;
-                        so.FindProperty("unityTerrain").boolValue = false;
-                        so.ApplyModifiedPropertiesWithoutUndo();
-                        var edits = worker.BuildEdits(new LoftSurface(new[] { road.GetComponent<MeshFilter>() }), network.terrainWorld.Chunks);
-                        LoftTerrainConformer.Apply(edits);
-                        tileEdits += edits.Count;
-                    }
-                    finally { Object.DestroyImmediate(worker); }
-                }
-                Undo.CollapseUndoOperations(group);
-                RebuildAll();
-                return $"Applied {tileEdits} terrain tile edits. Ctrl+Z restores the previous terrain.";
-            }
-            catch { Undo.RevertAllDownToGroup(group); throw; }
-            finally { EditorUtility.ClearProgressBar(); }
-        }
+        public static string Apply(IEnumerable<MGRoad> roads) => MGRoadLayerService.Apply(roads);
 
         static void SaveMeshes(Scene scene, string path)
         {
