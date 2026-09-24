@@ -31,6 +31,17 @@ namespace MashBoxSDK.Maps.Roads
         public RoadHeightMode heightMode;
     }
 
+    [Serializable]
+    public sealed class RoadDetailSettings
+    {
+        [Tooltip("Reversibly hide painted Terrain World details beneath the road and shoulders. Original paint maps are never modified.")]
+        public bool clearDetails;
+        [Tooltip("Update the detail mask when editing the road. Disable to update only with Apply Detail Clearing.")]
+        public bool autoUpdate = true;
+        [Min(0), Tooltip("Extra clearing width in metres outside the road and shoulders. Detail cells touching this footprint are cleared too.")]
+        public float extraWidth = .5f;
+    }
+
     [ExecuteAlways, DisallowMultipleComponent]
     [AddComponentMenu("MashBox/Maps/Road Network")]
     [MovedFrom(true, "MappyX.Roads", "Assembly-CSharp", null)]
@@ -38,6 +49,7 @@ namespace MashBoxSDK.Maps.Roads
     {
         public MGTerrainWorld terrainWorld;
         public RoadTerrainSettings terrain = new RoadTerrainSettings();
+        public RoadDetailSettings details = new RoadDetailSettings();
         public Material defaultRoadMaterial;
         public Material defaultShoulderMaterial;
         [Min(.1f)] public float defaultWidth = 6;

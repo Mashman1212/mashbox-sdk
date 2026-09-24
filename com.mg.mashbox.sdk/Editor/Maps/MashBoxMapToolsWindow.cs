@@ -194,8 +194,6 @@ namespace MashBoxSDK.MapTools
             MBEditorToolState.ModeChanged += OnEditorToolModeChanged;
             MBEditorToolState.ActiveEditingChanged -= OnActiveEditingChanged;
             MBEditorToolState.ActiveEditingChanged += OnActiveEditingChanged;
-            MBEditorToolState.ActionRequested -= OnEditorToolActionRequested;
-            MBEditorToolState.ActionRequested += OnEditorToolActionRequested;
             Selection.selectionChanged -= OnAuthoringSelectionChanged;
             Selection.selectionChanged += OnAuthoringSelectionChanged;
         }
@@ -207,7 +205,6 @@ namespace MashBoxSDK.MapTools
             Selection.selectionChanged -= OnAuthoringSelectionChanged;
             MBEditorToolState.ModeChanged -= OnEditorToolModeChanged;
             MBEditorToolState.ActiveEditingChanged -= OnActiveEditingChanged;
-            MBEditorToolState.ActionRequested -= OnEditorToolActionRequested;
             EditorApplication.delayCall -= ProcessQueuedUvSplineSelection;
             queuedUvSpline = null;
             uvSplineSelectionQueued = false;
@@ -275,24 +272,6 @@ namespace MashBoxSDK.MapTools
             UpdateAuthoringSceneToolState();
             if (MBEditorToolState.ActiveEditing && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline)
                 SelectUvSplineForCurrentSelection();
-            Repaint();
-        }
-
-        private void OnEditorToolActionRequested(MBEditorToolAction action)
-        {
-            if (!MBEditorToolState.ActiveEditing)
-                return;
-
-            EnsureAuthoringToolInstances();
-            switch (action)
-            {
-                case MBEditorToolAction.CreateSpline:
-                    authoringSplineTool?.CreateSplineFromOverlay();
-                    break;
-                case MBEditorToolAction.CreateLoftSpline:
-                    authoringLoftTool?.CreateLoftSplineFromOverlay();
-                    break;
-            }
             Repaint();
         }
 

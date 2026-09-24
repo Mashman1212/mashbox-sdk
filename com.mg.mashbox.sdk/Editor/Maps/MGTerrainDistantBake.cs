@@ -134,7 +134,8 @@ namespace MashBoxSDK.MapTools
                 savedHeight = heightAsset;
                 MGTerrainHeightEncoding.SaveMetadata(heightPath, heightDecode);
                 m_LastMorphHeight = savedHeight;
-                if (heightOnly)
+
+
                 {
                     // The shader deforms the existing terrain mesh. No proxy geometry or
                     // proxy material is needed; retire old generated scene proxies on success.

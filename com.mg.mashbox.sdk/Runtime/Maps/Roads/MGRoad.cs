@@ -28,6 +28,10 @@ namespace MashBoxSDK.Maps.Roads
         public bool overrideTerrain;
         [HideInInspector] public bool terrainLayerEnabled = true;
         public RoadTerrainSettings terrain = new RoadTerrainSettings();
+        public bool overrideDetails;
+        public RoadDetailSettings details = new RoadDetailSettings();
+        [HideInInspector] public bool detailMaskEnabled = true;
+        public RoadDetailSettings DetailSettings => !overrideDetails && Network != null ? Network.details : details;
         [NonSerialized] Mesh generatedMesh;
         [NonSerialized] Mesh ownedMesh;
         [NonSerialized] bool dirty = true;

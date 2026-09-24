@@ -1,0 +1,1 @@
+PASS: four-tile edges/corners, decoded ranges and Y scales, taller/lower rebakes, preserved interiors and GUIDs, isolated non-neighbour, idempotence, rollback including metadata, mixed-resolution rejection.

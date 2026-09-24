@@ -9,16 +9,22 @@ namespace MashBoxSDK.Maps.Spline
 {
     public sealed class SplineToolWindow : EditorWindow
     {
-        const int ReducedHandleKnotThreshold = 64;
         static SplineToolWindow s_ActiveSceneToolOwner;
 
         SplineContainer m_ActiveSpline;
         UnityEditor.Editor m_SplineInspector;
         bool m_SceneToolActive;
         bool m_ChangingSelection;
+        Tool m_RequestedTool = Tool.Move;
+
+        // Unity's drawing tool is internal; the public utility activates it.
+        static bool IsDrawing => ToolManager.activeToolType?.Name == "CreateSplineTool";
 
         internal static bool HasActiveSceneTool =>
             s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.m_SceneToolActive;
+
+        internal static SplineToolWindow ActiveSceneTool =>
+            HasActiveSceneTool ? s_ActiveSceneToolOwner : null;
 
         internal static void DeactivateActiveSceneTool()
         {
@@ -49,10 +55,7 @@ namespace MashBoxSDK.Maps.Spline
             s_ActiveSceneToolOwner = this;
 
             if (m_SceneToolActive)
-            {
-                UseSplineFromSelection(activateMoveTool: true, selectOnlyThisSpline: true);
                 return;
-            }
 
             m_SceneToolActive = true;
             Selection.selectionChanged += OnSelectionChanged;
@@ -133,7 +136,8 @@ namespace MashBoxSDK.Maps.Spline
             }
 
             EditorGUILayout.HelpBox(
-                "Select knots with Unity's spline handles. Press Delete or Backspace to remove selected knots.",
+                "In the Scene view: D to draw points; W to move, E to rotate, R to scale. "
+                + "Shift-click to select multiple points. Delete or Backspace removes selected points.",
                 MessageType.None);
 
             EditorGUILayout.Space(8f);
@@ -160,7 +164,7 @@ namespace MashBoxSDK.Maps.Spline
                 return;
 
             var selected = FindSplineInSelection();
-            if (selected != null)
+            if (selected != null && selected != m_ActiveSpline)
             {
                 SetActiveSpline(selected, select: false);
                 SelectOnlySpline(selected);
@@ -177,15 +181,12 @@ namespace MashBoxSDK.Maps.Spline
             if (!m_SceneToolActive || !MBEditorToolState.ActiveEditing || MBEditorToolState.Mode != MBEditorAuthoringMode.Spline)
                 return;
 
-            if (m_ActiveSpline != null
-                && UsesReducedHandles(m_ActiveSpline)
-                && ToolManager.activeContextType == typeof(SplineToolContext))
-            {
-                ToolManager.SetActiveContext<GameObjectToolContext>();
-            }
-
             Event current = Event.current;
-            if (current.alt || current.button != 0)
+            DrawSceneControls();
+            HandleShortcuts(current);
+            // Drawing owns clicks on both empty space and existing curves.
+            // Never let our container picker steal a knot placement click.
+            if (IsDrawing || current.alt || current.button != 0)
                 return;
 
             int controlId = GUIUtility.GetControlID(FocusType.Passive);
@@ -195,7 +196,9 @@ namespace MashBoxSDK.Maps.Spline
                 return;
             }
 
-            if (current.type != EventType.MouseDown || GUIUtility.hotControl != 0)
+            if (current.type != EventType.MouseDown || GUIUtility.hotControl != 0
+                || HandleUtility.nearestControl != controlId
+                || current.shift || current.control || current.command)
                 return;
 
             if (!TryFindSplineAtMouse(current.mousePosition, out SplineContainer spline))
@@ -204,6 +207,54 @@ namespace MashBoxSDK.Maps.Spline
             SetActiveSpline(spline, select: false);
             SelectOnlySpline(spline);
             QueueMoveTool();
+            current.Use();
+        }
+
+        void DrawSceneControls()
+        {
+            Handles.BeginGUI();
+            GUILayout.BeginArea(new Rect(12f, 12f, 440f, 88f), GUI.skin.box);
+            GUILayout.Label("Single Spline", EditorStyles.boldLabel);
+            using (new EditorGUI.DisabledScope(m_ActiveSpline == null))
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Toggle(IsDrawing, "Draw (D)", EditorStyles.miniButtonLeft) && !IsDrawing)
+                    QueueKnotPlacementTool();
+                DrawManipulationButton("Move (W)", Tool.Move, typeof(SplineMoveTool));
+                DrawManipulationButton("Rotate (E)", Tool.Rotate, typeof(SplineRotateTool));
+                DrawManipulationButton("Scale (R)", Tool.Scale, typeof(SplineScaleTool));
+            }
+            GUILayout.Label(m_ActiveSpline == null
+                ? "Select a spline curve or create a new spline."
+                : IsDrawing
+                    ? "Click to add points. Click an endpoint to extend. W: edit points."
+                    : "Click points to edit. Shift: multi-select. Delete: remove points.", EditorStyles.miniLabel);
+            GUILayout.EndArea();
+            Handles.EndGUI();
+        }
+
+        void DrawManipulationButton(string label, Tool tool, System.Type toolType)
+        {
+            bool active = ToolManager.activeToolType == toolType;
+            if (GUILayout.Toggle(active, label, EditorStyles.miniButtonMid) && !active)
+                QueueManipulationTool(tool);
+        }
+
+        void HandleShortcuts(Event current)
+        {
+            if (m_ActiveSpline == null || current.type != EventType.KeyDown
+                || current.alt || current.control || current.command || current.shift
+                || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0)
+                return;
+
+            switch (current.keyCode)
+            {
+                case KeyCode.D: QueueKnotPlacementTool(); break;
+                case KeyCode.W: QueueManipulationTool(Tool.Move); break;
+                case KeyCode.E: QueueManipulationTool(Tool.Rotate); break;
+                case KeyCode.R: QueueManipulationTool(Tool.Scale); break;
+                default: return;
+            }
             current.Use();
         }
 
@@ -340,10 +391,17 @@ namespace MashBoxSDK.Maps.Spline
 
         void QueueMoveTool()
         {
+            QueueManipulationTool(Tool.Move);
+        }
+
+        void QueueManipulationTool(Tool tool)
+        {
             if (m_ActiveSpline == null)
                 return;
 
-            Selection.activeGameObject = m_ActiveSpline.gameObject;
+            SelectOnlySpline(m_ActiveSpline);
+            m_RequestedTool = tool;
+            EditorApplication.delayCall -= ActivateKnotPlacementTool;
             EditorApplication.delayCall -= ActivateMoveTool;
             EditorApplication.delayCall += ActivateMoveTool;
         }
@@ -354,36 +412,14 @@ namespace MashBoxSDK.Maps.Spline
             if (!m_SceneToolActive || m_ActiveSpline == null)
                 return;
 
-            // Unity's SplineMoveTool renders a control for every knot and tangent.
-            // That becomes the dominant editor cost on long road splines. Selection
-            // still works through our lightweight curve picker, so skip those
-            // handles until the spline is back to a manageable size.
-            if (UsesReducedHandles(m_ActiveSpline))
-            {
-                ToolManager.SetActiveContext<GameObjectToolContext>();
-                SceneView.RepaintAll();
-                return;
-            }
-
             ToolManager.SetActiveContext<SplineToolContext>();
-            ToolManager.SetActiveTool<SplineMoveTool>();
-            SceneView.RepaintAll();
-        }
-
-        static bool UsesReducedHandles(SplineContainer container)
-        {
-            if (container == null)
-                return false;
-
-            int knotCount = 0;
-            foreach (var spline in container.Splines)
+            switch (m_RequestedTool)
             {
-                knotCount += spline.Count;
-                if (knotCount > ReducedHandleKnotThreshold)
-                    return true;
+                case Tool.Rotate: ToolManager.SetActiveTool<SplineRotateTool>(); break;
+                case Tool.Scale: ToolManager.SetActiveTool<SplineScaleTool>(); break;
+                default: ToolManager.SetActiveTool<SplineMoveTool>(); break;
             }
-
-            return false;
+            SceneView.RepaintAll();
         }
 
         void QueueKnotPlacementTool()
@@ -391,7 +427,8 @@ namespace MashBoxSDK.Maps.Spline
             if (m_ActiveSpline == null)
                 return;
 
-            Selection.activeGameObject = m_ActiveSpline.gameObject;
+            SelectOnlySpline(m_ActiveSpline);
+            EditorApplication.delayCall -= ActivateMoveTool;
             EditorApplication.delayCall -= ActivateKnotPlacementTool;
             EditorApplication.delayCall += ActivateKnotPlacementTool;
         }

@@ -3205,6 +3205,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         int ReadDensity(Texture2D densityMap, int x, int z)
         {
+            if (IsRoadDetailCellCleared(densityMap.width, densityMap.height, x, z)) return 0;
             if (densityMap.format == TextureFormat.R16)
             {
                 try

@@ -264,7 +264,7 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Bake This Terrain Tile", EditorStyles.boldLabel);
             EditorGUILayout.LabelField("Tile", tile.name);
-            EditorGUILayout.HelpBox("Uses the parent world's capture settings. Only this tile's appearance, normal and distant morph maps are updated.", MessageType.None);
+            EditorGUILayout.HelpBox("Uses the parent world's capture settings. Captures this tile only. Distant morph baking also welds touching edges and corners of existing neighbouring height maps.", MessageType.None);
             using (new EditorGUI.DisabledScope(true))
             {
                 EditorGUILayout.IntField("Capture Resolution", world.CaptureResolution);

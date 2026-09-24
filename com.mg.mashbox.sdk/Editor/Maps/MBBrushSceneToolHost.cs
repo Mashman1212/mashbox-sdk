@@ -5,7 +5,7 @@ using MashBoxSDK.Maps.Spline;
 namespace MashBoxSDK.MapTools
 {
     /// <summary>
-    /// Keeps Mappy's brush Scene tools alive even when the full MashBox SDK
+    /// Keeps Mappy's authoring Scene tools alive even when the full MashBox SDK
     /// window is closed or hidden. Individual tool windows enforce a single
     /// active owner, so an open SDK window can take over without duplicate
     /// Scene callbacks.
@@ -36,6 +36,25 @@ namespace MashBoxSDK.MapTools
 
             s_NextHealthCheck = EditorApplication.timeSinceStartup + HealthCheckInterval;
             Sync();
+        }
+
+        internal static void ExecuteAction(MBEditorToolAction action)
+        {
+            if (!MBEditorToolState.ActiveEditing)
+                return;
+
+            // Ensure an owner exists immediately, without waiting for the health
+            // check. Use the current owner to preserve the open window's state.
+            Sync();
+            switch (action)
+            {
+                case MBEditorToolAction.CreateSpline when MBEditorToolState.Mode == MBEditorAuthoringMode.Spline:
+                    SplineToolWindow.ActiveSceneTool.CreateSplineFromOverlay();
+                    break;
+                case MBEditorToolAction.CreateLoftSpline when MBEditorToolState.Mode == MBEditorAuthoringMode.SplineLoft:
+                    MultiSplineLoftWindow.ActiveSceneTool.CreateLoftSplineFromOverlay();
+                    break;
+            }
         }
 
         static void Sync()

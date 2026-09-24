@@ -25,7 +25,7 @@ namespace MashBoxSDK.MapTools
                     try { ApplyDistantMorph(terrain, m_LastMorphHeight); }
                     catch (Exception exception) { Debug.LogException(exception, terrain); EditorUtility.DisplayDialog("Distant Terrain Morph", exception.Message, "OK"); }
                 }
-            EditorGUILayout.HelpBox("Uses the baked mesh-minus-terrain height difference (black = no lift) to raise existing vertices over the Fade In distance interval (horizontal metres). Set Distant Surface Strength to 0 on the terrain material to turn it off. Vertex density still limits canopy detail. Mesh colliders stay at the original ground.", MessageType.Info);
+            EditorGUILayout.HelpBox("Uses the baked mesh-minus-terrain height difference (black = no lift) to raise existing vertices over the Fade In distance interval (horizontal metres). Set Distant Surface Strength to 0 on the terrain material to turn it off. Vertex density still limits canopy detail. Shared height-map edges and four-tile corners are welded automatically, including existing neighbouring maps when only this tile is baked. Touching tiles need matching edge sizes and capture resolutions, welded ground meshes, and matching morph strength/fade settings. Mesh colliders stay at the original ground.", MessageType.Info);
         }
 
         void ApplyDistantMorph(MGTerrain terrain, Texture2D height)

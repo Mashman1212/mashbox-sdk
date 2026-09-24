@@ -720,6 +720,9 @@ namespace MashBoxSDK.Maps.Spline
         internal static bool HasActiveSceneTool =>
             s_ActiveSceneToolOwner != null && s_ActiveSceneToolOwner.m_SceneToolActive;
 
+        internal static MultiSplineLoftWindow ActiveSceneTool =>
+            HasActiveSceneTool ? s_ActiveSceneToolOwner : null;
+
         internal static void DeactivateActiveSceneTool()
         {
             s_ActiveSceneToolOwner?.DeactivateSceneTool();

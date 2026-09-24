@@ -54,7 +54,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 network = (MGRoadNetwork)EditorGUILayout.ObjectField("Road Network", network, typeof(MGRoadNetwork), true);
                 if (GUILayout.Button("Create Road Network")) network = CreateNetwork();
                 if (network == null) { EditorGUILayout.HelpBox("Create a road network, assign its Terrain World, then create roads and Shift-click in the Scene view.", MessageType.Info); return; }
-                tab = GUILayout.Toolbar(tab, new[] { "Roads", "Network", "Terrain" });
+                tab = GUILayout.Toolbar(tab, new[] { "Roads", "Network", "Terrain", "Details" });
                 scroll = EditorGUILayout.BeginScrollView(scroll);
                 if (tab == 0) DrawRoads();
                 else
@@ -67,12 +67,13 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     }
                     else
                     {
-                        Field(so, "terrainWorld"); Field(so, "terrain");
-                        TerrainHelp();
+                        Field(so, "terrainWorld"); Field(so, tab == 3 ? "details" : "terrain");
+                        if (tab == 3) DetailHelp(); else TerrainHelp();
                     }
                     if (so.ApplyModifiedProperties()) network.Rebuild();
                     if (tab == 2 && GUILayout.Button("Apply Terrain to Network Roads")) Apply(network.Roads);
                     if (tab == 2) LayerButtons(network.Roads, network, ref message);
+                    if (tab == 3) DetailButtons(network.Roads, ref message);
                 }
                 if (!string.IsNullOrEmpty(message)) EditorGUILayout.HelpBox(message, MessageType.Info);
                 EditorGUILayout.EndScrollView();
@@ -105,6 +106,17 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         internal static void Field(SerializedObject so, string name) => EditorGUILayout.PropertyField(so.FindProperty(name), true);
         internal static void TerrainHelp() => EditorGUILayout.HelpBox("Road Follows Terrain updates the generated surface when the road moves. Terrain Follows Road uses replaceable layers. Enable Auto Apply Terrain for live editing; Apply also updates a layer without accumulating imprints. Remove restores the terrain underneath. Bake keeps the result and removes every road layer in the assigned world. Baked/removed roads pause until Apply. Save the scene to persist the gameplay mesh; no runtime layer replay. Apply fully conforms the road and shoulders, their supporting terrain cells, and one extra cell on either side. Falloff Distance starts outside that margin. Strength and height-mode restrictions still apply. Only tiles belonging to the assigned MG Terrain World are edited. Overlapping roads apply in hierarchy order.", MessageType.Info);
+        internal static void DetailHelp() => EditorGUILayout.HelpBox("Clear painted Terrain World detail cells beneath the road and shoulders without changing the original paint. Extra Width expands the footprint; touching detail cells are also cleared to prevent grass poking through. Auto Update follows road edits in every terrain mode. Turn Clear Details off to restore; overlapping roads keep their own clearing. Applies to all painted detail layers, including palette-generated details, not manually placed objects. Save the scene to retain the final mask for gameplay.", MessageType.Info);
+        internal static void DetailButtons(MGRoad[] roads, ref string result)
+        {
+            if (roads.Any(r => r != null && !r.detailMaskEnabled)) EditorGUILayout.HelpBox("Detail clearing is paused on some roads after Restore. Apply resumes it.", MessageType.Info);
+            try
+            {
+                if (GUILayout.Button("Apply Detail Clearing")) result = MGRoadDetailService.Apply(roads);
+                if (GUILayout.Button("Restore Details / Pause Clearing")) result = MGRoadDetailService.Remove(roads);
+            }
+            catch (Exception ex) { result = ex.Message; Debug.LogException(ex); }
+        }
         internal static void LayerButtons(MGRoad[] roads, MGRoadNetwork network, ref string result)
         {
             if (roads.Any(r => r != null && !r.terrainLayerEnabled)) EditorGUILayout.HelpBox("Some road layers are paused after Remove/Bake. Apply resumes them.", MessageType.Info);
@@ -377,11 +389,11 @@ namespace MashBoxSDK.Maps.Roads.Editor
             using (new EditorGUI.DisabledScope(Application.isPlaying))
             {
                 if (GUILayout.Button("Open Road Tool")) MGRoadTool.Open(road.Network, road);
-                tab = GUILayout.Toolbar(tab, new[] { "Shape", "Surface / UV", "Terrain" });
+                tab = GUILayout.Toolbar(tab, new[] { "Shape", "Surface / UV", "Terrain", "Details" });
                 serializedObject.Update();
                 string[] fields = tab == 0 ? new[] { "width", "shoulderWidth", "shoulderDrop", "crown", "bankAngle", "sampleSpacing", "generateCollider" }
                     : tab == 1 ? new[] { "roadMaterial", "shoulderMaterial", "uvMetresAlong", "uvMetresAcross", "uvOffset", "swapUV" }
-                    : new[] { "overrideTerrain" };
+                    : tab == 2 ? new[] { "overrideTerrain" } : new[] { "overrideDetails" };
                 foreach (var field in fields) MGRoadTool.Field(serializedObject, field);
                 if (tab == 2)
                 {
@@ -394,6 +406,17 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     else MGRoadTool.Field(serializedObject, "terrain");
                     EditorGUILayout.LabelField("Effective Mode", road.TerrainSettings.mode.ToString());
                     MGRoadTool.TerrainHelp();
+                }
+                if (tab == 3)
+                {
+                    if (!serializedObject.FindProperty("overrideDetails").boolValue && road.Network != null)
+                    {
+                        EditorGUILayout.LabelField("Inheriting network detail settings", EditorStyles.miniLabel);
+                        using (var inherited = new SerializedObject(road.Network))
+                            using (new EditorGUI.DisabledScope(true)) MGRoadTool.Field(inherited, "details");
+                    }
+                    else MGRoadTool.Field(serializedObject, "details");
+                    MGRoadTool.DetailHelp();
                 }
                 if (serializedObject.ApplyModifiedProperties()) road.RequestRebuild();
                 if (tab == 0)
@@ -409,6 +432,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     catch (Exception ex) { message = ex.Message; Debug.LogException(ex); }
                 }
                 if (tab == 2) MGRoadTool.LayerButtons(new[] { road }, road.Network, ref message);
+                if (tab == 3) MGRoadTool.DetailButtons(new[] { road }, ref message);
                 if (!string.IsNullOrEmpty(road.LastBuildMessage)) EditorGUILayout.HelpBox(road.LastBuildMessage, MessageType.Warning);
                 if (!string.IsNullOrEmpty(message)) EditorGUILayout.HelpBox(message, MessageType.Info);
             }
@@ -427,10 +451,11 @@ namespace MashBoxSDK.Maps.Roads.Editor
             {
                 if (GUILayout.Button("Open Road Tool")) MGRoadTool.Open(network);
                 if (GUILayout.Button("Create New Road")) MGRoadTool.Open(network, MGRoadTool.CreateRoad(network, false));
-                tab = GUILayout.Toolbar(tab, new[] { "Defaults", "Terrain", "Roads" });
+                tab = GUILayout.Toolbar(tab, new[] { "Defaults", "Terrain", "Roads", "Details" });
                 serializedObject.Update();
                 if (tab == 0) foreach (var field in new[] { "defaultWidth", "defaultRoadMaterial", "defaultShoulderMaterial" }) MGRoadTool.Field(serializedObject, field);
                 if (tab == 1) { MGRoadTool.Field(serializedObject, "terrainWorld"); MGRoadTool.Field(serializedObject, "terrain"); MGRoadTool.TerrainHelp(); }
+                if (tab == 3) { MGRoadTool.Field(serializedObject, "terrainWorld"); MGRoadTool.Field(serializedObject, "details"); MGRoadTool.DetailHelp(); }
                 if (serializedObject.ApplyModifiedProperties()) network.Rebuild();
                 if (tab == 2) foreach (var road in network.Roads) if (GUILayout.Button(road.name)) Selection.activeGameObject = road.gameObject;
                 if (GUILayout.Button("Rebuild Network")) network.Rebuild();
@@ -440,6 +465,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     catch (Exception ex) { message = ex.Message; Debug.LogException(ex); }
                 }
                 if (tab == 1) MGRoadTool.LayerButtons(network.Roads, network, ref message);
+                if (tab == 3) MGRoadTool.DetailButtons(network.Roads, ref message);
                 if (!string.IsNullOrEmpty(message)) EditorGUILayout.HelpBox(message, MessageType.Info);
             }
         }

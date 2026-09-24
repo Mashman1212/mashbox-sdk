@@ -60,7 +60,6 @@ namespace MashBoxSDK.MapTools
         internal static event Action SculptModeChanged;
         internal static event Action SculptableOnlyChanged;
         internal static event Action UvModeChanged;
-        internal static event Action<MBEditorToolAction> ActionRequested;
 
         internal static bool SculptableOnly
         {
@@ -320,7 +319,7 @@ namespace MashBoxSDK.MapTools
         internal static void RequestAction(MBEditorToolAction action)
         {
             if (ActiveEditing)
-                ActionRequested?.Invoke(action);
+                MBBrushSceneToolHost.ExecuteAction(action);
         }
 
         static void QueueLoftUndoRefresh()
