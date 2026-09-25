@@ -175,6 +175,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
         // disposable render caches, regenerated after reload and never painted directly.
         public void NotifySurfaceMeshChanged(bool topologyChanged = false)
         {
+#if UNITY_EDITOR
+            m_EditorPickDirty = true;
+#endif
             m_HolePickTree = null;
             m_SurfaceTilesDirty = true;
             if (topologyChanged) m_TiledSource = null;
@@ -462,13 +465,22 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         public void RefreshSurfaceCollidersFromMesh()
         {
+            if (!NeedsCollision) { DisableSurfaceCollision(); return; }
+            if (!NeedsCollisionChunks)
+            {
+                ApplyRuntimeSurfaceCollision();
+                Physics.SyncTransforms();
+                return;
+            }
             Mesh source = MeshFilter != null ? MeshFilter.sharedMesh : null;
             if (source == null || !source.isReadable) return;
             // Keep the master bound to the current editable surface even while chunks
             // own collision. Roads and sculpting can replace the MeshFilter's mesh.
             if (MeshCollider != null)
             {
-                MeshCollider.sharedMesh = null;
+                // Clearing and reassigning the same mesh on a disabled collider can
+                // leave Unity's binding null. Recook active colliders only.
+                if (MeshCollider.enabled) MeshCollider.sharedMesh = null;
                 MeshCollider.sharedMesh = source;
             }
             if (m_SurfaceColliderChunks.Length == 0)
@@ -484,8 +496,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (MeshCollider != null)
                 {
                     foreach (MeshCollider chunk in m_SurfaceColliderChunks) if (chunk != null) chunk.enabled = false;
-                    MeshCollider.sharedMesh = null;
-                    MeshCollider.sharedMesh = source;
                     MeshCollider.enabled = true;
                 }
                 return;
@@ -509,7 +519,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 #endif
                 mesh.vertices = updated;
                 mesh.RecalculateBounds();
-                map.collider.sharedMesh = null;
+                if (map.collider.enabled) map.collider.sharedMesh = null;
                 map.collider.sharedMesh = mesh;
 #if UNITY_EDITOR
                 if (!Application.isPlaying) UnityEditor.EditorUtility.SetDirty(mesh);
@@ -554,6 +564,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 #if UNITY_EDITOR
         void OnSurfaceTilesUndoRedo()
         {
+            if (!NeedsCollision) DisableSurfaceCollision();
             NotifySurfaceMeshChanged(true);
         }
 #endif

@@ -29,6 +29,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public float SurfaceChunkDistance => Mathf.Max(0f, m_SurfaceChunkDistance);
         [SerializeField] MGTerrainWorldQuality m_Quality;
         [SerializeField, HideInInspector] bool m_QualityInitialized;
+        [HideInInspector] public float ColliderCellSize = 50f;
         [HideInInspector] public int CaptureResolution = 2048;
         [HideInInspector] public float CaptureExposure = 10f;
         [HideInInspector] public bool CaptureSyncSceneExposure;

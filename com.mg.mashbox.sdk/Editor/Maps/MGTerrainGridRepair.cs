@@ -111,7 +111,7 @@ namespace MashBoxSDK.MapTools
             data.FindProperty("m_EditableSculptMesh").objectReferenceValue = repaired;
             data.ApplyModifiedProperties();
             var collider = tile.MeshCollider;
-            if (collider != null)
+            if (collider != null && tile.NeedsCollision)
             {
                 Undo.RecordObject(collider, "Restore Terrain Grid");
                 collider.sharedMesh = null;

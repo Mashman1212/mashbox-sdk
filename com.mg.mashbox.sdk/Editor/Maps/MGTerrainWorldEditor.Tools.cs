@@ -11,6 +11,182 @@ namespace MashBoxSDK.MapTools
     public sealed partial class MGTerrainWorldEditor
     {
         bool m_PaintWorld = true;
+
+        static readonly Dictionary<MGTerrain, string> s_ColliderBuildKeys = new Dictionary<MGTerrain, string>();
+        internal static int LastColliderTilesBuilt { get; private set; }
+        internal static int LastColliderTilesSkipped { get; private set; }
+
+        [InitializeOnLoadMethod]
+        static void InitializeColliderBuildCache() => Undo.undoRedoPerformed += s_ColliderBuildKeys.Clear;
+
+        // Conservative editor-session cache. Undo/reload, source edits, collider edits,
+        // holes, transforms, physics settings and cell size all invalidate it.
+        static string ColliderBuildKey(MGTerrain tile, float cellSize, string folder)
+        {
+            var key = new System.Text.StringBuilder();
+            void ObjectKey(UnityEngine.Object value)
+            {
+                key.Append('|').Append(value != null ? value.GetInstanceID() : 0);
+                key.Append(':').Append(value != null ? EditorUtility.GetDirtyCount(value) : 0);
+            }
+            ObjectKey(tile); ObjectKey(tile.MeshFilter); ObjectKey(tile.MeshFilter.sharedMesh);
+            ObjectKey(tile.MeshCollider);
+            key.Append('|').Append(cellSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).Append('|').Append(folder);
+            key.Append(tile.transform.localToWorldMatrix.ToString("R"));
+            key.Append(tile.MeshFilter.transform.localToWorldMatrix.ToString("R"));
+            key.Append('|').Append(tile.SurfaceColliderChunks.Count);
+            foreach (var collider in tile.SurfaceColliderChunks)
+            {
+                ObjectKey(collider);
+                if (collider == null) continue;
+                ObjectKey(collider.sharedMesh);
+                key.Append(collider.transform.localToWorldMatrix.ToString("R"));
+            }
+            return key.ToString();
+        }
+
+
+        internal static MGTerrain[] CollisionTiles(MGTerrainWorld world) =>
+            world.GetComponentsInChildren<MGTerrain>(true)
+                .Where(tile => tile.GetComponentInParent<MGTerrainWorld>(true) == world).ToArray();
+
+        void DrawWorldCollision(MGTerrainWorld world)
+        {
+            var tiles = CollisionTiles(world).Where(tile => tile.NeedsCollision).ToArray();
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Terrain Collision", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Build physics collider chunks only for tiles with Use Collision Chunks enabled, including inactive tiles. Other collidable tiles keep their main collider. The main collider is retained for terrain editing. Smaller cells create more colliders; profile your map to choose a size.", MessageType.None);
+            EditorGUILayout.LabelField("Background Tiles (Collision Off)", CollisionTiles(world).Count(tile => !tile.NeedsCollision).ToString());
+            EditorGUILayout.LabelField("Tiles Using Main Collider Only", tiles.Count(tile => !tile.NeedsCollisionChunks).ToString());
+            EditorGUILayout.LabelField("Tiles / Collider Chunks",
+                tiles.Length + " / " + tiles.Sum(tile => tile.SurfaceColliderChunks.Count));
+            using (new EditorGUI.DisabledScope(Application.isPlaying || tiles.Length == 0))
+            {
+                serializedObject.Update();
+                var size = serializedObject.FindProperty("ColliderCellSize");
+                size.floatValue = EditorGUILayout.Slider("Collider Cell Size (m)", size.floatValue, 10, 200);
+                serializedObject.ApplyModifiedProperties();
+                if (GUILayout.Button("Build / Rebuild World Collider Chunks"))
+                    RunCollisionAction(() => BuildWorldColliders(world, world.ColliderCellSize));
+                if (GUILayout.Button("Refresh Collider Geometry"))
+                    RunCollisionAction(() => SetWorldCollision(world, null));
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Use Collider Chunks"))
+                        RunCollisionAction(() => SetWorldCollision(world, true));
+                    if (GUILayout.Button("Use Master Colliders"))
+                        RunCollisionAction(() => SetWorldCollision(world, false));
+                }
+            }
+        }
+
+        static void RunCollisionAction(Action action)
+        {
+            try { action(); }
+            catch (OperationCanceledException) { Debug.Log("Terrain collider rebuild cancelled; previous colliders restored."); }
+            catch (Exception error) { Debug.LogException(error); }
+            finally { EditorUtility.ClearProgressBar(); SceneView.RepaintAll(); }
+        }
+
+        static void ValidateCollisionTiles(MGTerrain[] tiles)
+        {
+            if (Application.isPlaying) throw new InvalidOperationException("Edit terrain collision outside Play Mode.");
+            if (tiles.Length == 0) throw new InvalidOperationException("This world has no terrain tiles.");
+            foreach (var tile in tiles)
+            {
+                var mesh = tile.MeshFilter != null ? tile.MeshFilter.sharedMesh : null;
+                if (mesh == null || !mesh.isReadable || tile.GetSurfaceTrianglesIncludingHoles().Length == 0)
+                    throw new InvalidOperationException("A readable terrain surface with triangles is required on " + tile.name);
+            }
+        }
+
+        internal static void BuildWorldColliders(MGTerrainWorld world, float cellSize, string assetFolder = null)
+        {
+            LastColliderTilesBuilt = 0;
+            LastColliderTilesSkipped = 0;
+            var tiles = CollisionTiles(world).Where(tile => tile.NeedsCollisionChunks).ToArray();
+            if (tiles.Length == 0) return;
+            ValidateCollisionTiles(tiles);
+            if (float.IsNaN(cellSize) || float.IsInfinity(cellSize) || cellSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(cellSize));
+            foreach (var dead in s_ColliderBuildKeys.Keys.Where(tile => tile == null).ToArray()) s_ColliderBuildKeys.Remove(dead);
+            var pending = tiles.Where(tile => !s_ColliderBuildKeys.TryGetValue(tile, out var key)
+                || key != ColliderBuildKey(tile, cellSize, assetFolder)).ToArray();
+            LastColliderTilesBuilt = 0;
+            LastColliderTilesSkipped = tiles.Length - pending.Length;
+            if (pending.Length == 0) return;
+            Undo.IncrementCurrentGroup();
+            int group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Build World Terrain Colliders");
+            var assets = new List<string>();
+            try
+            {
+                for (int i = 0; i < pending.Length; i++)
+                {
+                    var tile = pending[i];
+                    if (!Application.isBatchMode && EditorUtility.DisplayCancelableProgressBar("Build Terrain Colliders",
+                        $"{tile.name} ({i + 1}/{pending.Length}); {LastColliderTilesSkipped} unchanged tiles skipped", (float)i / pending.Length))
+                        throw new OperationCanceledException();
+                    MGTerrainEditor.BuildSurfaceColliders(tile, cellSize, assetFolder, assets, false);
+                    LastColliderTilesBuilt++;
+                    using var data = new SerializedObject(tile);
+                    data.FindProperty("m_UseColliderChunksAtRuntime").boolValue = true;
+                    data.ApplyModifiedProperties();
+                    // Fresh chunks already contain the current geometry. Do not read
+                    // and compare every chunk a second time immediately after building.
+                }
+                Undo.RecordObject(world, "World Collider Cell Size");
+                world.ColliderCellSize = cellSize;
+                EditorUtility.SetDirty(world);
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(world.gameObject.scene);
+                foreach (var asset in assets) AssetDatabase.SaveAssetIfDirty(AssetDatabase.LoadMainAssetAtPath(asset));
+                Undo.FlushUndoRecordObjects();
+                Undo.CollapseUndoOperations(group);
+                foreach (var tile in pending) s_ColliderBuildKeys[tile] = ColliderBuildKey(tile, cellSize, assetFolder);
+            }
+            catch
+            {
+                Undo.RevertAllDownToGroup(group);
+                foreach (var asset in assets) AssetDatabase.DeleteAsset(asset);
+                LastColliderTilesBuilt = 0;
+                s_ColliderBuildKeys.Clear();
+                throw;
+            }
+            finally { EditorUtility.ClearProgressBar(); }
+        }
+
+        internal static void SetWorldCollision(MGTerrainWorld world, bool? chunks)
+        {
+            var tiles = CollisionTiles(world).Where(tile => tile.NeedsCollision).ToArray();
+            if (tiles.Length == 0) return;
+            ValidateCollisionTiles(tiles);
+            Undo.IncrementCurrentGroup();
+            int group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName(chunks.HasValue ? (chunks.Value ? "Use World Collider Chunks" : "Use World Master Colliders") : "Refresh World Terrain Colliders");
+            try
+            {
+                foreach (var tile in tiles)
+                {
+                    Undo.RegisterCompleteObjectUndo(tile, "World Terrain Collision");
+                    foreach (var collider in tile.GetComponentsInChildren<MeshCollider>(true))
+                        Undo.RegisterCompleteObjectUndo(collider, "World Terrain Collision");
+                    using var data = new SerializedObject(tile);
+                    var preference = data.FindProperty("m_UseColliderChunksAtRuntime");
+                    bool useChunks = chunks ?? preference.boolValue;
+                    preference.boolValue = useChunks;
+                    data.ApplyModifiedProperties();
+                    tile.RefreshSurfaceCollidersFromMesh();
+                    if (!useChunks) MeshSculptWindow.EnsureSeamMasterCollider(tile);
+                    EditorUtility.SetDirty(tile);
+                    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(tile.gameObject.scene);
+                }
+                Physics.SyncTransforms();
+                Undo.FlushUndoRecordObjects();
+                Undo.CollapseUndoOperations(group);
+            }
+            catch { Undo.RevertAllDownToGroup(group); throw; }
+        }
+
         void DrawWorldQualityPresets(MGTerrainWorld world)
         {
             EditorGUILayout.Space();
@@ -52,6 +228,7 @@ namespace MashBoxSDK.MapTools
 
         void DrawWorldBakes(MGTerrainWorld world)
         {
+            DrawWorldCollision(world);
             DrawWorldFarRangeMaterials(world);
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Bake All World Tiles", EditorStyles.boldLabel);

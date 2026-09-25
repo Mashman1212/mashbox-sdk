@@ -189,6 +189,43 @@ namespace MashBoxSDK.MapTools
             m_MaxPendingDetailBuilds = serializedObject.FindProperty("m_MaxPendingDetailBuilds");
         }
 
+
+        void DrawCollisionParticipation()
+        {
+            serializedObject.Update();
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("m_NeedsCollision"),
+                new GUIContent("Needs Collision", "Keep enabled for boundary walls and any terrain that must block the player."));
+            using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("m_NeedsCollision").boolValue
+                && !serializedObject.FindProperty("m_NeedsCollision").hasMultipleDifferentValues))
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("m_NeedsCollisionChunks"),
+                    new GUIContent("Use Collision Chunks", "Enable for frequently contacted terrain. Turn off to keep only the main collider and skip chunk generation and syncing."));
+            if (EditorGUI.EndChangeCheck())
+            {
+                foreach (MGTerrain tile in targets)
+                {
+                    foreach (var collider in tile.GetComponentsInChildren<MeshCollider>(true))
+                        Undo.RecordObject(collider, "Terrain Collision Participation");
+                    foreach (var mesh in tile.GetHoleColliderMeshes())
+                        Undo.RegisterCompleteObjectUndo(mesh, "Terrain Collision Participation");
+                }
+                serializedObject.ApplyModifiedProperties();
+                foreach (MGTerrain tile in targets)
+                {
+                    if (tile.NeedsCollision)
+                    {
+                        tile.ApplySurfaceHoles();
+                        tile.RefreshSurfaceCollidersFromMesh();
+                        tile.ApplyRuntimeSurfaceCollision();
+                    }
+                    else tile.DisableSurfaceCollision();
+                    EditorUtility.SetDirty(tile);
+                    EditorSceneManager.MarkSceneDirty(tile.gameObject.scene);
+                }
+            }
+            else serializedObject.ApplyModifiedProperties();
+        }
+
         bool m_InspectFromWorld;
         internal void DrawWorldTileInspector()
         {
@@ -202,6 +239,7 @@ namespace MashBoxSDK.MapTools
         {
             MGTerrainGizmos.DrawSettings();
             m_CurrentMeasurements.Draw(targets.Cast<MGTerrain>().ToArray());
+            DrawCollisionParticipation();
             if (targets.Length > 1)
             {
                 DrawMultipleTileInspector();
@@ -724,11 +762,53 @@ namespace MashBoxSDK.MapTools
             return Vector2.Distance(p, a + t * edge);
         }
 
+        [InitializeOnLoadMethod]
+        static void ScheduleLegacyColliderNameRepair()
+        {
+            EditorApplication.delayCall += RepairLoadedColliderNames;
+            EditorSceneManager.sceneOpened += (_, _) => RepairLoadedColliderNames();
+        }
+
+        static void RepairLoadedColliderNames()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+            foreach (var terrain in Resources.FindObjectsOfTypeAll<MGTerrain>())
+            {
+                if (EditorUtility.IsPersistent(terrain) || !terrain.gameObject.scene.isLoaded
+                    || EditorSceneManager.IsPreviewScene(terrain.gameObject.scene)) continue;
+                RepairLegacyColliderName(terrain);
+            }
+        }
+
+        internal static void RepairLegacyColliderName(MGTerrain terrain)
+        {
+            var chunks = terrain.SurfaceColliderChunks;
+            if (chunks.Count == 0 || chunks[0] == null) return;
+            var first = chunks[0];
+            // Older builds copied the main mesh asset's filename onto the first
+            // hierarchy object. Repair only that recognizable generated corner.
+            if (!(first.name.Contains("_Colliders") || first.name.StartsWith("TerrainColliders", StringComparison.Ordinal))
+                || first.sharedMesh == null || first.transform.parent == null
+                || first.transform.parent.name != "MG Terrain Collider Chunks"
+                || chunks.Any(c => c != null && c.name == "Terrain Collider 0,0")) return;
+            var minimum = first.sharedMesh.bounds.min;
+            foreach (var chunk in chunks)
+                if (chunk != null && chunk.sharedMesh != null
+                    && (chunk.sharedMesh.bounds.min.x < minimum.x - .001f
+                        || chunk.sharedMesh.bounds.min.z < minimum.z - .001f)) return;
+            Undo.RecordObject(first.gameObject, "Repair Terrain Collider Name");
+            first.gameObject.name = "Terrain Collider 0,0";
+            EditorUtility.SetDirty(first.gameObject);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(first.gameObject);
+            EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
+        }
+
         internal const float DefaultColliderCellSize = 50f;
         float m_ColliderCellSize = DefaultColliderCellSize;
 
         void DrawSurfaceColliders(MGTerrain terrain)
         {
+            if (!terrain.NeedsCollisionChunks) return;
             EditorGUILayout.LabelField("Surface Collision", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("m_UseColliderChunksAtRuntime"), new GUIContent("Use Chunks At Runtime"));
             m_ColliderCellSize = EditorGUILayout.Slider("Collider Cell Size (Metres)", m_ColliderCellSize, 10f, 200f);
@@ -779,6 +859,8 @@ namespace MashBoxSDK.MapTools
         internal static void BuildSurfaceColliders(MGTerrain terrain, float cellSize, string assetFolder = null, List<string> createdAssets = null, bool saveAssets = true)
         {
             if (terrain == null) throw new ArgumentNullException(nameof(terrain));
+            if (!terrain.NeedsCollision) { terrain.DisableSurfaceCollision(); return; }
+            if (!terrain.NeedsCollisionChunks) { terrain.ApplyRuntimeSurfaceCollision(); return; }
             if (float.IsNaN(cellSize) || float.IsInfinity(cellSize) || cellSize <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(cellSize));
             MeshFilter filter = terrain.MeshFilter;
@@ -790,10 +872,11 @@ namespace MashBoxSDK.MapTools
             if (triangles.Length == 0) throw new InvalidOperationException("The surface mesh has no triangles to build colliders from.");
             float sx = Mathf.Max(.0001f, filter.transform.TransformVector(Vector3.right).magnitude);
             float sz = Mathf.Max(.0001f, filter.transform.TransformVector(Vector3.forward).magnitude);
+            Vector3 boundsMin = source.bounds.min;
             var groups = new Dictionary<Vector2Int, List<int>>();
             for (int t = 0; t < triangles.Length; t += 3)
             {
-                Vector3 center = (vertices[triangles[t]] + vertices[triangles[t + 1]] + vertices[triangles[t + 2]]) / 3f - source.bounds.min;
+                Vector3 center = (vertices[triangles[t]] + vertices[triangles[t + 1]] + vertices[triangles[t + 2]]) / 3f - boundsMin;
                 var key = new Vector2Int(Mathf.FloorToInt(center.x * sx / cellSize), Mathf.FloorToInt(center.z * sz / cellSize));
                 if (!groups.TryGetValue(key, out var indices)) groups.Add(key, indices = new List<int>());
                 indices.Add(triangles[t]); indices.Add(triangles[t + 1]); indices.Add(triangles[t + 2]);
@@ -813,54 +896,68 @@ namespace MashBoxSDK.MapTools
             // Track the asset before writing so conversion rollback also removes partial builds.
             createdAssets?.Add(assetPath);
             terrain.ApplyWorldSurfaceTag();
-            var root = new GameObject("MG Terrain Collider Chunks");
+            var root = new GameObject("MG Terrain Collider Chunks") { isStatic = true };
             root.transform.SetParent(terrain.transform, false);
             root.layer = terrain.gameObject.layer;
             root.tag = terrain.gameObject.tag;
             var colliders = new List<MeshCollider>();
             var vertexMaps = new List<MGTerrain.SurfaceColliderVertexMap>();
             MeshCollider original = terrain.MeshCollider;
-            foreach (var group in groups)
+            Matrix4x4 toTerrain = terrain.transform.worldToLocalMatrix * filter.transform.localToWorldMatrix;
+            // Defer imports until the complete subasset file has been written.
+            AssetDatabase.StartAssetEditing();
+            try
             {
-                var remap = new Dictionary<int, int>();
-                var localVertices = new List<Vector3>();
-                var originalIndices = new List<int>();
-                var indices = new List<int>();
-                foreach (int sourceIndex in group.Value)
+                foreach (var group in groups)
                 {
-                    if (!remap.TryGetValue(sourceIndex, out int index))
+                    var remap = new Dictionary<int, int>();
+                    var localVertices = new List<Vector3>();
+                    var originalIndices = new List<int>();
+                    var indices = new List<int>();
+                    foreach (int sourceIndex in group.Value)
                     {
-                        index = localVertices.Count;
-                        remap.Add(sourceIndex, index);
-                        originalIndices.Add(sourceIndex);
-                        localVertices.Add(terrain.transform.InverseTransformPoint(filter.transform.TransformPoint(vertices[sourceIndex])));
+                        if (!remap.TryGetValue(sourceIndex, out int index))
+                        {
+                            index = localVertices.Count;
+                            remap.Add(sourceIndex, index);
+                            originalIndices.Add(sourceIndex);
+                            localVertices.Add(toTerrain.MultiplyPoint3x4(vertices[sourceIndex]));
+                        }
+                        indices.Add(index);
                     }
-                    indices.Add(index);
+                    string chunkName = $"Terrain Collider {group.Key.x},{group.Key.y}";
+                    var mesh = new Mesh { name = chunkName, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                    mesh.SetVertices(localVertices);
+                    mesh.SetTriangles(indices, 0);
+                    for (int channel = 0; channel < 8; channel++)
+                    {
+                        if (sourceUvs[channel].Count != vertices.Length) continue;
+                        var uv = new List<Vector4>(originalIndices.Count);
+                        foreach (int index in originalIndices) uv.Add(sourceUvs[channel][index]);
+                        mesh.SetUVs(channel, uv);
+                    }
+                    mesh.RecalculateBounds();
+                    if (colliders.Count == 0) AssetDatabase.CreateAsset(mesh, assetPath);
+                    else AssetDatabase.AddObjectToAsset(mesh, assetPath);
+                    var child = new GameObject(chunkName) { isStatic = true };
+                    child.transform.SetParent(root.transform, false);
+                    child.layer = original != null ? original.gameObject.layer : terrain.gameObject.layer;
+                    child.tag = original != null ? original.gameObject.tag : terrain.gameObject.tag;
+                    var collider = child.AddComponent<MeshCollider>();
+                    if (original != null) { collider.sharedMaterial = original.sharedMaterial; collider.cookingOptions = original.cookingOptions; collider.contactOffset = original.contactOffset; }
+                    collider.sharedMesh = mesh;
+                    colliders.Add(collider);
+                    vertexMaps.Add(new MGTerrain.SurfaceColliderVertexMap(collider, originalIndices.ToArray()));
                 }
-                var mesh = new Mesh { name = $"Terrain Collider {group.Key.x},{group.Key.y}", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
-                mesh.SetVertices(localVertices);
-                mesh.SetTriangles(indices, 0);
-                for (int channel = 0; channel < 8; channel++)
-                {
-                    if (sourceUvs[channel].Count != vertices.Length) continue;
-                    var uv = new List<Vector4>(originalIndices.Count);
-                    foreach (int index in originalIndices) uv.Add(sourceUvs[channel][index]);
-                    mesh.SetUVs(channel, uv);
-                }
-                mesh.RecalculateBounds();
-                if (colliders.Count == 0) AssetDatabase.CreateAsset(mesh, assetPath);
-                else AssetDatabase.AddObjectToAsset(mesh, assetPath);
-                var child = new GameObject(mesh.name);
-                child.transform.SetParent(root.transform, false);
-                child.layer = original != null ? original.gameObject.layer : terrain.gameObject.layer;
-                child.tag = original != null ? original.gameObject.tag : terrain.gameObject.tag;
-                var collider = child.AddComponent<MeshCollider>();
-                if (original != null) { collider.sharedMaterial = original.sharedMaterial; collider.cookingOptions = original.cookingOptions; collider.contactOffset = original.contactOffset; }
-                collider.sharedMesh = mesh;
-                colliders.Add(collider);
-                vertexMaps.Add(new MGTerrain.SurfaceColliderVertexMap(collider, originalIndices.ToArray()));
             }
+            catch
+            {
+                DestroyImmediate(root);
+                throw;
+            }
+            finally { AssetDatabase.StopAssetEditing(); }
             Undo.RegisterCreatedObjectUndo(root, "Build Terrain Child Colliders");
+            Undo.RegisterCompleteObjectUndo(terrain, "Build Terrain Child Colliders");
             using var serializedObject = new SerializedObject(terrain);
             serializedObject.Update();
             var rootProperty = serializedObject.FindProperty("m_SurfaceColliderRoot");
@@ -870,13 +967,18 @@ namespace MashBoxSDK.MapTools
             var chunksProperty = serializedObject.FindProperty("m_SurfaceColliderChunks");
             chunksProperty.arraySize = colliders.Count;
             for (int i = 0; i < colliders.Count; i++) chunksProperty.GetArrayElementAtIndex(i).objectReferenceValue = colliders[i];
-            serializedObject.ApplyModifiedProperties();
-            Undo.RecordObject(terrain, "Build Terrain Child Colliders");
+            // Snapshot once instead of diffing tens of thousands of vertex-map indices.
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
             terrain.SetSurfaceColliderVertexMaps(vertexMaps.ToArray(), source.vertexCount);
             terrain.ApplySurfaceHoles();
             EditorUtility.SetDirty(terrain);
-            if (original != null) { Undo.RecordObject(original, "Build Terrain Child Colliders"); original.enabled = false; }
-            if (saveAssets) AssetDatabase.SaveAssets();
+            if (original != null)
+            {
+                Undo.RecordObject(original, "Build Terrain Child Colliders");
+                original.enabled = false;
+                original.sharedMesh = source;
+            }
+            if (saveAssets) AssetDatabase.SaveAssetIfDirty(AssetDatabase.LoadMainAssetAtPath(assetPath));
             EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
             Physics.SyncTransforms();
             SceneView.RepaintAll();
@@ -1677,7 +1779,7 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.HelpBox("Drag to paint with soft falloff. Shift erases density or restores size to 1. Ctrl + middle-drag: horizontal = radius, vertical = strength. Alt navigates; Esc stops. Size multiplies existing width and height; it does not change density. Painted cells refresh live during the stroke. The first stroke makes a working copy; original maps are preserved.", MessageType.Info);
             if (terrain.DensityDetailLayers[m_PaintDetailIndex].GeneratedByPalette != null)
                 EditorGUILayout.HelpBox("This is a palette-generated layer. Baking the palette again can replace this layer and its painting.", MessageType.Warning);
-            if (!terrain.HasSurfaceCollider)
+            if (terrain.NeedsCollision && !terrain.HasSurfaceCollider)
                 EditorGUILayout.HelpBox("Enable the terrain's Mesh Collider to brush its surface.", MessageType.Warning);
             if (terrain.DensityDetailLayers[m_PaintDetailIndex].PaletteSourceOnly)
                 EditorGUILayout.HelpBox("This layer is a palette source, not rendered directly. Paint its density with the palette workflow and bake it, or select a rendered detail layer here.", MessageType.Warning);

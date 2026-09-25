@@ -14,8 +14,14 @@ namespace MashBoxSDK.MapTools
 
         bool RaycastDetailWorld(MGTerrain terrain, Ray ray, out RaycastHit hit)
         {
-            if (terrain.World != null) return terrain.World.RaycastSurface(ray, out hit, out _, float.MaxValue);
-            return terrain.RaycastSurface(ray, out hit, float.MaxValue);
+            if (terrain.World == null) return terrain.RaycastEditingSurface(ray, out hit, float.MaxValue);
+            hit = default;
+            bool found = false;
+            float distance = float.MaxValue;
+            foreach (var tile in terrain.World.Chunks)
+                if (tile != null && tile.isActiveAndEnabled && tile.RaycastEditingSurface(ray, out var next, distance))
+                { hit = next; distance = next.distance; found = true; }
+            return found;
         }
 
         internal static int FindWorldPaintLayer(MGTerrain source, int sourceIndex, MGTerrain destination)

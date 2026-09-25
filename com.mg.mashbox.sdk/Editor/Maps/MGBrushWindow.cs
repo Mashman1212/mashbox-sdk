@@ -1660,7 +1660,7 @@ namespace MashBoxSDK.MapTools
                     : $"Created editable mesh clone for '{meshFilter.gameObject.name}'.";
             }
 
-            if (isMGTerrain && terrain.MeshCollider != null && terrain.MeshCollider.sharedMesh != mesh)
+            if (isMGTerrain && terrain.NeedsCollision && terrain.MeshCollider != null && terrain.MeshCollider.sharedMesh != mesh)
             {
                 Undo.RecordObject(terrain.MeshCollider, undoName);
                 terrain.MeshCollider.sharedMesh = mesh;
@@ -2323,7 +2323,25 @@ namespace MashBoxSDK.MapTools
             }
         }
 
+
         private bool TryGetBrushHit(Ray ray, out RaycastHit hit)
+        {
+            bool found = TryGetPhysicalBrushHit(ray, out hit);
+            float distance = found ? hit.distance : float.MaxValue;
+            foreach (var terrain in MGTerrain.EditorActiveTerrains)
+            {
+                if (terrain == null || terrain.NeedsCollision || !terrain.isActiveAndEnabled || terrain.MeshFilter == null
+                    || (GetPaintRaycastLayerMask() & (1 << terrain.gameObject.layer)) == 0) continue;
+                if (isPainting && currentMode != ToolMode.Decor && !IsPaintTarget(terrain.MeshFilter.gameObject)) continue;
+                if (!terrain.RaycastEditingSurface(ray, out var candidate, distance)) continue;
+                hit = candidate; distance = candidate.distance; found = true;
+                if (currentMode == ToolMode.SplatMap && IsPaintTarget(terrain.MeshFilter.gameObject)
+                    && TryGetSplatUv(hit, out _, out _)) TryAutoAssignSplatTexture(hit, out _);
+            }
+            return found;
+        }
+
+        private bool TryGetPhysicalBrushHit(Ray ray, out RaycastHit hit)
         {
             // MappyX disables Physics.autoSyncTransforms. Loft collider chunks
             // are regenerated in edit mode, so synchronize before every brush

@@ -153,6 +153,7 @@ namespace MashBoxSDK.MapTools
 
         void DrawSettingsTab(MGTerrainWorld world)
         {
+            DrawWorldCollision(world);
             EditorGUILayout.HelpBox("One renderer and overall detail budget. Child MG Terrain components retain their existing painted data and editing tools. Distant chunk detail resources are released automatically; surface meshes and colliders stay loaded.", MessageType.Info);
             DrawPropertiesExcluding(serializedObject, "m_Script", "m_Quality");
             if (serializedObject.ApplyModifiedProperties()) world.ApplySharedQuality();

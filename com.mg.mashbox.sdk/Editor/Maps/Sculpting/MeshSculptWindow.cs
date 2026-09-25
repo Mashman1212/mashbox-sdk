@@ -1166,7 +1166,7 @@ namespace MashBoxSDK.MapTools
                 if (surface == null || surface.sharedMesh == null || !CanPickSculptSurface(surface)) continue;
                 // Query the terrain's registered master/chunk colliders directly.
                 // Loft/decor hits must not hide the terrain hover brush.
-                if (!terrain.RaycastSurface(ray, out var hit, closest)) continue;
+                if (!terrain.RaycastEditingSurface(ray, out var hit, closest)) continue;
                 surfaceHit = hit;
                 meshFilter = surface;
                 closest = hit.distance;
@@ -1344,18 +1344,29 @@ namespace MashBoxSDK.MapTools
             return m_Mode;
         }
 
-        static void EnsureSeamMasterCollider(MGTerrain terrain)
+        internal static void EnsureSeamMasterCollider(MGTerrain terrain)
         {
+            if (!terrain.NeedsCollision) { terrain.DisableSurfaceCollision(); return; }
             MeshCollider master = terrain.MeshCollider;
             if (master == null) master = Undo.AddComponent<MeshCollider>(terrain.MeshFilter.gameObject);
             Undo.RecordObject(master, "Fit Terrain Collision");
+            // Painting must hit the current surface, including mesh replacements
+            // and edits made while the master was disabled in favour of chunks.
+            Mesh surface = terrain.MeshFilter.sharedMesh;
+            bool refresh = !master.enabled || master.sharedMesh != surface;
             master.enabled = true;
+            if (refresh)
+            {
+                master.sharedMesh = null;
+                master.sharedMesh = surface;
+            }
             foreach (MeshCollider chunk in terrain.SurfaceColliderChunks)
             {
                 if (chunk == null || !chunk.enabled) continue;
                 Undo.RecordObject(chunk, "Fit Terrain Collision");
                 chunk.enabled = false;
             }
+            Physics.SyncTransforms();
         }
 
         void EnsureSculptPickingCollider()
@@ -1368,7 +1379,7 @@ namespace MashBoxSDK.MapTools
             }
 
             var terrain = target.GetComponentInParent<MGTerrain>();
-            if (terrain != null && terrain.MeshFilter == target && terrain.HasSurfaceCollider)
+            if (terrain != null && terrain.MeshFilter == target && (terrain.HasSurfaceCollider || !terrain.NeedsCollision))
             {
                 // Terrain already supplies master/chunk collision. Cooking a
                 // duplicate full-resolution mesh just for selection is costly.

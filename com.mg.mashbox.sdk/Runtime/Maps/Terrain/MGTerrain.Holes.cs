@@ -19,7 +19,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         public bool TryPrepareHoleColliderMappings()
         {
-            if (m_SurfaceColliderChunks.Length == 0) return true;
+            if (!NeedsCollisionChunks || m_SurfaceColliderChunks.Length == 0) return true;
             Mesh source = MeshFilter != null ? MeshFilter.sharedMesh : null;
             if (source == null || !source.isReadable) return false;
             CacheSurfaceColliderVertexMaps(source);
@@ -143,45 +143,51 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
                 source.SetTriangles(visible, s, false);
             }
-            // Preserve bounds and vertex attributes, including the surface underneath holes.
-            if (MeshCollider != null)
+            if (!NeedsCollision) DisableSurfaceCollision();
+            if (NeedsCollision)
             {
-                MeshCollider.sharedMesh = null;
-                if (m_SurfaceColliderChunks.Length == 0)
-                    for (int s = 0; s < source.subMeshCount; s++)
-                        if (source.GetIndexCount(s) > 0) { MeshCollider.sharedMesh = source; break; }
-            }
-            foreach (var map in m_SurfaceColliderVertexMaps)
-            {
-                if (map.collider == null || map.holeSourceTriangles == null) continue;
-                Mesh mesh = map.collider.sharedMesh != null ? map.collider.sharedMesh : map.holeMesh;
-                if (mesh == null) continue;
-                map.holeMesh = mesh;
-                var visible = new List<int>();
-                int[] triangles = map.holeSourceTriangles;
-                for (int t = 0; t < triangles.Length; t += 3)
+                // Preserve bounds and vertex attributes, including the surface underneath holes.
+                if (MeshCollider != null)
                 {
-                    int a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
-                    if (hidden.Contains(HoleTriangleKey(map.sourceIndices[a], map.sourceIndices[b], map.sourceIndices[c]))) continue;
-                    visible.Add(a); visible.Add(b); visible.Add(c);
+                    MeshCollider.sharedMesh = null;
+                    if (!NeedsCollisionChunks || m_SurfaceColliderChunks.Length == 0)
+                        for (int s = 0; s < source.subMeshCount; s++)
+                            if (source.GetIndexCount(s) > 0) { MeshCollider.sharedMesh = source; break; }
                 }
-                // Unchanged chunks need neither a mesh upload nor physics cooking.
-                mesh.GetTriangles(m_HoleColliderCurrentTriangles, 0);
-                bool differs = visible.Count != m_HoleColliderCurrentTriangles.Count;
-                for (int i = 0; !differs && i < visible.Count; i++)
-                    differs = visible[i] != m_HoleColliderCurrentTriangles[i];
-                // The saved mesh can be current while the collider reference was
-                // cleared by a previous hole edit. Restore that reference too.
-                if (!differs && ((visible.Count == 0 && map.collider.sharedMesh == null)
-                    || (visible.Count > 0 && map.collider.sharedMesh == mesh))) continue;
-                if (differs) mesh.SetTriangles(visible, 0, false);
-                map.collider.sharedMesh = null;
-                if (visible.Count > 0) map.collider.sharedMesh = mesh;
+                if (NeedsCollisionChunks)
+                foreach (var map in m_SurfaceColliderVertexMaps)
+                {
+                    if (map.collider == null || map.holeSourceTriangles == null) continue;
+                    Mesh mesh = map.collider.sharedMesh != null ? map.collider.sharedMesh : map.holeMesh;
+                    if (mesh == null) continue;
+                    map.holeMesh = mesh;
+                    var visible = new List<int>();
+                    int[] triangles = map.holeSourceTriangles;
+                    for (int t = 0; t < triangles.Length; t += 3)
+                    {
+                        int a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
+                        if (hidden.Contains(HoleTriangleKey(map.sourceIndices[a], map.sourceIndices[b], map.sourceIndices[c]))) continue;
+                        visible.Add(a); visible.Add(b); visible.Add(c);
+                    }
+                    // Unchanged chunks need neither a mesh upload nor physics cooking.
+                    mesh.GetTriangles(m_HoleColliderCurrentTriangles, 0);
+                    bool differs = visible.Count != m_HoleColliderCurrentTriangles.Count;
+                    for (int i = 0; !differs && i < visible.Count; i++)
+                        differs = visible[i] != m_HoleColliderCurrentTriangles[i];
+                    // The saved mesh can be current while the collider reference was
+                    // cleared by a previous hole edit. Restore that reference too.
+                    if (!differs && ((visible.Count == 0 && map.collider.sharedMesh == null)
+                        || (visible.Count > 0 && map.collider.sharedMesh == mesh))) continue;
+                    if (differs) mesh.SetTriangles(visible, 0, false);
+                    if (map.collider.enabled || visible.Count == 0) map.collider.sharedMesh = null;
+                    if (visible.Count > 0) map.collider.sharedMesh = mesh;
 #if UNITY_EDITOR
-                UnityEditor.EditorUtility.SetDirty(mesh);
+                    UnityEditor.EditorUtility.SetDirty(mesh);
 #endif
+                }
             }
 #if UNITY_EDITOR
+            m_EditorPickDirty = true;
             UnityEditor.EditorUtility.SetDirty(source);
             UnityEditor.EditorUtility.SetDirty(this);
 #endif

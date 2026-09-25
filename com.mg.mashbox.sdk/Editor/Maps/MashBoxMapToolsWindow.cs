@@ -27,7 +27,7 @@ namespace MashBoxSDK.MapTools
     public partial class MashBoxMapToolsWindow : EditorWindow
     {
         private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
-        private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector, Mesh }
+        private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector, Mesh, Road }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
         private const string PREF_KEY_MAP_TOOL_TAB_ORDER = "MashBoxSDK.SelectedMapToolTab.Order";
         private ToolTab currentToolTab = ToolTab.ArtTools;
@@ -945,9 +945,10 @@ namespace MashBoxSDK.MapTools
                     {
                         MBEditorAuthoringMode.SplineLoft,
                         MBEditorAuthoringMode.Spline,
-                        MBEditorAuthoringMode.UVSpline
+                        MBEditorAuthoringMode.UVSpline,
+                        MBEditorAuthoringMode.Road
                     };
-                    categoryModeLabels = new[] { "Spline Loft", "Single Spline", "UV Spline" };
+                    categoryModeLabels = new[] { "Spline Loft", "Single Spline", "UV Spline", "Road" };
                 }
 
                 int selectedModeIndex = Mathf.Max(0, Array.IndexOf(categoryModes, MBEditorToolState.Mode));
@@ -988,6 +989,9 @@ namespace MashBoxSDK.MapTools
                     break;
                 case AuthoringToolTab.Terrain:
                     DrawTerrainToolSection();
+                    break;
+                case AuthoringToolTab.Road:
+                    MBBrushSceneToolHost.RoadTool.Draw();
                     break;
                 case AuthoringToolTab.Mesh:
                     DrawMeshToolSection();

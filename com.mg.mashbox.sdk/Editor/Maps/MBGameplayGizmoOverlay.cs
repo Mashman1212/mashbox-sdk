@@ -1,6 +1,7 @@
 using MashBoxSDK.Maps;
 using MashBoxSDK.Maps.TerrainSystem;
 using UnityEditor;
+using MashBoxSDK.Maps.Roads.Editor;
 using UnityEditor.EditorTools;
 using UnityEditor.Overlays;
 using UnityEditor.Splines;
@@ -151,6 +152,12 @@ namespace MashBoxSDK.MapTools
                     DrawIconLine(pixels, size, new Vector2(16f, 17f), new Vector2(11f, 12f), 6f, bright);
                     DrawIconLine(pixels, size, new Vector2(10f, 12f), new Vector2(5f, 6f), 2.4f, bright);
                     DrawIconLine(pixels, size, new Vector2(12f, 10f), new Vector2(7f, 5f), 2f, bright);
+                    break;
+                case "MashBox.Road":
+                    DrawIconLine(pixels, size, new Vector2(5f, 4f), new Vector2(11f, 28f), 2.2f, bright);
+                    DrawIconLine(pixels, size, new Vector2(27f, 4f), new Vector2(21f, 28f), 2.2f, bright);
+                    for (int y = 5; y < 28; y += 8)
+                        DrawIconLine(pixels, size, new Vector2(16f, y), new Vector2(16f, y + 4f), 2f, mid);
                     break;
                 case "MashBox.Spline":
                     DrawIconLine(pixels, size, new Vector2(4f, 22f), new Vector2(10f, 12f), 2.2f, bright);
@@ -343,6 +350,7 @@ namespace MashBoxSDK.MapTools
             MBSplineLoftModeToggle.Id,
             MBMeshSculptModeToggle.Id,
             MBUvSplineModeToggle.Id,
+            MBRoadModeToggle.Id,
             MBDecorBrushToggle.Id,
             MBPainterBrushToggle.Id,
             MBSplatBrushToggle.Id,
@@ -433,6 +441,7 @@ namespace MashBoxSDK.MapTools
             toolsContent.Add(new MBSplineModeToggle());
             toolsContent.Add(new MBSplineLoftModeToggle());
             toolsContent.Add(new MBUvSplineModeToggle());
+            toolsContent.Add(new MBRoadModeToggle());
             root.Add(toolsRow);
             root.Add(new IMGUIContainer(MBBrushMask.DrawOverlay));
 
@@ -454,6 +463,16 @@ namespace MashBoxSDK.MapTools
             primaryActions.Add(new MBMoveUvToggle());
             primaryActions.Add(new MBSideOffsetUvToggle());
             primaryActions.Add(new MBUvScaleToggle());
+            var roadActions = new VisualElement();
+            roadActions.style.flexDirection = FlexDirection.Row;
+            roadActions.style.flexWrap = Wrap.Wrap;
+            roadActions.Add(new MBRoadActionButton("Move knot (W)", "d_MoveTool", tool => tool.SetKnotTool(Tool.Move), Tool.Move));
+            roadActions.Add(new MBRoadActionButton("Rotate / bank knot (E)", "d_RotateTool", tool => tool.SetKnotTool(Tool.Rotate), Tool.Rotate));
+            roadActions.Add(new MBRoadActionButton("Scale knot (R)", "d_ScaleTool", tool => tool.SetKnotTool(Tool.Scale), Tool.Scale));
+            roadActions.Add(new MBRoadActionButton("New road", "MashBox.NewSpline", tool => tool.NewRoad(false)));
+            roadActions.Add(new MBRoadActionButton("New road loop", "d_RotateTool", tool => tool.NewRoad(true)));
+            roadActions.Add(new MBRoadActionButton("Rebuild selected road or network", "Refresh", tool => tool.RebuildSelection(), allowStandaloneRoad: true));
+            actionsContent.Add(roadActions);
             actionsContent.Add(primaryActions);
             var sculptSelectionActions = new VisualElement();
             sculptSelectionActions.style.flexDirection = FlexDirection.Row;
@@ -500,7 +519,8 @@ namespace MashBoxSDK.MapTools
             System.Action syncActionsVisibility = () =>
             {
                 MBEditorAuthoringMode mode = MBEditorToolState.Mode;
-                bool hasActions = mode == MBEditorAuthoringMode.SplineLoft
+                roadActions.style.display = mode == MBEditorAuthoringMode.Road ? DisplayStyle.Flex : DisplayStyle.None;
+                bool hasActions = mode == MBEditorAuthoringMode.Road || mode == MBEditorAuthoringMode.SplineLoft
                     || mode == MBEditorAuthoringMode.Spline
                     || mode == MBEditorAuthoringMode.MeshSculpt
                     || mode == MBEditorAuthoringMode.UVSpline;
@@ -1205,6 +1225,7 @@ namespace MashBoxSDK.MapTools
                 },
                 MBEditorAuthoringMode.SplineLoft => "Spline Loft",
                 MBEditorAuthoringMode.Spline => "Spline",
+                MBEditorAuthoringMode.Road => "Road",
                 MBEditorAuthoringMode.MeshSculpt => "Sculpt - " + (MBEditorToolState.SculptMode == MBSculptMode.SetHeight ? "Set Height" : MBEditorToolState.SculptMode.ToString()),
                 MBEditorAuthoringMode.UVSpline => "UV Spline - " + (MBEditorToolState.UvMode switch
                 {
@@ -1361,7 +1382,7 @@ namespace MashBoxSDK.MapTools
         public MBSplineCategoryToggle() : base(
             MBEditorAuthoringCategory.Spline,
             "Spline",
-            "Show Spline Loft, individual Spline, and UV Spline tools.",
+            "Show Spline Loft, individual Spline, UV Spline, and Road tools.",
             "MashBox.Spline",
             "d_RectTool") { }
     }
@@ -1673,7 +1694,7 @@ namespace MashBoxSDK.MapTools
             MBEditorToolAction action = m_Action;
             if (m_Action == MBEditorToolAction.CreateSpline
                 && MBEditorToolState.Mode == MBEditorAuthoringMode.SplineLoft)
-                action = MBEditorToolAction.CreateLoftSpline;
+                action = MBEditorToolAction.CreateLoft;
             MBEditorToolState.RequestAction(action);
         }
 
@@ -1685,7 +1706,7 @@ namespace MashBoxSDK.MapTools
             SetEnabled(MBEditorToolState.ActiveEditing);
             if (m_Action == MBEditorToolAction.CreateSpline)
                 tooltip = MBEditorToolState.Mode == MBEditorAuthoringMode.SplineLoft
-                    ? "Create a new spline and add it to the current loft."
+                    ? "Create a new loft with left, center, and right splines, shoulders, colliders, and UVs."
                     : "Create a new spline.";
         }
     }
@@ -2003,6 +2024,52 @@ namespace MashBoxSDK.MapTools
             "d_RectTool") { }
     }
 
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBRoadModeToggle : MBEditorModeToggle
+    {
+        public const string Id = "MashBox/Editor Mode/Road";
+        public MBRoadModeToggle() : base(MBEditorAuthoringMode.Road, MBEditorAuthoringCategory.Spline,
+            "Road", "Edit MG roads and road networks.", "MashBox.Road", "d_MoveTool") { }
+    }
+
+    public sealed class MBRoadActionButton : EditorToolbarButton
+    {
+        readonly Tool? knotTool;
+        readonly bool allowStandalone;
+        public MBRoadActionButton(string description, string iconName, System.Action<MGRoadTool> action, Tool? selectedTool = null, bool allowStandaloneRoad = false)
+        {
+            knotTool = selectedTool;
+            allowStandalone = allowStandaloneRoad;
+            text = string.Empty;
+            tooltip = description;
+            icon = MBEditorToolVisuals.GetToolbarIcon(iconName);
+            style.width = 28; style.height = 28;
+            clicked += () => { if (MBEditorToolState.ActiveEditing) action(MBBrushSceneToolHost.RoadTool); Sync(); };
+            RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged += Sync;
+                MBEditorToolState.ActiveEditingChanged += Sync;
+                MGRoadTool.ControlsChanged += Sync;
+                Selection.selectionChanged += Sync;
+                Sync();
+            });
+            RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                MBEditorToolState.ModeChanged -= Sync;
+                MBEditorToolState.ActiveEditingChanged -= Sync;
+                MGRoadTool.ControlsChanged -= Sync;
+                Selection.selectionChanged -= Sync;
+            });
+        }
+        void Sync()
+        {
+            var owner = MGRoadTool.ActiveSceneTool;
+            SetEnabled(!EditorApplication.isPlayingOrWillChangePlaymode && MBEditorToolState.ActiveEditing
+                && owner != null && (knotTool.HasValue ? owner.HasRoad : owner.HasNetwork || (allowStandalone && owner.HasRoad)));
+            MBEditorToolVisuals.ApplyToolActionSelection(this, knotTool.HasValue && owner != null && owner.KnotTool == knotTool.Value);
+        }
+    }
+
     public sealed class MBModeControlsLabel : VisualElement
     {
         static readonly Color ShortcutColor = new Color(0.35f, 0.67f, 0.96f, 1f);
@@ -2042,6 +2109,18 @@ namespace MashBoxSDK.MapTools
                     AddShortcut("d_ViewToolZoom", "Radius", "Ctrl + MMB Left / Right");
                     AddShortcut("d_ScaleTool", "Strength", "Ctrl + MMB Up / Down");
                     AddShortcut("d_SceneViewFx", "Focus Surface", "F");
+                    break;
+                case MBEditorAuthoringMode.Road:
+                    AddShortcut("MashBox.Road", "Select Knot", "Click point");
+                    AddShortcut("MashBox.NewSpline", "Extend Nearest End", "Shift + Click");
+                    AddShortcut("MashBox.SplineEdit", "Insert Knot", "Ctrl + Click");
+                    AddShortcut("d_MoveTool", "Move Knot", "W");
+                    AddShortcut("d_RotateTool", "Rotate / Bank", "E");
+                    AddShortcut("d_ScaleTool", "Width / Height / Tangent", "R: X / Y / Z");
+                    AddShortcut("d_SceneViewFx", "Focus Knot", "F");
+                    AddShortcut("TreeEditor.Trash", "Remove Knot", "Delete / Backspace");
+                    AddShortcut("MashBox.Road", "Stop Editing", "Escape");
+                    AddShortcut("d_ViewToolOrbit", "Navigate", "Alt + Drag");
                     break;
                 case MBEditorAuthoringMode.SplineLoft:
                 case MBEditorAuthoringMode.Spline:

@@ -194,6 +194,61 @@ namespace MashBoxSDK.Maps.Roads.Editor
             var tile = store.terrain;
             tile.RefreshSurfaceCollidersFromMesh();
         }
+        // Generated road meshes have five vertices per ring: shoulder, edge, crown, edge, shoulder.
+        // Clip each side against the requested horizontal width, preserving the surface profile.
+        // Extensions stay at edge height instead of extrapolating a steep bank indefinitely.
+        internal static void AdjustConformWidth(Vector3[] vertices, bool shoulders, float offset)
+        {
+            if (offset == 0) return;
+            for (int row = 0; row < vertices.Length; row += 5)
+            {
+                Vector3 center = vertices[row + 2];
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    int innerIndex = row + 2 + side, outerIndex = row + 2 + side * 2;
+                    Vector3 inner = vertices[innerIndex], outer = shoulders ? vertices[outerIndex] : inner;
+                    Vector3 direction = outer - center; direction.y = 0;
+                    float width = direction.magnitude;
+                    if (width <= .00001f) continue;
+                    direction /= width;
+                    float target = Mathf.Max(.01f, width + offset);
+                    float innerWidth = Vector3.Dot(inner - center, direction);
+                    Vector3 edge;
+                    if (target >= width) edge = outer + direction * (target - width);
+                    else if (target <= innerWidth)
+                        edge = Vector3.Lerp(center, inner, target / Mathf.Max(.00001f, innerWidth));
+                    else edge = Vector3.Lerp(inner, outer, (target - innerWidth) / Mathf.Max(.00001f, width - innerWidth));
+                    vertices[outerIndex] = edge;
+                    if (!shoulders || target <= innerWidth) vertices[innerIndex] = edge;
+                }
+            }
+        }
+
+        // Carry distances to both lateral edges through the surface triangles. This lets
+        // negative offsets pass through the road edge and center without clamping a mesh.
+        internal static Vector2[] ConformInteriorDistances(Vector3[] vertices, bool shoulders)
+        {
+            var distances = new Vector2[vertices.Length];
+            for (int row = 0; row < vertices.Length; row += 5)
+            {
+                Vector3 left = vertices[row + (shoulders ? 0 : 1)];
+                Vector3 right = vertices[row + (shoulders ? 4 : 3)];
+                Vector3 direction = right - left; direction.y = 0;
+                float width = direction.magnitude;
+                if (width <= .00001f) continue;
+                direction /= width;
+                for (int col = 0; col < 5; col++)
+                {
+                    float across = Vector3.Dot(vertices[row + col] - left, direction);
+                    distances[row + col] = new Vector2(across, width - across);
+                }
+            }
+            return distances;
+        }
+
+        internal static float ConformBlendDistance(float signedDistance, float support, float offset)
+            => Mathf.Max(0, signedDistance - support - Mathf.Min(0, offset));
+
         static MGRoadTerrainLayers.Layer Sample(MGRoad road, MGTerrain tile, LoftSurface surface)
         {
             using var profile = sampleMarker.Auto();
@@ -206,9 +261,13 @@ namespace MashBoxSDK.Maps.Roads.Editor
             for (int i = 0; i < vertices.Length; i++)
             {
                 Vector3 p = toWorld.MultiplyPoint3x4(vertices[i]);
-                float support = supports[i] * 2, falloff = MGRoadFalloffSmoothing.Distance(settings, supports[i]);
-                if (!surface.Sample(p, support + falloff, out float height, out float distance)) continue;
-                distance = Mathf.Max(0, distance - support);
+                float support = supports[i] * Mathf.Max(0, settings.conformPaddingCells), falloff = MGRoadFalloffSmoothing.Distance(settings, supports[i]);
+                float inset = Mathf.Min(0, settings.conformWidthOffset);
+                if (!surface.Sample(p, Mathf.Max(0, support + falloff + inset), out float height, out float distance, signedInterior: inset < 0)) continue;
+                distance = ConformBlendDistance(distance, support, inset);
+                // An inward offset can exhaust the whole transition, including under the
+                // road. Do not evaluate custom curves beyond their intended domain.
+                if (distance > falloff) continue;
                 float weight = distance <= .00001f ? 1 : falloff <= 0 ? 0 : settings.falloff != null
                     ? Mathf.Clamp01(settings.falloff.Evaluate(distance / falloff)) : 1 - Mathf.SmoothStep(0, 1, distance / falloff);
                 weight *= Mathf.Clamp01(settings.strength);
@@ -242,12 +301,15 @@ namespace MashBoxSDK.Maps.Roads.Editor
                         throw new InvalidOperationException("Assign a Terrain World on the road network first.");
                     if (!Active(road)) continue;
                     var settings = road.TerrainSettings;
-                    foreach (float number in new[] { settings.terrainOffset, settings.strength, settings.falloffDistance })
-                        if (float.IsNaN(number) || float.IsInfinity(number)) throw new InvalidOperationException("Enter finite terrain offset, strength and falloff values.");
+                    foreach (float number in new[] { settings.terrainOffset, settings.strength, settings.falloffDistance, settings.conformWidthOffset, settings.conformPaddingCells })
+                        if (float.IsNaN(number) || float.IsInfinity(number)) throw new InvalidOperationException("Enter finite terrain offset, strength, width, padding and falloff values.");
                     var world = road.Network.terrainWorld; world.RefreshChunks();
                     road.Rebuild();
                     if (road.GeneratedMesh == null || road.GeneratedMesh.vertexCount == 0) continue;
-                    var surface = new LoftSurface(new[] { road.GetComponent<MeshFilter>() });
+                    var surface = new LoftSurface(new[] { road.GetComponent<MeshFilter>() }, adjustWorldVertices:
+                        vertices => AdjustConformWidth(vertices, road.shoulderWidth > 0, Mathf.Max(0, settings.conformWidthOffset)),
+                        interiorDistances: settings.conformWidthOffset < 0
+                            ? vertices => ConformInteriorDistances(vertices, road.shoulderWidth > 0) : null);
                     foreach (var tile in world.Chunks)
                     {
                         if (tile == null || !tile.isActiveAndEnabled || tile.MeshFilter == null || tile.MeshFilter.sharedMesh == null) continue;

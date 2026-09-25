@@ -1,4 +1,7 @@
 using System.Linq;
+using MashBoxSDK.MapTools;
+using UnityEditor.EditorTools;
+using UnityEditor.Splines;
 using System;
 using MashBoxSDK.Maps.Roads;
 using Unity.Mathematics;
@@ -16,7 +19,34 @@ namespace MashBoxSDK.Maps.Roads.Editor
         [SerializeField] MGRoadNetwork network;
         [SerializeField] MGRoad road;
         [SerializeField] int tab;
-        [SerializeField] bool draw;
+        static MGRoadTool sceneOwner;
+        internal static MGRoadTool ActiveSceneTool => sceneOwner;
+        internal static event Action ControlsChanged;
+        internal Tool KnotTool => knotTool;
+        internal bool HasNetwork => network != null;
+        internal bool HasRoad => road != null;
+        internal void ActivateSceneTool()
+        {
+            if (sceneOwner == this) return;
+            sceneOwner?.SuspendEditing();
+            sceneOwner = this;
+            OnSelectionChange();
+            OnEditingChanged();
+        }
+        internal void SuspendEditing() { RestoreObjectTools(); ClearPreview(); }
+        internal void SetKnotTool(Tool value) { knotTool = value; ControlsChanged?.Invoke(); SceneView.RepaintAll(); }
+        internal void NewRoad(bool closed)
+        {
+            if (network == null || Application.isPlaying) return;
+            road = CreateRoad(network, closed);
+            MBEditorToolState.Mode = MBEditorAuthoringMode.Road;
+            MBEditorToolState.ActiveEditing = true;
+        }
+        internal void RebuildSelection()
+        {
+            if (Application.isPlaying) return;
+            if (road != null) road.Rebuild(); else if (network != null) network.Rebuild();
+        }
         Func<Vector3, Vector3> previewProjector;
         MGRoad previewRoad;
         [SerializeField] float placementHeight;
@@ -28,26 +58,63 @@ namespace MashBoxSDK.Maps.Roads.Editor
         UnityEditor.Editor inspector;
 
         [MenuItem("MashBox/Map Tools/Road Tool")]
-        public static void Open() => GetWindow<MGRoadTool>("Road Tool");
+        public static void Open()
+        {
+            var window = GetWindow<MGRoadTool>("Road Tool");
+            window.ActivateSceneTool();
+            MBEditorToolState.Mode = MBEditorAuthoringMode.Road;
+            MBEditorToolState.ActiveEditing = true;
+        }
         public static void Open(MGRoadNetwork value, MGRoad selected = null)
         {
             var window = GetWindow<MGRoadTool>("Road Tool");
-            window.network = value; window.road = selected; window.draw = false;
+            window.ActivateSceneTool();
+            window.network = value; window.road = selected; window.selectedKnot = -1;
+            Selection.activeGameObject = selected != null ? selected.gameObject : value != null ? value.gameObject : null;
+            MBEditorToolState.Mode = MBEditorAuthoringMode.Road;
+            MBEditorToolState.ActiveEditing = true;
         }
-        void OnEnable() { minSize = new Vector2(350, 440); SceneView.duringSceneGui += SceneGUI; }
-        void OnDisable() { RestoreObjectTools(); ClearPreview(); SceneView.duringSceneGui -= SceneGUI; if (inspector != null) DestroyImmediate(inspector); }
+        void OnEnable()
+        {
+            minSize = new Vector2(350, 440);
+            SceneView.duringSceneGui += SceneGUI;
+            Selection.selectionChanged += OnSelectionChange;
+            MBEditorToolState.ModeChanged += OnEditingChanged;
+            MBEditorToolState.ActiveEditingChanged += OnEditingChanged;
+            ActivateSceneTool();
+        }
+        void OnEditingChanged()
+        {
+            if (!MBEditorToolState.ActiveEditing || MBEditorToolState.Mode != MBEditorAuthoringMode.Road) SuspendEditing();
+            else if (sceneOwner == this && ToolManager.activeContextType == typeof(SplineToolContext))
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+            Repaint(); SceneView.RepaintAll();
+        }
+        void OnDisable()
+        {
+            SuspendEditing();
+            if (sceneOwner == this) sceneOwner = null;
+            SceneView.duringSceneGui -= SceneGUI;
+            Selection.selectionChanged -= OnSelectionChange;
+            MBEditorToolState.ModeChanged -= OnEditingChanged;
+            MBEditorToolState.ActiveEditingChanged -= OnEditingChanged;
+            if (inspector != null) DestroyImmediate(inspector);
+        }
         void OnSelectionChange()
         {
             var go = Selection.activeGameObject;
-            if (go != null)
-            {
-                var selected = go.GetComponent<MGRoad>();
-                if (selected != null) { road = selected; network = selected.Network; selectedKnot = -1; }
-                else if (go.GetComponent<MGRoadNetwork>() != null) network = go.GetComponent<MGRoadNetwork>();
-            }
+            var selected = go != null && go.scene.IsValid() && !EditorUtility.IsPersistent(go)
+                ? go.GetComponentInParent<MGRoad>() : null;
+            var selectedNetwork = selected != null ? selected.Network
+                : go != null && go.scene.IsValid() && !EditorUtility.IsPersistent(go) ? go.GetComponent<MGRoadNetwork>() : null;
+            if (road != selected) { selectedKnot = -1; SuspendEditing(); }
+            road = selected;
+            network = selectedNetwork;
+            ControlsChanged?.Invoke();
             Repaint();
         }
-        void OnGUI()
+        void OnGUI() => Draw();
+        internal void Draw()
         {
             using (new EditorGUI.DisabledScope(Application.isPlaying))
             {
@@ -83,8 +150,8 @@ namespace MashBoxSDK.Maps.Roads.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("New Road")) { road = CreateRoad(network, false); draw = true; }
-                if (GUILayout.Button("New Loop")) { road = CreateRoad(network, true); draw = true; }
+                if (GUILayout.Button("New Road")) { NewRoad(false); }
+                if (GUILayout.Button("New Loop")) { NewRoad(true); }
             }
             foreach (var item in network.Roads)
             {
@@ -95,17 +162,23 @@ namespace MashBoxSDK.Maps.Roads.Editor
             if (road == null || road.Network != network) return;
             using (new EditorGUILayout.HorizontalScope())
             {
-                draw = GUILayout.Toggle(draw, "Edit in Scene", "Button");
+                bool editing = MBEditorToolState.ActiveEditing && MBEditorToolState.Mode == MBEditorAuthoringMode.Road;
+                bool nextEditing = GUILayout.Toggle(editing, "Edit in Scene", "Button");
+                if (nextEditing != editing)
+                {
+                    if (nextEditing) { ActivateSceneTool(); MBEditorToolState.Mode = MBEditorAuthoringMode.Road; }
+                    MBEditorToolState.ActiveEditing = nextEditing;
+                }
 
                 if (GUILayout.Button("Frame")) { Selection.activeGameObject = road.gameObject; SceneView.lastActiveSceneView?.FrameSelected(); }
             }
             placementHeight = EditorGUILayout.FloatField("Fallback Plane Height", placementHeight);
-            EditorGUILayout.HelpBox("Hold Shift to preview; Shift-click extends the nearest start or end. Ctrl-click inserts on the curve (Ctrl takes priority). Click points to select. W moves along the road; E rotates/banks the knot; R scales width (X), crown/shoulder height (Y), and tangent length (Z). Delete removes the selected point. Escape stops editing; Alt navigates. Closed loops extend from their last knot.", MessageType.Info);
+            EditorGUILayout.HelpBox("Hold Shift to preview; Shift-click extends the nearest start or end. Ctrl-click inserts on the curve (Ctrl takes priority). Click points to select. W moves along the road; E rotates/banks the knot; R scales width (X), crown/shoulder height (Y), and tangent length (Z). F focuses the selected knot. Delete removes the selected point. Escape stops editing; Alt navigates. Closed loops extend from their last knot.", MessageType.Info);
             UnityEditor.Editor.CreateCachedEditor(road, typeof(MGRoadEditor), ref inspector);
             inspector.OnInspectorGUI();
         }
         internal static void Field(SerializedObject so, string name) => EditorGUILayout.PropertyField(so.FindProperty(name), true);
-        internal static void TerrainHelp() => EditorGUILayout.HelpBox("Road Follows Terrain updates the generated surface when the road moves. Terrain Follows Road uses replaceable layers. Enable Auto Apply Terrain for live editing; Apply also updates a layer without accumulating imprints. Remove restores the terrain underneath. Bake keeps the result and removes every road layer in the assigned world. Baked/removed roads pause until Apply. Save the scene to persist the gameplay mesh; no runtime layer replay. Apply fully conforms the road and shoulders, their supporting terrain cells, and one extra cell on either side. Falloff Distance starts outside that margin. Strength and height-mode restrictions still apply. Only tiles belonging to the assigned MG Terrain World are edited. Overlapping roads apply in hierarchy order.", MessageType.Info);
+        internal static void TerrainHelp() => EditorGUILayout.HelpBox("Road Follows Terrain updates the generated surface when the road moves. Terrain Follows Road uses replaceable layers. Enable Auto Apply Terrain for live editing; Apply also updates a layer without accumulating imprints. Remove restores the terrain underneath. Bake keeps the result and removes every road layer in the assigned world. Baked/removed roads pause until Apply. Save the scene to persist the gameplay mesh; no runtime layer replay. Conform Width Offset adjusts each side in metres: negative pulls the complete sculpting influence inward through the padding, road edge and falloff until no terrain is affected; positive widens the road/shoulder footprint. Conform Padding Cells adds a full-strength terrain-cell margin (2 keeps the original behavior). For precise width control, set Conform Padding Cells and Minimum Falloff Cells to 0, then adjust the offset and Falloff Distance. Very narrow footprints remain limited by terrain resolution. Strength and height-mode restrictions still apply. Only tiles belonging to the assigned MG Terrain World are edited. Overlapping roads apply in hierarchy order.", MessageType.Info);
         internal static void DetailHelp() => EditorGUILayout.HelpBox("Clear painted Terrain World detail cells beneath the road and shoulders without changing the original paint. Extra Width expands the footprint; touching detail cells are also cleared to prevent grass poking through. Auto Update follows road edits in every terrain mode. Turn Clear Details off to restore; overlapping roads keep their own clearing. Applies to all painted detail layers, including palette-generated details, not manually placed objects. Save the scene to retain the final mask for gameplay.", MessageType.Info);
         internal static void DetailButtons(MGRoad[] roads, ref string result)
         {
@@ -156,24 +229,46 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         void SceneGUI(SceneView view)
         {
-            if (!draw || road == null || Application.isPlaying || PrefabStageUtility.GetPrefabStage(road.gameObject) != null)
+            if (sceneOwner != this || !MBEditorToolState.ActiveEditing || MBEditorToolState.Mode != MBEditorAuthoringMode.Road
+                || road == null || Application.isPlaying || PrefabStageUtility.GetPrefabStage(road.gameObject) != null)
             { RestoreObjectTools(); ClearPreview(); return; }
             if (!hidingObjectTools) { previousToolsHidden = Tools.hidden; hidingObjectTools = true; Tools.hidden = true; }
             view.wantsMouseMove = true;
             var spline = road.Container.Spline;
             var ev = Event.current;
+            if (selectedKnot >= 0 && selectedKnot < spline.Count && !EditorGUIUtility.editingTextField && GUIUtility.hotControl == 0)
+            {
+                bool focusKey = ev.type == EventType.KeyDown && ev.keyCode == KeyCode.F
+                    && !ev.alt && !ev.control && !ev.command && !ev.shift;
+                bool focusCommand = (ev.type == EventType.ValidateCommand || ev.type == EventType.ExecuteCommand)
+                    && ev.commandName == "FrameSelected";
+                if (focusKey || focusCommand)
+                {
+                    if (ev.type != EventType.ValidateCommand)
+                    {
+                        Vector3 position = road.transform.TransformPoint((Vector3)spline[selectedKnot].Position);
+                        Vector3 scale = road.transform.lossyScale;
+                        float diameter = (Mathf.Max(.1f, road.width) + 2 * Mathf.Max(0, road.shoulderWidth))
+                            * MGRoadKnotShape.GetScale(spline, selectedKnot).x
+                            * Mathf.Max(Mathf.Abs(scale.x), Mathf.Max(Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
+                        view.Frame(new Bounds(position, Vector3.one * Mathf.Max(2, diameter)), false);
+                    }
+                    ev.Use();
+                    return;
+                }
+            }
             if (selectedKnot >= 0 && ev.type == EventType.KeyDown && !ev.alt && !ev.control && !ev.shift && !EditorGUIUtility.editingTextField)
             {
                 if (ev.keyCode == KeyCode.W || ev.keyCode == KeyCode.E || ev.keyCode == KeyCode.R)
                 {
-                    knotTool = ev.keyCode == KeyCode.W ? Tool.Move : ev.keyCode == KeyCode.E ? Tool.Rotate : Tool.Scale;
+                    SetKnotTool(ev.keyCode == KeyCode.W ? Tool.Move : ev.keyCode == KeyCode.E ? Tool.Rotate : Tool.Scale);
                     ev.Use(); view.Repaint();
                 }
             }
             bool inserting = ev.control && !ev.alt;
             bool extending = ev.shift && !ev.control && !ev.alt;
             if (ev.type == EventType.KeyDown && ev.keyCode == KeyCode.Escape)
-            { draw = false; RestoreObjectTools(); ClearPreview(); ev.Use(); view.Repaint(); Repaint(); return; }
+            { MBEditorToolState.ActiveEditing = false; SuspendEditing(); ev.Use(); view.Repaint(); Repaint(); return; }
             if (!extending || previewRoad != road) ClearPreview();
             if (ev.type == EventType.MouseMove || ev.type == EventType.KeyDown || ev.type == EventType.KeyUp || ev.type == EventType.MouseLeaveWindow)
                 view.Repaint();
@@ -193,7 +288,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     int curveIndex = i == spline.Count - 1 && !spline.Closed ? Mathf.Max(0, i - 1) : i;
                     float curveT = i == spline.Count - 1 && !spline.Closed ? 1 : 0;
                     Quaternion frame = spline.Count > 1 ? MGRoadKnotShape.Frame(spline, curveIndex, curveT, road.transform) : road.transform.rotation;
-                    Handles.Label(p, "  W Move / E Rotate / R Scale");
+                    Handles.Label(p, "  W Move / E Rotate / R Scale / F Focus");
                     EditorGUI.BeginChangeCheck();
                     if (knotTool == Tool.Rotate)
                     {
@@ -224,7 +319,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     }
                 }
             Handles.color = oldColor;
-            if (ev.type == EventType.KeyDown && ev.keyCode == KeyCode.Delete && selectedKnot >= 0 && selectedKnot < spline.Count)
+            if (ev.type == EventType.KeyDown && (ev.keyCode == KeyCode.Delete || ev.keyCode == KeyCode.Backspace) && !EditorGUIUtility.editingTextField && GUIUtility.hotControl == 0 && !ev.alt && !ev.control && !ev.command && selectedKnot >= 0 && selectedKnot < spline.Count)
             {
                 Undo.RecordObject(road.Container, "Remove Road Point"); spline.RemoveAt(selectedKnot); selectedKnot = -1; Dirty(); ev.Use();
             }

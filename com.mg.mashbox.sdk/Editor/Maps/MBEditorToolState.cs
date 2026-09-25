@@ -1,5 +1,6 @@
 using System;
 using MashBoxSDK.Maps.Spline;
+using MashBoxSDK.Maps.Roads;
 using UnityEditor;
 using UnityEngine;
 
@@ -14,7 +15,8 @@ namespace MashBoxSDK.MapTools
         UVSpline,
         Terrain,
         UVInspector,
-        Mesh
+        Mesh,
+        Road
     }
 
     public enum MBEditorAuthoringCategory { Brush, Spline, Terrain, Mesh, UVInspector }
@@ -22,7 +24,7 @@ namespace MashBoxSDK.MapTools
     public enum MBBrushMode { Decor, Painter, SplatMap }
     public enum MBSculptMode { Displace, Smooth, Flatten, SeamFit = 4, MeshStamp = 5, SetHeight = 6 }
     public enum MBUvHandleMode { MoveAndUv, SideOffset, UvScale }
-    public enum MBEditorToolAction { CreateSpline, CreateLoftSpline }
+    public enum MBEditorToolAction { CreateSpline, CreateLoft }
     public enum MBSplatPaintMode { Color, TextureId }
 
     [InitializeOnLoad]
@@ -48,6 +50,20 @@ namespace MashBoxSDK.MapTools
         static MBEditorToolState()
         {
             Undo.undoRedoPerformed += QueueLoftUndoRefresh;
+            Selection.selectionChanged += SelectRoadMode;
+            EditorApplication.delayCall += SelectRoadMode;
+        }
+
+        static void SelectRoadMode()
+        {
+            var selected = Selection.activeGameObject;
+            if (EditorApplication.isPlayingOrWillChangePlaymode || selected == null
+                || EditorUtility.IsPersistent(selected) || !selected.scene.IsValid()) return;
+            if (selected.GetComponentInParent<MGRoad>() == null
+                && selected.GetComponent<MGRoadNetwork>() == null) return;
+            RequestMode(MBEditorAuthoringMode.Road);
+            ActiveEditing = true;
+            SceneView.RepaintAll();
         }
 
         internal static event Action ModeChanged;
@@ -90,6 +106,7 @@ namespace MashBoxSDK.MapTools
             MBEditorAuthoringMode.Terrain => MBEditorAuthoringCategory.Terrain,
             MBEditorAuthoringMode.SplineLoft => MBEditorAuthoringCategory.Spline,
             MBEditorAuthoringMode.Spline => MBEditorAuthoringCategory.Spline,
+            MBEditorAuthoringMode.Road => MBEditorAuthoringCategory.Spline,
             MBEditorAuthoringMode.UVSpline => MBEditorAuthoringCategory.Spline,
             MBEditorAuthoringMode.UVInspector => MBEditorAuthoringCategory.UVInspector,
             MBEditorAuthoringMode.Mesh => MBEditorAuthoringCategory.Mesh,
@@ -177,7 +194,8 @@ namespace MashBoxSDK.MapTools
         {
             return mode == MBEditorAuthoringMode.SplineLoft
                 || mode == MBEditorAuthoringMode.Spline
-                || mode == MBEditorAuthoringMode.UVSpline;
+                || mode == MBEditorAuthoringMode.UVSpline
+                || mode == MBEditorAuthoringMode.Road;
         }
 
         internal static MBBrushMode BrushMode
@@ -324,7 +342,8 @@ namespace MashBoxSDK.MapTools
 
         static void QueueLoftUndoRefresh()
         {
-            if (!IsSplineMode(Mode) || s_LoftUndoRefreshQueued)
+            if ((Mode != MBEditorAuthoringMode.SplineLoft && Mode != MBEditorAuthoringMode.Spline
+                && Mode != MBEditorAuthoringMode.UVSpline) || s_LoftUndoRefreshQueued)
                 return;
 
             s_LoftUndoRefreshQueued = true;

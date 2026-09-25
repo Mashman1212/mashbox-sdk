@@ -235,7 +235,7 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
             height = p.y;
             if (!surface.Sample(p, blendDistance + support, out float loftHeight, out float distance)) return false;
             distance = Mathf.Max(0, distance - support);
-            float weight = distance <= 0 ? 1 : falloffCurve != null
+            float weight = distance <= 0 ? 1 : falloffCurve != null && falloffCurve.length > 0
                 ? Mathf.Clamp01(falloffCurve.Evaluate(distance / blendDistance))
                 : 1 - Mathf.SmoothStep(0, 1, distance / blendDistance);
             float target = loftHeight + offset;
@@ -320,13 +320,13 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
     // XZ triangle tree: exact footprint sampling, independent of colliders and winding.
     internal sealed class LoftSurface
     {
-        struct Triangle { internal Vector3 a, b, c; internal Bounds bounds; internal float centerX, centerZ; }
+        struct Triangle { internal Vector3 a, b, c, insetLeft, insetRight; internal Bounds bounds; internal float centerX, centerZ; }
         sealed class Node { internal Bounds bounds; internal Node left, right; internal int start, count; internal float minX, maxX, minZ, maxZ; }
         readonly Triangle[] triangles;
         readonly Node root;
         internal Bounds Bounds => root.bounds;
 
-        internal LoftSurface(IEnumerable<MeshFilter> filters, bool includeTerrain = false)
+        internal LoftSurface(IEnumerable<MeshFilter> filters, bool includeTerrain = false, Action<Vector3[]> adjustWorldVertices = null, Func<Vector3[], Vector2[]> interiorDistances = null)
         {
             var list = new List<Triangle>();
             foreach (var filter in filters)
@@ -336,10 +336,13 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
                 if (!mesh.isReadable) throw new InvalidOperationException($"Loft mesh {filter.name} must be readable.");
                 var vertices = mesh.vertices;
                 for (int i = 0; i < vertices.Length; i++) vertices[i] = filter.transform.TransformPoint(vertices[i]);
+                adjustWorldVertices?.Invoke(vertices);
+                var insets = interiorDistances?.Invoke(vertices);
                 var indices = mesh.triangles;
                 for (int i = 0; i < indices.Length; i += 3)
                 {
                     var t = new Triangle { a = vertices[indices[i]], b = vertices[indices[i + 1]], c = vertices[indices[i + 2]] };
+                    if (insets != null) { t.insetLeft = new Vector3(insets[indices[i]].x, insets[indices[i + 1]].x, insets[indices[i + 2]].x); t.insetRight = new Vector3(insets[indices[i]].y, insets[indices[i + 1]].y, insets[indices[i + 2]].y); }
                     if (Mathf.Abs(Cross(t.b - t.a, t.c - t.a)) < 1e-8f) continue;
                     t.bounds = new Bounds(t.a, Vector3.zero); t.bounds.Encapsulate(t.b); t.bounds.Encapsulate(t.c);
                     t.centerX = t.bounds.center.x; t.centerZ = t.bounds.center.z;
@@ -369,16 +372,17 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
         internal bool Overlaps(Bounds b, float margin) => b.max.x >= Bounds.min.x - margin && b.min.x <= Bounds.max.x + margin
             && b.max.z >= Bounds.min.z - margin && b.min.z <= Bounds.max.z + margin;
 
-        internal bool Sample(Vector3 p, float radius, out float height, out float distance)
+        internal bool Sample(Vector3 p, float radius, out float height, out float distance, bool signedInterior = false)
         {
             float best = radius * radius;
             height = float.NegativeInfinity;
-            Search(root, p, ref best, ref height);
-            distance = Mathf.Sqrt(best);
+            float inset = 0;
+            Search(root, p, ref best, ref height, ref inset);
+            distance = signedInterior && best == 0 ? -inset : Mathf.Sqrt(best);
             return !float.IsNegativeInfinity(height);
         }
 
-        void Search(Node node, Vector3 p, ref float best, ref float height)
+        void Search(Node node, Vector3 p, ref float best, ref float height, ref float inset)
         {
             if (NodeDistance(node, p) > best + 1e-8f) return;
             if (node.left != null)
@@ -387,7 +391,7 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
                 // Still visit ties: overlapping road surfaces select the highest height.
                 var first = node.left; var second = node.right;
                 if (NodeDistance(second, p) < NodeDistance(first, p)) { first = node.right; second = node.left; }
-                Search(first, p, ref best, ref height); Search(second, p, ref best, ref height); return;
+                Search(first, p, ref best, ref height, ref inset); Search(second, p, ref best, ref height, ref inset); return;
             }
             for (int i = node.start; i < node.start + node.count; i++)
             {
@@ -395,9 +399,14 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
                 float den = Cross(t.b - t.a, t.c - t.a);
                 float u = Cross(p - t.a, t.c - t.a) / den;
                 float v = Cross(t.b - t.a, p - t.a) / den;
-                float distance; float y;
+                float distance; float y; float candidateInset = 0;
                 if (u >= -1e-6f && v >= -1e-6f && u + v <= 1 + 1e-6f)
-                { distance = 0; y = t.a.y + u * (t.b.y - t.a.y) + v * (t.c.y - t.a.y); }
+                {
+                    distance = 0; y = t.a.y + u * (t.b.y - t.a.y) + v * (t.c.y - t.a.y);
+                    float left = t.insetLeft.x + u * (t.insetLeft.y - t.insetLeft.x) + v * (t.insetLeft.z - t.insetLeft.x);
+                    float right = t.insetRight.x + u * (t.insetRight.y - t.insetRight.x) + v * (t.insetRight.z - t.insetRight.x);
+                    candidateInset = Mathf.Max(0, Mathf.Min(left, right));
+                }
                 else
                 {
                     Vector3 q = ClosestEdge(p, t.a, t.b);
@@ -408,8 +417,9 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
                     distance = Distance(p, q); y = q.y;
                 }
                 if (distance > best + 1e-8f) continue;
-                if (distance < best - 1e-8f) height = y;
-                else height = Mathf.Max(height, y);
+                if (distance < best - 1e-8f || y > height)
+                { height = y; inset = candidateInset; }
+                else if (y == height) inset = Mathf.Max(inset, candidateInset);
                 best = Mathf.Min(best, distance);
             }
         }

@@ -675,6 +675,53 @@ namespace MashBoxSDK.Maps.Spline
             Selection.activeGameObject = gameObject;
         }
 
+        internal static MultiSplineLoft CreateStarterLoft(Vector3 position, Quaternion rotation)
+        {
+            var root = new GameObject("Multi-Spline Loft", typeof(MultiSplineLoft));
+            root.transform.SetPositionAndRotation(position, rotation);
+            Undo.RegisterCreatedObjectUndo(root, "Create Multi-Spline Loft");
+            var loft = root.GetComponent<MultiSplineLoft>();
+            loft.AutoRegenerate = false;
+
+            string[] names = { "SPLINE [LEFT]", "SPLINE [CENTER]", "SPLINE [RIGHT]" };
+            for (int side = 0; side < names.Length; side++)
+            {
+                var source = new GameObject(names[side], typeof(SplineContainer));
+                source.transform.SetParent(root.transform, false);
+                var container = source.GetComponent<SplineContainer>();
+                float x = (side - 1) * 3f;
+                container.Spline = new UnityEngine.Splines.Spline(new[]
+                {
+                    new BezierKnot(new Unity.Mathematics.float3(x, 0f, -10f)),
+                    new BezierKnot(new Unity.Mathematics.float3(x, 0f, 0f)),
+                    new BezierKnot(new Unity.Mathematics.float3(x, 0f, 10f))
+                });
+                container.Spline.SetTangentMode(TangentMode.AutoSmooth);
+                loft.AddSelectedSpline(container);
+                Undo.RegisterCreatedObjectUndo(source, "Create Loft Source");
+            }
+
+            var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
+            root.GetComponent<MeshRenderer>().sharedMaterial = pipeline != null
+                ? pipeline.defaultMaterial
+                : AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat");
+
+            var shoulders = new GameObject("Shoulders", typeof(LoftShoulderModifier));
+            shoulders.transform.SetParent(root.transform, false);
+            var modifier = shoulders.GetComponent<LoftShoulderModifier>();
+            modifier.Loft = loft;
+            modifier.Left.enabled = true;
+            modifier.Right.enabled = true;
+            loft.ShoulderModifier = modifier;
+            Undo.RegisterCreatedObjectUndo(shoulders, "Create Loft Shoulders");
+
+            loft.GenerateUvSplineWithLoft = true;
+            loft.AutoRegenerate = true;
+            loft.Regenerate();
+            EditorUtility.SetDirty(loft);
+            return loft;
+        }
+
         public static bool ValidateCreateLoftFromSelection()
         {
             return GetSelectedSplineContainers().Count > 0;
@@ -807,8 +854,15 @@ namespace MashBoxSDK.Maps.Spline
             Repaint();
         }
 
+        static bool IsDrawingSpline => ToolManager.activeToolType?.Name == "CreateSplineTool";
+
         void OnSceneGUI(SceneView sceneView)
         {
+            // Knot placement owns Scene input until drawing finishes. The reduced
+            // knot editor would otherwise consume clicks before Unity can add knots.
+            if (IsDrawingSpline)
+                return;
+
             Event current = Event.current;
             if (m_SceneToolActive && m_ActiveLoft != null && UsesReducedSplineHandles())
             {
@@ -1334,6 +1388,11 @@ namespace MashBoxSDK.Maps.Spline
             if (loft == null)
                 return;
 
+            // Selection updates and embedded-window activation must not cancel
+            // knot placement for a source of the loft already being edited.
+            if (m_ActiveLoft == loft && IsDrawingSpline)
+                return;
+
             if (m_ActiveLoft != loft)
             {
                 m_FocusedSpline = null;
@@ -1470,14 +1529,34 @@ namespace MashBoxSDK.Maps.Spline
             QueueKnotPlacementTool(container);
         }
 
-        public void CreateLoftSplineFromOverlay()
+        public void CreateLoftFromOverlay()
         {
-            MultiSplineLoft selectedLoft = Selection.activeGameObject != null
-                ? Selection.activeGameObject.GetComponent<MultiSplineLoft>()
-                : null;
-            if (selectedLoft != null)
-                m_ActiveLoft = selectedLoft;
-            CreateAndAddLoftSpline();
+            Undo.IncrementCurrentGroup();
+            int undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Create Multi-Spline Loft");
+
+            // Cancel pending drawing callbacks before selecting the new system.
+            EditorApplication.delayCall -= ApplyQueuedKnotPlacementSelection;
+            EditorApplication.delayCall -= ActivateKnotPlacementTool;
+            m_QueuedKnotPlacementTarget = null;
+            if (ToolManager.activeContextType == typeof(SplineToolContext))
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+
+            SceneView view = SceneView.lastActiveSceneView;
+            Vector3 position = view != null ? view.pivot : Vector3.zero;
+            Vector3 forward = view != null ? Vector3.ProjectOnPlane(view.rotation * Vector3.forward, Vector3.up) : Vector3.forward;
+            Quaternion rotation = forward.sqrMagnitude > 0.001f
+                ? Quaternion.LookRotation(forward.normalized, Vector3.up)
+                : Quaternion.identity;
+            if (view != null && view.camera != null
+                && Physics.Raycast(view.camera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f)), out RaycastHit hit))
+                position = hit.point;
+
+            m_ActiveLoft = MultiSplineLoftEditor.CreateStarterLoft(position + Vector3.up * 0.1f, rotation);
+            Selection.activeGameObject = m_ActiveLoft.gameObject;
+            EnterUnitySplineEditMode(m_ActiveLoft);
+            Undo.CollapseUndoOperations(undoGroup);
+            SceneView.RepaintAll();
         }
 
         public void SelectMoveToolFromOverlay()

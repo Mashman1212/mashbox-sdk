@@ -1,4 +1,5 @@
 using UnityEditor;
+using MashBoxSDK.Maps.Roads.Editor;
 using UnityEngine;
 using MashBoxSDK.Maps.Spline;
 
@@ -19,6 +20,7 @@ namespace MashBoxSDK.MapTools
         static MeshSculptWindow s_SculptTool;
         static MultiSplineLoftWindow s_LoftTool;
         static SplineToolWindow s_SplineTool;
+        static MGRoadTool s_RoadTool;
         static double s_NextHealthCheck;
 
         static MBBrushSceneToolHost()
@@ -51,14 +53,31 @@ namespace MashBoxSDK.MapTools
                 case MBEditorToolAction.CreateSpline when MBEditorToolState.Mode == MBEditorAuthoringMode.Spline:
                     SplineToolWindow.ActiveSceneTool.CreateSplineFromOverlay();
                     break;
-                case MBEditorToolAction.CreateLoftSpline when MBEditorToolState.Mode == MBEditorAuthoringMode.SplineLoft:
-                    MultiSplineLoftWindow.ActiveSceneTool.CreateLoftSplineFromOverlay();
+                case MBEditorToolAction.CreateLoft when MBEditorToolState.Mode == MBEditorAuthoringMode.SplineLoft:
+                    MultiSplineLoftWindow.ActiveSceneTool.CreateLoftFromOverlay();
                     break;
+            }
+        }
+
+        internal static MGRoadTool RoadTool
+        {
+            get
+            {
+                if (MGRoadTool.ActiveSceneTool != null) return MGRoadTool.ActiveSceneTool;
+                if (s_RoadTool == null)
+                {
+                    s_RoadTool = ScriptableObject.CreateInstance<MGRoadTool>();
+                    s_RoadTool.hideFlags = HideFlags.HideAndDontSave;
+                }
+                s_RoadTool.ActivateSceneTool();
+                return s_RoadTool;
             }
         }
 
         static void Sync()
         {
+            if (!MBEditorToolState.ActiveEditing || MBEditorToolState.Mode != MBEditorAuthoringMode.Road)
+                MGRoadTool.ActiveSceneTool?.SuspendEditing();
             if (!MBEditorToolState.ActiveEditing)
             {
                 MGBrushWindow.DeactivateActiveSceneTool();
@@ -112,6 +131,14 @@ namespace MashBoxSDK.MapTools
                         EnsureSplineTool();
                         s_SplineTool.ActivateSceneTool();
                     }
+                    break;
+
+                case MBEditorAuthoringMode.Road:
+                    MGBrushWindow.DeactivateActiveSceneTool();
+                    MeshSculptWindow.DeactivateActiveSceneTool();
+                    MultiSplineLoftWindow.DeactivateActiveSceneTool();
+                    SplineToolWindow.DeactivateActiveSceneTool();
+                    _ = RoadTool;
                     break;
 
                 default:

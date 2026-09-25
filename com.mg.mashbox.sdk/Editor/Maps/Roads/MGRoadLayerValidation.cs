@@ -65,7 +65,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 var indices = new int[vertices.Length];
                 for (int i = 0; i < indices.Length; i++) indices[i] = i;
                 tile.SetSurfaceColliderVertexMaps(new[] { new MGTerrain.SurfaceColliderVertexMap(chunk, indices) }, vertices.Length);
-                var aRoad = Road("A", 5); var bRoad = Road("B", 9);
+                var aRoad = Road("A", 5);
                 MGRoadLayerService.Apply(new[] { aRoad }); meshes.Add(filter.sharedMesh);
                 Near(filter.sharedMesh.vertices[8].y, 5, "Initial layer reaches road");
                 Near(original.vertices[8].y, 2, "Source mesh untouched");
@@ -75,6 +75,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 Near(chunk.sharedMesh.vertices[8].y, 5, "Road replacement refreshes chunk heights");
                 Check(chunk.enabled && !collider.enabled, "Chunks retain collision ownership");
 
+                float beforeLoftHeight = filter.sharedMesh.vertices[0].y;
                 LoftTerrainConformer.Apply(new System.Collections.Generic.List<LoftTerrainConformer.Edit>
                 {
                     new LoftTerrainConformer.Edit { mg = tile, deltas = new System.Collections.Generic.List<MeshSculptModifier.SeamVertex>
@@ -87,20 +88,36 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 Near(filter.sharedMesh.vertices[0].y, 5, "Loft conform changes terrain outside road");
                 Near(filter.sharedMesh.vertices[8].y, 5, "Loft conform preserves road footprint");
                 Near(tile.GetComponent<MGRoadTerrainLayers>().baseline[0].y, 5, "Loft edit committed to road baseline immediately");
-                Check(collider.sharedMesh == filter.sharedMesh, "Loft keeps master on current mesh");
+                Check(collider.sharedMesh == filter.sharedMesh, $"Loft keeps master on current mesh (master={collider.sharedMesh}, surface={filter.sharedMesh}, configured={tile.MeshCollider})");
                 Near(chunk.sharedMesh.vertices[0].y, 5, "Loft refreshes collider chunk");
                 MGRoadLayerService.UpdateLive(scene);
                 Near(filter.sharedMesh.vertices[0].y, 5, "Editor tick does not replay loft delta");
                 Undo.PerformUndo();
-                Near(filter.sharedMesh.vertices[0].y, 2, "One Undo restores pre-loft terrain");
+                Near(filter.sharedMesh.vertices[0].y, beforeLoftHeight, "One Undo restores pre-loft terrain");
                 Near(filter.sharedMesh.vertices[8].y, 5, "Loft Undo preserves road");
-                Near(chunk.sharedMesh.vertices[0].y, 2, "Loft Undo restores chunk");
+                Near(chunk.sharedMesh.vertices[0].y, beforeLoftHeight, "Loft Undo restores chunk");
                 Undo.PerformRedo();
                 Near(filter.sharedMesh.vertices[0].y, 5, "Loft Redo restores terrain");
                 Near(chunk.sharedMesh.vertices[0].y, 5, "Loft Redo restores chunk");
+                Undo.IncrementCurrentGroup();
+                // Simulate an old master binding left behind while chunks own collision.
+                collider.sharedMesh = original;
+                MashBoxSDK.MapTools.MeshSculptWindow.EnsureSeamMasterCollider(tile);
+                Check(collider.enabled && !chunk.enabled && collider.sharedMesh == filter.sharedMesh,
+                    "Painting handoff binds the latest loft-conformed surface");
+                var conformedVertices = filter.sharedMesh.vertices;
+                Vector3 point = (conformedVertices[0] + conformedVertices[1] + conformedVertices[2]) / 3;
+                var ray = new Ray(point + Vector3.up * 100, Vector3.down);
+                Check(collider.Raycast(ray, out var masterHit, 200), "Painting master raycast hits conformed terrain");
+                Near(masterHit.point.y, point.y, "Painting master physics matches conformed geometry");
+                tile.RefreshSurfaceCollidersFromMesh();
+                Check(chunk.enabled && !collider.enabled, "Finishing painting hands collision back to chunks");
+                Check(chunk.Raycast(ray, out var chunkHit, 200), "Chunk raycast hits conformed terrain");
+                Near(chunkHit.point.y, point.y, "Chunk physics matches conformed geometry");
                 MGRoadLayerService.Apply(new[] { aRoad });
                 Near(filter.sharedMesh.vertices[0].y, 5, "Road reapply preserves loft");
 
+                var bRoad = Road("B", 9);
                 bRoad.overrideTerrain = true; bRoad.terrain.mode = RoadTerrainMode.TerrainFollowsRoad; bRoad.terrain.terrainOffset = 0; bRoad.terrain.strength = .5f;
                 MGRoadLayerService.Apply(new[] { bRoad });
                 Near(filter.sharedMesh.vertices[8].y, 7, "Ordered overlapping layers compose");
@@ -155,6 +172,20 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 Check(tile.GetComponent<MGRoadTerrainLayers>() == null, "Build strips road authoring history");
                 Near(filter.sharedMesh.vertices[8].y, beforeBuild[8].y, "Build keeps final geometry without replay");
                 Check(collider.sharedMesh == filter.sharedMesh, "Playable collider uses final mesh");
+                var replacement = Object.Instantiate(filter.sharedMesh); meshes.Add(replacement);
+                filter.sharedMesh = replacement;
+                tile.RefreshSurfaceCollidersFromMesh();
+                Check(collider.sharedMesh == replacement, "Disabled master adopts replacement surface");
+                var maps = new[] { new MGTerrain.SurfaceColliderVertexMap(chunk, indices) };
+                tile.SetSurfaceColliderVertexMaps(maps, replacement.vertexCount + 1);
+                tile.RefreshSurfaceCollidersFromMesh();
+                Check(collider.enabled && collider.sharedMesh == replacement && !chunk.enabled, "Invalid chunk mapping falls back to current master");
+                var fallbackVertices = replacement.vertices; fallbackVertices[0].y += 1;
+                replacement.vertices = fallbackVertices;
+                tile.SetSurfaceColliderVertexMaps(maps, replacement.vertexCount);
+                tile.RefreshSurfaceCollidersFromMesh();
+                Check(chunk.enabled && !collider.enabled && chunk.sharedMesh != null, "Repaired mapping restores disabled chunk binding");
+                Near(chunk.sharedMesh.vertices[0].y, replacement.vertices[0].y, "Reactivated chunk uses latest surface");
                 Debug.Log($"ROAD_LAYER_VALIDATION_PASS: {checks} checks");
             }
             finally

@@ -169,6 +169,57 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, HideInInspector] Transform m_SurfaceColliderRoot;
         [SerializeField, HideInInspector] MeshCollider[] m_SurfaceColliderChunks = Array.Empty<MeshCollider>();
         public IReadOnlyList<MeshCollider> SurfaceColliderChunks => m_SurfaceColliderChunks;
+
+        [SerializeField, Tooltip("Disable for unreachable background terrain. Collider generation and syncing are skipped; editor tools can still pick the surface on demand.")]
+        bool m_NeedsCollision = true;
+        public bool NeedsCollision => m_NeedsCollision;
+
+        [SerializeField, Tooltip("Generate and maintain spatial collider chunks for frequently contacted terrain. Turn off to use only the main collider.")]
+        bool m_NeedsCollisionChunks = true;
+        public bool NeedsCollisionChunks => NeedsCollision && m_NeedsCollisionChunks;
+
+        public void DisableSurfaceCollision()
+        {
+            if (MeshCollider != null) MeshCollider.enabled = false;
+            foreach (var collider in m_SurfaceColliderChunks) if (collider != null) collider.enabled = false;
+        }
+
+#if UNITY_EDITOR
+        static readonly HashSet<MGTerrain> s_EditorActiveTerrains = new HashSet<MGTerrain>();
+        public static IEnumerable<MGTerrain> EditorActiveTerrains => s_EditorActiveTerrains;
+        bool m_EditorPickDirty = true;
+        // Editor-only, on-demand picking. No chunk work and no active gameplay collider.
+        public bool RaycastEditingSurface(Ray ray, out RaycastHit hit, float maximumDistance)
+        {
+            if (NeedsCollision || Application.isPlaying) return RaycastSurface(ray, out hit, maximumDistance);
+            hit = default;
+            var filter = MeshFilter;
+            var mesh = filter != null ? filter.sharedMesh : null;
+            if (mesh == null || !mesh.isReadable || !gameObject.activeInHierarchy) return false;
+            var localRay = new Ray(filter.transform.InverseTransformPoint(ray.origin), filter.transform.InverseTransformVector(ray.direction));
+            if (!mesh.bounds.IntersectRay(localRay)) return false;
+            var master = MeshCollider;
+            if (master == null)
+            {
+                master = UnityEditor.Undo.AddComponent<MeshCollider>(filter.gameObject);
+                m_MeshCollider = master;
+            }
+            try
+            {
+                master.enabled = true;
+                if (m_EditorPickDirty || master.sharedMesh != mesh)
+                {
+                    master.sharedMesh = null;
+                    master.sharedMesh = mesh;
+                    m_EditorPickDirty = false;
+                }
+                Physics.SyncTransforms();
+                return master.Raycast(ray, out hit, maximumDistance);
+            }
+            finally { master.enabled = false; }
+        }
+#endif
+
         [SerializeField, Tooltip("Use the saved terrain collider chunks in Play Mode. Terrains without valid chunks retain their master collider.")]
         bool m_UseColliderChunksAtRuntime = true;
 
@@ -176,6 +227,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         // Empty hole chunks intentionally have no sharedMesh and must stay empty.
         public bool TryUseSurfaceColliderChunks()
         {
+            if (!NeedsCollision) { DisableSurfaceCollision(); return false; }
+            if (!NeedsCollisionChunks) return false;
             Mesh source = MeshFilter != null ? MeshFilter.sharedMesh : null;
             if (source == null || m_SurfaceColliderChunks.Length == 0
                 || m_SurfaceColliderVertexMaps.Length != m_SurfaceColliderChunks.Length
@@ -218,10 +271,25 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (MeshCollider != null) MeshCollider.enabled = false;
             return true;
         }
+        public void ApplyRuntimeSurfaceCollision()
+        {
+            if (!NeedsCollision) { DisableSurfaceCollision(); return; }
+            if (m_UseColliderChunksAtRuntime && TryUseSurfaceColliderChunks()) return;
+            // Respect the saved master preference even if an editor brush last used chunks.
+            var source = MeshFilter != null ? MeshFilter.sharedMesh : null;
+            var master = MeshCollider;
+            if (source == null || master == null) return;
+            master.enabled = true;
+            master.sharedMesh = null;
+            master.sharedMesh = source;
+            foreach (var chunk in m_SurfaceColliderChunks) if (chunk != null) chunk.enabled = false;
+        }
+
         public bool HasSurfaceCollider
         {
             get
             {
+                if (!NeedsCollision) return false;
                 if (MeshCollider != null && MeshCollider.enabled && MeshCollider.gameObject.activeInHierarchy) return true;
                 foreach (var chunk in m_SurfaceColliderChunks)
                     if (chunk != null && chunk.enabled && chunk.gameObject.activeInHierarchy) return true;
@@ -231,6 +299,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public bool RaycastSurface(Ray ray, out RaycastHit hit, float maximumDistance)
         {
             hit = default;
+            if (!NeedsCollision) return false;
             bool found = false;
             if (MeshCollider != null && MeshCollider.enabled && MeshCollider.gameObject.activeInHierarchy
                 && MeshCollider.Raycast(ray, out hit, maximumDistance))
@@ -301,8 +370,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void OnEnable()
         {
             ResolveComponents();
+            if (!NeedsCollision) DisableSurfaceCollision();
             NotifySurfaceMeshChanged(true);
 #if UNITY_EDITOR
+            s_EditorActiveTerrains.Add(this);
             UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
             UnityEditor.Undo.undoRedoPerformed += OnSurfaceTilesUndoRedo;
 #endif
@@ -311,9 +382,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             InvalidateRenderCache();
             if (Application.isPlaying)
             {
-                if (m_UseColliderChunksAtRuntime && m_SurfaceColliderChunks.Length > 0
-                    && !TryUseSurfaceColliderChunks())
-                    Debug.LogWarning($"[MG Terrain] '{name}' could not activate its saved collider chunks. Rebuild child colliders; keeping the existing collision state.", this);
+                ApplyRuntimeSurfaceCollision();
                 Debug.Log(
                     $"[MG Terrain Runtime] Enabled '{name}': draw={m_DrawInstances}, "
                     + $"densityLayers={DensityDetailLayerCount}, represented={RepresentedDensityDetailCount:N0}, "
@@ -326,6 +395,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             RefreshWorldOwnership();
 #if UNITY_EDITOR
+            s_EditorActiveTerrains.Remove(this);
             UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
 #endif
             RestoreDistantMorphBounds();

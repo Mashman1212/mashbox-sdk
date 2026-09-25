@@ -355,7 +355,7 @@ namespace MashBoxSDK.Maps.Sculpting
             {
                 m_LinkedLoft.RebuildColliderChunks();
             }
-            else if (m_UpdateMeshCollider && updateCollider && m_Target.TryGetComponent(out MeshCollider collider))
+            else if (m_UpdateMeshCollider && updateCollider && !IsDirectTerrain && m_Target.TryGetComponent(out MeshCollider collider))
             {
                 collider.sharedMesh = null;
                 collider.sharedMesh = mesh;

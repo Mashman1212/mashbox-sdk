@@ -21,6 +21,243 @@ namespace MashBoxSDK.MapTools
         static void Set(object target, string field, object value) => target.GetType().GetField(field, Fields).SetValue(target, value);
         static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 
+
+
+        public static void RunColliderSpeedBenchmark()
+        {
+            var scene = EditorSceneManager.NewPreviewScene();
+            string folder = "Assets/MGColliderSpeed_" + Guid.NewGuid().ToString("N");
+            AssetDatabase.CreateFolder("Assets", folder.Substring(7));
+            var meshes = new System.Collections.Generic.List<Mesh>();
+            try
+            {
+                var root = new GameObject("Collider speed benchmark"); SceneManager.MoveGameObjectToScene(root, scene);
+                var world = root.AddComponent<MGTerrainWorld>();
+                var tiles = new MGTerrain[2];
+                for (int tileIndex = 0; tileIndex < tiles.Length; tileIndex++)
+                {
+                    const int size = 129;
+                    var vertices = new Vector3[size * size];
+                    var triangles = new int[(size - 1) * (size - 1) * 6];
+                    for (int z = 0; z < size; z++) for (int x = 0; x < size; x++)
+                        vertices[z * size + x] = new Vector3(x * 4, Mathf.Sin(x * .1f) * Mathf.Cos(z * .1f) * 5, z * 4);
+                    int index = 0;
+                    for (int z = 0; z < size - 1; z++) for (int x = 0; x < size - 1; x++)
+                    {
+                        int a = z * size + x;
+                        triangles[index++] = a; triangles[index++] = a + size; triangles[index++] = a + 1;
+                        triangles[index++] = a + 1; triangles[index++] = a + size; triangles[index++] = a + size + 1;
+                    }
+                    var mesh = new Mesh { vertices = vertices, triangles = triangles }; mesh.RecalculateBounds(); meshes.Add(mesh);
+                    var go = new GameObject("Tile " + tileIndex); go.transform.SetParent(root.transform, false); go.transform.localPosition = new Vector3(tileIndex * 512, 0, 0);
+                    var tile = tiles[tileIndex] = go.AddComponent<MGTerrain>();
+                    tile.MeshFilter.sharedMesh = mesh;
+                    var collider = go.AddComponent<MeshCollider>(); collider.sharedMesh = mesh;
+                    tile.Configure(tile.MeshFilter, tile.MeshRenderer, collider);
+                }
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                MGTerrainWorldEditor.BuildWorldColliders(world, 50, folder);
+                double first = timer.Elapsed.TotalMilliseconds;
+                var initial = tiles.Select(tile => tile.SurfaceColliderChunks[0]).ToArray();
+                timer.Restart();
+                MGTerrainWorldEditor.BuildWorldColliders(world, 50, folder);
+                double repeat = timer.Elapsed.TotalMilliseconds;
+                Check(MGTerrainWorldEditor.LastColliderTilesBuilt == 0 && MGTerrainWorldEditor.LastColliderTilesSkipped == 2,
+                    "Unchanged world must skip all collider rebuilds");
+                Check(initial[0] == tiles[0].SurfaceColliderChunks[0] && initial[1] == tiles[1].SurfaceColliderChunks[0],
+                    "Skipped tiles must preserve collider objects and assets");
+                var changed = meshes[0].vertices; for (int i = 0; i < changed.Length; i++) changed[i].y += 3;
+                meshes[0].vertices = changed; meshes[0].RecalculateBounds();
+                timer.Restart();
+                MGTerrainWorldEditor.BuildWorldColliders(world, 50, folder);
+                double changedTime = timer.Elapsed.TotalMilliseconds;
+                Check(MGTerrainWorldEditor.LastColliderTilesBuilt == 1 && MGTerrainWorldEditor.LastColliderTilesSkipped == 1,
+                    "Editing one mesh must rebuild only that tile, even without manually marking it dirty");
+                Check(initial[1] == tiles[1].SurfaceColliderChunks[0], "An unrelated tile must retain its colliders");
+                // An Undo clears the optimization cache so restored data is never assumed current.
+                Undo.PerformUndo();
+                MGTerrainWorldEditor.BuildWorldColliders(world, 50, folder);
+                Check(MGTerrainWorldEditor.LastColliderTilesBuilt == 2, "Undo must invalidate build cache");
+                Debug.Log($"COLLIDER_SPEED_VALIDATION_PASS: first={first:F1}ms unchanged={repeat:F1}ms oneChanged={changedTime:F1}ms; 2 tiles, 65536 triangles, 242 chunks");
+            }
+            finally
+            {
+                EditorSceneManager.ClosePreviewScene(scene);
+                foreach (var mesh in meshes) UnityEngine.Object.DestroyImmediate(mesh);
+                AssetDatabase.DeleteAsset(folder);
+            }
+        }
+
+
+        [MenuItem("Tools/MashBox/MG Terrain/Validate World Collider Controls")]
+        public static void RunColliders()
+        {
+            var scene = EditorSceneManager.NewPreviewScene();
+            string folder = "Assets/MGWorldColliderValidation_" + Guid.NewGuid().ToString("N");
+            AssetDatabase.CreateFolder("Assets", folder.Substring(7));
+            var mesh = new Mesh { name = "World collider validation surface" };
+            int checks = 0;
+            void Verify(bool condition, string message) { checks++; Check(condition, message); }
+            try
+            {
+                var vertices = new Vector3[9];
+                for (int z = 0; z < 3; z++) for (int x = 0; x < 3; x++) vertices[z * 3 + x] = new Vector3(x * 50, 0, z * 50);
+                var triangles = new System.Collections.Generic.List<int>();
+                for (int z = 0; z < 2; z++) for (int x = 0; x < 2; x++)
+                {
+                    int corner = z * 3 + x;
+                    triangles.AddRange(new[] { corner, corner + 3, corner + 1, corner + 1, corner + 3, corner + 4 });
+                }
+                mesh.vertices = vertices; mesh.triangles = triangles.ToArray(); mesh.RecalculateBounds();
+                var root = new GameObject("Collider world"); SceneManager.MoveGameObjectToScene(root, scene);
+                var world = root.AddComponent<MGTerrainWorld>();
+                MGTerrain Tile(Transform parent, string name)
+                {
+                    var go = new GameObject(name); go.transform.SetParent(parent, false);
+                    var tile = go.AddComponent<MGTerrain>();
+                    tile.MeshFilter.sharedMesh = mesh;
+                    var collider = go.AddComponent<MeshCollider>(); collider.sharedMesh = mesh;
+                    tile.Configure(tile.MeshFilter, tile.MeshRenderer, collider);
+                    return tile;
+                }
+                var a = Tile(root.transform, "Active terrain");
+                var b = Tile(root.transform, "Inactive terrain"); b.gameObject.SetActive(false);
+                var nestedRoot = new GameObject("Nested world"); nestedRoot.transform.SetParent(root.transform, false);
+                nestedRoot.AddComponent<MGTerrainWorld>();
+                var nested = Tile(nestedRoot.transform, "Nested terrain");
+                Verify(MGTerrainWorldEditor.CollisionTiles(world).Length == 2, "World collision scope includes inactive tiles and excludes nested worlds");
+                MGTerrainWorldEditor.BuildWorldColliders(world, 50, folder);
+                Verify(a.SurfaceColliderChunks.Count == 4 && b.SurfaceColliderChunks.Count == 4, "Build creates spatial collider chunks for every owned tile");
+                Verify(nested.SurfaceColliderChunks.Count == 0, "Nested world collision remains untouched");
+                Verify(a.SurfaceColliderChunks.All(c => AssetDatabase.Contains(c.sharedMesh)), "Chunk meshes are saved assets");
+                Verify(!a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => c.enabled), "Build activates chunks without duplicate master collision");
+                Undo.PerformUndo();
+                Verify(a.SurfaceColliderChunks.Count == 0 && b.SurfaceColliderChunks.Count == 0 && a.MeshCollider.enabled, "One Undo restores all pre-build colliders");
+                Undo.PerformRedo();
+                Verify(a.SurfaceColliderChunks.Count == 4 && b.SurfaceColliderChunks.Count == 4, "Redo restores world collider chunks");
+                MGTerrainWorldEditor.BuildWorldColliders(world, 100, folder);
+                Verify(a.SurfaceColliderChunks.Count == 1 && b.SurfaceColliderChunks.Count == 1 && world.ColliderCellSize == 100, "Rebuild uses and saves the requested cell size");
+                Undo.PerformUndo();
+                Verify(a.SurfaceColliderChunks.Count == 4 && world.ColliderCellSize == 50, "Rebuild Undo restores chunks and cell size");
+
+                MGTerrainWorldEditor.SetWorldCollision(world, false);
+                Verify(a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => !c.enabled), "World master mode disables chunks");
+                a.MeshCollider.enabled = false;
+                foreach (var c in a.SurfaceColliderChunks) c.enabled = true;
+                a.ApplyRuntimeSurfaceCollision();
+                Verify(a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => !c.enabled), "Runtime honors saved master preference");
+                MGTerrainWorldEditor.SetWorldCollision(world, true);
+                a.MeshCollider.enabled = true;
+                foreach (var c in a.SurfaceColliderChunks) c.enabled = false;
+                a.ApplyRuntimeSurfaceCollision();
+                Verify(!a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => c.enabled), "Runtime honors saved chunk preference");
+                for (int i = 0; i < vertices.Length; i++) vertices[i].y = 12;
+                mesh.vertices = vertices; mesh.RecalculateBounds();
+                MGTerrainWorldEditor.SetWorldCollision(world, null);
+                var ray = new Ray(new Vector3(10, 50, 10), Vector3.down);
+                Verify(a.RaycastSurface(ray, out var hit, 100) && Mathf.Abs(hit.point.y - 12) < .001f, "World refresh updates actual chunk physics");
+                MGTerrainWorldEditor.SetWorldCollision(world, false);
+                MGTerrainWorldEditor.SetWorldCollision(world, null);
+                Verify(a.MeshCollider.enabled && a.MeshCollider.Raycast(ray, out hit, 100) && Mathf.Abs(hit.point.y - 12) < .001f, "Refresh preserves master mode and current physics");
+                b.MeshFilter.sharedMesh = null;
+                bool rejected = false;
+                try { MGTerrainWorldEditor.BuildWorldColliders(world, 25, folder); }
+                catch (InvalidOperationException) { rejected = true; }
+                Verify(rejected && a.SurfaceColliderChunks.Count == 4, "Invalid tile rejects world rebuild before changing other tiles");
+                Verify(a.NeedsCollision && b.NeedsCollision, "Existing terrain defaults to collision enabled");
+                Set(a, "m_NeedsCollision", false);
+                Set(b, "m_NeedsCollision", false);
+                a.DisableSurfaceCollision(); b.DisableSurfaceCollision();
+                var chunk = a.SurfaceColliderChunks[0];
+                var oldChunkVertices = chunk.sharedMesh.vertices;
+                for (int i = 0; i < vertices.Length; i++) vertices[i].y = 20;
+                mesh.vertices = vertices; mesh.RecalculateBounds();
+                a.NotifySurfaceMeshChanged();
+                a.RefreshSurfaceCollidersFromMesh();
+                a.ApplyRuntimeSurfaceCollision();
+                Verify(!a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => !c.enabled),
+                    "Background geometry updates and runtime handoff keep all collision disabled");
+                Verify(chunk.sharedMesh.vertices.SequenceEqual(oldChunkVertices),
+                    "Background updates do not synchronize chunk meshes");
+                Verify(!a.HasSurfaceCollider && !a.RaycastSurface(ray, out _, 100),
+                    "Background terrain is excluded from gameplay collision queries");
+                Verify(a.RaycastEditingSurface(ray, out hit, 100) && Mathf.Abs(hit.point.y - 20) < .001f,
+                    "Editor picking hits the current background surface after sculpting");
+                Verify(!a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => !c.enabled),
+                    "Editor picking leaves background collision disabled");
+                MGTerrainWorldEditor.BuildWorldColliders(world, 25, folder);
+                MGTerrainWorldEditor.SetWorldCollision(world, true);
+                Verify(a.SurfaceColliderChunks[0] == chunk && !a.MeshCollider.enabled && !chunk.enabled,
+                    "World actions skip background tiles, including invalid background meshes");
+                Set(b, "m_NeedsCollision", true);
+                b.MeshFilter.sharedMesh = mesh;
+                MGTerrainWorldEditor.BuildWorldColliders(world, 100, folder);
+                Verify(MGTerrainWorldEditor.LastColliderTilesBuilt == 1 && a.SurfaceColliderChunks[0] == chunk,
+                    "Mixed world builds only participating tiles");
+                Set(nested, "m_NeedsCollision", false);
+                MGTerrainEditor.BuildSurfaceColliders(nested, 50, folder);
+                Verify(nested.SurfaceColliderChunks.Count == 0 && !nested.MeshCollider.enabled,
+                    "Direct tile builds skip background terrain");
+                Undo.IncrementCurrentGroup();
+                Undo.RegisterCompleteObjectUndo(a, "Enable terrain collision");
+                foreach (var collider in a.GetComponentsInChildren<MeshCollider>(true))
+                    Undo.RegisterCompleteObjectUndo(collider, "Enable terrain collision");
+                using (var participation = new SerializedObject(a))
+                {
+                    participation.FindProperty("m_NeedsCollision").boolValue = true;
+                    participation.ApplyModifiedProperties();
+                }
+                a.ApplySurfaceHoles();
+                a.RefreshSurfaceCollidersFromMesh();
+                a.ApplyRuntimeSurfaceCollision();
+                Verify(a.RaycastSurface(ray, out hit, 100) && Mathf.Abs(hit.point.y - 20) < .001f,
+                    "Re-enabling collision restores current geometry");
+                Undo.FlushUndoRecordObjects();
+                Undo.PerformUndo();
+                Verify(!a.NeedsCollision && !a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => !c.enabled),
+                    "Undo re-enabling collision restores the background opt-out");
+                Undo.PerformRedo();
+                Verify(a.NeedsCollision && a.RaycastSurface(ray, out hit, 100) && Mathf.Abs(hit.point.y - 20) < .001f,
+                    "Redo restores current collision: needs=" + a.NeedsCollision + " masterEnabled=" + a.MeshCollider.enabled + " masterMesh=" + a.MeshCollider.sharedMesh + " chunks=" + string.Join(",", a.SurfaceColliderChunks.Select(c => c.enabled + ":" + c.sharedMesh)) + " y=" + hit.point.y);
+                Verify(a.NeedsCollisionChunks && b.NeedsCollisionChunks, "Chunk participation defaults on for existing terrain");
+                Set(a, "m_NeedsCollisionChunks", false);
+                Set(b, "m_NeedsCollisionChunks", false);
+                var retainedChunk = a.SurfaceColliderChunks[0];
+                var retainedVertices = retainedChunk.sharedMesh.vertices;
+                for (int i = 0; i < vertices.Length; i++) vertices[i].y = 24;
+                mesh.vertices = vertices; mesh.RecalculateBounds();
+                a.NotifySurfaceMeshChanged();
+                a.RefreshSurfaceCollidersFromMesh();
+                Verify(a.NeedsCollision && a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => !c.enabled)
+                    && a.RaycastSurface(ray, out hit, 100) && Mathf.Abs(hit.point.y - 24) < .001f,
+                    "Main-only terrain keeps current player-blocking collision after edits");
+                Verify(retainedChunk.sharedMesh.vertices.SequenceEqual(retainedVertices),
+                    "Main-only terrain skips chunk mesh synchronization");
+                MGTerrainWorldEditor.BuildWorldColliders(world, 25, folder);
+                MGTerrainEditor.BuildSurfaceColliders(a, 25, folder);
+                Verify(MGTerrainWorldEditor.LastColliderTilesBuilt == 0 && a.SurfaceColliderChunks[0] == retainedChunk,
+                    "World and direct tile builds skip main-only terrain chunks");
+                MGTerrainWorldEditor.SetWorldCollision(world, true);
+                Verify(a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => !c.enabled),
+                    "World chunk activation respects per-tile main-only selection");
+                Set(a, "m_NeedsCollisionChunks", true);
+                a.ApplySurfaceHoles();
+                a.RefreshSurfaceCollidersFromMesh();
+                a.ApplyRuntimeSurfaceCollision();
+                Verify(!a.MeshCollider.enabled && a.SurfaceColliderChunks.All(c => c.enabled)
+                    && a.RaycastSurface(ray, out hit, 100) && Mathf.Abs(hit.point.y - 24) < .001f,
+                    "Opting back into chunks refreshes retained geometry before use");
+                Debug.Log($"WORLD_COLLIDER_VALIDATION_PASS: {checks} checks");
+            }
+            finally
+            {
+                EditorSceneManager.ClosePreviewScene(scene);
+                UnityEngine.Object.DestroyImmediate(mesh);
+                AssetDatabase.DeleteAsset(folder);
+            }
+        }
+
+
         [MenuItem("MashBox/Validation/Validate Terrain World")]
         public static void Run()
         {
