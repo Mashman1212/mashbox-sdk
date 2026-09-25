@@ -129,6 +129,22 @@ namespace MashBoxSDK.Maps.Roads.Editor
             var expected = Evaluate(store);
             for (int i = 0; i < current.Length; i++) store.baseline[i] += current[i] - expected[i];
         }
+        // Commit one-shot terrain edits in their own Undo group, before an editor tick
+        // can recomposite them separately. Existing road footprints remain authoritative.
+        internal static void CompleteTerrainEdit(MGTerrain tile)
+        {
+            var store = tile.GetComponent<MGRoadTerrainLayers>();
+            if (store == null || busy) return;
+            busy = true;
+            try
+            {
+                CaptureEdits(store);
+                store.layers.RemoveAll(layer => !Active(layer.road));
+                Compose(store);
+                sculpted.Remove(tile);
+            }
+            finally { busy = false; }
+        }
         static Vector3[] Evaluate(MGRoadTerrainLayers store)
         {
             using var profile = evaluateMarker.Auto();
@@ -176,11 +192,6 @@ namespace MashBoxSDK.Maps.Roads.Editor
         static void RefreshCollision(MGRoadTerrainLayers store)
         {
             var tile = store.terrain;
-            if (tile.SurfaceColliderChunks.Count == 0 && tile.MeshCollider != null)
-            {
-                tile.MeshCollider.sharedMesh = null;
-                tile.MeshCollider.sharedMesh = tile.MeshFilter.sharedMesh;
-            }
             tile.RefreshSurfaceCollidersFromMesh();
         }
         static MGRoadTerrainLayers.Layer Sample(MGRoad road, MGTerrain tile, LoftSurface surface)

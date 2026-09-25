@@ -21,7 +21,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         static void RebuildAll()
         {
-            foreach (var road in Object.FindObjectsByType<MGRoad>()) road.RequestRebuild();
+            foreach (var road in Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None)) road.RequestRebuild();
         }
         static Func<Vector3, Vector3> CreateProjector(MGRoad road)
         {

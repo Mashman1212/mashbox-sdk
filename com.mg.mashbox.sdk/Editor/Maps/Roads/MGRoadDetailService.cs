@@ -66,7 +66,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
         {
             if (busy || Application.isPlaying) return;
             var roads = scene.HasValue ? scene.Value.GetRootGameObjects().SelectMany(r => r.GetComponentsInChildren<MGRoad>(true)).ToArray()
-                : Object.FindObjectsByType<MGRoad>().Where(Editable).ToArray();
+                : Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None).Where(Editable).ToArray();
             var changed = new List<MGRoad>();
             foreach (var road in roads)
             {
@@ -216,7 +216,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
         static void Restored()
         {
             fingerprints.Clear();
-            foreach (var road in Object.FindObjectsByType<MGRoad>()) if (Editable(road)) fingerprints[road] = Fingerprint(road);
+            foreach (var road in Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None)) if (Editable(road)) fingerprints[road] = Fingerprint(road);
             foreach (var store in Stores()) if (Editable(store)) store.GetComponent<MGTerrain>()?.RefreshRoadDetailMasks();
             nextUpdate = EditorApplication.timeSinceStartup + .3;
         }

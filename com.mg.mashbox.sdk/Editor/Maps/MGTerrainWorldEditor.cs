@@ -19,6 +19,9 @@ namespace MashBoxSDK.MapTools
         [MenuItem("GameObject/MashBox/MG Terrain World From Selected Chunks", false, 20)]
         static void CreateFromSelection()
         {
+#if !UNITY_6000_0_OR_NEWER
+            EditorUtility.DisplayDialog("MG Terrain World", "MG Terrain World requires Unity 6 or newer.", "OK");
+#else
             var chunks = SelectedChunks();
             if (chunks.Length == 0)
             {
@@ -27,6 +30,7 @@ namespace MashBoxSDK.MapTools
             }
             try { Selection.activeGameObject = Adopt(chunks).gameObject; }
             catch (Exception error) { Debug.LogException(error); }
+#endif
         }
 
         static MGTerrain[] SelectedChunks() => Selection.gameObjects
@@ -35,6 +39,9 @@ namespace MashBoxSDK.MapTools
         // Does not serialize/copy terrain data: reparenting preserves the exact existing component and assets.
         internal static MGTerrainWorld Adopt(MGTerrain[] chunks, MGTerrainWorld destination = null)
         {
+#if !UNITY_6000_0_OR_NEWER
+            throw new NotSupportedException("MG Terrain World requires Unity 6 or newer.");
+#else
             if (Application.isPlaying) throw new InvalidOperationException("Adopt chunks outside Play Mode.");
             chunks = chunks.Where(chunk => chunk != null).Distinct().ToArray();
             if (chunks.Length == 0) throw new ArgumentException("No MG Terrain chunks were selected.");
@@ -92,6 +99,7 @@ namespace MashBoxSDK.MapTools
                 return destination;
             }
             catch { Undo.RevertAllDownToGroup(undo); throw; }
+#endif
         }
 
         enum WorldTab { Tiles, Details, Settings, Baking }
@@ -100,8 +108,10 @@ namespace MashBoxSDK.MapTools
         void OnEnable()
         {
             m_Tab = (WorldTab)Mathf.Clamp(SessionState.GetInt(TabPreference, 0), 0, 3);
+#if UNITY_6000_0_OR_NEWER
             SceneView.duringSceneGui += DrawScene;
             Undo.undoRedoPerformed += ClearPlacementPreviews;
+#endif
         }
         void OnDisable()
         {
@@ -117,6 +127,9 @@ namespace MashBoxSDK.MapTools
         }
         public override void OnInspectorGUI()
         {
+#if !UNITY_6000_0_OR_NEWER
+            EditorGUILayout.HelpBox("MG Terrain World requires Unity 6 or newer. Open this project in Unity 6 to edit terrain worlds.", MessageType.Warning);
+#else
             var world = (MGTerrainWorld)target;
             serializedObject.Update();
             MashBoxSDK.EditorResources.MashBoxInspectorHeaderUtility.DrawScriptHeader();
@@ -135,6 +148,7 @@ namespace MashBoxSDK.MapTools
                 case WorldTab.Settings: DrawSettingsTab(world); break;
                 case WorldTab.Baking: DrawWorldBakes(world); break;
             }
+#endif
         }
 
         void DrawSettingsTab(MGTerrainWorld world)

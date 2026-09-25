@@ -193,7 +193,8 @@ namespace MashBoxSDK.MapTools
             {
                 mapName = mapName,
                 categories = new List<ChallengeCategory>(),
-                tasks = ExtractMapTaskData()
+                tasks = ExtractMapTaskData(),
+                trickChallenges = MBChallengeManifest.Extract(SceneManager.GetActiveScene())
             };
 
             foreach (Transform cat in root.transform)
@@ -272,6 +273,7 @@ namespace MashBoxSDK.MapTools
             public string mapName;
             public List<ChallengeCategory> categories;
             public List<MapTaskData> tasks;
+            public List<MBChallengeManifestEntry> trickChallenges;
         }
 
         [System.Serializable]

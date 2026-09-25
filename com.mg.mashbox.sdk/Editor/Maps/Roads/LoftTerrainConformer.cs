@@ -43,7 +43,7 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
 
         static void DrawLoftInspector(MultiSplineLoft loft)
         {
-            string key = "MappyX.LoftTerrainConform." + loft.GetEntityId();
+            string key = "MappyX.LoftTerrainConform." + loft.GetInstanceID();
             if (inspectorControls == null || inspectorKey != key)
             {
                 ReleaseInspectorControls();
@@ -142,7 +142,7 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
             {
                 var edits = new List<Edit>();
                 if (mgTerrain)
-                    foreach (var tile in meshTiles ?? Object.FindObjectsByType<MGTerrain>())
+                    foreach (var tile in meshTiles ?? Object.FindObjectsByType<MGTerrain>(FindObjectsSortMode.None))
                     {
                         if (!SceneObject(tile) || tile.MeshFilter == null || tile.MeshFilter.sharedMesh == null) continue;
                         var filter = tile.MeshFilter;
@@ -169,7 +169,7 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
                         if (edit.count > 0) edits.Add(edit);
                     }
                 if (unityTerrain)
-                    foreach (var tile in heightTiles ?? Object.FindObjectsByType<Terrain>())
+                    foreach (var tile in heightTiles ?? Object.FindObjectsByType<Terrain>(FindObjectsSortMode.None))
                     {
                         if (!SceneObject(tile) || tile.terrainData == null) continue;
                         var data = tile.terrainData;
@@ -287,6 +287,7 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
                             seamVertices = edit.deltas.ToArray() });
                         modifier.ApplyLatestStrokePreview();
                         modifier.FinalizeStrokePreview();
+                        MashBoxSDK.Maps.Roads.Editor.MGRoadLayerService.CompleteTerrainEdit(edit.mg);
                         EditorUtility.SetDirty(modifier);
                         EditorUtility.SetDirty(edit.mg);
                         EditorSceneManager.MarkSceneDirty(edit.mg.gameObject.scene);

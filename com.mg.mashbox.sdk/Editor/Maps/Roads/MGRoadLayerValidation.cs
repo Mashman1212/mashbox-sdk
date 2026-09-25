@@ -1,5 +1,7 @@
 using System;
 using MashBoxSDK.Maps.TerrainSystem;
+using MashBoxSDK.Maps.TerrainSystem.Editor;
+using MashBoxSDK.Maps.Sculpting;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -49,12 +51,56 @@ namespace MashBoxSDK.Maps.Roads.Editor
                     r.Container.Spline.Add(new BezierKnot(new float3(0, y, 8)), TangentMode.Linear);
                     return r;
                 }
+                // A saved chunk plus a separate master reproduces the stale binding
+                // when the road service replaces the original terrain mesh.
+                var chunkGo = new GameObject("Collider chunk"); chunkGo.transform.SetParent(tileGo.transform, false);
+                var chunk = chunkGo.AddComponent<MeshCollider>();
+                chunk.sharedMesh = Object.Instantiate(original); meshes.Add(chunk.sharedMesh);
+                using (var data = new SerializedObject(tile))
+                {
+                    var chunks = data.FindProperty("m_SurfaceColliderChunks");
+                    chunks.arraySize = 1; chunks.GetArrayElementAtIndex(0).objectReferenceValue = chunk;
+                    data.ApplyModifiedPropertiesWithoutUndo();
+                }
+                var indices = new int[vertices.Length];
+                for (int i = 0; i < indices.Length; i++) indices[i] = i;
+                tile.SetSurfaceColliderVertexMaps(new[] { new MGTerrain.SurfaceColliderVertexMap(chunk, indices) }, vertices.Length);
                 var aRoad = Road("A", 5); var bRoad = Road("B", 9);
                 MGRoadLayerService.Apply(new[] { aRoad }); meshes.Add(filter.sharedMesh);
                 Near(filter.sharedMesh.vertices[8].y, 5, "Initial layer reaches road");
                 Near(original.vertices[8].y, 2, "Source mesh untouched");
                 Check(!AssetDatabase.Contains(filter.sharedMesh), "Applying a road creates no imported terrain asset");
                 Near(filter.sharedMesh.vertices[12].y, 5, "Extra cell apron retained");
+                Check(collider.sharedMesh == filter.sharedMesh, "Road replacement updates master even with chunks");
+                Near(chunk.sharedMesh.vertices[8].y, 5, "Road replacement refreshes chunk heights");
+                Check(chunk.enabled && !collider.enabled, "Chunks retain collision ownership");
+
+                LoftTerrainConformer.Apply(new System.Collections.Generic.List<LoftTerrainConformer.Edit>
+                {
+                    new LoftTerrainConformer.Edit { mg = tile, deltas = new System.Collections.Generic.List<MeshSculptModifier.SeamVertex>
+                    {
+                        new MeshSculptModifier.SeamVertex { index = 0, delta = Vector3.up * 3 },
+                        new MeshSculptModifier.SeamVertex { index = 1, delta = Vector3.up * 3 }
+                    } }
+                });
+                meshes.Add(filter.sharedMesh);
+                Near(filter.sharedMesh.vertices[0].y, 5, "Loft conform changes terrain outside road");
+                Near(filter.sharedMesh.vertices[8].y, 5, "Loft conform preserves road footprint");
+                Near(tile.GetComponent<MGRoadTerrainLayers>().baseline[0].y, 5, "Loft edit committed to road baseline immediately");
+                Check(collider.sharedMesh == filter.sharedMesh, "Loft keeps master on current mesh");
+                Near(chunk.sharedMesh.vertices[0].y, 5, "Loft refreshes collider chunk");
+                MGRoadLayerService.UpdateLive(scene);
+                Near(filter.sharedMesh.vertices[0].y, 5, "Editor tick does not replay loft delta");
+                Undo.PerformUndo();
+                Near(filter.sharedMesh.vertices[0].y, 2, "One Undo restores pre-loft terrain");
+                Near(filter.sharedMesh.vertices[8].y, 5, "Loft Undo preserves road");
+                Near(chunk.sharedMesh.vertices[0].y, 2, "Loft Undo restores chunk");
+                Undo.PerformRedo();
+                Near(filter.sharedMesh.vertices[0].y, 5, "Loft Redo restores terrain");
+                Near(chunk.sharedMesh.vertices[0].y, 5, "Loft Redo restores chunk");
+                MGRoadLayerService.Apply(new[] { aRoad });
+                Near(filter.sharedMesh.vertices[0].y, 5, "Road reapply preserves loft");
+
                 bRoad.overrideTerrain = true; bRoad.terrain.mode = RoadTerrainMode.TerrainFollowsRoad; bRoad.terrain.terrainOffset = 0; bRoad.terrain.strength = .5f;
                 MGRoadLayerService.Apply(new[] { bRoad });
                 Near(filter.sharedMesh.vertices[8].y, 7, "Ordered overlapping layers compose");
@@ -65,6 +111,8 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 Near(filter.sharedMesh.vertices[8].y, 5.5f, "Moving road restores old footprint beneath another layer");
                 MGRoadLayerService.Remove(new[] { bRoad });
                 Near(filter.sharedMesh.vertices[8].y, 2, "Remove restores base");
+                Near(filter.sharedMesh.vertices[0].y, 5, "Road removal preserves loft terrain");
+                Check(collider.sharedMesh == filter.sharedMesh, "Road removal keeps master synchronized");
                 Undo.PerformUndo(); Near(filter.sharedMesh.vertices[8].y, 5.5f, "Remove Undo restores layer output");
                 Undo.PerformRedo(); Near(filter.sharedMesh.vertices[8].y, 2, "Remove Redo restores base");
                 MGRoadLayerService.Apply(new[] { bRoad });

@@ -10,6 +10,10 @@ namespace MashBoxSDK.MapTools
         internal static bool TryGet(out float value, out string message)
         {
             value = 0;
+#if !UNITY_6000_0_OR_NEWER
+            message = "MG Terrain scene exposure requires Unity 6 or newer.";
+            return false;
+#else
             var camera = SceneView.lastActiveSceneView != null ? SceneView.lastActiveSceneView.camera : Camera.main;
             if (camera == null || !VolumeManager.instance.isInitialized)
             { message = "Open a Scene view with HDRP active to resolve scene exposure."; return false; }
@@ -28,6 +32,7 @@ namespace MashBoxSDK.MapTools
             }
             catch (Exception e) { message = e.Message; return false; }
             finally { VolumeManager.instance.DestroyStack(stack); }
+#endif
         }
         static double nextUpdate;
         static string cachedMessage;

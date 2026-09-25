@@ -4,10 +4,12 @@
 
 ### Fixed
 
+- Fixed Unity 2022.3 SDK compilation errors in road terrain tools, scene exposure, and grass interaction validation. MG Terrain World creation and editing now explain their Unity 6+ requirement in older editors.
 - Content pack builds now honor explicit BMX Streets and ScootX targets in Unity 6 instead of validating them as ProjectX. Incompatible editor and Addressables combinations are rejected before icon generation; ProjectX retains its Unity 6 / Addressables 2.11.1 build path.
 
 ### Added
 
+- Added Spot and Line challenge authoring to Gameplay tools, with zone gizmos, editable tiers and goals, a rule preview, completion map tasks, export manifests, and a local-player telemetry bridge.
 - Added MG Terrain Seam Fit with nearest-surface or vertex snapping, a world-distance threshold, optional normal blending and surface offset, shared sculpt controls, replayable terrain-only strokes, and updated collision.
 
 ### Removed

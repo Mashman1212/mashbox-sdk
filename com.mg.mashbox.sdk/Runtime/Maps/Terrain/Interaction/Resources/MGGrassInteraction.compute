@@ -5,14 +5,25 @@
 // RG = direction * strength, B = relative contact height * strength, A = strength.
 Texture2D<float4> _Source;
 RWTexture2D<float4> _Map;
+// Separate float storage keeps short simulation steps precise throughout the hold.
+Texture2D<float> _DelaySource;
+RWTexture2D<float> _DelayMap;
 int _Resolution;
 int4 _Scroll; // source offset xy, clear flag z
 int4 _DispatchRect;
 float _Recovery;
+float _DeltaTime;
+float _RecoveryDelaySeconds;
 float4 _MapWorld; // minimum XZ, metres per texel, height origin
 float4 _BrushFrom; // xyz contact, radius
 float4 _BrushTo; // xyz contact, strength
 float4 _BrushDirection; // xy heading, z directional blend, w height separation
+
+float RecoveryAfterDelay(float delay)
+{
+    // Only the portion of this step after the hold expires contributes to recovery.
+    return _Recovery * saturate((_DeltaTime - delay) / max(_DeltaTime, 1e-6f));
+}
 
 [numthreads(8,8,1)]
 void ScrollRecover(uint3 id : SV_DispatchThreadID)
@@ -20,9 +31,14 @@ void ScrollRecover(uint3 id : SV_DispatchThreadID)
     if (any(id.xy >= (uint)_Resolution)) return;
     int2 source = int2(id.xy) + _Scroll.xy;
     float4 value = 0;
+    float delay = 0;
     if (_Scroll.z == 0 && all(source >= 0) && all(source < _Resolution))
+    {
         value = _Source.Load(int3(source, 0));
-    float strength = max(0, value.a - _Recovery);
+        delay = _DelaySource.Load(int3(source, 0));
+    }
+    float strength = max(0, value.a - RecoveryAfterDelay(delay));
+    _DelayMap[id.xy] = max(0, delay - _DeltaTime);
     _Map[id.xy] = value * (strength / max(value.a, 1e-6));
 }
 
@@ -34,7 +50,9 @@ void RecoverRegion(uint3 id : SV_DispatchThreadID)
     int2 pixel = _DispatchRect.xy + int2(id.xy);
     if (any(pixel < 0) || any(pixel >= _Resolution)) return;
     float4 value = _Map[pixel];
-    float strength = max(0, value.a - _Recovery);
+    float delay = _DelayMap[pixel];
+    float strength = max(0, value.a - RecoveryAfterDelay(delay));
+    _DelayMap[pixel] = max(0, delay - _DeltaTime);
     _Map[pixel] = value * (strength / max(value.a, 1e-6));
 }
 
@@ -66,5 +84,8 @@ void Stamp(uint3 id : SV_DispatchThreadID)
     // Maximum pressure avoids frame-rate-dependent accumulation and prevents small
     // brush tails from overwriting stronger impressions. Recovery lowers old pressure.
     if (strength >= previous.a)
+    {
         _Map[pixel] = float4(direction * strength, relativeHeight * strength, strength);
+        _DelayMap[pixel] = max(0, _RecoveryDelaySeconds);
+    }
 }

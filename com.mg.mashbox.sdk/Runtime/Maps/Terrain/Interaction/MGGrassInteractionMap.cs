@@ -12,6 +12,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [Range(64, 2048)] public int resolution = 512;
         [Min(4)] public float worldSize = 256;
         [Range(1, 120)] public float updateRate = 60;
+        [Min(0), Tooltip("Simulation seconds to hold an impression before it starts recovering.")]
+        public float recoveryDelaySeconds = 20;
         [Min(0.05f), Tooltip("Seconds for a full-strength impression to recover completely.")]
         public float recoverySeconds = 30;
         [Range(0, 85)] public float maximumBendAngle = 82.9f;
@@ -45,7 +47,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         static readonly int ParamsId = Shader.PropertyToID("_MGGrassInteractionParams");
         static readonly int HeightId = Shader.PropertyToID("_MGGrassInteractionHeightOrigin");
         static readonly int EdgeId = Shader.PropertyToID("_MGGrassInteractionEdgeFade");
-        RenderTexture current, scratch;
+        RenderTexture current, scratch, recoveryDelay, recoveryDelayScratch;
         ComputeShader painter;
         Vector2 minimum;
         float allocatedSize, heightOrigin, elapsed;
@@ -170,12 +172,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
             int size = Mathf.ClosestPowerOfTwo(Mathf.Clamp(resolution, 64, 2048));
             float metres = Mathf.Max(4, worldSize);
             if (current != null && current.IsCreated() && scratch != null && scratch.IsCreated()
+                && recoveryDelay != null && recoveryDelay.IsCreated()
+                && recoveryDelayScratch != null && recoveryDelayScratch.IsCreated()
                 && size == allocatedResolution && Mathf.Approximately(metres, allocatedSize)) return true;
             Release();
             if (!SystemInfo.supportsComputeShaders
                 || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf)
-                || !SystemInfo.SupportsRandomWriteOnRenderTextureFormat(RenderTextureFormat.ARGBHalf))
-                return Fail("Compute shaders and writable ARGBHalf textures are required.");
+                || !SystemInfo.SupportsRandomWriteOnRenderTextureFormat(RenderTextureFormat.ARGBHalf)
+                || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RFloat)
+                || !SystemInfo.SupportsRandomWriteOnRenderTextureFormat(RenderTextureFormat.RFloat))
+                return Fail("Compute shaders and writable ARGBHalf/RFloat textures are required.");
             var source = paintShader != null ? paintShader : Resources.Load<ComputeShader>("MGGrassInteraction");
             if (source == null) return Fail("MGGrassInteraction.compute is missing.");
             painter = Instantiate(source);
@@ -187,7 +193,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             allocatedSize = metres;
             current = CreateTexture(size, "MG Grass Interaction");
             scratch = CreateTexture(size, "MG Grass Interaction Scratch");
-            if (!current.IsCreated() || !scratch.IsCreated()) return Fail("Could not allocate interaction textures.");
+            recoveryDelay = CreateTexture(size, "MG Grass Recovery Delay", RenderTextureFormat.RFloat);
+            recoveryDelayScratch = CreateTexture(size, "MG Grass Recovery Delay Scratch", RenderTextureFormat.RFloat);
+            if (!current.IsCreated() || !scratch.IsCreated() || !recoveryDelay.IsCreated() || !recoveryDelayScratch.IsCreated())
+                return Fail("Could not allocate interaction textures.");
             clearRequested = true;
             return true;
         }
@@ -200,9 +209,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (Active == this) Active = null;
             return false;
         }
-        static RenderTexture CreateTexture(int size, string label)
+        static RenderTexture CreateTexture(int size, string label, RenderTextureFormat format = RenderTextureFormat.ARGBHalf)
         {
-            var texture = new RenderTexture(size, size, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear)
+            var texture = new RenderTexture(size, size, 0, format, RenderTextureReadWrite.Linear)
             {
                 name = label, enableRandomWrite = true, useMipMap = false, autoGenerateMips = false,
                 filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave
@@ -214,8 +223,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             if (current != null) { current.Release(); DisposeObject(current); }
             if (scratch != null) { scratch.Release(); DisposeObject(scratch); }
+            if (recoveryDelay != null) { recoveryDelay.Release(); DisposeObject(recoveryDelay); }
+            if (recoveryDelayScratch != null) { recoveryDelayScratch.Release(); DisposeObject(recoveryDelayScratch); }
             if (painter != null) DisposeObject(painter);
             current = scratch = null;
+            recoveryDelay = recoveryDelayScratch = null;
             painter = null;
         }
         static void DisposeObject(Object value)
@@ -238,13 +250,18 @@ namespace MashBoxSDK.Maps.TerrainSystem
             painter.SetInt("_Resolution", allocatedResolution);
             painter.SetInts("_Scroll", scroll);
             painter.SetFloat("_Recovery", delta / Mathf.Max(0.05f, recoverySeconds));
+            painter.SetFloat("_DeltaTime", delta);
+            painter.SetFloat("_RecoveryDelaySeconds", Mathf.Max(0, recoveryDelaySeconds));
             LastUpdatedTexels = 0;
             if (clearRequested || scroll[0] != 0 || scroll[1] != 0)
             {
                 painter.SetTexture(scrollKernel, "_Source", current);
                 painter.SetTexture(scrollKernel, "_Map", scratch);
+                painter.SetTexture(scrollKernel, "_DelaySource", recoveryDelay);
+                painter.SetTexture(scrollKernel, "_DelayMap", recoveryDelayScratch);
                 painter.Dispatch(scrollKernel, (allocatedResolution + 7) / 8, (allocatedResolution + 7) / 8, 1);
                 var swap = current; current = scratch; scratch = swap;
+                swap = recoveryDelay; recoveryDelay = recoveryDelayScratch; recoveryDelayScratch = swap;
                 LastUpdatedTexels = (long)allocatedResolution * allocatedResolution;
             }
             else if (activeRect.width > 0 && activeRect.height > 0)
@@ -252,6 +269,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 // No scroll: recover only retained stamp bounds, in place, with one writer per texel.
                 SetDispatchRectangle(activeRect);
                 painter.SetTexture(recoverKernel, "_Map", current);
+                painter.SetTexture(recoverKernel, "_DelayMap", recoveryDelay);
                 painter.Dispatch(recoverKernel, (activeRect.width + 7) / 8, (activeRect.height + 7) / 8, 1);
                 LastUpdatedTexels = (long)activeRect.width * activeRect.height;
             }
@@ -259,6 +277,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             clearRequested = false;
             painter.SetVector("_MapWorld", new Vector4(minimum.x, minimum.y, texel, heightOrigin));
             painter.SetTexture(stampKernel, "_Map", current);
+            painter.SetTexture(stampKernel, "_DelayMap", recoveryDelay);
             LastStampCount = 0;
             foreach (var brush in MGGrassInteractor.Instances)
             {

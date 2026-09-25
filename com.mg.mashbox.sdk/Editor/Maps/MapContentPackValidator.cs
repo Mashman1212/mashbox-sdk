@@ -1247,6 +1247,29 @@ namespace MashBoxSDK.MapTools
             ValidateChallengeGroupScript<MBCollectLetter>("Collect Letters", scene, issues);
             ValidateDualSlaloms(scene, issues);
             ValidateFourCrossCourses(scene, issues);
+            ValidateTrickChallenges(scene, issues);
+        }
+
+        private static void ValidateTrickChallenges(Scene scene, List<MapValidationIssue> issues)
+        {
+            var challenges = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<MBTrickChallenge>(true)).ToList();
+            foreach (var duplicate in challenges.GroupBy(challenge => challenge.ChallengeId).Where(group => group.Count() > 1))
+                issues.Add(new MapValidationIssue(MapValidationSeverity.Error,
+                    "Spot/Line challenge IDs must be unique. Use 'New Identity for Duplicated Challenge' on: "
+                    + string.Join(", ", duplicate.Select(challenge => challenge.ChallengeName))));
+            foreach (var challenge in challenges)
+            {
+                foreach (string error in challenge.GetValidationErrors())
+                    issues.Add(new MapValidationIssue(MapValidationSeverity.Error, $"{challenge.ChallengeName}: {error}"));
+                if (challenge.GetComponent<MBChallengeBridge>() == null)
+                    issues.Add(new MapValidationIssue(MapValidationSeverity.Warning,
+                        $"{challenge.ChallengeName}: add a Challenge Bridge to receive trick/landing events and report map-task completion."));
+                foreach (var zone in challenge.Zones)
+                    if (zone != null && !zone.GetComponent<BoxCollider>().isTrigger)
+                        issues.Add(new MapValidationIssue(MapValidationSeverity.Error,
+                            $"{challenge.ChallengeName}: zone '{zone.name}' must use a trigger collider."));
+            }
         }
 
         private static void ValidateDualSlaloms(Scene scene, List<MapValidationIssue> issues)

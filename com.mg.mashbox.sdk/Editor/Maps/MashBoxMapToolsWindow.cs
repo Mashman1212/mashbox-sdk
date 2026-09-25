@@ -24,7 +24,7 @@ using UnityEngine.SceneManagement;
 
 namespace MashBoxSDK.MapTools
 {
-    public class MashBoxMapToolsWindow : EditorWindow
+    public partial class MashBoxMapToolsWindow : EditorWindow
     {
         private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
         private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector, Mesh }
@@ -97,6 +97,8 @@ namespace MashBoxSDK.MapTools
         private readonly List<MBSecretGap> cachedSecretGaps = new();
         private readonly List<MBSideHit> cachedSideHits = new();
         private readonly List<MBExpertLine> cachedExpertLines = new();
+        private readonly List<MBSpotChallenge> cachedSpotChallenges = new();
+        private readonly List<MBLineChallenge> cachedLineChallenges = new();
         private readonly List<MBCollectible> cachedCollectibles = new();
         private readonly List<MBCollectLetter> cachedLetters = new();
         private readonly Dictionary<string, bool> challengeItemFoldouts = new();
@@ -475,6 +477,8 @@ namespace MashBoxSDK.MapTools
             cachedSecretGaps.Clear();
             cachedSideHits.Clear();
             cachedExpertLines.Clear();
+            cachedSpotChallenges.Clear();
+            cachedLineChallenges.Clear();
             cachedCollectibles.Clear();
             cachedLetters.Clear();
 
@@ -538,6 +542,8 @@ namespace MashBoxSDK.MapTools
             cachedExpertLines.AddRange(Resources.FindObjectsOfTypeAll<MBExpertLine>()
                 .Where(line => line != null && line.gameObject.scene == activeScene)
                 .OrderBy(line => line.transform.GetSiblingIndex()));
+            cachedSpotChallenges.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBSpotChallenge>(true)));
+            cachedLineChallenges.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBLineChallenge>(true)));
             cachedCollectibles.AddRange(Resources.FindObjectsOfTypeAll<MBCollectible>()
                 .Where(collectible => collectible != null && collectible.gameObject.scene == activeScene)
                 .OrderBy(collectible => collectible.transform.GetSiblingIndex()));
@@ -1514,6 +1520,8 @@ namespace MashBoxSDK.MapTools
                 DrawChallengeTypeSection("SecretGaps", "Secret Gaps", cachedSecretGaps.Count, DrawSecretGapsSection);
                 DrawChallengeTypeSection("SideHits", "Side Hits", cachedSideHits.Count, DrawSideHitsSection);
                 DrawChallengeTypeSection("ExpertLines", "Expert Lines", cachedExpertLines.Count, DrawExpertLinesSection);
+                DrawChallengeTypeSection("SpotChallenges", "Spot Challenges", cachedSpotChallenges.Count, () => DrawTrickChallengesSection(false));
+                DrawChallengeTypeSection("LineChallenges", "Line Challenges", cachedLineChallenges.Count, () => DrawTrickChallengesSection(true));
                 DrawChallengeTypeSection("Collectibles", "Collectibles", cachedCollectibles.Count, DrawCollectiblesSection);
                 DrawChallengeTypeSection("BikeLetters", "B.I.K.E.S Letters", cachedLetters.Count, DrawBikeLettersSection);
             }
@@ -3799,7 +3807,8 @@ namespace MashBoxSDK.MapTools
             {
                 mapName = mapName,
                 categories = new List<ChallengeCategory>(),
-                    tasks = ExtractMapTaskData()
+                    tasks = ExtractMapTaskData(),
+                    trickChallenges = MBChallengeManifest.Extract(scene)
                 };
 
             foreach (Transform cat in challengesRoot.transform)
@@ -4735,7 +4744,8 @@ namespace MashBoxSDK.MapTools
                 {
                     mapName = string.IsNullOrWhiteSpace(pack.MapName) ? pack.PackName : pack.MapName,
                     categories = new List<ChallengeCategory>(),
-                    tasks = ExtractMapTaskData()
+                    tasks = ExtractMapTaskData(),
+                    trickChallenges = MBChallengeManifest.Extract(scene)
                 };
 
                 foreach (Transform category in challengesRoot.transform)
@@ -6765,7 +6775,7 @@ namespace MashBoxSDK.MapTools
         [System.Serializable] public class MapInfo { public int version; public string filename; public long size; }
         [System.Serializable] public class MapManifestWrapper { [System.NonSerialized] public Dictionary<string, MapInfo> maps; }
         [System.Serializable] public class VersionLog { [System.NonSerialized] public Dictionary<string, int> versions; }
-        [System.Serializable] public class ChallengeMapData { public string mapName; public List<ChallengeCategory> categories; public List<MapTaskData> tasks; }
+        [System.Serializable] public class ChallengeMapData { public string mapName; public List<ChallengeCategory> categories; public List<MapTaskData> tasks; public List<MBChallengeManifestEntry> trickChallenges; }
         [System.Serializable] public class ChallengeCategory { public string categoryName; public List<string> items; }
         [System.Serializable] public class MapTaskData { public string taskType; public string displayName; public string verb; public string preposition; public string adjective; public float targetValue; public int targetCount; }
     }

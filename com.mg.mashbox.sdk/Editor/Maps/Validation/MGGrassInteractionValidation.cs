@@ -124,9 +124,9 @@ namespace MashBoxSDK.MapTools
                 for (int i = 0; i < expected.Length; i++)
                     Check(Vector4.Distance(expected[i], regional[i]) < 0.002f, "Regional recovery matches full-map recovery.");
                 var bounds = new RectInt(10, 20, 8, 6);
-                Check(MGGrassInteractionMap.ShiftFootprint(bounds, 2, -3, 65) == new RectInt(8, 23, 8, 6), "Footprint follows texture scroll sign.");
+                Check(MGGrassInteractionMap.ShiftFootprint(bounds, 2, -3, 65).Equals(new RectInt(8, 23, 8, 6)), "Footprint follows texture scroll sign.");
                 Check(MGGrassInteractionMap.ShiftFootprint(bounds, 65, 0, 65).width == 0, "Teleport removes footprint.");
-                Check(MGGrassInteractionMap.UnionFootprint(bounds, new RectInt(30, 40, 2, 3)) == new RectInt(10, 20, 22, 23), "Multiple brushes retain both footprints.");
+                Check(MGGrassInteractionMap.UnionFootprint(bounds, new RectInt(30, 40, 2, 3)).Equals(new RectInt(10, 20, 22, 23)), "Multiple brushes retain both footprints.");
 
                 var origin = new Vector2(-32, -32);
                 var outside = MGGrassInteractionMap.BrushRectangle(new Vector3(-100, 0, 0), new Vector3(-90, 0, 0), 1, origin, 1, 64);

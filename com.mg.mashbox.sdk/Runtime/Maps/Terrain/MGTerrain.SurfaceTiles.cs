@@ -463,7 +463,19 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public void RefreshSurfaceCollidersFromMesh()
         {
             Mesh source = MeshFilter != null ? MeshFilter.sharedMesh : null;
-            if (source == null || !source.isReadable || m_SurfaceColliderChunks.Length == 0) return;
+            if (source == null || !source.isReadable) return;
+            // Keep the master bound to the current editable surface even while chunks
+            // own collision. Roads and sculpting can replace the MeshFilter's mesh.
+            if (MeshCollider != null)
+            {
+                MeshCollider.sharedMesh = null;
+                MeshCollider.sharedMesh = source;
+            }
+            if (m_SurfaceColliderChunks.Length == 0)
+            {
+                Physics.SyncTransforms();
+                return;
+            }
             CacheSurfaceColliderVertexMaps(source);
             if (m_SurfaceColliderVertexMaps.Length != m_SurfaceColliderChunks.Length || m_ColliderSourceVertexCount != source.vertexCount)
             {

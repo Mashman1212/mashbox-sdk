@@ -22,11 +22,15 @@ namespace MashBoxSDK.MapTools
         [MenuItem("GameObject/MashBox/MG Terrain World", false, 19)]
         static void CreateEmptyWorld(MenuCommand command)
         {
+#if !UNITY_6000_0_OR_NEWER
+            EditorUtility.DisplayDialog("MG Terrain World", "MG Terrain World requires Unity 6 or newer.", "OK");
+#else
             var go = new GameObject("MG Terrain World");
             GameObjectUtility.SetParentAndAlign(go, command.context as GameObject);
             Undo.RegisterCreatedObjectUndo(go, "Create MG Terrain World");
             Undo.AddComponent<MGTerrainWorld>(go);
             Selection.activeGameObject = go;
+#endif
         }
 
         static MGTerrain[] OwnedTiles(MGTerrainWorld world) => world.GetComponentsInChildren<MGTerrain>(true)
