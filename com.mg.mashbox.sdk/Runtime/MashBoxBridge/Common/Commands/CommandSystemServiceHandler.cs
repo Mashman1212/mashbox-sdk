@@ -95,7 +95,17 @@ namespace MashBoxBridge.Common.Commands
         }
         
         public static ICharacterData LocalCustomPlayerCharacterData => _localCustomPlayerCharacterData;
-        public static ICharacterManager LocalCharacterManager => _localCharacterManager;
+        public static ICharacterManager LocalCharacterManager
+        {
+            get
+            {
+                // Interface null checks do not detect destroyed Unity objects.
+                // Session changes can destroy the old rider before a replacement spawns.
+                if (_localCharacterManager is UnityEngine.Object owner && owner == null)
+                    _localCharacterManager = null;
+                return _localCharacterManager;
+            }
+        }
         
         private static ICharacterManager _localCharacterManager;
         public static void SetLocalCharacterManager(ICharacterManager characterManager)
