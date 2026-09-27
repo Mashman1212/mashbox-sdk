@@ -1,9 +1,12 @@
 using UnityEditor;
 using UnityEditor.EditorTools;
+using UnityEditor.SceneManagement;
 using UnityEditor.Splines;
 using UnityEngine;
 using UnityEngine.Splines;
+using Unity.Mathematics;
 using MashBoxSDK.MapTools;
+using UnitySpline = UnityEngine.Splines.Spline;
 
 namespace MashBoxSDK.Maps.Spline
 {
@@ -59,6 +62,7 @@ namespace MashBoxSDK.Maps.Spline
 
             m_SceneToolActive = true;
             Selection.selectionChanged += OnSelectionChanged;
+            SceneView.beforeSceneGui += OnBeforeSceneGui;
             SceneView.duringSceneGui += OnSceneGui;
             UseSplineFromSelection(activateMoveTool: true, selectOnlyThisSpline: true);
         }
@@ -76,6 +80,7 @@ namespace MashBoxSDK.Maps.Spline
             if (s_ActiveSceneToolOwner == this)
                 s_ActiveSceneToolOwner = null;
             Selection.selectionChanged -= OnSelectionChanged;
+            SceneView.beforeSceneGui -= OnBeforeSceneGui;
             SceneView.duringSceneGui -= OnSceneGui;
             EditorApplication.delayCall -= ActivateMoveTool;
             EditorApplication.delayCall -= ActivateKnotPlacementTool;
@@ -135,11 +140,6 @@ namespace MashBoxSDK.Maps.Spline
                 }
             }
 
-            EditorGUILayout.HelpBox(
-                "In the Scene view: D to draw points; W to move, E to rotate, R to scale. "
-                + "Shift-click to select multiple points. Delete or Backspace removes selected points.",
-                MessageType.None);
-
             EditorGUILayout.Space(8f);
             EditorGUILayout.LabelField("Spline Container", EditorStyles.boldLabel);
             if (m_ActiveSpline == null)
@@ -173,6 +173,20 @@ namespace MashBoxSDK.Maps.Spline
             Repaint();
         }
 
+        // Claim modifier clicks before Unity's spline tools can use them for
+        // their own knot selection or placement controls. Preview drawing stays
+        // in duringSceneGui, where Scene view Handles are ready to repaint.
+        void OnBeforeSceneGui(SceneView sceneView)
+        {
+            if (!m_SceneToolActive || !MBEditorToolState.ActiveEditing || MBEditorToolState.Mode != MBEditorAuthoringMode.Spline)
+                return;
+
+            Event current = Event.current;
+            if (current.type == EventType.MouseDown && current.button == 0
+                && current.shift != current.control)
+                HandleKnotPlacement(sceneView, current, earlyClick: true);
+        }
+
         // Single-spline editing should select visible spline curves, not the mesh
         // collider behind them. Unity's default scene selection only knows about
         // renderers and colliders, so provide a spline-first pick control here.
@@ -182,11 +196,14 @@ namespace MashBoxSDK.Maps.Spline
                 return;
 
             Event current = Event.current;
-            DrawSceneControls();
             HandleShortcuts(current);
+            if (!MBEditorToolState.ActiveEditing || current.type == EventType.Used)
+                return;
+            if (HandleKnotPlacement(sceneView, current, earlyClick: false))
+                return;
             // Drawing owns clicks on both empty space and existing curves.
             // Never let our container picker steal a knot placement click.
-            if (IsDrawing || current.alt || current.button != 0)
+            if (IsDrawing || current.alt || current.shift || current.control || current.command || current.button != 0)
                 return;
 
             int controlId = GUIUtility.GetControlID(FocusType.Passive);
@@ -197,8 +214,7 @@ namespace MashBoxSDK.Maps.Spline
             }
 
             if (current.type != EventType.MouseDown || GUIUtility.hotControl != 0
-                || HandleUtility.nearestControl != controlId
-                || current.shift || current.control || current.command)
+                || HandleUtility.nearestControl != controlId)
                 return;
 
             if (!TryFindSplineAtMouse(current.mousePosition, out SplineContainer spline))
@@ -210,34 +226,211 @@ namespace MashBoxSDK.Maps.Spline
             current.Use();
         }
 
-        void DrawSceneControls()
+        bool HandleKnotPlacement(SceneView view, Event current, bool earlyClick)
         {
-            Handles.BeginGUI();
-            GUILayout.BeginArea(new Rect(12f, 12f, 440f, 88f), GUI.skin.box);
-            GUILayout.Label("Single Spline", EditorStyles.boldLabel);
-            using (new EditorGUI.DisabledScope(m_ActiveSpline == null))
-            using (new EditorGUILayout.HorizontalScope())
+            if (m_ActiveSpline == null || current.alt || current.command)
+                return false;
+
+            // Leave Ctrl+Shift to Unity's surface snapping.
+            bool inserting = current.control && !current.shift;
+            bool extending = current.shift && !current.control;
+            if (!inserting && !extending)
+                return false;
+
+            view.wantsMouseMove = true;
+            if (current.type == EventType.MouseMove || current.type == EventType.KeyDown || current.type == EventType.KeyUp)
+                view.Repaint();
+
+            if (!earlyClick)
             {
-                if (GUILayout.Toggle(IsDrawing, "Draw (D)", EditorStyles.miniButtonLeft) && !IsDrawing)
-                    QueueKnotPlacementTool();
-                DrawManipulationButton("Move (W)", Tool.Move, typeof(SplineMoveTool));
-                DrawManipulationButton("Rotate (E)", Tool.Rotate, typeof(SplineRotateTool));
-                DrawManipulationButton("Scale (R)", Tool.Scale, typeof(SplineScaleTool));
+                int controlId = GUIUtility.GetControlID(FocusType.Passive);
+                if (current.type == EventType.Layout)
+                    HandleUtility.AddDefaultControl(controlId);
             }
-            GUILayout.Label(m_ActiveSpline == null
-                ? "Select a spline curve or create a new spline."
-                : IsDrawing
-                    ? "Click to add points. Click an endpoint to extend. W: edit points."
-                    : "Click points to edit. Shift: multi-select. Delete: remove points.", EditorStyles.miniLabel);
-            GUILayout.EndArea();
-            Handles.EndGUI();
+
+            if (GUIUtility.hotControl != 0 || (!earlyClick && EditorWindow.mouseOverWindow != view))
+                return false;
+
+            // Unity's knot handles can be the nearest control even while our
+            // placement preview is visible. The modifier and Scene view check
+            // above reserve this click for Mappy instead.
+            bool click = current.type == EventType.MouseDown && current.button == 0;
+            UnitySpline editedSpline;
+            int editedKnot;
+            if (inserting)
+            {
+                if (!TryFindInsertion(current.mousePosition, out UnitySpline spline, out int curve, out float t, out Vector3 position))
+                    return false;
+
+                if (current.type == EventType.Repaint)
+                    DrawPlacementMarker(position, "Ctrl-click: insert knot", Color.yellow);
+                if (!click)
+                    return false;
+
+                Undo.RecordObject(m_ActiveSpline, "Insert Spline Knot");
+                InsertKnot(spline, curve, t);
+                editedSpline = spline;
+                editedKnot = curve + 1;
+            }
+            else
+            {
+                Ray ray = HandleUtility.GUIPointToWorldRay(current.mousePosition);
+                if (!TryPlacement(ray, out Vector3 position))
+                    return false;
+                UnitySpline spline = FindNearestEndpointSpline(position, out bool prepend);
+                if (spline == null)
+                    return false;
+
+                if (current.type == EventType.Repaint)
+                    DrawPlacementMarker(position, spline.Count == 0 ? "Shift-click: first knot"
+                        : prepend ? "Shift-click: extend START" : "Shift-click: extend END", Color.cyan);
+                if (!click)
+                    return false;
+
+                Undo.RecordObject(m_ActiveSpline, prepend ? "Extend Spline Start" : "Extend Spline End");
+                var knot = new BezierKnot((float3)m_ActiveSpline.transform.InverseTransformPoint(position));
+                if (prepend)
+                    spline.Insert(0, knot, TangentMode.AutoSmooth);
+                else
+                    spline.Add(knot, TangentMode.AutoSmooth);
+                editedSpline = spline;
+                editedKnot = prepend ? 0 : spline.Count - 1;
+            }
+
+            for (int i = 0; i < m_ActiveSpline.Splines.Count; i++)
+                if (m_ActiveSpline.Splines[i] == editedSpline)
+                {
+                    SplineSelection.Set(new SelectableKnot(new SplineInfo(m_ActiveSpline, i), editedKnot));
+                    break;
+                }
+            EditorUtility.SetDirty(m_ActiveSpline);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(m_ActiveSpline);
+            EditorSceneManager.MarkSceneDirty(m_ActiveSpline.gameObject.scene);
+            SceneView.RepaintAll();
+            current.Use();
+            return true;
         }
 
-        void DrawManipulationButton(string label, Tool tool, System.Type toolType)
+        bool TryPlacement(Ray ray, out Vector3 position)
         {
-            bool active = ToolManager.activeToolType == toolType;
-            if (GUILayout.Toggle(active, label, EditorStyles.miniButtonMid) && !active)
-                QueueManipulationTool(tool);
+            float nearest = float.PositiveInfinity;
+            position = default;
+            foreach (RaycastHit hit in Physics.RaycastAll(ray, 100000f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.collider.transform.IsChildOf(m_ActiveSpline.transform) || hit.distance >= nearest)
+                    continue;
+                nearest = hit.distance;
+                position = hit.point;
+            }
+            if (!float.IsPositiveInfinity(nearest))
+                return true;
+
+            float height = m_ActiveSpline.transform.position.y;
+            UnitySpline spline = m_ActiveSpline.Spline;
+            if (spline != null && spline.Count > 0)
+                height = m_ActiveSpline.transform.TransformPoint((Vector3)spline[spline.Count - 1].Position).y;
+            if (!new Plane(Vector3.up, new Vector3(0f, height, 0f)).Raycast(ray, out float distance))
+                return false;
+            position = ray.GetPoint(distance);
+            return true;
+        }
+
+        UnitySpline FindNearestEndpointSpline(Vector3 position, out bool prepend)
+        {
+            UnitySpline nearestSpline = null;
+            UnitySpline emptySpline = null;
+            float nearestDistance = float.PositiveInfinity;
+            prepend = false;
+            foreach (UnitySpline spline in m_ActiveSpline.Splines)
+            {
+                if (spline == null)
+                    continue;
+                if (spline.Count == 0)
+                {
+                    emptySpline ??= spline;
+                    continue;
+                }
+
+                Vector3 end = m_ActiveSpline.transform.TransformPoint((Vector3)spline[spline.Count - 1].Position);
+                float endDistance = (position - end).sqrMagnitude;
+                if (endDistance < nearestDistance)
+                {
+                    nearestDistance = endDistance;
+                    nearestSpline = spline;
+                    prepend = false;
+                }
+                if (spline.Closed || spline.Count < 2)
+                    continue;
+                Vector3 start = m_ActiveSpline.transform.TransformPoint((Vector3)spline[0].Position);
+                float startDistance = (position - start).sqrMagnitude;
+                if (startDistance < nearestDistance)
+                {
+                    nearestDistance = startDistance;
+                    nearestSpline = spline;
+                    prepend = true;
+                }
+            }
+            return nearestSpline ?? emptySpline;
+        }
+
+        bool TryFindInsertion(Vector2 mouse, out UnitySpline nearestSpline, out int nearestCurve, out float nearestT, out Vector3 nearestPosition)
+        {
+            nearestSpline = null;
+            nearestCurve = -1;
+            nearestT = 0f;
+            nearestPosition = default;
+            float nearestDistance = 30f * 30f;
+            foreach (UnitySpline spline in m_ActiveSpline.Splines)
+            {
+                if (spline == null || spline.Count < 2)
+                    continue;
+                int curves = spline.Closed ? spline.Count : spline.Count - 1;
+                for (int curve = 0; curve < curves; curve++)
+                {
+                    var bezier = spline.GetCurve(curve);
+                    for (int sample = 1; sample < 64; sample++)
+                    {
+                        float t = sample / 64f;
+                        Vector3 position = m_ActiveSpline.transform.TransformPoint((Vector3)CurveUtility.EvaluatePosition(bezier, t));
+                        float distance = (HandleUtility.WorldToGUIPoint(position) - mouse).sqrMagnitude;
+                        if (distance >= nearestDistance)
+                            continue;
+                        nearestDistance = distance;
+                        nearestSpline = spline;
+                        nearestCurve = curve;
+                        nearestT = t;
+                        nearestPosition = position;
+                    }
+                }
+            }
+            return nearestSpline != null;
+        }
+
+        static void InsertKnot(UnitySpline spline, int curve, float t)
+        {
+            CurveUtility.Split(spline.GetCurve(curve), t, out var left, out var right);
+            int next = (curve + 1) % spline.Count;
+            var start = spline[curve];
+            var end = spline[next];
+            quaternion rotation = math.slerp(start.Rotation, end.Rotation, t);
+            spline.SetTangentMode(curve, TangentMode.Broken);
+            spline.SetTangentMode(next, TangentMode.Broken);
+            start.TangentOut = math.rotate(math.inverse(start.Rotation), left.P1 - left.P0);
+            end.TangentIn = math.rotate(math.inverse(end.Rotation), right.P2 - right.P3);
+            spline[curve] = start;
+            spline[next] = end;
+            spline.Insert(curve + 1, new BezierKnot(left.P3,
+                math.rotate(math.inverse(rotation), left.P2 - left.P3),
+                math.rotate(math.inverse(rotation), right.P1 - right.P0), rotation), TangentMode.Broken);
+        }
+
+        static void DrawPlacementMarker(Vector3 position, string label, Color color)
+        {
+            using (new Handles.DrawingScope(color))
+            {
+                Handles.DrawWireDisc(position, Vector3.up, HandleUtility.GetHandleSize(position) * .08f);
+                Handles.Label(position, label);
+            }
         }
 
         void HandleShortcuts(Event current)
@@ -253,6 +446,7 @@ namespace MashBoxSDK.Maps.Spline
                 case KeyCode.W: QueueManipulationTool(Tool.Move); break;
                 case KeyCode.E: QueueManipulationTool(Tool.Rotate); break;
                 case KeyCode.R: QueueManipulationTool(Tool.Scale); break;
+                case KeyCode.Escape: MBEditorToolState.ActiveEditing = false; break;
                 default: return;
             }
             current.Use();

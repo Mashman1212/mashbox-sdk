@@ -554,10 +554,7 @@ namespace MashBoxSDK.MapTools
                     && MBEditorToolState.SculptMode == MBSculptMode.SetHeight
                         ? DisplayStyle.Flex : DisplayStyle.None;
                 toolsRow.style.display = editingDisplay;
-                controlsSection.style.display = MBEditorToolState.ActiveEditing
-                    && MBEditorToolState.Mode != MBEditorAuthoringMode.Spline
-                        ? DisplayStyle.Flex
-                        : DisplayStyle.None;
+                controlsSection.style.display = editingDisplay;
                 colorRow.style.display = MBEditorToolState.ActiveEditing
                     && MBEditorToolState.Mode == MBEditorAuthoringMode.Brush
                     && (MBEditorToolState.BrushMode == MBBrushMode.Painter
@@ -2123,8 +2120,21 @@ namespace MashBoxSDK.MapTools
                     AddShortcut("d_ViewToolOrbit", "Navigate", "Alt + Drag");
                     break;
                 case MBEditorAuthoringMode.SplineLoft:
-                case MBEditorAuthoringMode.Spline:
                     AddShortcut("TreeEditor.Trash", "Remove Knots", "Delete / Backspace");
+                    break;
+                case MBEditorAuthoringMode.Spline:
+                    AddShortcut("MashBox.SplineEdit", "Select Knot", "Click point");
+                    AddShortcut("MashBox.NewSpline", "Extend Nearest End", "Shift + Click");
+                    AddShortcut("MashBox.SplineEdit", "Insert Knot", "Ctrl + Click");
+                    AddShortcut("MashBox.NewSpline", "Draw Knots", "D");
+                    AddShortcut("d_MoveTool", "Move Knot", "W");
+                    AddShortcut("d_RotateTool", "Rotate Knot", "E");
+                    AddShortcut("d_ScaleTool", "Scale Knot", "R");
+                    AddShortcut("d_ToolHandlePivot", "Snap to Ground", "Ctrl + Shift");
+                    AddShortcut("d_SceneViewFx", "Focus Knot", "F");
+                    AddShortcut("TreeEditor.Trash", "Remove Knots", "Delete / Backspace");
+                    AddShortcut("MashBox.SplineEdit", "Stop Editing", "Escape");
+                    AddShortcut("d_ViewToolOrbit", "Navigate", "Alt + Drag");
                     break;
                 case MBEditorAuthoringMode.MeshSculpt:
                     bool seamFit = MBEditorToolState.SculptMode == MBSculptMode.SeamFit;

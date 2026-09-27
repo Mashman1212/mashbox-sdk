@@ -92,6 +92,7 @@ namespace MashBoxSDK.MapTools
         private readonly List<GameObject> cachedFlyCameraObjects = new();
         private readonly List<MBPhotoSpot> cachedPhotoSpots = new();
         private readonly List<MBRace> cachedRaces = new();
+        private readonly List<MBTrailSpline> cachedTrails = new();
         private readonly List<MBDualSlalom> cachedDualSlaloms = new();
         private readonly List<MBFourCross> cachedFourCrossCourses = new();
         private readonly List<MBSecretGap> cachedSecretGaps = new();
@@ -472,6 +473,7 @@ namespace MashBoxSDK.MapTools
             cachedFlyCameraObjects.Clear();
             cachedPhotoSpots.Clear();
             cachedRaces.Clear();
+            cachedTrails.Clear();
             cachedDualSlaloms.Clear();
             cachedFourCrossCourses.Clear();
             cachedSecretGaps.Clear();
@@ -527,6 +529,9 @@ namespace MashBoxSDK.MapTools
                                race.GetComponent<MBDualSlalomLane>() == null &&
                                race.GetComponent<MBFourCross>() == null)
                 .OrderBy(race => race.transform.GetSiblingIndex()));
+            cachedTrails.AddRange(Resources.FindObjectsOfTypeAll<MBTrailSpline>()
+                .Where(trail => trail != null && trail.gameObject.scene == activeScene)
+                .OrderBy(trail => trail.transform.GetSiblingIndex()));
             cachedDualSlaloms.AddRange(Resources.FindObjectsOfTypeAll<MBDualSlalom>()
                 .Where(slalom => slalom != null && slalom.gameObject.scene == activeScene)
                 .OrderBy(slalom => slalom.transform.GetSiblingIndex()));
@@ -705,6 +710,8 @@ namespace MashBoxSDK.MapTools
                 DrawMapBoundarySection();
                 GUILayout.Space(10f);
                 DrawChallengesSection();
+                GUILayout.Space(10f);
+                DrawTrailNetworkSection();
                 GUILayout.Space(10f);
                 DrawMapTasksSection();
             }
