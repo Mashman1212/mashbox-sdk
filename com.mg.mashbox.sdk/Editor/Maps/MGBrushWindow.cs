@@ -3676,12 +3676,14 @@ namespace MashBoxSDK.MapTools
             int textureHeight = splatMapTexture.height;
             float radius = Mathf.Max(0.0001f, brushRadius);
             int uvChannel = (int)splatUVChannel;
+            bool hasWorldFootprintMapping = false;
             for (int colliderIndex = 0; colliderIndex < colliders.Count; colliderIndex++)
             {
                 MeshCollider collider = colliders[colliderIndex];
                 if (!TryGetSplatMeshData(collider, uvChannel, out SplatMeshData meshData))
                     continue;
 
+                hasWorldFootprintMapping = true;
                 List<Vector4> uvs = meshData.uvs;
                 Vector3[] vertices = meshData.GetVertices();
                 int[] triangles = meshData.triangles;
@@ -3747,7 +3749,13 @@ namespace MashBoxSDK.MapTools
             }
 
             if (influences.Count == 0)
-                return false;
+            {
+                // A world-space dab can fall between texel centers, especially
+                // on low-resolution control maps or steep terrain. It is still
+                // handled: falling back to splatBrushPixels would change the
+                // brush size as the cursor moves between those centers.
+                return hasWorldFootprintMapping;
+            }
 
             DilateSplatInfluences(influences, textureWidth, textureHeight, 2);
 
