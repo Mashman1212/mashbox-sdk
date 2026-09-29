@@ -16,7 +16,7 @@ namespace MashBoxSDK.ContentTools.Editor
         static string ApiBase => ResolveApiBase();
 
         // Your backend base (set this once in your tool init, or via EditorPrefs).
-        static string ProxyBase => EditorPrefs.GetString("ModIo.ProxyBase", "https://YOUR_BACKEND/modio");
+        static string ProxyBase => EditorPrefs.GetString("ModIo.ProxyBase", "https://modio-proxy-cgf2e7hvc6fggsh6.centralus-01.azurewebsites.net/modio");
 
         // Per-game token/email storage (namespaced by api base).
         // SessionState forces a fresh mod.io login each Unity editor session,

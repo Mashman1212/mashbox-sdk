@@ -3540,10 +3540,10 @@ namespace MashBoxSDK.MapTools
 
             int textureWidth = splatMapTexture.width;
             int textureHeight = splatMapTexture.height;
-            float radiusPixelsX = Mathf.Max(1f, brushRadius / worldWidth * (textureWidth - 1));
-            float radiusPixelsY = Mathf.Max(1f, brushRadius / worldDepth * (textureHeight - 1));
-            float centerX = uv.x * (textureWidth - 1);
-            float centerY = uv.y * (textureHeight - 1);
+            float radiusPixelsX = Mathf.Max(0.0001f, brushRadius / worldWidth * textureWidth);
+            float radiusPixelsY = Mathf.Max(0.0001f, brushRadius / worldDepth * textureHeight);
+            float centerX = uv.x * textureWidth;
+            float centerY = uv.y * textureHeight;
             int minX = Mathf.Max(0, Mathf.FloorToInt(centerX - radiusPixelsX));
             int minY = Mathf.Max(0, Mathf.FloorToInt(centerY - radiusPixelsY));
             int maxX = Mathf.Min(textureWidth - 1, Mathf.CeilToInt(centerX + radiusPixelsX));
@@ -3757,7 +3757,11 @@ namespace MashBoxSDK.MapTools
                 return hasWorldFootprintMapping;
             }
 
-            DilateSplatInfluences(influences, textureWidth, textureHeight, 2);
+            // Atlas padding is only needed for loft/micro-bump UV islands.
+            // Dilating terrain strokes grows even a one-texel dab to 5x5 texels
+            // (1.25 m on a 512 m tile with a 2048 control map).
+            if (loft != null || TryGetMeshMicroBumpGenerator(hit.collider, out _))
+                DilateSplatInfluences(influences, textureWidth, textureHeight, 2);
 
             int minX = textureWidth - 1;
             int minY = textureHeight - 1;
@@ -3951,9 +3955,9 @@ namespace MashBoxSDK.MapTools
             int textureHeight,
             Dictionary<int, float> influences)
         {
-            Vector2 pixelA = new Vector2(uvA.x * (textureWidth - 1), uvA.y * (textureHeight - 1));
-            Vector2 pixelB = new Vector2(uvB.x * (textureWidth - 1), uvB.y * (textureHeight - 1));
-            Vector2 pixelC = new Vector2(uvC.x * (textureWidth - 1), uvC.y * (textureHeight - 1));
+            Vector2 pixelA = new Vector2(uvA.x * textureWidth, uvA.y * textureHeight);
+            Vector2 pixelB = new Vector2(uvB.x * textureWidth, uvB.y * textureHeight);
+            Vector2 pixelC = new Vector2(uvC.x * textureWidth, uvC.y * textureHeight);
             int minX = Mathf.Clamp(
                 Mathf.FloorToInt(Mathf.Min(pixelA.x, pixelB.x, pixelC.x)),
                 0,

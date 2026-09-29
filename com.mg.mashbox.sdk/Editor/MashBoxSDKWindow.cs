@@ -14,7 +14,8 @@ namespace MashBoxSDK.SDKMain
         {
             Setup,
             ContentTools,
-            MapTools
+            MapTools,
+            CreatorAccount
         }
 
         private enum ContentToolTab
@@ -26,6 +27,7 @@ namespace MashBoxSDK.SDKMain
             MachEquipManager
         }
 
+        private CreatorAccountPanel creatorAccountPanel;
         private int _tab;
         private int _contentToolTab;
         private ContentPackBuilderWindow contentBuilderTool;
@@ -91,6 +93,7 @@ namespace MashBoxSDK.SDKMain
                 case 0: DrawSetupTab(); break;
                 case 1: DrawContentToolsTab(); break;
                 case 2: DrawMapTab(); break;
+                case 3: (creatorAccountPanel ?? (creatorAccountPanel = new CreatorAccountPanel(Repaint))).Draw(); break;
             }
         }
 
@@ -112,6 +115,8 @@ namespace MashBoxSDK.SDKMain
         private void OnDisable()
         {
             MBEditorToolState.ModeChanged -= ShowSelectedEditorMode;
+            creatorAccountPanel?.Dispose();
+            creatorAccountPanel = null;
             DestroyTool(ref setupTool);
             DestroyTool(ref contentBuilderTool);
             DestroyTool(ref mapExporterTool);
@@ -214,7 +219,8 @@ namespace MashBoxSDK.SDKMain
             {
                 "Setup",
                 "Content Tools",
-                "Map Tools"
+                "Map Tools",
+                "Creator Account"
             }, MashBoxTabDrawer.TabVisualStyle.Primary, new[]
             {
 #if UNITY_EDITOR
@@ -222,6 +228,7 @@ namespace MashBoxSDK.SDKMain
 #else
                 MashBoxSDKState.UpdateAvailable,
 #endif
+                false,
                 false,
                 false
             });
