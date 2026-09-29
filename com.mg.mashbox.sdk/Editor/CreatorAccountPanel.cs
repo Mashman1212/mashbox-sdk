@@ -176,13 +176,11 @@ namespace MashBoxSDK.SDKMain
             }
             if (account != null)
             {
-                string visibility = account.flags.disabled ? "Your account is suspended. Saved artwork is still available to inspect."
-                    : !account.flags.partner ? "Partnership unlocks featured page customization. Your account identity and saved artwork remain available here."
-                    : !account.profile.published ? "Your page is a draft. Saved artwork is visible here."
-                    : !account.flags.featured ? "Your artwork is saved independently of approval. Your page becomes public when Mash enables featured placement."
-                    : "Your saved page is published in the community directory.";
-                EditorGUILayout.HelpBox(visibility, MessageType.Info);
+                EditorGUILayout.LabelField("Saved page status", PageStatus(account));
+                EditorGUILayout.HelpBox(PageGuidance(account), account.flags.partner && !account.profile.published ? MessageType.Warning : MessageType.Info);
             }
+            GUILayout.Label("Artwork requirements", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Logo: 512 x 512 pixels (square)\nWordmark: 1536 x 512 pixels (3:1)\nBanner: 2560 x 1440 pixels (16:9 QHD)\nStatic PNG or JPEG, up to 8 MiB. Dimensions must match exactly. Use PNG to preserve transparency. Wordmark and banner uploads require partner access.", MessageType.Info);
             DrawPartnership();
             using (new EditorGUI.DisabledScope(account != null && account.flags.disabled))
             {
@@ -206,16 +204,39 @@ namespace MashBoxSDK.SDKMain
                 draft.accentColor = ColorField("Accent color", draft.accentColor);
                 draft.backgroundColor = ColorField("Background color", draft.backgroundColor);
                 draft.backgroundStyle = EditorGUILayout.Popup("Background", draft.backgroundStyle == "image" ? 1 : 0, new[] { "Solid", "Banner image" }) == 1 ? "image" : "solid";
-                draft.published = EditorGUILayout.Toggle("Publish when featured", draft.published);
+                draft.published = EditorGUILayout.Toggle("Publish page", draft.published);
+                EditorGUILayout.HelpBox("Enable Publish page and click Save profile to publish. Uploading artwork alone does not publish your page.", MessageType.None);
+                if (draft.published != account.profile.published)
+                    EditorGUILayout.HelpBox("Publishing change not saved. Click Save profile to apply it.", MessageType.Warning);
                 }
                 if (GUILayout.Button(registration ? "Create Mash creator account" : "Save profile")) Run(SaveProfile);
                 if (!registration)
                 {
-                    EditorGUILayout.HelpBox("Upload an account logo. Partners can also upload a wordmark and banner for their featured page. Static PNG/JPEG, up to 4 MiB, 4096 pixels per side and 8 megapixels. The service optimizes artwork to 2048 pixels.", MessageType.None);
+                    EditorGUILayout.HelpBox("Upload an account logo. Partners can also upload a wordmark and banner for their featured page. Exact sizes: logo 512 x 512; wordmark 1536 x 512 (3:1); banner 2560 x 1440 (16:9). Static PNG/JPEG, up to 8 MiB. Use transparent PNG for logos and wordmarks.", MessageType.None);
                     foreach (string slot in Slots) DrawArtwork(slot);
                     if (GUILayout.Button("Reload saved profile")) Run(LoadAccount);
                 }
             }
+        }
+
+        static string PageStatus(Account item)
+        {
+            if (item.flags.disabled) return "Hidden - account suspended";
+            if (!item.flags.partner) return "Unavailable - partnership required";
+            if (!item.profile.published) return "Approved partner, but still a draft";
+            if (!item.flags.featured) return "Published by creator - awaiting featured placement";
+            return "Live in the community directory";
+        }
+
+        static string PageGuidance(Account item, bool owner = false)
+        {
+            if (item.flags.disabled) return "Suspended accounts are hidden from the directory. Saved artwork is retained.";
+            if (!item.flags.partner) return "Partnership approval is required before this account can publish a featured page.";
+            if (!item.profile.published)
+                return owner ? "This creator has not published their page. They must reload their Creator Account, enable Publish page, then click Save profile. Approving partnership or uploading artwork does not publish it."
+                    : "Your partnership is approved, but your page is not public. Enable Publish page below, then click Save profile. Uploading artwork does not publish the page.";
+            if (!item.flags.featured) return "The creator has published their page. Mash must enable Featured community page and save permissions before it appears in the directory.";
+            return "This page is public. The game's creator directory can take up to five minutes to refresh.";
         }
 
         void DrawPartnership()
@@ -239,23 +260,29 @@ namespace MashBoxSDK.SDKMain
         void DrawArtwork(string slot)
         {
             string path = "creator-account/assets/" + slot;
+            Vector2Int required = ArtworkSize(slot);
             bool uploaded = !string.IsNullOrEmpty(account?.assets?.Get(slot));
-            if (!uploaded && slot != "logo" && !account.flags.partner) return;
+
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.BeginHorizontal();
             GUILayout.Label(char.ToUpperInvariant(slot[0]) + slot.Substring(1), EditorStyles.boldLabel, GUILayout.Width(90));
-            GUILayout.Label(uploaded ? "Uploaded � saved to your account" : "No artwork uploaded", EditorStyles.miniLabel);
+            GUILayout.Label(uploaded ? "Uploaded - saved to your account" : "No artwork uploaded", EditorStyles.miniLabel);
             EditorGUILayout.EndHorizontal();
+            GUILayout.Label("Required: " + required.x + " x " + required.y + " pixels", EditorStyles.boldLabel);
+            if (slot != "logo" && !account.flags.partner)
+                GUILayout.Label("Partner access required to upload this artwork.", EditorStyles.wordWrappedLabel);
             if (uploaded)
             {
                 if (previews.TryGetValue(path, out Texture2D image) && image != null)
                 {
+                    if (image.width != required.x || image.height != required.y)
+                        EditorGUILayout.HelpBox("Previously uploaded artwork has a legacy size. Replace it with the required dimensions.", MessageType.Warning);
                     DrawPreview(path);
-                    GUILayout.Label(image.width + " � " + image.height + " pixels", EditorStyles.miniLabel);
+                    GUILayout.Label(image.width + " x " + image.height + " pixels", EditorStyles.miniLabel);
                 }
                 else if (previewErrors.TryGetValue(path, out string error))
                     EditorGUILayout.HelpBox("Upload is saved, but the preview could not load. " + error, MessageType.Warning);
-                else GUILayout.Label("Loading saved artwork�", EditorStyles.miniLabel);
+                else GUILayout.Label("Loading saved artwork...", EditorStyles.miniLabel);
             }
             EditorGUILayout.BeginHorizontal();
             bool canEdit = slot == "logo" || account.flags.partner;
@@ -299,10 +326,12 @@ namespace MashBoxSDK.SDKMain
         void DrawOwnerAccount(Account item)
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Label(item.profile.displayName + " — " + item.id, EditorStyles.boldLabel);
+            GUILayout.Label(item.profile.displayName + " - " + item.id, EditorStyles.boldLabel);
             EditorGUILayout.LabelField("mod.io", item.modioUsername + " (#" + item.modioUserId + ")");
             GUILayout.Label(item.profile.description, EditorStyles.wordWrappedLabel);
-            EditorGUILayout.LabelField("Type / publishing", string.Join(", ", item.profile.kinds ?? new[] { item.profile.kind }) + " / " + (item.profile.published ? "ready to publish" : "draft"));
+            EditorGUILayout.LabelField("Account types", string.Join(", ", item.profile.kinds ?? new[] { item.profile.kind }));
+            EditorGUILayout.LabelField("Page status", PageStatus(item));
+            EditorGUILayout.HelpBox(PageGuidance(item, true), item.flags.partner && !item.profile.published ? MessageType.Warning : MessageType.Info);
             item.flags.partner = EditorGUILayout.Toggle("Partner access", item.flags.partner);
             if (!item.flags.partner) item.flags.featured = false;
             using (new EditorGUI.DisabledScope(!item.flags.partner))
@@ -373,10 +402,13 @@ namespace MashBoxSDK.SDKMain
         void SetAccount(string json)
         {
             account = JsonUtility.FromJson<Account>(json);
-            draft = account.profile;
+            draft = JsonUtility.FromJson<Profile>(JsonUtility.ToJson(account.profile));
             if (draft.kinds == null || draft.kinds.Length == 0) draft.kinds = new[] { draft.kind ?? "creator" };
             loaded = true; registration = false;
         }
+
+        static Vector2Int ArtworkSize(string slot) => slot == "logo" ? new Vector2Int(512, 512)
+            : slot == "wordmark" ? new Vector2Int(1536, 512) : new Vector2Int(2560, 1440);
 
         void Upload(string slot)
         {
@@ -384,8 +416,17 @@ namespace MashBoxSDK.SDKMain
             if (string.IsNullOrEmpty(path)) return;
             Run(async () =>
             {
-                if (new FileInfo(path).Length > 4 * 1024 * 1024) throw new Exception("Artwork must be at most 4 MiB.");
+                if (new FileInfo(path).Length > 8 * 1024 * 1024) throw new Exception("Artwork must be at most 8 MiB.");
                 byte[] data = File.ReadAllBytes(path);
+                var check = new Texture2D(2, 2) { hideFlags = HideFlags.HideAndDontSave };
+                try
+                {
+                    if (!check.LoadImage(data)) throw new Exception("Use a valid PNG or JPEG image.");
+                    Vector2Int required = ArtworkSize(slot);
+                    if (check.width != required.x || check.height != required.y)
+                        throw new Exception(slot + " must be exactly " + required.x + " x " + required.y + " pixels. Selected image: " + check.width + " x " + check.height + ".");
+                }
+                finally { UnityEngine.Object.DestroyImmediate(check); }
                 // Preserve unsaved text/color edits when updating an independent artwork slot.
                 Profile edits = draft;
                 SetAccount(await Send("creator-account/assets/" + slot, "PUT", creatorSession, null, account.etag, data));
@@ -529,7 +570,7 @@ namespace MashBoxSDK.SDKMain
         async void Run(Func<Task> action)
         {
             if (busy || lifetime.IsCancellationRequested) return;
-            busy = true; status = "Working…";
+            busy = true; status = "Workingâ€¦";
             try { await action(); }
             catch (OperationCanceledException) { status = "Sign-in cancelled."; }
             catch (ApiException ex)
