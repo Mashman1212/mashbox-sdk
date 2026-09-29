@@ -81,7 +81,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             var owners = new List<GameObject>();
             foreach (MGTerrain terrain in s_PickableTerrains)
             {
-                if (terrain == null || !terrain.isActiveAndEnabled || !terrain.m_MasterRenderingSuppressed || (terrain.m_CombinedSurface && terrain.m_ActiveSurfaceLod < 0)
+                if (terrain == null || !terrain.isActiveAndEnabled || !terrain.m_MasterRenderingSuppressed || terrain.m_CombinedSurface
                     || terrain.m_MasterWasForceRenderingOff || terrain.MeshRenderer == null || !terrain.MeshRenderer.enabled)
                     continue;
                 GameObject owner = terrain.gameObject;
@@ -110,8 +110,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
         sealed class SurfaceTile
         {
             internal Mesh mesh;
-            internal MeshFilter filter;
-            internal bool isLodProxy;
             internal MeshRenderer renderer;
             internal int[] sourceIndices;
         }
@@ -138,16 +136,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
-        public int SurfaceTileCount => m_SurfaceTiles.Count - (m_SurfaceLodProxy != null ? 1 : 0);
+        public int SurfaceTileCount => m_SurfaceTiles.Count;
         public bool UsesSurfaceTiles => m_UseSurfaceTiles;
         public bool IsSurfaceRenderTile(MeshFilter filter) => filter != null && m_SurfaceTileRoot != null
             && filter.transform.parent == m_SurfaceTileRoot.transform;
 
         public int ActiveSurfaceRendererCount => MeshRenderer == null || !MeshRenderer.enabled
             || (m_MasterRenderingSuppressed ? m_MasterWasForceRenderingOff : MeshRenderer.forceRenderingOff)
-            ? 0 : m_CombinedSurface || m_SurfaceTiles.Count == 0 ? 1 : SurfaceTileCount;
+            ? 0 : m_CombinedSurface || m_SurfaceTiles.Count == 0 ? 1 : m_SurfaceTiles.Count;
 
-        void LateUpdate() { RefreshSurfaceTiles(); PumpSurfaceLods(); }
+        void LateUpdate() => RefreshSurfaceTiles();
 
         void PrepareSurfaceForCamera(Camera camera)
         {
@@ -158,29 +156,21 @@ namespace MashBoxSDK.Maps.TerrainSystem
             SelectSurfaceRendering(camera);
         }
 
-        // Select cached geometry before this camera's culling. Source data is never swapped.
+        // Select before this camera's culling; scene, game and reflection cameras
+        // may need different granularity. Neither path changes geometry or paint.
         void SelectSurfaceRendering(Camera camera)
         {
             if (camera == null || !m_MasterRenderingSuppressed || m_SurfaceTiles.Count == 0) return;
-            int lod = SelectSurfaceLod(camera);
             float distance = m_World != null ? m_World.SurfaceChunkDistance : Mathf.Max(0f, m_SurfaceChunkDistance);
-            bool combined = lod >= 0 || distance > 0f && MeshRenderer.bounds.SqrDistance(camera.transform.position) > distance * distance;
-            bool changed = combined != m_CombinedSurface || lod != m_ActiveSurfaceLod;
+            bool combined = distance > 0f && MeshRenderer.bounds.SqrDistance(camera.transform.position) > distance * distance;
+            if (combined == m_CombinedSurface) return;
             m_CombinedSurface = combined;
-            m_ActiveSurfaceLod = lod;
-            if (lod >= 0 && m_SurfaceLodProxy.mesh != m_SurfaceLods[lod].mesh)
-            {
-                m_SurfaceLodProxy.mesh = m_SurfaceLods[lod].mesh;
-                m_SurfaceLodProxy.filter.sharedMesh = m_SurfaceLodProxy.mesh;
-                m_HasSurfaceRendererState = false;
-            }
-            if (!combined || m_SurfaceLodProxy != null) SyncSurfaceTileRenderers(MeshRenderer);
-            MeshRenderer.forceRenderingOff = !combined || lod >= 0 || m_MasterWasForceRenderingOff;
-            if (!changed) return;
+            if (!combined) SyncSurfaceTileRenderers(MeshRenderer);
+            MeshRenderer.forceRenderingOff = !combined || m_MasterWasForceRenderingOff;
             foreach (SurfaceTile tile in m_SurfaceTiles)
-                if (tile.renderer != null) tile.renderer.forceRenderingOff = m_MasterWasForceRenderingOff
-                    || (tile.isLodProxy ? lod < 0 : combined);
+                if (tile.renderer != null) tile.renderer.forceRenderingOff = combined || m_MasterWasForceRenderingOff;
         }
+
         // The original MeshFilter stays the sole editable surface. These meshes are
         // disposable render caches, regenerated after reload and never painted directly.
         public void NotifySurfaceMeshChanged(bool topologyChanged = false)
@@ -228,7 +218,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_MasterWasForceRenderingOff = master.forceRenderingOff;
                 m_MasterRenderingSuppressed = true;
             }
-            master.forceRenderingOff = !m_CombinedSurface || m_ActiveSurfaceLod >= 0 || m_MasterWasForceRenderingOff;
+            master.forceRenderingOff = !m_CombinedSurface || m_MasterWasForceRenderingOff;
             if (!m_CombinedSurface) SyncSurfaceTileRenderers(master);
 #if UNITY_EDITOR
             m_SurfaceMeshDirtyCount = dirtyCount;
@@ -317,7 +307,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
         void UpdateSurfaceTileVertices(Mesh source)
         {
             using var profile = s_UpdateSurfaceTilesMarker.Auto();
-            ReleaseSurfaceLods();
             source.GetVertices(m_TileSourceVertices);
             source.GetNormals(m_TileSourceNormals);
             source.GetTangents(m_TileSourceTangents);
@@ -348,9 +337,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 tile.mesh.UploadMeshData(false);
             }
             m_SurfaceTilesDirty = false;
-#if UNITY_EDITOR
-            s_PendingEditorSurfaceLods.Add(this);
-#endif
             m_HasSurfaceRendererState = false;
         }
 
@@ -375,7 +361,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (material != null && material.HasProperty("_TessellationMaxDisplacement"))
                     padding = Mathf.Max(padding, Mathf.Abs(material.GetFloat("_TessellationMaxDisplacement")));
             int state = 17;
-            AddSurfaceState(ref state, m_CombinedSurface);
             AddSurfaceState(ref state, master.gameObject.layer);
             AddSurfaceState(ref state, master.enabled);
             AddSurfaceState(ref state, master.shadowCastingMode);
@@ -405,12 +390,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 padding / Mathf.Max(.0001f, Mathf.Abs(scale.y)), padding / Mathf.Max(.0001f, Mathf.Abs(scale.z)));
             foreach (SurfaceTile tile in m_SurfaceTiles)
             {
-                // Distant tiles only need their single proxy synchronized. A mode
-                // change invalidates the state hash and refreshes all near chunks.
-                if (m_CombinedSurface && !tile.isLodProxy) continue;
                 MeshRenderer renderer = tile.renderer;
                 if (renderer == null) continue;
-                if (materialsChanged || settingsChanged) renderer.SetSharedMaterials(m_SurfaceTileMaterials);
+                if (materialsChanged) renderer.SetSharedMaterials(m_SurfaceTileMaterials);
                 renderer.SetPropertyBlock(m_SurfaceTileProperties.isEmpty ? null : m_SurfaceTileProperties);
                 for (int i = 0; i < m_SurfaceTileMaterials.Count; i++)
                     renderer.SetPropertyBlock(hasPropertyBlocks && !m_SurfaceTileSubMeshProperties[i].isEmpty
@@ -418,7 +400,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (!settingsChanged) continue;
                 renderer.gameObject.layer = master.gameObject.layer;
                 renderer.enabled = master.enabled;
-                renderer.forceRenderingOff = m_MasterWasForceRenderingOff || (tile.isLodProxy ? m_ActiveSurfaceLod < 0 : m_CombinedSurface);
+                renderer.forceRenderingOff = m_CombinedSurface || m_MasterWasForceRenderingOff;
                 renderer.shadowCastingMode = master.shadowCastingMode;
                 renderer.receiveShadows = master.receiveShadows;
                 renderer.lightProbeUsage = master.lightProbeUsage;
@@ -551,7 +533,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ReleaseSurfaceTiles()
         {
-            ReleaseSurfaceLods();
             if (m_MasterRenderingSuppressed && m_MeshRenderer != null)
                 m_MeshRenderer.forceRenderingOff = m_MasterWasForceRenderingOff;
             m_MasterRenderingSuppressed = false;

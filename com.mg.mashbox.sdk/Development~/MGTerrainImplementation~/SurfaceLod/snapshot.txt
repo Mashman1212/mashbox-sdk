@@ -1,0 +1,24 @@
+Terrain Tile (-2, -2) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_-2_-2_Material morph=0
+Terrain Tile (1, 0) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_1_0_Material morph=1
+Terrain Tile (1, 1) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_1_1_Material morph=1
+Terrain Tile (-2, 0) source=16897 tris=33152 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_-2_0_Material morph=0
+Terrain Tile (0, 2) source=16897 tris=33152 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_0_2_Material morph=0
+Terrain Tile (2, -2) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_2_-2_Material morph=0
+Terrain Tile (0, 1) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_0_1_Material morph=1
+Terrain Tile (2, 2) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_2_2_Material morph=0
+Terrain Tile (0, 0) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_0_0_Material morph=1
+Terrain Tile (2, 0) source=16897 tris=33152 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_2_0_Material morph=0
+Terrain Tile (0, -2) source=16897 tris=33152 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_0_-2_Material morph=0
+Terrain Tile (-2, 2) source=16641 tris=32768 cached=0 active=0 lodTris=0
+ material=Terrain Word_Tile_-2_2_Material morph=0

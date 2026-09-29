@@ -15,6 +15,8 @@ namespace MashBoxSDK.MapTools
         MGTerrain m_EditChunk;
         Editor m_ChunkEditor;
         bool m_ShowChunk;
+        bool m_ShowSurfaceLodPreview = true;
+        double m_NextSurfaceLodRepaint;
 
         [MenuItem("GameObject/MashBox/MG Terrain World From Selected Chunks", false, 20)]
         static void CreateFromSelection()
@@ -122,6 +124,11 @@ namespace MashBoxSDK.MapTools
         }
         void DrawScene(SceneView view)
         {
+            if (m_Tab == WorldTab.Settings && EditorApplication.timeSinceStartup >= m_NextSurfaceLodRepaint)
+            {
+                m_NextSurfaceLodRepaint = EditorApplication.timeSinceStartup + .25;
+                Repaint();
+            }
             if (m_Tab == WorldTab.Tiles && DrawTilePlacement(view)) return;
             if ((m_Tab == WorldTab.Details || m_Tab == WorldTab.Tiles && m_ShowChunk) && m_ChunkEditor is MGTerrainEditor editor) editor.DrawWorldSceneGUI();
         }
@@ -156,7 +163,12 @@ namespace MashBoxSDK.MapTools
             DrawWorldCollision(world);
             EditorGUILayout.HelpBox("One renderer and overall detail budget. Child MG Terrain components retain their existing painted data and editing tools. Distant chunk detail resources are released automatically; surface meshes and colliders stay loaded.", MessageType.Info);
             DrawPropertiesExcluding(serializedObject, "m_Script", "m_Quality");
-            if (serializedObject.ApplyModifiedProperties()) world.ApplySharedQuality();
+            if (serializedObject.ApplyModifiedProperties())
+            {
+                world.ApplySharedQuality();
+                SceneView.RepaintAll();
+            }
+            DrawSurfaceLodPreview(world);
             DrawWorldQuality(world);
             DrawWorldFarRangeMaterials(world);
             EditorGUILayout.LabelField("Registered Chunks", world.Chunks.Count.ToString());
@@ -166,6 +178,34 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.LabelField("Submitted Details", world.LastSubmittedDetailInstances.ToString("N0"));
             EditorGUILayout.LabelField(new GUIContent("Enabled Surface Renderers", "For the last prepared camera, before frustum and occlusion culling."),
                 new GUIContent(world.Chunks.Sum(chunk => chunk != null ? chunk.ActiveSurfaceRendererCount : 0).ToString("N0")));
+        }
+
+        void DrawSurfaceLodPreview(MGTerrainWorld world)
+        {
+            m_ShowSurfaceLodPreview = EditorGUILayout.Foldout(m_ShowSurfaceLodPreview, "Surface LOD - Scene Camera", true);
+            if (!m_ShowSurfaceLodPreview) return;
+            var view = SceneView.lastActiveSceneView;
+            if (view == null || view.camera == null)
+            {
+                EditorGUILayout.HelpBox("Open a Scene view to inspect terrain LOD selection.", MessageType.Info);
+                return;
+            }
+            EditorGUILayout.HelpBox("Pixel error chooses among cached meshes; it does not force simplification. Start distance protects nearby tiles. Shader-deformed tiles retain their original mesh. Flat tiles can already be at the coarsest LOD for every pixel-error value. The terrain editing grid shows the original mesh.", MessageType.Info);
+            long original = 0, selected = 0;
+            foreach (var tile in world.Chunks)
+            {
+                if (tile == null || !tile.isActiveAndEnabled) continue;
+                string reason = tile.GetSurfaceLodPreview(view.camera, out int lod, out long source, out long triangles);
+                original += source; selected += triangles;
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    EditorGUILayout.LabelField(tile.name, lod == 0 ? "Original" : "LOD " + lod, EditorStyles.boldLabel);
+                    EditorGUILayout.LabelField(reason, EditorStyles.wordWrappedMiniLabel);
+                    EditorGUILayout.LabelField("Triangles", triangles.ToString("N0") + " / " + source.ToString("N0"));
+                }
+            }
+            EditorGUILayout.LabelField("Selected / original triangles", selected.ToString("N0") + " / " + original.ToString("N0"));
+            EditorGUILayout.LabelField("All registered active tiles, before frustum/occlusion culling. Game cameras select independently.", EditorStyles.wordWrappedMiniLabel);
         }
 
         void DrawTilesTab(MGTerrainWorld world)

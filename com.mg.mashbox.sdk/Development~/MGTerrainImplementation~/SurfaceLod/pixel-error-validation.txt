@@ -1,0 +1,11 @@
+PASS: flat-grid reduction, all LOD boundary edges identical, manifold topology, winding, immutable source.
+PASS: curved terrain adaptive protection and topology.
+PASS: hole perimeter remains exact at every LOD.
+PASS: material partition and mesh boundaries remain closed.
+PASS: arbitrary X/Z edits use original surface.
+PASS: isolated vertex paint feature retained.
+PASS: flat terrain correctly stays at coarsest LOD across the entire pixel-error slider.
+PASS: material changes propagate from distant proxy back to every near chunk.
+PASS: capture bypass and field-of-view changes respect the screen-space error limit.
+PASS: actual curved-grid LODs switch with pixel error; diagnostics agree without changing render state.
+PASS: distance selection, camera reuse, source/collider identity, close-up fidelity, shader morph guard, edit invalidation.

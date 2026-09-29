@@ -1,0 +1,63 @@
+GPU=NVIDIA GeForce RTX 5090
+Camera=(851.14, 956.16, 2251.41) rotation=(37.26, 221.13, 359.35)
+Terrain Word {"MonoBehaviour":{"m_Enabled":true,"m_EditorHideFlags":0,"m_Name":"","m_EditorClassIdentifier":"MashBoxSDK::MashBoxSDK.Maps.TerrainSystem.MGTerrainWorld","m_VisibleDetailBudget":100000,"m_DetailCellsBuiltPerFrame":8,"m_DetailMeshUploadsPerFrame":2,"m_MaxPendingDetailBuilds":8,"m_CachedDetailCells":5120,"m_DetailDistance":250.0,"m_UnloadMargin":64.0,"m_PreloadAllDetailCells":false,"m_SurfaceChunkDistance":256.0,"m_SurfaceLodEnabled":true,"m_SurfaceLodPixelError":1.5,"m_SurfaceLodMinDistance":256.0,"m_Quality":{"m_DrawInstances":true,"m_DrawInstancesInEditMode":true,"m_DetailChunkCells":10,"m_OverallDetailDensity":0.17499999701976777,"m_UseDetailDensityLod":true,"m_DensityTransitionWidth":10.0,"m_FullDetailDensityDistance":35.0,"m_MidDetailDensityDistance":100.0,"m_MidDetailDensity":0.5,"m_FarDetailDensity":0.1289999932050705,"m_DetailDensityLodHysteresis":8.0,"m_DistantDetailBudgetReserve":0.25,"m_UseBatchRendererGroup":true,"m_UseGpuProceduralDetailGeneration":true,"m_UseIndirectDetailDraws":false,"m_PrewarmFixedDetailCells":true,"m_DetailStreamingRefreshDistance":2.0,"m_DetailStreamingRefreshAngle":3.0,"m_CombineDenseDetailMeshes":true,"m_DenseDetailShadows":true,"m_MaxCombinedDetailVerticesPerChunk":600000,"m_MaxDetailVerticesPerUpload":131072},"m_QualityInitialized":true,"ColliderCellSize":50.0,"CaptureResolution":2048,"CaptureExposure":12.399999618530274,"CaptureSyncSceneExposure":false,"CaptureDetailTilt":0.0,"DistantMeshSpacing":2.0,"TileSize":512.0,"TileResolution":129,"TileMaterial":{"instanceID":0}}}
+Terrain Tile (-2, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (1, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (2, -2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (-2, -2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (2, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (0, 2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (0, 1) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (1, 1) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (-2, 2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (0, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (2, 2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (0, -2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (-2, 0) surfaceLOD=2 lodTriangles=3826 cachedLODs=2
+Terrain Tile (-2, 0) mesh=Terrain Word_Tile_-2_0_RoadTerrain grid=129x129 vertices=16897 bounds=Center: (512.00, 3.79, 512.00), Extents: (512.00, 3.79, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=130 Z=385
+Terrain Tile (1, 0) surfaceLOD=0 lodTriangles=0 cachedLODs=1
+Terrain Tile (1, 0) mesh=Terrain Word_Tile_1_0_Mesh grid=129x129 vertices=16641 bounds=Center: (256.00, 79.42, 256.00), Extents: (256.00, 79.42, 256.00)
+samples=(0.00, 23.27, 0.00);(4.00, 23.16, 0.00);(8.00, 23.01, 0.00);(12.00, 22.94, 0.00);(16.00, 0.00, 0.00);(20.00, 0.00, 0.00);(24.00, 0.00, 0.00);(28.00, 0.00, 0.00)
+unique X=129 Z=129
+Terrain Tile (2, -2) surfaceLOD=3 lodTriangles=736 cachedLODs=3
+Terrain Tile (2, -2) mesh=Terrain Word_Tile_2_-2_BeforeSculpt grid=129x129 vertices=16641 bounds=Center: (512.00, 0.00, 512.00), Extents: (512.00, 0.00, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=129 Z=129
+Terrain Tile (-2, -2) surfaceLOD=2 lodTriangles=3856 cachedLODs=2
+Terrain Tile (-2, -2) mesh=Terrain Word_Tile_-2_-2_RoadTerrain grid=129x129 vertices=16641 bounds=Center: (512.00, 15.29, 512.00), Extents: (512.00, 17.21, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=129 Z=129
+Terrain Tile (2, 0) surfaceLOD=2 lodTriangles=3826 cachedLODs=2
+Terrain Tile (2, 0) mesh=Terrain Word_Tile_2_0_BeforeSculpt 1 grid=129x129 vertices=16897 bounds=Center: (512.00, 4.79, 512.00), Extents: (512.00, 4.79, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=130 Z=385
+Terrain Tile (0, 2) surfaceLOD=0 lodTriangles=0 cachedLODs=2
+Terrain Tile (0, 2) mesh=Terrain Word_Tile_0_2_SculptedMesh grid=129x129 vertices=16897 bounds=Center: (512.00, 13.67, 512.00), Extents: (512.00, 13.67, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=385 Z=130
+Terrain Tile (0, 1) surfaceLOD=0 lodTriangles=0 cachedLODs=1
+Terrain Tile (0, 1) mesh=Terrain Word_Tile_0_1_BeforeSculpt grid=129x129 vertices=16641 bounds=Center: (256.00, 46.45, 256.00), Extents: (256.00, 46.45, 256.00)
+samples=(0.00, 6.08, 0.00);(4.00, 6.16, 0.00);(8.00, 5.73, 0.00);(12.00, 5.34, 0.00);(16.00, 5.04, 0.00);(20.00, 4.86, 0.00);(24.00, 4.02, 0.00);(28.00, 3.36, 0.00)
+unique X=129 Z=129
+Terrain Tile (1, 1) surfaceLOD=0 lodTriangles=0 cachedLODs=1
+Terrain Tile (1, 1) mesh=Terrain Word_Tile_1_1_Mesh grid=129x129 vertices=16641 bounds=Center: (256.00, 47.90, 256.00), Extents: (256.00, 47.90, 256.00)
+samples=(0.00, 21.73, 0.00);(4.00, 23.20, 0.00);(8.00, 23.20, 0.00);(12.00, 22.15, 0.00);(16.00, 20.55, 0.00);(20.00, 18.88, 0.00);(24.00, 17.49, 0.00);(28.00, 14.23, 0.00)
+unique X=129 Z=129
+Terrain Tile (-2, 2) surfaceLOD=3 lodTriangles=736 cachedLODs=3
+Terrain Tile (-2, 2) mesh=Terrain Tile (-2, 2) grid=129x129 vertices=16641 bounds=Center: (512.00, 0.00, 512.00), Extents: (512.00, 0.00, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=129 Z=129
+Terrain Tile (0, 0) surfaceLOD=0 lodTriangles=0 cachedLODs=1
+Terrain Tile (0, 0) mesh=Terrain Word_Tile_0_0_BeforeSculpt grid=129x129 vertices=16641 bounds=Center: (256.00, 87.63, 256.00), Extents: (256.00, 87.63, 256.00)
+samples=(0.00, 0.00, 0.00);(4.00, 0.00, 0.00);(8.00, 0.00, 0.00);(12.00, 0.00, 0.00);(16.00, 0.00, 0.00);(20.00, 0.00, 0.00);(24.00, 0.00, 0.00);(28.00, 0.00, 0.00)
+unique X=129 Z=129
+Terrain Tile (2, 2) surfaceLOD=0 lodTriangles=0 cachedLODs=3
+Terrain Tile (2, 2) mesh=Terrain Word_Tile_2_2_SculptedMesh grid=129x129 vertices=16641 bounds=Center: (512.00, 0.23, 512.00), Extents: (512.00, 0.23, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=129 Z=129
+Terrain Tile (0, -2) surfaceLOD=1 lodTriangles=23270 cachedLODs=1
+Terrain Tile (0, -2) mesh=Terrain Word_Tile_0_-2_RoadTerrain grid=129x129 vertices=16897 bounds=Center: (512.00, 57.40, 512.00), Extents: (512.00, 68.43, 512.00)
+samples=(0.00, 0.00, 0.00);(8.00, 0.00, 0.00);(16.00, 0.00, 0.00);(24.00, 0.00, 0.00);(32.00, 0.00, 0.00);(40.00, 0.00, 0.00);(48.00, 0.00, 0.00);(56.00, 0.00, 0.00)
+unique X=385 Z=130
