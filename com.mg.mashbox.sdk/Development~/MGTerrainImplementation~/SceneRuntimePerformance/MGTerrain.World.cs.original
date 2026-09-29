@@ -122,7 +122,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             {
                 // Only the detail streaming camera may unload persistent GPU batches.
                 bool canStream = !Application.isPlaying || !m_UseBatchRendererGroup || IsDensityDetailStreamingCamera(camera);
-                m_WorldReuseSelection = UsesWorldBudget && UseResidentDetailStreaming && canStream
+                m_WorldReuseSelection = UsesWorldBudget && Application.isPlaying && canStream
                     && !m_DetailRenderCacheDirty && CanReuseDensityDetailStreamingSet(camera);
                 // Grass streaming distance must not unload a tile that still has visible trees.
                 foreach (var layer in m_DensityDetailLayers)

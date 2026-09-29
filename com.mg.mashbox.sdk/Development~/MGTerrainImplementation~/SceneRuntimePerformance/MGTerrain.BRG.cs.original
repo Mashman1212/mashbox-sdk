@@ -239,7 +239,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             float distantScale)
         {
             if (!m_UseBatchRendererGroup
-                || !UseResidentDetailStreaming
+                || !Application.isPlaying
                 || GraphicsSettings.currentRenderPipeline == null
                 || !SystemInfo.supportsInstancing
                 || m_DetailBrgUnavailable)

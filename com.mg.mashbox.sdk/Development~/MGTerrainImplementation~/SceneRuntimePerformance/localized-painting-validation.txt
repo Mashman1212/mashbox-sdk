@@ -1,0 +1,5 @@
+PASS: First-stroke map copy preserves existing cell caches without triggering full terrain validation.
+PASS: Thinning evicts only the touched tree cell; distant trees and overlapping grass retain the same cells and candidate caches.
+PASS: Adding density discovers empty cells without moving the camera; stroke completion preserves caches and updates population.
+PASS: Fractional brush painted 30/256 texels at 0.1; 20 overlapping dabs stayed stable; dense repaint thins to the same pattern; lower targets nest; erase and integer targets work.
+PASS: A brush dab that changes no samples schedules no cell regeneration.

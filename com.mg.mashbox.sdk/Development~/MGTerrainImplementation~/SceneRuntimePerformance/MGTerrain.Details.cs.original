@@ -1372,7 +1372,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (m_AppearanceCaptureCamera != null) AppearanceCaptureTileComplete = true;
                 return;
             }
-            bool useFixedResidentCells = UseResidentDetailStreaming;
+            bool useFixedResidentCells = Application.isPlaying && m_UseBatchRendererGroup;
             bool useFixedCells = UseFixedDetailCells;
             if (useFixedResidentCells && !IsDensityDetailStreamingCamera(camera))
                 return;
@@ -1381,7 +1381,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 UpdateFullResidentVisibility(camera, planes);
                 return;
             }
-            if (Application.isPlaying && useFixedResidentCells && !m_RuntimeDetailCameraLogged)
+            if (useFixedResidentCells && !m_RuntimeDetailCameraLogged)
             {
                 Camera mainCamera = m_CachedGameplayCamera;
                 string targetName = camera.targetTexture != null ? camera.targetTexture.name : "backbuffer";
@@ -1433,7 +1433,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             int pendingBuilds = CountPendingDetailBuilds();
             m_AppearanceCapturePopulation = 0;
-            bool prewarmThisPass = KeepAllDetailCellsResident || m_AppearanceCaptureCamera != null || Application.isPlaying && !UsesWorldBudget && useFixedResidentCells
+            bool prewarmThisPass = KeepAllDetailCellsResident || m_AppearanceCaptureCamera != null || !UsesWorldBudget && useFixedResidentCells
                 && m_PrewarmFixedDetailCells
                 && m_DetailNeedsInitialPrewarm;
             bool allCandidateCellsReady = true;
@@ -1835,7 +1835,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         bool ShouldBuildGpuProceduralDetailCells()
         {
 #if UNITY_6000_0_OR_NEWER
-            return !m_BuildingReflectionDetails && UseResidentDetailStreaming
+            return !m_BuildingReflectionDetails && Application.isPlaying
                 && m_UseBatchRendererGroup
                 && m_UseGpuProceduralDetailGeneration
                 && CanUseGpuGeneratedDensityDetailBrg();
@@ -1987,11 +1987,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool IsDensityDetailStreamingCamera(Camera camera)
         {
-#if UNITY_EDITOR
-            if (!Application.isPlaying && camera != null && camera.cameraType == CameraType.SceneView)
-                return m_AppearanceCaptureCamera == null
-                    && (camera.cullingMask & (1 << gameObject.layer)) != 0;
-#endif
             if (!CanCameraRenderDensityDetails(camera))
                 return false;
 
@@ -2017,8 +2012,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool CanReuseDensityDetailStreamingSet(Camera camera)
         {
-            if (!m_DetailStreamingSettled || !m_HasDetailStreamingCamera
-                || camera.nonJitteredProjectionMatrix != m_DetailStreamingProjection)
+            if (!m_DetailStreamingSettled || !m_HasDetailStreamingCamera)
                 return false;
             if (camera.GetInstanceID() != m_DetailStreamingCameraId)
                 return false;
@@ -2034,11 +2028,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return Quaternion.Angle(camera.transform.rotation, m_DetailStreamingCameraRotation) < refreshAngle;
         }
 
-        Matrix4x4 m_DetailStreamingProjection;
-
         void RememberDensityDetailStreamingCamera(Camera camera)
         {
-            m_DetailStreamingProjection = camera.nonJitteredProjectionMatrix;
             m_HasDetailStreamingCamera = true;
             m_DetailStreamingCameraId = camera.GetInstanceID();
             m_DetailStreamingCamera = camera;
@@ -2099,7 +2090,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 cache.occupiedCells = null;
                 // Painted R16 maps are readable. Scan once per invalidation, not once
                 // per camera repaint; empty cells need no bounds or candidate work.
-                if (layer.DensityMap.isReadable && layer.DensityMap.format == TextureFormat.R16)
+                if (!Application.isPlaying && layer.DensityMap.isReadable && layer.DensityMap.format == TextureFormat.R16)
                 {
                     cache.occupiedColumns = (width + leafCellSize - 1) / leafCellSize;
                     cache.occupiedCells = new bool[cache.occupiedColumns * ((height + leafCellSize - 1) / leafCellSize)];
@@ -2244,7 +2235,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailCandidateComparer.height = height;
             // Only the nearest build-budget prefix needs ordering. World-budgeted
             // tiles can have thousands of missing cells but build only two this pass.
-            bool bounded = UseResidentDetailStreaming
+            bool bounded = Application.isPlaying && m_UseBatchRendererGroup
                 && !KeepAllDetailCellsResident && m_AppearanceCaptureCamera == null
                 && (UsesWorldBudget || !m_PrewarmFixedDetailCells || !m_DetailNeedsInitialPrewarm);
             int prefix = Mathf.Min(m_MissingFixedDetailCandidates.Count, Mathf.Max(1, m_MaxDetailChunksBuiltPerLayerPerFrame));
@@ -3262,48 +3253,40 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return Mathf.Lerp(bottom, top, tz);
         }
 
-        readonly List<KeyValuePair<DetailChunkKey, DensityDetailChunk>> m_DetailEvictionCandidates = new List<KeyValuePair<DetailChunkKey, DensityDetailChunk>>();
-        readonly HashSet<DensityDetailChunk> m_EvictedDetailChunks = new HashSet<DensityDetailChunk>();
-        static readonly Comparison<KeyValuePair<DetailChunkKey, DensityDetailChunk>> s_DetailEvictionOrder =
-            (a, b) => a.Value.lastUsedTick.CompareTo(b.Value.lastUsedTick);
-
         void PruneDetailChunkCache()
         {
-            if (KeepAllDetailCellsResident || Application.isPlaying && m_UseBatchRendererGroup && RetainDetailCells) return;
+            if (KeepAllDetailCellsResident || Application.isPlaying && m_UseBatchRendererGroup && RetainDetailCells)
+                return;
             int maximum = UsesWorldBudget ? m_World.CacheAllowance : Mathf.Max(32, m_MaxCachedDetailChunks);
-            int excess = m_DensityDetailCache.Count - maximum;
-            if (excess <= 0) return;
-            // Select eviction victims once. Repeatedly searching the entire cache
-            // made a large movement O(cache size * evictions).
-            m_DetailEvictionCandidates.Clear();
-            m_EvictedDetailChunks.Clear();
-            foreach (var pair in m_DensityDetailCache)
-                if (pair.Value.lastUsedTick < m_DetailRenderTick) m_DetailEvictionCandidates.Add(pair);
-            m_DetailEvictionCandidates.Sort(s_DetailEvictionOrder);
-            int count = Mathf.Min(excess, m_DetailEvictionCandidates.Count);
-            for (int i = 0; i < count; i++)
+            bool pruned = false;
+            while (m_DensityDetailCache.Count > maximum)
             {
-                var pair = m_DetailEvictionCandidates[i];
-                m_EvictedDetailChunks.Add(pair.Value);
-                DestroyDensityDetailChunk(pair.Value);
-                m_DensityDetailCache.Remove(pair.Key);
+                DetailChunkKey oldestKey = default;
+                int oldestTick = int.MaxValue;
+                foreach (KeyValuePair<DetailChunkKey, DensityDetailChunk> pair in m_DensityDetailCache)
+                {
+                    // During an LOD handoff both the requested cell and its old
+                    // fallback are touched this tick. The cache limit is soft for
+                    // that working set so pruning cannot create a one-frame hole.
+                    if (pair.Value.lastUsedTick >= m_DetailRenderTick)
+                        continue;
+                    if (pair.Value.lastUsedTick >= oldestTick)
+                        continue;
+                    oldestTick = pair.Value.lastUsedTick;
+                    oldestKey = pair.Key;
+                }
+                if (oldestTick == int.MaxValue)
+                    break;
+                if (m_DensityDetailCache.TryGetValue(oldestKey, out DensityDetailChunk oldestChunk))
+                    DestroyDensityDetailChunk(oldestChunk);
+                m_DensityDetailCache.Remove(oldestKey);
+                pruned = true;
             }
-            if (count > 0)
+            if (pruned)
             {
-                // Geometry and occupancy are independent of cached instance data.
-                // Keep them, but never leave a candidate pointing at a disposed cell.
-                foreach (var cache in m_FixedCandidateCaches.Values)
-                    for (int i = 0; i < cache.candidates.Count; i++)
-                    {
-                        var c = cache.candidates[i];
-                        if (c.cachedChunk == null || !m_EvictedDetailChunks.Contains(c.cachedChunk)) continue;
-                        c.cachedChunk = null;
-                        cache.candidates[i] = c;
-                    }
+                m_FixedCandidateCaches.Clear();
                 m_DetailStreamingSettled = false;
             }
-            m_DetailEvictionCandidates.Clear();
-            m_EvictedDetailChunks.Clear();
         }
 
         // GPU cells never enter this queue. Its cost must not grow with all the

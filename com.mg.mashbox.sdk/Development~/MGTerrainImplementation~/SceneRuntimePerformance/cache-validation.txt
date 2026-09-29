@@ -1,0 +1,1 @@
+PASS: build-time terrain batching exclusion, other static flags preserved, unrelated renderers unchanged, idempotent processing; soft-limit working set, oldest-first eviction, retained bounds and occupancy, disposed-cell reference removal, streaming restart, Scene camera eligibility and layer mask.

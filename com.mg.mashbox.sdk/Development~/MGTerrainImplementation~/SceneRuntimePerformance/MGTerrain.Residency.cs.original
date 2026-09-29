@@ -14,27 +14,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
         // World visible-instance budgets still apply; streaming build budgets do not.
         // A tile's legacy residency flag must not silently bypass the world's scheduler.
         // Captures keep their separate unbudgeted path; standalone terrains retain their setting.
-        bool KeepAllDetailCellsResident => Application.isPlaying && m_KeepAllDetailCellsResident
+        bool KeepAllDetailCellsResident => m_KeepAllDetailCellsResident
             && (!UsesWorldBudget || m_World.PreloadAllDetailCells)
             && ShouldBuildGpuProceduralDetailCells();
-        // Reuse the runtime GPU path in the Scene view without opting standalone
-        // authoring terrains into an unbounded full-world preload.
-        bool UseResidentDetailStreaming
-        {
-            get
-            {
-                if (!m_UseBatchRendererGroup) return false;
-                if (Application.isPlaying) return true;
-#if UNITY_EDITOR && UNITY_6000_0_OR_NEWER
-                return m_AppearanceCaptureCamera == null && m_DrawInstancesInEditMode
-                    && m_UseGpuProceduralDetailGeneration && !m_DetailGpuGenerationUnavailable
-                    && !m_DetailBrgUnavailable && SystemInfo.supportsInstancing && SystemInfo.supportsComputeShaders
-                    && UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline != null;
-#else
-                return false;
-#endif
-            }
-        }
         bool m_FullResidentReady;
         Camera m_CachedGameplayCamera;
         Matrix4x4 m_ResidentProjection;

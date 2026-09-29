@@ -1,0 +1,15 @@
+GPU=NVIDIA GeForce RTX 5090
+Camera=(0.00, 0.00, 0.00) rotation=(21.45, 206.37, 359.53)
+Terrain Word {"MonoBehaviour":{"m_Enabled":true,"m_EditorHideFlags":0,"m_Name":"","m_EditorClassIdentifier":"MashBoxSDK::MashBoxSDK.Maps.TerrainSystem.MGTerrainWorld","m_VisibleDetailBudget":100000,"m_DetailCellsBuiltPerFrame":8,"m_DetailMeshUploadsPerFrame":2,"m_MaxPendingDetailBuilds":8,"m_CachedDetailCells":5120,"m_DetailDistance":250.0,"m_UnloadMargin":64.0,"m_PreloadAllDetailCells":false,"m_SurfaceChunkDistance":256.0,"m_Quality":{"m_DrawInstances":true,"m_DrawInstancesInEditMode":true,"m_DetailChunkCells":10,"m_OverallDetailDensity":0.17499999701976777,"m_UseDetailDensityLod":true,"m_DensityTransitionWidth":10.0,"m_FullDetailDensityDistance":35.0,"m_MidDetailDensityDistance":100.0,"m_MidDetailDensity":0.5,"m_FarDetailDensity":0.1289999932050705,"m_DetailDensityLodHysteresis":8.0,"m_DistantDetailBudgetReserve":0.25,"m_UseBatchRendererGroup":true,"m_UseGpuProceduralDetailGeneration":true,"m_UseIndirectDetailDraws":false,"m_PrewarmFixedDetailCells":true,"m_DetailStreamingRefreshDistance":2.0,"m_DetailStreamingRefreshAngle":3.0,"m_CombineDenseDetailMeshes":true,"m_DenseDetailShadows":true,"m_MaxCombinedDetailVerticesPerChunk":600000,"m_MaxDetailVerticesPerUpload":131072},"m_QualityInitialized":true,"ColliderCellSize":50.0,"CaptureResolution":2048,"CaptureExposure":12.399999618530274,"CaptureSyncSceneExposure":false,"CaptureDetailTilt":0.0,"DistantMeshSpacing":2.0,"TileSize":512.0,"TileResolution":129,"TileMaterial":{"instanceID":0}}}
+Terrain Tile (0, 2) gpuFailed=False brgFailed=False world=Terrain Word instances=720 draws=1 GPU=True
+Terrain Tile (2, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (2, -2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (0, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (-2, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (-2, -2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (2, 2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (-2, 2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (0, 1) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (1, 0) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (1, 1) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False
+Terrain Tile (0, -2) gpuFailed=False brgFailed=False world=Terrain Word instances=0 draws=0 GPU=False

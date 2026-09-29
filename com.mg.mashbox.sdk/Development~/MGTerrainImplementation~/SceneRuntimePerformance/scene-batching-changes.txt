@@ -1,0 +1,12 @@
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-1149951825-0 Terrain Tile (2, 0) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-920931505-0 Terrain Tile (0, -2) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-993148116-0 Terrain Tile (-2, -2) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-966960018-0 Terrain Tile (-2, 0) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-391766163-0 Terrain Tile (0, 1) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-797389870-0 Terrain Tile (0, 0) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-1442228915-0 Terrain Tile (2, 2) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-671898230-0 Terrain Tile (2, -2) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-265061646-0 Terrain Tile (1, 1) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-1007630974-0 Terrain Tile (-2, 2) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-738332684-0 Terrain Tile (1, 0) flags=2147483647
+GlobalObjectId_V1-2-31528763dbf524c4bae8a107479a1e9c-1052308655-0 Terrain Tile (0, 2) flags=2147483647
