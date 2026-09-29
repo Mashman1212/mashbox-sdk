@@ -119,8 +119,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return;
             }
             if (!WorldHasCommands(context)) return;
-            if (UsesDetailShadowSelection(context))
-            { direct += m_DetailShadowGroups.Count; visible += m_DetailShadowCount; return; }
             bool useIndirect = m_IndirectDetailDrawsReady && m_DetailBrgUsesGpuGeneration;
             int count = 0;
             foreach (var group in m_DetailBrgPreparedGroups)
@@ -138,8 +136,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 return;
             }
             if (!WorldHasCommands(context)) return;
-            if (UsesDetailShadowSelection(context))
-            { WriteDetailShadowCommands(output, ref direct, ref visible, ref range); return; }
             bool camera = context.viewType == BatchCullingViewType.Camera;
             bool useIndirect = m_IndirectDetailDrawsReady && m_DetailBrgUsesGpuGeneration;
             bool occlusion = camera && m_OcclusionReady && m_OcclusionCamera != null

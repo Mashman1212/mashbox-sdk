@@ -1,0 +1,81 @@
+#if UNITY_EDITOR
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Profiling;
+using MashBoxSDK.Maps.TerrainSystem;
+namespace MashBoxSDK.MapTools {
+[DefaultExecutionOrder(32000)] internal sealed class MGGrassProbeMotion : MonoBehaviour { void LateUpdate(){ MGGrassRuntimeProbe.PositionCamera(); } }
+[InitializeOnLoad] internal static class MGGrassRuntimeProbe {
+static readonly string Root=Path.Combine(Path.GetTempPath(),"mg-grass-runtime");
+static readonly string[] Names={"MGTerrain.ShadowSelection","MGTerrain.InstanceUpdate","MGTerrain.DetailSelection","MGTerrain.DetailCandidates","MGTerrain.GpuPrepare","MGTerrain.SurfaceRendering","MGTerrain.ResidentVisibility","MGTerrain.ResidentVisibility.Compare","MGTerrain.ResidentVisibility.BuildCommands","MGTerrain.ResidentVisibility.Upload","MGTerrain.GPUCulling","RenderLoop.Draw","RenderLoop.DrawSRPBatcher","Gfx.WaitForPresentOnGfxThread","PlayerLoop"};
+static readonly BindingFlags F=BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public;
+static string[] stages; static int stage,frame; static bool running; static string label; static double previous,next;
+static MGGrassProbeMotion driver; static Behaviour[] brains; static Camera camera; static Pose pose; static MGTerrain[] tiles; static MGTerrainWorld[] worlds; static MGTerrainWorldQuality[] originals; static bool[][] flags;
+static Recorder[] recorders; static StringBuilder csv;
+static object Get(object o,string n)=>o.GetType().GetField(n,F).GetValue(o);
+static void Set(object o,string n,object v)=>o.GetType().GetField(n,F).SetValue(o,v);
+static MGGrassRuntimeProbe(){EditorApplication.update+=Tick; AssemblyReloadEvents.beforeAssemblyReload+=Stop; EditorApplication.quitting+=Stop;}
+static void Tick(){
+ if(running){if(!Application.isPlaying)Stop();return;}
+ if(EditorApplication.timeSinceStartup<next||EditorApplication.isCompiling||EditorApplication.isUpdating)return; next=EditorApplication.timeSinceStartup+.5;
+ string path=Path.Combine(Root,"request.txt"); if(!File.Exists(path)||Application.dataPath.Replace('\\','/')!="D:/MappyX/Assets")return;
+ if(!Application.isPlaying){if(!EditorApplication.isPlayingOrWillChangePlaymode)EditorApplication.EnterPlaymode();return;}
+ try {label=File.ReadAllText(path).Trim();File.Delete(path);
+ camera=Camera.main ?? Camera.allCameras.First(c=>c.cameraType==CameraType.Game);pose=new Pose(camera.transform.position,camera.transform.rotation);
+ tiles=UnityEngine.Object.FindObjectsByType<MGTerrain>(FindObjectsSortMode.None);worlds=tiles.Select(t=>t.World).Where(w=>w!=null).Distinct().ToArray();
+ originals=worlds.Select(w=>JsonUtility.FromJson<MGTerrainWorldQuality>(JsonUtility.ToJson(Get(w,"m_Quality")))).ToArray();
+ flags=tiles.Select(t=>new[]{(bool)Get(t,"m_GpuDetailFrustumCulling"),(bool)Get(t,"m_GpuTerrainOcclusion"),(bool)Get(t,"m_GpuRenderedDepthOcclusion")}).ToArray();
+ stages=label.Contains("verify")?new[]{"baseline","cap60","baseline-repeat","cap60-motion","baseline-motion","cap60-indirect"}:label.Contains("cap")?new[]{"baseline","cap40","cap60","cap90","cap60-motion","baseline-motion"}:label.Contains("shadow")?new[]{"baseline","noshadows","baseline-repeat","noshadows-motion","baseline-motion"}:label.Contains("final")?new[]{"baseline","frustum","baseline-motion","frustum-motion"}:new[]{"baseline","off","baseline-repeat","indirect","frustum","terrain","baseline-motion","frustum-motion"};stage=0;running=true;
+ brains=camera.GetComponents<Behaviour>().Where(b=>b.enabled && b.GetType().Name=="CinemachineBrain").ToArray(); foreach(var b in brains)b.enabled=false; driver=camera.gameObject.AddComponent<MGGrassProbeMotion>();
+ recorders=Names.Select(Recorder.Get).ToArray();foreach(var r in recorders)r.enabled=true;
+ var snapshot=new StringBuilder("Camera="+camera.name+" resolution="+camera.pixelWidth+"x"+camera.pixelHeight+" pose="+JsonUtility.ToJson(pose)+"\n");
+ foreach(var w in worlds)snapshot.AppendLine(EditorJsonUtility.ToJson(w));
+ foreach(var t in tiles){snapshot.AppendLine(t.name+" "+JsonUtility.ToJson(t.CaptureWorldQuality()));foreach(var p in t.Prototypes)snapshot.AppendLine(JsonUtility.ToJson(p));}
+ File.WriteAllText(Path.Combine(Root,label+"-snapshot.txt"),snapshot.ToString());
+ RenderPipelineManager.beginCameraRendering+=Begin;RenderPipelineManager.endCameraRendering+=End;StartStage();
+ }catch(Exception e){File.WriteAllText(Path.Combine(Root,"error.txt"),e.ToString());Stop();Debug.LogException(e);}
+}
+static void StartStage(){
+ frame=0;previous=0;string mode=stages[stage];
+ for(int i=0;i<worlds.Length;i++){var q=JsonUtility.FromJson<MGTerrainWorldQuality>(JsonUtility.ToJson(originals[i]));q.m_DrawInstances=mode!="off"; q.m_DenseDetailShadowDistance=mode.StartsWith("cap40")?40:mode.StartsWith("cap60")?60:mode.StartsWith("cap90")?90:0; if(mode.StartsWith("noshadows")) q.m_DenseDetailShadows=false;q.m_UseIndirectDetailDraws=mode.Contains("indirect")||mode.StartsWith("frustum")||mode.StartsWith("terrain");Set(worlds[i],"m_Quality",q);worlds[i].ApplySharedQuality();}
+ foreach(var t in tiles){Set(t,"m_GpuDetailFrustumCulling",mode.StartsWith("frustum")||mode=="terrain");Set(t,"m_GpuTerrainOcclusion",mode=="terrain");Set(t,"m_GpuRenderedDepthOcclusion",false);}
+ csv=new StringBuilder("frame,wall_ms,delta_ms,instances,draws,regenerated,batches,setpass,triangles,"+string.Join(",",Names)+"\n");
+ File.WriteAllText(Path.Combine(Root,"status.txt"),label+" "+mode+" warmup");
+}
+static void Begin(ScriptableRenderContext context,Camera c){}
+internal static void PositionCamera(){if(!running||camera==null)return; if(stages[stage].EndsWith("motion")){
+ float t=Mathf.Clamp01((frame-1200)/600f);camera.transform.SetPositionAndRotation(pose.position+pose.rotation*Vector3.forward*(8*Mathf.Sin(t*Mathf.PI)),Quaternion.AngleAxis(25*Mathf.Sin(t*Mathf.PI*2),Vector3.up)*pose.rotation);
+ }else camera.transform.SetPositionAndRotation(pose.position,pose.rotation);
+}
+static void End(ScriptableRenderContext context,Camera c){if(!running||c!=camera)return;double now=EditorApplication.timeSinceStartup;
+ if(frame>=1200&&previous>0){csv.Append(frame).Append(',').Append(((now-previous)*1000).ToString("F4",System.Globalization.CultureInfo.InvariantCulture)).Append(',').Append((Time.unscaledDeltaTime*1000).ToString("F4",System.Globalization.CultureInfo.InvariantCulture));
+ csv.Append(',').Append(tiles.Sum(t=>(long)t.LastSubmittedDensityDetailInstances)).Append(',').Append(tiles.Sum(t=>t.LastDensityDetailDrawCalls)).Append(',').Append(tiles.Sum(t=>(long)t.LastRegeneratedDetailInstances)).Append(',').Append(UnityStats.drawCalls).Append(',').Append(UnityStats.setPassCalls).Append(',').Append(UnityStats.triangles);
+ foreach(var r in recorders)csv.Append(',').Append((r.elapsedNanoseconds/1e6).ToString("F4",System.Globalization.CultureInfo.InvariantCulture));csv.AppendLine();}
+ previous=now;frame++; if(frame==1100)ScreenCapture.CaptureScreenshot(Path.Combine(Root,label+"-"+stages[stage]+".png")); if(frame%300==0)File.WriteAllText(Path.Combine(Root,"status.txt"),label+" "+stages[stage]+" "+frame+"/1800");
+ if(frame==1800){if(stages[stage].StartsWith("cap"))MGTerrainDetailShadowValidation.ValidateLive();File.WriteAllText(Path.Combine(Root,label+"-"+stages[stage]+".csv"),csv.ToString());
+ var sb=new StringBuilder();foreach(var t in tiles)sb.AppendLine(t.name+" GPU="+t.IsGpuProceduralDensityDetailActive+" cull="+t.IsGpuDetailCullingActive+" status="+t.TerrainOcclusionStatus+" shadowInstances="+t.LastDetailShadowInstances+" instances="+t.LastSubmittedDensityDetailInstances+" draws="+t.LastDensityDetailDrawCalls+" gpuFail="+Get(t,"m_DetailGpuGenerationUnavailable")+" brgFail="+Get(t,"m_DetailBrgUnavailable"));File.WriteAllText(Path.Combine(Root,label+"-"+stages[stage]+"-state.txt"),sb.ToString());
+  var assets=new StringBuilder();
+ foreach(var tile in tiles) foreach(var g in (System.Collections.IEnumerable)Get(tile,"m_ActiveDetailGpuBuildGroups")) {
+ var batch=Get(g,"batch"); var mesh=(Mesh)Get(batch,"mesh"); var mat=(Material)Get(batch,"material");
+ assets.AppendLine(tile.name+" mesh="+mesh.name+" vertices="+mesh.vertexCount+" indices="+mesh.GetIndexCount(0)+" asset="+AssetDatabase.GetAssetPath(mesh)+" material="+AssetDatabase.GetAssetPath(mat)+" shader="+mat.shader.name+" shadows="+Get(g,"shadowCasting"));
+ assets.AppendLine(EditorJsonUtility.ToJson(mat));
+ }
+ File.WriteAllText(Path.Combine(Root,label+"-"+stages[stage]+"-assets.txt"),assets.ToString());
+ stage++;if(stage==stages.Length){Stop();MGTerrainDetailShadowValidation.Run();File.WriteAllText(Path.Combine(Root,"status.txt"),"complete "+label);}else StartStage();}
+}
+static void Stop(){if(!running)return;running=false;RenderPipelineManager.beginCameraRendering-=Begin;RenderPipelineManager.endCameraRendering-=End;
+ if(driver!=null)UnityEngine.Object.DestroyImmediate(driver); if(brains!=null)foreach(var b in brains)if(b!=null)b.enabled=true;
+ if(camera!=null)camera.transform.SetPositionAndRotation(pose.position,pose.rotation);
+ if(worlds!=null)for(int i=0;i<worlds.Length;i++)if(worlds[i]!=null){Set(worlds[i],"m_Quality",originals[i]);worlds[i].ApplySharedQuality();}
+ if(tiles!=null)for(int i=0;i<tiles.Length;i++)if(tiles[i]!=null){Set(tiles[i],"m_GpuDetailFrustumCulling",flags[i][0]);Set(tiles[i],"m_GpuTerrainOcclusion",flags[i][1]);Set(tiles[i],"m_GpuRenderedDepthOcclusion",flags[i][2]);}
+ if(recorders!=null)foreach(var r in recorders)r.enabled=false;
+}
+}}
+#endif

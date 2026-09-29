@@ -1,0 +1,12 @@
+Terrain Tile (0, 0) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (-2, 0) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (-2, 2) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (1, 1) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (2, -2) GPU=False cull=False status=Bypassed: requires a perspective gameplay camera and ready resident indirect draws instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (0, -2) GPU=False cull=False status=Bypassed: requires a perspective gameplay camera and ready resident indirect draws instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (2, 2) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (2, 0) GPU=False cull=False status=Bypassed: requires a perspective gameplay camera and ready resident indirect draws instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (1, 0) GPU=True cull=True status=Active (hole-aware) instances=41422 draws=1 gpuFail=False brgFail=False
+Terrain Tile (0, 1) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (-2, -2) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False
+Terrain Tile (0, 2) GPU=False cull=False status=Waiting for gameplay camera instances=0 draws=0 gpuFail=False brgFail=False

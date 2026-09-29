@@ -1,0 +1,3 @@
+PASS: 1 live tiles, 8740 shadow indices, valid group offsets and camera subset.
+PASS: 1 live tiles, 8748 shadow indices, valid group offsets and camera subset.
+PASS: 1 live tiles, 8740 shadow indices, valid group offsets and camera subset.

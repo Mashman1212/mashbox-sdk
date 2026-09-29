@@ -229,7 +229,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (m_IndirectVisibilityInput != null) bytes += (long)m_IndirectVisibilityInput.count * m_IndirectVisibilityInput.stride;
             if (m_IndirectVisibleIndices != null) bytes += (long)m_IndirectVisibleIndices.count * m_IndirectVisibleIndices.stride;
             if (m_IndirectArgs != null) bytes += (long)m_IndirectArgs.count * m_IndirectArgs.stride;
-            if (m_DetailShadowIndices.IsCreated) bytes += (long)m_DetailShadowIndices.Length * sizeof(int);
             return bytes;
         }
 
@@ -894,7 +893,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool FinalizeResidentGpuVisibility(int submitted, bool onlyVisibleCells)
         {
-                m_ShadowSelectionVersion++;
                 m_OcclusionDraws.Clear();
                 UploadDetailDefinitions();
                 int destination = 0;
@@ -1349,19 +1347,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 WriteReflectionCommands(cullingContext, output, ref direct, ref visible, ref range);
                 return default;
             }
-            if (UsesDetailShadowSelection(cullingContext))
-            {
-                int count = m_DetailShadowGroups.Count;
-                if (count == 0) return default;
-                output->drawCommandCount = output->drawRangeCount = count;
-                output->visibleInstanceCount = m_DetailShadowCount;
-                output->drawCommands = (BatchDrawCommand*)UnsafeUtility.Malloc(sizeof(BatchDrawCommand) * (long)count, 8, Allocator.TempJob);
-                output->drawRanges = (BatchDrawRange*)UnsafeUtility.Malloc(sizeof(BatchDrawRange) * (long)count, 8, Allocator.TempJob);
-                output->visibleInstances = (int*)UnsafeUtility.Malloc(sizeof(int) * (long)m_DetailShadowCount, 8, Allocator.TempJob);
-                int direct = 0, visible = 0, range = 0;
-                WriteDetailShadowCommands(output, ref direct, ref visible, ref range);
-                return default;
-            }
             bool cameraView = cullingContext.viewType == BatchCullingViewType.Camera;
             bool lightView = cullingContext.viewType == BatchCullingViewType.Light;
             if (!cameraView && !lightView)
@@ -1469,7 +1454,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ClearDensityDetailBrgVisibility()
         {
-            m_DetailShadowSelectionReady = false;
             m_IndirectDetailDrawsReady = false;
             m_DetailBrgPreparedGroups.Clear();
             m_DetailBrgVisibleCount = 0;
@@ -1480,7 +1464,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ReleaseDensityDetailBrg()
         {
-            ReleaseDetailShadowSelection();
             ResetFullDetailResidency();
             ReleaseIndirectDetailBuffers();
             LastRegeneratedDetailInstances = 0;

@@ -1,0 +1,3 @@
+PASS: nearby fidelity, monotonic fade, far removal, unlimited mode and tree preservation.
+PASS: exhaustive uneven-texel resident/camera/shadow budgets preserve exact counts, bounds, uniqueness and subset identity.
+PASS: visibility clearing invalidates shadow selection.

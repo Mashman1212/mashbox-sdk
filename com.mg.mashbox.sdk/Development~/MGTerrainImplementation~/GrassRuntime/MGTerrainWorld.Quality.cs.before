@@ -25,7 +25,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public float m_DetailStreamingRefreshAngle = 3f;
         public bool m_CombineDenseDetailMeshes = true;
         public bool m_DenseDetailShadows;
-        [Min(0f), Tooltip("Runtime GPU grass shadow distance. Fades from half this distance; zero means unlimited. Grass density/draw distance and tree shadows are unchanged.")] public float m_DenseDetailShadowDistance;
         [Min(65535)] public int m_MaxCombinedDetailVerticesPerChunk = 600000;
         [Range(32768, 262144)] public int m_MaxDetailVerticesPerUpload = 131072;
     }
@@ -53,7 +52,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailStreamingRefreshAngle = m_DetailStreamingRefreshAngle,
             m_CombineDenseDetailMeshes = m_CombineDenseDetailMeshes,
             m_DenseDetailShadows = m_DenseDetailShadows,
-            m_DenseDetailShadowDistance = m_DenseDetailShadowDistance,
             m_MaxCombinedDetailVerticesPerChunk = m_MaxCombinedDetailVerticesPerChunk,
             m_MaxDetailVerticesPerUpload = m_MaxDetailVerticesPerUpload,
         };
@@ -78,7 +76,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 || m_DetailStreamingRefreshAngle != settings.m_DetailStreamingRefreshAngle
                 || m_CombineDenseDetailMeshes != settings.m_CombineDenseDetailMeshes
                 || m_DenseDetailShadows != settings.m_DenseDetailShadows
-                || m_DenseDetailShadowDistance != settings.m_DenseDetailShadowDistance
                 || m_MaxCombinedDetailVerticesPerChunk != settings.m_MaxCombinedDetailVerticesPerChunk
                 || m_MaxDetailVerticesPerUpload != settings.m_MaxDetailVerticesPerUpload;
             if (!changed) return;
@@ -102,7 +99,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_DetailStreamingRefreshAngle = settings.m_DetailStreamingRefreshAngle;
             m_CombineDenseDetailMeshes = settings.m_CombineDenseDetailMeshes;
             m_DenseDetailShadows = settings.m_DenseDetailShadows;
-            m_DenseDetailShadowDistance = Mathf.Max(0f, settings.m_DenseDetailShadowDistance);
             m_MaxCombinedDetailVerticesPerChunk = settings.m_MaxCombinedDetailVerticesPerChunk;
             m_MaxDetailVerticesPerUpload = settings.m_MaxDetailVerticesPerUpload;
             InvalidateRenderCache();

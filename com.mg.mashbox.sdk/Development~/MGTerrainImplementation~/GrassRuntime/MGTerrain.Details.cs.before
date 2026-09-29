@@ -594,7 +594,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
         float m_DetailStreamingRefreshAngle = 3f;
         [SerializeField] bool m_CombineDenseDetailMeshes = true;
         [SerializeField] bool m_DenseDetailShadows;
-        [SerializeField, Min(0f), Tooltip("Runtime GPU grass shadow distance in metres. Shadows gradually thin from half this distance; nearby shadows and all tree shadows remain. Zero keeps unlimited grass shadows. Visible grass distance and density are unchanged.")] float m_DenseDetailShadowDistance;
         [SerializeField, Min(65535)] int m_MaxCombinedDetailVerticesPerChunk = 600000;
         [SerializeField, Range(32768, 262144)] int m_MaxDetailVerticesPerUpload = 131072;
         [SerializeField, Range(1, 8)] int m_MaxDetailMeshUploadsPerFrame = 1;
@@ -1739,12 +1738,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             });
 
             if (TryPrepareDensityDetailBrg(camera, budget, nearScale, distantScale))
-            {
-#if UNITY_6000_0_OR_NEWER
-                UpdateDetailShadowSelection(camera);
-#endif
                 return;
-            }
 
             int remaining = budget;
             for (int index = 0; index < m_VisibleDensityDetails.Count && remaining > 0; index++)
