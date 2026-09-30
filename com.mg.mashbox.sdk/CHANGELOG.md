@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Publisher routing and status
+
+- Route map and content publishing by the selected game's exact Unity version and region. Project X uses separate Unity 6 storage; BMX Streets and Scoot X keep Unity 2022 storage.
+- Show per-publisher platform, Unity/SDK versions, availability and operator maintenance messages in Setup.
+- Capture routing before export and preserve it on upload retries; preflight available platforms and use a unique submission identity.
+
+
 ### Fixed
 
 - Fixed Unity 2022.3 SDK compilation errors in road terrain tools, scene exposure, and grass interaction validation. MG Terrain World creation and editing now explain their Unity 6+ requirement in older editors.

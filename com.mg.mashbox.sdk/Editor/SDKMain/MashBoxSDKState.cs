@@ -33,7 +33,20 @@ namespace MashBoxSDK.SDKMain
             Error
         }
 
-        public static CookerStatus Cooker = CookerStatus.Unknown;
+        private static CookerStatus _cooker = CookerStatus.Unknown;
+        public static PublisherService.Publisher[] Publishers = Array.Empty<PublisherService.Publisher>();
+        private static DateTimeOffset _fleetChecked;
+        public static CookerStatus Cooker
+        {
+            get
+            {
+                if (_cooker != CookerStatus.Online) return _cooker;
+                if ((DateTimeOffset.UtcNow - _fleetChecked).TotalSeconds > 45) return CookerStatus.Stale;
+                var game = MashBoxSDK.Exporting.GameRegistry.Find(EditorPrefs.GetString("ModIo.CurrentGame", ""));
+                return game != null && Publishers.Any(p => p.available && p.platform == "PC" && p.unityVersion == game.UnityEditorVersion) ? CookerStatus.Online : CookerStatus.Offline;
+            }
+            private set { _cooker = value; }
+        }
         public static string CookerNote = "checking...";
         public static bool CheckingCooker => _inFlight;
 
@@ -210,88 +223,13 @@ namespace MashBoxSDK.SDKMain
         {
             try
             {
-                using var client = new System.Net.Http.HttpClient();
-                using var request = new System.Net.Http.HttpRequestMessage(
-                    System.Net.Http.HttpMethod.Get,
-                    $"{URL}?t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
-
-                request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue
-                {
-                    NoCache = true,
-                    NoStore = true,
-                    MaxAge = TimeSpan.Zero
-                };
-                request.Headers.Pragma.ParseAdd("no-cache");
-
-                var res = await client.SendAsync(request);
-
-                if (!res.IsSuccessStatusCode)
-                {
-                    Cooker = CookerStatus.Error;
-                    CookerNote = $"HTTP {(int)res.StatusCode}";
-                }
-                else
-                {
-                    var body = await res.Content.ReadAsStringAsync();
-
-                    bool online = System.Text.RegularExpressions.Regex.IsMatch(
-                        body,
-                        "\"online\"\\s*:\\s*true",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-          
-                    DateTimeOffset utc = DateTimeOffset.MinValue;
-                    int i = body.IndexOf("\"utc\":", StringComparison.OrdinalIgnoreCase);
-
-                    if (i >= 0)
-                    {
-                        int q1 = body.IndexOf('"', i + 6);
-                        int q2 = (q1 >= 0) ? body.IndexOf('"', q1 + 1) : -1;
-
-                        if (q1 >= 0 && q2 > q1)
-                        {
-                            var iso = body.Substring(q1 + 1, q2 - q1 - 1);
-                            DateTimeOffset.TryParse(
-                                iso,
-                                null,
-                                System.Globalization.DateTimeStyles.AssumeUniversal |
-                                System.Globalization.DateTimeStyles.AdjustToUniversal,
-                                out utc
-                            );
-                        }
-                    }
-
-                    var referenceUtc = res.Headers.Date ?? DateTimeOffset.UtcNow;
-                    double age = (utc == DateTimeOffset.MinValue)
-                        ? double.MaxValue
-                        : (referenceUtc.ToUniversalTime() - utc.ToUniversalTime()).TotalSeconds;
-
-                    if (age < 0)
-                        age = 0;
-
-           
-                    if (!online)
-                    {
-                        Cooker = CookerStatus.Offline;
-                        CookerNote = "offline";
-                    }
-                    else if (age > HeartbeatFreshnessSeconds)
-                    {
-                        Cooker = CookerStatus.Stale;
-                        CookerNote = $"stale ({(int)age}s)";
-                    }
-                    else
-                    {
-                        Cooker = CookerStatus.Online;
-                        CookerNote = $"ok ({(int)age}s)";
-                    }
-                }
+                var fleet = await PublisherService.GetFleetAsync();
+                Publishers = fleet.workers;
+                _fleetChecked = DateTimeOffset.UtcNow;
+                Cooker = fleet.enabled ? CookerStatus.Online : CookerStatus.Offline;
+                CookerNote = string.IsNullOrEmpty(fleet.message) ? "Availability depends on game, Unity and region" : fleet.message;
             }
-            catch (Exception ex)
-            {
-                Cooker = CookerStatus.Error;
-                CookerNote = ex.Message;
-            }
+            catch (Exception ex) { Cooker = CookerStatus.Error; Publishers = Array.Empty<PublisherService.Publisher>(); CookerNote = ex.Message; }
             finally
             {
                 _inFlight = false;

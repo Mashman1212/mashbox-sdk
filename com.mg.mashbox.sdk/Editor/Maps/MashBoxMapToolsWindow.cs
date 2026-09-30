@@ -4919,6 +4919,8 @@ namespace MashBoxSDK.MapTools
                 AssetDatabase.SaveAssets();
 
                 var uploadRegion = DetermineUploadRegion();
+                var uploadRoute = PublisherService.CreateRoute(currentGame, uploadRegion);
+                await PublisherService.AvailableContainersAsync(uploadRoute, selectedPlatforms.Select(p => p.Container).ToArray());
                 var uploadRegionLabel = GetUploadRegionDisplayName(uploadRegion);
                 SetActiveMapPublishStatus("Exporting unitypackage...", uploadRegionLabel, 0.25f);
                 DisplayProgress("Publish Map To Mod.io", "Exporting unitypackage...", 0.25f);
@@ -4968,7 +4970,7 @@ namespace MashBoxSDK.MapTools
                     return;
                 }
 
-                await UploadMapPackageToContainersAsync(packagePath, packageBytes, uploadRegionLabel, selectedPlatforms, cts.Token);
+                await UploadMapPackageToContainersAsync(packagePath, packageBytes, uploadRegionLabel, selectedPlatforms, uploadRoute, cts.Token);
 
                 SetActiveMapPublishStatus("Finalizing...", uploadRegionLabel, 0.98f);
                 DisplayProgress("Publish Map To Mod.io", "Finalizing...", 0.98f);
@@ -5212,6 +5214,7 @@ namespace MashBoxSDK.MapTools
             long packageBytes,
             string uploadRegionLabel,
             IReadOnlyList<PublishPlatformOption> selectedPlatforms,
+            PublisherService.Route route,
             CancellationToken cancellationToken)
         {
             var containers = selectedPlatforms?.ToArray() ?? Array.Empty<PublishPlatformOption>();
@@ -5225,7 +5228,7 @@ namespace MashBoxSDK.MapTools
                     var container = containers[i];
                     await UploadToContainer(
                         packagePath,
-                        container.Container,
+                        container.Container, route,
                         CreateSequentialContainerProgressReporter(i, containers.Length, container.DisplayName, packageBytes, uploadRegionLabel),
                         cancellationToken);
                 }
@@ -5247,7 +5250,7 @@ namespace MashBoxSDK.MapTools
             var tasks = containers
                 .Select((container, index) => UploadToContainer(
                     packagePath,
-                    container.Container,
+                    container.Container, route,
                     new Progress<float>(p =>
                     {
                         progresses[index] = p;
@@ -6148,11 +6151,11 @@ namespace MashBoxSDK.MapTools
             public string uploadUrl;
         }
 
-        private async Task UploadToContainer(string packagePath, string container, IProgress<float> progress, CancellationToken cancellationToken)
+        private async Task UploadToContainer(string packagePath, string container, PublisherService.Route route, IProgress<float> progress, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var fileName = Path.GetFileName(packagePath);
-            var (_, uploadUrl) = await RequestUploadUrlAsync(fileName, container);
+            var (_, uploadUrl) = await PublisherService.RequestUploadAsync(fileName, container, route);
 
             try
             {
@@ -6162,36 +6165,9 @@ namespace MashBoxSDK.MapTools
             {
                 Debug.LogWarning($"[MashBoxMapTools] Upload URL had an invalid SAS time window. Requesting a fresh upload URL and retrying once. Details: {ex.Message}");
                 await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
-                var (_, refreshedUploadUrl) = await RequestUploadUrlAsync(fileName, container);
+                var (_, refreshedUploadUrl) = await PublisherService.RequestUploadAsync(fileName, container, route);
                 await UploadFileToSasAsync(packagePath, refreshedUploadUrl, progress, cancellationToken);
             }
-        }
-
-        private static async Task<(string jobId, string uploadUrl)> RequestUploadUrlAsync(string fileName, string container)
-        {
-            var region = DetermineUploadRegion();
-            var json = JsonUtility.ToJson(new UploadRequest
-            {
-                fileName = fileName,
-                container = container,
-                region = region
-            });
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, UploaderEndpoint)
-            {
-                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
-            };
-
-            using var res = await SharedHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
-            var body = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            if (!res.IsSuccessStatusCode)
-                throw new Exception($"Proxy request failed: {(int)res.StatusCode} {res.ReasonPhrase}");
-            var data = JsonUtility.FromJson<UploadResponse>(body);
-            if (data == null || string.IsNullOrEmpty(data.uploadUrl))
-                throw new Exception("Invalid proxy response (missing uploadUrl).");
-
-            return (data.jobId, data.uploadUrl);
         }
 
         private static string DetermineUploadRegion()

@@ -3167,6 +3167,8 @@ namespace MashBoxSDK.ContentTools.Editor
         private async Task PublishToModioPackageAsync(ContentPackDefinition p, string currentGame, string progressTitle)
         {
             GameTargetUnityVersionValidator.ThrowIfInvalidForPublishing(currentGame);
+            var uploadRoute = PublisherService.CreateRoute(currentGame, DetermineUploadRegion());
+            var uploadContainers = await PublisherService.AvailableContainersAsync(uploadRoute);
 
             var publishIssues = ValidatePackWithExportChecks(p, _rules);
             _packIssues[p] = publishIssues;
@@ -3202,11 +3204,11 @@ namespace MashBoxSDK.ContentTools.Editor
             if (!p.IsVanillaContent)
                 EnsurePackageSizeWithinLimit(packagePath, MaxContentPublishPackageBytes, "content pack");
 
-            float[] progresses = new float[3];
+            float[] progresses = new float[uploadContainers.Length];
 
             void ReportCombinedProgress()
             {
-                float combined = (progresses[0] + progresses[1] + progresses[2]) / 3f;
+                float combined = progresses.Average();
 
                 DisplayCancelableProgress(
                     progressTitle,
@@ -3216,17 +3218,8 @@ namespace MashBoxSDK.ContentTools.Editor
                 );
             }
 
-            var tasks = new[]
-            {
-                UploadToContainer(packagePath, "inbox-windows",
-                    new Progress<float>(progress => { progresses[0] = progress; ReportCombinedProgress(); }), cts.Token),
-
-                UploadToContainer(packagePath, "inbox-xbox",
-                    new Progress<float>(progress => { progresses[1] = progress; ReportCombinedProgress(); }), cts.Token),
-
-                UploadToContainer(packagePath, "inbox-ps5",
-                    new Progress<float>(progress => { progresses[2] = progress; ReportCombinedProgress(); }), cts.Token)
-            };
+            var tasks = uploadContainers.Select((container, index) => UploadToContainer(packagePath, container, uploadRoute,
+                new Progress<float>(progress => { progresses[index] = progress; ReportCombinedProgress(); }), cts.Token)).ToArray();
 
             await Task.WhenAll(tasks);
             DisplayCancelableProgress(progressTitle, $"Finalizing {p.name}...", 0.98f, cts);
@@ -3266,12 +3259,12 @@ namespace MashBoxSDK.ContentTools.Editor
             return false;
         }
 
-        private async Task UploadToContainer(string packagePath, string container, IProgress<float> progress, CancellationToken cancellationToken)
+        private async Task UploadToContainer(string packagePath, string container, PublisherService.Route route, IProgress<float> progress, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             string fileName = Path.GetFileName(packagePath);
 
-            var (jobId, uploadUrl) = await RequestUploadUrlAsync(fileName, container);
+            var (jobId, uploadUrl) = await PublisherService.RequestUploadAsync(fileName, container, route);
 
             try
             {
@@ -3281,7 +3274,7 @@ namespace MashBoxSDK.ContentTools.Editor
             {
                 Debug.LogWarning($"[ContentPackBuilder] Upload URL had an invalid SAS time window. Requesting a fresh upload URL and retrying once. Details: {ex.Message}");
                 await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
-                var (_, refreshedUploadUrl) = await RequestUploadUrlAsync(fileName, container);
+                var (_, refreshedUploadUrl) = await PublisherService.RequestUploadAsync(fileName, container, route);
                 await UploadFileToSasAsync(packagePath, refreshedUploadUrl, progress, cancellationToken);
             }
 
@@ -3332,36 +3325,6 @@ namespace MashBoxSDK.ContentTools.Editor
             "africa", "arab", "asia", "china", "europe", "gmt", "greenwich", "india", "israel",
             "japan", "korea", "russia", "singapore", "tokyo", "turkey", "utc", "w. europe"
         };
-
-        private static async Task<(string jobId, string uploadUrl)> RequestUploadUrlAsync(string fileName, string container)
-        {
-            var region = DetermineUploadRegion();
-            var json = JsonUtility.ToJson(new UploadRequest {
-                fileName = fileName,
-                container = container,
-                region = region
-            });
-
-            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-            
-            using var req = new HttpRequestMessage(HttpMethod.Post, UploaderEndpoint)
-            {
-                Content = content
-            };
-
-            using var res = await SharedHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead)
-                .ConfigureAwait(false);
-            var body = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            if (!res.IsSuccessStatusCode)
-                throw new Exception($"Proxy request failed: {(int)res.StatusCode} {res.ReasonPhrase}");
-
-            var data = JsonUtility.FromJson<UploadResponse>(body);
-            if (data == null || string.IsNullOrEmpty(data.uploadUrl))
-                throw new Exception("Invalid proxy response (missing uploadUrl).");
-
-            return (data.jobId, data.uploadUrl);
-        }
 
         private static string DetermineUploadRegion()
         {
@@ -5291,40 +5254,6 @@ namespace MashBoxSDK.ContentTools.Editor
             public string jobId;
             public string uploadUrl;
         }
-
-        private static async Task UploadUnityPackageAsync(string filePath)
-        {
-            using (var http = new HttpClient())
-            {
-                // 1) Ask proxy for an upload URL (pass a name so your function can store nicely)
-                var name = Path.GetFileName(filePath);
-                var form = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("fileName", name),
-                });
-
-                var req = await http.PostAsync(UploaderEndpoint, form);
-                var body = await req.Content.ReadAsStringAsync();
-                if (!req.IsSuccessStatusCode)
-                    throw new Exception($"Proxy request failed: {(int)req.StatusCode} {req.ReasonPhrase}");
-
-                var data = JsonUtility.FromJson<UploadResponse>(body);
-                if (data == null || string.IsNullOrEmpty(data.uploadUrl))
-                    throw new Exception("Invalid proxy response (missing uploadUrl).");
-
-                // 2) Upload the bytes to the SAS URL
-                var bytes = File.ReadAllBytes(filePath);
-                using var content = new ByteArrayContent(bytes);
-                content.Headers.Add("x-ms-blob-type", "BlockBlob");
-                var putRes = await http.PutAsync(data.uploadUrl, content);
-
-                if (!putRes.IsSuccessStatusCode)
-                    throw new Exception($"Upload failed: {(int)putRes.StatusCode} {putRes.ReasonPhrase}");
-            }
-        }
-        
-
-        
 
 #if MashBoxDev
         [MenuItem("MashBox/Dev/Mod.io/PrintCurrentUserToken")]

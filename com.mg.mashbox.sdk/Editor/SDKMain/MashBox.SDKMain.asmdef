@@ -1,6 +1,7 @@
 {
-    "name": "MashBox.SDKMain",
-    "references": [
-        "GUID:ef9e46d2fc66afe4aa918745e9034da8"
-    ]
+  "name": "MashBox.SDKMain",
+  "references": [
+    "GUID:ef9e46d2fc66afe4aa918745e9034da8",
+    "GUID:982c2b0bc58fb57498c119e2b1f0b90a"
+  ]
 }

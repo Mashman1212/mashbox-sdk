@@ -1558,57 +1558,31 @@ namespace MashBoxSDK.SDKMain
 
         private void DrawCookerStatus()
         {
-            using (new EditorGUILayout.HorizontalScope())
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
-                GUILayout.Label("Publishing Servers:", GUILayout.Width(130f));
-                var status = MashBoxSDKState.Cooker;
-
-                string text;
-                Color color;
-
-                switch (status)
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    case MashBoxSDKState.CookerStatus.Online:
-                        text = "Online";
-                        color = new Color(0.3f, 1f, 0.4f);
-                        break;
-
-                    case MashBoxSDKState.CookerStatus.Stale:
-                    case MashBoxSDKState.CookerStatus.Offline:
-                        text = "Offline";
-                        color = new Color(1f, 0.3f, 0.3f);
-                        break;
-
-                    case MashBoxSDKState.CookerStatus.Error:
-                        text = "Error";
-                        color = new Color(1f, 0.5f, 0.2f);
-                        break;
-
-                    default:
-                        text = "Checking...";
-                        color = Color.gray;
-                        break;
+                    EditorGUILayout.LabelField("Publishing servers", EditorStyles.boldLabel);
+                    using (new EditorGUI.DisabledScope(MashBoxSDKState.CheckingCooker))
+                        if (GUILayout.Button(MashBoxSDKState.CheckingCooker ? "Checking…" : "Refresh", GUILayout.Width(90))) MashBoxSDKState.RefreshCookerStatus();
                 }
-
-                var style = new GUIStyle(EditorStyles.boldLabel);
-                style.normal.textColor = color;
-
-                GUILayout.Label(text, style, GUILayout.Width(80f));
-                GUILayout.Label(MashBoxSDKState.CookerNote, EditorStyles.miniLabel, GUILayout.Width(110f));
-
-                using (new EditorGUI.DisabledScope(MashBoxSDKState.CheckingCooker))
+                EditorGUILayout.LabelField(MashBoxSDKState.CookerNote, EditorStyles.wordWrappedMiniLabel);
+                if (MashBoxSDKState.Publishers.Length == 0)
+                    EditorGUILayout.HelpBox("No publishers are reporting. Refresh status or try again later.", MessageType.Info);
+                foreach (var publisher in MashBoxSDKState.Publishers)
                 {
-                    if (GUILayout.Button(MashBoxSDKState.CheckingCooker ? "Checking..." : "Refresh", GUILayout.Width(90f)))
+                    using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                     {
-                        MashBoxSDKState.RefreshCookerStatus();
-                        Repaint();
+                        EditorGUILayout.LabelField(publisher.label + " · " + publisher.platform, EditorStyles.boldLabel);
+                        EditorGUILayout.LabelField("Unity " + publisher.unityVersion + " · MashBoxSDK " + publisher.mashBoxSdkVersion, EditorStyles.wordWrappedMiniLabel);
+                        EditorGUILayout.LabelField((publisher.family == "unity6" ? "Project X" : "BMX Streets / Scoot X") + " · " + publisher.status, EditorStyles.wordWrappedLabel);
+                        EditorGUILayout.LabelField("Regions: " + string.Join(", ", publisher.regions ?? new string[0]), EditorStyles.miniLabel);
+                        if (!string.IsNullOrEmpty(publisher.message)) EditorGUILayout.HelpBox(publisher.message, publisher.available ? MessageType.Info : MessageType.Warning);
                     }
                 }
-
-                GUILayout.FlexibleSpace();
             }
         }
-        
+
         private void OnFocus()
         {
             string currentGame = EditorPrefs.GetString("ModIo.CurrentGame", "");
