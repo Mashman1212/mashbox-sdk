@@ -1652,31 +1652,47 @@ namespace MashBoxSDK.SDKMain
 
         private static void DrawPublisherPlatform(string version, string platform, string label)
         {
-            var summary = PublisherStatusSummary.ForPlatform(MashBoxSDKState.Publishers, version, platform,
-                MashBoxSDKState.HasPublisherSnapshot, MashBoxSDKState.PublisherStatusFresh,
-                MashBoxSDKState.CheckingCooker, MashBoxSDKState.PublisherStatusFailed, MashBoxSDKState.PublishingEnabled);
+            var workers = MashBoxSDKState.Publishers.Where(p => p != null && p.unityVersion == version && p.platform == platform)
+                .OrderBy(p => p.label, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.id, StringComparer.Ordinal).ToArray();
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.MinWidth(0), GUILayout.ExpandWidth(true)))
             {
                 DrawPublisherLogo(platform);
-                EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
-                var statusColor = summary.Available ? new Color(0.30f, 0.85f, 0.45f)
-                    : summary.Status == "Offline" || summary.Status == "Not connected" ? new Color(1f, 0.40f, 0.40f)
-                    : summary.Status == "Checking..." ? new Color(0.65f, 0.68f, 0.72f)
-                    : new Color(0.95f, 0.70f, 0.30f);
-                var style = new GUIStyle(EditorStyles.boldLabel) { wordWrap = true };
-                style.normal.textColor = statusColor;
-                using (new EditorGUILayout.HorizontalScope())
+                if (workers.Length == 0)
+                    DrawPublisherStatusRow(version, platform, label, Array.Empty<PublisherService.Publisher>());
+                else foreach (var worker in workers)
                 {
-                    var slot = GUILayoutUtility.GetRect(16f, EditorGUIUtility.singleLineHeight, GUILayout.Width(16f));
-                    if (Event.current.type == EventType.Repaint)
-                    {
-                        var dot = new Rect(slot.x + 2f, slot.y + (EditorGUIUtility.singleLineHeight - 10f) * 0.5f, 10f, 10f);
-                        GUI.DrawTexture(dot, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, statusColor, 0f, 5f);
-                    }
-                    EditorGUILayout.LabelField(summary.Status, style);
+                    var title = label + (string.IsNullOrWhiteSpace(worker.label) ? "" : " — " + worker.label);
+                    DrawPublisherStatusRow(version, platform, title, new[] { worker });
+                    GUILayout.Space(4f);
                 }
-                EditorGUILayout.LabelField(summary.Detail, EditorStyles.wordWrappedMiniLabel);
             }
+        }
+
+        private static void DrawPublisherStatusRow(string version, string platform, string title, PublisherService.Publisher[] workers)
+        {
+            var summary = PublisherStatusSummary.ForPlatform(workers, version, platform,
+                MashBoxSDKState.HasPublisherSnapshot, MashBoxSDKState.PublisherStatusFresh,
+                MashBoxSDKState.CheckingCooker, MashBoxSDKState.PublisherStatusFailed, MashBoxSDKState.PublishingEnabled);
+            EditorGUILayout.LabelField(title, new GUIStyle(EditorStyles.boldLabel) { wordWrap = true });
+            var statusColor = summary.Available ? new Color(0.30f, 0.85f, 0.45f)
+                : summary.Status == "Offline" || summary.Status == "Not connected" ? new Color(1f, 0.40f, 0.40f)
+                : summary.Status == "Checking..." ? new Color(0.65f, 0.68f, 0.72f)
+                : new Color(0.95f, 0.70f, 0.30f);
+            var style = new GUIStyle(EditorStyles.boldLabel) { wordWrap = true };
+            style.normal.textColor = statusColor;
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                var slot = GUILayoutUtility.GetRect(16f, EditorGUIUtility.singleLineHeight, GUILayout.Width(16f));
+                if (Event.current.type == EventType.Repaint)
+                {
+                    var dot = new Rect(slot.x + 2f, slot.y + (EditorGUIUtility.singleLineHeight - 10f) * 0.5f, 10f, 10f);
+                    GUI.DrawTexture(dot, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, statusColor, 0f, 5f);
+                }
+                EditorGUILayout.LabelField(summary.Status + (string.IsNullOrEmpty(summary.ServiceStatus) ? "" : " · " + summary.ServiceStatus), style);
+            }
+            EditorGUILayout.LabelField(summary.Detail, EditorStyles.wordWrappedMiniLabel);
+            if (!string.IsNullOrEmpty(summary.Message) && summary.Message != summary.Detail && summary.Message != summary.ServiceStatus)
+                EditorGUILayout.LabelField(summary.Message, EditorStyles.wordWrappedMiniLabel);
         }
 
         private void OnFocus()

@@ -15,7 +15,7 @@ namespace MashBoxSDK.SDKMain
         private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
         [Serializable] public sealed class Publisher
         {
-            public string id, label, platform, unityVersion, mashBoxSdkVersion, family, status, message;
+            public string id, label, platform, unityVersion, mashBoxSdkVersion, family, status, message, serviceStatus;
             public bool enabled, available, online, busy;
             public string[] regions;
         }

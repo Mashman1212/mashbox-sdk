@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Show each public publisher name on its platform card, with the service status alongside availability and the creator message below.
+
 - Move publishing server status into its own Setup > Publishing Servers tab, with official Steam, Xbox and PS5 logos and colored availability dots beside each status.
 
 - Publishing server status now always shows PC, Xbox and PS5 grouped by exact Unity version, with distinct checking, disconnected, offline, paused and unavailable states. Publisher details retain SDK versions and maintenance notices.

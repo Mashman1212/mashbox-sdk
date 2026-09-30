@@ -7,7 +7,7 @@ namespace MashBoxSDK.SDKMain
     // Display aggregation only; upload authorization remains on the server.
     public sealed class PublisherStatusSummary
     {
-        public string Status, Detail;
+        public string Status, Detail, ServiceStatus, Message;
         public bool Available;
         public PublisherService.Publisher[] Workers;
 
@@ -31,6 +31,8 @@ namespace MashBoxSDK.SDKMain
             }
             var available = workers.Where(w => globallyEnabled && w.enabled && w.online && w.available).ToArray();
             var reasons = workers.Select(w => w.message).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct().ToArray();
+            result.ServiceStatus = string.Join(" · ", workers.Select(w => w.serviceStatus).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct());
+            result.Message = string.Join(" · ", reasons);
             result.Available = available.Length > 0;
             if (result.Available)
             {
