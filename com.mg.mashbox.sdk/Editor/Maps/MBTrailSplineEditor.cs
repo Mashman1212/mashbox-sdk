@@ -23,7 +23,11 @@ namespace MashBoxSDK.EditorTools.Maps
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode) return;
             var seen = new HashSet<string>();
+#if UNITY_6000_0_OR_NEWER
             MBTrailSpline[] trails = UnityEngine.Object.FindObjectsByType<MBTrailSpline>(FindObjectsInactive.Include);
+#else
+            MBTrailSpline[] trails = UnityEngine.Object.FindObjectsByType<MBTrailSpline>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#endif
             Array.Sort(trails, (a, b) => a.GetInstanceID().CompareTo(b.GetInstanceID()));
             foreach (MBTrailSpline trail in trails)
             {

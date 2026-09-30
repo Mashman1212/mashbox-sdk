@@ -1,3 +1,4 @@
+#if UNITY_EDITOR && UNITY_6000_0_OR_NEWER
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -31,3 +32,4 @@ namespace MashBoxSDK.MapTools
         }
     }
 }
+#endif

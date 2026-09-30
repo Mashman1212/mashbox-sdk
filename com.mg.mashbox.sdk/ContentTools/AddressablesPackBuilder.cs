@@ -336,11 +336,19 @@ namespace MashBoxSDK.ContentTools
             {
                 settings.MonoScriptBundleNaming = MonoScriptBundleNaming.Custom;
                 settings.MonoScriptBundleCustomNaming = monoScriptBundlePrefix;
-                // The external filename alone is not enough: Unity rejects two loaded
-                // bundles when their embedded bundle IDs match. Since every content pack
-                // is an independently loadable catalog, give all of its generated bundles
-                // unique embedded IDs as well. This applies only to newly exported packs.
-                settings.UniqueBundleIds = true;
+                // Addressables 1.22.3 appends an asset hash to internal bundle IDs,
+                // but its packed builder still uses exact matching to recover the
+                // output names for PackTogether/PackTogetherByLabel. With unique IDs
+                // enabled that lookup fails, losing the assets/label suffix and
+                // collapsing bundles into names such as "vanillasocks_.bundle".
+                // 2.11.1 handles the appended hash with prefix matching. Keep unique
+                // IDs there; legacy builds already distinguish packs by group GUID
+                // and by the pack-scoped MonoScripts prefix configured above.
+                var addressablesPackage = UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()
+                    .FirstOrDefault(package =>
+                        string.Equals(package.name, "com.unity.addressables", StringComparison.OrdinalIgnoreCase));
+                settings.UniqueBundleIds = string.Equals(
+                    addressablesPackage?.version, ProjectXAddressablesVersion, StringComparison.OrdinalIgnoreCase);
                 EditorUtility.SetDirty(settings);
                 AssetDatabase.SaveAssets();
 
