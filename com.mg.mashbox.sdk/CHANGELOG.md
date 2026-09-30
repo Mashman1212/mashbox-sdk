@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Move publishing server status into its own Setup > Publishing Servers tab, with official Steam, Xbox and PS5 logos and colored availability dots beside each status.
+
+- Publishing server status now always shows PC, Xbox and PS5 grouped by exact Unity version, with distinct checking, disconnected, offline, paused and unavailable states. Publisher details retain SDK versions and maintenance notices.
+
 ### Publisher routing and status
 
 - Route map and content publishing by the selected game's exact Unity version and region. Project X uses separate Unity 6 storage; BMX Streets and Scoot X keep Unity 2022 storage.

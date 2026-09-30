@@ -36,6 +36,10 @@ namespace MashBoxSDK.SDKMain
         private static CookerStatus _cooker = CookerStatus.Unknown;
         public static PublisherService.Publisher[] Publishers = Array.Empty<PublisherService.Publisher>();
         private static DateTimeOffset _fleetChecked;
+        public static bool HasPublisherSnapshot => _fleetChecked != default;
+        public static bool PublisherStatusFailed { get; private set; }
+        public static bool PublisherStatusFresh => HasPublisherSnapshot && !PublisherStatusFailed && (DateTimeOffset.UtcNow - _fleetChecked).TotalSeconds <= 45;
+        public static bool PublishingEnabled { get; private set; } = true;
         public static CookerStatus Cooker
         {
             get
@@ -62,7 +66,7 @@ namespace MashBoxSDK.SDKMain
             if (EditorApplication.timeSinceStartup < _nextPoll) return;
 
             _inFlight = true;
-            CookerNote = "checking...";
+            if (!HasPublisherSnapshot) CookerNote = "Checking publisher status...";
             _ = Poll();
         }
 
@@ -81,8 +85,8 @@ namespace MashBoxSDK.SDKMain
                 return;
             }
 
-            Cooker = CookerStatus.Unknown;
-            CookerNote = "checking...";
+            if (!HasPublisherSnapshot) Cooker = CookerStatus.Unknown;
+            if (!HasPublisherSnapshot) CookerNote = "Checking publisher status...";
             _inFlight = true;
             _nextPoll = 0.0;
 
@@ -225,11 +229,13 @@ namespace MashBoxSDK.SDKMain
             {
                 var fleet = await PublisherService.GetFleetAsync();
                 Publishers = fleet.workers;
+                PublisherStatusFailed = false;
+                PublishingEnabled = fleet.enabled;
                 _fleetChecked = DateTimeOffset.UtcNow;
                 Cooker = fleet.enabled ? CookerStatus.Online : CookerStatus.Offline;
-                CookerNote = string.IsNullOrEmpty(fleet.message) ? "Availability depends on game, Unity and region" : fleet.message;
+                CookerNote = string.IsNullOrEmpty(fleet.message) ? "Live publisher availability by Unity version and platform." : fleet.message;
             }
-            catch (Exception ex) { Cooker = CookerStatus.Error; Publishers = Array.Empty<PublisherService.Publisher>(); CookerNote = ex.Message; }
+            catch (Exception ex) { Cooker = CookerStatus.Error; PublisherStatusFailed = true; CookerNote = ex.Message; }
             finally
             {
                 _inFlight = false;

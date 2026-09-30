@@ -1,0 +1,15 @@
+Official platform logo artwork, retrieved 2026-09-30. Original PNGs are unmodified.
+
+Steam (Valve):
+https://partner.steamgames.com/doc/marketing/branding
+https://partner.steamgames.com/public/images/steam_logo_white_small.png
+
+Xbox (Microsoft):
+https://www.xbox.com/en-US/
+https://uhf.microsoft.com/images/xbox/RW4ESm.png
+
+PS5 (Sony Interactive Entertainment):
+https://www.playstation.com/en-us/ps5/
+https://gmedia.playstation.com/is/image/SIEPDC/ps5-badge-02-en-11jun20?fmt=png-alpha&wid=512
+
+Used to identify publishing platforms in the editor. Trademarks belong to their respective owners.

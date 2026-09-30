@@ -24,7 +24,8 @@ namespace MashBoxSDK.SDKMain
             PatchNotes,
             Game,
             Login,
-            Samples
+            Samples,
+            Publishers
         }
 
         private const string PREF_KEY_SETUP_TAB = "MashBoxSDK.SelectedSetupTab";
@@ -274,6 +275,9 @@ namespace MashBoxSDK.SDKMain
                 case SetupTab.Samples:
                     DrawSamplesSetupTab();
                     break;
+                case SetupTab.Publishers:
+                    DrawCookerStatus();
+                    break;
             }
 
             EditorGUILayout.EndScrollView();
@@ -287,7 +291,8 @@ namespace MashBoxSDK.SDKMain
                 "Patch Notes",
                 "Game",
                 "Mod.io Login",
-                "Samples"
+                "Samples",
+                "Publishing Servers"
             }, MashBoxTabDrawer.TabVisualStyle.Secondary, new[]
             {
 #if UNITY_EDITOR
@@ -298,14 +303,18 @@ namespace MashBoxSDK.SDKMain
                 false,
                 false,
                 false,
-                HasDeprecatedSampleFolders()
+                HasDeprecatedSampleFolders(),
+                false
             });
 
             if (newTab == _setupTab)
                 return;
 
             _setupTab = newTab;
+            _scrollPosition = Vector2.zero;
             EditorPrefs.SetInt(PREF_KEY_SETUP_TAB, _setupTab);
+            if ((SetupTab)_setupTab == SetupTab.Publishers)
+                MashBoxSDKState.RefreshCookerStatus();
         }
 
         private void DrawSdkSetupTab()
@@ -317,9 +326,6 @@ namespace MashBoxSDK.SDKMain
             {
                 EditorGUILayout.LabelField("SDK Package", EditorStyles.boldLabel);
                 DrawSdkUpdaterUI();
-                GUILayout.Space(6);
-
-                DrawCookerStatus();
                 GUILayout.Space(6);
 
                 EditorGUILayout.LabelField("Package", SDK_PACKAGE_NAME, EditorStyles.miniLabel);
@@ -1556,6 +1562,8 @@ namespace MashBoxSDK.SDKMain
 
 
 
+        private readonly HashSet<string> _expandedPublisherVersions = new HashSet<string>();
+
         private void DrawCookerStatus()
         {
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
@@ -1564,22 +1572,110 @@ namespace MashBoxSDK.SDKMain
                 {
                     EditorGUILayout.LabelField("Publishing servers", EditorStyles.boldLabel);
                     using (new EditorGUI.DisabledScope(MashBoxSDKState.CheckingCooker))
-                        if (GUILayout.Button(MashBoxSDKState.CheckingCooker ? "Checking…" : "Refresh", GUILayout.Width(90))) MashBoxSDKState.RefreshCookerStatus();
+                        if (GUILayout.Button(MashBoxSDKState.CheckingCooker ? "Refreshing..." : "Refresh", GUILayout.Width(100))) MashBoxSDKState.RefreshCookerStatus();
                 }
-                EditorGUILayout.LabelField(MashBoxSDKState.CookerNote, EditorStyles.wordWrappedMiniLabel);
-                if (MashBoxSDKState.Publishers.Length == 0)
-                    EditorGUILayout.HelpBox("No publishers are reporting. Refresh status or try again later.", MessageType.Info);
-                foreach (var publisher in MashBoxSDKState.Publishers)
+                if (MashBoxSDKState.PublisherStatusFailed)
+                    EditorGUILayout.HelpBox(MashBoxSDKState.CookerNote, MessageType.Warning);
+                else if (MashBoxSDKState.HasPublisherSnapshot && !MashBoxSDKState.PublishingEnabled)
+                    EditorGUILayout.HelpBox("Publishing is paused. " + MashBoxSDKState.CookerNote, MessageType.Warning);
+
+                EditorGUILayout.LabelField("Publisher availability by Unity version and platform.", EditorStyles.wordWrappedLabel);
+                EditorGUILayout.LabelField("Publishing requires an available PC publisher for your game's Unity version and upload region. Busy publishers can accept queued uploads.", EditorStyles.wordWrappedMiniLabel);
+                GUILayout.Space(8f);
+
+                // Expected game versions remain visible even before their first worker connects.
+                var versions = GameRegistry.Games.Select(g => g.UnityEditorVersion)
+                    .Concat(MashBoxSDKState.Publishers.Where(p => p != null).Select(p => p.unityVersion))
+                    .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().OrderBy(v => v, StringComparer.Ordinal).ToArray();
+                foreach (var version in versions)
                 {
                     using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                     {
-                        EditorGUILayout.LabelField(publisher.label + " · " + publisher.platform, EditorStyles.boldLabel);
-                        EditorGUILayout.LabelField("Unity " + publisher.unityVersion + " · MashBoxSDK " + publisher.mashBoxSdkVersion, EditorStyles.wordWrappedMiniLabel);
-                        EditorGUILayout.LabelField((publisher.family == "unity6" ? "Project X" : "BMX Streets / Scoot X") + " · " + publisher.status, EditorStyles.wordWrappedLabel);
-                        EditorGUILayout.LabelField("Regions: " + string.Join(", ", publisher.regions ?? new string[0]), EditorStyles.miniLabel);
-                        if (!string.IsNullOrEmpty(publisher.message)) EditorGUILayout.HelpBox(publisher.message, publisher.available ? MessageType.Info : MessageType.Warning);
+                        var games = GameRegistry.Games.Where(g => g.UnityEditorVersion == version)
+                            .Select(g => g.DisplayName == "BMXS" ? "BMX Streets" : g.DisplayName == "ScootX" ? "Scoot X" : g.DisplayName == "ProjectX" ? "Project X" : g.DisplayName);
+                        var gameNames = string.Join(" / ", games);
+                        EditorGUILayout.LabelField("Unity " + version + (string.IsNullOrEmpty(gameNames) ? "" : "  ·  " + gameNames), EditorStyles.boldLabel);
+                        if (EditorGUIUtility.currentViewWidth >= 620)
+                        {
+                            using (new EditorGUILayout.HorizontalScope())
+                            {
+                                DrawPublisherPlatform(version, "PC", "PC");
+                                DrawPublisherPlatform(version, "Xbox Series", "Xbox");
+                                DrawPublisherPlatform(version, "PlayStation 5", "PS5");
+                            }
+                        }
+                        else
+                        {
+                            DrawPublisherPlatform(version, "PC", "PC");
+                            DrawPublisherPlatform(version, "Xbox Series", "Xbox");
+                            DrawPublisherPlatform(version, "PlayStation 5", "PS5");
+                        }
+                        var workers = MashBoxSDKState.Publishers.Where(p => p != null && p.unityVersion == version).ToArray();
+                        if (workers.Length > 0)
+                        {
+                            var expanded = EditorGUILayout.Foldout(_expandedPublisherVersions.Contains(version), "Publisher details (" + workers.Length + ")", true);
+                            if (expanded) _expandedPublisherVersions.Add(version); else _expandedPublisherVersions.Remove(version);
+                            if (expanded) foreach (var worker in workers)
+                            {
+                                var state = MashBoxSDKState.PublisherStatusFresh ? worker.status : "Last known status: " + worker.status;
+                                EditorGUILayout.LabelField(worker.platform + " · " + worker.label + " · " + state, EditorStyles.wordWrappedLabel);
+                                EditorGUILayout.LabelField("MashBoxSDK " + worker.mashBoxSdkVersion, EditorStyles.wordWrappedMiniLabel);
+                                if (!string.IsNullOrEmpty(worker.message)) EditorGUILayout.LabelField(worker.message, EditorStyles.wordWrappedMiniLabel);
+                            }
+                        }
                     }
                 }
+                EditorGUILayout.LabelField("Online / Cooking = accepting uploads. Not connected = no publisher has reported yet.", EditorStyles.wordWrappedMiniLabel);
+            }
+        }
+
+        private static readonly Dictionary<string, Texture2D> PublisherLogoCache = new Dictionary<string, Texture2D>();
+
+        private static void DrawPublisherLogo(string platform)
+        {
+            string asset = platform == "PC" ? "steam" : platform == "Xbox Series" ? "xbox" : "ps5";
+            if (!PublisherLogoCache.TryGetValue(asset, out var logo) || logo == null)
+            {
+                logo = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/" + SDK_PACKAGE_NAME + "/Editor/PublisherLogos/" + asset + ".png");
+                if (logo != null) PublisherLogoCache[asset] = logo;
+            }
+            if (logo == null) return; // Platform text remains visible if an asset is missing.
+
+            var rect = GUILayoutUtility.GetRect(0f, 60f, GUILayout.ExpandWidth(true));
+            // Preserve the original artwork and its proportions. Use backgrounds suited to each official variant.
+            EditorGUI.DrawRect(rect, asset == "xbox" ? Color.white : new Color(0.10f, 0.11f, 0.13f));
+            float width = Mathf.Min(144f, Mathf.Max(0f, rect.width - 32f));
+            var imageRect = new Rect(rect.x + (rect.width - width) * 0.5f, rect.y + 14f, width, 32f);
+            GUI.DrawTexture(imageRect, logo, ScaleMode.ScaleToFit, true);
+            GUILayout.Space(4f);
+        }
+
+        private static void DrawPublisherPlatform(string version, string platform, string label)
+        {
+            var summary = PublisherStatusSummary.ForPlatform(MashBoxSDKState.Publishers, version, platform,
+                MashBoxSDKState.HasPublisherSnapshot, MashBoxSDKState.PublisherStatusFresh,
+                MashBoxSDKState.CheckingCooker, MashBoxSDKState.PublisherStatusFailed, MashBoxSDKState.PublishingEnabled);
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.MinWidth(0), GUILayout.ExpandWidth(true)))
+            {
+                DrawPublisherLogo(platform);
+                EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+                var statusColor = summary.Available ? new Color(0.30f, 0.85f, 0.45f)
+                    : summary.Status == "Offline" || summary.Status == "Not connected" ? new Color(1f, 0.40f, 0.40f)
+                    : summary.Status == "Checking..." ? new Color(0.65f, 0.68f, 0.72f)
+                    : new Color(0.95f, 0.70f, 0.30f);
+                var style = new GUIStyle(EditorStyles.boldLabel) { wordWrap = true };
+                style.normal.textColor = statusColor;
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    var slot = GUILayoutUtility.GetRect(16f, EditorGUIUtility.singleLineHeight, GUILayout.Width(16f));
+                    if (Event.current.type == EventType.Repaint)
+                    {
+                        var dot = new Rect(slot.x + 2f, slot.y + (EditorGUIUtility.singleLineHeight - 10f) * 0.5f, 10f, 10f);
+                        GUI.DrawTexture(dot, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, statusColor, 0f, 5f);
+                    }
+                    EditorGUILayout.LabelField(summary.Status, style);
+                }
+                EditorGUILayout.LabelField(summary.Detail, EditorStyles.wordWrappedMiniLabel);
             }
         }
 
