@@ -25,6 +25,8 @@ namespace MashBoxSDK.SDKMain
         string creatorSession, nextCursor = "";
         CancellationTokenSource ownerCancellation;
         bool busy, loaded, registration, ownerLoaded, autoLoadAttempted;
+        readonly Dictionary<string, string> artworkStatus = new Dictionary<string, string>();
+        readonly HashSet<string> artworkFailures = new HashSet<string>();
         readonly Dictionary<string, string> previewErrors = new Dictionary<string, string>();
         Vector2 scroll;
         Profile draft = new Profile();
@@ -284,15 +286,17 @@ namespace MashBoxSDK.SDKMain
                     EditorGUILayout.HelpBox("Upload is saved, but the preview could not load. " + error, MessageType.Warning);
                 else GUILayout.Label("Loading saved artwork...", EditorStyles.miniLabel);
             }
+            if (artworkStatus.TryGetValue(slot, out string feedback))
+                EditorGUILayout.HelpBox(feedback, artworkFailures.Contains(slot) ? MessageType.Error : MessageType.Info);
             EditorGUILayout.BeginHorizontal();
             bool canEdit = slot == "logo" || account.flags.partner;
             using (new EditorGUI.DisabledScope(!canEdit))
                 if (GUILayout.Button(uploaded ? "Replace " + slot : "Upload " + slot)) Upload(slot);
             using (new EditorGUI.DisabledScope(!uploaded))
             {
-                if (GUILayout.Button("Refresh preview")) Run(() => LoadArtwork(slot));
+                if (GUILayout.Button("Refresh preview")) Run(() => LoadArtwork(slot), slot);
                 using (new EditorGUI.DisabledScope(!canEdit))
-                    if (GUILayout.Button("Remove")) Run(() => Remove(slot));
+                    if (GUILayout.Button("Remove")) Run(() => Remove(slot), slot);
             }
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.EndVertical();
@@ -412,10 +416,11 @@ namespace MashBoxSDK.SDKMain
 
         void Upload(string slot)
         {
-            string path = EditorUtility.OpenFilePanel("Upload " + slot, "", "png,jpg,jpeg");
-            if (string.IsNullOrEmpty(path)) return;
             Run(async () =>
             {
+                string path = EditorUtility.OpenFilePanelWithFilters("Upload " + slot, "", new[] { "Image files", "png,jpg,jpeg" });
+                if (string.IsNullOrEmpty(path)) { status = "No file selected. Existing artwork is unchanged."; return; }
+                ReportArtwork(slot, "Checking " + Path.GetFileName(path) + "...");
                 if (new FileInfo(path).Length > 8 * 1024 * 1024) throw new Exception("Artwork must be at most 8 MiB.");
                 byte[] data = File.ReadAllBytes(path);
                 var check = new Texture2D(2, 2) { hideFlags = HideFlags.HideAndDontSave };
@@ -429,11 +434,13 @@ namespace MashBoxSDK.SDKMain
                 finally { UnityEngine.Object.DestroyImmediate(check); }
                 // Preserve unsaved text/color edits when updating an independent artwork slot.
                 Profile edits = draft;
+                ReportArtwork(slot, "Uploading " + Path.GetFileName(path) + " (" + (data.Length / (1024f * 1024f)).ToString("0.0") + " MiB)...");
                 SetAccount(await Send("creator-account/assets/" + slot, "PUT", creatorSession, null, account.etag, data));
                 draft = edits;
+                ReportArtwork(slot, "Upload saved. Loading the saved preview...");
                 await LoadArtwork(slot);
                 status = char.ToUpperInvariant(slot[0]) + slot.Substring(1) + " uploaded and saved to your account.";
-            });
+            }, slot);
         }
 
         async Task Remove(string slot)
@@ -567,22 +574,49 @@ namespace MashBoxSDK.SDKMain
             }
         }
 
-        async void Run(Func<Task> action)
+        void ReportArtwork(string slot, string message)
         {
-            if (busy || lifetime.IsCancellationRequested) return;
-            busy = true; status = "Workingâ€¦";
-            try { await action(); }
-            catch (OperationCanceledException) { status = "Sign-in cancelled."; }
-            catch (ApiException ex)
-            {
-                status = ex.Message;
-                if (ex.Code == 401) { OwnerToken = ""; ownerLoaded = false; }
-            }
-            catch (Exception ex) { status = ex.Message; }
-            finally { busy = false; if (!lifetime.IsCancellationRequested) repaint(); }
+            status = message;
+            artworkStatus[slot] = message;
+            if (!lifetime.IsCancellationRequested) repaint();
         }
 
-        void ClearPreviews() { foreach (Texture2D image in previews.Values) if (image != null) UnityEngine.Object.DestroyImmediate(image); previews.Clear(); previewErrors.Clear(); }
+        async void Run(Func<Task> action, string artworkSlot = null)
+        {
+            if (busy || lifetime.IsCancellationRequested) return;
+            busy = true; status = "Working...";
+            if (artworkSlot != null) { artworkFailures.Remove(artworkSlot); ReportArtwork(artworkSlot, "Preparing artwork..."); }
+            try
+            {
+                await action();
+                if (status == "Working..." || status == "Preparing artwork...") status = "Finished.";
+            }
+            catch (OperationCanceledException) { status = "Operation cancelled."; }
+            catch (ApiException ex)
+            {
+                status = ex.Code == 409 || ex.Code == 428
+                    ? "Your saved profile changed, possibly after owner approval or another upload. Click Reload saved profile, then select the image again. This upload was not saved."
+                    : ex.Code == 401 ? "Your sign-in expired. Sign in again and retry the upload." : ex.Message;
+                if (artworkSlot != null) artworkFailures.Add(artworkSlot);
+                if (ex.Code == 401) { OwnerToken = ""; ownerLoaded = false; }
+            }
+            catch (Exception ex)
+            {
+                status = ex.Message;
+                if (artworkSlot != null) artworkFailures.Add(artworkSlot);
+            }
+            finally
+            {
+                busy = false;
+                if (!lifetime.IsCancellationRequested)
+                {
+                    if (artworkSlot != null) artworkStatus[artworkSlot] = status;
+                    repaint();
+                }
+            }
+        }
+
+        void ClearPreviews() { foreach (Texture2D image in previews.Values) if (image != null) UnityEngine.Object.DestroyImmediate(image); previews.Clear(); previewErrors.Clear(); artworkStatus.Clear(); artworkFailures.Clear(); }
         public void Dispose() { lifetime.Cancel(); ClearPreviews(); }
     }
 }
