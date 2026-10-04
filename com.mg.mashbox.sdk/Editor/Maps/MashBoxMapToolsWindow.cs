@@ -4485,6 +4485,8 @@ namespace MashBoxSDK.MapTools
                     var pack = packs[i];
                     pack.modioUserToken = ModIoAuth.CurrentToken;
                     pack.PublisherEmail = ModIoAuth.CurrentEmail;
+                    pack.publisherModioUserId = ModIoAuth.CurrentUserId;
+                    pack.publisherModioUsername = ModIoAuth.CurrentUsername;
                     EditorUtility.SetDirty(pack);
 
                     var progress = packs.Count == 1 ? 0.25f : (float)i / packs.Count;
@@ -4912,8 +4914,11 @@ namespace MashBoxSDK.MapTools
             {
                 activeMapPublishCts = new CancellationTokenSource();
                 var cts = activeMapPublishCts;
+                await ModIoAuth.RefreshCurrentIdentityAsync();
                 pack.modioUserToken = ModIoAuth.CurrentToken;
                 pack.PublisherEmail = ModIoAuth.CurrentEmail;
+                pack.publisherModioUserId = ModIoAuth.CurrentUserId;
+                pack.publisherModioUsername = ModIoAuth.CurrentUsername;
                 pack.SetPublishTargetGame(currentGame);
                 EditorUtility.SetDirty(pack);
                 AssetDatabase.SaveAssets();
@@ -5410,6 +5415,9 @@ namespace MashBoxSDK.MapTools
                 tempPack.IncludeInBuild = sourcePack.IncludeInBuild;
                 tempPack.BuildToCustomFolder = sourcePack.BuildToCustomFolder;
                 tempPack.modioUserToken = sourcePack.modioUserToken;
+                tempPack.PublisherEmail = sourcePack.PublisherEmail;
+                tempPack.publisherModioUserId = sourcePack.publisherModioUserId;
+                tempPack.publisherModioUsername = sourcePack.publisherModioUsername;
                 tempPack.PublisherEmail = sourcePack.PublisherEmail;
                 tempPack.MashBoxSdkVersion = string.IsNullOrWhiteSpace(sourcePack.MashBoxSdkVersion)
                     ? MashBoxSDK.ContentTools.ContentPackDefinition.ResolveMashBoxSdkVersion()

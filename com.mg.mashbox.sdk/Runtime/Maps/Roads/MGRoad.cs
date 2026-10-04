@@ -45,8 +45,20 @@ namespace MashBoxSDK.Maps.Roads
         public string LastBuildMessage { get; private set; }
         public Mesh GeneratedMesh => generatedMesh;
         public void RequestRebuild() { dirty = true; }
-        void OnEnable() { UnitySpline.Changed += Changed; dirty = true; }
-        void OnDisable() { UnitySpline.Changed -= Changed; }
+        void OnEnable()
+        {
+            UnitySpline.Changed += Changed; dirty = true;
+#if UNITY_EDITOR
+            MGRoadSceneRegistry.Register(this);
+#endif
+        }
+        void OnDisable()
+        {
+            UnitySpline.Changed -= Changed;
+#if UNITY_EDITOR
+            MGRoadSceneRegistry.Unregister(this);
+#endif
+        }
         void OnValidate() { dirty = true; }
         void Changed(UnitySpline spline, int index, SplineModification modification)
         { if (Container != null && Container.Spline == spline) dirty = true; }
@@ -57,12 +69,18 @@ namespace MashBoxSDK.Maps.Roads
         }
         void OnDestroy()
         {
+#if UNITY_EDITOR
+            MGRoadSceneRegistry.Unregister(this);
+#endif
             if (ownedMesh != null) { if (Application.isPlaying) Destroy(ownedMesh); else DestroyImmediate(ownedMesh); }
         }
 
         public void Rebuild()
         {
             dirty = false; lastMatrix = transform.localToWorldMatrix;
+#if UNITY_EDITOR
+            MGRoadSceneRegistry.NotifyChanged();
+#endif
             var spline = Container.Spline;
             LastBuildMessage = null;
             if (ownedMesh == null)

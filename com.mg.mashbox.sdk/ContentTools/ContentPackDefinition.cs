@@ -63,6 +63,8 @@ namespace MashBoxSDK.ContentTools
         
         public string modioUserToken;
         public string publisherEmail;
+        public string publisherModioUserId;
+        public string publisherModioUsername;
         [Header("Publishing Targets")]
         [SerializeField]
         public List<GameModMapping> GameModMappings = new List<GameModMapping>();

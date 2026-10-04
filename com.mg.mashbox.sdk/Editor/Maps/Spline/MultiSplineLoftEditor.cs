@@ -334,8 +334,9 @@ namespace MashBoxSDK.Maps.Spline
                 if (GUILayout.Button("Generate Now", GUILayout.Height(26f)))
                 {
                     Undo.RecordObject(loft, "Generate Multi Spline Loft");
-                    loft.Regenerate();
-                    EditorUtility.SetDirty(loft);
+                    // Regeneration can remove collider components and children.
+                    // Let the editor update perform it after Inspector drawing.
+                    QueueGenerate(loft);
                 }
 
                 if (GUILayout.Button("Bake Mesh Asset", GUILayout.Height(26f)))

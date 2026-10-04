@@ -3,6 +3,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Threading.Tasks;
 using MashBoxSDK.Exporting;
 using UnityEditor;
@@ -26,12 +27,16 @@ namespace MashBoxSDK.ContentTools.Editor
 
         public static string CurrentToken => SessionState.GetString(TK(ApiBase), "");
         public static string CurrentEmail => SessionState.GetString(EK(ApiBase), "");
+        public static string CurrentUserId => SessionState.GetString("modio_user_id::" + ApiBase, "");
+        public static string CurrentUsername => SessionState.GetString("modio_username::" + ApiBase, "");
         public static bool IsAuthorizedForCurrentGame() => !string.IsNullOrEmpty(CurrentToken);
 
         public static void ClearForCurrentGame()
         {
             SessionState.SetString(TK(ApiBase), "");
             SessionState.SetString(EK(ApiBase), "");
+            SessionState.SetString("modio_user_id::" + ApiBase, "");
+            SessionState.SetString("modio_username::" + ApiBase, "");
 
             // Remove tokens written by older SDK versions so they cannot be reused silently.
             EditorPrefs.DeleteKey(TK(ApiBase));
@@ -120,6 +125,10 @@ namespace MashBoxSDK.ContentTools.Editor
             {
                 SessionState.SetString(TK(ApiBase), token);
                 SessionState.SetString(EK(ApiBase), email);
+                SessionState.SetString("modio_user_id::" + ApiBase, "");
+                SessionState.SetString("modio_username::" + ApiBase, "");
+                var identity = RefreshCurrentIdentityAsync();
+                while (!identity.IsCompleted) yield return null;
 
                 // Do not persist mod.io auth across Unity editor sessions.
                 EditorPrefs.DeleteKey(TK(ApiBase));
@@ -132,6 +141,36 @@ namespace MashBoxSDK.ContentTools.Editor
             }
         }
 
+        [Serializable] private sealed class UserIdentity { public long id; public string username; }
+
+        public static void UpdateCurrentIdentityFromJson(string json)
+        {
+            try
+            {
+                var user = JsonUtility.FromJson<UserIdentity>(json);
+                if (user == null || user.id <= 0 || string.IsNullOrWhiteSpace(user.username)) return;
+                SessionState.SetString("modio_user_id::" + ApiBase, user.id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                SessionState.SetString("modio_username::" + ApiBase, user.username);
+            }
+            catch { /* Account details must never interrupt publishing. */ }
+        }
+
+        public static async Task RefreshCurrentIdentityAsync()
+        {
+            var apiBase = ApiBase;
+            var token = CurrentToken;
+            if (string.IsNullOrWhiteSpace(token)) return;
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                using var response = await http.GetAsync(apiBase.TrimEnd('/') + "/me");
+                if (!response.IsSuccessStatusCode) return;
+                var json = await response.Content.ReadAsStringAsync();
+                if (ApiBase == apiBase && CurrentToken == token) UpdateCurrentIdentityFromJson(json);
+            }
+            catch { /* The cooker will retry verification using the submission token. */ }
+        }
         static async Task<string> PostToProxyWithFallbackAsync(string route, IEnumerable<KeyValuePair<string, string>> form)
         {
             Exception lastException = null;

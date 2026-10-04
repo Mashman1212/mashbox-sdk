@@ -166,6 +166,14 @@ namespace MashBoxSDK.Maps
             SetCollectedState(false);
         }
 
+        /// <summary>Restore profile state and group totals without replaying pickup or reset events.</summary>
+        public void RestoreCollectedState(bool isCollected)
+        {
+            collected = isCollected;
+            CacheGroupReference();
+            group?.RegisterCollectible(this);
+        }
+
         internal void SetCollectedState(bool isCollected, bool notifyGroup = true)
         {
             if (collected == isCollected)

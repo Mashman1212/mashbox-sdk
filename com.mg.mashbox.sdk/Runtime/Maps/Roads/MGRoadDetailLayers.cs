@@ -3,10 +3,13 @@ using System.Collections.Generic;
 using UnityEngine;
 namespace MashBoxSDK.Maps.Roads
 {
-    [DisallowMultipleComponent, AddComponentMenu("")]
+    [ExecuteAlways, DisallowMultipleComponent, AddComponentMenu("")]
     public sealed class MGRoadDetailLayers : MonoBehaviour
     {
 #if UNITY_EDITOR
+        void OnEnable() => MGRoadSceneRegistry.Register(this);
+        void OnDestroy() => MGRoadSceneRegistry.Unregister(this);
+        void OnValidate() => MGRoadSceneRegistry.NotifyChanged();
         [Serializable] public sealed class Cells
         {
             public int width, height;

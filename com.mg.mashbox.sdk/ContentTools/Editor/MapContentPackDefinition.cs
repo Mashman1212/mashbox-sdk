@@ -23,6 +23,8 @@ namespace MashBoxSDK.ContentTools.Editor
         public bool BuildToCustomFolder;
         public string modioUserToken;
         public string PublisherEmail;
+        public string publisherModioUserId;
+        public string publisherModioUsername;
 
         [Header("Metadata")]
         [Tooltip("MashBox SDK version that last prepared this map pack for export.")]
@@ -146,6 +148,8 @@ namespace MashBoxSDK.ContentTools.Editor
             StampMashBoxSdkVersion();
             modioUserToken = ModIoAuth.CurrentToken;
             PublisherEmail = ModIoAuth.CurrentEmail;
+            publisherModioUserId = ModIoAuth.CurrentUserId;
+            publisherModioUsername = ModIoAuth.CurrentUsername;
             EditorUtility.SetDirty(this);
         }
 

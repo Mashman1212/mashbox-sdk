@@ -7,10 +7,13 @@ namespace MashBoxSDK.Maps.Roads
 {
     // Editor-only payload. The build processor removes this component;
     // the persistent terrain mesh is the complete playable result.
-    [DisallowMultipleComponent, AddComponentMenu("")]
+    [ExecuteAlways, DisallowMultipleComponent, AddComponentMenu("")]
     public sealed class MGRoadTerrainLayers : MonoBehaviour
     {
 #if UNITY_EDITOR
+        void OnEnable() => MGRoadSceneRegistry.Register(this);
+        void OnDestroy() => MGRoadSceneRegistry.Unregister(this);
+        void OnValidate() => MGRoadSceneRegistry.NotifyChanged();
         [Serializable] public struct Sample
         {
             public int index;

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Include the signed-in creator's mod.io username and user ID in map and content submissions so Cooker Monitor can identify publish attempts. Account details are refreshed during login and publishing; existing tokens are not printed.
+
 - Show each public publisher name on its platform card, with the service status alongside availability and the creator message below.
 
 - Move publishing server status into its own Setup > Publishing Servers tab, with official Steam, Xbox and PS5 logos and colored availability dots beside each status.

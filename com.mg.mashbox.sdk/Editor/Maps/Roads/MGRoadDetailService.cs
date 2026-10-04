@@ -21,6 +21,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
         static readonly Unity.Profiling.ProfilerMarker marker = new Unity.Profiling.ProfilerMarker("MGRoadDetails.Apply");
         static bool busy;
         static double nextUpdate;
+        static int lastRevision = -1;
         static MGRoadDetailService()
         {
             EditorApplication.update += Tick;
@@ -32,7 +33,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
             && PrefabStageUtility.GetPrefabStage(c.gameObject) == null;
         static bool Active(MGRoad r) => r != null && r.isActiveAndEnabled && r.detailMaskEnabled && r.DetailSettings.clearDetails
             && r.Network != null && r.Network.isActiveAndEnabled && r.Network.terrainWorld != null && r.Network.terrainWorld.isActiveAndEnabled;
-        static MGRoadDetailLayers[] Stores() => Resources.FindObjectsOfTypeAll<MGRoadDetailLayers>()
+        static MGRoadDetailLayers[] Stores() => MGRoadSceneRegistry.DetailLayers
             .Where(s => s != null && s.gameObject.scene.IsValid() && s.gameObject.scene.isLoaded && !EditorUtility.IsPersistent(s)).ToArray();
         static string Fingerprint(MGRoad r)
         {
@@ -41,7 +42,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
             var world = r.Network != null ? r.Network.terrainWorld : null;
             if (world != null && r.DetailSettings.clearDetails && r.detailMaskEnabled)
             {
-                world.RefreshChunks(); b.Append(world.isActiveAndEnabled);
+                b.Append(world.isActiveAndEnabled);
                 foreach (var tile in world.Chunks)
                 {
                     if (tile == null) continue;
@@ -58,15 +59,16 @@ namespace MashBoxSDK.Maps.Roads.Editor
         {
             if (busy || EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating
                 || EditorApplication.timeSinceStartup < nextUpdate) return;
+            if (!MGRoadSceneRegistry.HasDetailWork || lastRevision == MGRoadSceneRegistry.Revision) return;
             double start = EditorApplication.timeSinceStartup;
-            try { UpdateLive(); nextUpdate = EditorApplication.timeSinceStartup + Math.Max(.15, EditorApplication.timeSinceStartup - start); }
+            try { UpdateLive(); lastRevision = MGRoadSceneRegistry.Revision; nextUpdate = EditorApplication.timeSinceStartup + Math.Max(.15, EditorApplication.timeSinceStartup - start); }
             catch (Exception e) { Debug.LogException(e); nextUpdate = EditorApplication.timeSinceStartup + 5; }
         }
         internal static void UpdateLive(Scene? scene = null)
         {
             if (busy || Application.isPlaying) return;
-            var roads = scene.HasValue ? scene.Value.GetRootGameObjects().SelectMany(r => r.GetComponentsInChildren<MGRoad>(true)).ToArray()
-                : Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None).Where(Editable).ToArray();
+            var roads = MGRoadSceneRegistry.Roads.Where(r => scene.HasValue
+                ? r != null && r.gameObject.scene == scene.Value : Editable(r)).ToArray();
             var changed = new List<MGRoad>();
             foreach (var road in roads)
             {
@@ -87,7 +89,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 Undo.RegisterCompleteObjectUndo(store, "Restore Road Details");
                 store.layers.RemoveAll(l => !Valid(l)); Compose(store);
             }
-            foreach (var road in fingerprints.Keys.Where(r => r == null).ToArray()) fingerprints.Remove(road);
+            foreach (var road in fingerprints.Keys.Where(r => r == null || !r.isActiveAndEnabled).ToArray()) fingerprints.Remove(road);
         }
         public static string Apply(IEnumerable<MGRoad> source, bool automatic = false)
         {
@@ -215,8 +217,9 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         static void Restored()
         {
+            MGRoadSceneRegistry.NotifyChanged();
             fingerprints.Clear();
-            foreach (var road in Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None)) if (Editable(road)) fingerprints[road] = Fingerprint(road);
+            foreach (var road in MGRoadSceneRegistry.Roads) if (Editable(road)) fingerprints[road] = Fingerprint(road);
             foreach (var store in Stores()) if (Editable(store)) store.GetComponent<MGTerrain>()?.RefreshRoadDetailMasks();
             nextUpdate = EditorApplication.timeSinceStartup + .3;
         }

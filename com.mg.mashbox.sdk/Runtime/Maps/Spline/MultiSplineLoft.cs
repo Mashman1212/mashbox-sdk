@@ -2416,7 +2416,15 @@ namespace MashBoxSDK.Maps.Spline
                 triangles.Add(remappedIndex);
             }
 
-            Mesh mesh = reusableMesh != null ? reusableMesh : new Mesh
+            // Older authored trails can share their visible surface with a riding
+            // collider. A collision chunk must never clear or overwrite that mesh.
+            // Saved assets may also be shared by duplicated lofts; give them new
+            // scene-owned buffers instead of mutating the original asset.
+            bool canReuse = reusableMesh != null && reusableMesh != m_GeneratedMesh;
+#if UNITY_EDITOR
+            canReuse &= reusableMesh != null && !UnityEditor.EditorUtility.IsPersistent(reusableMesh);
+#endif
+            Mesh mesh = canReuse ? reusableMesh : new Mesh
             {
                 name = $"{gameObject.name} Collider Chunk {chunkIndex + 1:000}",
                 hideFlags = HideFlags.None
@@ -2457,14 +2465,14 @@ namespace MashBoxSDK.Maps.Spline
             DestroyGeneratedObject(collider);
         }
 
-        static void DestroyColliderChunksRoot(Transform chunksRoot)
+        void DestroyColliderChunksRoot(Transform chunksRoot)
         {
             for (int index = chunksRoot.childCount - 1; index >= 0; index--)
                 DestroyColliderChunkObject(chunksRoot.GetChild(index).gameObject);
             DestroyGeneratedObject(chunksRoot.gameObject);
         }
 
-        static void DestroyColliderChunkObject(GameObject chunkObject)
+        void DestroyColliderChunkObject(GameObject chunkObject)
         {
             if (chunkObject == null)
                 return;
@@ -2474,9 +2482,9 @@ namespace MashBoxSDK.Maps.Spline
                 collider.sharedMesh = null;
 #if UNITY_EDITOR
             // Scene-owned meshes are now saved, so DontSave is no longer an ownership test.
-            if (colliderMesh != null && !UnityEditor.EditorUtility.IsPersistent(colliderMesh))
+            if (colliderMesh != null && colliderMesh != m_GeneratedMesh && !UnityEditor.EditorUtility.IsPersistent(colliderMesh))
 #else
-            if (colliderMesh != null && (colliderMesh.hideFlags & HideFlags.DontSave) != 0)
+            if (colliderMesh != null && colliderMesh != m_GeneratedMesh && (colliderMesh.hideFlags & HideFlags.DontSave) != 0)
 #endif
                 DestroyGeneratedObject(colliderMesh);
             DestroyGeneratedObject(chunkObject);

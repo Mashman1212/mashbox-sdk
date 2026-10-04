@@ -3190,6 +3190,8 @@ namespace MashBoxSDK.ContentTools.Editor
             p.PublisingToGameName = _currentGameName;
             p.modioUserToken = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentToken;
             p.publisherEmail = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentEmail;
+            p.publisherModioUserId = ModIoAuth.CurrentUserId;
+            p.publisherModioUsername = ModIoAuth.CurrentUsername;
             p.SetPublishTargetGame(currentGame);
 
             //EnsureModIoMarkerOnPrefabs(p);
@@ -3839,6 +3841,8 @@ namespace MashBoxSDK.ContentTools.Editor
                     //p.GameName = _currentGameName;
                     p.modioUserToken = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentToken;
                     p.publisherEmail = MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentEmail;
+                    p.publisherModioUserId = ModIoAuth.CurrentUserId;
+                    p.publisherModioUsername = ModIoAuth.CurrentUsername;
 
                     p.BuildToCustomFolder = customFolder;
                     
@@ -4168,7 +4172,11 @@ namespace MashBoxSDK.ContentTools.Editor
                 var body = await res.Content.ReadAsStringAsync();
 
                 if ((int)res.StatusCode == 200)
+                {
+                    if (ModIoAuth.CurrentToken == token && ResolveCurrentGameModIoApiBase() == apiBase)
+                        ModIoAuth.UpdateCurrentIdentityFromJson(body);
                     return (true, null);
+                }
 
                 // Treat any non-200 as invalid; common: 401 expired/revoked/malformed
                 return (false, $"HTTP {(int)res.StatusCode}: {body}");
@@ -5259,7 +5267,7 @@ namespace MashBoxSDK.ContentTools.Editor
         [MenuItem("MashBox/Dev/Mod.io/PrintCurrentUserToken")]
         public static void PrintCurrentUserToken()
         {
-            Debug.Log(MashBoxSDK.ContentTools.Editor.ModIoAuth.CurrentToken);
+
         }
 #endif
         

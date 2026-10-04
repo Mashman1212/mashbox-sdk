@@ -28,6 +28,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
         static readonly Unity.Profiling.ProfilerMarker composeMarker = new Unity.Profiling.ProfilerMarker("MGRoadLayer.Compose");
         static bool busy;
         static double nextUpdate;
+        static int lastRevision = -1;
         static MGRoadLayerService()
         {
             EditorApplication.update += Tick;
@@ -45,7 +46,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
         static bool Editable(Component c) => c != null && c.gameObject.scene.IsValid() && c.gameObject.scene.isLoaded
             && !EditorSceneManager.IsPreviewScene(c.gameObject.scene) && !EditorUtility.IsPersistent(c)
             && PrefabStageUtility.GetPrefabStage(c.gameObject) == null;
-        static MGRoadTerrainLayers[] Stores() => Resources.FindObjectsOfTypeAll<MGRoadTerrainLayers>()
+        static MGRoadTerrainLayers[] Stores() => MGRoadSceneRegistry.TerrainLayers
             .Where(s => s != null && s.gameObject.scene.IsValid() && s.gameObject.scene.isLoaded && !EditorUtility.IsPersistent(s)).ToArray();
         static bool Active(MGRoad r) => r != null && r.isActiveAndEnabled && r.terrainLayerEnabled
             && r.TerrainSettings.mode == RoadTerrainMode.TerrainFollowsRoad && r.Network != null && r.Network.isActiveAndEnabled && r.Network.terrainWorld != null && r.Network.terrainWorld.isActiveAndEnabled;
@@ -114,7 +115,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
             Undo.RegisterCompleteObjectUndo(store, "Update Road Terrain Layer");
             var filter = store.terrain.MeshFilter;
             // Duplicating a tile or scene must never make one layer write into another tile's mesh.
-            if (Resources.FindObjectsOfTypeAll<MGTerrain>().Any(t => t != store.terrain && t.MeshFilter != null && t.MeshFilter.sharedMesh == filter.sharedMesh))
+            if (MGRoadSceneRegistry.Terrains.Any(t => t != store.terrain && t.MeshFilter != null && t.MeshFilter.sharedMesh == filter.sharedMesh))
             {
                 Undo.RegisterCompleteObjectUndo(filter, "Isolate Road Terrain Mesh");
                 Undo.RegisterCompleteObjectUndo(store.terrain, "Isolate Road Terrain Mesh");
@@ -186,7 +187,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
             store.terrain.RefreshSurfaceTiles();
             EditorUtility.SetDirty(mesh); EditorUtility.SetDirty(filter); EditorUtility.SetDirty(store); EditorUtility.SetDirty(store.terrain);
             EditorSceneManager.MarkSceneDirty(store.gameObject.scene);
-            foreach (var road in Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None))
+            foreach (var road in MGRoadSceneRegistry.Roads)
                 if (road.TerrainSettings.mode == RoadTerrainMode.RoadFollowsTerrain) road.RequestRebuild();
         }
         static void RefreshCollision(MGRoadTerrainLayers store)
@@ -366,8 +367,9 @@ namespace MashBoxSDK.Maps.Roads.Editor
         }
         static void Restored()
         {
+            MGRoadSceneRegistry.NotifyChanged();
             fingerprints.Clear(); sculpted.Clear(); MGRoadFalloffSmoothing.ClearCache();
-            foreach (var road in Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None)) if (Editable(road)) fingerprints[road] = Fingerprint(road);
+            foreach (var road in MGRoadSceneRegistry.Roads) if (Editable(road)) fingerprints[road] = Fingerprint(road);
             foreach (var store in Stores()) if (Editable(store))
             {
                 store.terrain.NotifySurfaceMeshChanged(); RefreshCollision(store);
@@ -377,15 +379,17 @@ namespace MashBoxSDK.Maps.Roads.Editor
         static void Tick()
         {
             if (busy || EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.timeSinceStartup < nextUpdate) return;
+            if (!MGRoadSceneRegistry.HasLayerWork && sculpted.Count == 0) return;
+            if (lastRevision == MGRoadSceneRegistry.Revision && sculpted.Count == 0) return;
             double started = EditorApplication.timeSinceStartup;
-            try { UpdateLive(); nextUpdate = EditorApplication.timeSinceStartup + Math.Max(.05, EditorApplication.timeSinceStartup - started); }
+            try { UpdateLive(); lastRevision = MGRoadSceneRegistry.Revision; nextUpdate = EditorApplication.timeSinceStartup + Math.Max(.05, EditorApplication.timeSinceStartup - started); }
             catch (Exception e) { Debug.LogError("Road terrain layer update stopped: " + e.Message); nextUpdate = EditorApplication.timeSinceStartup + 5; }
         }
         internal static void UpdateLive(Scene? testScene = null)
         {
             if (busy || Application.isPlaying) return;
-            var roads = testScene.HasValue ? testScene.Value.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MGRoad>(true)).ToArray()
-                : Object.FindObjectsByType<MGRoad>(FindObjectsSortMode.None).Where(Editable).ToArray();
+            var roads = MGRoadSceneRegistry.Roads.Where(r => testScene.HasValue
+                ? r != null && r.gameObject.scene == testScene.Value : Editable(r)).ToArray();
             var changed = new List<MGRoad>();
             foreach (var road in roads)
             {
@@ -404,7 +408,7 @@ namespace MashBoxSDK.Maps.Roads.Editor
                 CaptureEdits(store); store.layers.RemoveAll(l => !Active(l.road)); Compose(store);
             }
             if (GUIUtility.hotControl == 0) sculpted.Clear();
-            foreach (var road in fingerprints.Keys.Where(r => r == null).ToArray()) fingerprints.Remove(road);
+            foreach (var road in fingerprints.Keys.Where(r => r == null || !r.isActiveAndEnabled).ToArray()) fingerprints.Remove(road);
         }
         internal static void Persist(MGRoadTerrainLayers store)
         {

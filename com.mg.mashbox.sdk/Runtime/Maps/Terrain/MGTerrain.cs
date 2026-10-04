@@ -374,6 +374,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             NotifySurfaceMeshChanged(true);
 #if UNITY_EDITOR
             s_EditorActiveTerrains.Add(this);
+            MashBoxSDK.Maps.Roads.MGRoadSceneRegistry.Register(this);
             UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
             UnityEditor.Undo.undoRedoPerformed += OnSurfaceTilesUndoRedo;
 #endif
@@ -406,6 +407,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ReleaseInstancedMaterials();
             m_TreeInstanceCells.Clear();
         }
+
+#if UNITY_EDITOR
+        void OnDestroy() => MashBoxSDK.Maps.Roads.MGRoadSceneRegistry.Unregister(this);
+#endif
 
         void OnValidate()
         {

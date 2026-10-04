@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using MashBoxBridge.Common.Interfaces;
 using UnityEngine;
 
@@ -134,11 +134,12 @@ namespace MashBoxBridge.Common.Commands
         }
         public static void SetLocalPlayerTrickGameplay(IPlayerTrickGameplay playerTrickGameplay)
         {
-            if (playerTrickGameplay != null)
-            {
-                _playerTrickGameplay = playerTrickGameplay;
+            if (ReferenceEquals(_playerTrickGameplay, playerTrickGameplay)) return;
+            if (_playerTrickGameplay != null)
+                _playerTrickGameplay.OnComboEnded -= HandleComboEnded;
+            _playerTrickGameplay = playerTrickGameplay;
+            if (_playerTrickGameplay != null)
                 _playerTrickGameplay.OnComboEnded += HandleComboEnded;
-            }
         }
         public static Action OnLocalPlayerComboEnded;
         public static Action OnLocalPlayerRespawned;
