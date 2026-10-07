@@ -83,19 +83,28 @@ namespace MashBoxSDK.Maps
             if (!MBGameplayGizmoVisibility.RacesVisible)
                 return;
 
-            EnforceValidScale();
-
             var previousMatrix = Gizmos.matrix;
             var previousColor = Gizmos.color;
             var center = GetLocalBoxCenter();
             var isSelected = IsSelected();
+#if UNITY_EDITOR
+            var race = EditorRace;
+            var raceColor = race != null ? race.EditorGizmoColor : new Color(1f, 0.45f, 0.15f, 1f);
+            bool showRaceLabels = race != null && Selection.Contains(race.gameObject);
+            // Only the gate being edited needs ground probes and clearance diagnostics.
+            if (isSelected) RefreshEditorValidation();
+            bool isInvalid = isSelected && editorHasClearance && editorTopClearance < MinimumTopClearance;
+#else
             var raceColor = GetRaceColor();
-            var hasClearance = TryGetTopClearance(out var topClearance);
-            var isInvalid = hasClearance && topClearance < MinimumTopClearance;
+            bool isInvalid = false;
+#endif
 
             Gizmos.matrix = transform.localToWorldMatrix;
-            Gizmos.color = GetDisplayColor(isInvalid ? InvalidFillColor : GetFillColor(raceColor), isSelected, true);
-            Gizmos.DrawCube(center, boxSize);
+            if (isSelected)
+            {
+                Gizmos.color = GetDisplayColor(isInvalid ? InvalidFillColor : GetFillColor(raceColor), true, true);
+                Gizmos.DrawCube(center, boxSize);
+            }
 
             Gizmos.color = GetDisplayColor(isInvalid ? InvalidWireColor : GetWireColor(raceColor), isSelected, false);
             Gizmos.DrawWireCube(center, boxSize);
@@ -104,9 +113,16 @@ namespace MashBoxSDK.Maps
             Gizmos.matrix = previousMatrix;
 
 #if UNITY_EDITOR
-            DrawValidationGuides(hasClearance, topClearance, raceColor, isSelected);
-            DrawForwardArrow(isInvalid, raceColor, isSelected);
-            DrawLabels(isInvalid, raceColor, isSelected);
+            // Handles.Label allocates inside Unity even with cached GUIContent. Do not submit
+            // hundreds of labels for unrelated races, or any handles during gizmo picking.
+            if (Event.current != null && Event.current.type != EventType.Repaint) return;
+            if (isSelected)
+                DrawValidationGuides(raceColor);
+            if (isSelected || showRaceLabels)
+            {
+                DrawForwardArrow(isInvalid, raceColor, isSelected);
+                DrawLabels(isInvalid, raceColor, isSelected, race);
+            }
 #endif
         }
 
@@ -387,7 +403,7 @@ namespace MashBoxSDK.Maps
         private bool IsSelected()
         {
 #if UNITY_EDITOR
-            return Selection.activeTransform == transform;
+            return Selection.Contains(gameObject);
 #else
             return false;
 #endif
@@ -398,6 +414,51 @@ namespace MashBoxSDK.Maps
         private static GUIStyle gateStatsStyle;
         private static GUIStyle gateGuideStyle;
         private static readonly Vector3[] ArrowPoints = new Vector3[2];
+        private static readonly GUIContent UnassignedGateName = new GUIContent("Gate 00");
+        private static readonly GUIContent UnassignedGateStats = new GUIContent("Race 0.0m\nFrom start 0.0m\nFinish gate");
+        private readonly GUIContent editorClearanceLabel = new GUIContent();
+        private int editorRaceRevision = -1;
+        private MBRace editorRace;
+        private bool editorValidationCached;
+        private Matrix4x4 editorValidationMatrix;
+        private Vector3 editorValidationBoxSize;
+        private double editorNextValidationTime;
+        private bool editorHasClearance;
+        private float editorTopClearance;
+        private bool editorHasGround;
+        private Vector3 editorGroundPoint;
+
+        private MBRace EditorRace
+        {
+            get
+            {
+                if (editorRaceRevision != MBRace.EditorGizmoRevision)
+                {
+                    editorRaceRevision = MBRace.EditorGizmoRevision;
+                    editorRace = Race;
+                }
+                return editorRace;
+            }
+        }
+
+        private void RefreshEditorValidation()
+        {
+            var matrix = transform.localToWorldMatrix;
+            bool changed = !editorValidationCached || matrix != editorValidationMatrix || boxSize != editorValidationBoxSize;
+            if (!changed && EditorApplication.timeSinceStartup < editorNextValidationTime) return;
+            // Preserve authoring scale constraints when a selected gate moves, without probing
+            // the ground under every gate on every Scene view repaint.
+            if (changed) EnforceValidScale();
+            editorValidationCached = true;
+            editorValidationMatrix = transform.localToWorldMatrix;
+            editorValidationBoxSize = boxSize;
+            editorNextValidationTime = EditorApplication.timeSinceStartup + 0.25d;
+            editorHasClearance = TryGetTopClearance(out editorTopClearance);
+            editorHasGround = TryGetGroundPointBelowBase(out editorGroundPoint);
+            editorClearanceLabel.text = editorTopClearance < MinimumTopClearance
+                ? $"Top clearance {editorTopClearance:0.0}m / min {MinimumTopClearance:0.0}m"
+                : $"Top clearance {editorTopClearance:0.0}m";
+        }
 
         private void DrawForwardArrow(bool isInvalid, Color raceColor, bool isSelected)
         {
@@ -414,7 +475,7 @@ namespace MashBoxSDK.Maps
             Handles.color = previousColor;
         }
 
-        private void DrawLabels(bool isInvalid, Color raceColor, bool isSelected)
+        private void DrawLabels(bool isInvalid, Color raceColor, bool isSelected, MBRace race)
         {
             var labelColor = GetDisplayColor(isInvalid ? InvalidLabelColor : GetLabelColor(raceColor), isSelected, false);
             var labelStyle = gateLabelStyle ?? (gateLabelStyle = new GUIStyle(EditorStyles.boldLabel)
@@ -423,14 +484,11 @@ namespace MashBoxSDK.Maps
             });
             labelStyle.normal.textColor = labelColor;
 
-            // Reuse one ordered gate list for all label statistics, instead of five hierarchy scans.
-            var race = Race;
-            var gates = race != null ? race.GetOrderedGates() : null;
-            int index = gates != null ? gates.IndexOf(this) : -1;
+            var labels = race != null ? race.GetEditorGateLabels(this) : null;
             var labelPosition = GetTopPointWorld() + (Vector3.up * 0.35f);
-            Handles.Label(labelPosition, $"Gate {index + 1:00}", labelStyle);
+            Handles.Label(labelPosition, labels != null ? labels.Name : UnassignedGateName, labelStyle);
 
-            if (!showStats)
+            if (!showStats || !isSelected)
                 return;
 
             var statsStyle = gateStatsStyle ?? (gateStatsStyle = new GUIStyle(EditorStyles.miniBoldLabel)
@@ -439,36 +497,21 @@ namespace MashBoxSDK.Maps
             });
             statsStyle.normal.textColor = labelColor;
 
-            float totalDistance = 0f, distanceFromStart = 0f, distanceToNext = 0f;
-            if (gates != null)
-            {
-                for (int i = 0; i < gates.Count - 1; i++)
-                {
-                    float distance = Vector3.Distance(gates[i].transform.position, gates[i + 1].transform.position);
-                    totalDistance += distance;
-                    if (i < index) distanceFromStart += distance;
-                    if (i == index) distanceToNext = distance;
-                }
-            }
-            bool hasNext = gates != null && index >= 0 && index < gates.Count - 1;
-            var nextDistance = hasNext ? $"{distanceToNext:0.0}m to next" : "Finish gate";
-            var statsText = $"Race {totalDistance:0.0}m\nFrom start {distanceFromStart:0.0}m\n{nextDistance}";
-            Handles.Label(labelPosition + (Vector3.right * 0.35f), statsText, statsStyle);
+            Handles.Label(labelPosition + (Vector3.right * 0.35f), labels != null ? labels.Stats : UnassignedGateStats, statsStyle);
         }
 
-        private void DrawValidationGuides(bool hasClearance, float topClearance, Color raceColor, bool isSelected)
+        private void DrawValidationGuides(Color raceColor)
         {
-            if (!hasClearance)
+            if (!editorHasClearance || !editorHasGround)
                 return;
 
             var topPoint = GetTopPointWorld();
-            if (!TryGetGroundPointBelowBase(out var groundPoint))
-                return;
+            var groundPoint = editorGroundPoint;
 
-            var isInvalid = topClearance < MinimumTopClearance;
+            var isInvalid = editorTopClearance < MinimumTopClearance;
             var raceGuideColor = GetWireColor(raceColor);
             raceGuideColor.a = 0.8f;
-            var guideColor = GetDisplayColor(isInvalid ? InvalidWireColor : raceGuideColor, isSelected, false);
+            var guideColor = GetDisplayColor(isInvalid ? InvalidWireColor : raceGuideColor, true, false);
             var requiredTopPoint = groundPoint + (transform.up * MinimumTopClearance);
 
             var previousColor = Handles.color;
@@ -480,9 +523,7 @@ namespace MashBoxSDK.Maps
 
             var style = gateGuideStyle ?? (gateGuideStyle = new GUIStyle(EditorStyles.miniBoldLabel));
             style.normal.textColor = guideColor;
-            Handles.Label(topPoint + (Vector3.left * 0.35f), isInvalid
-                ? $"Top clearance {topClearance:0.0}m / min {MinimumTopClearance:0.0}m"
-                : $"Top clearance {topClearance:0.0}m", style);
+            Handles.Label(topPoint + (Vector3.left * 0.35f), editorClearanceLabel, style);
 
             Handles.color = previousColor;
         }

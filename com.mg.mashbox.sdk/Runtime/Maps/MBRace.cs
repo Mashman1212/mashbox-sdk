@@ -45,9 +45,89 @@ namespace MashBoxSDK.Maps
         private int activeGateIndex;
 
 #if UNITY_EDITOR
+        // Gizmo-only snapshots. Runtime race progression continues to query the live hierarchy.
+        internal static int EditorGizmoRevision { get; private set; }
+        private int editorGizmoRevision = -1;
+        private int editorGizmoPlayFrame = -1;
+        private readonly List<MBRaceGate> editorGates = new List<MBRaceGate>();
+        private readonly List<float> editorDistances = new List<float>();
+        private readonly Dictionary<MBRaceGate, EditorGateLabels> editorLabels = new Dictionary<MBRaceGate, EditorGateLabels>();
+        private Color editorGizmoColor;
+
+        internal sealed class EditorGateLabels
+        {
+            internal readonly GUIContent Name = new GUIContent();
+            internal readonly GUIContent Stats = new GUIContent();
+        }
+
+        internal Color EditorGizmoColor
+        {
+            get { RefreshEditorGizmoCache(); return editorGizmoColor; }
+        }
+
+        internal EditorGateLabels GetEditorGateLabels(MBRaceGate gate)
+        {
+            RefreshEditorGizmoCache();
+            return editorLabels.TryGetValue(gate, out var labels) ? labels : null;
+        }
+
+        private static void InvalidateEditorGizmos() => EditorGizmoRevision++;
+
+        private static void OnEditorObjectsChanged(ref ObjectChangeEventStream stream)
+        {
+            for (int i = 0; i < stream.length; i++)
+            {
+                if (stream.GetEventType(i) != ObjectChangeKind.ChangeGameObjectOrComponentProperties) continue;
+                stream.GetChangeGameObjectOrComponentPropertiesEvent(i, out var change);
+                var changed = EditorUtility.InstanceIDToObject(change.instanceId);
+                // Include ancestor transforms, which can move a whole race without moving its gates locally.
+                if (changed is Transform || changed is MBRace || changed is MBRaceGate)
+                {
+                    InvalidateEditorGizmos();
+                    return;
+                }
+            }
+        }
+
+        private void RefreshEditorGizmoCache()
+        {
+            if (editorGizmoRevision == EditorGizmoRevision
+                && (!Application.isPlaying || editorGizmoPlayFrame == Time.frameCount)) return;
+            editorGizmoRevision = EditorGizmoRevision;
+            editorGizmoPlayFrame = Time.frameCount;
+            editorGizmoColor = GetRaceColor();
+            editorGates.Clear();
+            editorDistances.Clear();
+            editorLabels.Clear();
+            // Direct children already have sibling order. Never traverse descendants or sort for a repaint.
+            for (int i = 0; i < transform.childCount; i++)
+                if (transform.GetChild(i).TryGetComponent<MBRaceGate>(out var gate)) editorGates.Add(gate);
+
+            float total = 0f;
+            for (int i = 0; i < editorGates.Count; i++)
+            {
+                editorDistances.Add(total);
+                if (i + 1 < editorGates.Count)
+                    total += Vector3.Distance(editorGates[i].transform.position, editorGates[i + 1].transform.position);
+            }
+            for (int i = 0; i < editorGates.Count; i++)
+            {
+                bool hasNext = i + 1 < editorGates.Count;
+                string next = hasNext ? $"{editorDistances[i + 1] - editorDistances[i]:0.0}m to next" : "Finish gate";
+                var labels = new EditorGateLabels();
+                labels.Name.text = $"Gate {i + 1:00}";
+                labels.Stats.text = $"Race {total:0.0}m\nFrom start {editorDistances[i]:0.0}m\n{next}";
+                editorLabels.Add(editorGates[i], labels);
+            }
+        }
+
         [InitializeOnLoadMethod]
         private static void EnsureEditorRaceGatesActiveOnLoad()
         {
+            EditorApplication.hierarchyChanged += InvalidateEditorGizmos;
+            Undo.undoRedoPerformed += InvalidateEditorGizmos;
+            ObjectChangeEvents.changesPublished += OnEditorObjectsChanged;
+            EditorApplication.playModeStateChanged += _ => InvalidateEditorGizmos();
             if (Application.isPlaying)
                 return;
 
@@ -103,6 +183,9 @@ namespace MashBoxSDK.Maps
 
         private void OnValidate()
         {
+#if UNITY_EDITOR
+            InvalidateEditorGizmos();
+#endif
             CacheGroupReference();
             raceName = string.IsNullOrWhiteSpace(raceName) ? "Race" : raceName.Trim();
             SyncGameObjectName();
@@ -120,6 +203,9 @@ namespace MashBoxSDK.Maps
 
         private void OnTransformChildrenChanged()
         {
+#if UNITY_EDITOR
+            InvalidateEditorGizmos();
+#endif
             ResyncRaceFlow();
         }
 
@@ -128,15 +214,25 @@ namespace MashBoxSDK.Maps
             if (!MBGameplayGizmoVisibility.RacesVisible)
                 return;
 
+#if UNITY_EDITOR
+            RefreshEditorGizmoCache();
+            var gates = editorGates;
+#else
             var gates = GetOrderedGates();
+#endif
             if (gates.Count < 2)
                 return;
 
             var previousColor = Gizmos.color;
+#if UNITY_EDITOR
+            Gizmos.color = editorGizmoColor;
+#else
             Gizmos.color = GetRaceColor();
+#endif
 
             for (var index = 0; index < gates.Count - 1; index++)
-                Gizmos.DrawLine(gates[index].transform.position, gates[index + 1].transform.position);
+                if (gates[index] != null && gates[index + 1] != null)
+                    Gizmos.DrawLine(gates[index].transform.position, gates[index + 1].transform.position);
 
             Gizmos.color = previousColor;
         }
@@ -388,15 +484,11 @@ namespace MashBoxSDK.Maps
             if (transform.parent == null)
                 return pathColor;
 
-            var raceSiblings = transform.parent
-                .Cast<Transform>()
-                .Where(child => child.GetComponent<MBRace>() != null)
-                .OrderBy(child => child.GetSiblingIndex())
-                .ToList();
-
-            var raceIndex = raceSiblings.IndexOf(transform);
-            if (raceIndex < 0)
-                return pathColor;
+            // Siblings are already ordered; count preceding races without allocating a LINQ pipeline.
+            int raceIndex = 0;
+            var parent = transform.parent;
+            for (int i = 0; i < transform.GetSiblingIndex(); i++)
+                if (parent.GetChild(i).TryGetComponent<MBRace>(out _)) raceIndex++;
 
             var hue = Mathf.Repeat(0.08f + raceIndex * 0.173f, 1f);
             var baseColor = Color.HSVToRGB(hue, 0.72f, 1f);
