@@ -44,6 +44,49 @@ namespace MashBoxSDK.MapTools
             }
         }
 
+        [MenuItem("MashBox/Validation/Validate Loft Build Mesh Reset")]
+        public static void ValidateBuildMeshReset()
+        {
+            var go = new GameObject("Loft build mesh reset validation");
+            Mesh source = null;
+            Mesh stale = null;
+            try
+            {
+                var loft = go.AddComponent<MultiSplineLoft>();
+                loft.AutoRegenerate = false;
+                loft.UpdateMeshCollider = false;
+                for (int side = 0; side < 2; side++)
+                {
+                    var curve = new GameObject("Curve " + side);
+                    curve.transform.SetParent(go.transform, false);
+                    var container = curve.AddComponent<SplineContainer>();
+                    container.Spline = new UnityEngine.Splines.Spline(new[] {
+                        new BezierKnot(new Unity.Mathematics.float3(side * 4, 0, 0)),
+                        new BezierKnot(new Unity.Mathematics.float3(side * 4, 0, 100)) });
+                    loft.Sources.Add(new MultiSplineLoft.SplineSource { container = container });
+                }
+                loft.Regenerate();
+                var filter = go.GetComponent<MeshFilter>();
+                source = loft.GeneratedMesh;
+                stale = Object.Instantiate(source);
+                var vertices = stale.vertices;
+                vertices[0] += Vector3.up;
+                stale.vertices = vertices;
+                filter.sharedMesh = stale;
+                LoftVisualBuildProcessor.BakeVisuals(loft);
+                Check(loft.VisualsBaked, "Build did not bake visual chunks.");
+                Check(filter.sharedMesh == stale, "Build did not restore the original renderer mesh.");
+                Check(go.GetComponentInChildren<LoftVisualChunks>(true) != null, "Build produced no visual chunks.");
+                Debug.Log("LOFT_BUILD_MESH_RESET_PASS");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                if (stale != null) Object.DestroyImmediate(stale);
+                if (source != null) Object.DestroyImmediate(source);
+            }
+        }
+
         static void ValidateMeshData()
         {
             var mesh = new Mesh { name = "Visual chunk test" };

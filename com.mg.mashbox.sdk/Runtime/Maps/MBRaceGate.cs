@@ -82,7 +82,7 @@ namespace MashBoxSDK.Maps
         {
             EnforceValidScale();
 
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.RacesVisible)
                 return;
 
             var previousMatrix = Gizmos.matrix;

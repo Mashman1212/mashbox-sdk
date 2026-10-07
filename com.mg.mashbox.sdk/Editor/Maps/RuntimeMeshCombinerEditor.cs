@@ -13,6 +13,8 @@ public sealed class RuntimeMeshCombinerEditor : Editor
         MashBoxInspectorHeaderUtility.DrawScriptHeader();
         bool settingsChanged = DrawDefaultInspector();
         RuntimeMeshCombiner combiner = (RuntimeMeshCombiner)target;
+        if (!string.IsNullOrEmpty(combiner.LastSpatialCombineSummary))
+            EditorGUILayout.HelpBox("Last spatial combine: " + combiner.LastSpatialCombineSummary, MessageType.Info);
         materialPreview.Draw(combiner.GetMaterialPreviewMeshFilters, true, settingsChanged);
     }
 }

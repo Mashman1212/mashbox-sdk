@@ -84,7 +84,7 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.ChallengesVisible)
                 return;
 
             var gates = GetGateTransforms();

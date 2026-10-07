@@ -125,7 +125,7 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.RacesVisible)
                 return;
 
             var gates = GetOrderedGates();

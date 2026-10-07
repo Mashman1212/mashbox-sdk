@@ -17,8 +17,16 @@ void POMArrayStable_float(
     float FadeEnd,
     out float2 ParallaxUV)
 {
+    ParallaxUV = UV;
+
+    // Compute derivatives before any divergent return/loop. Implicit gradients
+    // inside a variable-length ray march are undefined and can select bad mips.
+    float2 uvDx = ddx(UV);
+    float2 uvDy = ddy(UV);
+
     // Explicit POM-off states.
-    if (Steps < 1.0 || abs(Amplitude) < 0.000001)
+    [branch] if (Steps < 1.0 || abs(Amplitude) < 0.000001
+        || (FadeEnd > FadeStart && CameraDistance >= FadeEnd))
     {
         ParallaxUV = UV;
         return;
@@ -102,11 +110,11 @@ void POMArrayStable_float(
         saturate(IsPlanar)
     );
 
-    // Near = normal amplitude, far = twice the amplitude.
+    // Fade relief to zero so distant fragments stop fetching heights entirely.
     float effectiveAmplitude =
         Amplitude *
         modeAmplitudeScale *
-        lerp(1.0, 2.0, distanceTransition);
+        (1.0 - distanceTransition);
 
     float2 rayOffset =
         viewSlope * effectiveAmplitude;
@@ -120,11 +128,12 @@ void POMArrayStable_float(
     float2 currentUV = UV;
     float currentLayerDepth = 0.0;
 
-    float currentHeight = SAMPLE_TEXTURE2D_ARRAY(
+    float currentHeight = SAMPLE_TEXTURE2D_ARRAY_GRAD(
         HeightArray.tex,
         HeightArray.samplerstate,
         currentUV,
-        sliceIndex
+        sliceIndex,
+        uvDx, uvDy
     ).r;
 
     if (InvertHeight > 0.5)
@@ -153,11 +162,12 @@ void POMArrayStable_float(
         currentUV -= uvStep;
         currentLayerDepth += layerStep;
 
-        currentHeight = SAMPLE_TEXTURE2D_ARRAY(
+        currentHeight = SAMPLE_TEXTURE2D_ARRAY_GRAD(
             HeightArray.tex,
             HeightArray.samplerstate,
             currentUV,
-            sliceIndex
+            sliceIndex,
+            uvDx, uvDy
         ).r;
 
         if (InvertHeight > 0.5)
@@ -201,11 +211,12 @@ void POMArrayStable_float(
         float middleDepth =
             (upperDepth + lowerDepth) * 0.5;
 
-        float middleHeight = SAMPLE_TEXTURE2D_ARRAY(
+        float middleHeight = SAMPLE_TEXTURE2D_ARRAY_GRAD(
             HeightArray.tex,
             HeightArray.samplerstate,
             middleUV,
-            sliceIndex
+            sliceIndex,
+            uvDx, uvDy
         ).r;
 
         if (InvertHeight > 0.5)

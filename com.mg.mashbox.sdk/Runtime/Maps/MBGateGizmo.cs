@@ -36,7 +36,7 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.ChallengesVisible)
                 return;
 
             if (GetComponent<MBRaceGate>() != null || GetComponentInParent<MBRace>() != null)

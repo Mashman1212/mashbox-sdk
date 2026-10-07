@@ -2627,6 +2627,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnDrawGizmosSelected()
         {
+            if (!MBGameplayGizmoVisibility.LoftSplinesVisible) return;
             if (m_SampledPoints == null || m_ValidSourceIndices.Count < 2)
                 return;
 

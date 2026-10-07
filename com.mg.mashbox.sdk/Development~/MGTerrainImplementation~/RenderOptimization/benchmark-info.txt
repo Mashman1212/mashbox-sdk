@@ -1,0 +1,1 @@
+materials=12 ground=(133.36, 46.77, 656.55) originalCamera=(0.00, 0.00, 0.00) pivot=(133.13, 47.38, 646.65) size=5

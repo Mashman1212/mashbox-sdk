@@ -205,7 +205,7 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.RacesVisible)
                 return;
 
             Color previousColor = Gizmos.color;

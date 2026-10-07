@@ -98,6 +98,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnSceneGUI()
         {
+            if (!MBGameplayGizmoVisibility.LoftSplinesVisible) return;
             var edgeSpline = (LoftShoulderEdgeSpline)target;
             UnitySpline spline = edgeSpline.Container.Spline;
             if (spline == null || spline.Count == 0)

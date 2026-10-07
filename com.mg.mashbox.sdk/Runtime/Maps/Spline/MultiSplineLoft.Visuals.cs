@@ -90,7 +90,6 @@ namespace MashBoxSDK.Maps.Spline
         public void BuildVisualChunks(bool bake)
         {
             if (m_VisualsBaked) return;
-            ClearRuntimeVisuals();
             MeshRenderer rootRenderer = GetComponent<MeshRenderer>();
             var sources = new List<MeshRenderer> { rootRenderer };
             LoftHeightOverlayModifier overlay = HeightOverlayModifier;
@@ -99,6 +98,34 @@ namespace MashBoxSDK.Maps.Spline
                     if (renderer.GetComponentInParent<LoftVisualChunks>() == null && renderer != rootRenderer)
                         sources.Add(renderer);
 
+            // Static batching can replace a filter with a combined mesh in an
+            // older bundle or an Editor session. That data is no longer the loft's
+            // local-space/UV source, even if its CPU copy happens to be readable.
+            // Preflight before clearing good chunks or accessing vertices/UVs.
+            foreach (MeshRenderer source in sources)
+            {
+                if (source == null) continue;
+                MeshFilter filter = source.GetComponent<MeshFilter>();
+                Mesh mesh = filter != null ? filter.sharedMesh : null;
+                if (mesh == null || mesh.vertexCount == 0) continue;
+                if (source.isPartOfStaticBatch || !mesh.isReadable)
+                {
+                    string message = $"Loft '{name}' is using an already-batched or unreadable mesh '{mesh.name}'. Rebuild the map with loft baking before static batching to enable visual sections.";
+                    if (bake) throw new InvalidOperationException(message);
+                    if (!m_VisualBuildFailed) Debug.LogWarning(message + " Existing visuals were retained.", this);
+                    m_VisualBuildFailed = true;
+                    return;
+                }
+            }
+            if (m_GeneratedMesh != null && !m_GeneratedMesh.isReadable)
+            {
+                const string message = "The authored loft mesh is unreadable; rebuild the map with readable loft source data.";
+                if (bake) throw new InvalidOperationException(message);
+                if (!m_VisualBuildFailed) Debug.LogWarning(message + " Existing visuals were retained.", this);
+                m_VisualBuildFailed = true;
+                return;
+            }
+            ClearRuntimeVisuals();
             var built = new List<LoftVisualChunks>();
             float uvPerMeter = ResolveVisualUvDensity();
             try

@@ -701,6 +701,9 @@
         },
         {
             "m_Id": "9f40c85a43d04282a16408e4ef60f8bc"
+        },
+        {
+            "m_Id": "0305e159a9fa4e43bebfb733deb20bd7"
         }
     ],
     "m_Keywords": [],
@@ -2624,6 +2627,9 @@
         },
         {
             "m_Id": "08c376fbb01a493aa92f266bea3d903a"
+        },
+        {
+            "m_Id": "5718f61c7f7048b3bd6e4c60d0f25bff"
         }
     ],
     "m_GroupDatas": [
@@ -12512,6 +12518,20 @@
                     "m_Id": "6bba2f826519459aad1c8e5ff0986a8b"
                 },
                 "m_SlotId": -1177143412
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "5718f61c7f7048b3bd6e4c60d0f25bff"
+                },
+                "m_SlotId": 0
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "4e97325af38b4ea9815d5b37980c5436"
+                },
+                "m_SlotId": 1
             }
         }
     ],
@@ -57625,7 +57645,7 @@
     "m_ShaderOutputName": "B",
     "m_StageCapability": 3,
     "m_Value": {
-        "e00": 50.0,
+        "e00": 4.0,
         "e01": 2.0,
         "e02": 2.0,
         "e03": 2.0,
@@ -71167,6 +71187,9 @@
         },
         {
             "m_Id": "338dea60cf7c474aa7393d917e39e5bb"
+        },
+        {
+            "m_Id": "0305e159a9fa4e43bebfb733deb20bd7"
         }
     ]
 }
@@ -81861,3 +81884,100 @@
     "m_BareResource": false
 }
 
+
+
+{
+    "m_SGVersion": 1,
+    "m_Type": "UnityEditor.ShaderGraph.Internal.Vector1ShaderProperty",
+    "m_ObjectId": "0305e159a9fa4e43bebfb733deb20bd7",
+    "m_Guid": {
+        "m_GuidSerialized": "6b7a86f7-6b37-4557-9963-8f124fd45ea8"
+    },
+    "promotedFromAssetID": "",
+    "promotedFromCategoryName": "",
+    "promotedOrdering": -1,
+    "m_Name": "TessellationQuality",
+    "m_DefaultRefNameVersion": 1,
+    "m_RefNameGeneratedByDisplayName": "TessellationQuality",
+    "m_DefaultReferenceName": "_TessellationQuality",
+    "m_OverrideReferenceName": "",
+    "m_GeneratePropertyBlock": true,
+    "m_UseCustomSlotLabel": false,
+    "m_CustomSlotLabel": "",
+    "m_DismissedVersion": 0,
+    "m_Precision": 0,
+    "overrideHLSLDeclaration": false,
+    "hlslDeclarationOverride": 0,
+    "m_Hidden": false,
+    "m_PerRendererData": false,
+    "m_customAttributes": [],
+    "m_Value": 4.0,
+    "m_FloatType": 1,
+    "m_LiteralFloatMode": false,
+    "m_RangeValues": {
+        "x": 1.0,
+        "y": 64.0
+    },
+    "m_SliderType": 0,
+    "m_SliderPower": 3.0,
+    "m_EnumType": 0,
+    "m_CSharpEnumString": "",
+    "m_EnumNames": [
+        "Default"
+    ],
+    "m_EnumValues": [
+        0
+    ]
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.PropertyNode",
+    "m_ObjectId": "5718f61c7f7048b3bd6e4c60d0f25bff",
+    "m_Group": {
+        "m_Id": "f907d5adda074af0a2cdf8baa6f21597"
+    },
+    "m_Name": "Property",
+    "m_DrawState": {
+        "m_Expanded": true,
+        "m_Position": {
+            "serializedVersion": "2",
+            "x": 6879.60009765625,
+            "y": -4104.0,
+            "width": 125.6005859375,
+            "height": 117.60009765625
+        }
+    },
+    "m_Slots": [
+        {
+            "m_Id": "dba5f13c89b24bbc9c6cb2e486d9b726"
+        }
+    ],
+    "synonyms": [],
+    "m_Precision": 0,
+    "m_PreviewExpanded": true,
+    "m_DismissedVersion": 0,
+    "m_PreviewMode": 0,
+    "m_CustomColors": {
+        "m_SerializableColors": []
+    },
+    "m_Property": {
+        "m_Id": "0305e159a9fa4e43bebfb733deb20bd7"
+    }
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
+    "m_ObjectId": "dba5f13c89b24bbc9c6cb2e486d9b726",
+    "m_Id": 0,
+    "m_DisplayName": "TessellationQuality",
+    "m_SlotType": 1,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "Out",
+    "m_StageCapability": 3,
+    "m_Value": 0.0,
+    "m_DefaultValue": 0.0,
+    "m_Labels": [],
+    "m_LiteralMode": false
+}

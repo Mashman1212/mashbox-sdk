@@ -112,6 +112,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnSceneGUI()
         {
+            if (!MBGameplayGizmoVisibility.LoftSplinesVisible) return;
             var profile = (LoftResolutionSpline)target;
             if (profile == null || profile.Container == null)
                 return;

@@ -81,7 +81,8 @@ namespace MashBoxSDK.ContentTools
         Tire,
         Chain,
         Accessory,
-        Full_Skin
+        Full_Skin,
+        Cassette
 
     }
 }

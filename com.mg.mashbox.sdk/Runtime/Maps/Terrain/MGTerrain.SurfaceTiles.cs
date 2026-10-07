@@ -373,7 +373,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             float padding = 0f;
             foreach (Material material in m_SurfaceTileMaterials)
                 if (material != null && material.HasProperty("_TessellationMaxDisplacement"))
-                    padding = Mathf.Max(padding, Mathf.Abs(material.GetFloat("_TessellationMaxDisplacement")));
+                    padding = Mathf.Max(padding, GetSurfaceDisplacementPadding(material, hasPropertyBlocks));
             int state = 17;
             AddSurfaceState(ref state, m_CombinedSurface);
             AddSurfaceState(ref state, master.gameObject.layer);
@@ -446,6 +446,41 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_PreviousTileMaterials.Clear();
                 m_PreviousTileMaterials.AddRange(m_SurfaceTileMaterials);
             }
+        }
+
+        static readonly int[] s_TrailDisplacementRemapIds = CreateTrailDisplacementRemapIds();
+        static int[] CreateTrailDisplacementRemapIds()
+        {
+            var ids = new int[16];
+            for (int i = 0; i < 8; i++)
+            {
+                ids[i * 2] = Shader.PropertyToID("_TesselationRemapMin" + i.ToString("00"));
+                ids[i * 2 + 1] = Shader.PropertyToID("_TesselationRemapMax" + i.ToString("00"));
+            }
+            return ids;
+        }
+
+        // MG_Lit_Trail's domain displacement is 0.2 * the normalized top-two
+        // height blend * amplitude, along the world normal. Its distant canopy
+        // morph is already covered vertically by ExpandDistantMorphBounds.
+        // The HDRP patch-culling margin also contains canopy height on older
+        // baked materials; copying it into X/Z makes 32m chunks hundreds of
+        // metres wide and defeats CPU frustum/shadow culling.
+        static float GetSurfaceDisplacementPadding(Material material, bool hasPropertyBlocks)
+        {
+            float configured = Mathf.Abs(material.GetFloat("_TessellationMaxDisplacement"));
+            // Unknown shaders and external per-renderer overrides retain the
+            // explicitly configured conservative bound.
+            if (hasPropertyBlocks || material.shader == null
+                || material.shader.name != "Shader Graphs/MG_Lit_Trail"
+                || !material.HasProperty("_TessellationQuality")
+                || material.GetFloat("_TessellationMode") != 0f) return configured;
+            float height = 0f;
+            foreach (int id in s_TrailDisplacementRemapIds)
+                height = Mathf.Max(height, Mathf.Abs(material.GetFloat(id)));
+            float displacement = .2f * height * Mathf.Abs(material.GetFloat("_TesselationAmplitudeMaster"));
+            // A one-metre floor retains ample rounding/interpolation headroom.
+            return Mathf.Max(1f, displacement + .1f);
         }
 
         static void AddSurfaceState<T>(ref int hash, T value) where T : struct

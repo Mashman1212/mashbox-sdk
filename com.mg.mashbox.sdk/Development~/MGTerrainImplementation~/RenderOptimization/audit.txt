@@ -1,0 +1,84 @@
+Terrain Tile (0, 2) | chunks=1024 | active=1 | bounds=Center: (512.00, 23.36, 1536.00), Extents: (512.00, 98.60, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_0_2_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=222.1198
+  _DistantSurfaceStrength=0
+Terrain Tile (-2, 0) | chunks=1024 | active=1024 | bounds=Center: (-512.00, 11.06, 512.00), Extents: (512.00, 86.32, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_-2_0_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=199.9965
+  _DistantSurfaceStrength=0
+Terrain Tile (2, -2) | chunks=1024 | active=1 | bounds=Center: (1536.00, 0.50, -512.00), Extents: (512.00, 75.76, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_2_-2_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=262.5301
+  _DistantSurfaceStrength=0
+Terrain Tile (1, 1) | chunks=256 | active=1 | bounds=Center: (768.00, 27.88, 768.00), Extents: (256.00, 88.48, 256.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_1_1_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=177.8641
+  _DistantSurfaceStrength=1
+Terrain Tile (2, 2) | chunks=1024 | active=1 | bounds=Center: (1536.00, 26.99, 1536.00), Extents: (512.00, 102.25, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_2_2_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=225.4217
+  _DistantSurfaceStrength=0
+Terrain Tile (0, 1) | chunks=256 | active=256 | bounds=Center: (256.00, 44.97, 768.00), Extents: (256.00, 85.77, 256.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_0_1_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=173.2834
+  _DistantSurfaceStrength=1
+Terrain Tile (0, 0) | chunks=256 | active=256 | bounds=Center: (256.00, 4.36, 256.00), Extents: (256.00, 79.64, 256.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_0_0_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=160.4421
+  _DistantSurfaceStrength=1
+Terrain Tile (0, -2) | chunks=1024 | active=1 | bounds=Center: (512.00, -0.06, -512.00), Extents: (512.00, 75.53, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_0_-2_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=202.9847
+  _DistantSurfaceStrength=0
+Terrain Tile (-2, -2) | chunks=1024 | active=1 | bounds=Center: (-512.00, -16.10, -512.00), Extents: (512.00, 59.16, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_-2_-2_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=140.0746
+  _DistantSurfaceStrength=0
+Terrain Tile (2, 0) | chunks=1024 | active=1 | bounds=Center: (1536.00, 14.87, 512.00), Extents: (512.00, 90.13, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_2_0_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=206.3263
+  _DistantSurfaceStrength=0
+Terrain Tile (-2, 2) | chunks=1024 | active=1 | bounds=Center: (-512.00, 22.74, 1536.00), Extents: (512.00, 98.00, 512.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_-2_2_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=202.3293
+  _DistantSurfaceStrength=0
+Terrain Tile (1, 0) | chunks=256 | active=1 | bounds=Center: (768.00, 13.30, 256.00), Extents: (256.00, 88.81, 256.00) | propertyBlock=False
+  Assets/Maps/Cotswold Ridge/[00] SCENES/COTSWOLD RIDGE [YAKY] [V01]/MG Terrain Data/MG Terrain World_Tile_1_0_Material.mat | Shader Graphs/MG_Lit_Trail
+  _TessellationQuality=4
+  _POMAmplitudeMaster=0
+  _TesselationAmplitudeMaster=1
+  _TessellationMaxDisplacement=179.0649
+  _DistantSurfaceStrength=1

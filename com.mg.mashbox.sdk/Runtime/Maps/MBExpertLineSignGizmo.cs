@@ -35,7 +35,7 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.ChallengesVisible)
                 return;
 
             Vector3 basePosition = snapPreviewToGround ? GetGroundedBasePosition(transform.position) : transform.position;

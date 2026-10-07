@@ -406,6 +406,41 @@ namespace MashBoxSDK.MapTools
             displayContent.Add(new MBGameplayGizmoToggle());
             displaySettings.Add(displayRow);
 
+            var challengesRow = CreateRow("Challenges", out VisualElement challengesContent);
+            challengesContent.Add(new MBGameplayGizmoLayerToggle(
+                () => MBGameplayGizmoVisibility.ChallengesEnabled,
+                enabled => MBGameplayGizmoVisibility.ChallengesEnabled = enabled,
+                "Show challenge zones, expert lines, secret gaps, side hits, photo spots, collectibles, letters, and their handles."));
+            displaySettings.Add(challengesRow);
+
+            var trailNetworkRow = CreateRow("Trail Network", out VisualElement trailNetworkContent);
+            trailNetworkContent.Add(new MBGameplayGizmoLayerToggle(
+                () => MBGameplayGizmoVisibility.TrailNetworkEnabled,
+                enabled => MBGameplayGizmoVisibility.TrailNetworkEnabled = enabled,
+                "Show MashBox trail spline and capture-radius gizmos."));
+            displaySettings.Add(trailNetworkRow);
+
+            var loftSplinesRow = CreateRow("Loft Splines", out VisualElement loftSplinesContent);
+            loftSplinesContent.Add(new MBGameplayGizmoLayerToggle(
+                () => MBGameplayGizmoVisibility.LoftSplinesEnabled,
+                enabled => MBGameplayGizmoVisibility.LoftSplinesEnabled = enabled,
+                "Show loft source curves, cross sections, and MashBox loft editing handles. Generated surfaces stay visible."));
+            displaySettings.Add(loftSplinesRow);
+
+            var racesRow = CreateRow("Races", out VisualElement racesContent);
+            racesContent.Add(new MBGameplayGizmoLayerToggle(
+                () => MBGameplayGizmoVisibility.RacesEnabled,
+                enabled => MBGameplayGizmoVisibility.RacesEnabled = enabled,
+                "Show races, gates, gate labels, and dual slalom start zones."));
+            displaySettings.Add(racesRow);
+
+            var chairliftsRow = CreateRow("Chairlifts", out VisualElement chairliftsContent);
+            chairliftsContent.Add(new MBGameplayGizmoLayerToggle(
+                () => MBGameplayGizmoVisibility.ChairliftsEnabled,
+                enabled => MBGameplayGizmoVisibility.ChairliftsEnabled = enabled,
+                "Show chairlift cables, towers, stations, labels and selection handles."));
+            displaySettings.Add(chairliftsRow);
+
             var timeOfDayRow = CreateRow("Time of Day", out VisualElement timeOfDayContent);
             timeOfDayContent.Add(new MBTimeOfDaySlider());
             displaySettings.Add(timeOfDayRow);
@@ -2211,6 +2246,33 @@ namespace MashBoxSDK.MapTools
             row.Add(shortcutLabel);
 
             Add(row);
+        }
+    }
+
+    internal sealed class MBGameplayGizmoLayerToggle : Toggle
+    {
+        private readonly System.Func<bool> getEnabled;
+
+        public MBGameplayGizmoLayerToggle(System.Func<bool> getEnabled, System.Action<bool> setEnabled, string description)
+        {
+            this.getEnabled = getEnabled;
+            tooltip = description + " The Display master switch must also be on.";
+            this.RegisterValueChangedCallback(evt => setEnabled(evt.newValue));
+            RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                MBGameplayGizmoVisibility.Changed += Sync;
+                Sync();
+            });
+            RegisterCallback<DetachFromPanelEvent>(_ => MBGameplayGizmoVisibility.Changed -= Sync);
+            Sync();
+        }
+
+        private void Sync()
+        {
+            bool enabled = getEnabled();
+            SetValueWithoutNotify(enabled);
+            text = enabled ? "On" : "Off";
+            SetEnabled(MBGameplayGizmoVisibility.Visible);
         }
     }
 

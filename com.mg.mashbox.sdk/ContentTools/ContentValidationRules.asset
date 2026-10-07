@@ -172,6 +172,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -198,6 +199,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -224,6 +226,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -250,6 +253,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -276,6 +280,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -302,6 +307,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -328,6 +334,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -354,6 +361,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -380,6 +388,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -406,6 +415,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -432,6 +442,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -458,6 +469,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 2
     AdditionalAllowedShaderTypes: 
@@ -484,6 +496,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -514,6 +527,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -555,6 +569,7 @@ MonoBehaviour:
     - SeatClamp_Anchor
     - SeatPost_Anchor
     - BB_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations:
     - ChildPath: RearWheel_Anchor/Rear_Left_Peg_Anchor
       Forward: 2
@@ -609,6 +624,7 @@ MonoBehaviour:
     - Right_Grip_Anchor
     - Left_BarEnd_Anchor
     - Right_BarEnd_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -644,6 +660,7 @@ MonoBehaviour:
     - FrontWheel_Anchor/Front_Right_Peg_Anchor
     - FrontWheel_Anchor/Front_Left_HubGuard_Anchor
     - FrontWheel_Anchor/Front_Right_HubGuard_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations:
     - ChildPath: FrontWheel_Anchor
       Forward: 0
@@ -700,6 +717,7 @@ MonoBehaviour:
     IgnoreRequiredChildren: 0
     RequiredChildren:
     - Stem_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -733,6 +751,7 @@ MonoBehaviour:
     - Sprocket_Anchor
     - Left_CrankArm_Anchor
     - Right_CrankArm_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -764,6 +783,7 @@ MonoBehaviour:
     IgnoreRequiredChildren: 0
     RequiredChildren:
     - Pedal_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -795,6 +815,7 @@ MonoBehaviour:
     IgnoreRequiredChildren: 0
     RequiredChildren:
     - Seat_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -825,6 +846,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -855,6 +877,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -886,6 +909,7 @@ MonoBehaviour:
     IgnoreRequiredChildren: 0
     RequiredChildren:
     - Axle
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -916,6 +940,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -954,6 +979,7 @@ MonoBehaviour:
     - StemBolt_Anchor_4
     - StemBolt_Anchor_5
     - StemBolt_Anchor_6
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -984,6 +1010,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1014,6 +1041,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1044,6 +1072,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1076,6 +1105,7 @@ MonoBehaviour:
     RequiredChildren:
     - Valve_Anchor
     - HubDriver
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1106,6 +1136,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1136,6 +1167,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1166,6 +1198,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1196,6 +1229,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1226,6 +1260,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1258,6 +1293,7 @@ MonoBehaviour:
     RequiredChildren:
     - Standard
     - DriveSide
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1289,6 +1325,7 @@ MonoBehaviour:
     IgnoreRequiredChildren: 0
     RequiredChildren:
     - Valve_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1319,6 +1356,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1350,6 +1388,7 @@ MonoBehaviour:
     IgnoreRequiredChildren: 0
     RequiredChildren:
     - HubDriver
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1380,6 +1419,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 4
     AdditionalAllowedShaderTypes: 
@@ -1410,6 +1450,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 5
     AdditionalAllowedShaderTypes: 
@@ -1434,6 +1475,7 @@ MonoBehaviour:
     - Right_Grip_Anchor
     - Left_Grip_Anchor
     - Right_BarEnd_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1467,6 +1509,7 @@ MonoBehaviour:
     - FrontWheel_Anchor
     - FrontWheel_Anchor/Front_Left_Peg_Anchor
     - FrontWheel_Anchor/Front_Right_Peg_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1498,6 +1541,7 @@ MonoBehaviour:
     IgnoreRequiredChildren: 0
     RequiredChildren:
     - Stem_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1536,6 +1580,7 @@ MonoBehaviour:
     - RearWheel_Anchor/Rear_Left_Peg_Anchor
     - RearWheel_Anchor/Rear_Right_Peg_Anchor
     - Mesh
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1571,6 +1616,7 @@ MonoBehaviour:
     - StemBolt_Anchor_3
     - StemBolt_Anchor_4
     - Bars_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1601,6 +1647,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 3
     AdditionalAllowedShaderTypes: 
@@ -1627,6 +1674,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1657,6 +1705,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 1
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1687,6 +1736,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 04000000
@@ -1769,6 +1819,7 @@ MonoBehaviour:
     - Left_Grip_Anchor
     - Right_BarEnd_Anchor
     - Right_Grip_Anchor
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1799,6 +1850,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1829,6 +1881,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1859,6 +1912,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1889,6 +1943,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
@@ -1919,28 +1974,60 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren: []
+    RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1
     AdditionalAllowedShaderTypes: 
     MaxTextureDataMB:
-      MB: 0
+      MB: 2
     Slots:
     - ShaderProperty: _BaseColorMap
-      MaxSize: 64
+      MaxSize: 512
     - ShaderProperty: _MaskMap
-      MaxSize: 64
+      MaxSize: 512
     - ShaderProperty: _NormalMap
-      MaxSize: 64
+      MaxSize: 512
     - ShaderProperty: _StickerMap
-      MaxSize: 64
+      MaxSize: 512
     - ShaderProperty: _DetailMap
-      MaxSize: 64
+      MaxSize: 512
     - ShaderProperty: _DetailColorMap
-      MaxSize: 64
+      MaxSize: 512
     - ShaderProperty: _CoatMaskMap
-      MaxSize: 64
+      MaxSize: 512
     - ShaderProperty: _EmissiveColorMap
-      MaxSize: 64
-    MaxVertexCount: 500
+      MaxSize: 512
+    MaxVertexCount: 20000
+    MaxRenderers: 8
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 5
+    AppliesToType: 50
+    AppliesToBrand: 
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    RequiredDescendantsAnywhere: []
+    PreferredOrientations: []
+    ShaderType: 1
+    AdditionalAllowedShaderTypes: 
+    MaxTextureDataMB:
+      MB: 2
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 512
+    - ShaderProperty: _MaskMap
+      MaxSize: 512
+    - ShaderProperty: _NormalMap
+      MaxSize: 512
+    - ShaderProperty: _StickerMap
+      MaxSize: 512
+    - ShaderProperty: _DetailMap
+      MaxSize: 512
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 512
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 512
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 512
+    MaxVertexCount: 30000
     MaxRenderers: 1
     MaxDistinctMaterials: 1

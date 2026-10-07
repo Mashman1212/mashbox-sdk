@@ -1,0 +1,1 @@
+Tested active chunk renderers=1539; frustum candidates before=1058, after=504; source triangles before=1465110, after=938246. This is a conservative frustum test, not measured draw calls or FPS.

@@ -51,6 +51,7 @@ namespace MashBoxSDK.Shaders
             "_BaseColorMap_ST",
             "_MaskMap",
             "_MaskMap_ST",
+            "_AlphaCutoffEnable",
             "_NormalMap",
             "_NormalMap_ST",
             "_NormalStrength",
@@ -672,7 +673,21 @@ namespace MashBoxSDK.Shaders
                     mat.SetFloat("_DetailAlbedoScale", 0f);
             }
             
+            bool useAlphaClip = mat.HasProperty("_AlphaCutoffEnable") &&
+                                mat.GetFloat("_AlphaCutoffEnable") >= 0.5f;
             mat.shaderKeywords = VehicleTemplateMat.shaderKeywords;
+            SetVehicleAlphaClipState(mat, useAlphaClip);
+        }
+
+        private static void SetVehicleAlphaClipState(Material mat, bool useAlphaClip)
+        {
+            if (useAlphaClip)
+                mat.EnableKeyword("_ALPHATEST_ON");
+            else
+                mat.DisableKeyword("_ALPHATEST_ON");
+
+            mat.renderQueue = useAlphaClip ? (int)RenderQueue.AlphaTest : VehicleTemplateMat.renderQueue;
+            mat.SetOverrideTag("RenderType", useAlphaClip ? "TransparentCutout" : "");
         }
         public static void EnforceClothingShader(Material mat)
         {
@@ -890,7 +905,10 @@ namespace MashBoxSDK.Shaders
             var enforceAlphaTest = false;
             var enforceHdrpDecalAffects = false;
             var enforceDoubleSided = false;
-            if (UsesTemplateShader(mat, VehicleTemplateMat))
+            var isVehicle = UsesTemplateShader(mat, VehicleTemplateMat);
+            var vehicleAlphaClip = isVehicle && mat.HasProperty("_AlphaCutoffEnable") &&
+                                   mat.GetFloat("_AlphaCutoffEnable") >= 0.5f;
+            if (isVehicle)
                 template = VehicleTemplateMat;
             else if (UsesTemplateShader(mat, ClothingTemplateMat))
                 template = ClothingTemplateMat;
@@ -950,6 +968,12 @@ namespace MashBoxSDK.Shaders
             var expectedKeywords = new System.Collections.Generic.HashSet<string>(
                 template.shaderKeywords,
                 System.StringComparer.Ordinal);
+            if (isVehicle)
+            {
+                expectedKeywords.Remove("_ALPHATEST_ON");
+                if (vehicleAlphaClip)
+                    expectedKeywords.Add("_ALPHATEST_ON");
+            }
             if (enforceSurfaceReception)
             {
                 expectedKeywords.Remove("_DISABLE_DECALS");
@@ -961,6 +985,10 @@ namespace MashBoxSDK.Shaders
                 expectedKeywords.Add("_DOUBLESIDED_ON");
 
             var needsKeywordSync = !KeywordSetsMatch(mat.shaderKeywords, expectedKeywords);
+            var needsVehicleSurfaceSync = isVehicle &&
+                (mat.renderQueue != (vehicleAlphaClip ? (int)RenderQueue.AlphaTest : template.renderQueue) ||
+                 mat.GetTag("RenderType", false, "") !=
+                 (vehicleAlphaClip ? "TransparentCutout" : template.GetTag("RenderType", false, "")));
             var needsDecalSync = enforceSurfaceReception &&
                                  mat.HasProperty("_SupportDecals") &&
                                  mat.GetFloat("_SupportDecals") < 0.5f;
@@ -1005,7 +1033,7 @@ namespace MashBoxSDK.Shaders
                 }
             }
 
-            if (!needsKeywordSync && !needsDecalSync && !needsSsrSync && !needsAlphaSync &&
+            if (!needsKeywordSync && !needsVehicleSurfaceSync && !needsDecalSync && !needsSsrSync && !needsAlphaSync &&
                 !needsDoubleSidedSync &&
                 !needsHdrpDecalAffectSync && !needsHdrpDecalTextureSync)
                 return false;
@@ -1017,6 +1045,9 @@ namespace MashBoxSDK.Shaders
                 System.Array.Sort(synchronizedKeywords, System.StringComparer.Ordinal);
                 mat.shaderKeywords = synchronizedKeywords;
             }
+
+            if (needsVehicleSurfaceSync)
+                SetVehicleAlphaClipState(mat, vehicleAlphaClip);
 
             if (enforceSurfaceReception)
             {

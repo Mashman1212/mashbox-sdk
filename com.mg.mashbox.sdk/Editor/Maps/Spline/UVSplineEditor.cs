@@ -259,7 +259,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnSceneGUI()
         {
-            if (!SceneEditingEnabled)
+            if (!SceneEditingEnabled || (!MBGameplayGizmoVisibility.LoftSplinesVisible && ((UVSpline)target).GetComponentInParent<MultiSplineLoft>() != null))
                 return;
 
             var uvSpline = (UVSpline)target;

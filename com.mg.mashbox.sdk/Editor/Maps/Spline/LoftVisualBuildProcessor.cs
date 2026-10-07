@@ -23,7 +23,9 @@ namespace MashBoxSDK.MapTools
             };
         }
 
-        public int callbackOrder => 1000;
+        // Bake before the runtime combiner preparation (-1000) and Unity's
+        // static batching (0), while authored per-loft meshes still exist.
+        public int callbackOrder => -2000;
 
         // Scene loading calls MultiSplineLoft.EnsureMesh, which can put the base
         // mesh back on the renderer before the queued editor UV preview runs.
@@ -36,6 +38,11 @@ namespace MashBoxSDK.MapTools
             Mesh uvMesh = null;
             try
             {
+                // A build scene can retain an editor UV preview (or another transient
+                // render mesh) even though the loft's saved source mesh is current.
+                // Always start from the loft source on this temporary scene copy.
+                if (loft.GeneratedMesh != null)
+                    filter.sharedMesh = loft.GeneratedMesh;
                 UVSpline uv = loft.GetComponentsInChildren<UVSpline>(true)
                     .FirstOrDefault(candidate => candidate.Target == filter);
                 if (uv != null && uv.ControlPoints.Count > 0)

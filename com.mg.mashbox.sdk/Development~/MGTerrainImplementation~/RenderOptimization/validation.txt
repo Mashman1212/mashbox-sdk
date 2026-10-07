@@ -1,0 +1,1 @@
+PASS: default tessellation=4; terrain bounds=1m; external overrides retain 200m; negative/large displacement covered; Phong preserves configured bounds.

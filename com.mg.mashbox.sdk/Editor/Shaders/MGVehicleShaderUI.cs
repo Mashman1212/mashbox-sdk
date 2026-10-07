@@ -16,7 +16,10 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             uiBlocks.RemoveAll(b => b is ShaderGraphUIBlock);
 
             // Add our own stuff
-            uiBlocks.Insert(1, new HDRPSurfaceInputsUiBlock(MaterialUIBlock.ExpandableBit.Input));
+            uiBlocks.Insert(1, new HDRPSurfaceInputsUiBlock(
+                MaterialUIBlock.ExpandableBit.Input,
+                maskMapHelpText: "<b><color=#ff6b6b>(R)Metallic</color></b>, <b><color=#6be36b>(G)AO</color></b>, <b><color=#6ba8ff>(B)Alpha Clip</color></b>, <b><color=#cccccc>(A)Smoothness</color></b>",
+                showAlphaClipToggle: true));
             uiBlocks.Insert(2, new HDRPStickerInputsUiBlock(MaterialUIBlock.ExpandableBit.Layer1));
             uiBlocks.Insert(3, new HDRPCoatingFXUiBlock(MaterialUIBlock.ExpandableBit.Layer2));
             uiBlocks.Insert(4, new HDRPDetailInputsUiBlock(MaterialUIBlock.ExpandableBit.Detail));

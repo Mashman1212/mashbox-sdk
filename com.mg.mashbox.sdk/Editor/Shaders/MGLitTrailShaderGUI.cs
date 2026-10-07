@@ -1365,11 +1365,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             MaterialProperty[] properties)
         {
             MaterialProperty heightTransition = FindOptionalProperty("_HeightTransition", properties);
+            MaterialProperty tessellationQuality = FindOptionalProperty("_TessellationQuality", properties);
             MaterialProperty tessellationAmplitudeMaster =
                 FindOptionalProperty("_TesselationAmplitudeMaster", properties);
             MaterialProperty pomAmplitudeMaster =
                 FindOptionalProperty("_POMAmplitudeMaster", properties);
-            if (heightTransition == null &&
+            if (heightTransition == null && tessellationQuality == null &&
                 tessellationAmplitudeMaster == null &&
                 pomAmplitudeMaster == null)
                 return;
@@ -1384,6 +1385,14 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     new GUIContent(
                         "Height Transition",
                         "Controls the width of the transition between height-blended terrain layers."));
+            }
+
+            if (tessellationQuality != null)
+            {
+                materialEditor.ShaderProperty(tessellationQuality, new GUIContent(
+                    "Tessellation Quality",
+                    "Maximum near-camera subdivision factor. 1 is cheapest; 4 is the default. " +
+                    "Cost grows approximately with the square of this value. The previous fixed value was 50."));
             }
 
             if (tessellationAmplitudeMaster != null)

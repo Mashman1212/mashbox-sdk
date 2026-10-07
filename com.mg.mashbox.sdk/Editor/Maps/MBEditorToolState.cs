@@ -45,11 +45,11 @@ namespace MashBoxSDK.MapTools
         const string LastBrushModePreferenceKey = "MashBoxSDK.EditorTools.LastBrushMode";
         const string LastSplineModePreferenceKey = "MashBoxSDK.EditorTools.LastSplineMode";
         const string CurrentModeOrder = "SplineAfterLoft";
-        static bool s_LoftUndoRefreshQueued;
+
 
         static MBEditorToolState()
         {
-            Undo.undoRedoPerformed += QueueLoftUndoRefresh;
+
             Selection.selectionChanged += SelectRoadMode;
             EditorApplication.delayCall += SelectRoadMode;
         }
@@ -338,45 +338,6 @@ namespace MashBoxSDK.MapTools
         {
             if (ActiveEditing)
                 MBBrushSceneToolHost.ExecuteAction(action);
-        }
-
-        static void QueueLoftUndoRefresh()
-        {
-            if ((Mode != MBEditorAuthoringMode.SplineLoft && Mode != MBEditorAuthoringMode.Spline
-                && Mode != MBEditorAuthoringMode.UVSpline) || s_LoftUndoRefreshQueued)
-                return;
-
-            s_LoftUndoRefreshQueued = true;
-            EditorApplication.delayCall -= RefreshLoftsAfterUndo;
-            EditorApplication.delayCall += RefreshLoftsAfterUndo;
-        }
-
-        static void RefreshLoftsAfterUndo()
-        {
-            EditorApplication.delayCall -= RefreshLoftsAfterUndo;
-            s_LoftUndoRefreshQueued = false;
-
-            MultiSplineLoft[] lofts = UnityEngine.Object.FindObjectsByType<MultiSplineLoft>(
-                UnityEngine.FindObjectsInactive.Include,
-                UnityEngine.FindObjectsSortMode.None);
-            for (int i = 0; i < lofts.Length; i++)
-            {
-                MultiSplineLoft loft = lofts[i];
-                if (loft == null || EditorUtility.IsPersistent(loft) || !loft.gameObject.scene.IsValid())
-                    continue;
-
-                try
-                {
-                    loft.Regenerate();
-                }
-                catch (Exception exception)
-                {
-                    UnityEngine.Debug.LogException(exception, loft);
-                }
-            }
-
-            EditorApplication.QueuePlayerLoopUpdate();
-            SceneView.RepaintAll();
         }
 
         static int GetMigratedModeIndex()

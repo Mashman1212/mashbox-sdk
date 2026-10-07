@@ -120,7 +120,7 @@ namespace MashBoxSDK.Maps
         {
             SnapToGround();
 
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.ChallengesVisible)
                 return;
 
             DrawCapsuleGizmo();

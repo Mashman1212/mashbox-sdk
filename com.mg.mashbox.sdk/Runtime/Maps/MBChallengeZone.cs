@@ -22,7 +22,7 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
-            if (!MBGameplayGizmoVisibility.Visible) return;
+            if (!MBGameplayGizmoVisibility.ChallengesVisible) return;
             var box = GetComponent<BoxCollider>();
             var owner = GetComponentInParent<MBTrickChallenge>();
             int index = owner != null ? owner.Zones.IndexOf(this) : -1;

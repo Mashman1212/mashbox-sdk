@@ -27,20 +27,6 @@ using MashBoxSDK.SDKMain;
 
 namespace MashBoxSDK.ContentTools.Editor
 {
-    [Serializable]
-    public class ContentPackGroupInfo
-    {
-        public string Name = "Ungrouped";
-        [Tooltip("Optional parent group used by the Content Builder hierarchy.")]
-        public string ParentName = string.Empty;
-        public Color Color = new Color(0f, 0f, 0f, 0.35f);
-    }
-
-    public class ContentPackGroupSettings : ScriptableObject
-    {
-        public List<ContentPackGroupInfo> Groups = new List<ContentPackGroupInfo>();
-    }
-
     /// <summary>
     /// Content Pack Manager:
     ///  • Forced pack folder: Assets/ContentPacks
@@ -181,6 +167,7 @@ namespace MashBoxSDK.ContentTools.Editor
             
             _captureIconsOnBuild = EditorPrefs.GetBool(PREF_KEY_CAPTURE_ICONS, true);
             EditorApplication.projectChanged += OnProjectChanged;
+            Undo.undoRedoPerformed += OnPackGroupUndoRedo;
             RefreshBuildLocation();
             
             EditorApplication.delayCall += DelayedInit;
@@ -222,6 +209,16 @@ namespace MashBoxSDK.ContentTools.Editor
             EditorPrefs.SetBool(PREF_KEY_SDK_FOLDOUT, _sdkFoldout);
             EditorPrefs.SetBool(PREF_KEY_CAPTURE_ICONS, _captureIconsOnBuild);
             EditorApplication.projectChanged -= OnProjectChanged;
+            Undo.undoRedoPerformed -= OnPackGroupUndoRedo;
+            if (_groupSettings != null)
+                _groupSettings.SavePendingChanges();
+        }
+
+        private void OnPackGroupUndoRedo()
+        {
+            if (_groupSettings != null)
+                _groupSettings.QueueSave();
+            Repaint();
         }
         private static string ShortString(string value, int max = 7)
         {
@@ -1367,7 +1364,7 @@ namespace MashBoxSDK.ContentTools.Editor
 
             Undo.RecordObject(_groupSettings, "Change Content Pack Group Color");
             group.Color = color;
-            EditorUtility.SetDirty(_groupSettings);
+            _groupSettings.QueueSave();
         }
 
         private void DrawPackGroupStatus(IReadOnlyList<ContentPackDefinition> packs)
@@ -1578,7 +1575,7 @@ namespace MashBoxSDK.ContentTools.Editor
                              string.Equals(NormalizeParentGroup(info.ParentName), oldGroup, StringComparison.OrdinalIgnoreCase)))
                     child.ParentName = newGroup;
 
-                EditorUtility.SetDirty(_groupSettings);
+                _groupSettings.QueueSave();
             }
 
             var packsInGroup = _packs.Where(pack => pack != null && string.Equals(GetPackGroup(pack), oldGroup, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -1634,7 +1631,7 @@ namespace MashBoxSDK.ContentTools.Editor
 
             _groupSettings.Groups.RemoveAll(info => string.Equals(NormalizePackGroup(info.Name), groupName, StringComparison.OrdinalIgnoreCase));
             EnsureDefaultPackGroup();
-            EditorUtility.SetDirty(_groupSettings);
+            _groupSettings.QueueSave();
 
             _packGroupFoldouts.Remove("pack_group_" + groupName);
             _packGroupFoldouts["pack_group_" + DefaultPackGroup] = true;
@@ -1644,10 +1641,15 @@ namespace MashBoxSDK.ContentTools.Editor
         private ContentPackGroupSettings EnsurePackGroupSettings()
         {
             if (_groupSettings == null)
+            {
+                ContentPackGroupSettings.RepairLegacyScriptReference(PackGroupSettingsPath);
                 _groupSettings = AssetDatabase.LoadAssetAtPath<ContentPackGroupSettings>(PackGroupSettingsPath);
+            }
 
             if (_groupSettings == null)
             {
+                if (File.Exists(PackGroupSettingsPath))
+                    throw new InvalidOperationException($"Cannot load content pack groups at '{PackGroupSettingsPath}'. The existing asset was preserved.");
                 EnsureFolderExists(FORCED_PACKS_FOLDER);
                 _groupSettings = ScriptableObject.CreateInstance<ContentPackGroupSettings>();
                 _groupSettings.Groups.Add(new ContentPackGroupInfo
@@ -1681,7 +1683,7 @@ namespace MashBoxSDK.ContentTools.Editor
                 ParentName = string.Empty,
                 Color = new Color(0f, 0f, 0f, 0.35f)
             });
-            EditorUtility.SetDirty(_groupSettings);
+            _groupSettings.QueueSave();
         }
 
         private void EnsureGroupsForPacks()
@@ -1718,7 +1720,7 @@ namespace MashBoxSDK.ContentTools.Editor
                 Color = GetDefaultPackGroupColor()
             };
             _groupSettings.Groups.Add(info);
-            EditorUtility.SetDirty(_groupSettings);
+            _groupSettings.QueueSave();
             return info;
         }
 
@@ -1873,7 +1875,7 @@ namespace MashBoxSDK.ContentTools.Editor
 
             Undo.RecordObject(_groupSettings, "Move Content Pack Group");
             group.ParentName = normalizedParent;
-            EditorUtility.SetDirty(_groupSettings);
+            _groupSettings.QueueSave();
 
             _packGroupFoldouts["pack_group_" + NormalizePackGroup(group.Name)] = true;
             if (!string.IsNullOrEmpty(normalizedParent))
@@ -1959,7 +1961,7 @@ namespace MashBoxSDK.ContentTools.Editor
             }
 
             EnsureValidPackGroupHierarchy();
-            EditorUtility.SetDirty(_groupSettings);
+            _groupSettings.QueueSave();
             Repaint();
         }
 
@@ -2007,7 +2009,7 @@ namespace MashBoxSDK.ContentTools.Editor
             }
 
             if (changed)
-                EditorUtility.SetDirty(_groupSettings);
+                _groupSettings.QueueSave();
         }
 
         private static Color GetDefaultPackGroupColor()

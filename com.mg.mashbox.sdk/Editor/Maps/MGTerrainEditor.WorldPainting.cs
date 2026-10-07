@@ -8,9 +8,55 @@ namespace MashBoxSDK.MapTools
 {
     public sealed partial class MGTerrainEditor
     {
-        readonly Dictionary<MGTerrain, MGTerrainEditor> m_WorldPaintEditors = new Dictionary<MGTerrain, MGTerrainEditor>();
-        readonly HashSet<MGTerrain> m_WorldPaintSkipped = new HashSet<MGTerrain>();
+        readonly Dictionary<(MGTerrain tile, int layer, int channel), MGTerrainEditor> m_WorldPaintEditors =
+            new Dictionary<(MGTerrain, int, int), MGTerrainEditor>();
+        readonly HashSet<(MGTerrain, int, int)> m_WorldPaintSkipped = new HashSet<(MGTerrain, int, int)>();
+        readonly HashSet<MGTerrain.DensityDetailLayer> m_SelectedPaintLayers = new HashSet<MGTerrain.DensityDetailLayer>();
+        int m_WorldStrokeUndo = -1;
+        bool m_ShowPaintTogether;
         bool m_WorldPaintDelegate;
+
+        void SelectPaintDetail(int index, bool additive = false)
+        {
+            FinishDetailStroke();
+            var terrain = (MGTerrain)target;
+            if (additive && m_SelectedPaintLayers.Count == 0 && (uint)m_PaintDetailIndex < terrain.DensityDetailLayerCount)
+                m_SelectedPaintLayers.Add(terrain.DensityDetailLayers[m_PaintDetailIndex]);
+            if (!additive) m_SelectedPaintLayers.Clear();
+            m_PaintDetailIndex = index;
+            if ((uint)index >= terrain.DensityDetailLayerCount) return;
+            var layer = terrain.DensityDetailLayers[index];
+            if (!additive || !m_SelectedPaintLayers.Remove(layer) || m_SelectedPaintLayers.Count == 0)
+                m_SelectedPaintLayers.Add(layer);
+            else
+                for (int i = 0; i < terrain.DensityDetailLayerCount; i++)
+                    if (m_SelectedPaintLayers.Contains(terrain.DensityDetailLayers[i])) { m_PaintDetailIndex = i; break; }
+            m_SelectedPrototype = terrain.DensityDetailLayers[m_PaintDetailIndex].PrototypeIndex;
+        }
+
+        bool IsPaintLayerSelected(MGTerrain terrain, int index) =>
+            index == m_PaintDetailIndex || m_SelectedPaintLayers.Contains(terrain.DensityDetailLayers[index]);
+
+        bool IsPaintPrototypeSelected(MGTerrain terrain, int prototype)
+        {
+            for (int i = 0; i < terrain.DensityDetailLayerCount; i++)
+                if (terrain.DensityDetailLayers[i].PrototypeIndex == prototype && IsPaintLayerSelected(terrain, i)) return true;
+            return m_SelectedPrototype == prototype;
+        }
+
+        void DrawPaintTogether(MGTerrain terrain, string[] labels)
+        {
+            m_ShowPaintTogether = EditorGUILayout.Foldout(m_ShowPaintTogether, "Paint Together", true);
+            if (!m_ShowPaintTogether) return;
+            using (new EditorGUI.IndentLevelScope())
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    if (terrain.DensityDetailLayers[i].PaletteSourceOnly) continue;
+                    bool selected = IsPaintLayerSelected(terrain, i);
+                    if (EditorGUILayout.ToggleLeft(labels[i], selected) != selected) SelectPaintDetail(i, true);
+                }
+            EditorGUILayout.HelpBox("Selected details share the brush and target density. Each layer receives the full target. You can also Ctrl-click detail thumbnails to select several types. Per-detail settings below apply to the active detail.", MessageType.None);
+        }
 
         bool RaycastDetailWorld(MGTerrain terrain, Ray ray, out RaycastHit hit)
         {
@@ -82,41 +128,65 @@ namespace MashBoxSDK.MapTools
             SceneView.RepaintAll();
         }
 
-        void PaintWorldNeighbours(MGTerrain terrain, Vector3 point, bool erase)
+        void BeginMultiDetailStroke()
         {
-            if (m_WorldPaintDelegate || terrain.World == null) return;
-            foreach (var chunk in terrain.World.Chunks)
+            FinishDetailStroke();
+            Undo.IncrementCurrentGroup();
+            m_WorldStrokeUndo = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Paint MG Terrain Details");
+        }
+
+        void PaintSelectedDetailDab(MGTerrain terrain, Vector3 point, bool erase, bool eraseAll)
+        {
+            PaintTile(terrain);
+            if (terrain.World != null)
+                foreach (var chunk in terrain.World.Chunks)
+                    if (chunk != terrain) PaintTile(chunk);
+
+            void PaintTile(MGTerrain chunk)
             {
-                if (chunk == null || chunk == terrain || !chunk.isActiveAndEnabled || chunk.MeshFilter == null
-                    || chunk.MeshFilter.sharedMesh == null) continue;
+                if (chunk == null || !chunk.isActiveAndEnabled || chunk.MeshFilter == null
+                    || chunk.MeshFilter.sharedMesh == null) return;
                 var bounds = chunk.MeshFilter.sharedMesh.bounds;
                 Vector3 local = chunk.transform.InverseTransformPoint(point);
                 // Brush falloff operates on the local XZ plane, matching the existing detail brush.
                 Vector3 nearest = new Vector3(Mathf.Clamp(local.x, bounds.min.x, bounds.max.x), local.y,
                     Mathf.Clamp(local.z, bounds.min.z, bounds.max.z));
-                if (chunk.transform.TransformVector(local - nearest).sqrMagnitude >= MBEditorToolState.BrushRadius * MBEditorToolState.BrushRadius) continue;
-                if (!m_WorldPaintEditors.TryGetValue(chunk, out var editor))
+                if (chunk.transform.TransformVector(local - nearest).sqrMagnitude >= MBEditorToolState.BrushRadius * MBEditorToolState.BrushRadius) return;
+                int channel = eraseAll ? 0 : m_PaintChannel;
+                int count = eraseAll ? chunk.DensityDetailLayerCount : terrain.DensityDetailLayerCount;
+                for (int sourceIndex = 0; sourceIndex < count; sourceIndex++)
                 {
-                    int index = FindWorldPaintLayer(terrain, m_PaintDetailIndex, chunk);
+                    if (!eraseAll && !IsPaintLayerSelected(terrain, sourceIndex)) continue;
+                    int index = eraseAll || chunk == terrain ? sourceIndex : FindWorldPaintLayer(terrain, sourceIndex, chunk);
                     if (index < 0)
                     {
-                        if (m_WorldPaintSkipped.Add(chunk)) Debug.LogWarning($"Skipped cross-chunk paint on '{chunk.name}': no unique matching detail definition. Match the chunk's detail setup before painting across this border.", chunk);
+                        if (m_WorldPaintSkipped.Add((chunk, sourceIndex, -1))) Debug.LogWarning($"Skipped cross-chunk paint of layer {sourceIndex} on '{chunk.name}': no unique matching detail definition. Match the chunk's detail setup before painting across this border.", chunk);
                         continue;
                     }
-                    editor = (MGTerrainEditor)CreateEditor(chunk, typeof(MGTerrainEditor));
-                    editor.m_WorldPaintDelegate = true;
-                    editor.m_PaintDetailIndex = index;
-                    editor.m_GrassPaintSubId = m_GrassPaintSubId;
-                    editor.m_GrassIdOnly = m_GrassIdOnly;
-                    editor.m_GrassPaintPopulation = m_GrassPaintPopulation;
-                    editor.m_PaintChannel = m_PaintChannel; editor.m_PaintDensity = m_PaintDensity;
-                    editor.m_PaintSize = m_PaintSize; editor.m_RandomPaintSize = m_RandomPaintSize;
-                    editor.m_PaintSizeMin = m_PaintSizeMin; editor.m_PaintSizeMax = m_PaintSizeMax;
-                    editor.m_PaintSizeSeed = m_PaintSizeSeed;
-                    m_WorldPaintEditors.Add(chunk, editor);
-                    if (!editor.BeginDetailStroke(chunk)) continue;
+                    var detail = chunk.DensityDetailLayers[index];
+                    if (detail.PaletteSourceOnly || (uint)detail.PrototypeIndex >= chunk.Prototypes.Count) continue;
+                    // Erasing an unpainted layer must not allocate a blank texture.
+                    if ((eraseAll || (erase && channel == 0)) && detail.DensityMap == null) continue;
+                    var key = (chunk, index, channel);
+                    if (m_WorldPaintSkipped.Contains(key)) continue;
+                    if (!m_WorldPaintEditors.TryGetValue(key, out var editor))
+                    {
+                        editor = (MGTerrainEditor)CreateEditor(chunk, typeof(MGTerrainEditor));
+                        editor.m_WorldPaintDelegate = true;
+                        editor.m_PaintDetailIndex = index;
+                        editor.m_GrassPaintSubId = m_GrassPaintSubId;
+                        editor.m_GrassIdOnly = m_GrassIdOnly;
+                        editor.m_GrassPaintPopulation = m_GrassPaintPopulation;
+                        editor.m_PaintChannel = channel; editor.m_PaintDensity = m_PaintDensity;
+                        editor.m_PaintSize = m_PaintSize; editor.m_RandomPaintSize = m_RandomPaintSize;
+                        editor.m_PaintSizeMin = m_PaintSizeMin; editor.m_PaintSizeMax = m_PaintSizeMax;
+                        editor.m_PaintSizeSeed = m_PaintSizeSeed;
+                        m_WorldPaintEditors.Add(key, editor);
+                        if (!editor.BeginDetailStroke(chunk)) { m_WorldPaintSkipped.Add(key); continue; }
+                    }
+                    editor.PaintDetailDab(chunk, point, erase || eraseAll);
                 }
-                editor.PaintDetailDab(chunk, point, erase);
             }
         }
 
@@ -129,9 +199,10 @@ namespace MashBoxSDK.MapTools
                 if (editor != null) { editor.FinishDetailStroke(); DestroyImmediate(editor); }
             Tools.current = tool; MBEditorToolState.ActiveEditing = editing;
             m_WorldPaintEditors.Clear(); m_WorldPaintSkipped.Clear();
+            if (m_WorldStrokeUndo >= 0) Undo.CollapseUndoOperations(m_WorldStrokeUndo);
+            m_WorldStrokeUndo = -1;
         }
     }
 }
 #endif
-
 

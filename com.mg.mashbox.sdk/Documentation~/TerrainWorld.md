@@ -35,6 +35,17 @@ that world when converted through the existing conversion tools.
 
 ## Painting and appearance maps
 
+Ctrl-click detail thumbnails (Command-click on macOS), or use **Paint Together** in the
+paint controls, to select multiple detail layers. A normal click selects one type.
+Each selected layer receives the same full **Target Density / Texel**, brush strength,
+and falloff; the density is not divided between types. Size painting also applies to
+the selected layers. Per-detail settings apply to the **Active Detail**.
+Hold **Shift** while painting to erase selected density (or restore selected size to 1).
+Hold **Ctrl + Shift** to erase density for every rendered detail type under the brush,
+including unselected and hidden types, in either Density or Size mode. This also
+clears unmatched detail types on neighbouring tiles. Palette source-only layers are
+excluded. One Undo restores the whole stroke across all affected types and tiles.
+
 Detail density/size painting can cross chunk borders inside the same world. Matching uses
 prefab/mesh/material/kind and palette entry identity, never another chunk's layer index.
 Missing or ambiguous matches are skipped with a warning. Configure matching detail

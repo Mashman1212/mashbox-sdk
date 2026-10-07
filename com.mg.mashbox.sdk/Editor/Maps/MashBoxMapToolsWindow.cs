@@ -41,6 +41,11 @@ namespace MashBoxSDK.MapTools
         private static readonly Color RaceGateFillColor = new Color(1f, 0.45f, 0.15f, 0.12f);
         private static readonly Color RaceGateWireColor = new Color(1f, 0.45f, 0.15f, 0.95f);
         private static readonly Color RaceGateLabelColor = new Color(1f, 0.9f, 0.72f, 1f);
+        private static readonly HashSet<string> GameplayGroupRootNames = new(StringComparer.Ordinal)
+        {
+            "Photo Spots", "Races", "Dual Slaloms", "4 Cross", "Secret Gap",
+            "Side Hit", "Side Hits", "Expert Line", "Expert Lines", "Collectible", "Collect Letters"
+        };
 
         private MapContentDatabase db;
         private ReorderableList list;
@@ -71,7 +76,7 @@ namespace MashBoxSDK.MapTools
         private Vector2 mapToolsScrollPosition;
         private string validatedPackInstanceId;
         private List<MapValidationIssue> lastValidationIssues;
-        private List<MapValidationIssue> gameplayValidationIssues = new();
+        private List<MapValidationIssue> gameplayValidationIssues;
         private double nextGameplayValidationRefreshTime;
         [SerializeField] private MapPerformanceScannerPanel performanceScannerPanel = new();
         private double nextSceneToolCacheRefreshTime;
@@ -288,7 +293,6 @@ namespace MashBoxSDK.MapTools
             UVSplineEditor.SceneEditingEnabled = MBEditorToolState.ActiveEditing
                 && currentToolTab == ToolTab.ArtTools
                 && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
-            db = MapContentDatabase.GetOrCreate();
 
             EditorApplication.hierarchyChanged -= MarkSceneToolCacheDirty;
             EditorApplication.hierarchyChanged += MarkSceneToolCacheDirty;
@@ -298,8 +302,17 @@ namespace MashBoxSDK.MapTools
             Selection.selectionChanged += OnAuthoringSelectionChanged;
 
             MarkSceneToolCacheDirty();
-            RefreshGameplayValidationIssues(force: true);
-            EnsureAuthoringToolInstances();
+
+            initialized = true;
+            OnAuthoringSelectionChanged();
+        }
+
+        private void EnsureExporterInitialized()
+        {
+            if (db != null && list != null)
+                return;
+
+            db = MapContentDatabase.GetOrCreate();
 
             list = new ReorderableList(db.Packs, typeof(MapContentPackDefinition), true, true, true, true);
             list.drawHeaderCallback = (r) => EditorGUI.LabelField(r, "Maps");
@@ -308,8 +321,6 @@ namespace MashBoxSDK.MapTools
             list.onAddCallback = (l) => CreateEmptyPackAsset();
             list.onRemoveCallback = (l) => RemovePackAt(l.index);
 
-            initialized = true;
-            OnAuthoringSelectionChanged();
         }
 
         private void OnAuthoringSelectionChanged()
@@ -448,6 +459,7 @@ namespace MashBoxSDK.MapTools
 
         private void OnActiveSceneChangedInEditMode(Scene previousScene, Scene newScene)
         {
+            gameplayValidationIssues = null;
             MarkSceneToolCacheDirty();
         }
 
@@ -473,6 +485,7 @@ namespace MashBoxSDK.MapTools
             cachedFlyCameraObjects.Clear();
             cachedPhotoSpots.Clear();
             cachedRaces.Clear();
+            cachedChairlifts.Clear();
             cachedTrails.Clear();
             cachedDualSlaloms.Clear();
             cachedFourCrossCourses.Clear();
@@ -507,19 +520,21 @@ namespace MashBoxSDK.MapTools
             cachedMapBoundary = Resources.FindObjectsOfTypeAll<MBMapBoundary>()
                 .FirstOrDefault(boundary => boundary != null && boundary.gameObject.scene == activeScene);
             cachedMapTaskList = MBMapTaskList.FindInScene(activeScene);
-            cachedPhotoSpotGroupRoot = FindChallengeTypeRootInScene("Photo Spots", activeScene);
-            cachedRaceGroupRoot = FindChallengeTypeRootInScene("Races", activeScene);
-            cachedDualSlalomGroupRoot = FindChallengeTypeRootInScene("Dual Slaloms", activeScene);
-            cachedFourCrossGroupRoot = FindChallengeTypeRootInScene("4 Cross", activeScene);
-            cachedSecretGapGroupRoot = FindChallengeTypeRootInScene("Secret Gap", activeScene);
-            cachedSideHitGroupRoot = FindChallengeTypeRootInScene("Side Hit", activeScene)
-                                     ?? FindChallengeTypeRootInScene("Side Hits", activeScene);
-            cachedExpertLineGroupRoot = FindChallengeTypeRootInScene("Expert Line", activeScene)
-                                        ?? FindChallengeTypeRootInScene("Expert Lines", activeScene);
-            cachedCollectibleGroupRoot = FindChallengeTypeRootInScene("Collectible", activeScene);
+            var groupRoots = IndexGameplayGroupRoots(activeScene);
+            cachedPhotoSpotGroupRoot = FindChallengeTypeRootInScene("Photo Spots", activeScene, groupRoots);
+            cachedRaceGroupRoot = FindChallengeTypeRootInScene("Races", activeScene, groupRoots);
+            cachedDualSlalomGroupRoot = FindChallengeTypeRootInScene("Dual Slaloms", activeScene, groupRoots);
+            cachedFourCrossGroupRoot = FindChallengeTypeRootInScene("4 Cross", activeScene, groupRoots);
+            cachedSecretGapGroupRoot = FindChallengeTypeRootInScene("Secret Gap", activeScene, groupRoots);
+            cachedSideHitGroupRoot = FindChallengeTypeRootInScene("Side Hit", activeScene, groupRoots)
+                                     ?? FindChallengeTypeRootInScene("Side Hits", activeScene, groupRoots);
+            cachedExpertLineGroupRoot = FindChallengeTypeRootInScene("Expert Line", activeScene, groupRoots)
+                                        ?? FindChallengeTypeRootInScene("Expert Lines", activeScene, groupRoots);
+            cachedCollectibleGroupRoot = FindChallengeTypeRootInScene("Collectible", activeScene, groupRoots);
 
-            cachedFlyCameraObjects.AddRange(Resources.FindObjectsOfTypeAll<GameObject>()
-                .Where(gameObject => gameObject != null && gameObject.scene == activeScene && gameObject.GetComponent<Freecam>() != null)
+            cachedFlyCameraObjects.AddRange(Resources.FindObjectsOfTypeAll<Freecam>()
+                .Where(camera => camera != null && camera.gameObject.scene == activeScene)
+                .Select(camera => camera.gameObject)
                 .OrderBy(gameObject => gameObject.name));
             cachedPhotoSpots.AddRange(Resources.FindObjectsOfTypeAll<MBPhotoSpot>()
                 .Where(photoSpot => photoSpot != null && photoSpot.gameObject.scene == activeScene)
@@ -548,6 +563,7 @@ namespace MashBoxSDK.MapTools
                 .Where(line => line != null && line.gameObject.scene == activeScene)
                 .OrderBy(line => line.transform.GetSiblingIndex()));
             cachedSpotChallenges.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBSpotChallenge>(true)));
+            cachedChairlifts.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBChairlift>(true)));
             cachedLineChallenges.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBLineChallenge>(true)));
             cachedCollectibles.AddRange(Resources.FindObjectsOfTypeAll<MBCollectible>()
                 .Where(collectible => collectible != null && collectible.gameObject.scene == activeScene)
@@ -560,7 +576,7 @@ namespace MashBoxSDK.MapTools
             cachedLettersRoot = cachedLetters
                 .Select(letter => letter != null ? letter.transform.parent : null)
                 .FirstOrDefault(parent => parent != null);
-            cachedMissingChallengeGroupScriptCount = CountMissingChallengeGroupScripts(activeScene);
+            cachedMissingChallengeGroupScriptCount = CountMissingChallengeGroupScripts(activeScene, groupRoots);
         }
 
         public void Draw()
@@ -582,8 +598,6 @@ namespace MashBoxSDK.MapTools
                 currentToolTab = newToolTab;
                 EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)currentToolTab);
                 MarkSceneToolCacheDirty();
-                if (currentToolTab == ToolTab.Gameplay)
-                    RefreshGameplayValidationIssues(force: true);
             }
             GUILayout.Space(6);
             UpdateAuthoringSceneToolState();
@@ -621,7 +635,7 @@ namespace MashBoxSDK.MapTools
                     break;
             }
 
-            if (GUI.changed)
+            if (GUI.changed && db != null)
                 EditorUtility.SetDirty(db);
         }
         
@@ -634,6 +648,7 @@ namespace MashBoxSDK.MapTools
         // -------------------------------
         private void DrawMapsTab()
         {
+            EnsureExporterInitialized();
             EditorGUILayout.HelpBox(
                 "Each scene becomes a map data asset. Drag scenes here to create maps, then fill in metadata, build a single map bundle to Documents, or publish that selected map to mod.io.",
                 MessageType.Info);
@@ -703,6 +718,8 @@ namespace MashBoxSDK.MapTools
 
                 DrawGameplayGizmoVisibilitySection();
                 GUILayout.Space(10f);
+                DrawChairliftsSection();
+                GUILayout.Space(10f);
                 DrawGameplayValidationSection();
                 GUILayout.Space(10f);
                 DrawSpawnLocationSection();
@@ -735,7 +752,7 @@ namespace MashBoxSDK.MapTools
                 }
 
                 EditorGUILayout.HelpBox(
-                    "Controls MashBox gameplay drawing for races and gates, secret gaps, side hits, expert lines, photo spots, collectibles, letters, spawn points, and related gameplay handles.",
+                    "Controls MashBox gameplay drawing for chairlifts, races and gates, secret gaps, side hits, expert lines, photo spots, collectibles, letters, spawn points, and related gameplay handles.",
                     MessageType.None);
             }
         }
@@ -819,7 +836,16 @@ namespace MashBoxSDK.MapTools
                     }
                 }
 
-                if (gameplayValidationIssues == null || gameplayValidationIssues.Count == 0)
+                if (gameplayValidationIssues == null)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Click Validate to check this scene. Maps are also validated before building or publishing.",
+                        MessageType.Info);
+                    return;
+                }
+
+                EditorGUILayout.HelpBox("Results from the last validation. Click Validate again after making changes.", MessageType.None);
+                if (gameplayValidationIssues.Count == 0)
                 {
                     EditorGUILayout.HelpBox("Gameplay validation passed.", MessageType.Info);
                     return;
@@ -920,9 +946,6 @@ namespace MashBoxSDK.MapTools
                 MBEditorToolState.ActiveEditing = false;
                 MashBoxSDK.Maps.Roads.Editor.MGRoadTool.Open();
             }
-            EnsureAuthoringToolInstances();
-
-
             MBEditorAuthoringCategory category = MBEditorToolState.Category;
             int newCategory = MashBoxTabDrawer.DrawTabs(
                 (int)category,
@@ -977,6 +1000,7 @@ namespace MashBoxSDK.MapTools
                 GUILayout.Space(4f);
             }
 
+            EnsureAuthoringToolInstances();
             switch ((AuthoringToolTab)authoringToolTab)
             {
                 case AuthoringToolTab.MGBrush:
@@ -1348,7 +1372,8 @@ namespace MashBoxSDK.MapTools
 
         private void EnsureAuthoringToolInstances()
         {
-            if (authoringBrushTool == null)
+            var selectedTool = (AuthoringToolTab)authoringToolTab;
+            if (selectedTool == AuthoringToolTab.MGBrush && authoringBrushTool == null)
             {
                 authoringBrushTool = CreateInstance<MGBrushWindow>();
                 // HideAndDontSave also includes NotEditable, which makes fields drawn
@@ -1357,29 +1382,30 @@ namespace MashBoxSDK.MapTools
                 authoringBrushTool.DeactivateSceneTool();
             }
 
-            if (authoringLoftTool == null)
+            if (selectedTool == AuthoringToolTab.SplineLoft && authoringLoftTool == null)
             {
                 authoringLoftTool = CreateInstance<MultiSplineLoftWindow>();
                 authoringLoftTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
                 authoringLoftTool.DeactivateSceneTool();
+                authoringLoftTool.UvSplineGenerated = OnLoftUvSplineGenerated;
             }
-            authoringLoftTool.UvSplineGenerated = OnLoftUvSplineGenerated;
 
-            if (authoringSplineTool == null)
+            if (selectedTool == AuthoringToolTab.Spline && authoringSplineTool == null)
             {
                 authoringSplineTool = CreateInstance<SplineToolWindow>();
                 authoringSplineTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
                 authoringSplineTool.DeactivateSceneTool();
             }
 
-            if (authoringSculptTool == null)
+            if (selectedTool == AuthoringToolTab.MeshSculpt && authoringSculptTool == null)
             {
                 authoringSculptTool = CreateInstance<MeshSculptWindow>();
                 authoringSculptTool.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
                 authoringSculptTool.DeactivateSceneTool();
             }
 
-            authoringUvInspectorTool ??= new UVInspectorTool();
+            if (selectedTool == AuthoringToolTab.UVInspector)
+                authoringUvInspectorTool ??= new UVInspectorTool();
         }
 
         private void OnLoftUvSplineGenerated(UVSpline uvSpline)
@@ -1457,6 +1483,7 @@ namespace MashBoxSDK.MapTools
                 && (AuthoringToolTab)authoringToolTab == AuthoringToolTab.UVSpline;
             if (embeddedHostVisible && currentToolTab == ToolTab.ArtTools && MBEditorToolState.ActiveEditing)
             {
+                EnsureAuthoringToolInstances();
                 if ((AuthoringToolTab)authoringToolTab == AuthoringToolTab.MGBrush)
                 {
                     authoringLoftTool?.DeactivateSceneTool();
@@ -3420,10 +3447,29 @@ namespace MashBoxSDK.MapTools
                 Undo.AddComponent<MBRaceGroup>(groupRoot);
         }
 
-        private static GameObject FindChallengeTypeRootInScene(string challengeTypeName, Scene scene)
+        private static Dictionary<string, GameObject> IndexGameplayGroupRoots(Scene scene)
+        {
+            var roots = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                foreach (var item in root.GetComponentsInChildren<Transform>(true))
+                {
+                    string itemName = item.name;
+                    if (GameplayGroupRootNames.Contains(itemName) && !roots.ContainsKey(itemName))
+                        roots.Add(itemName, item.gameObject);
+                }
+            }
+            return roots;
+        }
+
+        private static GameObject FindChallengeTypeRootInScene(string challengeTypeName, Scene scene,
+            Dictionary<string, GameObject> indexedRoots = null)
         {
             if (!scene.IsValid() || !scene.isLoaded)
                 return null;
+
+            if (indexedRoots != null)
+                return indexedRoots.TryGetValue(challengeTypeName, out var root) ? root : null;
 
             return scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
@@ -3431,38 +3477,38 @@ namespace MashBoxSDK.MapTools
                 ?.gameObject;
         }
 
-        private static int CountMissingChallengeGroupScripts(Scene scene)
+        private static int CountMissingChallengeGroupScripts(Scene scene, Dictionary<string, GameObject> groupRoots)
         {
             if (!scene.IsValid() || !scene.isLoaded)
                 return 0;
 
             var missingCount = 0;
 
-            var collectibleRoot = FindChallengeTypeRootInScene("Collectible", scene);
+            var collectibleRoot = FindChallengeTypeRootInScene("Collectible", scene, groupRoots);
             if (collectibleRoot != null && collectibleRoot.GetComponent<MBCollectibleGroup>() == null && collectibleRoot.GetComponentsInChildren<MBCollectible>(true).Length > 0)
                 missingCount++;
 
-            var photoSpotRoot = FindChallengeTypeRootInScene("Photo Spots", scene);
+            var photoSpotRoot = FindChallengeTypeRootInScene("Photo Spots", scene, groupRoots);
             if (photoSpotRoot != null && photoSpotRoot.GetComponent<MBPhotoSpotGroup>() == null && photoSpotRoot.GetComponentsInChildren<MBPhotoSpot>(true).Length > 0)
                 missingCount++;
 
-            var racesRoot = FindChallengeTypeRootInScene("Races", scene);
+            var racesRoot = FindChallengeTypeRootInScene("Races", scene, groupRoots);
             if (racesRoot != null && racesRoot.GetComponent<MBRaceGroup>() == null && racesRoot.GetComponentsInChildren<MBRace>(true).Length > 0)
                 missingCount++;
 
-            var secretGapRoot = FindChallengeTypeRootInScene("Secret Gap", scene);
+            var secretGapRoot = FindChallengeTypeRootInScene("Secret Gap", scene, groupRoots);
             if (secretGapRoot != null && secretGapRoot.GetComponent<MBSecretGapGroup>() == null && secretGapRoot.GetComponentsInChildren<MBSecretGap>(true).Length > 0)
                 missingCount++;
 
-            var sideHitRoot = FindChallengeTypeRootInScene("Side Hit", scene) ?? FindChallengeTypeRootInScene("Side Hits", scene);
+            var sideHitRoot = FindChallengeTypeRootInScene("Side Hit", scene, groupRoots) ?? FindChallengeTypeRootInScene("Side Hits", scene, groupRoots);
             if (sideHitRoot != null && sideHitRoot.GetComponent<MBSideHitGroup>() == null && sideHitRoot.GetComponentsInChildren<MBSideHit>(true).Length > 0)
                 missingCount++;
 
-            var expertLineRoot = FindChallengeTypeRootInScene("Expert Line", scene) ?? FindChallengeTypeRootInScene("Expert Lines", scene);
+            var expertLineRoot = FindChallengeTypeRootInScene("Expert Line", scene, groupRoots) ?? FindChallengeTypeRootInScene("Expert Lines", scene, groupRoots);
             if (expertLineRoot != null && expertLineRoot.GetComponent<MBExpertLineGroup>() == null && expertLineRoot.GetComponentsInChildren<MBExpertLine>(true).Length > 0)
                 missingCount++;
 
-            var collectLettersRoot = FindChallengeTypeRootInScene("Collect Letters", scene);
+            var collectLettersRoot = FindChallengeTypeRootInScene("Collect Letters", scene, groupRoots);
             if (collectLettersRoot != null && collectLettersRoot.GetComponent<MBCollectLettersChallenge>() == null && collectLettersRoot.GetComponentsInChildren<MBCollectLetter>(true).Length > 0)
                 missingCount++;
 

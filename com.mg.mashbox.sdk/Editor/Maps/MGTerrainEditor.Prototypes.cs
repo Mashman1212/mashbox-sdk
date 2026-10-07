@@ -50,13 +50,14 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        void SelectPrototype(int index)
+        void SelectPrototype(int index, bool additive = false)
         {
             FinishDetailStroke();
             m_SelectedPrototype = index;
             for (int i = 0; i < m_DensityDetailLayers.arraySize; i++)
                 if (m_DensityDetailLayers.GetArrayElementAtIndex(i).FindPropertyRelative("m_PrototypeIndex").intValue == index)
-                { m_PaintDetailIndex = i; return; }
+                { SelectPaintDetail(i, additive); return; }
+            m_SelectedPaintLayers.Clear();
             SetDetailPainting(false);
         }
 
@@ -234,7 +235,7 @@ namespace MashBoxSDK.MapTools
             Event evt = Event.current;
             if (evt.type == EventType.Repaint)
                 GUI.skin.button.Draw(cell, GUIContent.none, cell.Contains(evt.mousePosition),
-                    GUIUtility.hotControl == control, m_SelectedPrototype == index, false);
+                    GUIUtility.hotControl == control, IsPaintPrototypeSelected(terrain, index), false);
             if (serializedObject.isEditingMultipleObjects) return;
             switch (evt.GetTypeForControl(control))
             {
@@ -242,7 +243,7 @@ namespace MashBoxSDK.MapTools
                     if (evt.button != 0 || !cell.Contains(evt.mousePosition)) break;
                     GUIUtility.hotControl = control;
                     m_PrototypeDragStart = evt.mousePosition;
-                    SelectPrototype(index);
+                    SelectPrototype(index, evt.control || evt.command);
                     evt.Use();
                     Repaint();
                     break;

@@ -1719,8 +1719,11 @@ namespace MashBoxSDK.MapTools
                 labels[i] = i + ": " + name + (detail.GrassIdMap != null ? " / Population " + (detail.GrassPopulation == 0 ? "A" : "B") : detail.UsesGrassArray ? " / Sub-ID " + detail.TextureSlice : "");
             }
             if (labels.Length == 0) { SetDetailPainting(false); return; }
-            m_PaintDetailIndex = EditorGUILayout.Popup("Detail", Mathf.Clamp(m_PaintDetailIndex, 0, labels.Length - 1), labels);
-            m_PaintChannel = GUILayout.Toolbar(m_PaintChannel, new[] { "Density", "Size" });
+            int activeDetail = EditorGUILayout.Popup("Active Detail", Mathf.Clamp(m_PaintDetailIndex, 0, labels.Length - 1), labels);
+            if (activeDetail != m_PaintDetailIndex) SelectPaintDetail(activeDetail);
+            DrawPaintTogether(terrain, labels);
+            int channel = GUILayout.Toolbar(m_PaintChannel, new[] { "Density", "Size" });
+            if (channel != m_PaintChannel) { FinishDetailStroke(); m_PaintChannel = channel; }
             var selectedDetail = terrain.DensityDetailLayers[m_PaintDetailIndex];
             if (selectedDetail.GrassIdMap != null)
             {
@@ -1784,7 +1787,7 @@ namespace MashBoxSDK.MapTools
                 else
                     m_PaintSize = EditorGUILayout.Slider("Target Size Multiplier", m_PaintSize, .05f, 4f);
             }
-            EditorGUILayout.HelpBox("Drag to paint with soft falloff. Shift erases density or restores size to 1. Ctrl + middle-drag: horizontal = radius, vertical = strength. Alt navigates; Esc stops. Size multiplies existing width and height; it does not change density. Painted cells refresh live during the stroke. The first stroke makes a working copy; original maps are preserved.", MessageType.Info);
+            EditorGUILayout.HelpBox("Drag to paint selected details with soft falloff. Shift erases selected density or restores selected size to 1. Ctrl + Shift erases density for all detail types under the brush, in either mode. Ctrl + middle-drag: horizontal = radius, vertical = strength. Alt navigates; Esc stops. Size multiplies existing width and height; it does not change density. Painted cells refresh live during the stroke. The first stroke makes a working copy; original maps are preserved.", MessageType.Info);
             if (terrain.DensityDetailLayers[m_PaintDetailIndex].GeneratedByPalette != null)
                 EditorGUILayout.HelpBox("This is a palette-generated layer. Baking the palette again can replace this layer and its painting.", MessageType.Warning);
             if (terrain.NeedsCollision && !terrain.HasSurfaceCollider)
@@ -1827,6 +1830,7 @@ namespace MashBoxSDK.MapTools
 
         void RefreshPaintUndo()
         {
+            m_SelectedPaintLayers.Clear();
             foreach (Texture2D map in m_PaintCopies)
                 if (map != null && map.isReadable) { map.Apply(false, false); EditorUtility.SetDirty(map); }
             if (target is MGTerrain terrain)
@@ -1899,7 +1903,8 @@ namespace MashBoxSDK.MapTools
                 && MBEditorToolVisuals.FocusBrushSurface(e, sceneView, hit.point, MBEditorToolState.BrushRadius)) return;
             Handles.color = m_PaintChannel == 0 ? Color.green : Color.cyan;
             Handles.DrawWireDisc(hit.point, hit.normal, MBEditorToolState.BrushRadius);
-            MBEditorToolVisuals.DrawBrushAction(m_PaintChannel == 0
+            bool eraseAll = e.control && e.shift;
+            MBEditorToolVisuals.DrawBrushAction(eraseAll ? "Erase All Detail Types" : m_PaintChannel == 0
                 ? (e.shift ? "Thin / Erase Detail Density" : "Paint Detail Density")
                 : (e.shift ? "Restore Detail Size Ã—1" : m_RandomPaintSize
                     ? $"Paint Random Size Ã—{m_PaintSizeMin:0.00}â€“{m_PaintSizeMax:0.00}"
@@ -1908,12 +1913,12 @@ namespace MashBoxSDK.MapTools
             if (e.button != 0 || (e.type != EventType.MouseDown && e.type != EventType.MouseDrag)) return;
             if (e.type == EventType.MouseDown)
             {
-                if (!BeginDetailStroke(terrain)) return;
+                BeginMultiDetailStroke();
                 GUIUtility.hotControl = control;
                 m_LastDetailDab = hit.point;
-                PaintDetailDab(terrain, hit.point, e.shift);
+                PaintSelectedDetailDab(terrain, hit.point, e.shift, eraseAll);
             }
-            else if (m_StrokeMap != null)
+            else if (m_WorldStrokeUndo >= 0)
             {
                 float spacing = Mathf.Max(.05f, MBEditorToolState.BrushRadius * .2f);
                 float distance = Vector3.Distance(m_LastDetailDab, hit.point);
@@ -1922,7 +1927,7 @@ namespace MashBoxSDK.MapTools
                 for (int i = 1; i <= steps; i++)
                 {
                     m_LastDetailDab = Vector3.MoveTowards(start, hit.point, i * spacing);
-                    PaintDetailDab(terrain, m_LastDetailDab, e.shift);
+                    PaintSelectedDetailDab(terrain, m_LastDetailDab, e.shift, eraseAll);
                 }
             }
             e.Use();
@@ -1998,9 +2003,12 @@ namespace MashBoxSDK.MapTools
             TextureFormat format = m_PaintChannel == 0 ? TextureFormat.R16 : TextureFormat.RHalf;
             if (source != null && (!source.isReadable || source.format != format))
             { EditorUtility.DisplayDialog("Cannot Paint Detail", $"The map must be readable {format}.", "OK"); return false; }
-            Undo.IncrementCurrentGroup();
-            m_StrokeUndo = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Paint MG Terrain Detail");
+            if (!m_WorldPaintDelegate)
+            {
+                Undo.IncrementCurrentGroup();
+                m_StrokeUndo = Undo.GetCurrentGroup();
+                Undo.SetCurrentGroupName("Paint MG Terrain Detail");
+            }
             Undo.RegisterCompleteObjectUndo(terrain, "Paint MG Terrain Detail");
             bool shared = false;
             foreach (var other in terrain.DensityDetailLayers)
@@ -2109,13 +2117,12 @@ namespace MashBoxSDK.MapTools
                     ids[index] = (byte)m_GrassPaintSubId;
 
                 }
-                if (m_GrassStrokeIds != null && m_GrassIdOnly) goal = previous;
+                if (m_GrassStrokeIds != null && m_GrassIdOnly && !erase) goal = previous;
                 float next = Mathf.Lerp(previous, goal, influence);
                 ushort value = m_PaintChannel == 0 ? (ushort)Mathf.RoundToInt(next) : Mathf.FloatToHalf(next);
                 changed |= pixels[index] != value;
                 pixels[index] = value;
             }
-            PaintWorldNeighbours(terrain, point, erase);
             if (!changed) return;
             Rect region = Rect.MinMaxRect(x0 / (float)w, z0 / (float)h, (x1 + 1f) / w, (z1 + 1f) / h);
             m_PendingPaintRegion = m_HasPendingPaint
@@ -2160,7 +2167,7 @@ namespace MashBoxSDK.MapTools
             }
             // Leave the texture dirty for the normal project save workflow.
             // Saving here stalls the editor after every brush stroke.
-            Undo.CollapseUndoOperations(m_StrokeUndo);
+            if (m_StrokeUndo >= 0) Undo.CollapseUndoOperations(m_StrokeUndo);
             m_StrokeMap = null;
             m_GrassStrokeIds = null;
             m_StrokeUndo = -1;

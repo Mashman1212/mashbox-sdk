@@ -14,6 +14,7 @@ namespace MashBoxSDK.Maps
     public class MBTrailSpline : MonoBehaviour
     {
         public static readonly HashSet<MBTrailSpline> Active = new HashSet<MBTrailSpline>();
+        public static readonly Color GizmoColor = new Color(0.55f, 0.82f, 1f, 1f);
         [Header("Trail")]
         [SerializeField, Tooltip("Name shown in the Trails menu and compass. Map Tools keeps this in sync with the trail object name.")] private string trailName;
         [SerializeField, HideInInspector] private string persistentId;
@@ -120,8 +121,25 @@ namespace MashBoxSDK.Maps
             best *= best;
             if (_bounds.SqrDistance(position) > best) return false;
             bool found = false;
-            for (int i = 1; i < _points.Length; i++)
+            int firstSegment = 1;
+            bool bounded = previousDistance >= 0f && !Closed && !float.IsPositiveInfinity(progressWindow);
+            float maximum = previousDistance + progressWindow;
+            if (bounded)
             {
+                // Distances are sorted. Only project segments touching the progress window.
+                float minimum = previousDistance - progressWindow;
+                int lo = 1, hi = _distances.Length - 1;
+                while (lo < hi)
+                {
+                    int mid = lo + (hi - lo) / 2;
+                    if (_distances[mid] < minimum) lo = mid + 1;
+                    else hi = mid;
+                }
+                firstSegment = lo;
+            }
+            for (int i = firstSegment; i < _points.Length; i++)
+            {
+                if (bounded && _distances[i - 1] > maximum) break;
                 Vector3 segment = _points[i] - _points[i - 1];
                 float squared = segment.sqrMagnitude;
                 if (squared < 0.000001f) continue;
@@ -163,10 +181,13 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmosSelected()
         {
+            if (!MBGameplayGizmoVisibility.TrailNetworkVisible) return;
             if (!RebuildIfNeeded()) return;
-            Gizmos.color = Color.cyan;
-            for (int i = 1; i < _points.Length; i++) Gizmos.DrawLine(_points[i - 1], _points[i]);
+            Color previousColor = Gizmos.color;
+            Gizmos.color = GizmoColor;
+
             Gizmos.DrawWireSphere(_points[0], Mathf.Max(0.1f, CaptureDistance));
+            Gizmos.color = previousColor;
         }
     }
 }

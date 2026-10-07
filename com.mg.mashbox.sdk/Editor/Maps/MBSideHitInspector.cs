@@ -23,7 +23,7 @@ namespace MashBoxSDK.Maps
 
         private void OnSceneGUI()
         {
-            if (!MBGameplayGizmoVisibility.Visible)
+            if (!MBGameplayGizmoVisibility.ChallengesVisible)
                 return;
 
             if (target is MBSideHit sideHit)

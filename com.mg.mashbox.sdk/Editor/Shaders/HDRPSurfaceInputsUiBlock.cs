@@ -15,6 +15,8 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
         MaterialProperty texWorldScale;
         MaterialProperty alphaClipThreshold;
         MaterialProperty alphaClipThresholdShadow;
+        MaterialProperty alphaCutoffEnable;
+        readonly bool showAlphaClipToggle;
         MaterialProperty whiteBoost;
         MaterialProperty hueShift;
         MaterialProperty whiteBalance;
@@ -74,11 +76,12 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             //public static GUIContent detailNormalMapText = new GUIContent("Ambient Occlusion Remapping");
         }
             
-        public HDRPSurfaceInputsUiBlock(ExpandableBit expandableBit, string BaseMapHelpText = DefaultBaseMapHelpText, string maskMapHelpText = "<b><color=#ff6b6b>(R)Metallic</color></b>, <b><color=#6be36b>(G)AO</color></b>, <b><color=#6ba8ff>(B)not used</color></b>, <b><color=#cccccc>(A)Smoothness</color></b>")
+        public HDRPSurfaceInputsUiBlock(ExpandableBit expandableBit, string BaseMapHelpText = DefaultBaseMapHelpText, string maskMapHelpText = "<b><color=#ff6b6b>(R)Metallic</color></b>, <b><color=#6be36b>(G)AO</color></b>, <b><color=#6ba8ff>(B)not used</color></b>, <b><color=#cccccc>(A)Smoothness</color></b>", bool showAlphaClipToggle = false)
         {
             foldoutBit = expandableBit;
             this.BaseMapHelpText = BaseMapHelpText;
             this.maskMapHelpText = maskMapHelpText;
+            this.showAlphaClipToggle = showAlphaClipToggle;
         }
         
         public override void LoadMaterialProperties()//
@@ -88,6 +91,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             texWorldScale = FindProperty("_TexWorldScale", false);
             alphaClipThreshold = FindProperty("_AlphaClipThreshold", false);
             alphaClipThresholdShadow = FindProperty("_AlphaClipThresholdShadow", false);
+            alphaCutoffEnable = showAlphaClipToggle ? FindProperty("_AlphaCutoffEnable", false) : null;
             whiteBoost = FindProperty("_WhiteBoost");
             hueShift = FindProperty("_HueShift");
             whiteBalance = FindProperty("_WhiteBalance", false);
@@ -190,6 +194,21 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
                     
                         EditorGUILayout.HelpBox(maskMapHelpText, MessageType.None);
                         materialEditor.TexturePropertySingleLine(Styles.maskMapSText, MaskMap);
+
+                        if (alphaCutoffEnable != null)
+                        {
+                            EditorGUI.showMixedValue = alphaCutoffEnable.hasMixedValue;
+                            EditorGUI.BeginChangeCheck();
+                            bool useAlphaClip = EditorGUILayout.Toggle(
+                                new GUIContent("Use Alpha Clip", "Clip pixels using the Mask Map blue channel."),
+                                alphaCutoffEnable.floatValue >= 0.5f);
+                            if (EditorGUI.EndChangeCheck())
+                            {
+                                materialEditor.RegisterPropertyChangeUndo("Use Alpha Clip");
+                                alphaCutoffEnable.floatValue = useAlphaClip ? 1f : 0f;
+                            }
+                            EditorGUI.showMixedValue = false;
+                        }
 
                     }
        

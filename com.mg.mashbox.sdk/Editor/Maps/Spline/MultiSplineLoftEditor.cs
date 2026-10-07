@@ -859,6 +859,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnSceneGUI(SceneView sceneView)
         {
+            if (!MBGameplayGizmoVisibility.LoftSplinesVisible) return;
             // Knot placement owns Scene input until drawing finishes. The reduced
             // knot editor would otherwise consume clicks before Unity can add knots.
             if (IsDrawingSpline)

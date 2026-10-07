@@ -20,6 +20,8 @@ namespace MashBoxSDK.Maps
     [Serializable]
     public class MBMapTaskDefinition
     {
+        [HideInInspector] public string persistentId = string.Empty;
+        [HideInInspector] public string legacyProgressId = string.Empty;
         public bool enabled = true;
         public MBMapTaskKind taskType = MBMapTaskKind.Standard;
         public string displayName = "New Task";
