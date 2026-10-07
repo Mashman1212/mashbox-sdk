@@ -80,31 +80,33 @@ namespace MashBoxSDK.Maps
 
         private void OnDrawGizmos()
         {
-            EnforceValidScale();
-
             if (!MBGameplayGizmoVisibility.RacesVisible)
                 return;
+
+            EnforceValidScale();
 
             var previousMatrix = Gizmos.matrix;
             var previousColor = Gizmos.color;
             var center = GetLocalBoxCenter();
             var isSelected = IsSelected();
             var raceColor = GetRaceColor();
+            var hasClearance = TryGetTopClearance(out var topClearance);
+            var isInvalid = hasClearance && topClearance < MinimumTopClearance;
 
             Gizmos.matrix = transform.localToWorldMatrix;
-            Gizmos.color = GetDisplayColor(IsBelowMinimumHeight() ? InvalidFillColor : GetFillColor(raceColor), isSelected, true);
+            Gizmos.color = GetDisplayColor(isInvalid ? InvalidFillColor : GetFillColor(raceColor), isSelected, true);
             Gizmos.DrawCube(center, boxSize);
 
-            Gizmos.color = GetDisplayColor(IsBelowMinimumHeight() ? InvalidWireColor : GetWireColor(raceColor), isSelected, false);
+            Gizmos.color = GetDisplayColor(isInvalid ? InvalidWireColor : GetWireColor(raceColor), isSelected, false);
             Gizmos.DrawWireCube(center, boxSize);
 
             Gizmos.color = previousColor;
             Gizmos.matrix = previousMatrix;
 
 #if UNITY_EDITOR
-            DrawValidationGuides();
-            DrawForwardArrow();
-            DrawLabels();
+            DrawValidationGuides(hasClearance, topClearance, raceColor, isSelected);
+            DrawForwardArrow(isInvalid, raceColor, isSelected);
+            DrawLabels(isInvalid, raceColor, isSelected);
 #endif
         }
 
@@ -267,11 +269,6 @@ namespace MashBoxSDK.Maps
             return Mathf.Max(MinimumGateAxisScale, minimumScaleFromClearance);
         }
 
-        private bool IsBelowMinimumHeight()
-        {
-            return TryGetTopClearance(out var topClearance) && topClearance < MinimumTopClearance;
-        }
-
         private bool TryGetGroundPointBelowBase(out Vector3 groundPoint)
         {
             groundPoint = Vector3.zero;
@@ -397,48 +394,71 @@ namespace MashBoxSDK.Maps
         }
 
 #if UNITY_EDITOR
-        private void DrawForwardArrow()
+        private static GUIStyle gateLabelStyle;
+        private static GUIStyle gateStatsStyle;
+        private static GUIStyle gateGuideStyle;
+        private static readonly Vector3[] ArrowPoints = new Vector3[2];
+
+        private void DrawForwardArrow(bool isInvalid, Color raceColor, bool isSelected)
         {
             var previousColor = Handles.color;
-            Handles.color = GetDisplayColor(IsBelowMinimumHeight() ? InvalidArrowColor : GetArrowColor(GetRaceColor()), IsSelected(), false);
+            Handles.color = GetDisplayColor(isInvalid ? InvalidArrowColor : GetArrowColor(raceColor), isSelected, false);
 
             var start = transform.position + (transform.up * Mathf.Max(GetScaledHeight() * 0.35f, 0.75f));
             var end = start + (transform.forward * Mathf.Max(boxSize.z + 1.75f, 2f));
-            Handles.DrawAAPolyLine(4f, start, end);
+            ArrowPoints[0] = start;
+            ArrowPoints[1] = end;
+            Handles.DrawAAPolyLine(4f, ArrowPoints);
             Handles.ArrowHandleCap(0, end, transform.rotation, 1f, EventType.Repaint);
 
             Handles.color = previousColor;
         }
 
-        private void DrawLabels()
+        private void DrawLabels(bool isInvalid, Color raceColor, bool isSelected)
         {
-            var labelColor = GetDisplayColor(IsBelowMinimumHeight() ? InvalidLabelColor : GetLabelColor(GetRaceColor()), IsSelected(), false);
-            var labelStyle = new GUIStyle(EditorStyles.boldLabel)
+            var labelColor = GetDisplayColor(isInvalid ? InvalidLabelColor : GetLabelColor(raceColor), isSelected, false);
+            var labelStyle = gateLabelStyle ?? (gateLabelStyle = new GUIStyle(EditorStyles.boldLabel)
             {
                 alignment = TextAnchor.MiddleCenter
-            };
+            });
             labelStyle.normal.textColor = labelColor;
 
+            // Reuse one ordered gate list for all label statistics, instead of five hierarchy scans.
+            var race = Race;
+            var gates = race != null ? race.GetOrderedGates() : null;
+            int index = gates != null ? gates.IndexOf(this) : -1;
             var labelPosition = GetTopPointWorld() + (Vector3.up * 0.35f);
-            Handles.Label(labelPosition, $"Gate {GateNumber:00}", labelStyle);
+            Handles.Label(labelPosition, $"Gate {index + 1:00}", labelStyle);
 
             if (!showStats)
                 return;
 
-            var statsStyle = new GUIStyle(EditorStyles.miniBoldLabel)
+            var statsStyle = gateStatsStyle ?? (gateStatsStyle = new GUIStyle(EditorStyles.miniBoldLabel)
             {
                 alignment = TextAnchor.UpperLeft
-            };
+            });
             statsStyle.normal.textColor = labelColor;
 
-            var nextDistance = GetNextGate() != null ? $"{DistanceToNextGate:0.0}m to next" : "Finish gate";
-            var statsText = $"Race {TotalRaceDistance:0.0}m\nFrom start {DistanceFromStart:0.0}m\n{nextDistance}";
+            float totalDistance = 0f, distanceFromStart = 0f, distanceToNext = 0f;
+            if (gates != null)
+            {
+                for (int i = 0; i < gates.Count - 1; i++)
+                {
+                    float distance = Vector3.Distance(gates[i].transform.position, gates[i + 1].transform.position);
+                    totalDistance += distance;
+                    if (i < index) distanceFromStart += distance;
+                    if (i == index) distanceToNext = distance;
+                }
+            }
+            bool hasNext = gates != null && index >= 0 && index < gates.Count - 1;
+            var nextDistance = hasNext ? $"{distanceToNext:0.0}m to next" : "Finish gate";
+            var statsText = $"Race {totalDistance:0.0}m\nFrom start {distanceFromStart:0.0}m\n{nextDistance}";
             Handles.Label(labelPosition + (Vector3.right * 0.35f), statsText, statsStyle);
         }
 
-        private void DrawValidationGuides()
+        private void DrawValidationGuides(bool hasClearance, float topClearance, Color raceColor, bool isSelected)
         {
-            if (!TryGetTopClearance(out var topClearance))
+            if (!hasClearance)
                 return;
 
             var topPoint = GetTopPointWorld();
@@ -446,9 +466,9 @@ namespace MashBoxSDK.Maps
                 return;
 
             var isInvalid = topClearance < MinimumTopClearance;
-            var raceGuideColor = GetWireColor(GetRaceColor());
+            var raceGuideColor = GetWireColor(raceColor);
             raceGuideColor.a = 0.8f;
-            var guideColor = GetDisplayColor(isInvalid ? InvalidWireColor : raceGuideColor, IsSelected(), false);
+            var guideColor = GetDisplayColor(isInvalid ? InvalidWireColor : raceGuideColor, isSelected, false);
             var requiredTopPoint = groundPoint + (transform.up * MinimumTopClearance);
 
             var previousColor = Handles.color;
@@ -458,7 +478,7 @@ namespace MashBoxSDK.Maps
             Handles.DrawWireDisc(groundPoint, transform.up, 0.18f);
             Handles.DrawWireDisc(requiredTopPoint, transform.up, 0.18f);
 
-            var style = new GUIStyle(EditorStyles.miniBoldLabel);
+            var style = gateGuideStyle ?? (gateGuideStyle = new GUIStyle(EditorStyles.miniBoldLabel));
             style.normal.textColor = guideColor;
             Handles.Label(topPoint + (Vector3.left * 0.35f), isInvalid
                 ? $"Top clearance {topClearance:0.0}m / min {MinimumTopClearance:0.0}m"
