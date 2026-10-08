@@ -1,0 +1,73 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags:
+  - Null_00
+  - UI
+  - water
+  - Null_01
+  - Null_02
+  - Null_03
+  - Null_04
+  - Null_05
+  - Null_06
+  - Null_07
+  - Null_08
+  - Null_09
+  - wood
+  - metal
+  - grass
+  - dirt
+  - Null_10
+  - Null_11
+  - Null_12
+  - WorldMover
+  - Null_13
+  - concrete
+  - PHXChain
+  - plastic
+  - glass
+  - cement
+  - magnet zone
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - MicroBump
+  - Water
+  - UI
+  - PhysicsObjectInteractor
+  - PhysicsObject
+  - PostProcessing
+  - VehicleColliders
+  - Ragdoll
+  - Character
+  - Interactable
+  - CollideAll
+  - NoDefault
+  - No Asssist Zone
+  - Camera
+  - ParkZone
+  - Pause Menu
+  - Interactor
+  - Ladder
+  - CameraCollidable
+  - PW_Object_Large
+  - CharacterScreen
+  - SceneStreamer
+  - EquippableLocator
+  - ColliderStreamerManager
+  - Cleint VehicleColliders
+  - Cleint Ragdoll
+  - Cleint Character
+  - MG_MediumRenderer
+  - NetworkRagdoll
+  m_SortingLayers:
+  - name: TextMeshPro
+    uniqueID: 120147807
+    locked: 0
+  - name: Default
+    uniqueID: 0
+    locked: 0

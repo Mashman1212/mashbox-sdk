@@ -15,6 +15,8 @@ namespace MashBoxSDK.Maps
         private static readonly Color OrangeFlagWireColor = new Color(1f, 0.72f, 0.24f, 1f);
         private static readonly Color BlueFlagWireColor = new Color(0.35f, 0.82f, 1f, 1f);
 
+        private bool showFlagSetHandles;
+
         public override void OnInspectorGUI()
         {
             MashBoxInspectorHeaderUtility.DrawScriptHeader();
@@ -39,7 +41,9 @@ namespace MashBoxSDK.Maps
 
             DrawFlagColorToggle(sideHit);
             DrawFlagSetControls(sideHit);
-            DrawFlagSetTransformHandles(sideHit);
+            DrawFlagSetHandlesToggle(sideHit);
+            if (showFlagSetHandles)
+                DrawFlagSetTransformHandles(sideHit);
 
             serializedObject.ApplyModifiedProperties();
         }
@@ -68,6 +72,33 @@ namespace MashBoxSDK.Maps
             };
             labelStyle.normal.textColor = GetFlagWireColor(sideHit);
             Handles.Label(togglePosition + (Vector3.up * handleSize * 1.4f), $"Flag: {sideHit.FlagColor}", labelStyle);
+            Handles.color = previousColor;
+        }
+
+        private void DrawFlagSetHandlesToggle(MBSideHit sideHit)
+        {
+            var transform = sideHit.transform;
+            var previousColor = Handles.color;
+            Vector3 togglePosition = transform.position
+                                     + (transform.up * Mathf.Max(sideHit.BoxSize.y + 0.75f, 1.1f))
+                                     + (transform.right * 0.45f);
+            float handleSize = HandleUtility.GetHandleSize(togglePosition) * ToggleHandleSize;
+            togglePosition += Vector3.up * handleSize * 4f;
+
+            Handles.color = showFlagSetHandles ? GetFlagWireColor(sideHit) : Color.gray;
+            if (Handles.Button(togglePosition, Quaternion.identity, handleSize, handleSize * 1.2f, Handles.SphereHandleCap))
+            {
+                showFlagSetHandles = !showFlagSetHandles;
+                SceneView.RepaintAll();
+            }
+
+            var labelStyle = new GUIStyle(EditorStyles.miniBoldLabel)
+            {
+                alignment = TextAnchor.MiddleLeft
+            };
+            labelStyle.normal.textColor = showFlagSetHandles ? GetFlagWireColor(sideHit) : Color.gray;
+            Handles.Label(togglePosition + (Vector3.up * handleSize * 1.4f),
+                $"Flag handles: {(showFlagSetHandles ? "On" : "Off")}", labelStyle);
             Handles.color = previousColor;
         }
 

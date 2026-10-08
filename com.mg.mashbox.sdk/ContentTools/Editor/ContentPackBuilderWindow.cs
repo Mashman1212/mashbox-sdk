@@ -623,6 +623,7 @@ namespace MashBoxSDK.ContentTools.Editor
 
         public void Draw()
         {
+            if (GUILayout.Button("My Publishes", GUILayout.ExpandWidth(false))) PublishHistoryWindow.Open();
             _currentGameName = EditorPrefs.GetString("ModIo.CurrentGame", "this game");
             RefreshBuildLocation();
 

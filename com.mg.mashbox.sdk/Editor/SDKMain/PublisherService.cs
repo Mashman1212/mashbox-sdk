@@ -26,19 +26,37 @@ namespace MashBoxSDK.SDKMain
             public string game, unityVersion, sdkVersion, region;
             // One identity per submission, shared across its platform copies and upload retries.
             public string submissionId;
+            public string statusToken;
         }
         [Serializable] private sealed class UploadRequest
         {
             public int protocol;
-            public string fileName, container, game, unityVersion, sdkVersion, region;
+            public string fileName, container, game, unityVersion, sdkVersion, region, statusToken;
         }
-        [Serializable] private sealed class UploadResponse { public string jobId, uploadUrl, message; }
+        [Serializable] private sealed class UploadResponse { public string jobId, uploadUrl, message; public bool trackingSupported; }
+        private static string NewStatusToken()
+        {
+            var bytes = new byte[32];
+            using (var random = System.Security.Cryptography.RandomNumberGenerator.Create()) random.GetBytes(bytes);
+            return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+        }
+        public static async Task<PublishHistory.Status> GetPublishStatusAsync(string jobId, string token)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, BaseUrl + "publish-status?id=" + Uri.EscapeDataString(jobId));
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            using var response = await Http.SendAsync(request).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Status unavailable. Refresh shortly; the last result may be outdated.");
+            var status = JsonUtility.FromJson<PublishHistory.Status>(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            if (status == null || status.jobId != jobId || string.IsNullOrEmpty(status.status))
+                throw new InvalidOperationException("Invalid publish status response.");
+            return status;
+        }
         public static Route CreateRoute(string gameName, string region)
         {
             GameTargetUnityVersionValidator.ThrowIfInvalidForPublishing(gameName);
             if (region != "us" && region != "eu") throw new ArgumentException("Invalid upload region.");
             return new Route { game = GameRegistry.Find(gameName).DisplayName, unityVersion = Application.unityVersion,
-                sdkVersion = MashBoxSDKState.InstalledVersion, region = region, submissionId = Guid.NewGuid().ToString("N") };
+                sdkVersion = MashBoxSDKState.InstalledVersion, region = region, submissionId = Guid.NewGuid().ToString("N"), statusToken = NewStatusToken() };
         }
         public static async Task<Fleet> GetFleetAsync()
         {
@@ -64,13 +82,14 @@ namespace MashBoxSDK.SDKMain
         {
             // Route was captured before asynchronous export/upload; never re-read EditorPrefs during retries.
             var request = new UploadRequest { protocol = route.protocol, game = route.game, unityVersion = route.unityVersion,
-                sdkVersion = route.sdkVersion, region = route.region, container = container, fileName = route.submissionId + "_" + fileName };
+                sdkVersion = route.sdkVersion, region = route.region, container = container, statusToken = route.statusToken, fileName = route.submissionId + "_" + fileName };
             using var content = new StringContent(JsonUtility.ToJson(request), Encoding.UTF8, "application/json");
             using var response = await Http.PostAsync(BaseUrl + "request-upload-v2", content).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             var result = JsonUtility.FromJson<UploadResponse>(body);
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(result?.message ?? "Publisher could not accept the upload.");
             if (string.IsNullOrEmpty(result?.uploadUrl)) throw new InvalidOperationException("Publisher returned an invalid upload response.");
+            PublishHistory.Remember(result.jobId, route.statusToken, fileName, container, route, result.trackingSupported);
             return (result.jobId, result.uploadUrl);
         }
     }

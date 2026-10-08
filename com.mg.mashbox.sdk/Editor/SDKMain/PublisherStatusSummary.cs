@@ -46,6 +46,7 @@ namespace MashBoxSDK.SDKMain
             else
             {
                 result.Status = !globallyEnabled || workers.All(w => !w.enabled) ? "Paused"
+                    : workers.Any(w => w.enabled && w.online && w.status == "Editor unresponsive") ? "Editor unresponsive"
                     : workers.Any(w => w.enabled && w.online) ? "Not accepting" : "Offline";
                 result.Detail = reasons.Length > 0 ? string.Join(" · ", reasons)
                     : result.Status == "Offline" ? "No fresh heartbeat from an enabled publisher."

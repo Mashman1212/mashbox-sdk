@@ -434,12 +434,14 @@ namespace MashBoxSDK.MapTools
                 "Show races, gates, gate labels, and dual slalom start zones."));
             displaySettings.Add(racesRow);
 
+#if UNITY_6000_0_OR_NEWER
             var chairliftsRow = CreateRow("Chairlifts", out VisualElement chairliftsContent);
             chairliftsContent.Add(new MBGameplayGizmoLayerToggle(
                 () => MBGameplayGizmoVisibility.ChairliftsEnabled,
                 enabled => MBGameplayGizmoVisibility.ChairliftsEnabled = enabled,
                 "Show chairlift cables, towers, stations, labels and selection handles."));
             displaySettings.Add(chairliftsRow);
+#endif
 
             var timeOfDayRow = CreateRow("Time of Day", out VisualElement timeOfDayContent);
             timeOfDayContent.Add(new MBTimeOfDaySlider());

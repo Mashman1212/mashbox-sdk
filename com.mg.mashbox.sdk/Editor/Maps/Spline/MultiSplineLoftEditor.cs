@@ -329,6 +329,9 @@ namespace MashBoxSDK.Maps.Spline
         void DrawActionButtons(MultiSplineLoft loft)
         {
             EditorGUILayout.Space(8f);
+            if (GUILayout.Button("Loft Mesh Stamp", GUILayout.Height(26f)))
+                LoftMeshStampWindow.Open(loft);
+
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Generate Now", GUILayout.Height(26f)))

@@ -1,0 +1,1 @@
+D:\mashbox-sdk\com.mg.mashbox.sdk\Editor\SDKMain\MashBoxRiggingInspectors.cs(34,26): warning CS0618: 'MBTriggerRelay' is obsolete: 'MBTriggerRelay is deprecated. Use MBTriggerZone instead.'

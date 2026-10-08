@@ -1,3 +1,4 @@
+#if UNITY_6000_0_OR_NEWER
 using MashBoxSDK.Maps;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -23,8 +24,8 @@ namespace MashBoxSDK.MapTools
             if (!view.drawGizmos || !MBGameplayGizmoVisibility.ChairliftsVisible || Event.current.alt || Tools.current == Tool.View) return;
             if (dirty)
             {
-                towers = Object.FindObjectsByType<MBChairliftTower>(FindObjectsInactive.Exclude);
-                stations = Object.FindObjectsByType<MBChairliftStation>(FindObjectsInactive.Exclude);
+                towers = Object.FindObjectsByType<MBChairliftTower>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+                stations = Object.FindObjectsByType<MBChairliftStation>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
                 dirty = false;
             }
             foreach (var tower in towers)
@@ -89,3 +90,4 @@ namespace MashBoxSDK.MapTools
         }
     }
 }
+#endif

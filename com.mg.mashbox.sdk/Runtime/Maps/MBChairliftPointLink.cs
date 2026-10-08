@@ -1,3 +1,4 @@
+#if UNITY_6000_0_OR_NEWER
 using UnityEngine;
 
 namespace MashBoxSDK.Maps
@@ -21,3 +22,4 @@ namespace MashBoxSDK.Maps
         }
     }
 }
+#endif

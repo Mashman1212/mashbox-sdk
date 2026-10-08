@@ -53,7 +53,7 @@ namespace MashBoxSDK.MapTools
             if (!(changed is Transform) && !(changed is SplineContainer)) return;
             if (indexDirty || lofts == null)
             {
-                lofts = Object.FindObjectsByType<MultiSplineLoft>(FindObjectsInactive.Include);
+                lofts = Object.FindObjectsByType<MultiSplineLoft>(FindObjectsInactive.Include, FindObjectsSortMode.None);
                 indexDirty = false;
             }
             foreach (var loft in lofts)

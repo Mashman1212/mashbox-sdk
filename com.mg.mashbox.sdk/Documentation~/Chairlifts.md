@@ -1,5 +1,7 @@
 # Chairlifts
 
+Requires **Unity 6 or newer**. Chairlift components and editor tools are excluded from earlier Unity versions.
+
 Use **MashBox SDK → Map Tools → Gameplay → Chairlifts → Create Chairlift**.
 
 The SDK prefab includes **Loading Bay (Bottom)**, **Chairlift Cable System** with tower proxies, and **Loading Bay (Top)**. Position and rotate the bay roots and move the towers to fit the map. The four cable handoff points follow the bay endpoints. The bottom bay starts at the placement handle.

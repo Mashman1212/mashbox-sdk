@@ -508,7 +508,9 @@ namespace MashBoxSDK.MapTools
             cachedFlyCameraObjects.Clear();
             cachedPhotoSpots.Clear();
             cachedRaces.Clear();
+#if UNITY_6000_0_OR_NEWER
             cachedChairlifts.Clear();
+#endif
             cachedTrails.Clear();
             cachedDualSlaloms.Clear();
             cachedFourCrossCourses.Clear();
@@ -586,7 +588,9 @@ namespace MashBoxSDK.MapTools
                 .Where(line => line != null && line.gameObject.scene == activeScene)
                 .OrderBy(line => line.transform.GetSiblingIndex()));
             cachedSpotChallenges.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBSpotChallenge>(true)));
+#if UNITY_6000_0_OR_NEWER
             cachedChairlifts.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBChairlift>(true)));
+#endif
             cachedLineChallenges.AddRange(activeScene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<MBLineChallenge>(true)));
             cachedCollectibles.AddRange(Resources.FindObjectsOfTypeAll<MBCollectible>()
                 .Where(collectible => collectible != null && collectible.gameObject.scene == activeScene)
@@ -604,6 +608,7 @@ namespace MashBoxSDK.MapTools
 
         public void Draw()
         {
+            if (GUILayout.Button("My Publishes", GUILayout.ExpandWidth(false))) PublishHistoryWindow.Open();
             embeddedHostVisible = true;
             EnsureInitialized();
             GUILayout.Space(6);
@@ -747,8 +752,10 @@ namespace MashBoxSDK.MapTools
 
                 DrawGameplayGizmoVisibilitySection();
                 GUILayout.Space(10f);
+#if UNITY_6000_0_OR_NEWER
                 DrawChairliftsSection();
                 GUILayout.Space(10f);
+#endif
                 DrawGameplayValidationSection();
                 GUILayout.Space(10f);
                 DrawSpawnLocationSection();

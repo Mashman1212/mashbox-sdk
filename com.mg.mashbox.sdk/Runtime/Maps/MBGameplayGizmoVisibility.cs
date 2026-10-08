@@ -12,9 +12,11 @@ namespace MashBoxSDK.Maps
 
         private static readonly VisibilityPreference loftSplines = new VisibilityPreference("MashBoxSDK.ShowLoftSplineGizmos");
 
+#if UNITY_6000_0_OR_NEWER
         private static readonly VisibilityPreference chairlifts = new VisibilityPreference("MashBoxSDK.ShowChairliftGizmos");
         public static bool ChairliftsEnabled { get => chairlifts.Value; set => chairlifts.Value = value; }
         public static bool ChairliftsVisible => Visible && ChairliftsEnabled;
+#endif
 
         public static event Action Changed;
 

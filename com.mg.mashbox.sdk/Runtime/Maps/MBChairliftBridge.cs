@@ -1,3 +1,4 @@
+#if UNITY_6000_0_OR_NEWER
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -39,3 +40,4 @@ namespace MashBoxSDK.Maps
         public void SetSpeed(float value) => chairlift?.SetSpeed(value);
     }
 }
+#endif
