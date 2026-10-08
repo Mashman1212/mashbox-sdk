@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using MashBoxSDK.Maps.TerrainSystem;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -159,21 +158,6 @@ namespace MashBoxSDK.MapTools
             if (GUI.changed) SceneView.RepaintAll();
         }
 
-        static Scene OpenSourcePreviewScene(string path)
-        {
-            // Unity 2022.3 exposes this only internally. Keep using a preview scene
-            // so source objects stay isolated from the user's open scenes.
-            var method = typeof(EditorSceneManager).GetMethod("OpenPreviewScene",
-                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
-                null, new[] { typeof(string) }, null);
-            if (method == null)
-                throw new NotSupportedException("This Unity version cannot load a source scene for terrain merging. Open the source scene manually and select its terrain tile or world instead.");
-
-            // A delegate preserves the original Unity exception for Report().
-            var open = (Func<string, Scene>)method.CreateDelegate(typeof(Func<string, Scene>));
-            return open(path);
-        }
-
         void BuildPreview()
         {
             ClearPreview();
@@ -196,7 +180,7 @@ namespace MashBoxSDK.MapTools
                         string path = AssetDatabase.GetAssetPath(sceneAsset);
                         if (targets.Any(t => t.gameObject.scene.path == path))
                             throw new InvalidOperationException("Choose a different source scene from the destination scene.");
-                        reference = OpenSourcePreviewScene(path);
+                        reference = EditorSceneManager.OpenPreviewScene(path);
                         sources = reference.GetRootGameObjects().SelectMany(r => r.GetComponentsInChildren<MGTerrain>(true)).ToList();
                     }
                     else
@@ -244,7 +228,7 @@ namespace MashBoxSDK.MapTools
             point = default; float distance = float.MaxValue; bool found = false;
             foreach (var tile in session.targets)
                 if (tile.terrain != null && tile.terrain.gameObject.activeInHierarchy
-                    && tile.terrain.RaycastSculptSurface(ray, out var hit, distance))
+                    && tile.terrain.RaycastEditingSurface(ray, out var hit, distance))
                 { distance = hit.distance; point = hit.point; found = true; }
             return found;
         }
@@ -305,7 +289,7 @@ namespace MashBoxSDK.MapTools
                 {
                     float distance = new Vector2(point.x - lastPoint.x, point.z - lastPoint.z).magnitude;
                     int steps = Mathf.Clamp(Mathf.CeilToInt(distance / Mathf.Max(.01f, radius * .2f)), 1, 128);
-                    session.PaintLine(lastPoint, point, steps, radius, hardness, strength);
+                    for (int i = 1; i <= steps; i++) session.Paint(Vector3.Lerp(lastPoint, point, i / (float)steps), radius, hardness, strength);
                     lastPoint = point; e.Use(); view.Repaint();
                 }
             }

@@ -75,6 +75,7 @@ namespace MashBoxSDK.Maps.Sculpting
         public MultiSplineLoft LinkedLoft => m_LinkedLoft;
         public bool UpdateMeshCollider { get => m_UpdateMeshCollider; set => m_UpdateMeshCollider = value; }
         [NonSerialized] Stroke m_TerrainStroke;
+        public bool LastTerrainBrushInterior { get; private set; }
         public bool IsDirectTerrain => m_LinkedLoft == null && m_Target != null
             && m_Target.GetComponentInParent<MGTerrain>() is MGTerrain terrain && terrain.MeshFilter == m_Target;
 #if UNITY_EDITOR
@@ -171,7 +172,9 @@ namespace MashBoxSDK.Maps.Sculpting
         // still used when the loft changes or when undo/redo needs to restore a
         // deterministic result, but editor dragging must not replay every earlier
         // stroke for each new brush sample.
-        public void ApplyLatestStrokePreview()
+        public void ApplyLatestStrokePreview() => ApplyLatestStrokePreview(false);
+
+        public void ApplyLatestStrokePreview(bool deferTerrainTangents)
         {
             if (IsDirectTerrain)
             {
@@ -185,16 +188,19 @@ namespace MashBoxSDK.Maps.Sculpting
                 m_DirectVertexReadback.CopyTo(m_DirectVertices);
                 var directVertices = m_DirectVertices;
                 ApplyStroke(directVertices, directMesh, m_TerrainStroke);
+                var terrain = m_Target.GetComponentInParent<MGTerrain>();
+                LastTerrainBrushInterior = terrain.SculptBordersUnchanged(m_DirectVertexReadback, directVertices)
+                    && m_TerrainStroke.mode != SculptMode.SeamFit && m_TerrainStroke.mode != SculptMode.MeshStamp;
                 directMesh.vertices = directVertices;
-                directMesh.RecalculateNormals();
+                terrain.RecalculateSculptNormals(LastTerrainBrushInterior);
                 directMesh.RecalculateBounds();
                 // Seam normals use only this dab; no replay history is retained.
                 m_Strokes.Add(m_TerrainStroke);
                 try { ApplySeamNormals(directMesh); }
                 finally { m_Strokes.Clear(); }
-                if (directMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) directMesh.RecalculateTangents();
+                terrain.RefreshSculptTangents(deferTerrainTangents);
                 directMesh.UploadMeshData(false);
-                m_Target.GetComponentInParent<MGTerrain>().NotifySurfaceMeshChanged();
+                m_Target.GetComponentInParent<MGTerrain>().NotifySurfaceMeshChanged(topologyChanged: false, geometryOnly: true);
 #if UNITY_EDITOR
                 UnityEditor.EditorUtility.SetDirty(directMesh);
 #endif
@@ -274,7 +280,10 @@ namespace MashBoxSDK.Maps.Sculpting
             {
                 var terrain = m_Target.GetComponentInParent<MGTerrain>();
                 if (terrain != null && terrain.MeshFilter == m_Target)
+                {
+                    terrain.FinalizeSculptTangents();
                     terrain.RefreshSurfaceCollidersFromMesh();
+                }
             }
             ConformTerrainInstancesForLatestStroke();
             if (IsDirectTerrain)

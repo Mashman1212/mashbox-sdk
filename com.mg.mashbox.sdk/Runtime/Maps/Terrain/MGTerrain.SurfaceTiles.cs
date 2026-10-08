@@ -21,6 +21,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] float m_BuiltTileSize;
         [NonSerialized] Vector3 m_BuiltTileScale;
         [NonSerialized] bool m_SurfaceTilesDirty = true;
+        [NonSerialized] bool m_SurfaceTilesGeometryOnly;
         [NonSerialized] bool m_MasterRenderingSuppressed;
         [NonSerialized] bool m_MasterWasForceRenderingOff;
         [NonSerialized] readonly List<Material> m_SurfaceTileMaterials = new List<Material>();
@@ -31,9 +32,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] bool m_HasSurfaceRendererState;
         static readonly Unity.Profiling.ProfilerMarker s_BuildSurfaceTilesMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.BuildSurfaceTiles");
         static readonly Unity.Profiling.ProfilerMarker s_UpdateSurfaceTilesMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.UpdateSurfaceTileVertices");
-        [NonSerialized] readonly List<Vector3> m_TileSourceVertices = new List<Vector3>();
-        [NonSerialized] readonly List<Vector3> m_TileSourceNormals = new List<Vector3>();
-        [NonSerialized] readonly List<Vector4> m_TileSourceTangents = new List<Vector4>();
+        [NonSerialized] List<Vector3> m_TileSourceVertices = new List<Vector3>();
+        [NonSerialized] List<Vector3> m_TileNextVertices = new List<Vector3>();
+        [NonSerialized] List<Vector3> m_TileSourceNormals = new List<Vector3>();
+        [NonSerialized] List<Vector3> m_TileNextNormals = new List<Vector3>();
+        [NonSerialized] List<Vector4> m_TileSourceTangents = new List<Vector4>();
+        [NonSerialized] List<Vector4> m_TileNextTangents = new List<Vector4>();
+        [NonSerialized] bool[] m_TileChangedVertices = Array.Empty<bool>();
         [NonSerialized] readonly List<Color> m_TileSourceColors = new List<Color>();
         [NonSerialized] readonly List<Vector4>[] m_TileSourceUVs = new List<Vector4>[8];
         [NonSerialized] readonly List<Vector3> m_TileVector3Buffer = new List<Vector3>();
@@ -183,12 +188,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
         }
         // The original MeshFilter stays the sole editable surface. These meshes are
         // disposable render caches, regenerated after reload and never painted directly.
-        public void NotifySurfaceMeshChanged(bool topologyChanged = false)
+        public void NotifySurfaceMeshChanged(bool topologyChanged = false) => NotifySurfaceMeshChanged(topologyChanged, false);
+
+        public void NotifySurfaceMeshChanged(bool topologyChanged, bool geometryOnly)
         {
 #if UNITY_EDITOR
             m_EditorPickDirty = true;
 #endif
-            m_HolePickTree = null;
+            InvalidateSurfacePicking(topologyChanged || !geometryOnly);
+            m_SurfaceTilesGeometryOnly = geometryOnly && !topologyChanged && (!m_SurfaceTilesDirty || m_SurfaceTilesGeometryOnly);
             m_SurfaceTilesDirty = true;
             if (topologyChanged) m_TiledSource = null;
         }
@@ -212,7 +220,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 || scale != m_BuiltTileScale || m_SurfaceTileRoot == null;
 #if UNITY_EDITOR
             int dirtyCount = UnityEditor.EditorUtility.GetDirtyCount(source);
-            if (dirtyCount != m_SurfaceMeshDirtyCount) m_SurfaceTilesDirty = true;
+            if (dirtyCount != m_SurfaceMeshDirtyCount && !m_SurfaceTilesDirty)
+            { m_SurfaceTilesDirty = true; m_SurfaceTilesGeometryOnly = false; }
 #endif
             if (rebuild)
             {
@@ -239,6 +248,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             using var profile = s_BuildSurfaceTilesMarker.Auto();
             ReleaseSurfaceTiles();
+            m_SurfaceTilesGeometryOnly = false;
             Vector3[] vertices = source.vertices;
             var groups = new Dictionary<Vector2Int, SurfaceTileGroup>();
             Vector3 origin = source.bounds.min;
@@ -318,17 +328,37 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             using var profile = s_UpdateSurfaceTilesMarker.Auto();
             ReleaseSurfaceLods();
-            source.GetVertices(m_TileSourceVertices);
-            source.GetNormals(m_TileSourceNormals);
-            source.GetTangents(m_TileSourceTangents);
-            source.GetColors(m_TileSourceColors);
+            source.GetVertices(m_TileNextVertices);
+            source.GetNormals(m_TileNextNormals);
+            source.GetTangents(m_TileNextTangents);
+            bool partial = m_SurfaceTilesGeometryOnly && m_TileNextVertices.Count == m_TileSourceVertices.Count
+                && m_TileNextNormals.Count == m_TileSourceNormals.Count && m_TileNextTangents.Count == m_TileSourceTangents.Count;
+            if (partial)
+            {
+                if (m_TileChangedVertices.Length != source.vertexCount) m_TileChangedVertices = new bool[source.vertexCount];
+                for (int i = 0; i < m_TileChangedVertices.Length; i++)
+                    m_TileChangedVertices[i] = !m_TileNextVertices[i].Equals(m_TileSourceVertices[i])
+                        || (i < m_TileNextNormals.Count && !m_TileNextNormals[i].Equals(m_TileSourceNormals[i]))
+                        || (i < m_TileNextTangents.Count && !m_TileNextTangents[i].Equals(m_TileSourceTangents[i]));
+            }
+            (m_TileSourceVertices, m_TileNextVertices) = (m_TileNextVertices, m_TileSourceVertices);
+            (m_TileSourceNormals, m_TileNextNormals) = (m_TileNextNormals, m_TileSourceNormals);
+            (m_TileSourceTangents, m_TileNextTangents) = (m_TileNextTangents, m_TileSourceTangents);
+            if (!m_SurfaceTilesGeometryOnly) source.GetColors(m_TileSourceColors);
             for (int channel = 0; channel < 8; channel++)
             {
+                if (m_SurfaceTilesGeometryOnly) break;
                 m_TileSourceUVs[channel] ??= new List<Vector4>();
                 source.GetUVs(channel, m_TileSourceUVs[channel]);
             }
             foreach (SurfaceTile tile in m_SurfaceTiles)
             {
+                if (partial)
+                {
+                    bool changed = false;
+                    foreach (int index in tile.sourceIndices) if (m_TileChangedVertices[index]) { changed = true; break; }
+                    if (!changed) continue;
+                }
                 GatherInto(m_TileSourceVertices, tile.sourceIndices, m_TileVector3Buffer);
                 tile.mesh.SetVertices(m_TileVector3Buffer);
                 // Copy master normals/tangents rather than recalculating per tile:
@@ -337,10 +367,14 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 tile.mesh.SetNormals(m_TileVector3Buffer);
                 GatherInto(m_TileSourceTangents, tile.sourceIndices, m_TileVector4Buffer);
                 tile.mesh.SetTangents(m_TileVector4Buffer);
-                GatherInto(m_TileSourceColors, tile.sourceIndices, m_TileColorBuffer);
-                tile.mesh.SetColors(m_TileColorBuffer);
+                if (!m_SurfaceTilesGeometryOnly)
+                {
+                    GatherInto(m_TileSourceColors, tile.sourceIndices, m_TileColorBuffer);
+                    tile.mesh.SetColors(m_TileColorBuffer);
+                }
                 for (int channel = 0; channel < 8; channel++)
                 {
+                    if (m_SurfaceTilesGeometryOnly) break;
                     GatherInto(m_TileSourceUVs[channel], tile.sourceIndices, m_TileVector4Buffer);
                     tile.mesh.SetUVs(channel, m_TileVector4Buffer);
                 }
@@ -348,6 +382,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 tile.mesh.UploadMeshData(false);
             }
             m_SurfaceTilesDirty = false;
+            m_SurfaceTilesGeometryOnly = false;
 #if UNITY_EDITOR
             s_PendingEditorSurfaceLods.Add(this);
 #endif

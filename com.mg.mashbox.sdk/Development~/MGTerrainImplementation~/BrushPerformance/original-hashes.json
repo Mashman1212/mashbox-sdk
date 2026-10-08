@@ -1,0 +1,10 @@
+{
+  "Runtime/Maps/Terrain/MGTerrain.HolePicking.cs": "c737be222578387b31e91395e326dbf04abd84ec0adaca6776defd9e8abf9679",
+  "Runtime/Maps/Terrain/MGTerrain.SurfaceTiles.cs": "8464141323d5e29026bef6fdee1ddf850fcbb31dda2986c6cac542ea3cae0d6a",
+  "Runtime/Maps/Sculpting/MeshSculptModifier.cs": "18c357c5fd369f4fd258c805ab8102c9da485f6d9c5304cbc2b16dda7c9c40d3",
+  "Editor/Maps/Sculpting/MeshSculptWindow.cs": "488e5585d9fcf0ebcbc6074995dccaafdd3506396a8b11e3f8c263ce181d698b",
+  "Editor/Maps/Validation/MGTerrainMerge.cs": "84875b90d4cdc86f19a0eaff023410ffb020fa2e4406ae78feca802d3e412748",
+  "Editor/Maps/Validation/MGTerrainMergeWindow.cs": "556ee2b8093ce943f91c1ce068b739e29c6ee6220d73c598072cf97eeccd08fd",
+  "Editor/Maps/MGTerrainSeams.cs": "81850ae95a2509275f152574bc0035cc1d1b4b0286852598ba614d8297fb75f7",
+  "Runtime/Maps/Terrain/MGTerrain.Holes.cs": "a207b1642669e766861f66c5c72e69128f85c896f2585915093c53ca3e2c36d8"
+}

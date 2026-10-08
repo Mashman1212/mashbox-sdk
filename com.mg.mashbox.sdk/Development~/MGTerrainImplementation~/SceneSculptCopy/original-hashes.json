@@ -1,0 +1,26 @@
+[
+  {
+    "relative": "Editor/Maps/MGTerrainEditor.cs",
+    "hash": "3BB5BF835775226E25CD04D6C51AFA10137EE98D6755E936ECC203E18D91F829"
+  },
+  {
+    "relative": "Editor/Maps/MGTerrainDirectSculpt.cs",
+    "hash": "7CE795746E91E588697D91D691EC87E1BA13B0C250BC8D2D7D83A5A1BCE0CE04"
+  },
+  {
+    "relative": "Editor/Maps/MGTerrainGridRepair.cs",
+    "hash": "A8AB230A6EC92074C4ADDE9DF32FDCE3A41DECD90E318E8C98088B0272AB2467"
+  },
+  {
+    "relative": "Editor/Maps/Validation/MGTerrainMerge.cs",
+    "hash": "BEAF5CD7F26B7B64D580B77DA7AF7A8C509121A314ECFD30531D0F8CE9F7A27E"
+  },
+  {
+    "relative": "Editor/Maps/Validation/MGTerrainMergeValidation.cs",
+    "hash": "2EE66B49F294BBDA0477F3549DE4604D0BFF072CA88C6199F9DA97EB275D930E"
+  },
+  {
+    "relative": "Runtime/Maps/Terrain/MGTerrain.cs",
+    "hash": "92FF649C040EDAC0257DC74B79C0BC837BB86FEC13425A75CA4686C388FFF9D4"
+  }
+]

@@ -1,0 +1,986 @@
+.terrain-copy-work~ is not a valid directory name. Please make sure there are no unallowed characters in the name.
+.terrain-copy-work~ is not a valid directory name. Please make sure there are no unallowed characters in the name.
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.4/respin/6000.4.12f1-6df48370b9ce' branch; Version is '6000.4.12f1 (3ca267ce8005) revision 3973735'; Using compiler version '194234433'; Build Type 'Release'
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-matth" at "2026-10-08T18:24:50.3150413Z"
+OS: 'Windows 11  (10.0.26200) Professional' Language: 'en' Physical Memory: 130518 MB
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+System  architecture: x64
+Process architecture: x64
+Date: 2026-10-08T18:24:50Z
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 2280, path: "C:/Program Files/Unity Hub/UnityLicensingClient_V1/Unity.Licensing.Client.exe")
+[Licensing::Module] LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.18.3+d7ffd15
+  Session Id:              62e553cdb98049f5b85ba1175e7c6bc0
+  Correlation Id:          99786bbbfb1deef3b4dcf0b276f23199
+  External correlation Id: 3282169285776802901
+  Machine Id:              D6vvtXKrIX7jylsCBTq4qqlGfsU=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-matth" (connect: 0.00s, validation: 0.00s, handshake: 0.03s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-matth-notifications" at "2026-10-08T18:24:50.3455298Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: 3574230460656-mash-games-corp-UnitXXXX
+  Product: Unity Pro
+  Type: Assigned
+  Expiration: 2027-09-29T00:00:00Z
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.00
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Licensing Background thread has ended after 0.03s
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Unity.exe
+-batchmode
+-nographics
+-projectPath
+D:\mashbox-sdk\com.mg.mashbox.sdk\Development~\MGTerrainImplementation~\TerrainMerge\UnityValidation
+-executeMethod
+MashBoxSDK.MapTools.MGTerrainMergeValidation.Run
+-quit
+-logFile
+D:\MappyX\Assets\.terrain-copy-work~\scene-copy-validation.log
+Successfully changed project path to: D:\mashbox-sdk\com.mg.mashbox.sdk\Development~\MGTerrainImplementation~\TerrainMerge\UnityValidation
+D:/mashbox-sdk/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/TerrainMerge/UnityValidation
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-preload-manager=33554432"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=33554432"
+    "memorysetup-bucket-allocator-block-count=8"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=33554432"
+    "memorysetup-profiler-bucket-allocator-block-count=8"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=16777216"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+Player connection [51240]  Target information:
+
+Player connection [51240]  * "[IP] 192.168.50.86 [Port] 55506 [Flags] 2 [Guid] 3825561547 [EditorId] 3825561547 [Version] 1048832 [Id] WindowsEditor(7,Destruction) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [51240] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [51240] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+[Package Manager] Connected to IPC stream "Upm-50684" after 0.2 seconds.
+[Licensing::Client] Successfully resolved entitlement details
+Library Redirect Path: Library/
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Initialize engine version: 6000.4.12f1 (3ca267ce8005)
+[Subsystems] Discovering subsystems at path C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Resources/UnitySubsystems
+[Subsystems] Discovering subsystems at path D:/mashbox-sdk/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/TerrainMerge/UnityValidation/Assets
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Initialize mono
+Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed'
+Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
+Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/MonoBleedingEdge/etc'
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56684
+CodeReloadManager initialized
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+ImportWorker Server TCP listen port: 0
+AcceleratorClientConnectionCallback - disconnected - :0
+Begin MonoManager ReloadAssembly
+Registering precompiled unity dll's ...
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
+Registered in 0.001855 seconds.
+Native extension for WindowsStandalone target not found
+Package Manager log level set to [2]
+ScheduleIndexationOnStartup MainProcess:False IndexOnStartup:False
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.249 seconds
+Domain Reload Profiling: 534ms
+	BeginReloadAssembly (87ms)
+		CreateAndSetChildDomain (3ms)
+	RebuildCommonClasses (26ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (41ms)
+	LoadAllAssembliesAndSetupDomain (123ms)
+		LoadAssemblies (81ms)
+		AnalyzeDomain (117ms)
+			TypeCache.Refresh (116ms)
+				TypeCache.ScanAssembly (106ms)
+	FinalizeReload (250ms)
+		SetupLoadedEditorAssemblies (0ms)
+			InitializePlatformSupportModulesInManaged (31ms)
+			BeforeProcessingInitializeOnLoad (51ms)
+			ProcessInitializeOnLoadAttributes (69ms)
+			ProcessInitializeOnLoadMethodAttributes (56ms)
+[Licensing::Client] Successfully resolved entitlement details
+Application.AssetDatabase Initial Refresh Start
+[Package Manager] Restoring resolved packages state from cache
+[Package Manager] Registered 0 packages:
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+[API Updater] Processing imported assemblies took 181 ms (2/2 assembly(ies)).
+Filename: C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetCoreRuntime\dotnet.exe
+Arguments: "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Tools/BuildPipeline/Compilation/ApiUpdater/AssemblyUpdater.dll" update -a "Assets/Plugins/MashBoxSDK.Tools.Editor.dll" --output "C:/Users/matth/AppData/Local/Temp/tmp1ad15d27.tmp" --api-version 6000.4.12f1  -s "C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetStandard\ref\2.1.0;C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetStandard\compat\2.1.0\shims\netstandard;C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetStandard\compat\2.1.0\shims\netfx;+D:/mashbox-sdk/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/TerrainMerge/UnityValidation/Assets;Library/ScriptAssemblies;+C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\Managed\UnityEngine" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEditor.CoreModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.CoreModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.IMGUIModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.TerrainModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.PhysicsModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.ParticleSystemModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.AssetBundleModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEditor.EditorToolbarModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.UIElementsModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.TerrainPhysicsModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.UnityWebRequestModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.TextRenderingModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.ImageConversionModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.JSONSerializeModule.dll"
+Filename: C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetCoreRuntime\dotnet.exe
+Arguments: "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Tools/BuildPipeline/Compilation/ApiUpdater/AssemblyUpdater.dll" update -a "Assets/Plugins/MashBoxSDK.dll" --output "C:/Users/matth/AppData/Local/Temp/tmp7ed7c8dd.tmp" --api-version 6000.4.12f1  -s "C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetStandard\ref\2.1.0;C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetStandard\compat\2.1.0\shims\netstandard;C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\NetStandard\compat\2.1.0\shims\netfx;+D:/mashbox-sdk/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/TerrainMerge/UnityValidation/Assets;Library/ScriptAssemblies;+C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\Managed\UnityEngine" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.CoreModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEditor.CoreModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.PhysicsModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.AnimationModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.IMGUIModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.TerrainModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.TextRenderingModule.dll" "C:/Program Files/Unity/Hub/Editor/6000.4.12f1/Editor/Data/Managed/UnityEngine/UnityEngine.JSONSerializeModule.dll"
+[API Updater] Assemblies not requiring updates:
+[API Updater] Assets/Plugins/MashBoxSDK.dll
+[API Updater] Assets/Plugins/MashBoxSDK.Tools.Editor.dll
+[API Updater] Update finished with success in 2857 ms (0/2 assembly(ies) updated).
+Assembly Updater Post Process Assets time: 3.040660s
+[ScriptCompilation] Requested script compilation because: AssetDatabase observed changes in script compilation related files
+Starting: C:\Program Files\Unity\Hub\Editor\6000.4.12f1\Editor\Data\Tools\BuildPipeline\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
+WorkingDir: D:/mashbox-sdk/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/TerrainMerge/UnityValidation
+DisplayProgressbar: Compiling Scripts
+ExitCode: 0 Duration: 0s66ms
+*** Tundra build success (0.04 seconds), 0 items updated, 1 evaluated
+Begin MonoManager ReloadAssembly
+Assembly Assembly-CSharp-Editor-firstpass.dll at Library/ScriptAssemblies/Assembly-CSharp-Editor-firstpass.dll not valid. Loading of assembly skipped.
+Assembly Assembly-CSharp-Editor.dll at Library/ScriptAssemblies/Assembly-CSharp-Editor.dll not valid. Loading of assembly skipped.
+Assembly Assembly-CSharp-firstpass.dll at Library/ScriptAssemblies/Assembly-CSharp-firstpass.dll not valid. Loading of assembly skipped.
+Assembly Assembly-CSharp.dll at Library/ScriptAssemblies/Assembly-CSharp.dll not valid. Loading of assembly skipped.
+Object is already loaded
+Unexpected: object already in ms_IDToPointer map.
+Object is already loaded
+Unexpected: object already in ms_IDToPointer map.
+Object is already loaded
+Unexpected: object already in ms_IDToPointer map.
+Native extension for WindowsStandalone target not found
+Unable to initialize the burst JIT compiler. The folder `Packages/com.unity.burst/.Runtime` does not exist
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+Unity.Burst.LowLevel.BurstCompilerService:Initialize (string,Unity.Burst.LowLevel.BurstCompilerService/ExtractCompilerFlags)
+Unity.Burst.Editor.BurstLoader:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+Can't locate Bakery folder
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+ftLightmaps:GetEditorPath ()
+ftDefine:CreateAsmDefs ()
+ftDefine:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Fractal Template File at "Packages/com.unity.terrain-tools/Shaders/NoiseLib/Templates/FractalFbm.noisehlsltemplate" could not be found! Skipping generation of: Fbm
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadFractalSource (UnityEditor.TerrainTools.IFractalType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Fractal Template File at "Packages/com.unity.terrain-tools/Shaders/NoiseLib/Templates/FractalNone.noisehlsltemplate" could not be found! Skipping generation of: None
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadFractalSource (UnityEditor.TerrainTools.IFractalType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Fractal Template File at "Packages/com.unity.terrain-tools/Shaders/NoiseLib/Templates/FractalStrata.noisehlsltemplate" could not be found! Skipping generation of: Strata
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadFractalSource (UnityEditor.TerrainTools.IFractalType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Noise Include File could not be found! Skipping generation of: Value
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadNoiseSource (UnityEditor.TerrainTools.INoiseType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Noise Include File could not be found! Skipping generation of: Voronoi
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadNoiseSource (UnityEditor.TerrainTools.INoiseType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Noise Include File could not be found! Skipping generation of: Perlin
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadNoiseSource (UnityEditor.TerrainTools.INoiseType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Noise Include File could not be found! Skipping generation of: Billow
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadNoiseSource (UnityEditor.TerrainTools.INoiseType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+NoiseLib: Noise Include File could not be found! Skipping generation of: Ridge
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:LoadNoiseSource (UnityEditor.TerrainTools.INoiseType[])
+UnityEditor.TerrainTools.NoiseLib:GenerateHeaderFiles ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+Could not find specified template file for noise shader generator:  (UnityEditor.TerrainTools.NoiseFillShaderGenerator)
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:GenerateShaders ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+Could not find specified template file for noise shader generator:  (UnityEditor.TerrainTools.NoiseBlitShaderGenerator)
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.TerrainTools.NoiseLib:GenerateShaders ()
+UnityEditor.TerrainTools.NoiseLib:.cctor ()
+System.Runtime.CompilerServices.RuntimeHelpers:RunClassConstructor (System.RuntimeTypeHandle)
+UnityEditor.EditorAssemblies:ProcessInitializeOnLoadAttributes (System.Type[])
+
+Error detecting Visual Studio installations: System.ComponentModel.Win32Exception (0x80004005): ApplicationName='D:\mashbox-sdk\com.mg.mashbox.sdk\Development~\MGTerrainImplementation~\TerrainMerge\UnityValidation\Packages\com.unity.ide.visualstudio\Editor\VSWhere\vswhere.exe', CommandLine='-prerelease -format json', CurrentDirectory='', Native error= The system cannot find the file specified.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+Microsoft.Unity.VisualStudio.Editor.VisualStudioEditor:DiscoverInstallations ()
+Microsoft.Unity.VisualStudio.Editor.AsyncOperation`1<System.Collections.Generic.Dictionary`2<string, Microsoft.Unity.VisualStudio.Editor.IVisualStudioInstallation>>:<Run>b__8_0 (object)
+System.Threading.QueueUserWorkItemCallback:WaitCallback_Context (object)
+System.Threading.ExecutionContext:RunInternal (System.Threading.ExecutionContext,System.Threading.ContextCallback,object,bool)
+System.Threading.ExecutionContext:Run (System.Threading.ExecutionContext,System.Threading.ContextCallback,object,bool)
+System.Threading.QueueUserWorkItemCallback:System.Threading.IThreadPoolWorkItem.ExecuteWorkItem ()
+System.Threading.ThreadPoolWorkQueue:Dispatch ()
+System.Threading._ThreadPoolWaitCallback:PerformWaitCallback ()
+
+[MODES] ModeService[none].Initialize
+[MODES] ModeService[none].LoadModes
+[MODES] Loading mode Default (0) for mode-current-id-UnityValidation
+ScheduleIndexationOnStartup MainProcess:True IndexOnStartup:True
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.752 seconds
+Domain Reload Profiling: 1566ms
+	BeginReloadAssembly (262ms)
+		DisableScriptedObjects (21ms)
+		CreateAndSetChildDomain (144ms)
+	RebuildCommonClasses (21ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (61ms)
+	LoadAllAssembliesAndSetupDomain (461ms)
+		LoadAssemblies (304ms)
+		AnalyzeDomain (220ms)
+			TypeCache.Refresh (203ms)
+				TypeCache.ScanAssembly (186ms)
+			BuildScriptInfoCaches (7ms)
+			ResolveRequiredComponents (9ms)
+	FinalizeReload (752ms)
+		SetupLoadedEditorAssemblies (0ms)
+			InitializePlatformSupportModulesInManaged (15ms)
+			BeforeProcessingInitializeOnLoad (77ms)
+			ProcessInitializeOnLoadAttributes (442ms)
+			ProcessInitializeOnLoadMethodAttributes (91ms)
+			AfterProcessingInitializeOnLoad (5ms)
+		AwakeInstancesAfterBackupRestoration (13ms)
+No restricted APIs configured; Validation skipped.
+Checking 2 assemblies for restricted APIs found 0 usage(s) in 5 ms
+Failed to find Assets/Runtime/RenderPipelineResources/Texture/MoonAlbedo.png in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/Lighting/VolumetricClouds/VolumetricClouds.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/RenderPipeline/Raytracing/Shaders/Reflections/RaytracingReflections.raytrace in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/Material/Lit/Lit.shader in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/Debug/GPUInlineDebugDrawer.shader in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/RenderPipelineResources/ShaderGraph/PhysicallyBasedSky.shadergraph in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/Tools/ColorChecker/ColorCheckerMaterial.mat in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/RenderPipelineResources/Texture/DebugFont.tga in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/RenderPipelineResources/Material/DefaultHDMaterial.mat in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Editor/RenderPipelineResources/DefaultSettingsVolumeProfile.asset in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/RenderPipelineResources/defaultDiffusionProfile.asset in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/RenderPipelineResources/ShaderGraph/Water.shadergraph in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/RenderPipelineResources/GPUDriven/InstanceDataBufferCopyKernels.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/Vrs/Shaders/VrsTexture.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Editor/Lighting/ProbeVolume/ProbeVolumeCellDilation.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/Debug/ProbeVolumeDebug.shader in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/Lighting/ProbeVolume/ProbeVolumeBlendStates.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Shaders/CoreCopy.shader in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/STP/StpSetup.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/UnifiedRayTracing/Common/GeometryPool/GeometryPoolKernels.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+Failed to find Assets/Runtime/PathTracing/Shaders/BlitCubemap.compute in ProjectPath.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+UnityEditor.Rendering.RenderPipelineResourcesEditorUtils:TryReloadContainedNullFields (UnityEngine.Rendering.IRenderPipelineResources)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:UpdateRenderPipelineGlobalSettings (UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager/RenderPipelineGraphicsSettingsInfo,UnityEngine.Rendering.RenderPipelineGlobalSettings,bool&,UnityEngine.Rendering.IRenderPipelineGraphicsSettings&)
+UnityEditor.Rendering.Settings.RenderPipelineGraphicsSettingsManager:PopulateRenderPipelineGraphicsSettings (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset (System.Type,UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEditor.Rendering.EditorGraphicsSettings:SetRenderPipelineGlobalSettingsAsset<UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.RenderPipelineGlobalSettings)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool,System.Exception&)
+UnityEngine.Rendering.RenderPipelineGlobalSettingsUtils:TryEnsure<UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings, UnityEngine.Rendering.HighDefinition.HDRenderPipeline> (UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings&,string,bool)
+UnityEngine.Rendering.HighDefinition.HDRenderPipelineGlobalSettings:Ensure (bool)
+UnityEditor.Rendering.HighDefinition.HDRenderPipelineGlobalSettingsPostprocessor:OnPostprocessAllAssets (string[],string[],string[],string[],bool)
+System.Reflection.RuntimeMethodInfo:Invoke (object,System.Reflection.BindingFlags,System.Reflection.Binder,object[],System.Globalization.CultureInfo)
+System.Reflection.MethodBase:Invoke (object,object[])
+UnityEditor.AssetPostprocessingInternal:InvokeMethod (System.Reflection.MethodInfo,object[])
+UnityEditor.AssetPostprocessingInternal:PostprocessAllAssets (string[],string[],string[],string[],string[],bool)
+
+(Values over 0.050ms)
+Asset Pipeline Refresh (id=32917c0f3f69f1e4eabcd8648f8410d9): Total: 5.535 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+	Summary:
+		Imports: total=0 (actual=0, local cache=0, cache server=0)
+		Asset DB Process Time: managed=0 ms, native=1296 ms
+		Asset DB Callback time: managed=54 ms, native=8 ms
+		Scripting: domain reloads=1, domain reload time=818 ms, compile time=3352 ms, other=4 ms
+		Project Asset Count: scripts=24, non-scripts=5
+		Asset File Changes: new=0, changed=2, moved=0, deleted=0
+		Scan Filter Count: 0
+	InvokePackagesCallback: 1.735ms
+	ApplyChangesToAssetFolders: 0.069ms
+	Scan: 416.361ms
+	OnSourceAssetsModified: 0.868ms
+	CategorizeScriptCompilationAssets: 19.819ms
+	ProcessAssetsWithTransientArtifactChanges: 48.660ms
+	CategorizeAssets: 0.158ms
+	CompileScripts: 3352.171ms
+	ImportOutOfDateAssets: 754.167ms (752.935ms without children)
+		UnloadImportedAssets: 1.093ms
+		OnDemandSchedulerStart: 0.129ms
+	PostProcessAllAssets: 60.369ms
+		VCAutoAddAssetPostprocess 0.581ms
+		AssemblyValidation.PostprocessAllAssets 0.279ms
+		MonoPostProcessAllAssets: 53.272ms
+			HDRenderPipelineGlobalSettingsPostprocessor.OnPostprocessAllAssets 15.751ms
+			StyleCatalogPostProcessor.OnPostprocessAllAssets 7.202ms
+			AssetPostprocessor.OnPostprocessAllAssets 3.926ms
+			BuilderAssetPostprocessor.OnPostprocessAllAssets 3.819ms
+			LocalizationAssetPostProcessor.OnPostprocessAllAssets 1.470ms
+			MaterialPostprocessor.OnPostprocessAllAssets 1.409ms
+			SpeedTree9Postprocessor.OnPostprocessAllAssets 1.235ms
+			SyncVS.PostprocessSyncProject 1.205ms
+			AssetChangedListener.OnPostprocessAllAssets 1.086ms
+			ShaderGraphAssetPostProcessor.OnPostprocessAllAssets 0.969ms
+			WindowAssetPostprocessingWatcher.OnPostprocessAllAssets 0.872ms
+			RetainedModeAssetPostprocessor.OnPostprocessAllAssets 0.778ms
+			VFXGraphPreprocessor.OnPostprocessAllAssets 0.633ms
+			AddressablesAssetPostProcessor.OnPostprocessAllAssets 0.613ms
+			MGLitTrailMaterialArrayPostprocessor.OnPostprocessAllAssets 0.589ms
+			ReferencedClipsPostProcessor.OnPostprocessAllAssets 0.510ms
+			ArtifactBrowserPostProcessor.OnPostprocessAllAssets 0.417ms
+			UVCSAssetPostprocessor.OnPostprocessAllAssets 0.282ms
+			MGTrailLayerTexturePostprocessor.OnPostprocessAllAssets 0.249ms
+			ManifestJsonPostprocessor.OnPostprocessAllAssets 0.241ms
+			TextAssetPostProcessor.OnPostprocessAllAssets 0.235ms
+			InputActionAssetPostprocessor.OnPostprocessAllAssets 0.215ms
+			MGShaderTemplateEnforcerPostprocessor.OnPostprocessAllAssets 0.212ms
+			DomainReloadProcessor.OnPostprocessAllAssets 0.206ms
+			TMPro_TexturePostProcessor.OnPostprocessAllAssets 0.205ms
+			TerrainToolsPostprocessor.OnPostprocessAllAssets 0.199ms
+			AssetPathToTypes.OnPostprocessAllAssets 0.187ms
+			CinemachineSettings.OnPostprocessAllAssets 0.177ms
+			AssetEvents.OnPostprocessAllAssets 0.175ms
+			AudioMixerPostprocessor.OnPostprocessAllAssets 0.171ms
+			SpeedTreePostProcessor.OnPostprocessAllAssets 0.171ms
+			InputActionJsonNameModifierAssetProcessor.OnPostprocessAllAssets 0.160ms
+			GdkAssemblyAssetProcessor.OnPostprocessAllAssets 0.158ms
+			MGTerrainPrototypeRefresh.OnPostprocessAllAssets 0.136ms
+			TerrainToolbarOverlayPostProcessor.OnPostprocessAllAssets 0.134ms
+			PostProcessor.OnPostprocessAllAssets 0.130ms
+			AssetDatabaseCallbacks.OnPostprocessAllAssets 0.091ms
+			ProjectSettingsPostprocessor.OnPostprocessAllAssets 0.089ms
+			SamplePostprocessor.OnPostprocessAllAssets 0.088ms
+			ConfigAssetsTracker.OnPostprocessAllAssets 0.078ms
+			MGLitTrailLinkedMaterialPostprocessor.OnPostprocessAllAssets 0.075ms
+			ScenarioDriftAssetsTracker.OnPostprocessAllAssets 0.069ms
+	PostAssetChangesProfiler: 0.393ms
+	UnloadStreamsBegin: 1.268ms
+	Untracked: 876.549ms
+
+Application.AssetDatabase Initial Refresh End
+Scanning for USB devices : 2.119ms
+Initializing Unity extensions:
+Unloading 5 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 216 unused Assets / (0.6 MB). Loaded Objects now: 2594.
+Memory consumption went from 130.0 MB to 129.5 MB.
+Total: 4.638200 ms (FindLiveObjects: 0.123400 ms CreateObjectMapping: 0.055300 ms MarkObjects: 4.247100 ms  DeleteObjects: 0.211000 ms)
+
+Start importing Assets/MergeValidationBootstrap.unity using Guid(b5ed3c0e86afee849b023110981691e8) (DefaultImporter) -> (Import Result ID: '75cfb5de44793b7c46eb819ed0316b60') in 0.0043695 seconds [static dependencies only]. Details - ImportResultOutputID=c10be722da541c832a275f0f62aedb0c DependenciesID=acd1739786f652c17402ba2f987fa92a StaticDependenciesID=e517432fdc85c8ebe2f5820eed2b7415 
+Asset Pipeline Refresh (id=5c6e7f8aa1f32f642b18d08389314fd7): Total: 0.020 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141 using Guid(b253f71527873834b8a88ceb25b30eb0) (DefaultImporter) -> (Import Result ID: 'e359209b58c0e306d4a95a1b7ecf8450') in 0.0057264 seconds [static dependencies only]. Details - ImportResultOutputID=42917df2de68c90e13c0810b5488f117 DependenciesID=b431a6eff9cb8b434566784039ede6e3 StaticDependenciesID=2d7d933db12ef260ecf8628071a913fa 
+Asset Pipeline Refresh (id=036acee438550384b95d2ce01dbcd901): Total: 0.021 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination.unity using Guid(958ac274e4e95da4a8a281f1e5b3f3e0) (DefaultImporter) -> (Import Result ID: 'b9ddc41b0255c69c2b5c976613ab1c87') in 0.0006257 seconds [static dependencies only]. Details - ImportResultOutputID=b561b1856ac85408f254778cd4f4e2cb DependenciesID=74d0c773d5019b0c312915c967d3db9c StaticDependenciesID=ef10aafb87402b57c03b0ab9805ef6ae 
+Asset Pipeline Refresh (id=cfa240d8bba24c34b8ee9b515574f3bb): Total: 0.011 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Original.asset using Guid(977e7118e3c65514d8078eae2df29c84) (NativeFormatImporter) -> (Import Result ID: 'a42cc9b5728a1201ec8f57709599eab2') in 0.0010921 seconds [static dependencies only]. Details - ImportResultOutputID=f85413007c0c82bc889d6a40aa6d69a7 DependenciesID=bed6d564ef19df1e4f99f28dd43e01e5 StaticDependenciesID=1dbc05ee1b7ab8c334ced3cc737be61a 
+Asset Pipeline Refresh (id=6143705c219f45b4d9fb5421a83f1c55): Total: 0.016 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Source.asset using Guid(dfa459a8033b4774e8dcad7cbfba5e8f) (NativeFormatImporter) -> (Import Result ID: '9fb872d123efc7f081f43bdfac11ff98') in 0.0010715 seconds [static dependencies only]. Details - ImportResultOutputID=1d9a235780f7818039e54561f33d85b3 DependenciesID=c581446f98c23c4ce03e6dbd37fb1ad2 StaticDependenciesID=5706df800c6a7b69794d84b3efbbcda5 
+Asset Pipeline Refresh (id=70cb047a8d474fc49aa0aafdefab6b1f): Total: 0.011 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/OriginalCollision.asset using Guid(c7e11535a265653438db52b07575e47d) (NativeFormatImporter) -> (Import Result ID: '81529366a56d8c094bcd5e0d7b27e627') in 0.0012051 seconds [static dependencies only]. Details - ImportResultOutputID=46e98e100dec4a68ed087c182103a84b DependenciesID=aa182fbd560c7062f62fa591fbb04aff StaticDependenciesID=17b25529fce7c1901c3e7d9db690e125 
+Asset Pipeline Refresh (id=c852c4159704e1a4da5c0b0c126ae011): Total: 0.013 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+MG TERRAIN SCULPT COPY VALIDATION PASSED: scene-stored meshes, zero new asset files, shape/UV retention, independent colliders, grouped Undo/Redo, and subsequent sculpt isolation.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:Log (object)
+MashBoxSDK.MapTools.MGTerrainMergeValidation:SculptCopy (MashBoxSDK.Maps.TerrainSystem.MGTerrain,MashBoxSDK.Maps.TerrainSystem.MGTerrain,UnityEngine.Mesh,UnityEngine.Mesh,UnityEngine.MeshCollider)
+MashBoxSDK.MapTools.MGTerrainMergeValidation:Run ()
+
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Original.asset using Guid(977e7118e3c65514d8078eae2df29c84) (NativeFormatImporter) -> (Import Result ID: 'a42cc9b5728a1201ec8f57709599eab2') in 0.0009959 seconds [static dependencies only]. Details - ImportResultOutputID=f85413007c0c82bc889d6a40aa6d69a7 DependenciesID=bed6d564ef19df1e4f99f28dd43e01e5 StaticDependenciesID=1dbc05ee1b7ab8c334ced3cc737be61a 
+Asset Pipeline Refresh (id=079679903ab7a6249a80d883ec418ffa): Total: 0.009 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/SourceScene.unity using Guid(b5405e0b8a27b8e47a66ff95f4b0e708) (DefaultImporter) -> (Import Result ID: '2e7317040658de43d2f2d8f980c13ba2') in 0.0005521 seconds [static dependencies only]. Details - ImportResultOutputID=5c9408335621d8ce83ee16219bbbb48b DependenciesID=b7d4c038fd1119475fac558b36ec81ea StaticDependenciesID=1fc8d3573af95903aceb1b1997b7381e 
+Asset Pipeline Refresh (id=af58be5436b884a45aedbd1592c25e4d): Total: 0.013 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+DisplayProgressbar: Terrain Merge
+Loaded scene 'Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/SourceScene.unity'
+	Deserialize:            0.710 ms
+	Integration:            0.231 ms
+	Integration of assets:  0.015 ms
+	Thread Wait Time:       0.008 ms
+	Total Operation Time:   0.963 ms
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination using Guid(dbcedb24ab456764a975f50c8f327d8c) (DefaultImporter) -> (Import Result ID: '4d7f4d7057548b1c7294cdb218b6a888') in 0.0044656 seconds [static dependencies only]. Details - ImportResultOutputID=76585da533fc15be26e4495f9bd144fd DependenciesID=a5d1d6a309c47f08db21fe7e2da5582e StaticDependenciesID=2530c3ee21f3b8656a803d0edc05fdd2 
+Asset Pipeline Refresh (id=59d627929090efe429ef6e16a321eea2): Total: 0.017 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data using Guid(7f0bfb8bb97c8bb4497f150ac3bf6a9c) (DefaultImporter) -> (Import Result ID: '7d8aafa381decc4e86daabfdb47f3ac1') in 0.0092297 seconds [static dependencies only]. Details - ImportResultOutputID=8ff64f3322e4d89ef973e06d80f34959 DependenciesID=febd32b3565c8314d8ff20cb323f39b0 StaticDependenciesID=f87d9d02abde7fedb48ecb64c75f942f 
+Asset Pipeline Refresh (id=b5493451d9b91774c9848213c31d9ec5): Total: 0.016 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/MG Terrain_Destination_MergedSculpt.asset using Guid(99a9f71f4bc30e34ca16b0361840ea7e) (NativeFormatImporter) -> (Import Result ID: '251c872915775d1506062d16f8ed0531') in 0.0009524 seconds [static dependencies only]. Details - ImportResultOutputID=6dbf301dca8fb3d899b3bf87fbc36264 DependenciesID=87c5ac286e2d732afe838a003dbebe02 StaticDependenciesID=39dd92ab20be38d6111d89bb5702538a 
+Asset Pipeline Refresh (id=b32eae8287d09fb4d905275233a14c1d): Total: 0.012 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/MG Terrain_Destination_MergedColliders.asset using Guid(1d9137fcc73fb104dbbaa4d9fa4f3f37) (NativeFormatImporter) -> (Import Result ID: '60728e62153267134f126f43b4edbed3') in 0.0011792 seconds [static dependencies only]. Details - ImportResultOutputID=961bf34c6e0ae49b5e2797b5d5bad11e DependenciesID=4f8c49e7588ac5e7545d860ebcd3aa5e StaticDependenciesID=858fe6c02321a99a4ccf495bf203fb45 
+Asset Pipeline Refresh (id=2daab6275ff659f479063f6fd920fb19): Total: 0.012 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Coarse.asset using Guid(2509ae96ed6223747ac55c366330a4e2) (NativeFormatImporter) -> (Import Result ID: '43ba905d9e4fbcde8ba9d54d33634a64') in 0.0009218 seconds [static dependencies only]. Details - ImportResultOutputID=e4b53ae35015b0e7a75c8f507ade1da5 DependenciesID=64930356b40daf2da74057751b3e1ab9 StaticDependenciesID=ca34b77067193f9de7abcb103df621b3 
+Asset Pipeline Refresh (id=b363beb89d1273448b6dd016123d541b): Total: 0.011 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/Merge world_Tile_0_0_MergedSculpt.asset using Guid(876521ac6d1f66049acae6331ebacd8f) (NativeFormatImporter) -> (Import Result ID: '7befc8bcf8d307f5db2393968f09a628') in 0.001131 seconds [static dependencies only]. Details - ImportResultOutputID=3681403be310d21c3fcf9e385ab4d5ff DependenciesID=c710ba2666dce4e50fb393b6308266c4 StaticDependenciesID=6c6180cbf1d1dcada8836477be04913d 
+Asset Pipeline Refresh (id=1c721c76c310c53438f061727832b574): Total: 0.013 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/Merge world_Tile_0_0_MergedSculpt 1.asset using Guid(92c376e8a12fbc046bb3794bd0add3fa) (NativeFormatImporter) -> (Import Result ID: 'c2fa14e4faf50e9bb50f347861e053cb') in 0.0010845 seconds [static dependencies only]. Details - ImportResultOutputID=9d4cb535f8f33be1f4c786c85eb7548d DependenciesID=4f2fc75fbc42089f0b251209cc9b73a8 StaticDependenciesID=d61e6d5a8bee750bbfa6d303c6378ba8 
+Asset Pipeline Refresh (id=4dec1fafb29118f4aa18afeedd54cb43): Total: 0.019 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/ForeignSceneSculpt.asset using Guid(4ac4485e5379ee04282c4fa492873b8e) (NativeFormatImporter) -> (Import Result ID: 'be11e29bfab643b2ece31b7ec718e019') in 0.0009938 seconds [static dependencies only]. Details - ImportResultOutputID=6e9ad4a9412bd9a04e2c6c4c4b30dd71 DependenciesID=811659a96c687ad3fd19ad43d1eef10f StaticDependenciesID=d59f62c1896bef4a794fa614693ce261 
+Asset Pipeline Refresh (id=c854e7bfca573a34da46a5ec83bdbe59): Total: 0.019 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/MG Terrain_Copied terrain_SculptedMesh.asset using Guid(64293d36fd6bd434693f02dd95a8f6e6) (NativeFormatImporter) -> (Import Result ID: '3372d2688751ce362279ec164057c272') in 0.0012545 seconds [static dependencies only]. Details - ImportResultOutputID=56ab92fa5737c19cb531bf65c16f9d39 DependenciesID=997d4a6ec2d394c566eb85fff55590f5 StaticDependenciesID=ddfbcd87e2970cb037a726d4c2c3460b 
+Asset Pipeline Refresh (id=7f7514b34b7739b4fa2d9b639d7f9cdb): Total: 0.014 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/Merge world_Tile_0_0_MergedSculpt 1.asset using Guid(92c376e8a12fbc046bb3794bd0add3fa) (NativeFormatImporter) -> (Import Result ID: 'c366c9fefa7fdcdf550d845f3020ac11') in 0.000965 seconds [static dependencies only]. Details - ImportResultOutputID=9d4cb535f8f33be1f4c786c85eb7548d DependenciesID=6d1e29fb56826951318dd00177440b56 StaticDependenciesID=235a02d6d32a57878ae1118dba5d38d8 
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/MG Terrain_Copied terrain_SculptedMesh.asset using Guid(64293d36fd6bd434693f02dd95a8f6e6) (NativeFormatImporter) -> (Import Result ID: '3372d2688751ce362279ec164057c272') in 0.0010141 seconds [static dependencies only]. Details - ImportResultOutputID=56ab92fa5737c19cb531bf65c16f9d39 DependenciesID=997d4a6ec2d394c566eb85fff55590f5 StaticDependenciesID=ddfbcd87e2970cb037a726d4c2c3460b 
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/Merge world_Tile_0_0_MergedSculpt.asset using Guid(876521ac6d1f66049acae6331ebacd8f) (NativeFormatImporter) -> (Import Result ID: '5033e5bde2b4c3a35e9a7ca527880e97') in 0.0007744 seconds [static dependencies only]. Details - ImportResultOutputID=3681403be310d21c3fcf9e385ab4d5ff DependenciesID=ff27fb19c9efb6902f2fe059ef1d46c1 StaticDependenciesID=d3510f8245f49543780fe5307edae196 
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Original.asset using Guid(977e7118e3c65514d8078eae2df29c84) (NativeFormatImporter) -> (Import Result ID: 'a42cc9b5728a1201ec8f57709599eab2') in 0.00065 seconds [static dependencies only]. Details - ImportResultOutputID=f85413007c0c82bc889d6a40aa6d69a7 DependenciesID=bed6d564ef19df1e4f99f28dd43e01e5 StaticDependenciesID=1dbc05ee1b7ab8c334ced3cc737be61a 
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/MG Terrain_Destination_MergedSculpt.asset using Guid(99a9f71f4bc30e34ca16b0361840ea7e) (NativeFormatImporter) -> (Import Result ID: '9d57125607147b514bd920bc7174c94e') in 0.0007358 seconds [static dependencies only]. Details - ImportResultOutputID=6dbf301dca8fb3d899b3bf87fbc36264 DependenciesID=a2206d2c3d15e85c582382727fe0109c StaticDependenciesID=b8b9f412164a3bc0367c75dabfdbfcf2 
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination/MG Terrain Data/MG Terrain_Destination_MergedColliders.asset using Guid(1d9137fcc73fb104dbbaa4d9fa4f3f37) (NativeFormatImporter) -> (Import Result ID: 'b64fda8a4c92be8547b7eb66b4e8eae6') in 0.0007398 seconds [static dependencies only]. Details - ImportResultOutputID=961bf34c6e0ae49b5e2797b5d5bad11e DependenciesID=1018d64ec3c0f9bb6142116f16addf75 StaticDependenciesID=a0f48ff6b6790c2d88c7bc6a9f77f5bf 
+Asset Pipeline Refresh (id=f3bf25723168db74f896bb941b0a4295): Total: 0.012 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Start importing Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination.unity using Guid(958ac274e4e95da4a8a281f1e5b3f3e0) (DefaultImporter) -> (Import Result ID: '3a354ace6f822e0b67bf7c19deb6b7c2') in 0.0005773 seconds [static dependencies only]. Details - ImportResultOutputID=b561b1856ac85408f254778cd4f4e2cb DependenciesID=6dcd9b03fb9d676f4f64cba2226ccca7 StaticDependenciesID=5f3c3f6a79a527e2720dc5f5460293e0 
+Asset Pipeline Refresh (id=f31f356d8580b054e9e660d1a2315bbf): Total: 0.012 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Opening scene 'Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination.unity additively'
+Loaded scene 'Assets/__TerrainMergeValidation_7a98eba4be1e4c1b9f9285f521b9e141/Destination.unity'
+	Deserialize:            0.844 ms
+	Integration:            0.454 ms
+	Integration of assets:  0.002 ms
+	Thread Wait Time:       0.015 ms
+	Total Operation Time:   1.314 ms
+MG TERRAIN MERGE VALIDATION PASSED: saved-scene preview loading, transformed triangle sampling, snapshot isolation, coverage, soft brush bounds, strength, whole tile, no height stacking, independent meshes and colliders, mixed-resolution seams, source preservation, UV/topology preservation, collision picking, Undo/Redo, cancelled strokes, copied-scene ownership, and save/reload.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:Log (object)
+MashBoxSDK.MapTools.MGTerrainMergeValidation:Run ()
+
+Asset Pipeline Refresh (id=658bfc1dbf1ad7d43a5390db1b859177): Total: 0.009 seconds - Initiated by StopAssetImportingV2(NoUpdateAssetOptions)
+Batchmode quit successfully invoked - shutting down!
+[Physics::Module] Cleanup current backend.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input Polling Thread exited.
+Input System module state changed to: Shutdown.
+[Licensing::IpcConnector] LicenseClient-matth-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-matth channel disconnected successfully.
+AcceleratorClientConnectionCallback - disconnected - :0
+Cleanup mono
+CodeReloadManager destroyed
+11:24:58.070 |V| RiderPlugin                    | :1                             | AppDomain.CurrentDomain.DomainUnload lifetimeDefinition.Terminate
+Exiting batchmode successfully now!
+Exiting without the bug reporter. Application will terminate with return code 0

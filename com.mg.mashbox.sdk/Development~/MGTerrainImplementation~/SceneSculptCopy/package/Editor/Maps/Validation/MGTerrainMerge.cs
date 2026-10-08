@@ -112,14 +112,11 @@ namespace MashBoxSDK.MapTools
             internal float[] sourceHeights;
             internal bool[] covered;
             internal int coveredCount;
-            internal readonly List<Vector3> readback = new List<Vector3>();
         }
         internal readonly List<Tile> targets = new List<Tile>();
         readonly List<MGTerrain> world;
         readonly Dictionary<MGTerrain, Tile> states = new Dictionary<MGTerrain, Tile>();
         readonly HashSet<MGTerrain> changed = new HashSet<MGTerrain>();
-        readonly HashSet<MGTerrain> dabChanged = new HashSet<MGTerrain>();
-        readonly HashSet<MGTerrain> touched = new HashSet<MGTerrain>();
         internal int StrokeGroup { get; private set; } = -1;
         internal int CoveredCount => targets.Sum(t => t.coveredCount);
         internal int VertexCount => targets.Sum(t => t.positions.Length);
@@ -203,7 +200,7 @@ namespace MashBoxSDK.MapTools
             Undo.IncrementCurrentGroup(); StrokeGroup = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Merge Terrain Sculpt"); changed.Clear();
             // Undo / external sculpting can change vertex contents without changing mesh identity.
-            foreach (var tile in states.Values) ReadPositions(tile);
+            foreach (var tile in states.Values) tile.positions = tile.terrain.MeshFilter.sharedMesh.vertices;
         }
         void Prepare(MGTerrain terrain)
         {
@@ -235,11 +232,7 @@ namespace MashBoxSDK.MapTools
                 EditorUtility.SetDirty(filter);
                 Undo.FlushUndoRecordObjects();
             }
-            if (changed.Add(terrain))
-            {
-                Undo.RegisterCompleteObjectUndo(filter.sharedMesh, "Merge Terrain Sculpt");
-                EditorUtility.SetDirty(terrain); EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
-            }
+            if (changed.Add(terrain)) Undo.RegisterCompleteObjectUndo(filter.sharedMesh, "Merge Terrain Sculpt");
         }
         internal static void DetachColliders(MGTerrain terrain, string label = "Merge Terrain Sculpt", string role = "MergedColliders")
         {
@@ -302,97 +295,48 @@ namespace MashBoxSDK.MapTools
             float fade = distance <= inner ? 1 : 1 - Mathf.SmoothStep(0, 1, (distance - inner) / (radius - inner));
             return fade * Mathf.Clamp01(strength);
         }
-        static void ReadPositions(Tile tile)
-        {
-            tile.terrain.MeshFilter.sharedMesh.GetVertices(tile.readback);
-            tile.readback.CopyTo(tile.positions);
-        }
         internal int Paint(Vector3 center, float radius, float hardness, float strength, bool wholeTile = false)
-            => PaintDabs(center, center, 1, radius, hardness, strength, wholeTile);
-
-        internal int PaintLine(Vector3 from, Vector3 to, int steps, float radius, float hardness, float strength)
         {
-            steps = Mathf.Clamp(steps, 1, 128);
-            // Boundary dabs retain the sequential seam constraints (including coarse neighbours).
-            // Interior dabs can share one upload/normal calculation without changing their result.
-            foreach (var tile in targets)
-            {
-                if (!tile.terrain.HasRegularSculptGrid) return PaintBoundaryLine(from, to, steps, radius, hardness, strength);
-                var a = new Vector2(from.x, from.z); var delta = new Vector2(to.x - from.x, to.z - from.z);
-                int w = tile.terrain.SurfaceGridWidth, h = tile.terrain.SurfaceGridHeight;
-                for (int z = 0; z < h; z++) for (int x = 0; x < w; x++)
-                {
-                    if (z >= 2 && z < h - 2 && x == 2) x = w - 2;
-                    var point = tile.matrix.MultiplyPoint3x4(tile.positions[z * w + x]);
-                    var offset = new Vector2(point.x, point.z) - a;
-                    float t = delta.sqrMagnitude > 0 ? Mathf.Clamp01(Vector2.Dot(offset, delta) / delta.sqrMagnitude) : 0;
-                    if ((offset - delta * t).sqrMagnitude <= radius * radius)
-                        return PaintBoundaryLine(from, to, steps, radius, hardness, strength);
-                }
-            }
-            return PaintDabs(from, to, steps, radius, hardness, strength, false);
-        }
-        int PaintBoundaryLine(Vector3 from, Vector3 to, int steps, float radius, float hardness, float strength)
-        {
-            int count = 0;
-            for (int i = 1; i <= steps; i++) count += Paint(Vector3.Lerp(from, to, i / (float)steps), radius, hardness, strength);
-            return count;
-        }
-        int PaintDabs(Vector3 from, Vector3 center, int steps, float radius, float hardness, float strength, bool wholeTile)
-        {
-            using var profile = PaintMarker.Auto();
             if (StrokeGroup < 0) throw new InvalidOperationException("Begin a merge stroke before painting.");
             ValidateCurrent();
             if (!MGTerrainMergeSurface.Finite(radius) || radius <= 0 || !MGTerrainMergeSurface.Finite(strength)
                 || !MGTerrainMergeSurface.Finite(hardness)) throw new ArgumentException("Brush settings must be finite and radius must be positive.");
             int count = 0;
-            touched.Clear(); dabChanged.Clear();
-            bool bordersUnchanged = true;
+            var touched = new HashSet<MGTerrain>();
             foreach (var tile in targets)
             {
-                bool dirty = false, interior = tile.terrain.HasRegularSculptGrid;
-                for (int step = 1; step <= steps; step++)
+                bool dirty = false;
+                for (int i = 0; i < tile.positions.Length; i++)
                 {
-                    var dab = Vector3.Lerp(from, center, step / (float)steps);
-                    for (int i = 0; i < tile.positions.Length; i++)
-                    {
-                        if (!tile.covered[i]) continue;
-                        var p = tile.matrix.MultiplyPoint3x4(tile.positions[i]);
-                        float dx = p.x - dab.x, dz = p.z - dab.z;
-                        float distanceSquared = dx * dx + dz * dz;
-                        if (!wholeTile && distanceSquared >= radius * radius) continue;
-                        float weight = wholeTile ? 1 : Weight(Mathf.Sqrt(distanceSquared), radius, hardness, strength);
-                        float y = Mathf.Lerp(p.y, tile.sourceHeights[i], weight);
-                        if (Mathf.Abs(y - p.y) < .000001f) continue;
-                        if (!dirty) { Prepare(tile.terrain); dirty = true; }
-                        p.y = y;
-                        tile.positions[i].y = tile.inverse.MultiplyPoint3x4(p).y;
-                        if (interior && tile.terrain.IsSculptBorderVertex(i)) interior = false;
-                        count++;
-                    }
+                    if (!tile.covered[i]) continue;
+                    var p = tile.matrix.MultiplyPoint3x4(tile.positions[i]);
+                    float weight = wholeTile ? 1 : Weight(new Vector2(p.x - center.x, p.z - center.z).magnitude, radius, hardness, strength);
+                    float y = Mathf.Lerp(p.y, tile.sourceHeights[i], weight);
+                    if (Mathf.Abs(y - p.y) < .000001f) continue;
+                    if (!dirty) { Prepare(tile.terrain); dirty = true; }
+                    p.y = y;
+                    tile.positions[i].y = tile.inverse.MultiplyPoint3x4(p).y;
+                    count++;
                 }
                 if (!dirty) continue;
-                bordersUnchanged &= interior;
                 var mesh = tile.terrain.MeshFilter.sharedMesh;
-                mesh.vertices = tile.positions; mesh.RecalculateBounds(); tile.terrain.RecalculateSculptNormals(interior);
-                tile.terrain.RefreshSculptTangents(true);
-                touched.Add(tile.terrain); dabChanged.Add(tile.terrain);
+                mesh.vertices = tile.positions; mesh.RecalculateBounds(); mesh.RecalculateNormals();
+                if (mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) mesh.RecalculateTangents();
+                touched.Add(tile.terrain);
             }
             if (touched.Count == 0) return 0;
-            if (!bordersUnchanged)
+            // The seam resolver may extend to the endpoints of a coarse neighbour segment.
+            var neighbours = MGTerrainSeams.Neighbours(world, touched.ToList());
+            MGTerrainSeams.Join(neighbours, center, wholeTile ? float.MaxValue : radius, false,
+                tile => changed.Add(tile), touched, world, Prepare);
+            foreach (var terrain in changed)
             {
-                var neighbours = MGTerrainSeams.Neighbours(world, touched.ToList());
-                MGTerrainSeams.Join(neighbours, center, wholeTile ? float.MaxValue : radius, false,
-                    tile => { changed.Add(tile); dabChanged.Add(tile); }, touched, world, Prepare, deferTangents: true);
-                foreach (var terrain in dabChanged) ReadPositions(states[terrain]);
-            }
-            foreach (var terrain in dabChanged)
-            {
-                terrain.NotifySurfaceMeshChanged(topologyChanged: false, geometryOnly: true); EditorUtility.SetDirty(terrain.MeshFilter.sharedMesh);
+                states[terrain].positions = terrain.MeshFilter.sharedMesh.vertices;
+                terrain.NotifySurfaceMeshChanged(); EditorUtility.SetDirty(terrain.MeshFilter.sharedMesh);
+                EditorUtility.SetDirty(terrain); EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
             }
             return count;
         }
-        static readonly Unity.Profiling.ProfilerMarker PaintMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.Merge.Paint");
         internal void EndStroke(bool cancel = false)
         {
             if (StrokeGroup < 0) return;
@@ -401,7 +345,7 @@ namespace MashBoxSDK.MapTools
             foreach (var terrain in changed)
             {
                 if (terrain == null) continue;
-                terrain.FinalizeSculptTangents(); terrain.NotifySurfaceMeshChanged(topologyChanged: false, geometryOnly: true); terrain.RefreshSurfaceCollidersFromMesh();
+                terrain.NotifySurfaceMeshChanged(); terrain.RefreshSurfaceCollidersFromMesh();
                 EditorUtility.SetDirty(terrain.MeshFilter.sharedMesh);
             }
             if (!cancel) { Undo.FlushUndoRecordObjects(); Undo.CollapseUndoOperations(group); }

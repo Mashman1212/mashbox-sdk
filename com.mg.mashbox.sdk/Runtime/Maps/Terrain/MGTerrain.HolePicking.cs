@@ -9,6 +9,53 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] HolePickTree m_HolePickTree;
         [NonSerialized] Mesh m_HolePickMesh;
         [NonSerialized] bool m_HolePickHadData;
+        [NonSerialized] bool m_HolePickVerticesDirty;
+#if UNITY_EDITOR
+        [NonSerialized] HolePickTree m_SculptPickTree;
+        [NonSerialized] Mesh m_SculptPickMesh;
+        [NonSerialized] bool m_SculptPickVerticesDirty;
+        [NonSerialized] int m_SculptPickDirtyCount;
+
+        // Brush queries follow the visible mesh without cooking a physics collider.
+        // Refit retained bounds after deformation; rebuild only for topology edits.
+        public bool RaycastSculptSurface(Ray ray, out RaycastHit hit, float maximumDistance)
+        {
+            hit = default;
+            var filter = MeshFilter;
+            var mesh = filter != null ? filter.sharedMesh : null;
+            if (mesh == null || !mesh.isReadable || !isActiveAndEnabled) return false;
+            var inverse = filter.transform.worldToLocalMatrix;
+            var localDirection = inverse.MultiplyVector(ray.direction);
+            float localUnitsPerWorldUnit = localDirection.magnitude;
+            if (localUnitsPerWorldUnit <= 0) return false;
+            var localRay = new Ray(inverse.MultiplyPoint3x4(ray.origin), localDirection);
+            if (!mesh.bounds.IntersectRay(localRay, out float near) || near > maximumDistance * localUnitsPerWorldUnit) return false;
+            int dirtyCount = UnityEditor.EditorUtility.GetDirtyCount(mesh);
+            if (m_SculptPickTree == null || m_SculptPickMesh != mesh || m_SculptPickTree.VertexCount != mesh.vertexCount)
+            {
+                m_SculptPickTree = new HolePickTree(mesh.vertices, mesh.triangles);
+                m_SculptPickMesh = mesh;
+            }
+            else if (m_SculptPickVerticesDirty || dirtyCount != m_SculptPickDirtyCount) m_SculptPickTree.Refit(mesh);
+            m_SculptPickVerticesDirty = false;
+            m_SculptPickDirtyCount = dirtyCount;
+            if (!m_SculptPickTree.Raycast(localRay, out float distance, out var normal)) return false;
+            distance /= localUnitsPerWorldUnit;
+            if (distance > maximumDistance) return false;
+            hit = new RaycastHit { point = ray.GetPoint(distance), normal = inverse.transpose.MultiplyVector(normal).normalized, distance = distance };
+            return true;
+        }
+#endif
+
+        void InvalidateSurfacePicking(bool topologyChanged)
+        {
+            if (topologyChanged) m_HolePickTree = null;
+            m_HolePickVerticesDirty = true;
+#if UNITY_EDITOR
+            if (topologyChanged) m_SculptPickTree = null;
+            m_SculptPickVerticesDirty = true;
+#endif
+        }
 
         static readonly Unity.Profiling.ProfilerMarker s_HolePickMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.HolePick");
 
@@ -24,17 +71,20 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (mesh == null || !mesh.isReadable) return false;
             EnsureHolePickTree(mesh);
             Transform surface = filter.transform;
-            // Do not normalize: the ray parameter must remain a world-space distance.
-            Ray localRay = new Ray(surface.InverseTransformPoint(worldRay.origin), surface.InverseTransformVector(worldRay.direction));
+            // Unity's Ray constructor normalizes direction; convert its local distance back to world units.
+            var localDirection = surface.InverseTransformVector(worldRay.direction);
+            float localUnitsPerWorldUnit = localDirection.magnitude;
+            if (localUnitsPerWorldUnit <= 0) return false;
+            Ray localRay = new Ray(surface.InverseTransformPoint(worldRay.origin), localDirection);
             if (!m_HolePickTree.Raycast(localRay, out float distance, out Vector3 localNormal)) return false;
-            point = worldRay.GetPoint(distance);
+            point = worldRay.GetPoint(distance / localUnitsPerWorldUnit);
             normal = surface.worldToLocalMatrix.transpose.MultiplyVector(localNormal).normalized;
             return true;
         }
 
         void EnsureHolePickTree(Mesh mesh)
         {
-            bool rebuild = m_HolePickTree == null || m_HolePickMesh != mesh || m_HolePickHadData != HasHoleData;
+            bool rebuild = m_HolePickTree == null || m_HolePickMesh != mesh || m_HolePickHadData != HasHoleData || m_HolePickTree.VertexCount != mesh.vertexCount;
 
             if (rebuild)
             {
@@ -44,7 +94,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_HolePickHadData = HasHoleData;
 
             }
-
+            else if (m_HolePickVerticesDirty) m_HolePickTree.Refit(mesh);
+            m_HolePickVerticesDirty = false;
         }
         sealed class HolePickTree
         {
@@ -54,6 +105,54 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 internal int first, count, left, right;
             }
             readonly Vector3[] vertices;
+            readonly List<Vector3> readback = new List<Vector3>();
+            internal int VertexCount => vertices.Length;
+            readonly int[] vertexFaceOffsets, vertexFaces, faceLeaves;
+            readonly bool[] dirtyFaces;
+            bool[] dirtyNodes;
+            internal void Refit(Mesh mesh)
+            {
+                using var profile = s_HolePickRefitMarker.Auto();
+                mesh.GetVertices(readback);
+                bool changed = false;
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    var next = readback[i];
+                    if (vertices[i].Equals(next)) continue;
+                    vertices[i] = next; changed = true;
+                    for (int f = vertexFaceOffsets[i]; f < vertexFaceOffsets[i + 1]; f++) dirtyFaces[vertexFaces[f]] = true;
+                }
+                if (!changed) return;
+                for (int face = 0; face < faceBounds.Length; face++)
+                {
+                    if (!dirtyFaces[face]) continue;
+                    dirtyFaces[face] = false;
+                    int t = face * 3;
+                    var a = vertices[triangles[t]]; var b = vertices[triangles[t + 1]]; var c = vertices[triangles[t + 2]];
+                    var bounds = new Bounds(); bounds.SetMinMax(Vector3.Min(a, Vector3.Min(b, c)), Vector3.Max(a, Vector3.Max(b, c)));
+                    faceBounds[face] = bounds;
+                    dirtyNodes[faceLeaves[face]] = true;
+                }
+                for (int i = nodes.Count - 1; i >= 0; i--)
+                {
+                    var node = nodes[i];
+                    if (node.count == 0)
+                    {
+                        if (!dirtyNodes[node.left] && !dirtyNodes[node.right]) continue;
+                        dirtyNodes[i] = true;
+                        node.bounds = nodes[node.left].bounds; node.bounds.Encapsulate(nodes[node.right].bounds);
+                    }
+                    else
+                    {
+                        if (!dirtyNodes[i]) continue;
+                        node.bounds = faceBounds[order[node.first]];
+                        for (int f = 1; f < node.count; f++) node.bounds.Encapsulate(faceBounds[order[node.first + f]]);
+                    }
+                    nodes[i] = node;
+                }
+                Array.Clear(dirtyNodes, 0, dirtyNodes.Length);
+            }
+            static readonly Unity.Profiling.ProfilerMarker s_HolePickRefitMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.Picking.Refit");
             readonly int[] triangles, order;
             readonly Bounds[] faceBounds;
             readonly List<Node> nodes;
@@ -75,6 +174,18 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     faceBounds[i] = bounds;
                 }
                 if (count > 0) Build(0, count, 0);
+                faceLeaves = new int[count]; dirtyFaces = new bool[count]; dirtyNodes = new bool[nodes.Count];
+                for (int n = 0; n < nodes.Count; n++)
+                {
+                    var node = nodes[n];
+                    for (int f = 0; f < node.count; f++) faceLeaves[order[node.first + f]] = n;
+                }
+                vertexFaceOffsets = new int[vertices.Length + 1];
+                foreach (int vertex in triangles) vertexFaceOffsets[vertex + 1]++;
+                for (int i = 1; i < vertexFaceOffsets.Length; i++) vertexFaceOffsets[i] += vertexFaceOffsets[i - 1];
+                vertexFaces = new int[triangles.Length];
+                var nextFace = (int[])vertexFaceOffsets.Clone();
+                for (int t = 0; t < triangles.Length; t++) vertexFaces[nextFace[triangles[t]]++] = t / 3;
             }
 
             int Build(int first, int count, int depth)

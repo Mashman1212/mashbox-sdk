@@ -1060,7 +1060,7 @@ namespace MashBoxSDK.MapTools
 
         bool TryRaycastSculptSurface(Ray ray, out RaycastHit surfaceHit, out MeshFilter meshFilter)
         {
-            if (IsSeamFit)
+            if (IsSeamFit || SelectedTerrainWorld != null || (m_Modifier != null && IsTerrainSurface(m_Modifier.Target)))
                 return TryRaycastSeamSurface(ray, out surfaceHit, out meshFilter);
             surfaceHit = default;
             meshFilter = null;
@@ -1164,9 +1164,9 @@ namespace MashBoxSDK.MapTools
                     || !terrain.gameObject.scene.IsValid() || !terrain.gameObject.scene.isLoaded) continue;
                 MeshFilter surface = terrain.MeshFilter;
                 if (surface == null || surface.sharedMesh == null || !CanPickSculptSurface(surface)) continue;
-                // Query the terrain's registered master/chunk colliders directly.
+                // Query current editable geometry without recooking physics meshes.
                 // Loft/decor hits must not hide the terrain hover brush.
-                if (!terrain.RaycastEditingSurface(ray, out var hit, closest)) continue;
+                if (!terrain.RaycastSculptSurface(ray, out var hit, closest)) continue;
                 surfaceHit = hit;
                 meshFilter = surface;
                 closest = hit.distance;
@@ -1214,6 +1214,7 @@ namespace MashBoxSDK.MapTools
                     if (GetStrokeMode(control, shift) == MeshSculptModifier.SculptMode.MeshStamp && !ValidateStampAppearance(tile)) return;
                     affected.Add(tile);
                 }
+                bool bordersUnchanged = true;
                 m_ApplyingWorldDab = true;
                 try
                 {
@@ -1221,13 +1222,19 @@ namespace MashBoxSDK.MapTools
                     {
                         m_Modifier = MGTerrainTileAuthoring.Modifier(tile);
                         // World tiles must retain X/Z so subsequent edits cannot open their borders.
-                        Undo.RecordObject(tile, "Sculpt Terrain Tiles");
-                        tile.HeightOnlySculpt = true;
+                        if (!tile.HeightOnlySculpt)
+                        {
+                            Undo.RecordObject(tile, "Sculpt Terrain Tiles");
+                            tile.HeightOnlySculpt = true;
+                        }
                         m_SeamBrush = null;
                         RecordStroke(hit, control, shift);
+                        bordersUnchanged &= m_Modifier.LastTerrainBrushInterior;
                         MeshSeamFitBrush.TrackUndo(m_Modifier);
                     }
-                    // Each dab recalculates whole-mesh normals. Rejoin all touched
+                    // Interior dabs retain the welded perimeter normals.
+                    if (bordersUnchanged) return;
+                    // Each boundary dab recalculates whole-mesh normals. Rejoin all touched
                     // perimeters, including neighbouring tiles and T-junction corners.
                     var neighbours = MGTerrainSeams.Neighbours(worldTerrain.World.Chunks, affected);
                     MGTerrainSeams.Join(neighbours, hit.point, float.PositiveInfinity, false, tile =>
@@ -1235,7 +1242,7 @@ namespace MashBoxSDK.MapTools
                         var modifier = MGTerrainTileAuthoring.Modifier(tile);
                         m_StrokeModifiers.Add(modifier);
                         MeshSeamFitBrush.TrackUndo(modifier);
-                    }, new HashSet<MGTerrain>(affected), worldTerrain.World.Chunks);
+                    }, new HashSet<MGTerrain>(affected), worldTerrain.World.Chunks, deferTangents: true);
                 }
                 finally { m_Modifier = active; m_ApplyingWorldDab = false; m_SeamBrush = null; }
                 return;
@@ -1325,7 +1332,7 @@ namespace MashBoxSDK.MapTools
             m_Modifier.AddStroke(stroke);
             if (strokeMode == MeshSculptModifier.SculptMode.MeshStamp) QueueStampAppearance(terrain, hit.point, control);
             if (strokeMode == MeshSculptModifier.SculptMode.SeamFit || strokeMode == MeshSculptModifier.SculptMode.MeshStamp) MeshSeamFitBrush.TrackUndo(m_Modifier);
-            m_Modifier.ApplyLatestStrokePreview();
+            m_Modifier.ApplyLatestStrokePreview(deferTerrainTangents: true);
             EditorUtility.SetDirty(m_Modifier);
             m_LastStrokePosition = hit.point;
             m_LastStrokeSampleTime = EditorApplication.timeSinceStartup;

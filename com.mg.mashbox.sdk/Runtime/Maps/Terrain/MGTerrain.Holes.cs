@@ -188,6 +188,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
 #if UNITY_EDITOR
             m_EditorPickDirty = true;
+            m_SculptPickTree = null;
             UnityEditor.EditorUtility.SetDirty(source);
             UnityEditor.EditorUtility.SetDirty(this);
 #endif

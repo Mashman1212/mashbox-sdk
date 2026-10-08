@@ -21,6 +21,7 @@ namespace MashBoxSDK.MapTools
             internal readonly List<Sample> border = new List<Sample>();
             internal Matrix4x4 toWorld, toLocal;
             internal bool prepared, changed, moved;
+            internal int gridWidth, gridHeight;
         }
         sealed class Sample
         {
@@ -56,6 +57,43 @@ namespace MashBoxSDK.MapTools
         static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MGTerrain, Buffer> Buffers =
             new System.Runtime.CompilerServices.ConditionalWeakTable<MGTerrain, Buffer>();
 
+        // Retain one neighbourhood's planar graph. Heights/normals are read back every
+        // dab, including external edits and Undo. Mesh identity may change when a
+        // scene sculpt copy is prepared; its footprint must still match exactly.
+        static Dictionary<Vector2Int, Node> cachedNodes;
+        static List<Buffer> cachedBuffers;
+        static bool ReadCachedGraph(List<MGTerrain> tiles, bool preparedMeshes)
+        {
+            if (cachedBuffers == null || tiles.Count != cachedBuffers.Count) return false;
+            foreach (var buffer in cachedBuffers)
+            {
+                var tile = buffer.tile;
+                if (tile == null || !tiles.Contains(tile) || tile.MeshFilter == null || tile.MeshFilter.sharedMesh == null) return false;
+                var mesh = tile.MeshFilter.sharedMesh;
+                // Irregular/stitched rims take the general path, whose border membership
+                // can change even when vertex count and the old border samples match.
+                if (!mesh.isReadable || buffer.gridWidth < 2 || buffer.gridHeight < 2
+                    || (long)buffer.gridWidth * buffer.gridHeight != mesh.vertexCount
+                    || tile.SurfaceGridWidth != buffer.gridWidth || tile.SurfaceGridHeight != buffer.gridHeight
+                    || tile.MeshFilter.transform.localToWorldMatrix != buffer.toWorld) return false;
+            }
+            foreach (var buffer in cachedBuffers)
+            {
+                var mesh = buffer.tile.MeshFilter.sharedMesh;
+                mesh.GetVertices(buffer.vertices); mesh.GetNormals(buffer.normals);
+                buffer.prepared = preparedMeshes; buffer.changed = buffer.moved = false;
+                foreach (var sample in buffer.border)
+                {
+                    var position = buffer.toWorld.MultiplyPoint3x4(buffer.vertices[sample.index]);
+                    if (position.x != sample.world.x || position.z != sample.world.z) return false;
+                    sample.world = position;
+                    sample.normal = buffer.normals.Count == buffer.vertices.Count ? buffer.normals[sample.index] : Vector3.up;
+                }
+            }
+            foreach (var node in cachedNodes.Values) { node.active = false; node.state = 0; }
+            return true;
+        }
+
         internal static List<MGTerrain> Neighbours(IReadOnlyList<MGTerrain> world, List<MGTerrain> touched)
         {
             var bounds = touched.Select(MGTerrainTileAuthoring.BoundsOf).ToArray();
@@ -67,12 +105,16 @@ namespace MashBoxSDK.MapTools
 
         internal static void Join(List<MGTerrain> tiles, Vector3 center, float radius, bool preparedMeshes,
             Action<MGTerrain> changed = null, HashSet<MGTerrain> touched = null, IReadOnlyList<MGTerrain> world = null,
-            Action<MGTerrain> prepareMesh = null)
+            Action<MGTerrain> prepareMesh = null, bool deferTangents = false)
         {
             if (tiles.Count < 2) return;
-            var nodes = new Dictionary<Vector2Int, Node>();
+            bool reused = ReadCachedGraph(tiles, preparedMeshes);
+            var nodes = reused ? cachedNodes : new Dictionary<Vector2Int, Node>();
+            var buffers = reused ? cachedBuffers : new List<Buffer>();
+            if (!reused)
+            {
+            cachedNodes = null; cachedBuffers = null;
             var lines = new Dictionary<(bool, int), Line>();
-            var buffers = new List<Buffer>();
             foreach (var tile in tiles.Distinct())
             {
                 MGTerrainTileAuthoring.Validate(tile);
@@ -114,6 +156,7 @@ namespace MashBoxSDK.MapTools
                     for (int side = 0; side < 4; side++) if ((membership & (1 << side)) != 0) sides[side].points.Add(node);
                 }
                 int width = tile.SurfaceGridWidth, height = tile.SurfaceGridHeight;
+                buffer.gridWidth = width; buffer.gridHeight = height;
                 if (width >= 2 && height >= 2 && (long)width * height == mesh.vertexCount)
                 {
                     for (int x = 0; x < width; x++) { Add(x); Add((height - 1) * width + x); }
@@ -159,14 +202,22 @@ namespace MashBoxSDK.MapTools
                     left = right;
                 }
             }
+            cachedNodes = nodes; cachedBuffers = buffers;
+            }
             var queue = new Queue<Node>();
             void Activate(Node node) { if (!node.active) { node.active = true; queue.Enqueue(node); } }
             foreach (var node in nodes.Values)
             {
-                node.shared = node.samples.Any(s => s.buffer != node.samples[0].buffer);
+                node.shared = false;
+                bool wasTouched = touched == null;
+                foreach (var sample in node.samples)
+                {
+                    node.shared |= sample.buffer != node.samples[0].buffer;
+                    wasTouched |= touched != null && touched.Contains(sample.buffer.tile);
+                }
                 float dx = node.samples[0].world.x - center.x, dz = node.samples[0].world.z - center.z;
                 if (dx * dx + dz * dz <= radius * radius
-                    && (touched == null || node.samples.Any(sample => touched.Contains(sample.buffer.tile)))) Activate(node);
+                    && wasTouched) Activate(node);
             }
             // Include complete coarse segments and all T-junction copies, even outside the dab.
             while (queue.Count > 0)
@@ -190,7 +241,7 @@ namespace MashBoxSDK.MapTools
                 if (additional.Count > 0)
                 {
                     var expanded = new List<MGTerrain>(tiles); expanded.AddRange(additional);
-                    Join(expanded, center, radius, preparedMeshes, changed, touched, world, prepareMesh);
+                    Join(expanded, center, radius, preparedMeshes, changed, touched, world, prepareMesh, deferTangents);
                     return;
                 }
             }
@@ -245,11 +296,11 @@ namespace MashBoxSDK.MapTools
                 if (!buffer.changed) continue;
                 var mesh = buffer.tile.MeshFilter.sharedMesh;
                 mesh.SetNormals(buffer.normals);
-                if (mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Tangent)) mesh.RecalculateTangents();
-                mesh.UploadMeshData(false); buffer.tile.NotifySurfaceMeshChanged(); EditorUtility.SetDirty(mesh);
+                buffer.tile.RefreshSculptTangents(deferTangents);
+                mesh.UploadMeshData(false); buffer.tile.NotifySurfaceMeshChanged(topologyChanged: false, geometryOnly: true); EditorUtility.SetDirty(mesh);
                 changed?.Invoke(buffer.tile);
             }
-            foreach (var buffer in buffers) buffer.border.Clear();
+
         }
 
         static bool OnBorder(Vector3 p, Bounds b) => p.x >= b.min.x - Epsilon && p.x <= b.max.x + Epsilon
