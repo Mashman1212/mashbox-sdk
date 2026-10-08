@@ -1,0 +1,5 @@
+Starting isolated Play Mode validation.
+PASS: automatic activation, idempotent startup, collision under forced visual culling, immediate disable.
+PASS: disable cleanup, re-enable, resize rebuild and destruction release meshes/materials.
+PASS: additive scene activation and unload cleanup.
+This headless lifecycle test uses a minimal test shader; HDRP artwork is checked separately in MappyX.

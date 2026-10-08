@@ -1,0 +1,5 @@
+PASS: four editable proxies / 32 planned tiles, no authored renderers or colliders; saved scene references runtime SDK script and packaged artwork.
+PASS: runtime geometry, continuous solid collision, conservative LOD distances and unchanged SDK material.
+PASS: rotated / scaled parents, uneven tiles, coverage, UV seams, rebuild / release cleanup, optional collision and invalid settings.
+PASS: conversion of existing SDK baked walls preserves root / unrelated children and supports Undo / Redo.
+Validation exercises the runtime generator in an isolated editor scene; it does not enter the user's open map into Play Mode or benchmark GPU frame time.

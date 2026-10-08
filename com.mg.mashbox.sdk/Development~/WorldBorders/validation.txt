@@ -1,0 +1,6 @@
+PASS: packaged shader, default material and exact albedo references; generated material is a private copy with no map-specific dependencies.
+PASS: default 1024 m rectangle = 32 native LOD tiles, four independent colliders, persistent meshes and packaged HDRP artwork.
+PASS: rebuild, Undo and Redo preserve root identity, user children and previous mesh assets.
+PASS: rotated concave outline, expected surface area, six blocking collision walls.
+PASS: optional collision, scene save and profile lookup; output has no MonoBehaviours.
+PASS: invalid polygons, non-finite input, excessive tiling and unsafe fade settings rejected.

@@ -26,7 +26,8 @@ namespace MashBoxSDK.MapTools
 {
     public partial class MashBoxMapToolsWindow : EditorWindow
     {
-        private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter }
+        private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter, WorldBorders }
+        [SerializeField] private WorldBorders.MGWorldBorderWindow worldBorderTool;
         private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector, Mesh, Road }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
         private const string PREF_KEY_MAP_TOOL_TAB_ORDER = "MashBoxSDK.SelectedMapToolTab.Order";
@@ -147,6 +148,27 @@ namespace MashBoxSDK.MapTools
             GetWindow<MashBoxMapToolsWindow>("MashBox Map Tools");
         }
 
+        public void SelectWorldBorders()
+        {
+            EnsureInitialized();
+            currentToolTab = ToolTab.WorldBorders;
+            EditorPrefs.SetInt(PREF_KEY_MAP_TOOL_TAB, (int)currentToolTab);
+            EditorPrefs.SetString(PREF_KEY_MAP_TOOL_TAB_ORDER, "ArtToolsFirst");
+            if (Selection.activeObject is WorldBorders.MGWorldBorderProfile profile)
+                EnsureWorldBorderTool().Load(profile);
+            Repaint();
+        }
+
+        private WorldBorders.MGWorldBorderWindow EnsureWorldBorderTool()
+        {
+            if (worldBorderTool == null)
+            {
+                worldBorderTool = CreateInstance<WorldBorders.MGWorldBorderWindow>();
+                worldBorderTool.hideFlags = HideFlags.HideAndDontSave;
+            }
+            return worldBorderTool;
+        }
+
         internal static void OpenAuthoringTool(MBEditorAuthoringMode mode)
         {
             MBEditorToolState.RequestMode(mode);
@@ -218,6 +240,7 @@ namespace MashBoxSDK.MapTools
             uvSplineSelectionQueued = false;
             UVSplineEditor.SceneEditingEnabled = MBEditorToolState.ActiveEditing
                 && MBEditorToolState.Mode == MBEditorAuthoringMode.UVSpline;
+            if (worldBorderTool != null) { DestroyImmediate(worldBorderTool); worldBorderTool = null; }
             DestroyAuthoringToolInstances();
             initialized = false;
         }
@@ -584,10 +607,11 @@ namespace MashBoxSDK.MapTools
             embeddedHostVisible = true;
             EnsureInitialized();
             GUILayout.Space(6);
-            var newToolTab = (ToolTab)MashBoxTabDrawer.DrawTabs((int)currentToolTab, new[] { "Art Tools", "Gameplay", "Audio", "Performance", "Testing", "Exporter" }, MashBoxTabDrawer.TabVisualStyle.Secondary, new[]
+            var newToolTab = (ToolTab)MashBoxTabDrawer.DrawTabs((int)currentToolTab, new[] { "Art Tools", "Gameplay", "Audio", "Performance", "Testing", "Exporter", "World Borders" }, MashBoxTabDrawer.TabVisualStyle.Secondary, new[]
             {
                 false,
                 GameplayHasBlockingIssues(),
+                false,
                 false,
                 false,
                 false,
@@ -602,8 +626,13 @@ namespace MashBoxSDK.MapTools
             GUILayout.Space(6);
             UpdateAuthoringSceneToolState();
 
+            worldBorderTool?.SetEmbeddedActive(currentToolTab == ToolTab.WorldBorders);
+
             switch (currentToolTab)
             {
+                case ToolTab.WorldBorders:
+                    EnsureWorldBorderTool().DrawEmbedded();
+                    break;
                 case ToolTab.ArtTools:
                     mapToolsScrollPosition = EditorGUILayout.BeginScrollView(mapToolsScrollPosition);
                     DrawMapAuthoringToolsSection();
@@ -913,6 +942,9 @@ namespace MashBoxSDK.MapTools
         {
             var activeScene = SceneManager.GetActiveScene();
             var existingBoundary = cachedMapBoundary;
+
+            if (GUILayout.Button("World Border Tool - Optimized Visuals and Collision", GUILayout.Height(32f)))
+                SelectWorldBorders();
 
             EditorGUILayout.LabelField("Map Boundary", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
@@ -1458,6 +1490,7 @@ namespace MashBoxSDK.MapTools
 
         public void DeactivateEmbeddedSceneTools()
         {
+            worldBorderTool?.SetEmbeddedActive(false);
             embeddedHostVisible = false;
             UVSplineEditor.SceneEditingEnabled = false;
             GUIUtility.hotControl = 0;

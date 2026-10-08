@@ -54,6 +54,17 @@ namespace MashBoxSDK.SDKMain
             GetWindow<MashBoxSDKWindow>("MashBox SDK");
         }
 
+        public static void OpenWorldBorders()
+        {
+            var window = GetWindow<MashBoxSDKWindow>("MashBox SDK");
+            window._tab = (int)MainTab.MapTools;
+            EditorPrefs.SetInt(PREF_KEY_TAB, window._tab);
+            EnsureHiddenToolWindow(ref window.mapExporterTool).SelectWorldBorders();
+            window.Show();
+            window.Focus();
+            window.Repaint();
+        }
+
         private void OnEnable()
         {
             _tab = EditorPrefs.GetInt(PREF_KEY_TAB, 0);
