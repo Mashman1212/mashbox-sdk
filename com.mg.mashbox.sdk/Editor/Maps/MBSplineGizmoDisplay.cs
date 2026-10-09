@@ -138,6 +138,10 @@ namespace MashBoxSDK.MapTools
             GeometryUtility.CalculateFrustumPlanes(sceneView.camera, Frustum);
             var stage = StageUtility.GetCurrentStageHandle();
             bool splineTool = typeof(SplineTool).IsAssignableFrom(ToolManager.activeToolType);
+            // Authoring tools own knot/rectangle selection. Display curves must
+            // not convert a Shift-click on a knot into GameObject selection.
+            bool authoringOwnsPicking = MBEditorToolState.ActiveEditing
+                && (SplineToolWindow.HasActiveSceneTool || MultiSplineLoftWindow.HasActiveSceneTool);
             Color splineColor = UnityColorValue?.GetValue(UnityColorSetting) is Color color ? color : Color.blue;
             var previousZTest = Handles.zTest;
             try
@@ -172,7 +176,7 @@ namespace MashBoxSDK.MapTools
                             if (current.type == EventType.Repaint)
                                 Handles.DrawPolyLine(positions);
                             else if ((current.type == EventType.Layout || current.type == EventType.MouseMove)
-                                && !SceneVisibilityManager.instance.IsPickingDisabled(go))
+                                && !authoringOwnsPicking && !SceneVisibilityManager.instance.IsPickingDisabled(go))
                             {
                                 float distance = float.MaxValue;
                                 for (int i = 1; i < positions.Length; i++)
@@ -181,7 +185,7 @@ namespace MashBoxSDK.MapTools
                             }
                         }
                     }
-                    if (current.type == EventType.MouseDown && current.button == 0 && !current.alt
+                    if (!authoringOwnsPicking && current.type == EventType.MouseDown && current.button == 0 && !current.alt
                         && !Tools.viewToolActive && GUIUtility.hotControl == 0
                         && HandleUtility.nearestControl == control
                         && !SceneVisibilityManager.instance.IsPickingDisabled(go))

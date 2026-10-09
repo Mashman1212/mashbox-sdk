@@ -2157,12 +2157,24 @@ namespace MashBoxSDK.MapTools
                     AddShortcut("d_ViewToolOrbit", "Navigate", "Alt + Drag");
                     break;
                 case MBEditorAuthoringMode.SplineLoft:
+                    AddShortcut("MashBox.SplineEdit", "Insert Knot Row", "Hold I + Click curve");
+                    AddShortcut("MashBox.NewSpline", "Extend Loft End", "Shift + Click empty ground");
+                    AddShortcut("MashBox.SplineEdit", "Select Knot", "Click point");
+                    AddShortcut("MashBox.SplineEdit", "Toggle Knot Selection", "Shift + Click");
+                    AddShortcut("MashBox.SplineEdit", "Box Select Knots", "Drag empty space");
+                    AddShortcut("MashBox.SplineEdit", "Add Box Selection", "Shift + Drag");
+                    AddShortcut("d_MoveTool", "Move Selected Knots", "W");
+                    AddShortcut("d_RotateTool", "Rotate Selected Knots", "E");
+                    AddShortcut("d_ScaleTool", "Scale Selected Knots", "R");
                     AddShortcut("TreeEditor.Trash", "Remove Knots", "Delete / Backspace");
                     break;
                 case MBEditorAuthoringMode.Spline:
                     AddShortcut("MashBox.SplineEdit", "Select Knot", "Click point");
-                    AddShortcut("MashBox.NewSpline", "Extend Nearest End", "Shift + Click");
-                    AddShortcut("MashBox.SplineEdit", "Insert Knot", "Ctrl + Click");
+                    AddShortcut("MashBox.SplineEdit", "Toggle Knot Selection", "Shift + Click");
+                    AddShortcut("MashBox.SplineEdit", "Box Select Knots", "Drag empty space");
+                    AddShortcut("MashBox.SplineEdit", "Add Box Selection", "Shift + Drag");
+                    AddShortcut("MashBox.NewSpline", "Extend Nearest End (Draw)", "Shift + Click");
+                    AddShortcut("MashBox.SplineEdit", "Insert Knot", "I / Ctrl + Click");
                     AddShortcut("MashBox.NewSpline", "Draw Knots", "D");
                     AddShortcut("d_MoveTool", "Move Knot", "W");
                     AddShortcut("d_RotateTool", "Rotate Knot", "E");

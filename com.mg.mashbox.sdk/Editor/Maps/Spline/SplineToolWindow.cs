@@ -18,6 +18,7 @@ namespace MashBoxSDK.Maps.Spline
         UnityEditor.Editor m_SplineInspector;
         bool m_SceneToolActive;
         bool m_ChangingSelection;
+        bool m_InsertHeld;
         Tool m_RequestedTool = Tool.Move;
 
         // Unity's drawing tool is internal; the public utility activates it.
@@ -77,6 +78,7 @@ namespace MashBoxSDK.Maps.Spline
             }
 
             m_SceneToolActive = false;
+            m_InsertHeld = false;
             if (s_ActiveSceneToolOwner == this)
                 s_ActiveSceneToolOwner = null;
             Selection.selectionChanged -= OnSelectionChanged;
@@ -173,18 +175,43 @@ namespace MashBoxSDK.Maps.Spline
             Repaint();
         }
 
-        // Claim modifier clicks before Unity's spline tools can use them for
-        // their own knot selection or placement controls. Preview drawing stays
+        // Claim placement clicks only. Shift in edit mode belongs to Unity's
+        // knot selection and rectangle selector. Preview drawing stays
         // in duringSceneGui, where Scene view Handles are ready to repaint.
         void OnBeforeSceneGui(SceneView sceneView)
         {
             if (!m_SceneToolActive || !MBEditorToolState.ActiveEditing || MBEditorToolState.Mode != MBEditorAuthoringMode.Spline)
+            {
+                m_InsertHeld = false;
                 return;
+            }
 
             Event current = Event.current;
+            if (current.type == EventType.MouseLeaveWindow || current.type == EventType.Ignore)
+                m_InsertHeld = false;
+            if (current.keyCode == KeyCode.I && current.type == EventType.KeyUp)
+            {
+                m_InsertHeld = false;
+                current.Use();
+                sceneView.Repaint();
+                return;
+            }
+            if (current.keyCode == KeyCode.I && current.type == EventType.KeyDown
+                && !current.alt && !current.control && !current.command && !current.shift
+                && !EditorGUIUtility.editingTextField && GUIUtility.hotControl == 0)
+            {
+                m_InsertHeld = true;
+                current.Use();
+                sceneView.Repaint();
+                return;
+            }
             if (current.type == EventType.MouseDown && current.button == 0
-                && current.shift != current.control)
+                && ((current.control || m_InsertHeld) && !current.shift || IsDrawing && current.shift && !current.control))
+            {
                 HandleKnotPlacement(sceneView, current, earlyClick: true);
+                if (m_InsertHeld && !current.alt && !current.command && GUIUtility.hotControl == 0 && current.type != EventType.Used)
+                    current.Use();
+            }
         }
 
         // Single-spline editing should select visible spline curves, not the mesh
@@ -209,7 +236,11 @@ namespace MashBoxSDK.Maps.Spline
             int controlId = GUIUtility.GetControlID(FocusType.Passive);
             if (current.type == EventType.Layout)
             {
-                HandleUtility.AddDefaultControl(controlId);
+                // Unity's rectangle selector must keep empty-space drags.
+                // Only compete for clicks on a different spline container.
+                if (TryFindSplineAtMouse(current.mousePosition, out SplineContainer hovered)
+                    && hovered != m_ActiveSpline)
+                    HandleUtility.AddControl(controlId, 0f);
                 return;
             }
 
@@ -232,8 +263,8 @@ namespace MashBoxSDK.Maps.Spline
                 return false;
 
             // Leave Ctrl+Shift to Unity's surface snapping.
-            bool inserting = current.control && !current.shift;
-            bool extending = current.shift && !current.control;
+            bool inserting = (current.control || m_InsertHeld) && !current.shift;
+            bool extending = IsDrawing && current.shift && !current.control;
             if (!inserting && !extending)
                 return false;
 
@@ -263,7 +294,7 @@ namespace MashBoxSDK.Maps.Spline
                     return false;
 
                 if (current.type == EventType.Repaint)
-                    DrawPlacementMarker(position, "Ctrl-click: insert knot", Color.yellow);
+                    DrawPlacementMarker(position, "I / Ctrl-click: insert knot", Color.yellow);
                 if (!click)
                     return false;
 
@@ -406,7 +437,7 @@ namespace MashBoxSDK.Maps.Spline
             return nearestSpline != null;
         }
 
-        static void InsertKnot(UnitySpline spline, int curve, float t)
+        internal static void InsertKnot(UnitySpline spline, int curve, float t)
         {
             CurveUtility.Split(spline.GetCurve(curve), t, out var left, out var right);
             int next = (curve + 1) % spline.Count;
