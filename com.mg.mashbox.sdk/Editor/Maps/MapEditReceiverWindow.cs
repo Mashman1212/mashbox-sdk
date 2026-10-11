@@ -70,12 +70,13 @@ namespace MashBoxSDK.MapTools
             try
             {
                 var data = MapEditDocument.Read(file); var scene = Destination();
+                data = MapEditReceiverState.PrepareIncoming(data, scene);
                 var conflicts = MapEditImporter.Conflicts(data, scene);
                 report = "From " + data.sceneName + "\n" + data.changes.Count + " changed objects\n\n" +
                     string.Join("\n", data.changes.Select(c => (c.after.deleted ? "Delete" : c.kind == "existing" ? "Edit" : "Create") + "  " + c.after.name)) +
                     (conflicts.Count == 0 ? "\n\nNo source conflicts." : "\n\nCONFLICTS\n" + string.Join("\n", conflicts));
-                if (!apply || conflicts.Count != 0) { message = conflicts.Count == 0 ? "Ready to apply." : "Resolve the listed source conflicts before importing."; return; }
-                MapEditImporter.Apply(data, scene);
+                if (!apply || conflicts.Count != 0) { message = conflicts.Count == 0 ? data.changes.Count == 0 ? "This send is already applied. No pending changes." : "Ready to apply." : "Resolve the listed source conflicts before importing."; return; }
+                if (data.changes.Count > 0) MapEditImporter.Apply(data, scene);
                 MapEditReceiverState.RecordApplied(scene, data, file);
                 if (file == lastReceivedFile) pendingReview = false;
                 message = "Applied to " + scene.name + ". Review the scene and save. Ctrl+Z undoes the import.";

@@ -119,16 +119,7 @@ namespace MashBoxSDK.MapTools
                 var scene = SceneManager.GetSceneByPath(AssetDatabase.GetAssetPath(destination));
                 if (!scene.IsValid() || !scene.isLoaded) throw new InvalidOperationException("Open the receiving scene in Unity first.");
                 var document = MapEditDocument.Read(path);
-                var previous = LastApplied(scene, document.sessionId);
-                var delta = document;
-                if (previous != null) Rebase(delta, previous);
-                var lookup = MapEditCodec.Lookup(scene);
-                // A deletion pulled back to the game is already satisfied in Unity.
-                delta.changes.RemoveAll(c => c.kind == "existing" && c.after.deleted &&
-                    (c.id.StartsWith("map:", StringComparison.Ordinal) || c.id.StartsWith("new:", StringComparison.Ordinal)) && !lookup.ContainsKey(c.id));
-                var missing = delta.changes.Where(c => c.kind == "existing" &&
-                    (c.id.StartsWith("map:", StringComparison.Ordinal) || c.id.StartsWith("new:", StringComparison.Ordinal)) && !lookup.ContainsKey(c.id)).ToList();
-                if (missing.Count > 0) throw new InvalidOperationException(missing.Count + " objects were deleted or are missing in Unity. Pull from Unity to sync deletions before sending again. First: " + missing[0].after.name);
+                var delta = PrepareIncoming(document, scene);
                 if (delta.changes.Count > 0) MapEditImporter.Apply(delta, scene);
                 RecordApplied(scene, document, path);
                 Pending = false;
@@ -141,6 +132,20 @@ namespace MashBoxSDK.MapTools
                 Message = "Not applied: " + error.Message + " Use ⋯ to review.";
             }
             Changed?.Invoke();
+        }
+        internal static MapEditDocument PrepareIncoming(MapEditDocument document, Scene scene)
+        {
+                var previous = LastApplied(scene, document.sessionId);
+                var delta = document;
+                if (previous != null) Rebase(delta, previous);
+                var lookup = MapEditCodec.Lookup(scene);
+                // A deletion pulled back to the game is already satisfied in Unity.
+                delta.changes.RemoveAll(c => c.kind == "existing" && c.after.deleted &&
+                    (c.id.StartsWith("map:", StringComparison.Ordinal) || c.id.StartsWith("new:", StringComparison.Ordinal)) && !lookup.ContainsKey(c.id));
+                var missing = delta.changes.Where(c => c.kind == "existing" &&
+                    (c.id.StartsWith("map:", StringComparison.Ordinal) || c.id.StartsWith("new:", StringComparison.Ordinal)) && !lookup.ContainsKey(c.id)).ToList();
+                if (missing.Count > 0) throw new InvalidOperationException(missing.Count + " objects were deleted or are missing in Unity. Pull from Unity to sync deletions before sending again. First: " + missing[0].after.name);
+            return delta;
         }
         // Game sends cumulative session patches. Compare the next patch against the last
         // successfully applied one, while leaving editor-side conflict checks intact.
