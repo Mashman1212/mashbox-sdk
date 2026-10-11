@@ -62,7 +62,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void LateUpdate()
         {
-            if (!Application.isPlaying || m_VisualsBaked || m_VisualBuildFailed) return;
+            if (!Application.isPlaying || m_VisualsBaked || m_VisualBuildFailed || m_RuntimePreviewActive) return;
             Mesh mesh = GetComponent<MeshFilter>().sharedMesh;
             if (m_VisualGeneration == m_GenerationVersion && mesh == m_LastVisualMesh) return;
             try { BuildVisualChunks(false); }
@@ -108,7 +108,10 @@ namespace MashBoxSDK.Maps.Spline
                 MeshFilter filter = source.GetComponent<MeshFilter>();
                 Mesh mesh = filter != null ? filter.sharedMesh : null;
                 if (mesh == null || mesh.vertexCount == 0) continue;
-                if (source.isPartOfStaticBatch || !mesh.isReadable)
+                bool editableSource = !bake && m_RuntimeEditing && source == rootRenderer && mesh == m_RuntimeEditVisualMesh;
+                // Runtime editing restores a private local mesh and renders fresh
+                // dynamic chunks. Their owner hides the old batched renderer.
+                if ((source.isPartOfStaticBatch && !editableSource) || !mesh.isReadable)
                 {
                     string message = $"Loft '{name}' is using an already-batched or unreadable mesh '{mesh.name}'. Rebuild the map with loft baking before static batching to enable visual sections.";
                     if (bake) throw new InvalidOperationException(message);

@@ -245,7 +245,6 @@ namespace MashBoxSDK.Maps.Spline
         bool m_RegenerateAsLivePreview;
         bool m_FinalRegenerateQueued;
         float m_FinalRegenerateAfterTime;
-        bool m_UseFastSourceEvaluation;
         int m_LastFullAlongSampleCount;
         int m_GenerationVersion;
 
@@ -386,6 +385,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void OnDisable()
         {
+            ClearSourceEvaluations();
             // Disabling the authoring component must not remove runtime visual culling.
             if (!Application.isPlaying || !gameObject.activeInHierarchy) ClearRuntimeVisuals();
             UnitySpline.Changed -= OnSplineChanged;
@@ -488,6 +488,7 @@ namespace MashBoxSDK.Maps.Spline
 
         public void QueueRegenerate()
         {
+            if (Application.isPlaying && m_RuntimeEditing) return; // The runtime edit session owns preview/final scheduling.
             m_FinalRegenerateQueued = false;
             m_RegenerateAsLivePreview = false;
             m_RegenerateQueued = true;
@@ -500,6 +501,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void QueueLiveRegenerate()
         {
+            if (Application.isPlaying && m_RuntimeEditing) return;
             float now = CurrentRegenerationTime();
             m_FinalRegenerateQueued = true;
             m_FinalRegenerateAfterTime = now + LivePreviewFinalizeDelay;
@@ -663,14 +665,14 @@ namespace MashBoxSDK.Maps.Spline
         {
             if (m_VisualsBaked) return;
             InvalidateVisualChunks();
-            m_UseFastSourceEvaluation = livePreview;
             try
             {
+                PrepareSourceEvaluations();
                 RegenerateInternalCore(livePreview);
             }
             finally
             {
-                m_UseFastSourceEvaluation = false;
+                ReleaseSourceEvaluations();
             }
         }
 
@@ -1091,6 +1093,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void BuildSampleGrid(bool livePreview)
         {
+            using var sampleScope = LoftSamplingMarker.Auto();
             int sourceCount = m_ValidSourceIndices.Count;
             bool closedAlong = ShouldCloseAlong();
             int sourceSpans = m_CloseAcrossSplines ? sourceCount : sourceCount - 1;
@@ -1258,22 +1261,7 @@ namespace MashBoxSDK.Maps.Spline
         Vector3 EvaluateSourcePosition(SplineSource source, float logicalParameter)
         {
             float t = source.reverse ? 1f - logicalParameter : logicalParameter;
-            if (m_UseFastSourceEvaluation)
-            {
-                var spline = source.container.Splines[source.splineIndex];
-                int curveCount = spline.Closed ? spline.Count : spline.Count - 1;
-                if (curveCount > 0)
-                {
-                    float curvePosition = Mathf.Clamp01(t) * curveCount;
-                    int curveIndex = curvePosition >= curveCount
-                        ? curveCount - 1
-                        : Mathf.Min(Mathf.FloorToInt(curvePosition), curveCount - 1);
-                    float curveT = curvePosition >= curveCount ? 1f : curvePosition - curveIndex;
-                    Vector3 localPoint = CurveUtility.EvaluatePosition(spline.GetCurve(curveIndex), curveT);
-                    return source.container.transform.TransformPoint(localPoint);
-                }
-            }
-
+            if (m_SourceEvaluationActive && m_SourceEvaluations.TryGetValue(source, out var evaluation)) return evaluation.Evaluate(t);
             var point = source.container.EvaluatePosition(source.splineIndex, Mathf.Clamp01(t));
             return new Vector3(point.x, point.y, point.z);
         }
@@ -2260,9 +2248,10 @@ namespace MashBoxSDK.Maps.Spline
 
         public void RebuildColliderChunks()
         {
+            using var collisionScope = LoftCollisionMarker.Auto();
             // Collision is authored offline. The nonserialized surface count can
             // be zero after loading even though the saved chunks are valid.
-            if (Application.isPlaying || m_VisualsBaked) return;
+            if ((Application.isPlaying && !m_RuntimeEditing) || m_VisualsBaked) return;
 
             ClearLegacyRootCollider();
             Transform chunksRoot = FindColliderChunksRoot();
@@ -2455,7 +2444,7 @@ namespace MashBoxSDK.Maps.Spline
 
         void ClearLegacyRootCollider()
         {
-            if (Application.isPlaying || m_VisualsBaked) return;
+            if ((Application.isPlaying && !m_RuntimeEditing) || m_VisualsBaked) return;
 
             if (!TryGetComponent(out MeshCollider collider))
                 return;

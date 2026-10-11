@@ -410,9 +410,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_TreeInstanceCells.Clear();
         }
 
+        void OnDestroy()
+        {
+            ReleaseRuntimeEditingMeshes();
 #if UNITY_EDITOR
-        void OnDestroy() => MashBoxSDK.Maps.Roads.MGRoadSceneRegistry.Unregister(this);
+            MashBoxSDK.Maps.Roads.MGRoadSceneRegistry.Unregister(this);
 #endif
+        }
 
         void OnValidate()
         {

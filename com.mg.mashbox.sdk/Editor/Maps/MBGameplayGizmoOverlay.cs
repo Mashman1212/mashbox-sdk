@@ -1,4 +1,5 @@
 using MashBoxSDK.Maps;
+using MashBoxSDK.Maps.Editing;
 using MashBoxSDK.Maps.TerrainSystem;
 using UnityEditor;
 using MashBoxSDK.Maps.Roads.Editor;
@@ -71,10 +72,8 @@ namespace MashBoxSDK.MapTools
             return true;
         }
 
-        static readonly Color ModeToolSelectionColor = new Color(0.68f, 0.38f, 0.08f, 0.95f);
-        static readonly Color ToolActionSelectionColor = new Color(0.42f, 0.27f, 0.68f, 0.95f);
-        static readonly System.Collections.Generic.Dictionary<string, Texture2D> CustomIcons =
-            new System.Collections.Generic.Dictionary<string, Texture2D>();
+        static readonly Color ModeToolSelectionColor = MappyPanelVisuals.ToolSelection;
+        static readonly Color ToolActionSelectionColor = MappyPanelVisuals.ActionSelection;
 
         internal static void ConfigureIconOnly(
             EditorToolbarToggle element,
@@ -90,12 +89,12 @@ namespace MashBoxSDK.MapTools
             element.text = string.Empty;
             element.icon = toolbarIcon;
             element.tooltip = label + ": " + description;
-            element.style.width = 28f;
-            element.style.minWidth = 28f;
-            element.style.maxWidth = 28f;
-            element.style.height = 28f;
-            element.style.minHeight = 28f;
-            element.style.maxHeight = 28f;
+            element.style.width = MappyPanelVisuals.IconSize;
+            element.style.minWidth = MappyPanelVisuals.IconSize;
+            element.style.maxWidth = MappyPanelVisuals.IconSize;
+            element.style.height = MappyPanelVisuals.IconSize;
+            element.style.minHeight = MappyPanelVisuals.IconSize;
+            element.style.maxHeight = MappyPanelVisuals.IconSize;
             element.style.flexShrink = 0f;
         }
 
@@ -104,212 +103,7 @@ namespace MashBoxSDK.MapTools
             if (!iconName.StartsWith("MashBox."))
                 return EditorGUIUtility.FindTexture(iconName);
 
-            if (CustomIcons.TryGetValue(iconName, out Texture2D existing))
-                return existing;
-
-            Texture2D created = CreateMashBoxIcon(iconName);
-            CustomIcons[iconName] = created;
-            return created;
-        }
-
-        static Texture2D CreateMashBoxIcon(string iconName)
-        {
-            const int size = 32;
-            var icon = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                name = iconName + " Icon",
-                filterMode = FilterMode.Bilinear,
-                hideFlags = HideFlags.HideAndDontSave
-            };
-
-            var pixels = new Color32[size * size];
-            var bright = new Color32(240, 244, 250, 255);
-            var mid = new Color32(195, 203, 215, 255);
-
-            switch (iconName)
-            {
-                case "MashBox.ActiveEditing":
-                    DrawIconLine(pixels, size, new Vector2(6f, 6f), new Vector2(20f, 20f), 4.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(5f, 9f), new Vector2(9f, 5f), 2.2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(24f, 20f), new Vector2(24f, 30f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(19f, 25f), new Vector2(29f, 25f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(20.5f, 21.5f), new Vector2(27.5f, 28.5f), 1.6f, mid);
-                    DrawIconLine(pixels, size, new Vector2(20.5f, 28.5f), new Vector2(27.5f, 21.5f), 1.6f, mid);
-                    DrawIconDot(pixels, size, new Vector2(24f, 25f), 2f, bright);
-                    break;
-                case "MashBox.GameplayGizmos":
-                    DrawIconLine(pixels, size, new Vector2(3f, 16f), new Vector2(10f, 22f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(10f, 22f), new Vector2(22f, 22f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(22f, 22f), new Vector2(29f, 16f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(3f, 16f), new Vector2(10f, 10f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(10f, 10f), new Vector2(22f, 10f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(22f, 10f), new Vector2(29f, 16f), 2f, mid);
-                    DrawIconDot(pixels, size, new Vector2(16f, 16f), 5f, bright);
-                    DrawIconDot(pixels, size, new Vector2(16f, 16f), 2f, new Color32(120, 160, 210, 255));
-                    break;
-                case "MashBox.Brush":
-                    DrawIconLine(pixels, size, new Vector2(25f, 26f), new Vector2(14f, 15f), 4.5f, mid);
-                    DrawIconLine(pixels, size, new Vector2(16f, 17f), new Vector2(11f, 12f), 6f, bright);
-                    DrawIconLine(pixels, size, new Vector2(10f, 12f), new Vector2(5f, 6f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(12f, 10f), new Vector2(7f, 5f), 2f, bright);
-                    break;
-                case "MashBox.Road":
-                    DrawIconLine(pixels, size, new Vector2(5f, 4f), new Vector2(11f, 28f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(27f, 4f), new Vector2(21f, 28f), 2.2f, bright);
-                    for (int y = 5; y < 28; y += 8)
-                        DrawIconLine(pixels, size, new Vector2(16f, y), new Vector2(16f, y + 4f), 2f, mid);
-                    break;
-                case "MashBox.Spline":
-                    DrawIconLine(pixels, size, new Vector2(4f, 22f), new Vector2(10f, 12f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(10f, 12f), new Vector2(18f, 20f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(18f, 20f), new Vector2(28f, 8f), 2.2f, bright);
-                    DrawIconDot(pixels, size, new Vector2(4f, 22f), 2.3f, mid);
-                    DrawIconDot(pixels, size, new Vector2(18f, 20f), 2.3f, mid);
-                    DrawIconDot(pixels, size, new Vector2(28f, 8f), 2.3f, mid);
-                    break;
-                case "MashBox.SplineEdit":
-                    DrawIconLine(pixels, size, new Vector2(4f, 22f), new Vector2(11f, 12f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(11f, 12f), new Vector2(20f, 19f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(20f, 19f), new Vector2(28f, 9f), 2.2f, bright);
-                    DrawIconDot(pixels, size, new Vector2(11f, 12f), 3.2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(11f, 6f), new Vector2(11f, 18f), 1.8f, bright);
-                    DrawIconLine(pixels, size, new Vector2(5f, 12f), new Vector2(17f, 12f), 1.8f, bright);
-                    break;
-                case "MashBox.NewSpline":
-                    DrawIconLine(pixels, size, new Vector2(4f, 22f), new Vector2(10f, 13f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(10f, 13f), new Vector2(18f, 19f), 2.2f, bright);
-                    DrawIconDot(pixels, size, new Vector2(4f, 22f), 2.2f, mid);
-                    DrawIconDot(pixels, size, new Vector2(10f, 13f), 2.2f, mid);
-                    DrawIconDot(pixels, size, new Vector2(18f, 19f), 2.2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(25f, 8f), new Vector2(25f, 20f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(19f, 14f), new Vector2(31f, 14f), 2.4f, bright);
-                    break;
-                case "MashBox.Terrain":
-                    DrawIconLine(pixels, size, new Vector2(3f, 7f), new Vector2(11f, 21f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(11f, 21f), new Vector2(16f, 14f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(16f, 14f), new Vector2(22f, 25f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(22f, 25f), new Vector2(29f, 7f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(3f, 7f), new Vector2(29f, 7f), 2f, mid);
-                    break;
-                case "MashBox.Decor":
-                    DrawIconLine(pixels, size, new Vector2(16f, 5f), new Vector2(16f, 24f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(16f, 17f), new Vector2(8f, 22f), 3f, mid);
-                    DrawIconLine(pixels, size, new Vector2(16f, 14f), new Vector2(24f, 19f), 3f, mid);
-                    DrawIconLine(pixels, size, new Vector2(7f, 5f), new Vector2(25f, 5f), 2f, bright);
-                    break;
-                case "MashBox.VertexPaint":
-                    DrawIconLine(pixels, size, new Vector2(25f, 26f), new Vector2(14f, 15f), 4f, mid);
-                    DrawIconLine(pixels, size, new Vector2(14f, 15f), new Vector2(8f, 9f), 4.8f, bright);
-                    DrawIconDot(pixels, size, new Vector2(7f, 24f), 2f, bright);
-                    DrawIconDot(pixels, size, new Vector2(14f, 26f), 2f, bright);
-                    DrawIconDot(pixels, size, new Vector2(6f, 16f), 2f, bright);
-                    break;
-                case "MashBox.Splat":
-                    DrawIconLine(pixels, size, new Vector2(16f, 27f), new Vector2(8f, 13f), 2.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(16f, 27f), new Vector2(24f, 13f), 2.5f, bright);
-                    DrawIconDot(pixels, size, new Vector2(16f, 12f), 8f, mid);
-                    DrawIconDot(pixels, size, new Vector2(16f, 13f), 5.5f, bright);
-                    break;
-                case "MashBox.Loft":
-                    DrawIconLine(pixels, size, new Vector2(4f, 24f), new Vector2(12f, 15f), 2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(12f, 15f), new Vector2(28f, 20f), 2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(4f, 17f), new Vector2(12f, 8f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(12f, 8f), new Vector2(28f, 13f), 2f, mid);
-                    break;
-                case "MashBox.UV":
-                    DrawIconLine(pixels, size, new Vector2(5f, 5f), new Vector2(27f, 5f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(27f, 5f), new Vector2(27f, 27f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(27f, 27f), new Vector2(5f, 27f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(5f, 27f), new Vector2(5f, 5f), 2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(5f, 20f), new Vector2(14f, 11f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(14f, 11f), new Vector2(27f, 18f), 2.2f, bright);
-                    break;
-                case "MashBox.Sculpt":
-                    DrawIconLine(pixels, size, new Vector2(24f, 25f), new Vector2(18f, 19f), 6f, mid);
-                    DrawIconLine(pixels, size, new Vector2(18f, 19f), new Vector2(8f, 9f), 3.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(5f, 10f), new Vector2(10f, 5f), 2.2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(20f, 28f), new Vector2(28f, 20f), 2f, mid);
-                    break;
-                case "MashBox.Displace":
-                    DrawIconLine(pixels, size, new Vector2(16f, 5f), new Vector2(16f, 27f), 2.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(16f, 27f), new Vector2(11f, 21f), 2.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(16f, 27f), new Vector2(21f, 21f), 2.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(5f, 8f), new Vector2(27f, 8f), 2.5f, mid);
-                    break;
-                case "MashBox.Smooth":
-                    DrawIconLine(pixels, size, new Vector2(3f, 12f), new Vector2(9f, 20f), 2.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(9f, 20f), new Vector2(16f, 12f), 2.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(16f, 12f), new Vector2(23f, 20f), 2.5f, bright);
-                    DrawIconLine(pixels, size, new Vector2(23f, 20f), new Vector2(29f, 12f), 2.5f, bright);
-                    break;
-                case "MashBox.Flatten":
-                    DrawIconLine(pixels, size, new Vector2(4f, 9f), new Vector2(28f, 9f), 3f, bright);
-                    DrawIconLine(pixels, size, new Vector2(10f, 27f), new Vector2(10f, 15f), 2.3f, mid);
-                    DrawIconLine(pixels, size, new Vector2(22f, 27f), new Vector2(22f, 15f), 2.3f, mid);
-                    DrawIconLine(pixels, size, new Vector2(10f, 15f), new Vector2(7f, 19f), 2.3f, mid);
-                    DrawIconLine(pixels, size, new Vector2(22f, 15f), new Vector2(25f, 19f), 2.3f, mid);
-                    break;
-                case "MashBox.SeamFit":
-                    // Two surface profiles meeting at a shared vertex, with a
-                    // lift arrow from the terrain toward the loft shoulder.
-                    DrawIconLine(pixels, size, new Vector2(3f, 24f), new Vector2(12f, 24f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(12f, 24f), new Vector2(20f, 16f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(20f, 16f), new Vector2(29f, 16f), 2.4f, bright);
-                    DrawIconLine(pixels, size, new Vector2(3f, 6f), new Vector2(11f, 9f), 2.2f, mid);
-                    DrawIconLine(pixels, size, new Vector2(11f, 9f), new Vector2(20f, 16f), 2.2f, mid);
-                    DrawIconDot(pixels, size, new Vector2(20f, 16f), 2.8f, bright);
-                    DrawIconLine(pixels, size, new Vector2(7f, 12f), new Vector2(7f, 20f), 2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(7f, 20f), new Vector2(4f, 17f), 2f, bright);
-                    DrawIconLine(pixels, size, new Vector2(7f, 20f), new Vector2(10f, 17f), 2f, bright);
-                    break;
-            }
-
-            icon.SetPixels32(pixels);
-            icon.Apply(false, true);
-            return icon;
-        }
-
-        static void DrawIconLine(
-            Color32[] pixels,
-            int textureSize,
-            Vector2 start,
-            Vector2 end,
-            float width,
-            Color32 color)
-        {
-            Vector2 segment = end - start;
-            float segmentLengthSquared = segment.sqrMagnitude;
-            float radius = width * 0.5f;
-            for (int y = 0; y < textureSize; y++)
-            {
-                for (int x = 0; x < textureSize; x++)
-                {
-                    Vector2 point = new Vector2(x + 0.5f, y + 0.5f);
-                    float amount = segmentLengthSquared > 0f
-                        ? Mathf.Clamp01(Vector2.Dot(point - start, segment) / segmentLengthSquared)
-                        : 0f;
-                    if (Vector2.Distance(point, start + segment * amount) <= radius)
-                        pixels[y * textureSize + x] = color;
-                }
-            }
-        }
-
-        static void DrawIconDot(
-            Color32[] pixels,
-            int textureSize,
-            Vector2 center,
-            float radius,
-            Color32 color)
-        {
-            for (int y = 0; y < textureSize; y++)
-            {
-                for (int x = 0; x < textureSize; x++)
-                {
-                    Vector2 point = new Vector2(x + 0.5f, y + 0.5f);
-                    if (Vector2.Distance(point, center) <= radius)
-                        pixels[y * textureSize + x] = color;
-                }
-            }
+            return MappyPanelVisuals.Icon(iconName);
         }
 
         internal static void ApplyModeToolSelection(VisualElement element, bool selected)
@@ -337,7 +131,7 @@ namespace MashBoxSDK.MapTools
     public sealed class MBGameplayGizmoOverlay : ToolbarOverlay
     {
         internal const float PanelWidth = 220f;
-        internal const float RowHeadingWidth = 72f;
+        internal const float RowHeadingWidth = MappyPanelVisuals.HeadingWidth;
 
         static Texture2D s_CollapsedIcon;
 
@@ -374,7 +168,7 @@ namespace MashBoxSDK.MapTools
 
         public override VisualElement CreatePanelContent()
         {
-            const float compactWidth = 240f;
+            const float compactWidth = MappyPanelVisuals.PanelWidth;
             var scroll = new ScrollView(ScrollViewMode.Vertical);
             scroll.style.width = compactWidth;
             scroll.style.minWidth = compactWidth;
@@ -633,7 +427,12 @@ namespace MashBoxSDK.MapTools
             });
             syncEditingVisibility();
 
-            return scroll;
+            // Keep receiver state visible even when the tool controls are scrolled down.
+            var panel = new VisualElement();
+            panel.style.width = compactWidth;
+            panel.Add(MapEditReceiverWindow.CreateStatusIndicator());
+            panel.Add(scroll);
+            return panel;
         }
 
         static Foldout CompactFoldout(string title, string key, bool defaultValue)
@@ -652,7 +451,7 @@ namespace MashBoxSDK.MapTools
             row.style.width = Length.Percent(100f);
             row.style.alignSelf = Align.Stretch;
             row.style.height = new StyleLength(StyleKeyword.Auto);
-            row.style.minHeight = 22f;
+            row.style.minHeight = MappyPanelVisuals.RowHeight;
             row.style.flexShrink = 0f;
             row.style.alignItems = Align.FlexStart;
             var heading = new Label(label);
@@ -1221,7 +1020,7 @@ namespace MashBoxSDK.MapTools
 
     public sealed class MBCurrentToolLabel : Label
     {
-        static readonly Color CurrentToolColor = new Color(0.9f, 0.58f, 0.24f, 1f);
+        static readonly Color CurrentToolColor = MappyPanelVisuals.CurrentToolColor;
 
         public MBCurrentToolLabel()
         {
@@ -1284,12 +1083,12 @@ namespace MashBoxSDK.MapTools
             text = string.Empty;
             icon = MBEditorToolVisuals.GetToolbarIcon("MashBox.ActiveEditing");
             tooltip = "Enable automatic MashBox Scene editing and selection behavior for the current mode.";
-            style.width = 28f;
-            style.minWidth = 28f;
-            style.maxWidth = 28f;
-            style.height = 28f;
-            style.minHeight = 28f;
-            style.maxHeight = 28f;
+            style.width = MappyPanelVisuals.IconSize;
+            style.minWidth = MappyPanelVisuals.IconSize;
+            style.maxWidth = MappyPanelVisuals.IconSize;
+            style.height = MappyPanelVisuals.IconSize;
+            style.minHeight = MappyPanelVisuals.IconSize;
+            style.maxHeight = MappyPanelVisuals.IconSize;
             style.flexShrink = 0f;
             value = MBEditorToolState.ActiveEditing;
             this.RegisterValueChangedCallback(changeEvent => MBEditorToolState.ActiveEditing = changeEvent.newValue);
@@ -1309,7 +1108,7 @@ namespace MashBoxSDK.MapTools
         {
             if (MBEditorToolState.ActiveEditing)
             {
-                style.backgroundColor = new StyleColor(new Color(0.12f, 0.48f, 0.2f, 0.95f));
+                style.backgroundColor = new StyleColor(MappyPanelVisuals.EditingSelection);
                 style.color = new StyleColor(Color.white);
             }
             else
@@ -1753,12 +1552,12 @@ namespace MashBoxSDK.MapTools
         {
             text = string.Empty;
             icon = MBEditorToolVisuals.GetToolbarIcon("MashBox.NewSpline");
-            style.width = 28f;
-            style.minWidth = 28f;
-            style.maxWidth = 28f;
-            style.height = 28f;
-            style.minHeight = 28f;
-            style.maxHeight = 28f;
+            style.width = MappyPanelVisuals.IconSize;
+            style.minWidth = MappyPanelVisuals.IconSize;
+            style.maxWidth = MappyPanelVisuals.IconSize;
+            style.height = MappyPanelVisuals.IconSize;
+            style.minHeight = MappyPanelVisuals.IconSize;
+            style.maxHeight = MappyPanelVisuals.IconSize;
             style.flexShrink = 0f;
         }
     }
@@ -2106,7 +1905,7 @@ namespace MashBoxSDK.MapTools
 
     public sealed class MBModeControlsLabel : VisualElement
     {
-        static readonly Color ShortcutColor = new Color(0.35f, 0.67f, 0.96f, 1f);
+        static readonly Color ShortcutColor = MappyPanelVisuals.ShortcutColor;
 
         public MBModeControlsLabel()
         {
@@ -2300,12 +2099,12 @@ namespace MashBoxSDK.MapTools
             text = string.Empty;
             icon = MBEditorToolVisuals.GetToolbarIcon("MashBox.GameplayGizmos");
             tooltip = "Show or hide MashBox race and gameplay gizmos in the Scene view.";
-            style.width = 28f;
-            style.minWidth = 28f;
-            style.maxWidth = 28f;
-            style.height = 28f;
-            style.minHeight = 28f;
-            style.maxHeight = 28f;
+            style.width = MappyPanelVisuals.IconSize;
+            style.minWidth = MappyPanelVisuals.IconSize;
+            style.maxWidth = MappyPanelVisuals.IconSize;
+            style.height = MappyPanelVisuals.IconSize;
+            style.minHeight = MappyPanelVisuals.IconSize;
+            style.maxHeight = MappyPanelVisuals.IconSize;
             style.flexShrink = 0f;
             value = MBGameplayGizmoVisibility.Visible;
 
