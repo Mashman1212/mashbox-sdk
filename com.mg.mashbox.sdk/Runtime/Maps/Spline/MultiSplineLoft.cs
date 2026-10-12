@@ -981,6 +981,26 @@ namespace MashBoxSDK.Maps.Spline
             return boundary.Count >= 2;
         }
 
+        internal int GetShoulderSeamVertex(LoftShoulderModifier.Edge edge, int path, int shell = -1)
+        {
+            // Flat faces deliberately have independent vertices/normals per triangle.
+            if (m_NormalMode == NormalMode.Face)
+                return -1;
+
+            int cross = edge == LoftShoulderModifier.Edge.Left ? 0
+                : edge == LoftShoulderModifier.Edge.Right ? m_CrossSampleCount - 1 : path;
+            int along = edge == LoftShoulderModifier.Edge.Start ? 0
+                : edge == LoftShoulderModifier.Edge.Finish ? m_AlongSampleCount - 1 : path;
+            int source = VertexIndex(cross, along);
+            if (shell >= 0 && m_GeneratePackedUv2)
+            {
+                long key = ((long)shell << 32) | (uint)source;
+                if (m_PackedUv2SeamVertices.TryGetValue(key, out int packed))
+                    return packed;
+            }
+            return source;
+        }
+
         public bool TryGetShoulderSourceKnotCount(LoftShoulderModifier.Edge edge, out int knotCount)
         {
             knotCount = 0;

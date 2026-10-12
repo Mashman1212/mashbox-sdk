@@ -20,7 +20,8 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.HelpBox(
                     "Create a lift, then position Loading Bay (Bottom), Loading Bay (Top), and the towers in the Scene view. " +
                     "Bay connections follow automatically. Select Chairlift Cable System to set chair count, spacing and sag; " +
-                    "select the lift root to set speed and direction.",
+                    "select the lift root to set speed and direction. Duplicate towers under Tower Root with Ctrl+D; " +
+                    "their hierarchy order defines the uphill route, with the return cable connected in reverse.",
                     MessageType.None);
                 var scene = SceneManager.GetActiveScene();
                 using (new EditorGUI.DisabledScope(Application.isPlaying || !scene.IsValid() || !scene.isLoaded))

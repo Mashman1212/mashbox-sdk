@@ -9,6 +9,8 @@ namespace MashBoxSDK.Maps
     public sealed class MBChairliftPath : MonoBehaviour
     {
         public bool loadingBay;
+        [Tooltip("Connect tower points in hierarchy order. Turn off for a manually authored route.")]
+        public bool autoConnectTowers = true;
         public bool closedLoop = true;
         public bool catmullRom;
         [Min(2)] public int samplesPerSegment = 16;
@@ -27,6 +29,7 @@ namespace MashBoxSDK.Maps
 
         public bool Validate(out string error)
         {
+            if (Application.isPlaying) MBChairliftTowerRouting.Refresh(this);
             if (points == null || points.Count < (closedLoop ? 3 : 2))
             { error = name + ": not enough cable points."; return false; }
             var owner = GetComponentInParent<MBChairlift>();

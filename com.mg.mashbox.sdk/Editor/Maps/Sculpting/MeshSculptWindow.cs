@@ -48,6 +48,7 @@ namespace MashBoxSDK.MapTools
         [SerializeField] float m_SeamMinimumRise = 0.02f;
         [SerializeField] bool m_SeamHeightOnly;
         readonly Dictionary<MeshSculptModifier, MeshSeamFitBrush> m_SeamBrushes = new Dictionary<MeshSculptModifier, MeshSeamFitBrush>();
+        readonly MeshSeamFitBrush.SurfaceCache m_SeamSurfaces = new MeshSeamFitBrush.SurfaceCache();
         MGTerrain[] m_SeamTerrains;
         string m_SeamStatus;
         bool IsSeamFit => m_Mode == MeshSculptModifier.SculptMode.SeamFit;
@@ -118,6 +119,7 @@ namespace MashBoxSDK.MapTools
 
         public void DeactivateSceneTool()
         {
+            m_SeamSurfaces.Clear();
             // StopStroke releases Unity's global IMGUI hot control. Embedded hosts
             // call this for every inactive authoring tool, so repeating cleanup
             // here would cancel unrelated buttons between MouseDown and MouseUp.
@@ -485,6 +487,7 @@ namespace MashBoxSDK.MapTools
 
         void ClearActiveModifier()
         {
+            m_SeamSurfaces.Clear();
             if (m_Modifier != null)
             {
                 if (m_SceneToolActive)
@@ -1291,7 +1294,7 @@ namespace MashBoxSDK.MapTools
                     else foreach (MultiSplineLoft loft in Object.FindObjectsByType<MultiSplineLoft>(FindObjectsSortMode.InstanceID))
                         candidates.Add(loft.GetComponent<MeshFilter>());
                     seamBrush = new MeshSeamFitBrush(candidates, m_Modifier.Target,
-                        editingLoft ? m_LoftSeamVerticesOnly : m_SeamVerticesOnly, editingLoft);
+                        editingLoft ? m_LoftSeamVerticesOnly : m_SeamVerticesOnly, editingLoft, m_SeamSurfaces);
                     m_SeamBrushes.Add(m_Modifier, seamBrush);
                 }
                 stroke.seamVertexCount = sourceMesh.vertexCount;
@@ -1471,6 +1474,7 @@ namespace MashBoxSDK.MapTools
 
         void OnUndoRedo()
         {
+            m_SeamSurfaces.Clear();
             m_MeshStampBrush?.InvalidatePreview();
             m_PrefabStamp?.InvalidatePreview();
             // Mesh replay and collider cooking are handled only for components

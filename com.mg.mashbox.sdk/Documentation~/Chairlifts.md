@@ -13,3 +13,5 @@ ProjectX resolves the proxy's definitionId through a ChairliftRuntimeDefinition 
 The previous two-tower starter is not automatically modified. Create a new lift to use the complete template. Existing physical Tiger Chair instances can be converted using **Convert Selected Legacy Lift**, with Undo support.
 
 ProjectX provides **MashBox → Maps → Chairlifts → Validate Loading Bay Integration** to check creation, game prefab placement, transfers and route continuity after moving the bays. **Rebuild Default Station Assets from Tiger Chair** regenerates the default physical bay prefabs and SDK template from the source Tiger Chair prefab.
+
+Duplicate a complete tower under Tower Root with Ctrl+D, then position it. Tower hierarchy order defines the uphill route; the return cable follows the reverse order. Reorder tower siblings to insert a tower elsewhere along the lift. Duplicate, delete and Undo/Redo automatically refresh the cable references. Disable Auto Connect Towers on the main path for a manually authored route.

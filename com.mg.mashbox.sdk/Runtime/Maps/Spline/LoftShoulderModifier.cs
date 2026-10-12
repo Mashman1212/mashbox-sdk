@@ -72,6 +72,7 @@ namespace MashBoxSDK.Maps.Spline
             public Material material;
             public bool generateCollider;
             public int[] outerVertexIndices;
+            public int[] seamLoftVertexIndices;
         }
 
         readonly List<int> m_CombinedOuterVertexIndices = new List<int>();
@@ -215,12 +216,14 @@ namespace MashBoxSDK.Maps.Spline
                 pathDistances,
                 edgeSpline,
                 usesSharedSideProfile,
-                out int[] packedOuterVertexIndices);
+                out int[] packedOuterVertexIndices,
+                out int[] seamLoftVertexIndices);
             generatedShoulders.Add(new GeneratedShoulder
             {
                 mesh = mesh,
                 material = profile.materialOverride != null ? profile.materialOverride : m_LayeredBankMaterial,
                 generateCollider = profile.generateCollider,
+                seamLoftVertexIndices = seamLoftVertexIndices,
                 outerVertexIndices = packedOuterVertexIndices
                     ?? BuildOuterVertexIndices(boundary.Count, Mathf.Max(1, profile.segments) + 1)
             });
@@ -288,6 +291,25 @@ namespace MashBoxSDK.Maps.Spline
 
             loftMesh.indexFormat = totalVertexCount > ushort.MaxValue ? IndexFormat.UInt32 : IndexFormat.UInt16;
             loftMesh.CombineMeshes(combine, false, false, false);
+            // Share the actual loft vertices across the submesh boundary. Matching
+            // positions alone leaves normals, UVs and displacement masks independent.
+            // Keep unused shoulder entries so saved sculpt/paint vertex indices remain stable.
+            vertexOffset = baseMesh.vertexCount;
+            for (int index = 0; index < shoulders.Count; index++)
+            {
+                GeneratedShoulder shoulder = shoulders[index];
+                int[] triangles = loftMesh.GetTriangles(index + 1);
+                for (int triangle = 0; triangle < triangles.Length; triangle++)
+                {
+                    int localVertex = triangles[triangle] - vertexOffset;
+                    int seamVertex = shoulder.seamLoftVertexIndices[localVertex];
+                    if (seamVertex >= 0)
+                        triangles[triangle] = seamVertex;
+                }
+                loftMesh.SetTriangles(triangles, index + 1, false);
+                vertexOffset += shoulder.mesh.vertexCount;
+            }
+            loftMesh.RecalculateTangents();
             loftMesh.name = $"{m_Loft.gameObject.name} Loft";
             loftMesh.RecalculateBounds();
             loftRenderer.sharedMaterials = materials;
@@ -371,12 +393,17 @@ namespace MashBoxSDK.Maps.Spline
             IReadOnlyList<float> pathDistances,
             LoftShoulderEdgeSpline edgeSpline,
             bool usesSharedSideProfile,
-            out int[] packedOuterVertexIndices)
+            out int[] packedOuterVertexIndices,
+            out int[] seamLoftVertexIndices)
         {
             packedOuterVertexIndices = null;
             int profileSegments = Mathf.Max(1, profile.segments);
             int profilePoints = profileSegments + 1;
             int pathCount = boundary.Count;
+            seamLoftVertexIndices = new int[pathCount * profilePoints];
+            for (int vertex = 0; vertex < seamLoftVertexIndices.Length; vertex++)
+                seamLoftVertexIndices[vertex] = vertex % profilePoints == 0
+                    ? m_Loft.GetShoulderSeamVertex(edge, vertex / profilePoints) : -1;
             var vertices = new List<Vector3>(pathCount * profilePoints);
             var uvs = new List<Vector2>(pathCount * profilePoints);
             var triangles = new List<int>((pathCount - 1) * profileSegments * 6);
@@ -433,7 +460,7 @@ namespace MashBoxSDK.Maps.Spline
                             * highSideBlend;
                     }
 
-                    vertices.Add(
+                    vertices.Add(across == 0 ? boundary[path] :
                         boundary[path]
                         + outward * (profile.width * t + outwardErosion)
                         + localUp * (height + erosion)
@@ -521,7 +548,8 @@ namespace MashBoxSDK.Maps.Spline
                         edge,
                         pathDistances,
                         pathCount,
-                        profilePoints);
+                        profilePoints,
+                        out seamLoftVertexIndices);
                 }
                 else
                 {
@@ -539,7 +567,8 @@ namespace MashBoxSDK.Maps.Spline
             Edge edge,
             IReadOnlyList<float> pathDistances,
             int pathCount,
-            int profilePoints)
+            int profilePoints,
+            out int[] seamLoftVertexIndices)
         {
             Vector3[] sourceVertices = mesh.vertices;
             Vector3[] sourceNormals = mesh.normals;
@@ -570,6 +599,7 @@ namespace MashBoxSDK.Maps.Spline
             var triangles = new List<int>(sourceTriangles.Length);
             var remappedVertices = new Dictionary<long, int>();
             var outerVertices = new HashSet<int>();
+            var seamVertices = new List<int>();
 
             for (int triangle = 0; triangle + 2 < sourceTriangles.Length; triangle += 3)
             {
@@ -602,6 +632,7 @@ namespace MashBoxSDK.Maps.Spline
             mesh.SetColors(colors);
             mesh.SetTriangles(triangles, 0, true);
             mesh.RecalculateBounds();
+            seamLoftVertexIndices = seamVertices.ToArray();
             return new List<int>(outerVertices).ToArray();
 
             int GetPackedShoulderVertex(int sourceVertex, int shell)
@@ -615,6 +646,8 @@ namespace MashBoxSDK.Maps.Spline
                 int remapped = vertices.Count;
                 remappedVertices.Add(key, remapped);
                 vertices.Add(sourceVertices[sourceVertex]);
+                seamVertices.Add(sourceVertex % profilePoints == 0
+                    ? m_Loft.GetShoulderSeamVertex(edge, path, shell) : -1);
                 normals.Add(sourceVertex < sourceNormals.Length ? sourceNormals[sourceVertex] : Vector3.up);
                 if (sourceTangents.Length == sourceVertices.Length)
                     tangents.Add(sourceTangents[sourceVertex]);

@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace MashBoxSDK.MapTools
 {
-    // One cache per drag. Read render meshes directly: loft colliders may use
+    // Read render meshes directly: loft colliders may use
     // different tessellation, and a target does not need a collider to be fitted.
     [InitializeOnLoad]
     internal sealed class MeshSeamFitBrush
@@ -45,15 +45,38 @@ namespace MashBoxSDK.MapTools
         }
 
         readonly List<MeshFilter> targets = new List<MeshFilter>();
-        readonly Dictionary<MeshFilter, Surface> surfaces = new Dictionary<MeshFilter, Surface>();
+        readonly SurfaceCache surfaces;
         readonly bool verticesOnly;
         readonly List<Vector3> sourceVertices = new List<Vector3>();
         readonly List<Surface> nearby = new List<Surface>();
         readonly List<MeshSculptModifier.SeamVertex> samples = new List<MeshSculptModifier.SeamVertex>();
 
-        internal MeshSeamFitBrush(IEnumerable<MeshFilter> candidates, MeshFilter terrain, bool verticesOnly, bool allowTerrainTargets = false)
+        // Shared by the active brush window, across tiles and mouse-up. A new drag
+        // discovers candidates again, but unchanged target geometry needs no rebuild.
+        internal sealed class SurfaceCache
+        {
+            readonly Dictionary<(MeshFilter, bool), Surface> entries = new Dictionary<(MeshFilter, bool), Surface>();
+            static readonly Unity.Profiling.ProfilerMarker BuildMarker = new Unity.Profiling.ProfilerMarker("MeshSculpt.SeamFit.BuildTarget");
+            internal int BuildCount { get; private set; }
+            internal void Clear() => entries.Clear();
+            internal Surface Get(MeshFilter filter, bool verticesOnly)
+            {
+                var key = (filter, verticesOnly);
+                if (!entries.TryGetValue(key, out var surface) || !surface.IsCurrent(filter))
+                {
+                    using var profile = BuildMarker.Auto();
+                    entries[key] = surface = new Surface(filter, verticesOnly);
+                    BuildCount++;
+                }
+                return surface;
+            }
+        }
+
+        internal MeshSeamFitBrush(IEnumerable<MeshFilter> candidates, MeshFilter terrain, bool verticesOnly,
+            bool allowTerrainTargets = false, SurfaceCache surfaceCache = null)
         {
             this.verticesOnly = verticesOnly;
+            surfaces = surfaceCache ?? new SurfaceCache();
             var seen = new HashSet<MeshFilter>();
             var sourceLoft = terrain.GetComponentInParent<MultiSplineLoft>();
             foreach (MeshFilter candidate in candidates)
@@ -84,12 +107,7 @@ namespace MashBoxSDK.MapTools
                 MeshRenderer renderer = target.GetComponent<MeshRenderer>();
                 if (renderer == null || !renderer.enabled || !target.gameObject.activeInHierarchy
                     || renderer.bounds.SqrDistance(center) > reachSquared) continue;
-                if (!surfaces.TryGetValue(target, out Surface surface))
-                {
-                    surface = new Surface(target, verticesOnly);
-                    surfaces.Add(target, surface);
-                }
-                nearby.Add(surface);
+                nearby.Add(surfaces.Get(target, verticesOnly));
             }
             if (nearby.Count == 0) return samples.ToArray();
 
@@ -161,7 +179,7 @@ namespace MashBoxSDK.MapTools
             return samples.ToArray();
         }
 
-        sealed class Surface
+        internal sealed class Surface
         {
             struct Primitive
             {
@@ -178,11 +196,28 @@ namespace MashBoxSDK.MapTools
             readonly Primitive[] primitives;
             readonly Node root;
             readonly bool verticesOnly;
+            readonly Mesh source;
+            readonly Matrix4x4 sourceMatrix;
+            readonly int dirtyCount, vertexCount, subMeshCount, generationVersion;
+            readonly MultiSplineLoft loft;
+
+            internal bool IsCurrent(MeshFilter filter) => filter.sharedMesh == source
+                && filter.transform.localToWorldMatrix == sourceMatrix
+                && source.vertexCount == vertexCount && source.subMeshCount == subMeshCount
+                && EditorUtility.GetDirtyCount(source) == dirtyCount
+                && (loft == null || loft.GenerationVersion == generationVersion);
 
             internal Surface(MeshFilter filter, bool verticesOnly)
             {
                 this.verticesOnly = verticesOnly;
                 Mesh mesh = filter.sharedMesh;
+                source = mesh;
+                sourceMatrix = filter.transform.localToWorldMatrix;
+                dirtyCount = EditorUtility.GetDirtyCount(mesh);
+                vertexCount = mesh.vertexCount;
+                subMeshCount = mesh.subMeshCount;
+                loft = filter.GetComponentInParent<MultiSplineLoft>();
+                generationVersion = loft != null ? loft.GenerationVersion : -1;
                 vertices = mesh.vertices;
                 normals = mesh.normals;
                 Matrix4x4 matrix = filter.transform.localToWorldMatrix;

@@ -16,6 +16,7 @@ namespace MashBoxSDK.Maps.Spline
 
         SplineContainer m_ActiveSpline;
         UnityEditor.Editor m_SplineInspector;
+        SplinePickCache m_PickCache;
         bool m_SceneToolActive;
         bool m_ChangingSelection;
         bool m_InsertHeld;
@@ -62,6 +63,7 @@ namespace MashBoxSDK.Maps.Spline
                 return;
 
             m_SceneToolActive = true;
+            m_PickCache = new SplinePickCache();
             Selection.selectionChanged += OnSelectionChanged;
             SceneView.beforeSceneGui += OnBeforeSceneGui;
             SceneView.duringSceneGui += OnSceneGui;
@@ -70,6 +72,8 @@ namespace MashBoxSDK.Maps.Spline
 
         public void DeactivateSceneTool()
         {
+            m_PickCache?.Dispose();
+            m_PickCache = null;
             if (!m_SceneToolActive)
             {
                 if (s_ActiveSceneToolOwner == this)
@@ -234,11 +238,15 @@ namespace MashBoxSDK.Maps.Spline
                 return;
 
             int controlId = GUIUtility.GetControlID(FocusType.Passive);
+            // Keep IDs stable during a drag, but do no picking until the mouse is
+            // back over this view and no other handle owns the gesture.
+            if (GUIUtility.hotControl != 0 || EditorWindow.mouseOverWindow != sceneView)
+                return;
             if (current.type == EventType.Layout)
             {
                 // Unity's rectangle selector must keep empty-space drags.
                 // Only compete for clicks on a different spline container.
-                if (TryFindSplineAtMouse(current.mousePosition, out SplineContainer hovered)
+                if (TryFindSplineAtMouse(sceneView, current.mousePosition, out SplineContainer hovered)
                     && hovered != m_ActiveSpline)
                     HandleUtility.AddControl(controlId, 0f);
                 return;
@@ -248,7 +256,7 @@ namespace MashBoxSDK.Maps.Spline
                 || HandleUtility.nearestControl != controlId)
                 return;
 
-            if (!TryFindSplineAtMouse(current.mousePosition, out SplineContainer spline))
+            if (!TryFindSplineAtMouse(sceneView, current.mousePosition, out SplineContainer spline))
                 return;
 
             SetActiveSpline(spline, select: false);
@@ -483,51 +491,10 @@ namespace MashBoxSDK.Maps.Spline
             current.Use();
         }
 
-        static bool TryFindSplineAtMouse(Vector2 mousePosition, out SplineContainer closestSpline)
+        bool TryFindSplineAtMouse(SceneView view, Vector2 mousePosition, out SplineContainer closestSpline)
         {
-            const float pickRadius = 14f;
-            float closestDistance = pickRadius * pickRadius;
             closestSpline = null;
-
-            foreach (SplineContainer container in Resources.FindObjectsOfTypeAll<SplineContainer>())
-            {
-                if (container == null || EditorUtility.IsPersistent(container) || !container.gameObject.scene.IsValid())
-                    continue;
-
-                for (int splineIndex = 0; splineIndex < container.Splines.Count; splineIndex++)
-                {
-                    var spline = container.Splines[splineIndex];
-                    if (spline == null || spline.Count == 0)
-                        continue;
-
-                    int sampleCount = Mathf.Max(16, spline.Count * 12);
-                    Vector2 previous = HandleUtility.WorldToGUIPoint(container.EvaluatePosition(splineIndex, 0f));
-                    for (int sample = 1; sample <= sampleCount; sample++)
-                    {
-                        Vector2 current = HandleUtility.WorldToGUIPoint(container.EvaluatePosition(splineIndex, sample / (float)sampleCount));
-                        float distance = DistanceToSegmentSquared(mousePosition, previous, current);
-                        if (distance < closestDistance)
-                        {
-                            closestDistance = distance;
-                            closestSpline = container;
-                        }
-                        previous = current;
-                    }
-                }
-            }
-
-            return closestSpline != null;
-        }
-
-        static float DistanceToSegmentSquared(Vector2 point, Vector2 start, Vector2 end)
-        {
-            Vector2 segment = end - start;
-            float lengthSquared = segment.sqrMagnitude;
-            if (lengthSquared <= Mathf.Epsilon)
-                return (point - start).sqrMagnitude;
-
-            float t = Mathf.Clamp01(Vector2.Dot(point - start, segment) / lengthSquared);
-            return (point - (start + segment * t)).sqrMagnitude;
+            return m_PickCache != null && m_PickCache.TryPick(view.camera, mousePosition, out closestSpline);
         }
 
         void UseSplineFromSelection(bool activateMoveTool = false, bool selectOnlyThisSpline = false)

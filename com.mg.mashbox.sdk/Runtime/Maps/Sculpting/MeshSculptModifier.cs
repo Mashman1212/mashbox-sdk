@@ -190,7 +190,8 @@ namespace MashBoxSDK.Maps.Sculpting
                 ApplyStroke(directVertices, directMesh, m_TerrainStroke);
                 var terrain = m_Target.GetComponentInParent<MGTerrain>();
                 LastTerrainBrushInterior = terrain.SculptBordersUnchanged(m_DirectVertexReadback, directVertices)
-                    && m_TerrainStroke.mode != SculptMode.SeamFit && m_TerrainStroke.mode != SculptMode.MeshStamp;
+                    && m_TerrainStroke.mode != SculptMode.MeshStamp
+                    && !SeamNormalsTouchTerrainBorder(terrain, m_TerrainStroke, directMesh.vertexCount);
                 directMesh.vertices = directVertices;
                 terrain.RecalculateSculptNormals(LastTerrainBrushInterior);
                 directMesh.RecalculateBounds();
@@ -234,6 +235,19 @@ namespace MashBoxSDK.Maps.Sculpting
                 if (terrain != null && terrain.MeshFilter == m_Target)
                     terrain.NotifySurfaceMeshChanged();
             }
+        }
+
+        // Interior seam fits can use the same border-preserving preview as regular
+        // sculpting. A normal-only fit on the perimeter still needs a tile join.
+        static bool SeamNormalsTouchTerrainBorder(MGTerrain terrain, Stroke stroke, int vertexCount)
+        {
+            if (stroke.mode != SculptMode.SeamFit || stroke.seamVertexCount != vertexCount
+                || stroke.seamVertices == null) return false;
+            foreach (var sample in stroke.seamVertices)
+                if ((uint)sample.index < (uint)vertexCount && sample.normalWeight > 0f
+                    && sample.normal.sqrMagnitude >= 0.000001f && terrain.IsSculptBorderVertex(sample.index))
+                    return true;
+            return false;
         }
 
         void PublishLoftStrokePreview()

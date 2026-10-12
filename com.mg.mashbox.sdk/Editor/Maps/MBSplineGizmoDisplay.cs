@@ -86,9 +86,12 @@ namespace MashBoxSDK.MapTools
             if (ownsDrawing || GetCachedPositions == null
                 || !GizmoUtility.TryGetGizmoInfo(typeof(SplineContainer), out var info)) return;
             originalGizmoEnabled = info.gizmoEnabled;
-            if (!originalGizmoEnabled) return;
+            // The native flag can already be off (including after an interrupted
+            // reload). Mappy's Trail Network / Loft Splines switches still own
+            // those display layers; do not leave both drawers disabled.
             ownsDrawing = true;
-            GizmoUtility.SetGizmoEnabled(typeof(SplineContainer), false, false);
+            if (originalGizmoEnabled)
+                GizmoUtility.SetGizmoEnabled(typeof(SplineContainer), false, false);
             SceneView.RepaintAll();
         }
 
@@ -121,12 +124,15 @@ namespace MashBoxSDK.MapTools
                 return MBGameplayGizmoVisibility.TrailNetworkVisible;
             if (LoftSources.Contains(container) || container.GetComponentInParent<MultiSplineLoft>() != null)
                 return MBGameplayGizmoVisibility.LoftSplinesVisible;
-            return true;
+            return originalGizmoEnabled;
         }
 
         private static void DrawSplines(SceneView sceneView)
         {
             var current = Event.current;
+            // Annotation discovery can fail during the first delayed startup call.
+            // Retry when a Scene view is available instead of remaining blank.
+            if (!ownsDrawing) TakeOverDrawing();
             if (!ownsDrawing || !sceneView.drawGizmos || sceneView.camera == null || current == null) return;
             // Respect the user handing drawing back to Unity's Gizmos menu.
             if (GizmoUtility.TryGetGizmoInfo(typeof(SplineContainer), out var info) && info.gizmoEnabled) return;
@@ -161,7 +167,8 @@ namespace MashBoxSDK.MapTools
                     if (selected && splineTool) continue;
                     int control = GUIUtility.GetControlID(container.GetInstanceID(), FocusType.Passive);
                     var matrix = container.transform.localToWorldMatrix;
-                    Color drawColor = container.TryGetComponent<MBTrailSpline>(out _)
+                    bool trail = container.TryGetComponent<MBTrailSpline>(out _);
+                    Color drawColor = trail
                         ? MBTrailSpline.GizmoColor : selected ? Handles.selectedColor : splineColor;
                     // Allocate control IDs on every event so other Scene tools retain stable IDs
                     // during dragging, but only process curve geometry for drawing and hit testing.
@@ -174,7 +181,13 @@ namespace MashBoxSDK.MapTools
                             GetCachedPositions(spline, out var positions);
                             if (!IntersectsView(spline, positions, matrix)) continue;
                             if (current.type == EventType.Repaint)
-                                Handles.DrawPolyLine(positions);
+                            {
+                                // Trail guides often lie on/below displaced ground.
+                                // Keep their authoring overlay visible through the surface.
+                                Handles.zTest = trail ? CompareFunction.Always : CompareFunction.LessEqual;
+                                if (trail) Handles.DrawAAPolyLine(2f, positions);
+                                else Handles.DrawPolyLine(positions);
+                            }
                             else if ((current.type == EventType.Layout || current.type == EventType.MouseMove)
                                 && !authoringOwnsPicking && !SceneVisibilityManager.instance.IsPickingDisabled(go))
                             {
