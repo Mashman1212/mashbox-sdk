@@ -47,6 +47,9 @@ namespace MashBoxSDK.MapTools
         readonly List<MeshFilter> targets = new List<MeshFilter>();
         readonly Dictionary<MeshFilter, Surface> surfaces = new Dictionary<MeshFilter, Surface>();
         readonly bool verticesOnly;
+        readonly List<Vector3> sourceVertices = new List<Vector3>();
+        readonly List<Surface> nearby = new List<Surface>();
+        readonly List<MeshSculptModifier.SeamVertex> samples = new List<MeshSculptModifier.SeamVertex>();
 
         internal MeshSeamFitBrush(IEnumerable<MeshFilter> candidates, MeshFilter terrain, bool verticesOnly, bool allowTerrainTargets = false)
         {
@@ -71,9 +74,9 @@ namespace MashBoxSDK.MapTools
         internal MeshSculptModifier.SeamVertex[] Sample(MeshFilter terrain, Vector3 center,
             float radius, float threshold, float strength, float falloff, float normalBlend, bool heightOnly, float surfaceOffset = 0f, bool aboveOnly = false, float minimumRise = 0.02f, Mesh sourceMesh = null)
         {
-            var samples = new List<MeshSculptModifier.SeamVertex>();
-            if (radius <= 0f || threshold <= 0f) return samples.ToArray();
-            var nearby = new List<Surface>();
+            samples.Clear();
+            nearby.Clear();
+            if (radius <= 0f || threshold <= 0f) return Array.Empty<MeshSculptModifier.SeamVertex>();
             float reachSquared = (radius + threshold) * (radius + threshold);
             foreach (MeshFilter target in targets)
             {
@@ -91,11 +94,15 @@ namespace MashBoxSDK.MapTools
             if (nearby.Count == 0) return samples.ToArray();
 
             Transform transform = terrain.transform;
-            Vector3[] vertices = (sourceMesh != null ? sourceMesh : terrain.sharedMesh).vertices;
+            (sourceMesh != null ? sourceMesh : terrain.sharedMesh).GetVertices(sourceVertices);
+            var vertices = sourceVertices;
+            Matrix4x4 localToWorld = transform.localToWorldMatrix;
+            Matrix4x4 worldToLocal = transform.worldToLocalMatrix;
+            Matrix4x4 normalToLocal = localToWorld.transpose;
             float thresholdSquared = threshold * threshold;
-            for (int i = 0; i < vertices.Length; i++)
+            for (int i = 0; i < vertices.Count; i++)
             {
-                Vector3 world = transform.TransformPoint(vertices[i]);
+                Vector3 world = localToWorld.MultiplyPoint3x4(vertices[i]);
                 float distance = Vector3.Distance(world, center);
                 if (distance >= radius) continue;
                 float weight = Mathf.Clamp01(Mathf.Abs(strength) * Mathf.Pow(1f - distance / radius, falloff));
@@ -114,18 +121,18 @@ namespace MashBoxSDK.MapTools
                     foreach (Surface surface in nearby)
                         found |= surface.Nearest(world, ref best, ref point, ref normal, true, 0.00001f);
                 if (!found) continue;
-                Vector3 desired = transform.InverseTransformPoint(point + normal * surfaceOffset);
+                Vector3 desired = worldToLocal.MultiplyPoint3x4(point + normal * surfaceOffset);
                 if (heightOnly) { desired.x = vertices[i].x; desired.z = vertices[i].z; }
                 Vector3 delta = (desired - vertices[i]) * weight;
                 // A negative surface offset or a tilted height-only axis must
                 // not turn an upward vertex fit into a downward movement.
-                if (aboveOnly && transform.TransformVector(delta).y < 0f) delta = Vector3.zero;
+                if (aboveOnly && localToWorld.MultiplyVector(delta).y < 0f) delta = Vector3.zero;
                 float normalWeight = weight * Mathf.Clamp01(normalBlend);
                 if (delta.sqrMagnitude < 1e-14f && normalWeight <= 0f) continue;
                 samples.Add(new MeshSculptModifier.SeamVertex
                 {
                     index = i, delta = delta,
-                    normal = transform.localToWorldMatrix.transpose.MultiplyVector(normal).normalized,
+                    normal = normalToLocal.MultiplyVector(normal).normalized,
                     normalWeight = normalWeight
                 });
             }
@@ -186,7 +193,8 @@ namespace MashBoxSDK.MapTools
                 else for (int i = 0; i < normals.Length; i++) normals[i] = normalMatrix.MultiplyVector(normals[i]).normalized;
 
                 var list = new List<Primitive>();
-                for (int sub = 0; sub < mesh.subMeshCount; sub++)
+                // Vertex snapping with authored normals does not need triangle readback.
+                for (int sub = 0; (!verticesOnly || !hasNormals) && sub < mesh.subMeshCount; sub++)
                 {
                     if (mesh.GetTopology(sub) != MeshTopology.Triangles) continue;
                     int[] indices = mesh.GetTriangles(sub);

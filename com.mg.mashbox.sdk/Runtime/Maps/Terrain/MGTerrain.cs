@@ -933,7 +933,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             m_MeshFilter ??= GetComponent<MeshFilter>();
             m_MeshRenderer ??= GetComponent<MeshRenderer>();
-            m_MeshCollider ??= GetComponent<MeshCollider>();
+            // Unity missing/destroyed components compare equal to null. TryGetComponent
+            // avoids allocating missing-component wrappers while hovering collision-less tiles.
+            if (m_MeshCollider == null) TryGetComponent(out m_MeshCollider);
             return (m_MeshFilter, m_MeshRenderer, m_MeshCollider);
         }
 

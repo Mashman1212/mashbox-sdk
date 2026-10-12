@@ -16,10 +16,20 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] bool m_SculptPickVerticesDirty;
         [NonSerialized] int m_SculptPickDirtyCount;
 
+        delegate bool SculptMeshRaycast(Ray ray, Mesh mesh, Matrix4x4 matrix, out RaycastHit hit);
+        static readonly SculptMeshRaycast s_SculptMeshRaycast = typeof(UnityEditor.HandleUtility).GetMethod(
+            "IntersectRayMesh", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic,
+            null, new[] { typeof(Ray), typeof(Mesh), typeof(Matrix4x4), typeof(RaycastHit).MakeByRefType() }, null)
+            ?.CreateDelegate(typeof(SculptMeshRaycast)) as SculptMeshRaycast;
+        static readonly Unity.Profiling.ProfilerMarker s_SculptPickMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.SculptPick");
+
+        // Native editor mesh picking avoids building a managed triangle tree on first hover.
+        // Retain the tree fallback for Unity versions without this editor API.
         // Brush queries follow the visible mesh without cooking a physics collider.
         // Refit retained bounds after deformation; rebuild only for topology edits.
         public bool RaycastSculptSurface(Ray ray, out RaycastHit hit, float maximumDistance)
         {
+            using var profile = s_SculptPickMarker.Auto();
             hit = default;
             var filter = MeshFilter;
             var mesh = filter != null ? filter.sharedMesh : null;
@@ -30,6 +40,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (localUnitsPerWorldUnit <= 0) return false;
             var localRay = new Ray(inverse.MultiplyPoint3x4(ray.origin), localDirection);
             if (!mesh.bounds.IntersectRay(localRay, out float near) || near > maximumDistance * localUnitsPerWorldUnit) return false;
+            if (s_SculptMeshRaycast != null)
+                return s_SculptMeshRaycast(ray, mesh, filter.transform.localToWorldMatrix, out hit)
+                    && hit.distance <= maximumDistance;
             int dirtyCount = UnityEditor.EditorUtility.GetDirtyCount(mesh);
             if (m_SculptPickTree == null || m_SculptPickMesh != mesh || m_SculptPickTree.VertexCount != mesh.vertexCount)
             {
