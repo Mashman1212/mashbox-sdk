@@ -13,3 +13,9 @@ Library/
 Temp/
 Obj/
 Logs/
+# Generated grass/health authoring scratch and local validation output
+/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/DensitySubIdAccumulation/
+/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/DetailHealth/
+/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/GrassLayerParameters/
+/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/GrassShapes/
+/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/GrassSubIdSize/

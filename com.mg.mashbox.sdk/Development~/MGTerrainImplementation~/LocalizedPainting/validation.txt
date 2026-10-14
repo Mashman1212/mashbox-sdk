@@ -2,4 +2,5 @@ PASS: First-stroke map copy preserves existing cell caches without triggering fu
 PASS: Thinning evicts only the touched tree cell; distant trees and overlapping grass retain the same cells and candidate caches.
 PASS: Adding density discovers empty cells without moving the camera; stroke completion preserves caches and updates population.
 PASS: Fractional brush painted 30/256 texels at 0.1; 20 overlapping dabs stayed stable; dense repaint thins to the same pattern; lower targets nest; erase and integer targets work.
+PASS: Strength .01 / target 32 creates selected sub-ID plants on empty texels across editor/stroke lifetimes; converges to target; erases to zero; ID-only preserves density; Undo reset and external-edit resync work.
 PASS: A brush dab that changes no samples schedules no cell regeneration.

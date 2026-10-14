@@ -24,7 +24,8 @@ namespace MashBoxSDK.SDKMain
             TextureReducer,
             UVInspector,
             PhotoBooth,
-            MachEquipManager
+            MachEquipManager,
+            GrassShapes
         }
 
         private CreatorAccountPanel creatorAccountPanel;
@@ -37,6 +38,7 @@ namespace MashBoxSDK.SDKMain
         private PhotoBoothWindow photoBoothTool;
         private TextureSizeReducerTool textureSizeReducerTool;
         private UVInspectorTool uvInspectorTool;
+        private MGGrassShapeBakerWindow grassShapeTool;
         
         private const string PREF_KEY_TAB = "MashBoxSDK.SelectedTab";
         private const string PREF_KEY_CONTENT_TOOL_TAB = "MashBoxSDK.SelectedContentToolTab";
@@ -133,6 +135,7 @@ namespace MashBoxSDK.SDKMain
             DestroyTool(ref mapExporterTool);
             DestroyTool(ref machEquipManager);
             DestroyTool(ref photoBoothTool);
+            DestroyTool(ref grassShapeTool);
             textureSizeReducerTool = null;
             uvInspectorTool = null;
         }
@@ -325,7 +328,8 @@ namespace MashBoxSDK.SDKMain
                 "Texture Reducer",
                 "UV Inspector",
                 "Photo Booth",
-                "Mach Equip Manager"
+                "Mach Equip Manager",
+                "Grass Shapes"
             }, MashBoxTabDrawer.TabVisualStyle.Secondary);
 
             if (newTab != _contentToolTab)
@@ -349,6 +353,9 @@ namespace MashBoxSDK.SDKMain
                     break;
                 case ContentToolTab.PhotoBooth:
                     DrawPhotoBoothTab();
+                    break;
+                case ContentToolTab.GrassShapes:
+                    EnsureHiddenToolWindow(ref grassShapeTool).Draw();
                     break;
                 case ContentToolTab.MachEquipManager:
                     DrawMachEquipManager();

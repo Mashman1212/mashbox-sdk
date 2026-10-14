@@ -28,6 +28,10 @@ namespace MashBoxSDK.MapTools
         float m_PaintDensity = 32f;
         bool m_GrassIdOnly;
         float m_PaintSize = 1f;
+        float m_PaintHealth = 1f;
+        bool m_MultiDensity = true, m_MultiSize = true, m_MultiHealth = true;
+        bool PaintsChannel(int channel) => m_PaintChannel == channel || m_PaintChannel == 3
+            && (channel == 0 ? m_MultiDensity : channel == 1 ? m_MultiSize : m_MultiHealth);
         bool m_RandomPaintSize;
         float m_PaintSizeMin = .8f, m_PaintSizeMax = 1.2f;
         int m_PaintSizeSeed = 1;
@@ -1012,7 +1016,7 @@ namespace MashBoxSDK.MapTools
                 var disabled = layer.FindPropertyRelative("m_RenderDisabled");
                 EditorGUI.BeginChangeCheck();
                 bool enabled = EditorGUILayout.ToggleLeft(
-                    new GUIContent($"Layer {index + 1}: {name}", "Enable rendering for this detail layer. Turning it off preserves its painted density and size maps. Works in Edit and Play modes."),
+                    new GUIContent($"Layer {index + 1}: {name}", "Enable rendering for this detail layer. Turning it off preserves its painted density, size, and health maps. Works in Edit and Play modes."),
                     !disabled.boolValue);
                 if (EditorGUI.EndChangeCheck())
                 {
@@ -1065,14 +1069,14 @@ namespace MashBoxSDK.MapTools
                     }
                     if (!m_ShowPrototypeAdvanced) continue;
                     if (m_WorldDetailControls)
-                        DrawPrototypeFields(layer, "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_DensityMap", "m_SizeMap", "m_GrassIdMap");
+                        DrawPrototypeFields(layer, "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_DensityMap", "m_SizeMap", "m_HealthMap", "m_GrassIdMap");
                     else DrawPrototypeFields(layer, "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice");
                     using (new EditorGUI.IndentLevelScope())
                     {
                         using (new EditorGUI.DisabledScope(Application.isPlaying))
                         if (GUILayout.Button("Start Empty (This Detail Only)..."))
                         {
-                            if (EditorUtility.DisplayDialog("Start Detail Empty?", "Remove this element's density and size map assignments? Other details and the original texture assets are preserved. The first density stroke creates a new independent map. Undo restores the assignments.", "Start Empty", "Cancel"))
+                            if (EditorUtility.DisplayDialog("Start Detail Empty?", "Remove this element's density, size, and health map assignments? Other details and the original texture assets are preserved. The first density stroke creates a new independent map. Undo restores the assignments.", "Start Empty", "Cancel"))
                             {
                                 FinishDetailStroke();
                                 if (m_WorldDetailControls) ResetSharedWorldPainting(terrain, index);
@@ -1125,6 +1129,7 @@ namespace MashBoxSDK.MapTools
         {
             layer.FindPropertyRelative("m_DensityMap").objectReferenceValue = null;
             layer.FindPropertyRelative("m_SizeMap").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_HealthMap").objectReferenceValue = null;
             layer.FindPropertyRelative("m_RepresentedInstanceCount").longValue = 0;
             layer.FindPropertyRelative("m_PaletteSourceOnly").boolValue = false;
             layer.FindPropertyRelative("m_GeneratedByPalette").objectReferenceValue = null;
@@ -1723,10 +1728,23 @@ namespace MashBoxSDK.MapTools
             int activeDetail = EditorGUILayout.Popup("Active Detail", Mathf.Clamp(m_PaintDetailIndex, 0, labels.Length - 1), labels);
             if (activeDetail != m_PaintDetailIndex) SelectPaintDetail(activeDetail);
             DrawPaintTogether(terrain, labels);
-            int channel = GUILayout.Toolbar(m_PaintChannel, new[] { "Density", "Size" });
+            int channel = GUILayout.Toolbar(m_PaintChannel, new[] { "Density", "Size", "Health", "Multi" });
             if (channel != m_PaintChannel) { FinishDetailStroke(); m_PaintChannel = channel; }
+            if (m_PaintChannel == 3)
+            {
+                EditorGUI.BeginChangeCheck();
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    m_MultiDensity = EditorGUILayout.ToggleLeft("Density", m_MultiDensity);
+                    m_MultiSize = EditorGUILayout.ToggleLeft("Size", m_MultiSize);
+                    m_MultiHealth = EditorGUILayout.ToggleLeft("Health", m_MultiHealth);
+                }
+                if (EditorGUI.EndChangeCheck()) FinishDetailStroke();
+                if (!m_MultiDensity && !m_MultiSize && !m_MultiHealth)
+                    EditorGUILayout.HelpBox("Enable at least one channel to paint.", MessageType.Info);
+            }
             var selectedDetail = terrain.DensityDetailLayers[m_PaintDetailIndex];
-            if (selectedDetail.GrassIdMap != null)
+            if (selectedDetail.GrassIdMap != null && PaintsChannel(0))
             {
                 m_GrassPaintPopulation = selectedDetail.GrassPopulation;
                 EditorGUI.BeginChangeCheck();
@@ -1755,7 +1773,7 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.HelpBox("No density map yet. A density stroke on this terrain will create it automatically.", MessageType.Info);
             MBEditorToolState.BrushRadius = EditorGUILayout.Slider("Brush Radius", MBEditorToolState.BrushRadius, .1f, MBEditorToolState.MaxBrushRadius);
             MBEditorToolState.BrushStrength = EditorGUILayout.Slider("Brush Strength", MBEditorToolState.BrushStrength, .01f, 1f);
-            if (m_PaintChannel == 0)
+            if (PaintsChannel(0))
             {
                 m_PaintDensity = EditorGUILayout.FloatField(new GUIContent("Target Density / Texel", "Supports fractional density: 0.1 paints approximately one tree per ten texels. Repeated strokes keep the same sparse pattern."), m_PaintDensity);
                 m_PaintDensity = float.IsFinite(m_PaintDensity) ? Mathf.Clamp(m_PaintDensity, 0f, 2000f) : 1f;
@@ -1775,7 +1793,7 @@ namespace MashBoxSDK.MapTools
                     new GUIContent("Variation Seed", "Controls the repeatable random placement, rotation and size of this detail layer."));
                 EditorGUILayout.HelpBox("Each instance gets a random width and height within these ranges. Equal minimum and maximum values give a fixed size. These settings affect all foliage in this detail layer, including existing painting. The Size brush adds a local multiplier.", MessageType.None);
             }
-            else
+            if (PaintsChannel(1))
             {
                 m_RandomPaintSize = EditorGUILayout.Toggle("Random Size", m_RandomPaintSize);
                 if (m_RandomPaintSize)
@@ -1788,7 +1806,12 @@ namespace MashBoxSDK.MapTools
                 else
                     m_PaintSize = EditorGUILayout.Slider("Target Size Multiplier", m_PaintSize, .05f, 4f);
             }
-            EditorGUILayout.HelpBox("Drag to paint selected details with soft falloff. Shift erases selected density or restores selected size to 1. Ctrl + Shift erases density for all detail types under the brush, in either mode. Ctrl + middle-drag: horizontal = radius, vertical = strength. Alt navigates; Esc stops. Size multiplies existing width and height; it does not change density. Painted cells refresh live during the stroke. The first stroke makes a working copy; original maps are preserved.", MessageType.Info);
+            if (PaintsChannel(2))
+            {
+                m_PaintHealth = EditorGUILayout.Slider("Target Health", m_PaintHealth, 0f, 1f);
+                EditorGUILayout.HelpBox("0 = low health; 1 = full health. GodGrass's Painted Health controls set the appearance per index. Health does not change density or size. Shift restores health to 1.", MessageType.None);
+            }
+            EditorGUILayout.HelpBox("Drag to paint selected details with soft falloff. Shift erases enabled density and restores enabled size and health to 1. Ctrl + Shift erases density for all detail types under the brush, in every mode. Ctrl + middle-drag: horizontal = radius, vertical = strength. Alt navigates; Esc stops. Multi applies enabled channels in one undoable stroke. Size multiplies existing width and height; health changes shader appearance. Painted cells refresh live during the stroke. The first stroke makes a working copy; original maps are preserved.", MessageType.Info);
             if (terrain.DensityDetailLayers[m_PaintDetailIndex].GeneratedByPalette != null)
                 EditorGUILayout.HelpBox("This is a palette-generated layer. Baking the palette again can replace this layer and its painting.", MessageType.Warning);
             if (terrain.NeedsCollision && !terrain.HasSurfaceCollider)
@@ -1832,15 +1855,28 @@ namespace MashBoxSDK.MapTools
         void RefreshPaintUndo()
         {
             m_SelectedPaintLayers.Clear();
-            foreach (Texture2D map in m_PaintCopies)
-                if (map != null && map.isReadable) { map.Apply(false, false); EditorUtility.SetDirty(map); }
             if (target is MGTerrain terrain)
             {
-                terrain.InvalidateRenderCache();
+                // One Multi stroke can touch several tiles. Delegated editors are
+                // disposed at mouse-up, so upload every tile's restored textures here.
+                if (terrain.World != null)
+                {
+                    foreach (var tile in terrain.World.Chunks) RefreshTile(tile);
+                }
+                else RefreshTile(terrain);
                 if (m_SharedDefinitionSignature != null) RememberSharedDefinitions(terrain);
             }
             SceneView.RepaintAll();
             Repaint();
+
+            static void RefreshTile(MGTerrain tile)
+            {
+                if (tile == null) return;
+                if (PaintCopiesByTerrain.TryGetValue(tile, out var maps))
+                    foreach (var map in maps)
+                        if (map != null && map.isReadable) { map.Apply(false, false); EditorUtility.SetDirty(map); }
+                tile.InvalidateRenderCache();
+            }
         }
 
         void OnSceneGUI()
@@ -1902,14 +1938,14 @@ namespace MashBoxSDK.MapTools
             var sceneView = SceneView.currentDrawingSceneView;
             if (sceneView != null && !Tools.viewToolActive
                 && MBEditorToolVisuals.FocusBrushSurface(e, sceneView, hit.point, MBEditorToolState.BrushRadius)) return;
-            Handles.color = m_PaintChannel == 0 ? Color.green : Color.cyan;
+            Handles.color = m_PaintChannel == 0 ? Color.green : m_PaintChannel == 1 ? Color.cyan : m_PaintChannel == 2 ? new Color(1f, .7f, .2f) : Color.magenta;
             Handles.DrawWireDisc(hit.point, hit.normal, MBEditorToolState.BrushRadius);
             bool eraseAll = e.control && e.shift;
-            MBEditorToolVisuals.DrawBrushAction(eraseAll ? "Erase All Detail Types" : m_PaintChannel == 0
-                ? (e.shift ? "Thin / Erase Detail Density" : "Paint Detail Density")
-                : (e.shift ? "Restore Detail Size Ã—1" : m_RandomPaintSize
-                    ? $"Paint Random Size Ã—{m_PaintSizeMin:0.00}â€“{m_PaintSizeMax:0.00}"
-                    : $"Paint Detail Size Ã—{m_PaintSize:0.00}"));
+            string action = m_PaintChannel == 0 ? (e.shift ? "Thin / Erase Detail Density" : "Paint Detail Density")
+                : m_PaintChannel == 1 ? (e.shift ? "Restore Detail Size x1" : "Paint Detail Size")
+                : m_PaintChannel == 2 ? (e.shift ? "Restore Detail Health 1" : $"Paint Detail Health {m_PaintHealth:0.00}")
+                : (e.shift ? "Reset Enabled Detail Channels" : "Paint Enabled Detail Channels");
+            MBEditorToolVisuals.DrawBrushAction(eraseAll ? "Erase All Detail Types" : action);
             if (e.type == EventType.MouseMove) SceneView.RepaintAll();
             if (e.button != 0 || (e.type != EventType.MouseDown && e.type != EventType.MouseDrag)) return;
             if (e.type == EventType.MouseDown)
@@ -2000,7 +2036,7 @@ namespace MashBoxSDK.MapTools
             var detail = terrain.DensityDetailLayers[m_PaintDetailIndex];
             if (detail.PaletteSourceOnly || detail.PrototypeIndex < 0 || detail.PrototypeIndex >= terrain.Prototypes.Count)
             { EditorUtility.DisplayDialog("Cannot Paint Detail", "Select a rendered detail layer with a valid prototype, not a palette source-only layer.", "OK"); return false; }
-            Texture2D source = m_PaintChannel == 0 ? detail.DensityMap : detail.SizeMap;
+            Texture2D source = m_PaintChannel == 0 ? detail.DensityMap : m_PaintChannel == 1 ? detail.SizeMap : detail.HealthMap;
             TextureFormat format = m_PaintChannel == 0 ? TextureFormat.R16 : TextureFormat.RHalf;
             if (source != null && (!source.isReadable || source.format != format))
             { EditorUtility.DisplayDialog("Cannot Paint Detail", $"The map must be readable {format}.", "OK"); return false; }
@@ -2013,13 +2049,13 @@ namespace MashBoxSDK.MapTools
             Undo.RegisterCompleteObjectUndo(terrain, "Paint MG Terrain Detail");
             bool shared = false;
             foreach (var other in terrain.DensityDetailLayers)
-                if (other != detail && source != null && (other.DensityMap == source || other.SizeMap == source)) shared = true;
+                if (other != detail && source != null && (other.DensityMap == source || other.SizeMap == source || other.HealthMap == source)) shared = true;
             if (source == null || shared || !m_PaintCopies.Contains(source))
             {
                 int width = detail.DensityMap != null ? detail.DensityMap.width : 512;
                 int height = detail.DensityMap != null ? detail.DensityMap.height : 512;
                 var copy = source != null ? Instantiate(source) : new Texture2D(width, height, format, false, true);
-                copy.name = terrain.name + (m_PaintChannel == 0 ? "_DetailDensity" : "_DetailSize");
+                copy.name = terrain.name + (m_PaintChannel == 0 ? "_DetailDensity" : m_PaintChannel == 1 ? "_DetailSize" : "_DetailHealth");
                 copy.wrapMode = TextureWrapMode.Clamp;
                 copy.filterMode = FilterMode.Bilinear;
                 if (source == null)
@@ -2029,8 +2065,8 @@ namespace MashBoxSDK.MapTools
                     for (int i = 0; i < pixels.Length; i++) pixels[i] = neutral;
                     copy.Apply(false, false);
                 }
-                copy = MGTerrainAssetStore.SaveDetailMap(copy, terrain, m_PaintDetailIndex, m_PaintChannel == 0 ? "Density" : "Size");
-                detail.AssignPaintMapCopy(copy, m_PaintChannel == 0 ? MGTerrain.DetailPaintMap.Density : MGTerrain.DetailPaintMap.Size);
+                copy = MGTerrainAssetStore.SaveDetailMap(copy, terrain, m_PaintDetailIndex, m_PaintChannel == 0 ? "Density" : m_PaintChannel == 1 ? "Size" : "Health");
+                detail.AssignPaintMapCopy(copy, m_PaintChannel == 0 ? MGTerrain.DetailPaintMap.Density : m_PaintChannel == 1 ? MGTerrain.DetailPaintMap.Size : MGTerrain.DetailPaintMap.Health);
                 serializedObject.Update();
                 source = copy;
                 m_PaintCopies.Add(copy);
@@ -2110,7 +2146,7 @@ namespace MashBoxSDK.MapTools
                 float influence = Mathf.SmoothStep(1, 0, d) * MBEditorToolState.BrushStrength;
                 int index = z * w + x;
                 float previous = m_PaintChannel == 0 ? pixels[index] : Mathf.HalfToFloat(pixels[index]);
-                float goal = m_PaintChannel == 0 ? (erase ? 0 : SparseDensityTarget(m_PaintDensity, x, z, terrain.DensityDetailLayers[m_PaintDetailIndex].Seed)) : (erase ? 1 : GetPaintSizeTarget(x, z));
+                float goal = m_PaintChannel == 0 ? (erase ? 0 : SparseDensityTarget(m_PaintDensity, x, z, terrain.DensityDetailLayers[m_PaintDetailIndex].Seed)) : (erase ? 1 : m_PaintChannel == 1 ? GetPaintSizeTarget(x, z) : Mathf.Clamp01(m_PaintHealth));
                 if (m_GrassStrokeIds != null && !erase && influence > 0)
                 {
                     var ids = m_GrassStrokeIds.GetPixelData<byte>(0);
@@ -2118,9 +2154,10 @@ namespace MashBoxSDK.MapTools
                     ids[index] = (byte)m_GrassPaintSubId;
 
                 }
-                if (m_GrassStrokeIds != null && m_GrassIdOnly && !erase) goal = previous;
-                float next = Mathf.Lerp(previous, goal, influence);
-                ushort value = m_PaintChannel == 0 ? (ushort)Mathf.RoundToInt(next) : Mathf.FloatToHalf(next);
+                bool replaceIdOnly = m_GrassStrokeIds != null && m_GrassIdOnly && !erase;
+                ushort value = m_PaintChannel == 0
+                    ? (replaceIdOnly ? pixels[index] : AccumulateDensityPaint(m_StrokeMap, index, pixels[index], (int)goal, influence))
+                    : Mathf.FloatToHalf(Mathf.Lerp(previous, goal, influence));
                 changed |= pixels[index] != value;
                 pixels[index] = value;
             }

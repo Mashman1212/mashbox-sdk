@@ -97,7 +97,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal uint layerIndex;
             internal uint padding0;
             internal uint padding1;
-            internal uint padding2;
+            internal uint health;
             internal Vector4 sizes;
         }
 
@@ -1018,7 +1018,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         layerIndex = (uint)chunk.layerIndex,
                         padding0 = (uint)spawn.count,
                         padding1 = (uint)(spawn.slice + 1),
-                        sizes = spawn.sizes
+                        sizes = spawn.sizes,
+                        health = spawn.health
                     });
                 }
                 sourceCursor = nextSource;
@@ -1188,7 +1189,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     var matrix = matrices[matrixIndex];
                     uint seed = Hash((uint)matrix.m03.GetHashCode() ^ (uint)matrix.m23.GetHashCode());
                     int slice = chunkIndex < batch.grassSliceChunks.Count ? batch.grassSliceChunks[chunkIndex][matrixIndex] : m_DensityDetailLayers[layerIndex].TextureSlice;
-                    group.shaderData.Add(new Vector4(layerIndex, slice + 1 + Hash01(seed) * .999f, (maximumInstances - remaining + matrixIndex + 1f) / Mathf.Max(1, population), fade ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f));
+                    group.shaderData.Add(new Vector4(EncodeDetailLayerHealth(layerIndex, BatchDetailHealth(batch, chunkIndex, matrixIndex)), slice + 1 + Hash01(seed) * .999f, (maximumInstances - remaining + matrixIndex + 1f) / Mathf.Max(1, population), fade ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f));
                 }
                 remaining -= count;
             }

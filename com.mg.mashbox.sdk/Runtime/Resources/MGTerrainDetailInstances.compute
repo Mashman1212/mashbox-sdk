@@ -10,7 +10,7 @@ struct SpawnCommand
     uint layerIndex;
     uint padding0;
     uint padding1;
-    uint padding2;
+    uint health;
     float4 sizes;
 };
 
@@ -144,8 +144,12 @@ void GenerateDetailInstances(uint3 groupId : SV_GroupID, uint3 groupThreadId : S
         float4x4 objectToWorld = mul(_TerrainLocalToWorld, mul(localMatrix, _PartRelative));
         float4x4 worldToObject = InverseAffine(objectToWorld);
         uint destination = _GroupOutputBase + command.outputStart + item;
+        float4 healthCorners = float4(command.health & 255u, (command.health >> 8) & 255u,
+            (command.health >> 16) & 255u, command.health >> 24);
+        float health = lerp(lerp(healthCorners.x, healthCorners.y, jitterX), lerp(healthCorners.z, healthCorners.w, jitterX), jitterZ);
+        float layerHealth = command.layerIndex + .25 + floor(health + .5) * (.5 / 255.0);
         _InstanceData.Store4(_DetailDataAddress + destination * 16,
-            asuint(float4(command.layerIndex, command.padding1 + Hash01(Hash(hash + 0x165667B1)) * .999,  (item + 1.0) / max(1u, command.padding0), layer.padding1)));
+            asuint(float4(layerHealth, command.padding1 + Hash01(Hash(hash + 0x165667B1)) * .999,  (item + 1.0) / max(1u, command.padding0), layer.padding1)));
         StorePackedMatrix(_ObjectToWorldAddress, destination, objectToWorld);
         StorePackedMatrix(_WorldToObjectAddress, destination, worldToObject);
     }

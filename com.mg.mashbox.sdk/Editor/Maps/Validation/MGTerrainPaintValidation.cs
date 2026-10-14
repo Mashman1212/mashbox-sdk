@@ -148,6 +148,48 @@ static class MGTerrainPaintValidation
                 Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
                 for(int i=0;i<data.Length;i++) Check(data[i]==1,"Integer one keeps original dense coverage");
                 results.Add($"PASS: Fractional brush painted {count}/256 texels at 0.1; 20 overlapping dabs stayed stable; dense repaint thins to the same pattern; lower targets nest; erase and integer targets work.");
+                // Regression: 0.01 * 32 was rounded back to zero on every dab,
+                // although the sub-ID changed immediately on occupied texels.
+                MashBoxSDK.MapTools.MGTerrainEditor.ResetDensityPaintProgress();
+                for (int i=0;i<data.Length;i++) data[i]=0;
+                var ids = new Texture2D(16,16,TextureFormat.R8,false,true); assets.Add(ids);
+                ids.SetPixelData(new byte[256],0); ids.Apply();
+                Set(editor,"m_GrassStrokeIds",ids); Set(editor,"m_GrassPaintSubId",5);
+                Set(editor,"m_GrassIdOnly",false); Set(editor,"m_PaintDensity",32f);
+                MashBoxSDK.MapTools.MBEditorToolState.BrushStrength=.01f;
+                Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                Check(data[136]==0,"First gentle dab must not force a whole instance");
+                Check(ids.GetPixelData<byte>(0)[136]==5,"New-area paint lost the selected sub-ID");
+                // World and Multi painting destroy delegated editors at mouse-up.
+                Set(editor,"m_StrokeMap",null); Set(editor,"m_GrassStrokeIds",null);
+                Object.DestroyImmediate(editor); editor=Editor.CreateEditor(terrain,editorType);
+                Set(editor,"m_StrokeMap",copy); Set(editor,"m_PaintDetailIndex",0); Set(editor,"m_PaintChannel",0);
+                Set(editor,"m_GrassStrokeIds",ids); Set(editor,"m_GrassPaintSubId",5);
+                Set(editor,"m_PaintDensity",32f);
+                Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                Check(data[136]==1,"Gentle density must accumulate across delegated editor lifetimes");
+                for(int dab=0;dab<600;dab++) Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                Check(data[136]==32,"Gentle density stalls before its target");
+                for(int dab=0;dab<700;dab++) Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),true);
+                Check(data[136]==0,"Gentle erase stalls above zero");
+                Check(ids.GetPixelData<byte>(0)[136]==5,"Erase unexpectedly changed the sub-ID");
+                Set(editor,"m_GrassIdOnly",true); Set(editor,"m_GrassPaintSubId",3);
+                for(int dab=0;dab<10;dab++) Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                Check(data[136]==0 && ids.GetPixelData<byte>(0)[136]==3,"ID-only paint must preserve blank density");
+                data[136]=7;
+                Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                Check(data[136]==7,"ID-only paint changed existing density");
+                Set(editor,"m_GrassIdOnly",false); data[136]=0;
+                MashBoxSDK.MapTools.MGTerrainEditor.ResetDensityPaintProgress();
+                Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                MashBoxSDK.MapTools.MGTerrainEditor.ResetDensityPaintProgress(); // Undo/Redo callback
+                Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                Check(data[136]==0,"Undo reset leaked hidden fractional progress");
+                data[136]=10; // Another painter or texture edit invalidates pending value.
+                Call(editor,"PaintDetailDab",terrain,new Vector3(16,0,16),false);
+                Check(data[136]==10,"External density edit was replaced by stale accumulator state");
+                Set(editor,"m_GrassStrokeIds",null);
+                results.Add("PASS: Strength .01 / target 32 creates selected sub-ID plants on empty texels across editor/stroke lifetimes; converges to target; erases to zero; ID-only preserves density; Undo reset and external-edit resync work.");
             }
             finally
             {

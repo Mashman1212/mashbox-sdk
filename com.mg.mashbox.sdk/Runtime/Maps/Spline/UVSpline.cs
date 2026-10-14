@@ -93,12 +93,21 @@ namespace MashBoxSDK.Maps.Spline
         public Mesh OutputMesh => m_OutputMesh;
         public SplineContainer Container => m_Container != null ? m_Container : m_Container = GetComponent<SplineContainer>();
 
+        void OnEnable()
+        {
+            // Cross-component state is available after deserialization. The custom
+            // inspector also synchronizes settings when the user changes them.
+            MultiSplineLoft owningLoft = GetComponentInParent<MultiSplineLoft>();
+            owningLoft?.SynchronizeUvSplineSettings(this);
+        }
+
         void OnValidate()
         {
             m_UvChannel = Mathf.Clamp(m_UvChannel, 0, 3);
             m_GeneratedPointCount = Mathf.Max(2, m_GeneratedPointCount);
             m_MoveFalloffPoints = Mathf.Max(0.25f, m_MoveFalloffPoints);
-            EnsureControlPointCount(Mathf.Max(2, Container.Spline.Count));
+            // A SplineContainer can still be deserializing here. Never resize
+            // authored controls against its temporarily empty/default spline.
             if (m_MirrorSettingsVersion < 1)
             {
                 for (int index = 0; index < m_ControlPoints.Count; index++)
@@ -121,9 +130,6 @@ namespace MashBoxSDK.Maps.Spline
                 m_ControlPoints[index].mirrorRightScale = Mathf.Max(0.01f, m_ControlPoints[index].mirrorRightScale);
             }
             m_MirrorSettingsVersion = 3;
-
-            MultiSplineLoft owningLoft = GetComponentInParent<MultiSplineLoft>();
-            owningLoft?.SynchronizeUvSplineSettings(this);
         }
 
         public bool GenerateFromTarget(out string error)
@@ -1069,7 +1075,10 @@ namespace MashBoxSDK.Maps.Spline
                 flipMirrorRight = blend < 0.5f ? points[a].flipMirrorRight : points[b].flipMirrorRight,
                 mirrorBranchUvWidth = Mathf.Lerp(points[a].mirrorBranchUvWidth, points[b].mirrorBranchUvWidth, blend),
                 mirrorLeftScale = Mathf.Lerp(points[a].mirrorLeftScale, points[b].mirrorLeftScale, blend),
-                mirrorRightScale = Mathf.Lerp(points[a].mirrorRightScale, points[b].mirrorRightScale, blend)
+                mirrorRightScale = Mathf.Lerp(points[a].mirrorRightScale, points[b].mirrorRightScale, blend),
+                // This baseline is part of the authored state: losing it makes
+                // RebuildSpline treat the whole knot position as an edit offset.
+                generatedLocalPosition = Vector3.Lerp(points[a].generatedLocalPosition, points[b].generatedLocalPosition, blend)
             };
         }
 

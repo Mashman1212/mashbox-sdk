@@ -47,8 +47,10 @@ namespace MashBoxSDK.MapTools
             var counts = new[] { new ushort[width * height], new ushort[width * height] };
             var ids = new[] { new byte[width * height], new byte[width * height] };
             var sizes = new[] { new ushort[width * height], new ushort[width * height] };
+            var health = new[] { new ushort[width * height], new ushort[width * height] };
+            bool hasHealth = sources.Exists(i => terrain.DensityDetailLayers[i].HealthMap != null);
             ushort one = Mathf.FloatToHalf(1);
-            for (int i = 0; i < width * height; i++) { sizes[0][i] = one; sizes[1][i] = one; }
+            for (int i = 0; i < width * height; i++) { sizes[0][i] = one; sizes[1][i] = one; health[0][i] = one; health[1][i] = one; }
             foreach (int source in sources)
             {
                 var layer = terrain.DensityDetailLayers[source];
@@ -62,7 +64,9 @@ namespace MashBoxSDK.MapTools
                     if (value == 0) continue;
                     ushort size = layer.SizeMap != null && layer.SizeMap.isReadable
                         ? Mathf.FloatToHalf(Mathf.Clamp(layer.SizeMap.GetPixelBilinear((x + .5f) / width, (z + .5f) / height).r, .05f, 4f)) : one;
-                    MGGrassPopulationMerge.Add(index, value, (byte)layer.TextureSlice, size, counts, ids, sizes);
+                    ushort paintedHealth = layer.HealthMap != null && layer.HealthMap.isReadable
+                        ? Mathf.FloatToHalf(Mathf.Clamp01(layer.HealthMap.GetPixelBilinear((x + .5f) / width, (z + .5f) / height).r)) : one;
+                    MGGrassPopulationMerge.Add(index, value, (byte)layer.TextureSlice, size, counts, ids, sizes, health, paintedHealth);
                 }
             }
             const string backupFolder = "Assets/Editor/MGGrassMigrationBackups";
@@ -98,6 +102,8 @@ namespace MashBoxSDK.MapTools
                 layer.FindPropertyRelative("m_DensityMap").objectReferenceValue = SaveSharedMap(terrain, prototype, width, height, TextureFormat.R16, "GrassDensity" + group, counts[group]);
                 layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue = SaveSharedMap(terrain, prototype, width, height, TextureFormat.R8, "GrassIDs" + group, ids[group]);
                 layer.FindPropertyRelative("m_SizeMap").objectReferenceValue = SaveSharedMap(terrain, prototype, width, height, TextureFormat.RHalf, "GrassSizes" + group, sizes[group]);
+                layer.FindPropertyRelative("m_HealthMap").objectReferenceValue = hasHealth
+                    ? SaveSharedMap(terrain, prototype, width, height, TextureFormat.RHalf, "GrassHealth" + group, health[group]) : null;
                 long total = 0; foreach (ushort count in counts[group]) total += count;
                 layer.FindPropertyRelative("m_RepresentedInstanceCount").longValue = total;
             }

@@ -95,6 +95,28 @@ void MGTerrainDetailSlice_float(float DefaultSlice, out float Slice)
     if (encoded >= 1) Slice = floor(encoded) - 1;
 #endif
 }
+// Painted health shares the unused fraction of the definition index. No extra
+// per-instance buffer, material texture, or fragment map lookup is required.
+float MGTerrainDecodeHealth(float encoded, float fallback)
+{
+    float fraction = frac(encoded);
+    return fraction >= .125 ? saturate((fraction - .25) * 2.0) : fallback;
+}
+void MGTerrainDetailHealth_float(float DefaultHealth, out float Health)
+{
+    Health = saturate(DefaultHealth);
+#if defined(UNITY_DOTS_INSTANCING_ENABLED) && !defined(SHADERGRAPH_PREVIEW)
+    if (UNITY_DOTS_INSTANCED_METADATA_NAME(float4, _MGDetailInstance) != 0)
+    {
+        float4 instance = UNITY_ACCESS_DOTS_INSTANCED_PROP(float4, _MGDetailInstance);
+        if (instance.y >= 1) Health = MGTerrainDecodeHealth(instance.x, 1);
+    }
+#elif !defined(SHADERGRAPH_PREVIEW)
+    float4 instance = UNITY_ACCESS_INSTANCED_PROP(MGTerrainClassicDetailMetadata, _MGDetailInstance);
+    if (instance.y >= 1) Health = MGTerrainDecodeHealth(instance.x, 1);
+#endif
+}
+
 void MGTerrainDetailData_float(out float DefinitionIndex, out float TextureSlice,
     out float4 Tint, out float WindMultiplier, out float RandomValue, out float HasDetailData)
 {
@@ -128,7 +150,7 @@ void MGTerrainDetailData_float(out float DefinitionIndex, out float TextureSlice
     float4 instance = UNITY_ACCESS_INSTANCED_PROP(MGTerrainClassicDetailMetadata, _MGDetailInstance);
     if (instance.y > 0)
     {
-        DefinitionIndex = instance.x;
+        DefinitionIndex = floor(instance.x);
         TextureSlice = instance.y - 1;
         HasDetailData = 1;
     }

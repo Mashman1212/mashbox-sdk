@@ -55,7 +55,7 @@ namespace MashBoxSDK.MapTools
                     bool selected = IsPaintLayerSelected(terrain, i);
                     if (EditorGUILayout.ToggleLeft(labels[i], selected) != selected) SelectPaintDetail(i, true);
                 }
-            EditorGUILayout.HelpBox("Selected details share the brush and target density. Each layer receives the full target. You can also Ctrl-click detail thumbnails to select several types. Per-detail settings below apply to the active detail.", MessageType.None);
+            EditorGUILayout.HelpBox("Selected details share the enabled brush channels and their target values. Each layer receives the full target. You can also Ctrl-click detail thumbnails to select several types. Per-detail settings below apply to the active detail.", MessageType.None);
         }
 
         bool RaycastDetailWorld(MGTerrain terrain, Ray ray, out RaycastHit hit)
@@ -153,39 +153,43 @@ namespace MashBoxSDK.MapTools
                 Vector3 nearest = new Vector3(Mathf.Clamp(local.x, bounds.min.x, bounds.max.x), local.y,
                     Mathf.Clamp(local.z, bounds.min.z, bounds.max.z));
                 if (chunk.transform.TransformVector(local - nearest).sqrMagnitude >= MBEditorToolState.BrushRadius * MBEditorToolState.BrushRadius) return;
-                int channel = eraseAll ? 0 : m_PaintChannel;
-                int count = eraseAll ? chunk.DensityDetailLayerCount : terrain.DensityDetailLayerCount;
-                for (int sourceIndex = 0; sourceIndex < count; sourceIndex++)
+                for (int channel = 0; channel < 3; channel++)
                 {
-                    if (!eraseAll && !IsPaintLayerSelected(terrain, sourceIndex)) continue;
-                    int index = eraseAll || chunk == terrain ? sourceIndex : FindWorldPaintLayer(terrain, sourceIndex, chunk);
-                    if (index < 0)
+                    if (eraseAll ? channel != 0 : !PaintsChannel(channel)) continue;
+                    int count = eraseAll ? chunk.DensityDetailLayerCount : terrain.DensityDetailLayerCount;
+                    for (int sourceIndex = 0; sourceIndex < count; sourceIndex++)
                     {
-                        if (m_WorldPaintSkipped.Add((chunk, sourceIndex, -1))) Debug.LogWarning($"Skipped cross-chunk paint of layer {sourceIndex} on '{chunk.name}': no unique matching detail definition. Match the chunk's detail setup before painting across this border.", chunk);
-                        continue;
+                        if (!eraseAll && !IsPaintLayerSelected(terrain, sourceIndex)) continue;
+                        int index = eraseAll || chunk == terrain ? sourceIndex : FindWorldPaintLayer(terrain, sourceIndex, chunk);
+                        if (index < 0)
+                        {
+                            if (m_WorldPaintSkipped.Add((chunk, sourceIndex, -1))) Debug.LogWarning($"Skipped cross-chunk paint of layer {sourceIndex} on '{chunk.name}': no unique matching detail definition. Match the chunk's detail setup before painting across this border.", chunk);
+                            continue;
+                        }
+                        var detail = chunk.DensityDetailLayers[index];
+                        if (detail.PaletteSourceOnly || (uint)detail.PrototypeIndex >= chunk.Prototypes.Count) continue;
+                        // Erasing an unpainted layer must not allocate a blank texture.
+                        if ((eraseAll || (erase && channel == 0)) && detail.DensityMap == null) continue;
+                        var key = (chunk, index, channel);
+                        if (m_WorldPaintSkipped.Contains(key)) continue;
+                        if (!m_WorldPaintEditors.TryGetValue(key, out var editor))
+                        {
+                            editor = (MGTerrainEditor)CreateEditor(chunk, typeof(MGTerrainEditor));
+                            editor.m_WorldPaintDelegate = true;
+                            editor.m_PaintDetailIndex = index;
+                            editor.m_GrassPaintSubId = m_GrassPaintSubId;
+                            editor.m_GrassIdOnly = m_GrassIdOnly;
+                            editor.m_GrassPaintPopulation = m_GrassPaintPopulation;
+                            editor.m_PaintChannel = channel; editor.m_PaintDensity = m_PaintDensity;
+                            editor.m_PaintSize = m_PaintSize; editor.m_RandomPaintSize = m_RandomPaintSize;
+                            editor.m_PaintSizeMin = m_PaintSizeMin; editor.m_PaintSizeMax = m_PaintSizeMax;
+                            editor.m_PaintSizeSeed = m_PaintSizeSeed;
+                            editor.m_PaintHealth = m_PaintHealth;
+                            m_WorldPaintEditors.Add(key, editor);
+                            if (!editor.BeginDetailStroke(chunk)) { m_WorldPaintSkipped.Add(key); continue; }
+                        }
+                        editor.PaintDetailDab(chunk, point, erase || eraseAll);
                     }
-                    var detail = chunk.DensityDetailLayers[index];
-                    if (detail.PaletteSourceOnly || (uint)detail.PrototypeIndex >= chunk.Prototypes.Count) continue;
-                    // Erasing an unpainted layer must not allocate a blank texture.
-                    if ((eraseAll || (erase && channel == 0)) && detail.DensityMap == null) continue;
-                    var key = (chunk, index, channel);
-                    if (m_WorldPaintSkipped.Contains(key)) continue;
-                    if (!m_WorldPaintEditors.TryGetValue(key, out var editor))
-                    {
-                        editor = (MGTerrainEditor)CreateEditor(chunk, typeof(MGTerrainEditor));
-                        editor.m_WorldPaintDelegate = true;
-                        editor.m_PaintDetailIndex = index;
-                        editor.m_GrassPaintSubId = m_GrassPaintSubId;
-                        editor.m_GrassIdOnly = m_GrassIdOnly;
-                        editor.m_GrassPaintPopulation = m_GrassPaintPopulation;
-                        editor.m_PaintChannel = channel; editor.m_PaintDensity = m_PaintDensity;
-                        editor.m_PaintSize = m_PaintSize; editor.m_RandomPaintSize = m_RandomPaintSize;
-                        editor.m_PaintSizeMin = m_PaintSizeMin; editor.m_PaintSizeMax = m_PaintSizeMax;
-                        editor.m_PaintSizeSeed = m_PaintSizeSeed;
-                        m_WorldPaintEditors.Add(key, editor);
-                        if (!editor.BeginDetailStroke(chunk)) { m_WorldPaintSkipped.Add(key); continue; }
-                    }
-                    editor.PaintDetailDab(chunk, point, erase || eraseAll);
                 }
             }
         }

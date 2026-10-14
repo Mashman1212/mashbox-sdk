@@ -142,6 +142,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal Prototype prototype;
             internal readonly List<Matrix4x4[]> matrixChunks = new List<Matrix4x4[]>();
             internal readonly List<byte[]> grassSliceChunks = new List<byte[]>();
+            internal readonly List<byte[]> healthChunks = new List<byte[]>();
             internal bool forceNonInstanced;
             internal LightProbeUsage lightProbeUsage = LightProbeUsage.BlendProbes;
             internal ShadowCastingMode? shadowCastingOverride;

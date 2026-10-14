@@ -145,7 +145,7 @@ namespace MashBoxSDK.MapTools
                 var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(PathFor(tile, candidate));
                 bool shared = existing != null && Resources.FindObjectsOfTypeAll<MGTerrain>().Any(other =>
                     other != null && other.gameObject.scene.IsValid() && other.DensityDetailLayers.Where((layer, i) => other != tile || i != index)
-                    .Any(layer => layer.DensityMap == existing || layer.SizeMap == existing || layer.GrassIdMap == existing));
+                    .Any(layer => layer.DensityMap == existing || layer.SizeMap == existing || layer.HealthMap == existing || layer.GrassIdMap == existing));
                 if (!shared) return SaveGenerated(generated, tile, candidate);
             }
         }

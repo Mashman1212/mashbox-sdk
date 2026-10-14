@@ -95,6 +95,7 @@ namespace MashBoxSDK.MapTools
             layer.FindPropertyRelative("m_UseGrassArray").boolValue = true;
             layer.FindPropertyRelative("m_TextureSlice").intValue = subId;
             layer.FindPropertyRelative("m_SizeMap").objectReferenceValue = null;
+            layer.FindPropertyRelative("m_HealthMap").objectReferenceValue = null;
             layer.FindPropertyRelative("m_RenderDisabled").boolValue = false;
             layer.FindPropertyRelative("m_PaletteSourceOnly").boolValue = false;
             layer.FindPropertyRelative("m_GeneratedByPalette").objectReferenceValue = null;

@@ -151,7 +151,7 @@ namespace MashBoxSDK.MapTools
                         if(!(value is Texture2D) && !(value is Mesh))continue;
                         string role=property.Replace("m_","").Replace(".Array.data[","_").Replace("]","").Replace('.','_');
                         if(property=="m_Mesh")role="Mesh";
-                        var layerMatch = System.Text.RegularExpressions.Regex.Match(property, @"m_DensityDetailLayers\.Array\.data\[(\d+)\]\.m_(DensityMap|SizeMap|GrassIdMap)$");
+                        var layerMatch = System.Text.RegularExpressions.Regex.Match(property, @"m_DensityDetailLayers\.Array\.data\[(\d+)\]\.m_(DensityMap|SizeMap|HealthMap|GrassIdMap)$");
                         if (layerMatch.Success) role = "Layer_" + layerMatch.Groups[1].Value + "_" + (layerMatch.Groups[2].Value == "GrassIdMap" ? "GrassIDs" : layerMatch.Groups[2].Value.Replace("Map", ""));
                         if (layerMatch.Success && layerMatch.Groups[2].Value == "DensityMap")
                         {

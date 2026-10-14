@@ -10,7 +10,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 {
     public sealed partial class MGTerrain
     {
-        public enum DetailPaintMap { Density, Size, GrassIds }
+        public enum DetailPaintMap { Density, Size, GrassIds, Health }
 
         public enum DetailQualityPreset
         {
@@ -62,14 +62,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal readonly int count;
             internal readonly Vector4 sizes;
             internal readonly int slice;
+            internal readonly uint health;
 
-            internal DensityDetailSpawn(int x, int z, int count, Vector4 sizes, int slice)
+            internal DensityDetailSpawn(int x, int z, int count, Vector4 sizes, int slice, uint health)
             {
                 this.x = x;
                 this.z = z;
                 this.count = count;
                 this.sizes = sizes;
                 this.slice = slice;
+                this.health = health;
             }
         }
 
@@ -87,6 +89,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             public float MaxInstancesPerSquareMetre => Mathf.Clamp(m_MaxInstancesPerSquareMetre, 0f, 32f);
             [SerializeField, Tooltip("Spatial size multipliers painted by the detail brush. No map means 1. Readable RHalf, values 0.05 to 4.")]
             Texture2D m_SizeMap;
+            [SerializeField, Tooltip("Painted foliage health from 0 to 1. No map means fully healthy (1). Readable linear RHalf.")]
+            Texture2D m_HealthMap;
             [SerializeField, Min(0), Tooltip("Texture2DArray slice used by the MG Detail Data shader function.")]
             int m_TextureSlice;
             [SerializeField, Tooltip("Paint this definition as one of the grass material's eight texture-array slices.")]
@@ -133,6 +137,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
             public int PrototypeIndex => m_PrototypeIndex;
             public Texture2D DensityMap => m_DensityMap;
             public Texture2D SizeMap => m_SizeMap;
+            public Texture2D HealthMap => m_HealthMap;
+            internal uint GetPaintedHealth(int x, int z)
+            {
+                if (m_HealthMap == null || !m_HealthMap.isReadable || m_DensityMap == null) return uint.MaxValue;
+                float u = x / (float)m_DensityMap.width, v = z / (float)m_DensityMap.height;
+                float du = 1f / m_DensityMap.width, dv = 1f / m_DensityMap.height;
+                // Four UNorm8 corners fit the existing GPU spawn command's spare word.
+                uint Sample(float a, float b) => QuantizeDetailHealth(m_HealthMap.GetPixelBilinear(a, b).r);
+                return Sample(u, v) | Sample(u + du, v) << 8 | Sample(u, v + dv) << 16 | Sample(u + du, v + dv) << 24;
+            }
             public float MaximumPaintedHeight => MaxHeight * (m_SizeMap != null ? 4f : 1f);
             internal Vector4 GetPaintedSizes(int x, int z)
             {
@@ -170,6 +184,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 {
                     case DetailPaintMap.Density: m_DensityMap = copy; break;
                     case DetailPaintMap.Size: m_SizeMap = copy; break;
+                    case DetailPaintMap.Health: m_HealthMap = copy; break;
                     case DetailPaintMap.GrassIds: m_GrassIdMap = copy; break;
                     default: throw new ArgumentOutOfRangeException(nameof(channel));
                 }
@@ -663,7 +678,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             {
                 DensityDetailLayer layer = m_DensityDetailLayers[layerIndex];
                 if (layer != null)
-                    usage.DensityMapBytes += GetRuntimeMemorySize(layer.DensityMap) + GetRuntimeMemorySize(layer.SizeMap);
+                    usage.DensityMapBytes += GetRuntimeMemorySize(layer.DensityMap) + GetRuntimeMemorySize(layer.SizeMap) + GetRuntimeMemorySize(layer.HealthMap);
             }
 
             for (int batchIndex = 0; batchIndex < m_DrawBatches.Count; batchIndex++)
@@ -671,7 +686,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
             foreach (DensityDetailChunk chunk in m_DensityDetailCache.Values)
             {
-                usage.ProceduralCellDataBytes += chunk.proceduralSpawns.Count * 28L;
+                usage.ProceduralCellDataBytes += chunk.proceduralSpawns.Count * 36L;
                 for (int drawIndex = 0; drawIndex < chunk.combinedDraws.Count; drawIndex++)
                 {
                     CombinedDetailDraw draw = chunk.combinedDraws[drawIndex];
@@ -1838,6 +1853,22 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 visible.chunk.instanceCount);
         }
 
+        internal static byte QuantizeDetailHealth(float health) =>
+            (byte)Mathf.FloorToInt((float.IsFinite(health) ? Mathf.Clamp01(health) : 1f) * 255f + .5f);
+
+        internal static float InterpolateDetailHealth(uint packed, float x, float z) =>
+            Mathf.Lerp(Mathf.Lerp(packed & 255u, (packed >> 8) & 255u, x),
+                Mathf.Lerp((packed >> 16) & 255u, packed >> 24, x), z) / 255f;
+
+        // The integer part remains the definition index. Fraction 0 is legacy/unpainted.
+        // Keep random, texture index, rank and density fade in their existing components.
+        internal static float EncodeDetailLayerHealth(int layer, float health) =>
+            layer + .25f + QuantizeDetailHealth(health) * (.5f / 255f);
+
+        static float BatchDetailHealth(DrawBatch batch, int chunk, int index) =>
+            chunk < batch.healthChunks.Count && batch.healthChunks[chunk] != null
+                ? batch.healthChunks[chunk][index] / 255f : 1f;
+
         bool ShouldBuildGpuProceduralDetailCells()
         {
 #if UNITY_6000_0_OR_NEWER
@@ -1913,9 +1944,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     for (int i = 0; i < copyCount; i++)
                     {
                         int slice = chunkIndex < batch.grassSliceChunks.Count ? batch.grassSliceChunks[chunkIndex][sourceIndex + i] : m_DensityDetailLayers[definitionIndex].TextureSlice;
+                        float layerHealth = EncodeDetailLayerHealth(definitionIndex, BatchDetailHealth(batch, chunkIndex, sourceIndex + i));
                         accumulator.fadeData[accumulator.count + i] = fade
-                            ? new Vector4(definitionIndex, slice + 1, (queued + i + 1f) / Mathf.Max(1, population), Mathf.Clamp01(m_OverallDetailDensity) + 1f)
-                            : new Vector4(definitionIndex, slice + 1, 0, 0);
+                            ? new Vector4(layerHealth, slice + 1, (queued + i + 1f) / Mathf.Max(1, population), Mathf.Clamp01(m_OverallDetailDensity) + 1f)
+                            : new Vector4(layerHealth, slice + 1, 0, 0);
                     }
                     accumulator.count += copyCount;
                     sourceIndex += copyCount;
@@ -2687,7 +2719,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         count = Mathf.Min(count, limit - generated);
                         if (count <= 0)
                             continue;
-                        chunk.proceduralSpawns.Add(new DensityDetailSpawn(x, z, count, layer.GetPaintedSizes(x, z), layer.GrassSliceAt(x, z)));
+                        chunk.proceduralSpawns.Add(new DensityDetailSpawn(x, z, count, layer.GetPaintedSizes(x, z), layer.GrassSliceAt(x, z), layer.GetPaintedHealth(x, z)));
                         generated += count;
                     }
                 }
@@ -2696,6 +2728,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
 
             var slices = new List<byte>();
+            var healthValues = layer.HealthMap != null ? new List<byte>() : null;
             var matricesByPart = new List<Matrix4x4>[parts.Count];
             var matrixOwners = new int[parts.Count];
             var treeMatrices = new Dictionary<Matrix4x4, int>();
@@ -2721,6 +2754,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         count++;
                     count = Mathf.Min(count, limit - generated);
                     Vector4 sizes = layer.GetPaintedSizes(x, z);
+                    uint health = layer.GetPaintedHealth(x, z);
                     for (int item = 0; item < count; item++)
                     {
                         uint hash = Hash(cellHash ^ (uint)(item * 83492791));
@@ -2743,6 +2777,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         for (int partIndex = 0; partIndex < parts.Count; partIndex++)
                             if (matrixOwners[partIndex] == partIndex) matricesByPart[partIndex].Add(instanceMatrix * parts[partIndex].relativeMatrix);
                         slices.Add((byte)layer.GrassSliceAt(x, z));
+                        healthValues?.Add(QuantizeDetailHealth(InterpolateDetailHealth(health, jitterX, jitterZ)));
                         generated++;
                     }
                 }
@@ -2765,7 +2800,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     && !UseFixedDetailCells
                     && m_AppearanceCaptureCamera == null
                     && !(m_UseBatchRendererGroup && Application.isPlaying)
-                    && layer.GrassIdMap == null
+                    && layer.GrassIdMap == null && layer.HealthMap == null
                     && !RequiresPerInstanceObjectTransform(part.material)
                     && !IsDetailPaintRegion(layerIndex, firstX, firstZ, chunkCells, width, height)
                     && matrices.Count > 1
@@ -2817,6 +2852,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 {
                     batch.matrixChunks.AddRange(sharedBatch.matrixChunks);
                     batch.grassSliceChunks.AddRange(sharedBatch.grassSliceChunks);
+                    batch.healthChunks.AddRange(sharedBatch.healthChunks);
                     if (batch.matrixChunks.Count > 0) chunk.batches.Add(batch);
                     continue;
                 }
@@ -2826,15 +2862,18 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     int count = Mathf.Min(1023, matrices.Count - start);
                     var matrixChunk = new Matrix4x4[count];
                     var sliceChunk = new byte[count];
+                    var healthChunk = healthValues != null ? new byte[count] : null;
                     for (int matrixIndex = 0; matrixIndex < count; matrixIndex++)
                     {
                         int orderedIndex = (int)((permutationOffset
                             + (long)(start + matrixIndex) * permutationStride) % matrices.Count);
                         matrixChunk[matrixIndex] = transform.localToWorldMatrix * matrices[orderedIndex];
                         sliceChunk[matrixIndex] = slices[orderedIndex];
+                        if (healthChunk != null) healthChunk[matrixIndex] = healthValues[orderedIndex];
                     }
                     batch.matrixChunks.Add(matrixChunk);
                     batch.grassSliceChunks.Add(sliceChunk);
+                    batch.healthChunks.Add(healthChunk);
                 }
                 if (batch.matrixChunks.Count > 0)
                     chunk.batches.Add(batch);

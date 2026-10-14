@@ -79,7 +79,7 @@ namespace MashBoxSDK.MapTools
                 .Where(t => t.GetComponentInParent<MGTerrainWorld>(true) == source.World);
 
         static readonly HashSet<string> LocalDetailData = new HashSet<string>
-        { "m_PrototypeIndex", "m_DensityMap", "m_SizeMap", "m_GrassIdMap", "m_PaletteSourceMap", "m_RepresentedInstanceCount" };
+        { "m_PrototypeIndex", "m_DensityMap", "m_SizeMap", "m_HealthMap", "m_GrassIdMap", "m_PaletteSourceMap", "m_RepresentedInstanceCount" };
 
         static void SharedIds(MGTerrain tile)
         {
