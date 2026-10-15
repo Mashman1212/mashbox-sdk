@@ -348,6 +348,7 @@ namespace MashBoxSDK.AnimationStudio
             hadViewport = true;
             viewport.Studio = this;
             viewport.BindTimeline(DrawViewportTimeline);
+            viewport.BindRigControls(DrawViewportRigControls);
             viewport.BindInspector(DrawViewportInspector);
             viewport.SetInspectorExpanded(inspectorExpanded);
             if (rig == null) return;
@@ -424,12 +425,14 @@ namespace MashBoxSDK.AnimationStudio
             showPoles = EditorGUILayout.Toggle("Elbow / knee targets", showPoles);
             controlSize = EditorGUILayout.Slider("Control size", controlSize, 0.75f, 3f);
             if (EditorGUI.EndChangeCheck()) viewport?.Repaint();
-            EditorGUILayout.HelpBox("Click a bone or body ring to rotate it. Gold targets steer elbows and knees. W moves; E rotates. FK bones rotate only; only Root can translate. IK targets and poles can move.", MessageType.None);
+            EditorGUILayout.HelpBox("W moves; E rotates. Root and Hips can translate. Use IK targets to move hands and feet; gold targets steer elbows and knees. Other FK bones rotate to preserve bone lengths.", MessageType.None);
             EditorGUI.BeginChangeCheck();
             neutralShading = EditorGUILayout.Toggle("Neutral preview material", neutralShading);
             if (EditorGUI.EndChangeCheck()) { rig.SetNeutralShading(neutralShading); viewport?.Repaint(); }
             }
             rotate = GUILayout.Toolbar(rotate ? 1 : 0, new[] { "Move  [W]", "Rotate  [E]" }) == 1;
+            if (!rotate && !ikMode && !CanTranslateBone(control))
+                EditorGUILayout.HelpBox("Move is available on Root, Hips and IK controls. Choose an IK hand/foot target to move a limb, or press E to rotate this FK bone.", MessageType.Info);
             if (ikMode)
             {
                 control = Mathf.Clamp(control, 0, 3);
@@ -763,10 +766,10 @@ namespace MashBoxSDK.AnimationStudio
                     Handles.color = Color.yellow;
                     Handles.DrawDottedLine(rig.Middles[control].position, target, 4);
                 }
-                if (rotate && !poleMode) eff.rotation = Quaternion.Inverse(root.rotation) * Handles.RotationHandle(root.rotation * eff.rotation, target);
+                if (rotate && !poleMode) eff.rotation = Quaternion.Inverse(root.rotation) * StudioRotationHandle(root.rotation * eff.rotation, target);
                 else
                 {
-                    target = Handles.PositionHandle(target, Quaternion.identity);
+                    target = Handles.PositionHandle(target, HandleOrientation(poleMode ? root.rotation : root.rotation * eff.rotation));
                     if (poleMode) eff.pole = root.InverseTransformPoint(target);
                     else eff.position = root.InverseTransformPoint(target);
                 }
@@ -780,14 +783,14 @@ namespace MashBoxSDK.AnimationStudio
                 control = Mathf.Clamp(control, 0, rig.Bones.Length - 1);
                 var bone = rig.Bones[control];
                 var p = BonePose.Read(bone);
-                if (rotate || !CanTranslateBone(control))
+                if (rotate)
                 {
-                    Quaternion rotation = Handles.RotationHandle(bone.rotation, bone.position);
+                    Quaternion rotation = StudioRotationHandle(bone.rotation, bone.position);
                     p.rotation = bone.parent ? Quaternion.Inverse(bone.parent.rotation) * rotation : rotation;
                 }
-                else
+                else if (CanTranslateBone(control))
                 {
-                    Vector3 position = Handles.PositionHandle(bone.position, Quaternion.identity);
+                    Vector3 position = Handles.PositionHandle(bone.position, HandleOrientation(bone.rotation));
                     p.position = bone.parent ? bone.parent.InverseTransformPoint(position) : position;
                 }
                 if (EditorGUI.EndChangeCheck()) { PrepareFKEdit(control); pose.bones[control] = p; PreviewSceneEdit("Move FK control"); }

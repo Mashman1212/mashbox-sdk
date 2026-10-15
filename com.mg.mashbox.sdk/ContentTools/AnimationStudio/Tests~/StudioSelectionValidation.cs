@@ -24,7 +24,11 @@ namespace MashBoxSDK.AnimationStudio
     AnimationStudioWindow.OpenInStudio(take);var window=Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
     var rig2=(AuthoringRig)Get(window,"rig");
     Check((bool)Call(window,"CanTranslateBone",0),"Top-level Root allows translation");
-    Check(Enumerable.Range(1,rig2.Bones.Length-1).All(i=>!(bool)Call(window,"CanTranslateBone",i)),"Every non-root bone rejects translation");
+    int hips=Array.IndexOf(rig2.Bones,rig2.Animator.GetBoneTransform(HumanBodyBones.Hips));
+    Check((bool)Call(window,"CanTranslateBone",hips),"Humanoid Hips allows translation");
+    Check(Enumerable.Range(1,rig2.Bones.Length-1).Where(i=>i!=hips).All(i=>!(bool)Call(window,"CanTranslateBone",i)),"Other non-root FK bones reject translation");
+    Set(window,"rotate",false); Call(window,"SelectBone",rig2.Bones[hips]);
+    Check(!(bool)Get(window,"rotate"),"Selecting Hips preserves Move mode");
     int left=Array.IndexOf(rig2.Bones,rig2.Animator.GetBoneTransform(HumanBodyBones.LeftUpperArm));
     int right=Array.IndexOf(rig2.Bones,rig2.Animator.GetBoneTransform(HumanBodyBones.RightUpperArm));
     Call(window,"SetRigControlSelection",left,false,false,false);

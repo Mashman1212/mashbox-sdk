@@ -211,7 +211,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     var offset=BikeHandle(control); EditorGUI.BeginChangeCheck();
                     var p=handlePosition; var r=selected.rotation*Quaternion.Euler(offset?.rotation ?? Vector3.zero);
-                    if(rotate) r=Handles.RotationHandle(r,p); else p=Handles.PositionHandle(p,selected.rotation);
+                    if(rotate) r=StudioRotationHandle(r,p); else p=Handles.PositionHandle(p,HandleOrientation(r));
                     if(EditorGUI.EndChangeCheck()) SaveBikeHandle(control,selected.InverseTransformPoint(p),(Quaternion.Inverse(selected.rotation)*r).eulerAngles);
                     return true;
                 }
@@ -222,8 +222,8 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     Vector3 p=handlePosition;
                     Quaternion r=selected.rotation;
-                    if(rotate && control==0) r=Handles.RotationHandle(r,p);
-                    else p=Handles.PositionHandle(p,selected.parent.rotation);
+                    if(rotate && control==0) r=StudioRotationHandle(r,p);
+                    else p=Handles.PositionHandle(p,HandleOrientation(selected.rotation));
                     if(EditorGUI.EndChangeCheck())
                     {
                         if(!rotate || control==8) selected.position+=p-handlePosition;

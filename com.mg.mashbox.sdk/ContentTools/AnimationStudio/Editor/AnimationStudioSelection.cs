@@ -8,7 +8,13 @@ namespace MashBoxSDK.AnimationStudio
  public sealed partial class AnimationStudioWindow
  {
   [SerializeField] private bool lockActorMeshes=true;
-  private bool CanTranslateBone(int index) => rig != null && index >= 0 && index < rig.Bones.Length && rig.Bones[index] == rig.Root.transform;
+  private bool CanTranslateBone(int index)
+  {
+   if(rig==null || index<0 || index>=rig.Bones.Length) return false;
+   var bone=rig.Bones[index];
+   return bone==rig.Root.transform || (rig.Animator && rig.Animator.avatar && rig.Animator.avatar.isHuman &&
+    bone==rig.Animator.GetBoneTransform(HumanBodyBones.Hips));
+  }
   private sealed class RigSelectionItem
   {
    public AnimationTake Actor; public int Index; public bool IK,Pole;
@@ -143,7 +149,9 @@ namespace MashBoxSDK.AnimationStudio
    Vector3 pivot=Vector3.zero; foreach(var entry in entries) pivot+=entry.Position; pivot/=entries.Count;
    EditorGUI.BeginChangeCheck();
    Vector3 moved=pivot; Quaternion turn=Quaternion.identity;
-   if(groupRotate) turn=Handles.RotationHandle(turn,pivot); else moved=Handles.PositionHandle(pivot,Quaternion.identity);
+   var active=entries.LastOrDefault(e=>e.Item.Actor==OutfitActor && e.Item.Index==control && e.Item.IK==ikMode && e.Item.Pole==poleMode) ?? entries[entries.Count-1];
+   Quaternion orientation=HandleOrientation(active.Rotation);
+   if(groupRotate) turn=StudioRotationHandle(orientation,pivot)*Quaternion.Inverse(orientation); else moved=Handles.PositionHandle(pivot,orientation);
    if(!EditorGUI.EndChangeCheck()) return;
    foreach(var entry in entries.OrderBy(e=>e.Depth)) InSelectedActor(entry.Item.Actor,()=>
    {

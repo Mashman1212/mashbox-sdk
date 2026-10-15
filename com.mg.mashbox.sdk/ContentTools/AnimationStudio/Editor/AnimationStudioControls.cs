@@ -11,6 +11,38 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool fadeRigControls = true;
         [SerializeField] private bool hideInactiveControls;
         [SerializeField] private bool rigDiagram = true;
+        [SerializeField] private bool rigToolbarExpanded = true;
+        [SerializeField] private bool localHandleSpace;
+        private int globalRotationControl;
+        private Quaternion globalRotationPrevious = Quaternion.identity;
+
+        private Quaternion HandleOrientation(Quaternion controlRotation) => localHandleSpace ? controlRotation : Quaternion.identity;
+
+        private void SetHandleSpace(bool local)
+        {
+            if (localHandleSpace == local) return;
+            FinishSceneEdit(); FinishActorEdits();
+            localHandleSpace = local; globalRotationControl = 0;
+            viewport?.Repaint(); Repaint();
+        }
+
+        private Quaternion ApplyGlobalHandleRotation(Quaternion rotation, Quaternion handleRotation, int hotControl)
+        {
+            // RotationHandle returns the total drag from its initial orientation, so apply only the new delta.
+            Quaternion previous = globalRotationControl == hotControl ? globalRotationPrevious : Quaternion.identity;
+            globalRotationControl = hotControl; globalRotationPrevious = handleRotation;
+            return handleRotation * Quaternion.Inverse(previous) * rotation;
+        }
+
+        private Quaternion StudioRotationHandle(Quaternion rotation, Vector3 position)
+        {
+            if (localHandleSpace) return Handles.RotationHandle(rotation, position);
+            if (GUIUtility.hotControl == 0) globalRotationControl = 0;
+            EditorGUI.BeginChangeCheck();
+            Quaternion handleRotation = Handles.RotationHandle(Quaternion.identity, position);
+            if (!EditorGUI.EndChangeCheck()) return rotation;
+            return ApplyGlobalHandleRotation(rotation, handleRotation, GUIUtility.hotControl);
+        }
         [SerializeField] private int diagramHand;
         private static readonly string[] FingerNames = { "Thumb", "Index", "Middle", "Ring", "Little" };
         private int BoneLimb(Transform bone)
@@ -35,7 +67,7 @@ namespace MashBoxSDK.AnimationStudio
             pose.effectors[limb].weight = weight;
             Commit("Change limb IK/FK blend");
         }
-        private void DrawRigDiagram()
+        private void DrawRigVisibility()
         {
             EditorGUI.BeginChangeCheck();
             using (new EditorGUILayout.HorizontalScope())
@@ -46,6 +78,63 @@ namespace MashBoxSDK.AnimationStudio
             fadeRigControls = EditorGUILayout.Toggle("Fade by IK/FK blend", fadeRigControls);
             using (new EditorGUI.DisabledScope(!fadeRigControls)) hideInactiveControls = EditorGUILayout.Toggle("Hide inactive controls", hideInactiveControls);
             if (EditorGUI.EndChangeCheck()) viewport?.Repaint();
+        }
+
+        private void DrawViewportRigControls()
+        {
+            if (!this) return;
+            float oldWidth = EditorGUIUtility.labelWidth;
+            try
+            {
+                EditorGUIUtility.labelWidth = 150;
+                using (new GUILayout.VerticalScope(EditorStyles.inspectorDefaultMargins))
+                {
+                    rigToolbarExpanded = EditorGUILayout.Foldout(rigToolbarExpanded, "Control rig", true);
+                    if (!rigToolbarExpanded) return;
+                    int space = GUILayout.Toolbar(localHandleSpace ? 0 : 1, new[] { new GUIContent("Local", "Align handles with the selected control"), new GUIContent("Global", "Align handles with world axes") });
+                    SetHandleSpace(space == 0);
+                    DrawRigVisibility();
+                    if (!take || rig == null || pose == null) return;
+                    EnsureActors();
+                    EditorGUILayout.LabelField(OutfitActor.name, EditorStyles.miniLabel);
+                    Action draw = () =>
+                    {
+                        if (IsBike) return;
+                        DrawSelectedLimbBlend(true);
+                    };
+                    if (activeActor >= 0 && activeActor < actorPreviews.Count) InActor(actorPreviews[activeActor], draw);
+                    else draw();
+                }
+            }
+            finally { EditorGUIUtility.labelWidth = oldWidth; }
+        }
+
+        private void DrawSelectedLimbBlend(bool presets = false)
+        {
+            int limb = ikMode ? Mathf.Clamp(control, 0, 3) : BoneLimb(rig.Bones[Mathf.Clamp(control, 0, rig.Bones.Length - 1)]);
+            if (limb < 0)
+            {
+                EditorGUILayout.LabelField("Select a limb to adjust IK/FK blend", EditorStyles.miniLabel);
+                return;
+            }
+            EditorGUILayout.LabelField(LimbNames[limb] + " chain", EditorStyles.boldLabel);
+            using (new EditorGUI.DisabledScope(!rig.HasIK))
+            {
+                if (presets)
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("FK", EditorStyles.miniButtonLeft)) SetLimbBlend(limb, 0);
+                        if (GUILayout.Button("Mix", EditorStyles.miniButtonMid)) SetLimbBlend(limb, .5f);
+                        if (GUILayout.Button("IK", EditorStyles.miniButtonRight)) SetLimbBlend(limb, 1);
+                    }
+                EditorGUI.BeginChangeCheck();
+                float blend = EditorGUILayout.Slider("FK 0 → IK 1", pose.effectors[limb].weight, 0, 1);
+                if (EditorGUI.EndChangeCheck()) SetLimbBlend(limb, blend);
+            }
+        }
+
+        private void DrawRigDiagram()
+        {
             rigDiagram = EditorGUILayout.Foldout(rigDiagram, "Body picker · front view", true);
             if (!rigDiagram) return;
             Rect area = GUILayoutUtility.GetRect(100, 280, GUILayout.ExpandWidth(true));
@@ -77,18 +166,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             Handles.EndGUI();
             EditorGUILayout.LabelField("Circles: FK bones   Squares: IK   Gold: poles", EditorStyles.miniLabel);
-            int limb = ikMode ? Mathf.Clamp(control,0,3) : BoneLimb(rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)]);
-            if (limb >= 0)
-            {
-                EditorGUILayout.LabelField(LimbNames[limb] + " chain", EditorStyles.boldLabel);
-                using (new EditorGUI.DisabledScope(!rig.HasIK))
-                {
-                    EditorGUI.BeginChangeCheck();
-                    float blend = EditorGUILayout.Slider("FK 0 ← blend → IK 1", pose.effectors[limb].weight,0,1);
-                    if (EditorGUI.EndChangeCheck()) SetLimbBlend(limb,blend);
-                }
-            }
-            else EditorGUILayout.LabelField("Selected bone: FK control", EditorStyles.miniLabel);
+            DrawSelectedLimbBlend();
             diagramHand = GUILayout.Toolbar(diagramHand, new[] { "Left fingers", "Right fingers" });
             Rect hand = GUILayoutUtility.GetRect(100,78,GUILayout.ExpandWidth(true));
             int first = (int)(diagramHand == 0 ? HumanBodyBones.LeftThumbProximal : HumanBodyBones.RightThumbProximal);
@@ -147,7 +225,7 @@ namespace MashBoxSDK.AnimationStudio
             int index = Array.IndexOf(rig.Bones, bone);
             if (index < 0) return;
             PickRigControl(index);
-            control = index; ikMode = false; poleMode = false; rotate = true; boneSearch = "";
+            control = index; ikMode = false; poleMode = false; boneSearch = "";
             Repaint(); viewport?.Repaint();
         }
 

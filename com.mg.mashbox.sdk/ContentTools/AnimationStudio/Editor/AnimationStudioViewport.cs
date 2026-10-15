@@ -24,6 +24,23 @@ namespace MashBoxSDK.AnimationStudio
         }
         private IMGUIContainer timeline;
         private IMGUIContainer inspector;
+        private IMGUIContainer rigControls;
+
+        internal void BindRigControls(System.Action draw)
+        {
+            if (rigControls == null)
+            {
+                rigControls = new IMGUIContainer { name = "mashbox-animation-rig-controls" };
+                rigControls.style.position = Position.Absolute;
+                rigControls.style.top = 8;
+                rigControls.style.left = 8;
+                rigControls.style.width = 260;
+                rigControls.style.backgroundColor = new Color(0.13f, 0.14f, 0.16f, 0.98f);
+                rootVisualElement.Add(rigControls);
+            }
+            rigControls.onGUIHandler = draw;
+            rigControls.BringToFront();
+        }
 
         internal void BindInspector(System.Action draw)
         {

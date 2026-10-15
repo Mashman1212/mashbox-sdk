@@ -242,6 +242,13 @@ public partial class RuntimeMeshCombiner : MonoBehaviour
         return results;
     }
 
+    // Uses the same retention rules as Combine, without allocating output meshes.
+    public bool IsDataSizePreviewSource(MeshFilter filter)
+    {
+        if (!ShouldUseMeshFilter(filter, true) || !filter.sharedMesh.isReadable)
+            return false;
+        return !useSpatialChunks || SpatialRetentionReason(filter, filter.GetComponent<MeshRenderer>()) == null;
+    }
     [ContextMenu("Enable Read/Write On Child Mesh Assets")]
     public void EnableReadWriteOnChildMeshAssets()
     {

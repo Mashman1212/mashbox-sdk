@@ -87,9 +87,7 @@ namespace MashBoxSDK.AnimationStudio
 
             GUILayout.Space(5);
             var timelineActor=OutfitActor;
-            var layerKeys=timelineActor.activeLayer>=0 && timelineActor.activeLayer<timelineActor.layers.Count ? timelineActor.layers[timelineActor.activeLayer].keys : timelineActor.keys;
-            if(timelineSelectionActor!=timelineActor || timelineSelectionKeys!=layerKeys)
-            { timelineRangeStart=timelineRangeEnd=-1; timelineSelectionActor=timelineActor; timelineSelectionKeys=layerKeys; }
+            var layerKeys=TimelineLayerKeys(timelineActor);
             var keyFrames=layerKeys.Select(k=>Mathf.RoundToInt((float)k.frame/timelineActor.frameRate*take.frameRate)).ToArray();
             using (new GUILayout.HorizontalScope())
             {
@@ -109,12 +107,16 @@ namespace MashBoxSDK.AnimationStudio
                 if (EditorGUI.EndChangeCheck()) ScrubViewport(next);
                 GUILayout.Label("/ " + take.lastFrame, GUILayout.Width(58));
                 GUILayout.FlexibleSpace();
+                DrawTimelineLayerPicker();
                 bool nextAuto = GUILayout.Toggle(autoKey, "Auto Key", "Button", GUILayout.Width(70));
                 if (nextAuto != autoKey) { FinishSceneEdit(); autoKey = nextAuto; Repaint(); }
                 if (GUILayout.Button("Key [S]", GUILayout.Width(62))) KeyCurrentActor();
                 GUILayout.Space(6);
             }
 
+            // The toolbar may have changed the authoring layer during this GUI event.
+            layerKeys=TimelineLayerKeys(timelineActor);
+            keyFrames=layerKeys.Select(k=>Mathf.RoundToInt((float)k.frame/timelineActor.frameRate*take.frameRate)).ToArray();
             Rect ruler = GUILayoutUtility.GetRect(1, 51, GUILayout.ExpandWidth(true));
             ruler.xMin += 10; ruler.xMax -= 10;
             int id = GUIUtility.GetControlID("MashBoxViewportScrubber".GetHashCode(), FocusType.Keyboard, ruler);
@@ -204,6 +206,14 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.Space(10);
             }
             HandleKeys(evt);
+        }
+
+        private List<PoseKey> TimelineLayerKeys(AnimationTake actor)
+        {
+            var keys=actor.activeLayer>=0 && actor.activeLayer<actor.layers.Count ? actor.layers[actor.activeLayer].keys : actor.keys;
+            if(timelineSelectionActor!=actor || timelineSelectionKeys!=keys)
+            { timelineRangeStart=timelineRangeEnd=-1; timelineSelectionActor=actor; timelineSelectionKeys=keys; }
+            return keys;
         }
 
         private int FrameAtMouse(Rect ruler, float x) =>

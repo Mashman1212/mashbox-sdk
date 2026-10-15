@@ -156,7 +156,7 @@ namespace MashBoxSDK.AnimationStudio
             Vector3 p=tp+tq*c.positionOffset; Quaternion q=tq*Quaternion.Euler(c.rotationOffset);
             Handles.Label(p,"Attached · edit offset");
             EditorGUI.BeginChangeCheck();
-            if(rotate) q=Handles.RotationHandle(q,p); else p=Handles.PositionHandle(p,tq);
+            if(rotate) q=StudioRotationHandle(q,p); else p=Handles.PositionHandle(p,HandleOrientation(q));
             if(EditorGUI.EndChangeCheck())
             {
                 Undo.RecordObject(constraintSession,"Edit attachment offset");

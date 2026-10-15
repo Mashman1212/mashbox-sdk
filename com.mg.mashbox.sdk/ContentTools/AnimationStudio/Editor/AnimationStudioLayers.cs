@@ -55,7 +55,27 @@ namespace MashBoxSDK.AnimationStudio
             var names=new[]{"Base motion"}.Concat(take.layers.Select(l=>l.name)).ToArray();
             int choice=EditorGUILayout.Popup("Key on layer",Mathf.Clamp(take.activeLayer+1,0,names.Length-1),names)-1;
             if(choice!=take.activeLayer)
-            { FinishSceneEdit(); Undo.RecordObject(take,"Select animation layer"); take.activeLayer=choice; Save(); RefreshLayers(); }
+                SelectAuthoringLayer(choice);
+        }
+        private void SelectAuthoringLayer(int choice)
+        {
+            if(choice < -1 || choice >= take.layers.Count) throw new ArgumentOutOfRangeException(nameof(choice));
+            if(choice == take.activeLayer) return;
+            FinishSceneEdit(); Undo.RecordObject(take,"Select animation layer"); take.activeLayer=choice; Save(); RefreshLayers();
+        }
+        private void DrawTimelineLayerPicker()
+        {
+            Action draw=()=>
+            {
+                take.layers=take.layers ?? new List<StudioAnimationLayer>();
+                var names=new[]{new GUIContent("Base motion",take.name+" · Base motion")}.Concat(take.layers.Select(l=>new GUIContent(l.name,take.name+" · "+l.name))).ToArray();
+                GUILayout.Label(new GUIContent("Layer", "Key on layer for the selected actor: "+take.name),EditorStyles.miniLabel,GUILayout.Width(30));
+                float width=Mathf.Clamp((viewport ? viewport.position.width : 900)-640,100,210);
+                int choice=EditorGUILayout.Popup(Mathf.Clamp(take.activeLayer+1,0,names.Length-1),names,GUILayout.Width(width))-1;
+                if(choice!=take.activeLayer) SelectAuthoringLayer(choice);
+            };
+            if(activeActor>=0 && activeActor<actorPreviews.Count) InActor(actorPreviews[activeActor],draw);
+            else draw();
         }
         private void DrawLayers()
         {
