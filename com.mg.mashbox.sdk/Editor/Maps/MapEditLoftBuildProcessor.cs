@@ -1,3 +1,4 @@
+#if UNITY_EDITOR && UNITY_6000_0_OR_NEWER
 using MashBoxSDK.Maps.Spline;
 using UnityEditor;
 using UnityEditor.Build;
@@ -36,3 +37,4 @@ namespace MashBoxSDK.MapTools
         }
     }
 }
+#endif
