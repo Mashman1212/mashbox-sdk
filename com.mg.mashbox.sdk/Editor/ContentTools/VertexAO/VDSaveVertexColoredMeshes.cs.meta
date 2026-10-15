@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: ba59971fdddc95d4680cd4efb4b3919f
+timeCreated: 1501539673
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 21015
+  packageName: VertexDirt - Vertex Ambient Occlusion
+  packageVersion: 1.8
+  assetPath: Assets/Zololgo/VertexDirt/Scripts/Editor/VDSaveVertexColoredMeshes.cs
+  uploadId: 493783

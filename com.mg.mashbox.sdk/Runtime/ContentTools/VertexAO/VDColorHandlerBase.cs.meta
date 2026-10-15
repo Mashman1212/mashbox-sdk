@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: 8fad1c34e90176949a5b4754836b8152
+timeCreated: 1501614277
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 21015
+  packageName: VertexDirt - Vertex Ambient Occlusion
+  packageVersion: 1.8
+  assetPath: Assets/Zololgo/VertexDirt/Scripts/VDColorHandlerBase.cs
+  uploadId: 493783

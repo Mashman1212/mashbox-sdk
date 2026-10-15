@@ -52,6 +52,9 @@ namespace MashBoxSDK.Shaders
             "_MaskMap",
             "_MaskMap_ST",
             "_AlphaCutoffEnable",
+            // Per-material user choices: never inherit these from the enforcement template.
+            "_UseVertexAO",
+            "UseVertexAO",
             "_NormalMap",
             "_NormalMap_ST",
             "_NormalStrength",

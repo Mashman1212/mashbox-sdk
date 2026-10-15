@@ -23,6 +23,7 @@ namespace MashBoxSDK.SDKMain
             ContentBuilder,
             TextureReducer,
             UVInspector,
+            VertexAO,
             PhotoBooth,
             MachEquipManager,
             GrassShapes
@@ -38,6 +39,7 @@ namespace MashBoxSDK.SDKMain
         private PhotoBoothWindow photoBoothTool;
         private TextureSizeReducerTool textureSizeReducerTool;
         private UVInspectorTool uvInspectorTool;
+        private VertexDirtWindow vertexAOTool;
         private MGGrassShapeBakerWindow grassShapeTool;
         
         private const string PREF_KEY_TAB = "MashBoxSDK.SelectedTab";
@@ -67,6 +69,18 @@ namespace MashBoxSDK.SDKMain
             window.Repaint();
         }
 
+        public static void OpenVertexAO()
+        {
+            var window = GetWindow<MashBoxSDKWindow>("MashBox SDK");
+            window._tab = (int)MainTab.ContentTools;
+            window._contentToolTab = (int)ContentToolTab.VertexAO;
+            EditorPrefs.SetInt(PREF_KEY_TAB, window._tab);
+            EditorPrefs.SetInt(PREF_KEY_CONTENT_TOOL_TAB, window._contentToolTab);
+            window.Show();
+            window.Focus();
+            window.Repaint();
+        }
+
         private void OnEnable()
         {
             _tab = EditorPrefs.GetInt(PREF_KEY_TAB, 0);
@@ -75,11 +89,17 @@ namespace MashBoxSDK.SDKMain
             {
                 // UV Inspector was inserted before the existing Photo Booth and
                 // Mach Equip tabs. Preserve each user's previously selected tab.
-                if (_contentToolTab >= (int)ContentToolTab.PhotoBooth - 1)
+                if (_contentToolTab >= 2)
                     _contentToolTab++;
 
                 EditorPrefs.SetInt(PREF_KEY_CONTENT_TOOL_TAB, _contentToolTab);
                 EditorPrefs.SetBool(PREF_KEY_CONTENT_TOOL_TAB_UV_LAYOUT, true);
+            }
+            if (!EditorPrefs.GetBool("MashBoxSDK.ContentToolTabVertexAOLayout", false))
+            {
+                if (_contentToolTab >= (int)ContentToolTab.VertexAO) _contentToolTab++;
+                EditorPrefs.SetInt(PREF_KEY_CONTENT_TOOL_TAB, _contentToolTab);
+                EditorPrefs.SetBool("MashBoxSDK.ContentToolTabVertexAOLayout", true);
             }
             _headerTex = AssetDatabase.LoadAssetAtPath<Texture2D>(MashBoxEditorResources.HEADER);
             textureSizeReducerTool?.Initialize();
@@ -136,6 +156,7 @@ namespace MashBoxSDK.SDKMain
             DestroyTool(ref machEquipManager);
             DestroyTool(ref photoBoothTool);
             DestroyTool(ref grassShapeTool);
+            DestroyTool(ref vertexAOTool);
             textureSizeReducerTool = null;
             uvInspectorTool = null;
         }
@@ -327,10 +348,11 @@ namespace MashBoxSDK.SDKMain
                 "Content Builder",
                 "Texture Reducer",
                 "UV Inspector",
+                "Vertex AO",
                 "Photo Booth",
                 "Mach Equip Manager",
                 "Grass Shapes"
-            }, MashBoxTabDrawer.TabVisualStyle.Secondary);
+            }, MashBoxTabDrawer.TabVisualStyle.Secondary, minTabWidth: 110f);
 
             if (newTab != _contentToolTab)
             {
@@ -350,6 +372,9 @@ namespace MashBoxSDK.SDKMain
                     break;
                 case ContentToolTab.UVInspector:
                     EnsureUVInspectorTool().Draw();
+                    break;
+                case ContentToolTab.VertexAO:
+                    EnsureHiddenToolWindow(ref vertexAOTool).Draw(Repaint);
                     break;
                 case ContentToolTab.PhotoBooth:
                     DrawPhotoBoothTab();
@@ -399,28 +424,30 @@ namespace MashBoxSDK.SDKMain
             Secondary
         }
 
-        public static int DrawTabs(int selectedIndex, string[] labels, TabVisualStyle style, bool[] alertFlags = null)
+        public static int DrawTabs(int selectedIndex, string[] labels, TabVisualStyle style, bool[] alertFlags = null, float minTabWidth = 0f)
         {
             // Navigation must remain available even if an embedded tool was disabled
             // or released during the previous IMGUI event.
             bool previousGuiEnabled = GUI.enabled;
             GUI.enabled = true;
-            var containerRect = GUILayoutUtility.GetRect(0f, GetHeight(style), GUILayout.ExpandWidth(true));
-            containerRect = new Rect(containerRect.x, containerRect.y, containerRect.width, GetHeight(style));
-
-            DrawBackground(containerRect, style);
-
             float spacing = style == TabVisualStyle.Primary ? 8f : 6f;
-            float totalSpacing = spacing * (labels.Length - 1);
-            float tabWidth = (containerRect.width - totalSpacing) / labels.Length;
+            int columns = minTabWidth > 0f
+                ? Mathf.Clamp(Mathf.FloorToInt((EditorGUIUtility.currentViewWidth - 8f + spacing) / (minTabWidth + spacing)), 1, labels.Length)
+                : labels.Length;
+            int rows = Mathf.CeilToInt((float)labels.Length / columns);
+            float rowHeight = GetHeight(style);
+            float height = rows * rowHeight + (rows - 1) * spacing;
+            var containerRect = GUILayoutUtility.GetRect(0f, height, GUILayout.ExpandWidth(true));
+            DrawBackground(containerRect, style);
+            float tabWidth = (containerRect.width - spacing * (columns - 1)) / columns;
 
             for (int i = 0; i < labels.Length; i++)
             {
                 var tabRect = new Rect(
-                    containerRect.x + i * (tabWidth + spacing),
-                    containerRect.y,
+                    containerRect.x + (i % columns) * (tabWidth + spacing),
+                    containerRect.y + (i / columns) * (rowHeight + spacing),
                     tabWidth,
-                    containerRect.height);
+                    rowHeight);
 
                 var showAlert = alertFlags != null && i < alertFlags.Length && alertFlags[i];
                 if (DrawTabButton(tabRect, labels[i], i == selectedIndex, style, showAlert))

@@ -17,6 +17,8 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
         MaterialProperty alphaClipThresholdShadow;
         MaterialProperty alphaCutoffEnable;
         readonly bool showAlphaClipToggle;
+        readonly bool showVertexAOToggle;
+        MaterialProperty useVertexAO;
         MaterialProperty whiteBoost;
         MaterialProperty hueShift;
         MaterialProperty whiteBalance;
@@ -76,12 +78,13 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             //public static GUIContent detailNormalMapText = new GUIContent("Ambient Occlusion Remapping");
         }
             
-        public HDRPSurfaceInputsUiBlock(ExpandableBit expandableBit, string BaseMapHelpText = DefaultBaseMapHelpText, string maskMapHelpText = "<b><color=#ff6b6b>(R)Metallic</color></b>, <b><color=#6be36b>(G)AO</color></b>, <b><color=#6ba8ff>(B)not used</color></b>, <b><color=#cccccc>(A)Smoothness</color></b>", bool showAlphaClipToggle = false)
+        public HDRPSurfaceInputsUiBlock(ExpandableBit expandableBit, string BaseMapHelpText = DefaultBaseMapHelpText, string maskMapHelpText = "<b><color=#ff6b6b>(R)Metallic</color></b>, <b><color=#6be36b>(G)AO</color></b>, <b><color=#6ba8ff>(B)not used</color></b>, <b><color=#cccccc>(A)Smoothness</color></b>", bool showAlphaClipToggle = false, bool showVertexAOToggle = false)
         {
             foldoutBit = expandableBit;
             this.BaseMapHelpText = BaseMapHelpText;
             this.maskMapHelpText = maskMapHelpText;
             this.showAlphaClipToggle = showAlphaClipToggle;
+            this.showVertexAOToggle = showVertexAOToggle;
         }
         
         public override void LoadMaterialProperties()//
@@ -92,6 +95,7 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             alphaClipThreshold = FindProperty("_AlphaClipThreshold", false);
             alphaClipThresholdShadow = FindProperty("_AlphaClipThresholdShadow", false);
             alphaCutoffEnable = showAlphaClipToggle ? FindProperty("_AlphaCutoffEnable", false) : null;
+            useVertexAO = showVertexAOToggle ? (FindProperty("UseVertexAO", false) ?? FindProperty("_UseVertexAO", false)) : null;
             whiteBoost = FindProperty("_WhiteBoost");
             hueShift = FindProperty("_HueShift");
             whiteBalance = FindProperty("_WhiteBalance", false);
@@ -128,12 +132,31 @@ namespace MGShaders.HDRP.Lit.Editor.EditorGui
             AOBaseMapBlendContrast = FindProperty("_AOBaseMapBlendContrast");
         }
 
+        private void DrawVertexAO()
+        {
+            var property = useVertexAO;
+            if (property == null) return;
+            bool previousMixed = EditorGUI.showMixedValue;
+            EditorGUI.showMixedValue = property.hasMixedValue;
+            EditorGUI.BeginChangeCheck();
+            bool enabled = EditorGUILayout.Toggle(new GUIContent("Use Vertex AO",
+                "Use baked vertex ambient occlusion / dirt. Writes 0 or 1 to the shader's UseVertexAO input."), property.floatValue > 0.5f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                materialEditor.RegisterPropertyChangeUndo("Use Vertex AO");
+                property.floatValue = enabled ? 1f : 0f;
+            }
+            EditorGUI.showMixedValue = previousMixed;
+            GUILayout.Space(4);
+        }
+
         public override void OnGUI()
         {
             using (var header = new MaterialHeaderScope("Surface Inputs", (uint)foldoutBit, materialEditor))
             {
                 if (header.expanded)
                 {
+                    DrawVertexAO();
                     EditorStyles.helpBox.richText = true;
                     EditorGUILayout.HelpBox(BaseMapHelpText, MessageType.None);
                     materialEditor.TexturePropertySingleLine(Styles.baseColorText, baseMap, baseColor );

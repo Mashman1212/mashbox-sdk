@@ -35,10 +35,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         [Serializable] private sealed class MotionRequest
         {
-            public string mode, prompt, video;
+            public string mode, prompt, video, image;
             public float duration, start;
             public int seed;
             public bool inPlace;
+            public bool mirror;
         }
         [Serializable] private sealed class MotionStatus
         {
@@ -105,11 +106,12 @@ namespace MashBoxSDK.AnimationStudio
         private void RestoreMotionJob()
         {
             if (!MotionGenerationAvailable) return;
-            if (!string.IsNullOrEmpty(motionJob)) return;
+            if (!string.IsNullOrEmpty(motionJob)) { RestoreImagePoseJob(); return; }
             string key = "MashBox.MotionJob." + Application.dataPath;
             motionJob = SessionState.GetString(key, "");
             motionPid = SessionState.GetInt(key + ".pid", 0);
             motionStartTicks = SessionState.GetString(key + ".start", "");
+            RestoreImagePoseJob();
         }
         private void RememberMotionJob()
         {
@@ -122,6 +124,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawGeneration()
         {
             if (!MotionGenerationAvailable) return;
+            DrawImagePoseMatcher();
             DrawInbetweenTools();
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("GENERATE MOTION · LOCAL", EditorStyles.boldLabel);
@@ -154,18 +157,18 @@ namespace MashBoxSDK.AnimationStudio
                 using (new EditorGUI.DisabledScope(!ready || (generationMode == 0 ? string.IsNullOrWhiteSpace(motionPrompt) : !File.Exists(motionVideo))))
                     if (GUILayout.Button("Generate motion", GUILayout.Height(30))) Guard(StartMotionJob);
             }
-            if (motionStatus != null && !string.IsNullOrEmpty(motionStatus.message))
+            if (motionJob != imagePoseJob && motionStatus != null && !string.IsNullOrEmpty(motionStatus.message))
             {
                 EditorGUILayout.HelpBox(motionStatus.message ?? "", motionStatus.state == "failed" ? MessageType.Error : MessageType.Info);
                 if (MotionRunning) EditorGUI.ProgressBar(GUILayoutUtility.GetRect(1, 16), Mathf.Clamp01(motionStatus.progress), "Local processing");
             }
-            if (MotionRunning && GUILayout.Button("Cancel generation")) Guard(CancelMotionJob);
+            if (MotionRunning && motionJob != imagePoseJob && GUILayout.Button("Cancel generation")) Guard(CancelMotionJob);
             motionUpdateCurrent = EditorGUILayout.Toggle("Update current take", motionUpdateCurrent);
             EditorGUILayout.HelpBox(motionUpdateCurrent ? "Apply replaces the current take's motion and length. Undo restores the previous motion; the existing asset saves automatically." : "Import saves a new take asset.", MessageType.None);
             DrawMotionEndpoints();
             motionPlantFeet = EditorGUILayout.Toggle("Plant feet on import", motionPlantFeet);
             motionContactSpeed = EditorGUILayout.Slider(new GUIContent("Contact sensitivity", "Maximum foot speed in leg lengths per second. Higher values catch more sliding but may suppress intentional shuffles."), motionContactSpeed, .05f, .6f);
-            using (new EditorGUI.DisabledScope(MotionRunning || rig == null || (motionUpdateCurrent && !take) || !File.Exists(Path.Combine(motionJob, "motion.json"))))
+            using (new EditorGUI.DisabledScope(MotionRunning || motionJob == imagePoseJob || rig == null || (motionUpdateCurrent && !take) || !File.Exists(Path.Combine(motionJob, "motion.json"))))
                 if (GUILayout.Button(motionUpdateCurrent ? "Apply result to current take" : "Import result as a new take…")) Guard(ImportGeneratedMotion);
             using (new EditorGUI.DisabledScope(rig == null || !take || take.keys.Count == 0))
                 if (GUILayout.Button(motionUpdateCurrent ? "Clean up feet in current take" : "Clean up feet as a new take…")) Guard(CleanUpMotionFeet);
@@ -262,6 +265,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ImportGeneratedMotion()
         {
             if (!MotionGenerationAvailable) throw new InvalidOperationException("Motion generation is not enabled on this workstation.");
+            if (motionJob == imagePoseJob) throw new InvalidOperationException("Use Apply pose at current frame for an image pose result.");
             string path = motionUpdateCurrent ? null : EditorUtility.SaveFilePanelInProject("Import generated motion", generationMode == 0 ? "Generated Motion" : "Video Motion", "asset", "Create an editable animation take.");
             if (!motionUpdateCurrent && string.IsNullOrEmpty(path)) return;
             var data = JsonUtility.FromJson<GeneratedMotion>(File.ReadAllText(Path.Combine(motionJob, "motion.json")));

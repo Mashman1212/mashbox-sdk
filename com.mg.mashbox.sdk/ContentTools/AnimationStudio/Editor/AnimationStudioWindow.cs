@@ -157,6 +157,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnDisable()
         {
+            ReleaseImagePosePreview();
             SceneView.duringSceneGui -= DuringSceneGUI;
             SceneView.beforeSceneGui -= BeforeSceneGUI;
             EditorApplication.update -= Tick;
@@ -518,7 +519,18 @@ namespace MashBoxSDK.AnimationStudio
             humanoidExport = EditorGUILayout.Toggle("Bake Humanoid muscles", humanoidExport && rig.Animator);
             if (!humanoidExport)
                 EditorGUILayout.HelpBox("Transform clips require a Generic Animator with the same bone paths. Use Humanoid muscles for the SM Humanoid Avatar.", MessageType.Info);
-            if (GUILayout.Button("Bake Unity animation clip…", GUILayout.Height(32))) Guard(Bake);
+            EditorGUI.BeginChangeCheck();
+            var outputClip = (AnimationClip)EditorGUILayout.ObjectField(new GUIContent("Overwrite clip", "Drag an existing .anim clip here to save this take back to it."), take.outputClip, typeof(AnimationClip), false);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(take, "Set output animation clip");
+                take.outputClip = outputClip; Save();
+            }
+            if (take.outputClip && !CanOverwriteClip(take.outputClip))
+                EditorGUILayout.HelpBox("Choose a standalone .anim clip inside Assets to overwrite, or bake a new clip first. Imported model clips cannot be overwritten.", MessageType.Info);
+            using (new EditorGUI.DisabledScope(!CanOverwriteClip(take.outputClip)))
+                if (GUILayout.Button("Save to referenced clip", GUILayout.Height(32))) Guard(SaveToReferencedClip);
+            if (GUILayout.Button("Bake new animation clip…")) Guard(Bake);
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUILayout.LabelField(sceneDraft ? (autoKey ? "Posing… key commits on release" : "Posing… press S to key") : unkeyedPose ? "Unkeyed pose · S to key" : pendingSave ? "Keys queued for save" : "Take saved", EditorStyles.miniLabel);
@@ -821,6 +833,7 @@ namespace MashBoxSDK.AnimationStudio
             if (imported.lastFrame > 18000) { DestroyImmediate(imported); throw new InvalidOperationException("Clip exceeds 18,000 frames. Trim it before importing."); }
             imported.bonePaths = (string[])rig.Paths.Clone();
             imported.interpolation = PoseInterpolation.Linear;
+            imported.outputClip = importClip;
             imported.loop = AnimationUtility.GetAnimationClipSettings(importClip).loopTime;
             var avatar = rig.Animator ? rig.Animator.avatar : null;
             try
@@ -858,6 +871,25 @@ namespace MashBoxSDK.AnimationStudio
             FlushEdits();
             string path = EditorUtility.SaveFilePanelInProject("Bake animation clip", take.name, "anim", "Create a clip for an Animator or Animancer.");
             if (string.IsNullOrEmpty(path)) return;
+            BakeToClip(null, AssetDatabase.GenerateUniqueAssetPath(path));
+        }
+
+        private static bool CanOverwriteClip(AnimationClip clip)
+        {
+            if (!clip || AssetDatabase.IsSubAsset(clip)) return false;
+            string path = AssetDatabase.GetAssetPath(clip);
+            return path.StartsWith("Assets/", StringComparison.Ordinal) && path.EndsWith(".anim", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void SaveToReferencedClip()
+        {
+            if (!CanOverwriteClip(take.outputClip)) throw new InvalidOperationException("Choose a standalone .anim clip inside Assets to overwrite.");
+            FlushEdits();
+            BakeToClip(take.outputClip, null);
+        }
+
+        private void BakeToClip(AnimationClip target, string path)
+        {
             playing = false;
             AnimationClip clip;
             var sampled=SampleConstrainedTake(take);
@@ -865,8 +897,23 @@ namespace MashBoxSDK.AnimationStudio
             finally { DestroyImmediate(sampled); EvaluateConstraints(); }
             try
             {
-                AssetDatabase.CreateAsset(clip, AssetDatabase.GenerateUniqueAssetPath(path));
-                AssetDatabase.SaveAssetIfDirty(clip); EditorGUIUtility.PingObject(clip);
+                if (target)
+                {
+                    Undo.RegisterCompleteObjectUndo(target, "Save Studio animation clip");
+                    clip.name = target.name;
+                    EditorUtility.CopySerialized(clip, target);
+                    DestroyImmediate(clip);
+                    EditorUtility.SetDirty(target);
+                }
+                else
+                {
+                    AssetDatabase.CreateAsset(clip, path);
+                    target = clip;
+                    Undo.RecordObject(take, "Set output animation clip");
+                    take.outputClip = target;
+                    Save();
+                }
+                AssetDatabase.SaveAssetIfDirty(target); FlushSave(); EditorGUIUtility.PingObject(target);
             }
             catch { if (!EditorUtility.IsPersistent(clip)) DestroyImmediate(clip); throw; }
             finally { rig.Apply(pose); EvaluateConstraints(); }

@@ -115,6 +115,7 @@ namespace MashBoxSDK.AnimationStudio
     public sealed partial class AnimationTake : ScriptableObject
     {
         public GameObject character;
+        public AnimationClip outputClip;
         public GameObject body;
         public GameObject[] clothing = Array.Empty<GameObject>();
         public OutfitOptions[] outfitOptions = Array.Empty<OutfitOptions>();

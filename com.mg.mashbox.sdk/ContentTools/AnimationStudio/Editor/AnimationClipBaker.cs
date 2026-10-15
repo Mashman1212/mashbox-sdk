@@ -68,6 +68,21 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 clip.EnsureQuaternionContinuity();
                 var settings = AnimationUtility.GetAnimationClipSettings(clip);
+                // Preserve the output clip's root-motion policy when rebaking. In-place
+                // abilities need body tilt baked into the pose; locomotion may extract it.
+                if (take.outputClip)
+                {
+                    var output = AnimationUtility.GetAnimationClipSettings(take.outputClip);
+                    settings.loopBlendOrientation = output.loopBlendOrientation;
+                    settings.loopBlendPositionY = output.loopBlendPositionY;
+                    settings.loopBlendPositionXZ = output.loopBlendPositionXZ;
+                    settings.keepOriginalOrientation = output.keepOriginalOrientation;
+                    settings.keepOriginalPositionY = output.keepOriginalPositionY;
+                    settings.keepOriginalPositionXZ = output.keepOriginalPositionXZ;
+                    settings.orientationOffsetY = output.orientationOffsetY;
+                    settings.level = output.level;
+                    settings.heightFromFeet = output.heightFromFeet;
+                }
                 settings.loopTime = take.loop;
                 AnimationUtility.SetAnimationClipSettings(clip, settings);
                 return clip;
