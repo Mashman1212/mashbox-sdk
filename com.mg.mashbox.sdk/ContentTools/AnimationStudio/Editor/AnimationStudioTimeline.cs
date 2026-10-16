@@ -13,6 +13,91 @@ namespace MashBoxSDK.AnimationStudio
         private List<PoseKey> timelineSelectionKeys, timelineClipboardTrack;
         private List<PoseKey> timelineClipboard = new List<PoseKey>();
         private int timelineClipboardOrigin;
+        [SerializeField] private AnimationTake timelineViewTake;
+        [SerializeField] private int timelineViewFirst;
+        [SerializeField] private int timelineViewLast = -1;
+        [SerializeField] private int timelineViewLength;
+
+        private void EnsureTimelineView()
+        {
+            if (!take) return;
+            if (timelineViewTake != take || timelineViewLast < 0)
+            { timelineViewTake = take; timelineViewFirst = 0; timelineViewLast = take.lastFrame; }
+            else if (timelineViewLength != take.lastFrame && timelineViewLast == timelineViewLength)
+                timelineViewLast = take.lastFrame;
+            timelineViewFirst = Mathf.Clamp(timelineViewFirst, 0, Mathf.Max(0, take.lastFrame - 1));
+            timelineViewLast = Mathf.Clamp(timelineViewLast, timelineViewFirst + 1, Mathf.Max(1, take.lastFrame));
+            timelineViewLength = take.lastFrame;
+        }
+
+        private void SetTimelineView(int first, int last)
+        {
+            EnsureTimelineView();
+            timelineViewFirst = Mathf.Clamp(first, 0, Mathf.Max(0, take.lastFrame - 1));
+            timelineViewLast = Mathf.Clamp(last, timelineViewFirst + 1, take.lastFrame);
+            viewport?.Repaint(); Repaint();
+        }
+
+        private void SetTimelineViewEnd(int last)
+        {
+            EnsureTimelineView();
+            last = Mathf.Clamp(last, 1, 18000);
+            int first = timelineViewFirst;
+            if (last > take.lastFrame) SetTimelineClipEnd(last);
+            SetTimelineView(first, last);
+        }
+
+        private void SetTimelineClipEnd(int last)
+        {
+            if (!take) return;
+            last = Mathf.Clamp(last, 1, 18000);
+            if (last == take.lastFrame) return;
+            EnsureTimelineView(); FlushEdits(); playing = false;
+            Undo.RegisterCompleteObjectUndo(take, "Change animation clip end");
+            take.lastFrame = last;
+            // Keep keys beyond the playback end so shortening is reversible without data loss.
+            EnsureTimelineView(); Save(); FlushSave(); Seek(Mathf.Min(frame, last));
+            timelineRangeStart = timelineRangeEnd = -1;
+        }
+
+        private float TimelineFrameX(Rect ruler, int atFrame) => ruler.x + ruler.width *
+            (atFrame - timelineViewFirst) / Mathf.Max(1f, timelineViewLast - timelineViewFirst);
+
+        private void ZoomTimelineView(float scale, int anchor)
+        {
+            EnsureTimelineView();
+            int oldSpan = timelineViewLast - timelineViewFirst;
+            int span = Mathf.Clamp(Mathf.RoundToInt(oldSpan * scale), 1, take.lastFrame);
+            float fraction = Mathf.Clamp01((anchor - timelineViewFirst) / (float)oldSpan);
+            int first = Mathf.Clamp(Mathf.RoundToInt(anchor - span * fraction), 0, take.lastFrame - span);
+            SetTimelineView(first, first + span);
+        }
+
+        private void DrawTimelineViewingRange()
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Space(10);
+                GUILayout.Label(new GUIContent("Clip end", "Last frame of the animation (frame numbering starts at 0). Later keys are preserved when shortening."), EditorStyles.miniLabel, GUILayout.Width(48));
+                EditorGUI.BeginChangeCheck();
+                int end = EditorGUILayout.DelayedIntField(take.lastFrame, GUILayout.Width(58));
+                if (EditorGUI.EndChangeCheck()) SetTimelineClipEnd(end);
+                GUILayout.Space(12);
+                GUILayout.Label(new GUIContent("View", "Visible frame range. Enter a higher end frame to extend the clip. Drag the range handles to zoom or its center to pan."), EditorStyles.miniLabel, GUILayout.Width(30));
+                EditorGUI.BeginChangeCheck();
+                int first = EditorGUILayout.DelayedIntField(timelineViewFirst, GUILayout.Width(52));
+                if (EditorGUI.EndChangeCheck()) SetTimelineView(first, timelineViewLast);
+                float min = timelineViewFirst, max = timelineViewLast;
+                EditorGUI.BeginChangeCheck();
+                EditorGUILayout.MinMaxSlider(ref min, ref max, 0, take.lastFrame, GUILayout.MinWidth(70));
+                if (EditorGUI.EndChangeCheck()) SetTimelineView(Mathf.RoundToInt(min), Mathf.RoundToInt(max));
+                EditorGUI.BeginChangeCheck();
+                int last = EditorGUILayout.DelayedIntField(timelineViewLast, GUILayout.Width(52));
+                if (EditorGUI.EndChangeCheck()) SetTimelineViewEnd(last);
+                if (GUILayout.Button(new GUIContent("Fit", "Show the whole clip"), GUILayout.Width(35))) SetTimelineView(0, take.lastFrame);
+                GUILayout.Space(10);
+            }
+        }
         private int TimelineSharedFrame(AnimationTake actor,int f) => Mathf.RoundToInt((float)f/actor.frameRate*take.frameRate);
         private bool TimelineInRange(AnimationTake actor,PoseKey key) => timelineRangeStart>=0 &&
             TimelineSharedFrame(actor,key.frame)>=Mathf.Min(timelineRangeStart,timelineRangeEnd) &&
@@ -86,6 +171,7 @@ namespace MashBoxSDK.AnimationStudio
             }
 
             GUILayout.Space(5);
+            EnsureTimelineView();
             var timelineActor=OutfitActor;
             var layerKeys=TimelineLayerKeys(timelineActor);
             var keyFrames=layerKeys.Select(k=>Mathf.RoundToInt((float)k.frame/timelineActor.frameRate*take.frameRate)).ToArray();
@@ -124,41 +210,47 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type == EventType.Repaint)
             {
                 EditorGUI.DrawRect(ruler, new Color(0.065f, 0.075f, 0.09f));
-                int end = Mathf.Max(1, take.lastFrame);
-                if(timelineRangeStart>=0)
+                int span = Mathf.Max(1, timelineViewLast - timelineViewFirst);
+                if(timelineRangeStart>=0 && Mathf.Max(timelineRangeStart,timelineRangeEnd)>=timelineViewFirst && Mathf.Min(timelineRangeStart,timelineRangeEnd)<=timelineViewLast)
                 {
-                    float left=ruler.x+ruler.width*Mathf.Min(timelineRangeStart,timelineRangeEnd)/end;
-                    float right=ruler.x+ruler.width*Mathf.Max(timelineRangeStart,timelineRangeEnd)/end;
-                    EditorGUI.DrawRect(new Rect(left-3,ruler.y,Mathf.Max(6,right-left+6),ruler.height),new Color(.55f,.22f,.18f,.65f));
+                    float left=Mathf.Max(ruler.x,TimelineFrameX(ruler,Mathf.Min(timelineRangeStart,timelineRangeEnd))-3);
+                    float right=Mathf.Min(ruler.xMax,TimelineFrameX(ruler,Mathf.Max(timelineRangeStart,timelineRangeEnd))+3);
+                    EditorGUI.DrawRect(new Rect(left,ruler.y,Mathf.Max(1,right-left),ruler.height),new Color(.55f,.22f,.18f,.65f));
                 }
-                int step = Mathf.Max(1, Mathf.CeilToInt(end / Mathf.Max(1f, ruler.width / 55f)));
+                int step = Mathf.Max(1, Mathf.CeilToInt(span / Mathf.Max(1f, ruler.width / 55f)));
                 if (step > 5) step = Mathf.CeilToInt(step / 5f) * 5;
-                for (int f = 0; f <= end; f += step)
+                for (int f = Mathf.CeilToInt((float)timelineViewFirst / step) * step; f <= timelineViewLast; f += step)
                 {
-                    float x = ruler.x + ruler.width * f / end;
+                    float x = TimelineFrameX(ruler,f);
                     EditorGUI.DrawRect(new Rect(x, ruler.y + 20, 1, 10), new Color(0.45f, 0.48f, 0.53f));
                     GUI.Label(new Rect(x + 3, ruler.y + 1, 48, 18), f.ToString(), EditorStyles.miniLabel);
                 }
                 foreach (var keyFrame in keyFrames)
                 {
-                    float x = ruler.x + ruler.width * keyFrame / end;
+                    if(keyFrame<timelineViewFirst || keyFrame>timelineViewLast) continue;
+                    float x = TimelineFrameX(ruler,keyFrame);
                     EditorGUI.DrawRect(new Rect(x - 2, ruler.y + 32, 4, 14), new Color(0.2f, 0.8f, 0.7f));
                 }
-                float cursor = ruler.x + ruler.width * frame / end;
-                EditorGUI.DrawRect(new Rect(cursor - 1, ruler.y, 2, ruler.height), new Color(1f, 0.75f, 0.25f));
+                if(frame>=timelineViewFirst && frame<=timelineViewLast)
+                {
+                    float cursor = TimelineFrameX(ruler,frame);
+                    EditorGUI.DrawRect(new Rect(cursor - 1, ruler.y, 2, ruler.height), new Color(1f, 0.75f, 0.25f));
+                }
             }
             // SceneView-hosted IMGUIContainers do not reliably synthesize ContextClick.
             // Consume the actual right-button press before viewport navigation can claim it.
             if(((evt.type==EventType.MouseDown && evt.button==1) || evt.type==EventType.ContextClick) && ruler.Contains(evt.mousePosition))
             {
                 int at=FrameAtMouse(ruler,evt.mousePosition.x);
-                var nearby=keyFrames.OrderBy(f=>Mathf.Abs(ruler.x+ruler.width*f/Mathf.Max(1,take.lastFrame)-evt.mousePosition.x)).Take(1).ToArray();
-                if(nearby.Length>0 && Mathf.Abs(ruler.x+ruler.width*nearby[0]/Mathf.Max(1,take.lastFrame)-evt.mousePosition.x)<=6) at=nearby[0];
+                var nearby=keyFrames.Where(f=>f>=timelineViewFirst && f<=timelineViewLast).OrderBy(f=>Mathf.Abs(TimelineFrameX(ruler,f)-evt.mousePosition.x)).Take(1).ToArray();
+                if(nearby.Length>0 && Mathf.Abs(TimelineFrameX(ruler,nearby[0])-evt.mousePosition.x)<=6) at=nearby[0];
                 if(timelineRangeStart<0 || at<Mathf.Min(timelineRangeStart,timelineRangeEnd) || at>Mathf.Max(timelineRangeStart,timelineRangeEnd))
                     timelineRangeStart=timelineRangeEnd=at;
                 GUIUtility.keyboardControl=id;
                 TimelineContextMenu(timelineActor,layerKeys,at); evt.Use();
             }
+            if(evt.type==EventType.ScrollWheel && ruler.Contains(evt.mousePosition))
+            { ZoomTimelineView(Mathf.Pow(1.15f,evt.delta.y),FrameAtMouse(ruler,evt.mousePosition.x)); evt.Use(); }
             if(evt.type==EventType.KeyDown && GUIUtility.keyboardControl==id && !EditorGUIUtility.editingTextField)
             {
                 if(evt.keyCode==KeyCode.Delete || evt.keyCode==KeyCode.Backspace)
@@ -196,6 +288,7 @@ namespace MashBoxSDK.AnimationStudio
                     evt.Use();
                     break;
             }
+            DrawTimelineViewingRange();
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Space(10);
@@ -216,13 +309,20 @@ namespace MashBoxSDK.AnimationStudio
             return keys;
         }
 
-        private int FrameAtMouse(Rect ruler, float x) =>
-            Mathf.RoundToInt(Mathf.Clamp01((x - ruler.x) / Mathf.Max(1, ruler.width)) * take.lastFrame);
+        private int FrameAtMouse(Rect ruler, float x)
+        {
+            EnsureTimelineView();
+            return timelineViewFirst + Mathf.RoundToInt(Mathf.Clamp01((x - ruler.x) / Mathf.Max(1, ruler.width)) * (timelineViewLast - timelineViewFirst));
+        }
 
         private void ScrubViewport(int next)
         {
             playing = false;
             Seek(Mathf.Clamp(next, 0, take.lastFrame));
+            EnsureTimelineView();
+            int span = timelineViewLast - timelineViewFirst;
+            if(frame<timelineViewFirst) SetTimelineView(frame,frame+span);
+            else if(frame>timelineViewLast) SetTimelineView(frame-span,frame);
         }
     }
 }

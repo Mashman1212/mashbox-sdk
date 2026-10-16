@@ -63,7 +63,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetInspectorExpanded(bool expanded)
         {
             if (inspector == null) return;
-            inspector.style.bottom = expanded ? new StyleLength(116) : new StyleLength(StyleKeyword.Auto);
+            inspector.style.bottom = expanded ? new StyleLength(148) : new StyleLength(StyleKeyword.Auto);
             inspector.style.height = expanded ? new StyleLength(StyleKeyword.Auto) : new StyleLength(28);
         }
 
@@ -78,7 +78,7 @@ namespace MashBoxSDK.AnimationStudio
                 timeline.style.left = 0;
                 timeline.style.right = 0;
                 timeline.style.bottom = 0;
-                timeline.style.height = 108;
+                timeline.style.height = 140;
                 timeline.style.backgroundColor = new Color(0.11f, 0.12f, 0.14f);
                 rootVisualElement.Add(timeline);
             }

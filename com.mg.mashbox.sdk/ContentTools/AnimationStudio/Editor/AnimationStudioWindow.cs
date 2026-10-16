@@ -396,7 +396,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Undo.RecordObject(take, "Change animation timing");
                 take.frameRate = Mathf.Clamp(fps, 1, 120);
-                take.lastFrame = Mathf.Clamp(end, Mathf.Max(1, take.keys.Count == 0 ? 1 : take.keys.Max(k => k.frame)), 18000);
+                take.lastFrame = Mathf.Clamp(end, 1, 18000);
                 take.loop = loop; take.interpolation = interpolation; Save(); Seek(Mathf.Min(frame, take.lastFrame));
             }
             EditorGUILayout.LabelField("Scrub and play using the timeline at the bottom of the viewport.", EditorStyles.wordWrappedMiniLabel);
