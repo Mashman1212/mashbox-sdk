@@ -1592,7 +1592,8 @@ namespace MashBoxSDK.MapTools
 
                 GUILayout.Space(8f);
                 DrawChallengeTypeSection("PhotoSpots", "Photo Spots", cachedPhotoSpots.Count, DrawPhotoSpotsSection);
-                DrawChallengeTypeSection("Races", "Races", cachedRaces.Count, DrawRacesSection);
+                DrawChallengeTypeSection("Races", "Races", cachedRaces.Count(race => race && !race.IsPumpTrack), DrawRacesSection);
+                DrawChallengeTypeSection("PumpTracks", "Pump Tracks", cachedRaces.Count(race => race && race.IsPumpTrack), () => DrawRaceVariantSection(true));
                 DrawChallengeTypeSection("DualSlaloms", "Dual Slaloms", cachedDualSlaloms.Count, DrawDualSlalomsSection);
                 DrawChallengeTypeSection("FourCross", "4 Cross", cachedFourCrossCourses.Count, DrawFourCrossSection);
                 DrawChallengeTypeSection("SecretGaps", "Secret Gaps", cachedSecretGaps.Count, DrawSecretGapsSection);
@@ -2197,13 +2198,18 @@ namespace MashBoxSDK.MapTools
                 }
             }
         }
-        private void DrawRacesSection()
+        private void DrawRacesSection() => DrawRaceVariantSection(false);
+
+        private void DrawRaceVariantSection(bool pumpTrack)
         {
-            EditorGUILayout.LabelField("Races", EditorStyles.boldLabel);
-            if (DrawAddButton("Add Race", "Create a new race with editable gate markers.", 32f))
-                CreateRaceChallenge();
+            EditorGUILayout.LabelField(pumpTrack ? "Pump Tracks" : "Races", EditorStyles.boldLabel);
+            if (DrawAddButton(pumpTrack ? "Add Pump Track" : "Add Race",
+                    pumpTrack ? "Race gates and timing; pedaling locks after the first gate." :
+                    "Create a new race with editable gate markers.", 32f))
+                CreateRaceChallenge(pumpTrack);
 
             EditorGUILayout.HelpBox(
+                pumpTrack ? "Pump Tracks use normal race gates and timing. Pedaling and throttle are cut after the first gate until the attempt ends or resets." :
                 "Races work like authored gate paths. Gates are numbered from hierarchy order, draw with their own color, and can be added or renumbered from here.",
                 MessageType.None);
 
@@ -2227,12 +2233,12 @@ namespace MashBoxSDK.MapTools
                 GUILayout.Space(6f);
             }
 
-            var races = cachedRaces;
+            var races = cachedRaces.Where(race => race && race.IsPumpTrack == pumpTrack).ToList();
 
             if (races.Count == 0)
             {
                 EditorGUILayout.HelpBox(
-                    "No races are in the active scene yet.",
+                    pumpTrack ? "No Pump Tracks are in the active scene yet." : "No races are in the active scene yet.",
                     MessageType.None);
                 return;
             }
@@ -2257,7 +2263,7 @@ namespace MashBoxSDK.MapTools
 
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
-                    if (!DrawChallengeItemFoldout("Race", race, race.RaceName, $"{raceGates.Count:00} gates"))
+                    if (!DrawChallengeItemFoldout(race.IsPumpTrack ? "Pump Track" : "Race", race, race.RaceName, $"{raceGates.Count:00} gates"))
                         continue;
 
                     GUI.SetNextControlName($"RaceName_{GetObjectStableId(race)}");
@@ -2758,12 +2764,13 @@ namespace MashBoxSDK.MapTools
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
         }
 
-        private static void CreateRaceChallenge()
+        private static void CreateRaceChallenge(bool pumpTrack = false)
         {
             var raceRoot = FindOrCreateChallengeTypeRoot("Races");
             EnsureRaceGroupComponent(raceRoot);
-            var race = CreateChallengeMarker("Races", "New Race");
+            var race = CreateChallengeMarker("Races", pumpTrack ? "New Pump Track" : "New Race");
             var raceComponent = Undo.AddComponent<MBRace>(race);
+            raceComponent.IsPumpTrack = pumpTrack;
             raceComponent.RaceName = race.name;
             CreateRaceGate(raceComponent, Vector3.zero, false);
             CreateRaceGate(raceComponent, new Vector3(0f, 0f, 8f), true);
@@ -3059,7 +3066,8 @@ namespace MashBoxSDK.MapTools
 
             gizmo.FillColor = new Color(0.0f, 0.0f, 0.0f, 0.18f);
             gizmo.WireColor = new Color(0.0f, 0.0f, 0.0f, 0.96f);
-        }
+        }
+
         private static Transform EnsureExpertLineSignProxy(MBExpertLine expertLine)
         {
             if (expertLine == null)

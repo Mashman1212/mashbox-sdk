@@ -23,6 +23,20 @@ namespace MashBoxSDK.Maps
         public event System.Action Initiated;
         public event System.Action ResetOccurred;
 
+        [SerializeField, Tooltip("Cut pedaling and throttle after the first gate until this attempt ends.")] private bool pumpTrack;
+        public bool IsPumpTrack { get => pumpTrack; set => pumpTrack = value; }
+        public bool RestrictsAcceleration => pumpTrack && isActiveAndEnabled && isRaceTimerStarted && activeGateIndex > 0 && !completed;
+        private static readonly HashSet<MBRace> enabledRaces = new HashSet<MBRace>();
+        public static bool IsPumpTrackAccelerationRestricted
+        {
+            get
+            {
+                foreach (var race in enabledRaces)
+                    if (race && race.RestrictsAcceleration) return true;
+                return false;
+            }
+        }
+
         [SerializeField] private string raceName = "New Race";
         private readonly Color pathColor = new Color(1f, 0.45f, 0.15f, 0.9f);
         [SerializeField] private bool started;
@@ -173,11 +187,13 @@ namespace MashBoxSDK.Maps
 
         private void OnEnable()
         {
+            enabledRaces.Add(this);
             ResyncRaceFlow();
         }
 
         private void OnDisable()
         {
+            enabledRaces.Remove(this);
             UnsubscribeFromGates();
         }
 
