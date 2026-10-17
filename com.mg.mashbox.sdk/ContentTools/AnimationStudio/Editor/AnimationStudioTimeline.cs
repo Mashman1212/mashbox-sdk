@@ -78,12 +78,12 @@ namespace MashBoxSDK.AnimationStudio
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Space(10);
-                GUILayout.Label(new GUIContent("Clip end", "Last frame of the animation (frame numbering starts at 0). Later keys are preserved when shortening."), EditorStyles.miniLabel, GUILayout.Width(48));
+                GUILayout.Label(new GUIContent("Clip end", "Last frame of the animation (frame numbering starts at 0). Later keys are preserved when shortening."), StudioTheme.Styles.miniLabel, GUILayout.Width(48));
                 EditorGUI.BeginChangeCheck();
                 int end = EditorGUILayout.DelayedIntField(take.lastFrame, GUILayout.Width(58));
                 if (EditorGUI.EndChangeCheck()) SetTimelineClipEnd(end);
                 GUILayout.Space(12);
-                GUILayout.Label(new GUIContent("View", "Visible frame range. Enter a higher end frame to extend the clip. Drag the range handles to zoom or its center to pan."), EditorStyles.miniLabel, GUILayout.Width(30));
+                GUILayout.Label(new GUIContent("View", "Visible frame range. Enter a higher end frame to extend the clip. Drag the range handles to zoom or its center to pan."), StudioTheme.Styles.miniLabel, GUILayout.Width(30));
                 EditorGUI.BeginChangeCheck();
                 int first = EditorGUILayout.DelayedIntField(timelineViewFirst, GUILayout.Width(52));
                 if (EditorGUI.EndChangeCheck()) SetTimelineView(first, timelineViewLast);
@@ -110,13 +110,130 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DeleteTimelineKeys(AnimationTake actor,List<PoseKey> keys)
         {
-            FinishSceneEdit(); FinishActorEdits(); playing=false;
-            // Base evaluation needs at least one pose; an animation layer may be empty.
-            if(keys==actor.keys && keys.All(k=>TimelineInRange(actor,k)))
-            { message="Keep at least one base pose key. Layers may have all their keys deleted."; Repaint(); return; }
-            Undo.RegisterCompleteObjectUndo(actor,"Delete timeline keys");
-            keys.RemoveAll(k=>TimelineInRange(actor,k));
-            EditorUtility.SetDirty(actor); Save(); Seek(frame);
+            if(timelineRangeStart<0) return;
+            DeleteSelectedControlKeys(actor,keys,Mathf.Min(timelineRangeStart,timelineRangeEnd),Mathf.Max(timelineRangeStart,timelineRangeEnd));
+        }
+
+        private void DeleteSelectedAtCurrentFrame()
+        {
+            var actor=OutfitActor;
+            var keys=actor.activeLayer>=0 && actor.activeLayer<actor.layers.Count ? actor.layers[actor.activeLayer].keys : actor.keys;
+            DeleteSelectedControlKeys(actor,keys,frame,frame);
+        }
+
+        private void DeleteSelectedControlKeys(AnimationTake actor,List<PoseKey> keys,int first,int last)
+        {
+            if(rigSelectionExplicit && rigSelection.Count==0) return;
+            FlushEdits(); playing=false;
+            int sharedFps=take.frameRate;
+            var targets=rigSelection.Count>0 ? rigSelection.Select(s=>s.Actor).Where(a=>a).Distinct().ToArray() : new[]{actor};
+            Undo.IncrementCurrentGroup(); Undo.SetCurrentGroupName("Delete selected control keys");
+            foreach(var target in targets) InSelectedActor(target,()=>
+            {
+                var track=target==actor ? keys : EditingKeys;
+                DeleteControlChannels(track,first,last,sharedFps);
+            });
+            FlushSave(); Seek(frame); Undo.IncrementCurrentGroup();
+        }
+
+        private void SelectedControlMasks(out int[] bones,out int[] effectors)
+        {
+            var boneMask=new int[rig.Bones.Length]; var effectorMask=new int[4];
+            System.Action<int,bool,bool> select=(index,ik,pole)=>
+            {
+                if(ik && !IsBike) { if(index>=0 && index<4) effectorMask[index]|=pole ? 4 : 11; }
+                else
+                {
+                    int bone=IsBike ? System.Array.IndexOf(rig.Bones,BikeJoint(index)) : index;
+                    if(bone>=0 && bone<boneMask.Length) boneMask[bone]=7;
+                }
+            };
+            if(rigSelection.Count>0)
+                foreach(var item in rigSelection.Where(s=>s.Actor==take)) select(item.Index,item.IK,item.Pole);
+            else if(!rigSelectionExplicit) select(control,ikMode,poleMode);
+            bones=boneMask; effectors=effectorMask;
+        }
+
+        private List<PoseKey> SelectedTimelineKeys(AnimationTake actor,List<PoseKey> keys)
+        {
+            var selected=new List<PoseKey>();
+            InSelectedActor(actor,()=>
+            {
+                SelectedControlMasks(out var bones,out var effectors);
+                if(!bones.Any(v=>v!=0) && !effectors.Any(v=>v!=0)) return;
+                var boneIndices=Enumerable.Range(0,bones.Length).Where(i=>bones[i]!=0).ToArray();
+                var effectorIndices=Enumerable.Range(0,effectors.Length).Where(i=>effectors[i]!=0).ToArray();
+                foreach(var key in keys)
+                {
+                    bool full=keys==actor.keys && !key.selective;
+                    bool matches=full || boneIndices.Any(i=>key.boneChannels!=null && i<key.boneChannels.Length && (key.boneChannels[i]&bones[i])!=0) ||
+                        effectorIndices.Any(i=>key.effectorChannels!=null && i<key.effectorChannels.Length && (key.effectorChannels[i]&effectors[i])!=0);
+                    if(matches) selected.Add(key);
+                }
+            });
+            return selected;
+        }
+
+        private int[] SelectedTimelineFrames(AnimationTake actor,List<PoseKey> keys)
+        {
+            int sharedFps=take.frameRate;
+            var targets=rigSelection.Count>0 ? rigSelection.Select(s=>s.Actor).Where(a=>a).Distinct().ToArray() : new[]{actor};
+            var frames=new List<int>();
+            foreach(var target in targets)
+            {
+                var track=target==actor ? keys : target.activeLayer>=0 && target.activeLayer<target.layers.Count ? target.layers[target.activeLayer].keys : target.keys;
+                frames.AddRange(SelectedTimelineKeys(target,track).Select(k=>Mathf.RoundToInt((float)k.frame/target.frameRate*sharedFps)));
+            }
+            return frames.Distinct().OrderBy(f=>f).ToArray();
+        }
+
+        private void DeleteControlChannels(List<PoseKey> keys,int first,int last,int sharedFps)
+        {
+            SelectedControlMasks(out var bones,out var effectors);
+            if(!bones.Any(v=>v!=0) && !effectors.Any(v=>v!=0)) return;
+            bool baseTrack=keys==take.keys;
+            var affected=keys.Where(k=>Mathf.RoundToInt((float)k.frame/take.frameRate*sharedFps)>=first &&
+                Mathf.RoundToInt((float)k.frame/take.frameRate*sharedFps)<=last).ToArray();
+            if(affected.Length==0) return;
+            Undo.RegisterCompleteObjectUndo(take,"Delete selected control keys");
+            foreach(var key in affected)
+            {
+                if(!key.selective && baseTrack)
+                {
+                    key.boneChannels=Enumerable.Repeat(7,key.bones.Length).ToArray();
+                    key.effectorChannels=Enumerable.Repeat(15,key.effectors.Length).ToArray();
+                }
+                key.selective=true;
+                if(key.boneChannels==null) key.boneChannels=new int[key.bones.Length];
+                if(key.effectorChannels==null) key.effectorChannels=new int[key.effectors.Length];
+                for(int i=0;i<bones.Length && i<key.boneChannels.Length;i++) key.boneChannels[i]&=~bones[i];
+                for(int i=0;i<effectors.Length && i<key.effectorChannels.Length;i++) key.effectorChannels[i]&=~effectors[i];
+            }
+            keys.RemoveAll(k=>k.selective && !(k.boneChannels?.Any(v=>v!=0) ?? false) && !(k.effectorChannels?.Any(v=>v!=0) ?? false));
+            if(baseTrack)
+            {
+                if(keys.Count==0) keys.Add(rig.Rest.Copy(0));
+                // Base evaluation falls back to its first pose for channels with no remaining keys.
+                // Give only those completely unkeyed selected channels their neutral values.
+                for(int i=0;i<bones.Length;i++)
+                    for(int bit=1;bit<=4;bit*=2)
+                        if((bones[i]&bit)!=0 && !keys.Any(k=>!k.selective || (k.boneChannels!=null && i<k.boneChannels.Length && (k.boneChannels[i]&bit)!=0)))
+                        {
+                            var value=keys[0].bones[i]; var rest=rig.Rest.bones[i];
+                            if(bit==1) value.position=rest.position; else if(bit==2) value.rotation=rest.rotation; else value.scale=rest.scale;
+                            keys[0].bones[i]=value;
+                        }
+                for(int i=0;i<effectors.Length;i++)
+                    for(int bit=1;bit<=8;bit*=2)
+                        if((effectors[i]&bit)!=0 && !keys.Any(k=>!k.selective || (k.effectorChannels!=null && i<k.effectorChannels.Length && (k.effectorChannels[i]&bit)!=0)))
+                        {
+                            var value=keys[0].effectors[i]; var rest=rig.Rest.effectors[i];
+                            if(bit==1) value.position=rest.position; else if(bit==2) value.rotation=rest.rotation;
+                            else if(bit==4) value.pole=rest.pole; else value.weight=rest.weight;
+                            keys[0].effectors[i]=value;
+                        }
+            }
+            Save();
         }
         private void PasteTimelineKeys(AnimationTake actor,List<PoseKey> keys,int destination)
         {
@@ -140,12 +257,12 @@ namespace MashBoxSDK.AnimationStudio
         private void TimelineContextMenu(AnimationTake actor,List<PoseKey> keys,int atFrame)
         {
             var menu=new GenericMenu();
-            int count=keys.Count(k=>TimelineInRange(actor,k));
+            int count=SelectedTimelineKeys(actor,keys).Count(k=>TimelineInRange(actor,k));
             if(count>0) menu.AddItem(new GUIContent("Copy selected keys"),false,()=>CopyTimelineKeys(actor,keys));
             else menu.AddDisabledItem(new GUIContent("Copy selected keys"));
-            if(count>0 && (keys!=actor.keys || count<keys.Count))
-                menu.AddItem(new GUIContent("Delete selected keys"),false,()=>DeleteTimelineKeys(actor,keys));
-            else menu.AddDisabledItem(new GUIContent("Delete selected keys"));
+            if(count>0)
+                menu.AddItem(new GUIContent("Delete keys for selected controls"),false,()=>DeleteTimelineKeys(actor,keys));
+            else menu.AddDisabledItem(new GUIContent("Delete keys for selected controls"));
             menu.AddSeparator("");
             if(timelineClipboard.Count>0 && actor==timelineClipboardActor && keys==timelineClipboardTrack)
                 menu.AddItem(new GUIContent("Paste keys at frame "+atFrame+" (replace matching keys)"),false,()=>PasteTimelineKeys(actor,keys,atFrame));
@@ -158,6 +275,7 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("Generate AI in-betweens…"),false,()=>Guard(()=>StartInbetween(actor,Mathf.Min(timelineRangeStart,timelineRangeEnd),Mathf.Max(timelineRangeStart,timelineRangeEnd))));
                 else menu.AddDisabledItem(new GUIContent("Generate AI in-betweens (select a range)"));
             }
+            AddAudioMenu(menu, actor, atFrame);
             menu.ShowAsContext();
         }
         private void DrawViewportTimeline()
@@ -166,7 +284,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!take || rig == null || pose == null)
             {
                 GUILayout.Space(15);
-                GUILayout.Label("Create or open an animation take to use the timeline.", EditorStyles.centeredGreyMiniLabel);
+                GUILayout.Label("Create or open an animation take to use the timeline.", StudioTheme.Styles.centeredGreyMiniLabel);
                 return;
             }
 
@@ -174,7 +292,7 @@ namespace MashBoxSDK.AnimationStudio
             EnsureTimelineView();
             var timelineActor=OutfitActor;
             var layerKeys=TimelineLayerKeys(timelineActor);
-            var keyFrames=layerKeys.Select(k=>Mathf.RoundToInt((float)k.frame/timelineActor.frameRate*take.frameRate)).ToArray();
+            var keyFrames=SelectedTimelineFrames(timelineActor,layerKeys);
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Space(6);
@@ -193,6 +311,9 @@ namespace MashBoxSDK.AnimationStudio
                 if (EditorGUI.EndChangeCheck()) ScrubViewport(next);
                 GUILayout.Label("/ " + take.lastFrame, GUILayout.Width(58));
                 GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("Audio", "Edit audio keys for this actor"), GUILayout.Width(48))) OpenAudioKeys(timelineActor);
+                bool nextMute = GUILayout.Toggle(muteAudio, new GUIContent("Mute", "Mute studio audio playback"), "Button", GUILayout.Width(44));
+                if (nextMute != muteAudio) { muteAudio = nextMute; if (muteAudio) StopStudioAudio(); }
                 DrawTimelineLayerPicker();
                 bool nextAuto = GUILayout.Toggle(autoKey, "Auto Key", "Button", GUILayout.Width(70));
                 if (nextAuto != autoKey) { FinishSceneEdit(); autoKey = nextAuto; Repaint(); }
@@ -202,14 +323,14 @@ namespace MashBoxSDK.AnimationStudio
 
             // The toolbar may have changed the authoring layer during this GUI event.
             layerKeys=TimelineLayerKeys(timelineActor);
-            keyFrames=layerKeys.Select(k=>Mathf.RoundToInt((float)k.frame/timelineActor.frameRate*take.frameRate)).ToArray();
+            keyFrames=SelectedTimelineFrames(timelineActor,layerKeys);
             Rect ruler = GUILayoutUtility.GetRect(1, 51, GUILayout.ExpandWidth(true));
             ruler.xMin += 10; ruler.xMax -= 10;
             int id = GUIUtility.GetControlID("MashBoxViewportScrubber".GetHashCode(), FocusType.Keyboard, ruler);
             var evt = Event.current;
             if (evt.type == EventType.Repaint)
             {
-                EditorGUI.DrawRect(ruler, new Color(0.065f, 0.075f, 0.09f));
+                EditorGUI.DrawRect(ruler, StudioTheme.Current.Header);
                 int span = Mathf.Max(1, timelineViewLast - timelineViewFirst);
                 if(timelineRangeStart>=0 && Mathf.Max(timelineRangeStart,timelineRangeEnd)>=timelineViewFirst && Mathf.Min(timelineRangeStart,timelineRangeEnd)<=timelineViewLast)
                 {
@@ -222,23 +343,25 @@ namespace MashBoxSDK.AnimationStudio
                 for (int f = Mathf.CeilToInt((float)timelineViewFirst / step) * step; f <= timelineViewLast; f += step)
                 {
                     float x = TimelineFrameX(ruler,f);
-                    EditorGUI.DrawRect(new Rect(x, ruler.y + 20, 1, 10), new Color(0.45f, 0.48f, 0.53f));
-                    GUI.Label(new Rect(x + 3, ruler.y + 1, 48, 18), f.ToString(), EditorStyles.miniLabel);
+                    EditorGUI.DrawRect(new Rect(x, ruler.y + 20, 1, 10), StudioTheme.Current.Muted);
+                    GUI.Label(new Rect(x + 3, ruler.y + 1, 48, 18), f.ToString(), StudioTheme.Styles.miniLabel);
                 }
                 foreach (var keyFrame in keyFrames)
                 {
                     if(keyFrame<timelineViewFirst || keyFrame>timelineViewLast) continue;
                     float x = TimelineFrameX(ruler,keyFrame);
-                    EditorGUI.DrawRect(new Rect(x - 2, ruler.y + 32, 4, 14), new Color(0.2f, 0.8f, 0.7f));
+                    EditorGUI.DrawRect(new Rect(x - 2, ruler.y + 32, 4, 14), StudioTheme.Current.Accent);
                 }
+                DrawAudioMarkers(ruler);
                 if(frame>=timelineViewFirst && frame<=timelineViewLast)
                 {
                     float cursor = TimelineFrameX(ruler,frame);
-                    EditorGUI.DrawRect(new Rect(cursor - 1, ruler.y, 2, ruler.height), new Color(1f, 0.75f, 0.25f));
+                    EditorGUI.DrawRect(new Rect(cursor - 1, ruler.y, 2, ruler.height), StudioTheme.Current.UVSelected);
                 }
             }
             // SceneView-hosted IMGUIContainers do not reliably synthesize ContextClick.
             // Consume the actual right-button press before viewport navigation can claim it.
+            HandleAudioMarker(evt, ruler);
             if(((evt.type==EventType.MouseDown && evt.button==1) || evt.type==EventType.ContextClick) && ruler.Contains(evt.mousePosition))
             {
                 int at=FrameAtMouse(ruler,evt.mousePosition.x);
@@ -293,9 +416,9 @@ namespace MashBoxSDK.AnimationStudio
             {
                 GUILayout.Space(10);
                 string layerLabel=timelineActor.activeLayer>=0 && timelineActor.activeLayer<timelineActor.layers.Count ? timelineActor.layers[timelineActor.activeLayer].name : "Base motion";
-                GUILayout.Label($"{(timelineRangeStart>=0 ? "Selected "+Mathf.Min(timelineRangeStart,timelineRangeEnd)+"–"+Mathf.Max(timelineRangeStart,timelineRangeEnd)+" · " : "Shift-drag: select · Right-click: edit · ")}{(float)frame / take.frameRate:0.000}s   ·   {take.frameRate} fps   ·   {layerKeys.Count} keys · {layerLabel}", EditorStyles.miniLabel);
+                GUILayout.Label($"{(timelineRangeStart>=0 ? "Selected "+Mathf.Min(timelineRangeStart,timelineRangeEnd)+"–"+Mathf.Max(timelineRangeStart,timelineRangeEnd)+" · " : "Shift-drag: select · Right-click: edit · ")}{(float)frame / take.frameRate:0.000}s   ·   {take.frameRate} fps   ·   {keyFrames.Length} selected keys · {layerLabel}", StudioTheme.Styles.miniLabel);
                 GUILayout.FlexibleSpace();
-                GUILayout.Label(unkeyedPose ? "Unkeyed changes · S: pose · Shift+W: position · Shift+E: rotation" : autoKey ? "AUTO KEY ON" : "S: pose · Shift+W: position · Shift+E: rotation", EditorStyles.miniLabel);
+                GUILayout.Label(unkeyedPose ? "Unkeyed changes · S: pose · Shift+W: position · Shift+E: rotation" : autoKey ? "AUTO KEY ON" : "S: pose · Shift+W: position · Shift+E: rotation", StudioTheme.Styles.miniLabel);
                 GUILayout.Space(10);
             }
             HandleKeys(evt);

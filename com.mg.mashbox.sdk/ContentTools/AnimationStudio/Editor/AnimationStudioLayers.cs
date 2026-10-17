@@ -69,7 +69,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 take.layers=take.layers ?? new List<StudioAnimationLayer>();
                 var names=new[]{new GUIContent("Base motion",take.name+" · Base motion")}.Concat(take.layers.Select(l=>new GUIContent(l.name,take.name+" · "+l.name))).ToArray();
-                GUILayout.Label(new GUIContent("Layer", "Key on layer for the selected actor: "+take.name),EditorStyles.miniLabel,GUILayout.Width(30));
+                GUILayout.Label(new GUIContent("Layer", "Key on layer for the selected actor: "+take.name),StudioTheme.Styles.miniLabel,GUILayout.Width(30));
                 float width=Mathf.Clamp((viewport ? viewport.position.width : 900)-640,100,210);
                 int choice=EditorGUILayout.Popup(Mathf.Clamp(take.activeLayer+1,0,names.Length-1),names,GUILayout.Width(width))-1;
                 if(choice!=take.activeLayer) SelectAuthoringLayer(choice);
@@ -79,7 +79,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawLayers()
         {
-            EditorGUILayout.LabelField(take.name+" · ANIMATION LAYERS",EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(take.name+" · ANIMATION LAYERS",StudioTheme.Styles.boldLabel);
             DrawLayerPicker();
             if(GUILayout.Button("Add correction layer + selected control"))
             {
@@ -107,11 +107,11 @@ namespace MashBoxSDK.AnimationStudio
             }
             if(GUILayout.Button("Add selected bone / IK control to layer"))
             { Undo.RecordObject(take,"Add layer control"); AddSelectedToLayer(selected); Save(); }
-            EditorGUILayout.LabelField("Affected bones",EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Affected bones",StudioTheme.Styles.boldLabel);
             for(int i=0;i<selected.bones.Count;i++)
                 using(new EditorGUILayout.HorizontalScope())
                 {
-                    EditorGUILayout.LabelField(selected.bones[i].Length==0 ? "Actor root" : selected.bones[i],EditorStyles.wordWrappedMiniLabel);
+                    EditorGUILayout.LabelField(selected.bones[i].Length==0 ? "Actor root" : selected.bones[i],StudioTheme.Styles.wordWrappedMiniLabel);
                     if(GUILayout.Button("×",GUILayout.Width(24)))
                     { Undo.RecordObject(take,"Remove layer bone"); selected.bones.RemoveAt(i); Save(); RefreshLayers(); break; }
                 }
@@ -132,7 +132,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawHumanOffsets(StudioAnimationLayer layer)
         {
-            EditorGUILayout.Space(6); EditorGUILayout.LabelField("HUMAN · WHOLE-CLIP ROTATION OFFSETS",EditorStyles.boldLabel);
+            EditorGUILayout.Space(6); EditorGUILayout.LabelField("HUMAN · WHOLE-CLIP ROTATION OFFSETS",StudioTheme.Styles.boldLabel);
             var mapped=Enumerable.Range(0,(int)HumanBodyBones.LastBone).Select(i=>(HumanBodyBones)i).Where(b=>rig.Animator.GetBoneTransform(b)).ToArray();
             offsetHumanBone=EditorGUILayout.Popup("Human joint",Mathf.Clamp(offsetHumanBone,0,mapped.Length-1),mapped.Select(b=>b.ToString()).ToArray());
             if(GUILayout.Button("Use selected joint"))

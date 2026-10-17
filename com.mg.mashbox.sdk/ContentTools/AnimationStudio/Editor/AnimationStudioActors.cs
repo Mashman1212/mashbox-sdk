@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             showAllActorControls = EditorGUILayout.Toggle(new GUIContent("All actor controls", "Show and pick controls on every actor directly in the viewport."), showAllActorControls);
             lockActorMeshes=EditorGUILayout.Toggle(new GUIContent("Lock actor meshes", "Drag empty viewport space to marquee-select rig controls. Unlock to allow Unity mesh selection."),lockActorMeshes);
-            if(rigSelection.Count>1) EditorGUILayout.LabelField(rigSelection.Count+" controls selected · Shift-click toggles",EditorStyles.miniLabel);
+            if(rigSelection.Count>1) EditorGUILayout.LabelField(rigSelection.Count+" controls selected · Shift-click toggles",StudioTheme.Styles.miniLabel);
             if(EditorGUI.EndChangeCheck()) viewport?.Repaint();
         }
         private void DrawActorPickers(SceneView view, int actorIndex)

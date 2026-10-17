@@ -132,7 +132,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawVehicleOutfit()
         {
             var a=OutfitActor; var r=OutfitRig;
-            EditorGUILayout.LabelField(a.name+" · VEHICLE PARTS",EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(a.name+" · VEHICLE PARTS",StudioTheme.Styles.boldLabel);
             if(!string.IsNullOrEmpty(vehicleOutfitNotice)) EditorGUILayout.HelpBox(vehicleOutfitNotice,MessageType.Info);
             vehicleLoadout=(GameObject)EditorGUILayout.ObjectField("Vehicle prefab",vehicleLoadout,typeof(GameObject),false);
             using(new EditorGUI.DisabledScope(!vehicleLoadout))

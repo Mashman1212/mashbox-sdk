@@ -211,8 +211,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var c=take.constraints[i];
                 EditorGUILayout.Space(4);
-                EditorGUILayout.LabelField((c.drivenActor ? c.drivenActor.name : "Missing")+" / "+(c.drivenIK>=0 ? LimbNames[Mathf.Clamp(c.drivenIK,0,3)] : c.drivenBone),EditorStyles.boldLabel);
-                EditorGUILayout.LabelField("→ "+(c.targetActor ? c.targetActor.name : "Missing")+" / "+(c.targetIK>=0 ? LimbNames[Mathf.Clamp(c.targetIK,0,3)] : c.targetBone),EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField((c.drivenActor ? c.drivenActor.name : "Missing")+" / "+(c.drivenIK>=0 ? LimbNames[Mathf.Clamp(c.drivenIK,0,3)] : c.drivenBone),StudioTheme.Styles.boldLabel);
+                EditorGUILayout.LabelField("→ "+(c.targetActor ? c.targetActor.name : "Missing")+" / "+(c.targetIK>=0 ? LimbNames[Mathf.Clamp(c.targetIK,0,3)] : c.targetBone),StudioTheme.Styles.wordWrappedMiniLabel);
                 EditorGUI.BeginChangeCheck();
                 bool enabled=EditorGUILayout.Toggle("Enabled",c.enabled);
                 float weight=EditorGUILayout.Slider("Weight",c.weight,0,1);

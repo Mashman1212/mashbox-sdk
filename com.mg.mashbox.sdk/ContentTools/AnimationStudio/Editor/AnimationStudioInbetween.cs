@@ -39,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
   }
   private void DrawInbetweenTools()
   {
-   EditorGUILayout.LabelField("AI IN-BETWEENS · LOCAL GPU",EditorStyles.boldLabel);
+   EditorGUILayout.LabelField("AI IN-BETWEENS · LOCAL GPU",StudioTheme.Styles.boldLabel);
    inbetweenFirst=EditorGUILayout.IntField("First frame",inbetweenFirst);
    inbetweenLast=EditorGUILayout.IntField("Last frame",inbetweenLast);
    motionSeed=EditorGUILayout.IntField("Variation seed",motionSeed);

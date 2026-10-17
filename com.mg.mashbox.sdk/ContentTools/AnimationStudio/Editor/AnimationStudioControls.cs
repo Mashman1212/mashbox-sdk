@@ -72,8 +72,8 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             using (new EditorGUILayout.HorizontalScope())
             {
-                showIKControls = GUILayout.Toggle(showIKControls, "Show IK", EditorStyles.miniButtonLeft);
-                showFKControls = GUILayout.Toggle(showFKControls, "Show FK", EditorStyles.miniButtonRight);
+                showIKControls = GUILayout.Toggle(showIKControls, "Show IK", StudioTheme.Styles.miniButtonLeft);
+                showFKControls = GUILayout.Toggle(showFKControls, "Show FK", StudioTheme.Styles.miniButtonRight);
             }
             fadeRigControls = EditorGUILayout.Toggle("Fade by IK/FK blend", fadeRigControls);
             using (new EditorGUI.DisabledScope(!fadeRigControls)) hideInactiveControls = EditorGUILayout.Toggle("Hide inactive controls", hideInactiveControls);
@@ -87,7 +87,7 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 EditorGUIUtility.labelWidth = 150;
-                using (new GUILayout.VerticalScope(EditorStyles.inspectorDefaultMargins))
+                using (new GUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins))
                 {
                     rigToolbarExpanded = EditorGUILayout.Foldout(rigToolbarExpanded, "Control rig", true);
                     if (!rigToolbarExpanded) return;
@@ -96,7 +96,7 @@ namespace MashBoxSDK.AnimationStudio
                     DrawRigVisibility();
                     if (!take || rig == null || pose == null) return;
                     EnsureActors();
-                    EditorGUILayout.LabelField(OutfitActor.name, EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(OutfitActor.name, StudioTheme.Styles.miniLabel);
                     Action draw = () =>
                     {
                         if (IsBike) return;
@@ -114,18 +114,18 @@ namespace MashBoxSDK.AnimationStudio
             int limb = ikMode ? Mathf.Clamp(control, 0, 3) : BoneLimb(rig.Bones[Mathf.Clamp(control, 0, rig.Bones.Length - 1)]);
             if (limb < 0)
             {
-                EditorGUILayout.LabelField("Select a limb to adjust IK/FK blend", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField("Select a limb to adjust IK/FK blend", StudioTheme.Styles.miniLabel);
                 return;
             }
-            EditorGUILayout.LabelField(LimbNames[limb] + " chain", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(LimbNames[limb] + " chain", StudioTheme.Styles.boldLabel);
             using (new EditorGUI.DisabledScope(!rig.HasIK))
             {
                 if (presets)
                     using (new EditorGUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button("FK", EditorStyles.miniButtonLeft)) SetLimbBlend(limb, 0);
-                        if (GUILayout.Button("Mix", EditorStyles.miniButtonMid)) SetLimbBlend(limb, .5f);
-                        if (GUILayout.Button("IK", EditorStyles.miniButtonRight)) SetLimbBlend(limb, 1);
+                        if (GUILayout.Button("FK", StudioTheme.Styles.miniButtonLeft)) SetLimbBlend(limb, 0);
+                        if (GUILayout.Button("Mix", StudioTheme.Styles.miniButtonMid)) SetLimbBlend(limb, .5f);
+                        if (GUILayout.Button("IK", StudioTheme.Styles.miniButtonRight)) SetLimbBlend(limb, 1);
                     }
                 EditorGUI.BeginChangeCheck();
                 float blend = EditorGUILayout.Slider("FK 0 → IK 1", pose.effectors[limb].weight, 0, 1);
@@ -165,7 +165,7 @@ namespace MashBoxSDK.AnimationStudio
                 DiagramIK(s+2, origin + new Vector2(x*58,195)*scale, true);
             }
             Handles.EndGUI();
-            EditorGUILayout.LabelField("Circles: FK bones   Squares: IK   Gold: poles", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("Circles: FK bones   Squares: IK   Gold: poles", StudioTheme.Styles.miniLabel);
             DrawSelectedLimbBlend();
             diagramHand = GUILayout.Toolbar(diagramHand, new[] { "Left fingers", "Right fingers" });
             Rect hand = GUILayoutUtility.GetRect(100,78,GUILayout.ExpandWidth(true));
@@ -177,9 +177,9 @@ namespace MashBoxSDK.AnimationStudio
                 var bone = rig.Animator.GetBoneTransform(human);
                 Rect button = new Rect(hand.x + finger*hand.width/5,hand.y + joint*25,hand.width/5-3,22);
                 var background = GUI.backgroundColor;
-                if (bone && !ikMode && rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)] == bone) GUI.backgroundColor = new Color(.3f,.85f,.7f);
+                if (bone && !ikMode && rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)] == bone) GUI.backgroundColor = StudioTheme.Current.Accent;
                 using (new EditorGUI.DisabledScope(!bone))
-                    if (GUI.Button(button,new GUIContent(joint == 0 ? FingerNames[finger] : (joint+1).ToString(), human.ToString()),EditorStyles.miniButton)) SelectBone(bone);
+                    if (GUI.Button(button,new GUIContent(joint == 0 ? FingerNames[finger] : (joint+1).ToString(), human.ToString()),StudioTheme.Styles.miniButton)) SelectBone(bone);
                 GUI.backgroundColor = background;
             }
         }
@@ -191,7 +191,7 @@ namespace MashBoxSDK.AnimationStudio
             Handles.DrawAAPolyLine(3,origin+new Vector2(px,py)*scale,p);
             bool selected = bone && !ikMode && rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)] == bone;
             float strength = bone ? RigAlpha(false, BoneLimb(bone)) : 0;
-            Handles.color = !bone ? Color.gray : selected ? Color.white : Color.Lerp(new Color(.22f,.27f,.3f), new Color(.3f,.85f,.7f),strength);
+            Handles.color = !bone ? Color.gray : selected ? Color.white : Color.Lerp(new Color(.22f,.27f,.3f), StudioTheme.Current.Accent,strength);
             Handles.DrawSolidDisc(p, Vector3.forward,selected ? 8 : 6);
             if (bone && GUI.Button(new Rect(p.x-10,p.y-10,20,20),new GUIContent("",human.ToString()), GUIStyle.none)) SelectBone(bone);
         }
@@ -200,7 +200,7 @@ namespace MashBoxSDK.AnimationStudio
             var old = GUI.backgroundColor;
             GUI.backgroundColor = ikMode && control == limb && poleMode == pole ? Color.white : Color.Lerp(Color.gray, pole ? new Color(1,.75f,.2f) : new Color(.3f,.65f,1),RigAlpha(true,limb));
             using (new EditorGUI.DisabledScope(!rig.HasIK))
-                if (GUI.Button(new Rect(p.x-9,p.y-9,18,18),new GUIContent(pole ? "·" : "",pole ? PoleNames[limb] : LimbNames[limb]),EditorStyles.miniButton))
+                if (GUI.Button(new Rect(p.x-9,p.y-9,18,18),new GUIContent(pole ? "·" : "",pole ? PoleNames[limb] : LimbNames[limb]),StudioTheme.Styles.miniButton))
                 { FinishSceneEdit(); PickRigControl(limb,true,pole); ikMode = true; control = limb; poleMode = pole; if (pole) rotate = false; Repaint(); viewport?.Repaint(); }
             GUI.backgroundColor = old;
         }

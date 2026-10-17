@@ -1,10 +1,38 @@
-# MashBox Animation Studio
+# MashBox Studio
 
-Right-click an animation clip in the Project browser (including a clip inside an expanded FBX) and choose **Open Clip as Take in Animation Studio**. Right-clicking an FBX with multiple clips opens a clip picker. Choose where to save the new take; Studio samples and loads it automatically using the clip's frame rate. Humanoid clips use the current Studio character when available; generic FBX clips use their source model skeleton. The original clip is unchanged.
+**MashBox → MashBox Studio** opens a shared viewport with **Animation** and **Modeling** icon tabs. Animation takes and modeling documents stay independent when switching modes.
 
-**MashBox → Animation Studio** opens the viewport directly. Select an Animation Take and click **Open in Animation Studio** in its asset inspector, or double-click the take, to load it in that viewport. The project remembers the last saved take locally for reopening. The viewport inspector's **Character & take** section contains character selection, body/outfit setup, take switching, new-take creation and the example entry point; Selection, Outfit, Clip and the workstation-private Generate tab hold the editing tools. The old standalone setup window is no longer required. Animation Takes use the supplied teal film/play icon, assigned persistently on their script importer.
+## Modeling
 
-Open **MashBox → Animation Studio** (also linked from the SDK Content Tools).
+The right **Channels** panel shows the selected object's Translate, Rotate and Scale X/Y/Z channels and Visibility. These are parent-relative object channels; the **Local / World** dropdown in the top bar controls handle orientation. **Grid** beside it toggles the modeling ground reference independently of animation.
+
+The icon strip beside Channels selects **Select / Move / Rotate / Scale** (Q/W/E/R). Double-click a tool to open its **Tool Options** window; **Mesh Tools → Tool Options…** opens the same settings. Through selection lives in **Select** and tool options, and Keep seams together lives in **Edit Mesh** and transform tool options. Pivot commands remain in **Modify** and the marking menu; UV, Save and Export remain in the top menus. During pivot editing, Translate changes the pivot while Rotate/Scale channels are disabled.
+
+The Modeling tab has a second menu bar: **Create, Select, Modify, Mesh, Edit Mesh, Mesh Tools, Mesh Display, UV**. **Create → Polygon Primitives** adds a **Cube, Sphere, Plane, Quad, or Cylinder** at the origin, selects it in the hierarchy, and frames it for editing. Creating the first primitive starts a saved working asset in `Assets/Studio Models`; additional primitives join the current document as independent root objects. Creation supports Undo/Redo. Each primitive owns its editable mesh, normals and UV 0. Cube, sphere, plane and quad are one unit across; cylinders are one unit across and two units tall. Plane lies on XZ; Quad lies on XY.
+
+The menus expose the current selection, pivot, transform, UV and export commands, plus selection inversion, normal recalculation and shaded/wireframe display. FBX export includes every root object in the document. The menu bar is a starting set of modeling commands; tools such as extrusion, bevel and booleans are not included yet.
+
+The **Hierarchy** represents a workspace containing multiple models. Drag one or more FBX files into the viewport or use **Import FBX…** to add model roots alongside existing models and primitives. Each imported model retains its children, materials, skin weights and blend shapes, with independent editable mesh copies and remapped bone references. Duplicate model roots get unique names. Import supports Undo/Redo and never replaces the existing models. Source FBX assets are unchanged. External FBX files are copied into `Assets/Studio Imports`; external texture dependencies must also be available to Unity.
+
+The first import or primitive creates a saved `Untitled Workspace.asset` in `Assets/Studio Models`. **Open…** or the **Workspace** asset field switches to another saved workspace, rather than appending it. Existing Studio model documents remain compatible. Edits autosave after gestures; **Mesh → Save Workspace** saves immediately. FBX export includes all workspace roots.
+
+Select objects in the hierarchy or viewport. **Hold right-click** in the modeling canvas, drag toward a choice, and release to apply it. The marking menu places **Edge** above, **Vertex** left, **Object Mode** right, and **Face** below. Drag onto a branch marked **›** to open its submenu without releasing: **UV → UV Sets → UV 0–7**, **Transform**, **Pivot**, or **Selection**. Hovering toward a branch also opens it after a short delay. Drag onto **Back** to return; release in the center or press **Escape** to cancel. **Shift + right-click** opens Transform directly; **Ctrl/Command + right-click** opens Selection. Alt + mouse camera navigation stays available.
+
+**1 / 2 / 3 / 4** also choose Object / Vertex / Edge / Face. **W / E / R** choose Move / Rotate / Scale; **F** frames the selection. Drag empty space for a marquee, **Shift** adds and **Ctrl/Command** subtracts. **Through selection** includes hidden components. **Keep seams together** moves coincident vertices across UV and normal splits together. Face and edge modes expose the imported triangle topology. Component deformation recalculates normals and tangents; it does not add or remove topology.
+
+In Object mode, **D** toggles pivot editing. Move the pivot handle and press **D** again to lock it; geometry and children stay in world space. **Center pivot** uses the selected hierarchy's world bounds. **Freeze transforms** bakes the local transform into the mesh and compensates children. **Ctrl/Command+Z** undoes edits; **Escape** cancels an active handle drag. Skin-bone origins cannot be repivoted/frozen. Skinned component edits require the bind pose; object and UV edits are still available when posed. Freeze rejects transforms that would introduce shear into children.
+
+**Open UV Editor** opens a separate window for the selected mesh. Choose **UV 0–7**, create an empty set, duplicate to another channel, or initialize using **Planar XZ**. Select points with click/marquee, use **All** or expand to connected **Shell**, then move, rotate or scale by dragging a selected point or using numeric fields. Shift adds and Ctrl/Command subtracts. Middle mouse pans and the wheel zooms. An optional texture can be shown behind the UV wireframe. UV edits and set duplication support Undo. This editor manipulates existing UV topology; automatic unwrap, seam cutting/sewing and packing are not included.
+
+**Export FBX…** writes the edited model through Unity's `com.unity.formats.fbx` package. Hierarchy, mesh geometry and UV sets are exported; missing lower UV channels are padded on the temporary export copy to preserve channel numbers. Modeling export does not carry the original FBX animation clips or Maya construction history. Animation export remains available in the Animation tab.
+
+## Animation
+
+Right-click an animation clip in the Project browser (including a clip inside an expanded FBX) and choose **Open Clip as Take in MashBox Studio**. Right-clicking an FBX with multiple clips opens a clip picker. Choose where to save the new take; Studio samples and loads it automatically using the clip's frame rate. Humanoid clips use the current Studio character when available; generic FBX clips use their source model skeleton. The original clip is unchanged.
+
+**MashBox → MashBox Studio** opens the viewport directly. Select an Animation Take and click **Open in MashBox Studio** in its asset inspector, or double-click the take, to load it in that viewport. The project remembers the last saved take locally for reopening. The viewport inspector's **Character & take** section contains character selection, body/outfit setup, take switching, new-take creation and the example entry point; Selection, Outfit, Clip and the workstation-private Generate tab hold the editing tools. The old standalone setup window is no longer required. Animation Takes use the supplied teal film/play icon, assigned persistently on their script importer.
+
+Open **MashBox → MashBox Studio** (also linked from the SDK Content Tools).
 
 1. Click **Use MashBox SM base** to load `Skeleton.fbx` and `SM_Body_01.fbx`. For other characters, select the GameObject with the Humanoid Animator at its root. Optional body meshes are remapped by unique bone names, ignoring namespaces.
 2. **New take…** saves an editable `.asset`. The separate Animation Viewport uses normal Unity orbit, pan, zoom and transform handles. It owns an isolated preview scene, so it does not dirty your gameplay scene or instantiate gameplay scripts.
@@ -139,4 +167,3 @@ AI in-betweens (private workstation): Shift-drag a timeline range, right-click G
 
 
 Rig selection: Lock actor meshes (above the inspector tabs) defaults on. Drag empty viewport space to marquee-select visible rig controls; Shift-drag adds, Shift-click toggles controls, and clicking empty space clears. All actor controls enables selecting across actors. W/E manipulate the group (rotations use each control's own pivot; bike axes stay constrained). Shift+W/Shift+E key the selected channels on each actor's current layer. Add selected controls to layer uses members of that layer's actor. Unlock meshes to restore Unity mesh selection. Hidden controls are excluded from marquee selection.
-

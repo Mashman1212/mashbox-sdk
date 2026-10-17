@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawSelectionTransform()
         {
             if(IsBike) return; // Bike's axis-specific channels lead DrawBikeControls.
-            EditorGUILayout.LabelField(take.name+" · "+(ikMode ? (poleMode ? PoleNames : LimbNames)[Mathf.Clamp(control,0,3)] : rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)].name),EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(take.name+" · "+(ikMode ? (poleMode ? PoleNames : LimbNames)[Mathf.Clamp(control,0,3)] : rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)].name),StudioTheme.Styles.boldLabel);
             EditorGUI.BeginChangeCheck();
             if(ikMode)
             {
@@ -44,7 +44,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUIUtility.wideMode = false;
             try
             {
-                using (new GUILayout.VerticalScope(EditorStyles.inspectorDefaultMargins))
+                using (new GUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins))
                 {
                     using (new GUILayout.HorizontalScope())
                     {
@@ -56,7 +56,7 @@ namespace MashBoxSDK.AnimationStudio
                     DrawActorControlVisibility();
                     var tabs = MotionGenerationAvailable ? PrivateInspectorTabs : InspectorTabs;
                     if(rig==null || !take) inspectorTab=0;
-                    inspectorTab = GUILayout.SelectionGrid(Mathf.Clamp(inspectorTab,0,tabs.Length-1),tabs,4,EditorStyles.miniButton);
+                    inspectorTab = GUILayout.SelectionGrid(Mathf.Clamp(inspectorTab,0,tabs.Length-1),tabs,4,StudioTheme.Styles.miniButton);
                     inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll);
                     string tab=tabs[inspectorTab];
                     if(tab=="Take") DrawWorkspace(false);
@@ -72,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                                 selectionTransformsDrawn=true;
                                 try { DrawControls(); } finally { selectionTransformsDrawn=false; }
                                 if(GUILayout.Button("Key pose [S]")) Commit("Key pose",true);
-                                EditorGUILayout.LabelField(unkeyedPose ? "Unkeyed changes" : autoKey ? "Auto Key ON" : "Auto Key OFF",EditorStyles.miniLabel);
+                                EditorGUILayout.LabelField(unkeyedPose ? "Unkeyed changes" : autoKey ? "Auto Key ON" : "Auto Key OFF",StudioTheme.Styles.miniLabel);
                             };
                             if(activeActor>=0) InActor(actorPreviews[activeActor],draw); else draw();
                         }
@@ -105,6 +105,3 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
-
-
-

@@ -129,6 +129,11 @@ namespace MashBoxSDK.MapTools
 
         private static void DrawSplines(SceneView sceneView)
         {
+            // Preview cameras (MashBox Studio, asset previews) are isolated from the map.
+            // StageUtility alone still reports the main stage for these views. Exit
+            // before taking over gizmos, discovering scene sources, or hit testing.
+            if (sceneView == null || !sceneView.drawGizmos || sceneView.camera == null
+                || sceneView.camera.cameraType == CameraType.Preview) return;
             var current = Event.current;
             // Annotation discovery can fail during the first delayed startup call.
             // Retry when a Scene view is available instead of remaining blank.

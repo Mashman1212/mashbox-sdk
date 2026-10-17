@@ -76,7 +76,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(motionPromptStyle==null)
             {
-                motionPromptStyle=new GUIStyle(EditorStyles.textArea)
+                motionPromptStyle=new GUIStyle(StudioTheme.Styles.textArea)
                 { wordWrap=true,richText=false,alignment=TextAnchor.UpperLeft,padding=new RectOffset(8,8,7,7) };
             }
             // This inspector is hosted by SceneView: do not inherit its GUI skin colors.
@@ -127,7 +127,7 @@ namespace MashBoxSDK.AnimationStudio
             DrawImagePoseMatcher();
             DrawInbetweenTools();
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("GENERATE MOTION · LOCAL", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("GENERATE MOTION · LOCAL", StudioTheme.Styles.boldLabel);
             generationMode = GUILayout.Toolbar(generationMode, new[] { "Text · GPU", "Video · CPU" });
             using (new EditorGUI.DisabledScope(MotionRunning))
             {
@@ -178,7 +178,7 @@ namespace MashBoxSDK.AnimationStudio
             generationExpanded = EditorGUILayout.Foldout(generationExpanded, "Local tools", true);
             if (generationExpanded)
             {
-                EditorGUILayout.LabelField(MotionToolPath, EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField(MotionToolPath, StudioTheme.Styles.wordWrappedMiniLabel);
                 using (new EditorGUI.DisabledScope(MotionRunning))
                     if (GUILayout.Button("Locate motion tools…"))
                     {
@@ -329,12 +329,12 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawMotionEndpoints()
         {
             EditorGUILayout.Space(6);
-            EditorGUILayout.LabelField("START / END POSES", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("START / END POSES", StudioTheme.Styles.boldLabel);
             EditorGUILayout.HelpBox("Capture the current pose, or choose an animation clip and sample a time below. Endpoint transitions are applied on import; these poses are not sent to the AI generator. Captures include hips position and orientation.", MessageType.None);
             for (int i = 0; i < 2; i++)
             {
                 bool start = i == 0;
-                EditorGUILayout.LabelField(start ? "Start pose" : "End pose", !(start ? HasMotionStart : HasMotionEnd) ? "Not set" : (start ? motionStartLabel : motionEndLabel), EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField(start ? "Start pose" : "End pose", !(start ? HasMotionStart : HasMotionEnd) ? "Not set" : (start ? motionStartLabel : motionEndLabel), StudioTheme.Styles.wordWrappedMiniLabel);
                 var clip = (AnimationClip)EditorGUILayout.ObjectField(start ? "Start animation clip" : "End animation clip", start ? motionStartClip : motionEndClip, typeof(AnimationClip), false);
                 float time = start ? motionStartClipTime : motionEndClipTime;
                 if (clip != (start ? motionStartClip : motionEndClip)) time = 0;
@@ -411,5 +411,3 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
-
-

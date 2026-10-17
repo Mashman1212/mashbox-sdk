@@ -139,7 +139,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!IsBike) return false;
             ikMode=false; control=Mathf.Clamp(control,0,BikeControlNames.Length-1);
-            EditorGUILayout.LabelField("BMX · MAYA CONTROL MAPPING",EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("BMX · MAYA CONTROL MAPPING",StudioTheme.Styles.boldLabel);
             var bone=BikeJoint(control);
             if(!bone) { EditorGUILayout.HelpBox("Joint missing: "+BikeJointNames[control],MessageType.Warning); return true; }
             rotate=GUILayout.Toolbar(rotate?1:0,new[]{"Move [W]","Rotate [E]"})==1;

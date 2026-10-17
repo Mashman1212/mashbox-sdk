@@ -64,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
   }
   private void DuringSceneGUI(SceneView view)
   {
+   if (view == viewport && modelingMode) { DrawModelScene(view); return; }
    if(view!=viewport || rig==null || !take || inActorScope || drawingActorControls) { DrawStudioSceneGUI(view); return; }
    rigSelection.RemoveAll(s=>!s.Actor || (s.Actor!=take && !take.actors.Contains(s.Actor)));
    int id=GUIUtility.GetControlID("MashBoxRigMarquee".GetHashCode(),FocusType.Passive);

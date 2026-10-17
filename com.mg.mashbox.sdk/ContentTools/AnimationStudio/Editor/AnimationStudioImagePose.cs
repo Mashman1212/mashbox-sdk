@@ -20,14 +20,14 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawImagePoseMatcher()
         {
-            EditorGUILayout.LabelField("AI POSE MATCHER · IMAGE", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("AI POSE MATCHER · IMAGE", StudioTheme.Styles.boldLabel);
             using (new EditorGUI.DisabledScope(MotionRunning))
             {
                 if (!imagePosePreview && File.Exists(imagePosePath)) Guard(() => LoadImagePoseReference(imagePosePath, false));
                 Rect area = GUILayoutUtility.GetRect(1, 130, GUILayout.ExpandWidth(true));
                 GUI.Box(area, GUIContent.none);
                 if (imagePosePreview) GUI.DrawTexture(area, imagePosePreview, ScaleMode.ScaleToFit);
-                else GUI.Label(area, "Drop an image here\nor click Paste screenshot", EditorStyles.centeredGreyMiniLabel);
+                else GUI.Label(area, "Drop an image here\nor click Paste screenshot", StudioTheme.Styles.centeredGreyMiniLabel);
                 var evt = Event.current;
                 if (!MotionRunning && area.Contains(evt.mousePosition))
                 {
@@ -59,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     if (GUILayout.Button("Paste screenshot")) Guard(PasteImagePoseReference);
                 }
-                if (!string.IsNullOrEmpty(imagePosePath)) EditorGUILayout.LabelField(Path.GetFileName(imagePosePath), EditorStyles.miniLabel);
+                if (!string.IsNullOrEmpty(imagePosePath)) EditorGUILayout.LabelField(Path.GetFileName(imagePosePath), StudioTheme.Styles.miniLabel);
                 EditorGUI.BeginChangeCheck();
                 imagePoseMirror = EditorGUILayout.Toggle("Mirror reference", imagePoseMirror);
                 if (EditorGUI.EndChangeCheck()) imagePoseInputId = Guid.NewGuid().ToString("N");

@@ -34,7 +34,7 @@ namespace MashBoxSDK.AnimationStudio
         private UnityEngine.SceneManagement.Scene emptyWorkspace;
         private PoseKey pose;
         private PoseKey clipboard;
-        private bool playing;
+
         private double previousTime;
         private float playFrame;
         private string message;
@@ -51,12 +51,12 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool showFKControls = true;
 
 #if MashBoxDev
-        [MenuItem("MashBox/Animation Studio", false, 120)]
+        [MenuItem("MashBox/MashBox Studio", false, 119)]
 #endif
         public static void Open() => OpenInStudio(Selection.activeObject as AnimationTake);
 
 #if MashBoxDev
-        [MenuItem("Assets/Open Clip as Take in Animation Studio",false,2000)]
+        [MenuItem("Assets/Open Clip as Take in MashBox Studio",false,2000)]
 #endif
         private static void OpenSelectedClip()
         {
@@ -70,7 +70,7 @@ namespace MashBoxSDK.AnimationStudio
             menu.ShowAsContext();
         }
 #if MashBoxDev
-        [MenuItem("Assets/Open Clip as Take in Animation Studio",true)]
+        [MenuItem("Assets/Open Clip as Take in MashBox Studio",true)]
 #endif
         private static bool CanOpenSelectedClip()
         {
@@ -113,7 +113,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!window) window = CreateInstance<AnimationStudioWindow>();
             if (!asset && !window.take)
                 asset = AssetDatabase.LoadAssetAtPath<AnimationTake>(EditorPrefs.GetString("MashBox.LastTake." + Application.dataPath,""));
-            if (asset) window.LoadTake(asset);
+            if (asset) { window.modelingMode = false; window.LoadTake(asset); }
             else if (window.take && window.rig == null) window.Guard(window.BuildRig);
             else window.OpenViewport();
             window.viewport?.Focus();
@@ -157,6 +157,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnDisable()
         {
+            ReleaseModelEditor();
             ReleaseImagePosePreview();
             SceneView.duringSceneGui -= DuringSceneGUI;
             SceneView.beforeSceneGui -= BeforeSceneGUI;
@@ -188,7 +189,7 @@ namespace MashBoxSDK.AnimationStudio
         private void PlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.ExitingPlayMode)
-                ReleaseRig();
+            { ReleaseRig(); ReleaseModelEditor(); }
             else if (state == PlayModeStateChange.EnteredEditMode) EditorApplication.delayCall += Restore;
         }
         private void ReleaseRig()
@@ -222,7 +223,8 @@ namespace MashBoxSDK.AnimationStudio
             Repaint();
         }
 
-        private void OnGUI()
+        private void OnGUI() { using (StudioTheme.Scope()) DrawThemedGUI(); }
+        private void DrawThemedGUI()
         {
             DrawHeader();
             scroll = EditorGUILayout.BeginScrollView(scroll);
@@ -243,7 +245,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawWorkspace(bool appearance = true)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField(appearance ? "CHARACTER WORKSPACE" : "TAKE", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(appearance ? "CHARACTER WORKSPACE" : "TAKE", StudioTheme.Styles.boldLabel);
             if(appearance || !take)
             {
             using (new EditorGUI.DisabledScope(take))
@@ -288,7 +290,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (GUILayout.Button("New take…")) Guard(NewTake);
             if (!take)
             {
-                var example = AssetDatabase.LoadAssetAtPath<AnimationTake>("Assets/MashBox/Animation Studio Examples/SM Reach Take.asset");
+                var example = AssetDatabase.LoadAssetAtPath<AnimationTake>("Assets/MashBox/MashBox Studio Examples/SM Reach Take.asset");
                 if (example && GUILayout.Button("Open SM reach example")) LoadTake(example);
             }
         }
@@ -298,8 +300,8 @@ namespace MashBoxSDK.AnimationStudio
             var rect = GUILayoutUtility.GetRect(1, 64, GUILayout.ExpandWidth(true));
             EditorGUI.DrawRect(rect, new Color(0.075f, 0.10f, 0.14f));
             EditorGUI.DrawRect(new Rect(rect.x, rect.y, 4, rect.height), new Color(0.15f, 0.78f, 0.72f));
-            GUI.Label(new Rect(18, rect.y + 10, rect.width - 30, 24), "MASHBOX  /  ANIMATION STUDIO", new GUIStyle(EditorStyles.boldLabel) { fontSize = 17, normal = { textColor = Color.white } });
-            GUI.Label(new Rect(18, rect.y + 36, rect.width - 30, 20), "POSE   ·   KEYFRAME   ·   BAKE", EditorStyles.miniLabel);
+            GUI.Label(new Rect(18, rect.y + 10, rect.width - 30, 24), "MASHBOX  /  ANIMATION STUDIO", new GUIStyle(StudioTheme.Styles.boldLabel) { fontSize = 17, normal = { textColor = Color.white } });
+            GUI.Label(new Rect(18, rect.y + 36, rect.width - 30, 20), "POSE   ·   KEYFRAME   ·   BAKE", StudioTheme.Styles.miniLabel);
         }
 
         private void BuildOrFocus()
@@ -331,14 +333,33 @@ namespace MashBoxSDK.AnimationStudio
         private void OpenViewport()
         {
             if (!viewport) viewport = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().FirstOrDefault();
+            bool migrateHost = viewport && !viewport.dockableHost;
+            var previousPivot = migrateHost ? viewport.pivot : Vector3.zero;
+            var previousRotation = migrateHost ? viewport.rotation : Quaternion.identity;
+            float previousSize = migrateHost ? viewport.size : 1;
+            bool previousOrthographic = migrateHost && viewport.orthographic;
+            if (migrateHost)
+            {
+                var previous = viewport;
+                viewport = CreateInstance<AnimationStudioViewport>();
+                viewport.dockableHost = true;
+                viewport.titleContent = new GUIContent("MashBox Studio");
+                viewport.position = previous.position;
+                viewport.modelGridVisible = previous.modelGridVisible;
+                viewport.cameraMode = previous.cameraMode;
+                viewport.Show();
+                previous.Close();
+            }
             if (!viewport)
             {
                 viewport = CreateInstance<AnimationStudioViewport>();
+                viewport.dockableHost = true;
+                viewport.titleContent = new GUIContent("MashBox Studio");
                 viewport.position = new Rect(150, 100, 1100, 800);
                 viewport.Show();
                 viewport.position = new Rect(150, 100, 1100, 800);
             }
-            viewport.titleContent = new GUIContent("Animation Studio");
+            viewport.titleContent = new GUIContent("MashBox Studio");
             if (rig != null) viewport.Bind(rig.Scene);
             else
             {
@@ -351,6 +372,8 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindRigControls(DrawViewportRigControls);
             viewport.BindInspector(DrawViewportInspector);
             viewport.SetInspectorExpanded(inspectorExpanded);
+            BindStudioMode();
+            if (migrateHost) { viewport.pivot = previousPivot; viewport.rotation = previousRotation; viewport.size = previousSize; viewport.orthographic = previousOrthographic; return; }
             if (rig == null) return;
             var bounds = new Bounds(rig.Root.transform.position + Vector3.up, Vector3.one * 2);
             foreach (var renderer in rig.Root.GetComponentsInChildren<Renderer>()) bounds.Encapsulate(renderer.bounds);
@@ -380,7 +403,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawTimeline()
         {
             EditorGUILayout.Space(12);
-            EditorGUILayout.LabelField("TAKE & TIMELINE", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("TAKE & TIMELINE", StudioTheme.Styles.boldLabel);
             bool nextAutoKey = EditorGUILayout.Toggle(new GUIContent("Auto Key", "When enabled, pose edits insert or replace a key at the current frame. S always keys the pose."), autoKey);
             if (nextAutoKey != autoKey) { FinishSceneEdit(); autoKey = nextAutoKey; }
             EditorGUILayout.HelpBox(unkeyedPose
@@ -399,18 +422,14 @@ namespace MashBoxSDK.AnimationStudio
                 take.lastFrame = Mathf.Clamp(end, 1, 18000);
                 take.loop = loop; take.interpolation = interpolation; Save(); Seek(Mathf.Min(frame, take.lastFrame));
             }
-            EditorGUILayout.LabelField("Scrub and play using the timeline at the bottom of the viewport.", EditorStyles.wordWrappedMiniLabel);
-            using (new EditorGUI.DisabledScope((take.activeLayer<0 && EditingKeys.Count<=1) || !EditingKeys.Any(k => k.frame == frame)))
-                if (GUILayout.Button("Delete key at frame " + frame))
-                {
-                    Undo.RecordObject(take, "Delete pose key");
-                    EditingKeys.RemoveAll(k => k.frame == frame); Save(); Seek(frame);
-                }
+            EditorGUILayout.LabelField("Scrub and play using the timeline at the bottom of the viewport.", StudioTheme.Styles.wordWrappedMiniLabel);
+            if (GUILayout.Button("Delete selected controls' keys at frame " + frame))
+                DeleteSelectedAtCurrentFrame();
         }
         private void DrawControls()
         {
             EditorGUILayout.Space(12);
-            EditorGUILayout.LabelField("CONTROL RIG", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("CONTROL RIG", StudioTheme.Styles.boldLabel);
             if (rig.Animator) DrawRigDiagram();
             else { ikMode = false; if (DrawBikeControls()) return; }
             int mode = GUILayout.Toolbar(ikMode ? 0 : 1, new[] { "IK effectors", "FK bones" });
@@ -420,7 +439,7 @@ namespace MashBoxSDK.AnimationStudio
             {
             EditorGUI.BeginChangeCheck();
             showSkeleton = EditorGUILayout.Toggle("Show skeleton", showSkeleton);
-            showGroundGrid = EditorGUILayout.Toggle(new GUIContent("Ground grid", "Ground at Y = 0. Small squares are 25 cm; major lines are 1 metre."), showGroundGrid);
+            showGroundGrid = EditorGUILayout.Toggle(new GUIContent("Ground grid", "Ground at Y = 0. Adjust line spacing and opacity in MashBox Studio Settings."), showGroundGrid);
             showFKControls = EditorGUILayout.Toggle("Body / FK rings", showFKControls);
             showPoles = EditorGUILayout.Toggle("Elbow / knee targets", showPoles);
             controlSize = EditorGUILayout.Slider("Control size", controlSize, 0.75f, 3f);
@@ -513,7 +532,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawClipTools()
         {
             EditorGUILayout.Space(12);
-            EditorGUILayout.LabelField("CLIPS & GAMEPLAY", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("CLIPS & GAMEPLAY", StudioTheme.Styles.boldLabel);
             importClip = (AnimationClip)EditorGUILayout.ObjectField("Source animation", importClip, typeof(AnimationClip), false);
             using (new EditorGUI.DisabledScope(!importClip))
                 if (GUILayout.Button("Import clip into a new take…")) Guard(ImportClip);
@@ -536,13 +555,14 @@ namespace MashBoxSDK.AnimationStudio
             if (GUILayout.Button("Bake new animation clip…")) Guard(Bake);
             using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField(sceneDraft ? (autoKey ? "Posing… key commits on release" : "Posing… press S to key") : unkeyedPose ? "Unkeyed pose · S to key" : pendingSave ? "Keys queued for save" : "Take saved", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField(sceneDraft ? (autoKey ? "Posing… key commits on release" : "Posing… press S to key") : unkeyedPose ? "Unkeyed pose · S to key" : pendingSave ? "Keys queued for save" : "Take saved", StudioTheme.Styles.miniLabel);
                 if (GUILayout.Button("Save now", GUILayout.Width(85))) FlushEdits();
             }
         }
 
         private void Seek(int next)
         {
+            playing = false;
             FinishSceneEdit();
             FinishActorEdits();
             unkeyedPose = false;
@@ -605,12 +625,16 @@ namespace MashBoxSDK.AnimationStudio
             FinishSceneEdit();
             FinishActorEdits();
             unkeyedPose = false;
-            playing = !playing; previousTime = EditorApplication.timeSinceStartup;
+            if (playing) { playing = false; return; }
+            StopStudioAudio(); audioErrors.Clear();
+            playing = true; previousTime = EditorApplication.timeSinceStartup;
             playFrame = frame >= take.lastFrame ? 0 : frame;
+            audioPlaybackFrame = playFrame;
+            PlayAudioRange(playFrame, playFrame, true);
         }
         private void Tick()
         {
-            if (hadViewport && !viewport) { hadViewport = false; ReleaseRig(); }
+            if (hadViewport && !viewport) { hadViewport = false; ReleaseRig(); ReleaseModelEditor(); }
             PollMotionJob();
             if (sceneDraft && !viewport) FinishSceneEdit();
             if (pendingSave && !sceneDraft && GUIUtility.hotControl == 0 &&
@@ -618,12 +642,27 @@ namespace MashBoxSDK.AnimationStudio
                 FlushSave();
             if (!playing || rig == null || !take) return;
             double now = EditorApplication.timeSinceStartup;
-            playFrame += (float)(now - previousTime) * take.frameRate; previousTime = now;
-            if (playFrame > take.lastFrame)
+            double advanced = audioPlaybackFrame + (now - previousTime) * take.frameRate; previousTime = now;
+            double previous = audioPlaybackFrame;
+            int end = Mathf.Max(1, take.lastFrame);
+            if (take.loop)
             {
-                if (take.loop) playFrame %= Mathf.Max(1, take.lastFrame);
-                else { playFrame = take.lastFrame; playing = false; }
+                while (advanced > end)
+                {
+                    PlayAudioRange(previous, end);
+                    audioPreview.StopLoops();
+                    advanced -= end; previous = 0;
+                    PlayAudioRange(0, 0, true);
+                }
+                PlayAudioRange(previous, advanced);
             }
+            else
+            {
+                PlayAudioRange(previous, Math.Min(advanced, end));
+                // Let the last one-shot finish; any explicit pause, seek or close stops it.
+                if (advanced >= end) { advanced = end; isPlaying = false; audioPreview.StopLoops(); }
+            }
+            audioPlaybackFrame = advanced; playFrame = (float)advanced;
             Guard(() =>
             {
                 pose = take.Evaluate(playFrame); frame = Mathf.RoundToInt(playFrame);
@@ -697,6 +736,16 @@ namespace MashBoxSDK.AnimationStudio
 
         private void BeforeSceneGUI(SceneView view)
         {
+            if (view == viewport && viewport.HandleWindowShortcut()) return;
+            if (view == viewport && modelingMode)
+            {
+                if (view.camera) view.camera.cameraType = CameraType.Preview;
+                EnsureModelEditor();
+                modelEditor.ConfigureLightingCamera(view);
+                if (modelEditor.HandleModelDrop(view, LoadStudioModel) || modelEditor.HandleObjectDuplicate() || modelEditor.HandleObjectDelete()) return;
+                modelEditor.BeforeModelSceneGUI(view);
+                return;
+            }
             // HDRP and scene-wide effects must treat this as an asset preview.
             // SceneView resets cameraType during SetupCamera, so set it immediately before rendering.
             if (view == viewport && view.camera) view.camera.cameraType = CameraType.Preview;
@@ -923,6 +972,3 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
-
-
-

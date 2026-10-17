@@ -338,8 +338,8 @@ namespace MashBoxSDK.SDKMain
         private void DrawContentToolsTab()
         {
 #if MashBoxDev && UNITY_6000_0_OR_NEWER
-            if (GUILayout.Button("Open Animation Studio", GUILayout.Height(28)))
-                EditorApplication.ExecuteMenuItem("MashBox/Animation Studio");
+            if (GUILayout.Button("Open MashBox Studio", GUILayout.Height(28)))
+                EditorApplication.ExecuteMenuItem("MashBox/MashBox Studio");
             GUILayout.Space(6f);
 #endif
 

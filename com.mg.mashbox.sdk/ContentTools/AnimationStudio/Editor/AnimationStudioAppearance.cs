@@ -62,9 +62,9 @@ namespace MashBoxSDK.AnimationStudio
                         rig.SetNeutralShading(false);
                     });
             }
-            EditorGUILayout.LabelField("Drag compatible skinned body, bust or clothing prefabs into these slots, then Apply outfit. Base textures and colors use studio preview shading; pose keys stay unchanged.", EditorStyles.wordWrappedMiniLabel);
-            EditorGUILayout.LabelField("Preview body / bust is always Body. Mark extra skin pieces as Body; Hat attaches to Head. Cutouts affect preview body copies only and are recalculated on Apply outfit.", EditorStyles.wordWrappedMiniLabel);
-            if (rig != null && rig.HiddenBodyTriangles > 0) EditorGUILayout.LabelField(rig.HiddenBodyTriangles + " body triangles hidden", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("Drag compatible skinned body, bust or clothing prefabs into these slots, then Apply outfit. Base textures and colors use studio preview shading; pose keys stay unchanged.", StudioTheme.Styles.wordWrappedMiniLabel);
+            EditorGUILayout.LabelField("Preview body / bust is always Body. Mark extra skin pieces as Body; Hat attaches to Head. Cutouts affect preview body copies only and are recalculated on Apply outfit.", StudioTheme.Styles.wordWrappedMiniLabel);
+            if (rig != null && rig.HiddenBodyTriangles > 0) EditorGUILayout.LabelField(rig.HiddenBodyTriangles + " body triangles hidden", StudioTheme.Styles.miniLabel);
         }
 
         private void RebuildAppearance()
@@ -90,4 +90,3 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
-
