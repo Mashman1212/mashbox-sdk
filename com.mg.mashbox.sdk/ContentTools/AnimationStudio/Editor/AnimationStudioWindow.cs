@@ -56,21 +56,21 @@ namespace MashBoxSDK.AnimationStudio
         public static void Open() => OpenInStudio(Selection.activeObject as AnimationTake);
 
 #if MashBoxDev
-        [MenuItem("Assets/Open Clip as Take in MashBox Studio",false,2000)]
+        [MenuItem("Assets/Open Clip in MashBox Studio",false,2000)]
 #endif
         private static void OpenSelectedClip()
         {
-            if (Selection.activeObject is AnimationClip clip) { OpenClipAsTake(clip); return; }
+            if (Selection.activeObject is AnimationClip clip) { OpenClipForEditing(clip); return; }
             var clips = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(Selection.activeObject))
                 .OfType<AnimationClip>().Where(c => !c.name.StartsWith("__preview__",StringComparison.Ordinal)).ToArray();
-            if (clips.Length == 1) { OpenClipAsTake(clips[0]); return; }
+            if (clips.Length == 1) { OpenClipForEditing(clips[0]); return; }
             var menu = new GenericMenu();
             foreach (var item in clips)
-            { var selectedClip = item; menu.AddItem(new GUIContent(item.name),false,() => OpenClipAsTake(selectedClip)); }
+            { var selectedClip = item; menu.AddItem(new GUIContent(item.name),false,() => OpenClipForEditing(selectedClip)); }
             menu.ShowAsContext();
         }
 #if MashBoxDev
-        [MenuItem("Assets/Open Clip as Take in MashBox Studio",true)]
+        [MenuItem("Assets/Open Clip in MashBox Studio",true)]
 #endif
         private static bool CanOpenSelectedClip()
         {
@@ -83,11 +83,26 @@ namespace MashBoxSDK.AnimationStudio
         {
             string path = EditorUtility.SaveFilePanelInProject("Open clip as take",clip.name+" Take","asset","Save an editable take; the source clip remains unchanged.");
             if (string.IsNullOrEmpty(path)) return;
+            OpenClip(clip, path);
+        }
+        private static void OpenClip(AnimationClip clip, string path)
+        {
             OpenInStudio(null);
             var window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
             window.Guard(() =>
             {
-                window.FlushEdits();
+                if (!window.ConfirmReplaceClip()) return;
+                var previousTake = window.take;
+                var previousCharacter = window.character;
+                var previousBody = window.body;
+                var previousClothing = window.clothing;
+                var previousOutfit = window.outfitOptions;
+                var previousClip = window.importClip;
+                bool previousMode = window.modelingMode;
+                int previousFrame = window.frame;
+                try
+                {
+                window.modelingMode = false;
                 var model = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(clip));
                 if (window.rig == null || (!clip.isHumanMotion && model))
                 {
@@ -101,8 +116,19 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 window.importClip = clip;
                 window.ImportClipToPath(path);
-                window.inspectorTab = 0;
+                window.humanoidExport = clip.isHumanMotion;
+                window.OpenViewport();
+                window.inspectorTab = 1;
                 window.viewport?.Focus();
+                }
+                catch
+                {
+                    window.take = previousTake; window.character = previousCharacter; window.body = previousBody;
+                    window.clothing = previousClothing; window.outfitOptions = previousOutfit;
+                    window.importClip = previousClip; window.frame = previousFrame; window.modelingMode = previousMode;
+                    if (window.character) window.BuildRig(); else window.ReleaseRig();
+                    throw;
+                }
             });
         }
 
@@ -133,7 +159,9 @@ namespace MashBoxSDK.AnimationStudio
 
         private void LoadTake(AnimationTake asset)
         {
+            if (asset != take && !ConfirmReplaceClip()) return;
             FlushEdits();
+            if (asset != clipSession) ReleaseClipSession();
             take = asset; character = asset.character; body = asset.body; frame = 0;
             EditorPrefs.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(asset));
             clothing = asset.clothing ?? Array.Empty<GameObject>(); outfitOptions = asset.outfitOptions ?? Array.Empty<OutfitOptions>();
@@ -169,7 +197,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void RestoreExistingViewport(AnimationStudioViewport view)
         {
-            if (!view || EditorApplication.isPlayingOrWillChangePlaymode) return;
+            if (!view || EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode) return;
             var window = view.Studio;
             if (!window) window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().FirstOrDefault();
             if (!window) window = CreateInstance<AnimationStudioWindow>();
@@ -178,22 +206,32 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Restore()
         {
-            if (!this || rig != null || EditorApplication.isPlayingOrWillChangePlaymode) return;
+            if (!this || rig != null || EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode) return;
             // A hidden controller can survive closing the viewport. Never recreate it on reload or Play.
             if (!viewport) viewport = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().FirstOrDefault(view => view.Studio == this);
             if (!viewport) return;
             if (take && take.character) { character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>(); }
-            if (character) Guard(BuildRig);
+            if (character)
+            {
+                // Rebuild only the disposable preview. Keep the document, time and user's view.
+                var pivot = viewport.pivot; var rotation = viewport.rotation;
+                float size = viewport.size; bool orthographic = viewport.orthographic;
+                Guard(BuildRig);
+                viewport.pivot = pivot; viewport.rotation = rotation;
+                viewport.size = size; viewport.orthographic = orthographic;
+            }
             else OpenViewport();
         }
         private void PlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.ExitingPlayMode)
             { ReleaseRig(); ReleaseModelEditor(); }
-            else if (state == PlayModeStateChange.EnteredEditMode) EditorApplication.delayCall += Restore;
+            else if (state == PlayModeStateChange.EnteredEditMode || state == PlayModeStateChange.EnteredPlayMode)
+                EditorApplication.delayCall += Restore;
         }
         private void ReleaseRig()
         {
+            EndCorrectionGizmo(false);
             FlushEdits();
             rigSelection.Clear(); rigSelectionExplicit=false; selectingRig=false;
             playing = false;
@@ -245,7 +283,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawWorkspace(bool appearance = true)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField(appearance ? "CHARACTER WORKSPACE" : "TAKE", StudioTheme.Styles.boldLabel);
+            EditorGUILayout.LabelField(appearance ? "CHARACTER WORKSPACE" : EditingClip ? "ANIMATION" : "TAKE", StudioTheme.Styles.boldLabel);
             if(appearance || !take)
             {
             using (new EditorGUI.DisabledScope(take))
@@ -277,11 +315,14 @@ namespace MashBoxSDK.AnimationStudio
                     if (GUILayout.Button("Open viewport")) Guard(BuildOrFocus);
             }
             }
+            if (EditingClip) DrawClipDocument();
             EditorGUI.BeginChangeCheck();
-            var nextTake = (AnimationTake)EditorGUILayout.ObjectField("Animation take", take, typeof(AnimationTake), false);
+            var nextTake = (AnimationTake)EditorGUILayout.ObjectField(EditingClip ? "Open saved take" : "Animation take", EditingClip ? null : take, typeof(AnimationTake), false);
             if (EditorGUI.EndChangeCheck())
             {
+                if (!ConfirmReplaceClip()) return;
                 FlushEdits();
+                ReleaseClipSession();
                 take = nextTake;
                 if (take) { character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>(); frame = 0; Guard(BuildRig); }
                 else { ReleaseRig(); }
@@ -368,6 +409,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             hadViewport = true;
             viewport.Studio = this;
+            UpdateClipSaveState();
             viewport.BindTimeline(DrawViewportTimeline);
             viewport.BindRigControls(DrawViewportRigControls);
             viewport.BindInspector(DrawViewportInspector);
@@ -381,6 +423,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void NewTake()
         {
+            if (!ConfirmReplaceClip()) return;
             FlushEdits();
             string path = EditorUtility.SaveFilePanelInProject("New animation take", "Animation Take", "asset", "Save the editable control rig take.");
             if (string.IsNullOrEmpty(path)) return;
@@ -397,6 +440,7 @@ namespace MashBoxSDK.AnimationStudio
             created.bonePaths = (string[])rig.Paths.Clone();
             created.SetKey(rig.Capture(), 0);
             AssetDatabase.CreateAsset(created, AssetDatabase.GenerateUniqueAssetPath(path));
+            ReleaseClipSession();
             take = created; frame = 0; Seek(0); Save();
         }
 
@@ -535,6 +579,8 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUILayout.LabelField("CLIPS & GAMEPLAY", StudioTheme.Styles.boldLabel);
             importClip = (AnimationClip)EditorGUILayout.ObjectField("Source animation", importClip, typeof(AnimationClip), false);
             using (new EditorGUI.DisabledScope(!importClip))
+                if (GUILayout.Button("Open clip for editing")) OpenClipForEditing(importClip);
+            using (new EditorGUI.DisabledScope(!importClip))
                 if (GUILayout.Button("Import clip into a new take…")) Guard(ImportClip);
             using (new EditorGUI.DisabledScope(!Selection.activeGameObject || EditorUtility.IsPersistent(Selection.activeGameObject)))
                 if (GUILayout.Button("Capture selected live character pose")) Guard(CaptureLive);
@@ -550,13 +596,13 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (take.outputClip && !CanOverwriteClip(take.outputClip))
                 EditorGUILayout.HelpBox("Choose a standalone .anim clip inside Assets to overwrite, or bake a new clip first. Imported model clips cannot be overwritten.", MessageType.Info);
-            using (new EditorGUI.DisabledScope(!CanOverwriteClip(take.outputClip)))
-                if (GUILayout.Button("Save to referenced clip", GUILayout.Height(32))) Guard(SaveToReferencedClip);
+            using (new EditorGUI.DisabledScope(!EditingClip && !CanOverwriteClip(take.outputClip)))
+                if (GUILayout.Button(EditingClip ? "Save animation" : "Save to referenced clip", GUILayout.Height(32))) Guard(() => { if (EditingClip) SaveClipSession(); else SaveToReferencedClip(); });
             if (GUILayout.Button("Bake new animation clip…")) Guard(Bake);
             using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField(sceneDraft ? (autoKey ? "Posing… key commits on release" : "Posing… press S to key") : unkeyedPose ? "Unkeyed pose · S to key" : pendingSave ? "Keys queued for save" : "Take saved", StudioTheme.Styles.miniLabel);
-                if (GUILayout.Button("Save now", GUILayout.Width(85))) FlushEdits();
+                EditorGUILayout.LabelField(sceneDraft ? (autoKey ? "Posing… key commits on release" : "Posing… press S to key") : unkeyedPose ? "Unkeyed pose · S to key" : EditingClip ? (clipSessionDirty ? "Unsaved animation changes" : "Animation saved") : pendingSave ? "Keys queued for save" : "Take saved", StudioTheme.Styles.miniLabel);
+                if (GUILayout.Button("Save now", GUILayout.Width(85))) Guard(() => { if (EditingClip) SaveClipSession(); else FlushEdits(); });
             }
         }
 
@@ -588,6 +634,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Save()
         {
+            if (clipSession && (take == clipSession || inActorScope)) { MarkClipChanged(); return; }
             if (EditorUtility.IsPersistent(take)) EditorPrefs.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(take));
             if (pendingSave && pendingSave != take) FlushSave();
             EditorUtility.SetDirty(take);
@@ -597,7 +644,7 @@ namespace MashBoxSDK.AnimationStudio
         private void FlushSave()
         {
             if (!pendingSave) return;
-            AssetDatabase.SaveAssetIfDirty(pendingSave);
+            if (EditorUtility.IsPersistent(pendingSave)) AssetDatabase.SaveAssetIfDirty(pendingSave);
             pendingSave = null;
             Repaint();
         }
@@ -672,6 +719,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void HandleKeys(Event evt)
         {
+            if (EditingClip && evt.type == EventType.KeyDown && evt.keyCode == KeyCode.S &&
+                (evt.control || evt.command) && !evt.alt && GUIUtility.hotControl == 0)
+            { Guard(() => SaveClipSession(evt.shift)); evt.Use(); return; }
+            if (HandleCorrectionGizmoKeys(evt)) return;
             if(HandleRigSelectionKeys(evt)) return;
             if (!inActorScope && activeActor >= 0 && activeActor < actorPreviews.Count && evt.type == EventType.KeyDown && evt.keyCode != KeyCode.Space)
             { InActor(actorPreviews[activeActor],()=>HandleKeys(evt)); return; }
@@ -794,6 +845,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!take) return;
             bool released = Event.current.rawType == EventType.MouseUp;
             HandleKeys(Event.current);
+            if (DrawCorrectionGizmos(view)) return;
             if (DrawBikeScene(view)) { if (released) FinishSceneEdit(); return; }
             if(!skipActorPickers) DrawRigPickers(view);
             if(rigSelection.Count>1 || (rigSelectionExplicit && rigSelection.Count==0)) return;
@@ -866,6 +918,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void ImportClip()
         {
+            if (!ConfirmReplaceClip()) return;
             FlushEdits();
             string path = EditorUtility.SaveFilePanelInProject("Import animation as take", importClip.name + " Take", "asset", "The original clip is preserved.");
             if (string.IsNullOrEmpty(path)) return;
@@ -903,9 +956,20 @@ namespace MashBoxSDK.AnimationStudio
                     importClip.SampleAnimation(rig.Root, Mathf.Min(importClip.length, (float)f / imported.frameRate));
                     var key = rig.Capture(); key.frame = f; imported.keys.Add(key);
                 }
-                AssetDatabase.CreateAsset(imported, AssetDatabase.GenerateUniqueAssetPath(path));
-                Undo.RegisterCreatedObjectUndo(imported,"Import clip as take");
-                take = imported; Save(); Seek(0);
+                bool memoryOnly = string.IsNullOrEmpty(path);
+                if (!memoryOnly)
+                {
+                    AssetDatabase.CreateAsset(imported, AssetDatabase.GenerateUniqueAssetPath(path));
+                    Undo.RegisterCreatedObjectUndo(imported,"Import clip as take");
+                }
+                else { imported.name = importClip.name; imported.hideFlags = HideFlags.HideAndDontSave; }
+                FlushSave(); ReleaseActors(); activeActor = -1;
+                take = imported;
+                Seek(0);
+                // Only release the old document after sampling and evaluation succeed.
+                ReleaseClipSession();
+                if (memoryOnly) { clipSession = imported; clipSessionDirty = false; UpdateClipSaveState(); }
+                else Save();
             }
             catch { if (!EditorUtility.IsPersistent(imported)) DestroyImmediate(imported); throw; }
             finally
@@ -949,6 +1013,7 @@ namespace MashBoxSDK.AnimationStudio
             finally { DestroyImmediate(sampled); EvaluateConstraints(); }
             try
             {
+                if (EditingClip) PreserveClipExtras(take.outputClip, clip);
                 if (target)
                 {
                     Undo.RegisterCompleteObjectUndo(target, "Save Studio animation clip");
@@ -966,6 +1031,7 @@ namespace MashBoxSDK.AnimationStudio
                     Save();
                 }
                 AssetDatabase.SaveAssetIfDirty(target); FlushSave(); EditorGUIUtility.PingObject(target);
+                if (EditingClip) { clipSessionDirty = false; UpdateClipSaveState(); }
             }
             catch { if (!EditorUtility.IsPersistent(clip)) DestroyImmediate(clip); throw; }
             finally { rig.Apply(pose); EvaluateConstraints(); }

@@ -53,6 +53,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawStudioMenuBar()
         {
             if (modelingMode) modelEditor?.DrawMenuBar(viewport, LoadStudioModel);
+            else DrawAnimationFileMenu();
         }
         private void DrawStudioModes()
         {

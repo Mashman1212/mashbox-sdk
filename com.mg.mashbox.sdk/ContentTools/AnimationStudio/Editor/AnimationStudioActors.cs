@@ -150,17 +150,18 @@ namespace MashBoxSDK.AnimationStudio
         private void AddActor(GameObject source)
         {
             if(!source) throw new InvalidOperationException("Actor source not found.");
-            if(!EditorUtility.IsPersistent(take)) throw new InvalidOperationException("Save the primary take before adding actors.");
+            if(!EditorUtility.IsPersistent(take) && !EditingClip) throw new InvalidOperationException("Open an animation or save the primary take before adding actors.");
             FinishActorEdits();
             var child=CreateInstance<AnimationTake>(); child.name=source.name; child.character=source;
             child.frameRate=take.frameRate; child.lastFrame=take.lastFrame; child.loop=take.loop;
             try
             {
                 using(var preview=new AuthoringRig(source,null)) { child.bonePaths=preview.Paths; child.keys.Add(preview.Rest.Copy(0)); }
-                AssetDatabase.AddObjectToAsset(child,take);
+                if (EditingClip) child.hideFlags = HideFlags.HideAndDontSave;
+                else AssetDatabase.AddObjectToAsset(child,take);
                 Undo.RegisterCreatedObjectUndo(child,"Add Studio actor"); Undo.RecordObject(take,"Add Studio actor");
                 take.actors.Add(child); EditorUtility.SetDirty(child); Save(); FlushSave();
-                AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(take));
+                if (EditorUtility.IsPersistent(take)) AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(take));
                 EnsureActors(); activeActor=actorPreviews.Count-1;
             }
             catch { if(!EditorUtility.IsPersistent(child)) DestroyImmediate(child); throw; }
@@ -192,8 +193,9 @@ namespace MashBoxSDK.AnimationStudio
                 Undo.RegisterCompleteObjectUndo(target,"Import actor clip");
                 int sharedEnd=Mathf.Max(take.lastFrame,replacement.lastFrame);
                 target.keys=replacement.keys; target.frameRate=replacement.frameRate; target.lastFrame=replacement.lastFrame;
+                target.quickCorrections?.Clear();
                 target.interpolation=PoseInterpolation.Linear; target.endpointLeadFrames=target.endpointTailFrames=0;
-                EditorUtility.SetDirty(target); AssetDatabase.SaveAssetIfDirty(target);
+                EditorUtility.SetDirty(target); if (EditorUtility.IsPersistent(target)) AssetDatabase.SaveAssetIfDirty(target);
                 Undo.RecordObject(take,"Extend shared timeline"); take.lastFrame=sharedEnd; Save();
             }
             finally
@@ -236,7 +238,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(drawingActorControls || inActorScope || view!=viewport || rig==null || !take) return false;
             EnsureActors();
-            if(showAllActorControls)
+            if(showAllActorControls && quickCorrectionMode==QuickCorrectionMode.None)
             {
                 drawingActorControls=true;
                 try

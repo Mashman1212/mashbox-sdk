@@ -74,6 +74,7 @@ namespace MashBoxSDK.AnimationStudio
    rigPickPoints.Clear(); collectingRigPoints=true;
    try { DrawStudioSceneGUI(view); }
    finally { collectingRigPoints=false; }
+   if(quickCorrectionMode!=QuickCorrectionMode.None) return;
    if(rigSelection.Count>1 && !selectingRig) DrawRigGroupTransform();
    if(evt.rawType==EventType.MouseUp) { FinishSceneEdit(); FinishActorEdits(); }
    if(!lockActorMeshes || playing || evt.alt) return;
@@ -104,6 +105,7 @@ namespace MashBoxSDK.AnimationStudio
   }
   private bool HandleRigSelectionKeys(Event evt)
   {
+   if(quickCorrectionMode!=QuickCorrectionMode.None) return false;
    if(inActorScope || rigSelection.Count<2 || evt.type!=EventType.KeyDown || EditorGUIUtility.editingTextField || evt.alt || evt.control || evt.command) return false;
    bool channel=evt.shift && (evt.keyCode==KeyCode.W || evt.keyCode==KeyCode.E);
    if(!channel) return false;

@@ -11,8 +11,8 @@ namespace MashBoxSDK.AnimationStudio
         private Vector2 inspectorScroll;
         private bool selectionTransformsDrawn;
         [SerializeField] private bool workspaceExpanded;
-        private static readonly string[] InspectorTabs = { "Take", "Selection", "Outfit", "Clip", "Actors", "Layers" };
-        private static readonly string[] PrivateInspectorTabs = { "Take", "Selection", "Outfit", "Clip", "Actors", "Layers", "Generate" };
+        private static readonly string[] InspectorTabs = { "Session", "Selection", "Outfit", "Clip", "Actors", "Layers" };
+        private static readonly string[] PrivateInspectorTabs = { "Session", "Selection", "Outfit", "Clip", "Actors", "Layers", "Generate" };
 
         private void DrawSelectionTransform()
         {
@@ -59,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
                     inspectorTab = GUILayout.SelectionGrid(Mathf.Clamp(inspectorTab,0,tabs.Length-1),tabs,4,StudioTheme.Styles.miniButton);
                     inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll);
                     string tab=tabs[inspectorTab];
-                    if(tab=="Take") DrawWorkspace(false);
+                    if(tab=="Session") DrawWorkspace(false);
                     else if(rig!=null && pose!=null && take)
                     {
                         EnsureActors();
@@ -67,6 +67,8 @@ namespace MashBoxSDK.AnimationStudio
                         {
                             System.Action draw=()=>
                             {
+                                DrawQuickCorrections();
+                                if (quickCorrectionMode != QuickCorrectionMode.None) return;
                                 DrawSelectionTransform();
                                 DrawLayerPicker();
                                 selectionTransformsDrawn=true;
