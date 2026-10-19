@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 
 using System;
 using System.Collections.Generic;
@@ -4911,7 +4911,42 @@ namespace MashBoxSDK.MapTools
                     }
 
                     PublishMapToModioAsync(pack, currentGame, selectedPlatforms);
-                });
+                },
+                () => SavePrivatePublishToDevAsync(pack, currentGame));
+        }
+
+        private async void SavePrivatePublishToDevAsync(MapContentPackDefinition pack, string currentGame)
+        {
+            if (isMapPublishInProgress || pack == null || pack.Scene == null) return;
+            if (!EditorUtility.DisplayDialog("Save Private Publish to Dev?",
+                "Are you sure you want to send this map privately to a developer?\n\n" +
+                "Only use this if you are having publishing issues and a developer is available to inspect them. " +
+                "Contact the developer before sending. This uploads your map and its assets for inspection; it does not publish to mod.io. " +
+                "The submission is kept until a developer removes it.", "Save Private Publish to Dev", "Cancel")) return;
+            try
+            {
+                activeMapPublishCts = new CancellationTokenSource();
+                SetActiveMapPublishStatus("Exporting private dev package...", "Private Dev", 0.1f);
+                var route = PublisherService.CreateRoute(currentGame, DetermineUploadRegion());
+                var packagePath = BuildUnityPackageForMapPack(pack, privateDev: true);
+                EnsurePackageSizeWithinLimit(packagePath, MaxMapPublishPackageBytes, "private dev map");
+                var fileName = Path.GetFileName(packagePath);
+                var grant = await PublisherService.RequestPrivateDevUploadAsync(fileName, route);
+                var progress = new Progress<float>(value => SetActiveMapPublishStatus("Uploading for developer inspection...", "Private Dev", value));
+                await UploadFileToSasAsync(packagePath, grant.uploadUrl, progress, activeMapPublishCts.Token);
+                EditorUtility.DisplayDialog("Private Dev Submission Saved",
+                    "Your map was saved privately for developer inspection. Share this reference with the developer:\n\n" + grant.jobId +
+                    "\n\nIt will not be automatically cooked or published to mod.io.", "OK");
+            }
+            catch (OperationCanceledException) { EditorUtility.DisplayDialog("Upload Cancelled", "The private dev upload was cancelled.", "OK"); }
+            catch (Exception ex) { EditorUtility.DisplayDialog("Private Dev Upload Failed", ex.Message, "OK"); }
+            finally
+            {
+                activeMapPublishCts?.Dispose();
+                activeMapPublishCts = null;
+                EditorUtility.ClearProgressBar();
+                ClearActiveMapPublishStatus();
+            }
         }
 
         private async void PublishMapToModioAsync(
@@ -5411,7 +5446,7 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        private static string BuildUnityPackageForMapPack(MapContentPackDefinition pack)
+        private static string BuildUnityPackageForMapPack(MapContentPackDefinition pack, bool privateDev = false)
         {
             if (pack == null)
                 throw new ArgumentNullException(nameof(pack));
@@ -5427,6 +5462,13 @@ namespace MashBoxSDK.MapTools
             try
             {
                 exportContext = CreateMapPackageExportContext(pack);
+                if (privateDev)
+                {
+                    // Diagnostic imports must never carry a creator's mod.io bearer token.
+                    exportContext.Pack.modioUserToken = string.Empty;
+                    EditorUtility.SetDirty(exportContext.Pack);
+                    AssetDatabase.SaveAssets();
+                }
                 var export = CollectExportPaths(exportContext);
                 if (export.Count == 0)
                     throw new Exception("No assets were found to export for this map pack.");
@@ -6875,17 +6917,20 @@ namespace MashBoxSDK.MapTools
         private readonly List<bool> selected = new List<bool>();
         private Action<IReadOnlyList<MashBoxMapToolsWindow.PublishPlatformOption>> onConfirm;
         private string gameName = string.Empty;
+        private Action onPrivateDev;
 
         public static void Show(
             EditorWindow parent,
             string currentGame,
             IEnumerable<MashBoxMapToolsWindow.PublishPlatformOption> platformOptions,
-            Action<IReadOnlyList<MashBoxMapToolsWindow.PublishPlatformOption>> onConfirm)
+            Action<IReadOnlyList<MashBoxMapToolsWindow.PublishPlatformOption>> onConfirm,
+            Action onPrivateDev = null)
         {
             var window = CreateInstance<PublishPlatformSelectionPopup>();
             window.titleContent = new GUIContent("Publish Platforms");
             window.gameName = currentGame ?? string.Empty;
             window.onConfirm = onConfirm;
+            window.onPrivateDev = onPrivateDev;
 
             foreach (var option in platformOptions)
             {
@@ -6909,6 +6954,12 @@ namespace MashBoxSDK.MapTools
                 selected[i] = EditorGUILayout.ToggleLeft(options[i].DisplayName, selected[i]);
 
             GUILayout.FlexibleSpace();
+            if (onPrivateDev != null && GUILayout.Button("Save Private Publish to Dev"))
+            {
+                onPrivateDev.Invoke();
+                Close();
+                return;
+            }
 
             using (new EditorGUILayout.HorizontalScope())
             {
