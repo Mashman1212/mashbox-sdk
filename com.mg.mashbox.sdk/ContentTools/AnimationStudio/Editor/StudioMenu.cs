@@ -43,11 +43,25 @@ namespace MashBoxSDK.AnimationStudio
             }
             level.Add(new Item { Separator = true, Enabled = false });
         }
-        internal void DropDown(Rect rect)
+        internal static bool MenuBarButton(EditorWindow owner, Rect rect, GUIContent content)
+        {
+            var evt = Event.current;
+            bool open = StudioMenuPopup.IsMenuBarItemOpen(owner,content.text);
+            bool switchMenu = !open && rect.Contains(evt.mousePosition) &&
+                (evt.type == EventType.MouseMove || evt.type == EventType.MouseDrag) && StudioMenuPopup.HasMenuBar(owner);
+            bool clicked = EditorGUI.DropdownButton(rect,content,FocusType.Passive,StudioTheme.Styles.menuBarButton);
+            if (evt.type == EventType.Repaint && open)
+                StudioTheme.Styles.menuBarButton.Draw(rect,content,rect.Contains(evt.mousePosition),true,true,false);
+            if (!switchMenu && !clicked) return false;
+            if (clicked && open) { StudioMenuPopup.CloseMenuBar(owner); return false; }
+            if (switchMenu) evt.Use();
+            return true;
+        }
+        internal void DropDown(Rect rect, EditorWindow menuBarOwner = null, string menuBarItem = null)
         {
             if (Items.Count == 0) return;
             var screen = new Rect(GUIUtility.GUIToScreenPoint(rect.position), rect.size);
-            StudioMenuPopup.Open(this, screen);
+            StudioMenuPopup.Open(this, screen,menuBarOwner,menuBarItem);
         }
     }
 
@@ -61,13 +75,35 @@ namespace MashBoxSDK.AnimationStudio
         private GUIStyle textStyle, shortcutStyle;
         private float columnWidth = ColumnWidth;
         private bool positioning;
-        internal static StudioMenuPopup Open(StudioMenu menu, Rect screenAnchor)
+        private static StudioMenuPopup current;
+        private EditorWindow menuBarOwner;
+        private string menuBarItem;
+        internal static bool HasMenuBar(EditorWindow owner) => owner && current && current.menuBarOwner == owner;
+        internal static bool IsMenuBarItemOpen(EditorWindow owner,string item) => HasMenuBar(owner) && current.menuBarItem == item;
+        internal static void CloseMenuBar(EditorWindow owner) { if (HasMenuBar(owner)) current.Close(); }
+        internal static StudioMenuPopup Open(StudioMenu menu, Rect screenAnchor, EditorWindow menuBarOwner = null, string menuBarItem = null)
         {
+            if (menuBarOwner && HasMenuBar(menuBarOwner))
+            {
+                current.ReplaceMenu(menu,screenAnchor,menuBarItem);
+                return current;
+            }
             foreach (var previous in Resources.FindObjectsOfTypeAll<StudioMenuPopup>()) previous.Close();
             var window = CreateInstance<StudioMenuPopup>();
-            window.anchor = screenAnchor; window.columns.Add(menu.Items); window.selected.Add(-1);
-            window.wantsMouseMove = true; window.PositionPopup();
+            current = window; window.menuBarOwner = menuBarOwner;
+            window.wantsMouseMove = true; window.ReplaceMenu(menu,screenAnchor,menuBarItem);
             return window;
+        }
+        private void ReplaceMenu(StudioMenu menu, Rect screenAnchor, string item)
+        {
+            anchor=screenAnchor;menuBarItem=item;activeColumn=0;
+            columns.Clear();selected.Clear();columns.Add(menu.Items);selected.Add(-1);
+            PositionPopup();Repaint();menuBarOwner?.Repaint();
+        }
+        private void OnDisable()
+        {
+            if (current == this) current=null;
+            if (menuBarOwner) menuBarOwner.Repaint();
         }
         internal int ColumnCount => columns.Count;
         private Vector2 MenuSize()

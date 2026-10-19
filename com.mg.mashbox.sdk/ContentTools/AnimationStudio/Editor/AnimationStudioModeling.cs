@@ -45,8 +45,14 @@ namespace MashBoxSDK.AnimationStudio
                 DrawStudioMenuBar,
                 modelingMode ? (System.Action)DrawModelViewportOptions : null, DrawStudioSettings);
             viewport.BindModelTools(modelingMode ? (System.Action)(() => modelEditor?.DrawToolStrip()) : null);
+            viewport.BindWorkspaceStatistics();
+            viewport.BindModelToolOptions(modelingMode ? (System.Action)(() => modelEditor?.DrawEmbeddedToolOptions()) : null);
+            if (modelEditor != null) modelEditor.FocusToolOptions = viewport.FocusModelToolOptions;
             viewport.BindStatistics(modelingMode ? (System.Action)(() => modelEditor?.DrawStatistics()) : null);
             viewport.BindMarkingMenu(modelingMode ? (System.Action)(() => modelEditor?.DrawMarkingMenu()) : null);
+            viewport.BindModelInput(modelingMode ? (System.Func<bool>)(() => modelingMode) : null,
+                () => viewport.HandleWindowShortcut() || modelEditor.HandleModelKeyboard(viewport),
+                () => modelEditor?.ReleaseShortcutHolds());
             viewport.minSize = new Vector2(1050, 600);
             if (!modelingMode) viewport.SetInspectorExpanded(inspectorExpanded);
         }
@@ -66,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddItem(new GUIContent("Animation"), !modelingMode, () => SwitchStudioMode(false));
             menu.AddItem(new GUIContent("Modeling"), modelingMode, () => SwitchStudioMode(true));
             menu.AddSeparator("");
-            menu.AddItem(new GUIContent(viewport.IsStudioMaximized ? "Restore View\tF11" : "Maximize View\tF11"), false, viewport.ToggleMaximized);
+            menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel(viewport.IsStudioMaximized ? "Restore View" : "Maximize View",StudioShortcut.Maximize)), false, viewport.ToggleMaximized);
             menu.DropDown(rect);
         }
         private void DrawModelViewportOptions()
@@ -99,6 +105,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawModelScene(SceneView view)
         {
+            if(Event.current.type == EventType.Repaint) viewport.RecordWorkspaceFrame(EditorApplication.timeSinceStartup);
             EnsureModelEditor(); if (viewport.modelGridVisible) viewport.DrawGroundGrid(); modelEditor.SceneGUI(view, LoadStudioModel);
         }
     }

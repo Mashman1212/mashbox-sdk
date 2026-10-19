@@ -1,0 +1,131 @@
+using System;
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.UIElements;
+
+namespace MashBoxSDK.AnimationStudio
+{
+    public sealed partial class MashBoxStudioViewport
+    {
+        private sealed class InputHandler
+        {
+            internal Action original, wrapped;
+        }
+        private readonly Dictionary<IMGUIContainer,InputHandler> studioInputHandlers = new Dictionary<IMGUIContainer,InputHandler>();
+        private Func<bool> studioInputActive;
+        private Func<bool> studioKeyboard;
+        private Action releaseStudioHolds;
+        private bool navigating;
+        private StudioShortcut navigation;
+        private int navigationControl, navigationButton;
+
+        internal void BindModelInput(Func<bool> active, Func<bool> keyboard, Action releaseHolds)
+        {
+            studioInputActive = active; studioKeyboard = keyboard; releaseStudioHolds = releaseHolds;
+            EditorApplication.update -= TickStudioInput;
+            StudioShortcuts.changed -= ReleaseStudioInput;
+            if (active == null) { RestoreStudioInput(); return; }
+            EditorApplication.update += TickStudioInput;
+            StudioShortcuts.changed += ReleaseStudioInput;
+            foreach (var container in rootVisualElement.Query<IMGUIContainer>().ToList())
+            {
+                if (container.onGUIHandler == null) continue;
+                if (studioInputHandlers.TryGetValue(container,out var previous) && container.onGUIHandler == previous.wrapped) continue;
+                var handler = new InputHandler { original = container.onGUIHandler };
+                // SceneView's native camera IMGUI container owns its main OnGUI callback.
+                bool canvas = ReferenceEquals(handler.original.Target,this) && handler.original.Method.DeclaringType == typeof(SceneView);
+                handler.wrapped = () => {
+                    if (studioInputActive != null && studioInputActive())
+                    {
+                        if (canvas) RouteStudioCanvasInput();
+                        else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider)) studioKeyboard?.Invoke();
+                    }
+                    handler.original();
+                    // Panels get their text-field and rename handling first. Everything else
+                    // stays in Studio instead of falling through to Unity's global shortcuts.
+                    if (studioInputActive != null && studioInputActive() && Event.current.isKey)
+                        Event.current.Use();
+                };
+                studioInputHandlers[container] = handler;
+                container.onGUIHandler = handler.wrapped;
+            }
+        }
+        private void RestoreStudioInput()
+        {
+            ReleaseStudioInput();
+            foreach (var pair in studioInputHandlers)
+                if (pair.Key.onGUIHandler == pair.Value.wrapped) pair.Key.onGUIHandler = pair.Value.original;
+            studioInputHandlers.Clear();
+        }
+        private void ReleaseStudioInput()
+        {
+            if (navigating && GUIUtility.hotControl == navigationControl) GUIUtility.hotControl = 0;
+            navigating = false; releaseStudioHolds?.Invoke();
+        }
+        private void TickStudioInput()
+        {
+            if (focusedWindow != this || studioInputActive == null || !studioInputActive()) ReleaseStudioInput();
+        }
+        public override void OnDisable()
+        {
+            StopWorkspaceStatistics();
+            EditorApplication.update -= TickStudioInput;
+            StudioShortcuts.changed -= ReleaseStudioInput;
+            RestoreStudioInput();
+            base.OnDisable();
+        }
+        private void RouteStudioCanvasInput()
+        {
+            var evt = Event.current;
+            int control = GUIUtility.GetControlID("MashBoxStudioNavigation".GetHashCode(),FocusType.Passive);
+            if (evt.isKey && !EditorGUIUtility.editingTextField)
+            {
+                if (navigating && StudioShortcuts.Pressed(StudioShortcut.Cancel,evt)) ReleaseStudioInput();
+                else studioKeyboard?.Invoke();
+                if (evt.isKey) evt.Use();
+                return;
+            }
+            if (navigating)
+            {
+                if (GUIUtility.hotControl != navigationControl) { ReleaseStudioInput(); return; }
+                if (evt.type == EventType.MouseDrag)
+                { ApplyStudioNavigation(navigation,navigation == StudioShortcut.Dolly ? -evt.delta : evt.delta); evt.Use(); Repaint(); return; }
+                if (evt.type == EventType.MouseUp && evt.button == navigationButton)
+                { ReleaseStudioInput(); evt.Use(); Repaint(); return; }
+            }
+            bool canvas = ModelCanvasRect.Contains(evt.mousePosition) && !IsOverViewportControls(evt.mousePosition);
+            if (!canvas) return;
+            if (evt.type == EventType.ScrollWheel && GUIUtility.hotControl == 0)
+            { ApplyStudioNavigation(StudioShortcut.Dolly,new Vector2(0,evt.delta.y*8)); evt.Use(); Repaint(); return; }
+            if (evt.type == EventType.MouseDown && GUIUtility.hotControl == 0)
+            {
+                foreach (var action in new[] { StudioShortcut.Orbit, StudioShortcut.Pan, StudioShortcut.Dolly })
+                    if (StudioShortcuts.Matches(action,evt))
+                    {
+                        navigating = true; navigation = action; navigationButton = evt.button;
+                        navigationControl = control; GUIUtility.hotControl = control; Focus(); evt.Use(); return;
+                    }
+            }
+            // Mouse gestures are owned here too; changing Unity's navigation profile
+            // cannot reintroduce the old bindings after a Studio gesture is remapped.
+            if (evt.isMouse && (evt.alt || evt.button != 0) &&
+                !StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt) &&
+                !StudioShortcuts.Matches(StudioShortcut.AxisMenu,evt) && GUIUtility.hotControl == 0) evt.Use();
+        }
+        internal void ApplyStudioNavigation(StudioShortcut action, Vector2 delta)
+        {
+            if (action == StudioShortcut.Orbit)
+            {
+                if (in2DMode || isRotationLocked) return;
+                rotation = Quaternion.AngleAxis(delta.x*.25f,Vector3.up)*rotation*Quaternion.AngleAxis(delta.y*.25f,Vector3.right);
+            }
+            else if (action == StudioShortcut.Pan)
+            {
+                float units = 2*Mathf.Max(.0001f,size)/Mathf.Max(1,camera.pixelHeight/EditorGUIUtility.pixelsPerPoint);
+                pivot += rotation*new Vector3(-delta.x*units,delta.y*units,0);
+            }
+            else size = Mathf.Clamp(size*Mathf.Exp((delta.x+delta.y)*.01f),.0001f,1000000);
+        }
+    }
+}

@@ -9,6 +9,31 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private bool displayLighting = true, displayTextures = true;
+        private bool displayXray;
+        private bool wireframeOnly;
+        internal DrawCameraMode ModelDrawMode => wireframeOnly ? DrawCameraMode.Wireframe :
+            StudioSettings.Current.hideObjectWireframe ? DrawCameraMode.Textured : DrawCameraMode.TexturedWire;
+        internal void SetModelDrawMode(SceneView view, DrawCameraMode mode)
+        {
+            wireframeOnly = mode == DrawCameraMode.Wireframe;
+            StudioSettings.Current.hideObjectWireframe = mode == DrawCameraMode.Textured;
+            StudioSettings.Save();
+            // Native wire modes add hard rasterized lines and force triangle wire drawing.
+            // Studio owns its edge overlay; the camera supplies shaded color or depth only.
+            view.cameraMode = SceneView.GetBuiltinCameraMode(DrawCameraMode.Textured);
+            ApplyDisplayMaterials(); repaint(); view.Repaint();
+        }
+        internal void ConfigureModelDisplay(SceneView view)
+        {
+            var mode = view.cameraMode.drawMode;
+            if (mode == DrawCameraMode.Wireframe || mode == DrawCameraMode.TexturedWire) SetModelDrawMode(view, mode);
+        }
+        internal bool XRayMode => displayXray;
+        internal void SetXRayMode(bool enabled)
+        {
+            if (displayXray == enabled) return;
+            displayXray = enabled; ApplyDisplayMaterials(); repaint();
+        }
         private readonly Dictionary<(Material source, int slice), Material> previewMaterials = new Dictionary<(Material source, int slice), Material>();
         private Material neutralLit, neutralPreview;
 
@@ -32,7 +57,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var rect=GUILayoutUtility.GetRect(24,24,GUILayout.Width(24),GUILayout.Height(24));
             bool visible=!StudioSettings.Current.hideObjectWireframe;
-            bool next=GUI.Toggle(rect,visible,new GUIContent("", "Object wireframe — show or hide selected-object outlines. Component editing overlays stay visible."),StudioTheme.Styles.overlayButton);
+            bool next=GUI.Toggle(rect,visible,new GUIContent("", "Object wireframe — show or hide wireframes on all visible meshes. Component editing overlays stay visible."),StudioTheme.Styles.overlayButton);
             if(next!=visible){StudioSettings.Current.hideObjectWireframe=!next;StudioSettings.Save();}
             if(Event.current.type!=EventType.Repaint)return;
             Handles.BeginGUI();
@@ -92,8 +117,8 @@ namespace MashBoxSDK.AnimationStudio
         private Material DisplayMaterial(Material source, int slice = 0)
         {
             // Editable geometry already contains its pose; terrain deformation must not run again.
-            if (LightingSettings.studioLights && displayLighting && displayTextures && !IsGodGrass(source) && source) return source;
-            if (displayLighting && LightingSettings.studioLights && !displayTextures)
+            if (!displayXray && !wireframeOnly && LightingSettings.studioLights && displayLighting && displayTextures && !IsGodGrass(source) && source) return source;
+            if (!displayXray && !wireframeOnly && displayLighting && LightingSettings.studioLights && !displayTextures)
             {
                 if (!neutralLit)
                 {
@@ -136,6 +161,18 @@ namespace MashBoxSDK.AnimationStudio
             }
             material.SetColor("_Color",color);
             ConfigureTexturePreview(material,source,slice);
+            if (wireframeOnly && !displayXray) material.SetFloat("_ColorMask", 0);
+            if (displayXray)
+            {
+                material.name = "Studio X-ray";
+                material.SetFloat("_Opacity", .22f);
+                material.SetFloat("_ZWrite", 0);
+                material.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+                material.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                material.SetFloat("_Cull", (float)CullMode.Off);
+                material.SetOverrideTag("RenderType", "Transparent");
+                material.renderQueue = (int)RenderQueue.Transparent;
+            }
             return material;
         }
         private void ClearDisplayMaterials()

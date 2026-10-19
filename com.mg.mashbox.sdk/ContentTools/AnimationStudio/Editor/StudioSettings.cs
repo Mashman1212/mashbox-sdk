@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
             public string theme = "graphite";
             public bool neutralMarkingMenus = true;
             public bool showMeshStatistics = true;
+            public bool showWorkspaceFps;
             public bool hideObjectWireframe;
             public float gridSpacing = .25f, gridOpacity = 1, uvPointSize = 4;
             public float handleSize = 1;
@@ -64,6 +65,7 @@ namespace MashBoxSDK.AnimationStudio
             scroll = EditorGUILayout.BeginScrollView(scroll);
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins))
             {
+                if (GUILayout.Button("Controls and Shortcuts…")) StudioControlsPreferences.Open();
                 GUILayout.Label("Appearance", StudioTheme.Styles.boldLabel);
                 GUILayout.Label("Choose a palette. Changes apply immediately to MashBox Studio and its tool windows.", StudioTheme.Styles.wordWrappedMiniLabel);
                 GUILayout.Space(8);

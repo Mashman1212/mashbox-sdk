@@ -89,7 +89,7 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 if (!pivotSnapHeld && !gridSnapHeld) return null;
-                string label = pivotSnapHeld ? "Vertex Snap · V" : "Grid Snap · X";
+                string label = pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
                 if (pivotSnapHeld && gridSnapHeld) label += " (overrides grid)";
                 if (moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
                     label += moveDragAxes == MoveAxes.Free ? " · Free" : " · " + moveDragAxes + (((int)moveDragAxes & ((int)moveDragAxes - 1)) == 0 ? " axis" : " plane");

@@ -17,6 +17,11 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
         _VertexAOStrength ("Vertex AO Strength", Range(0,1)) = 0
         _Unlit ("Unlit preview", Float) = 0
         _CameraLighting ("Camera lighting", Float) = 0
+        _Opacity ("Preview opacity", Range(0, 1)) = 1
+        [HideInInspector] _ZWrite ("Depth write", Float) = 1
+        [HideInInspector] _SrcBlend ("Source blend", Float) = 1
+        [HideInInspector] _DstBlend ("Destination blend", Float) = 0
+        [HideInInspector] _ColorMask ("Color write mask", Float) = 15
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
     }
@@ -32,6 +37,7 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
             float _Cutoff;
             float _Unlit, _VertexAOStrength;
             float _CameraLighting;
+            float _Opacity;
             struct Attributes { float4 vertex : POSITION; float3 normal : NORMAL; float4 tangent : TANGENT; float2 uv : TEXCOORD0; float4 color : COLOR; };
             struct Varyings { float4 position : SV_POSITION; float3 normal : TEXCOORD0; float2 uv : TEXCOORD1; float4 tangent : TEXCOORD2; float ao : TEXCOORD3; };
             Varyings Vert(Attributes input)
@@ -77,7 +83,7 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
                 albedo.rgb = (lerp(luminance.xxx,albedo.rgb,_Saturation)-.5)*_Contrast+.5;
                 albedo.rgb *= _Brightness;
                 clip(albedo.a - _Cutoff);
-                return float4(saturate(albedo.rgb) * lerp(shade, 1, _Unlit) * saturate(1-(1-input.ao)*_VertexAOStrength), 1);
+                return float4(saturate(albedo.rgb) * lerp(shade, 1, _Unlit) * saturate(1-(1-input.ao)*_VertexAOStrength), _Opacity);
             }
         ENDHLSL
     SubShader
@@ -86,7 +92,9 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
         Pass
         {
             Tags { "LightMode" = "ForwardOnly" }
-            ZWrite On
+            ZWrite [_ZWrite]
+            ColorMask [_ColorMask]
+            Blend [_SrcBlend] [_DstBlend]
             Cull [_Cull]
             HLSLPROGRAM
             #pragma vertex Vert
@@ -102,7 +110,9 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
         {
             // Built-in rendering does not use HDRP's ForwardOnly pass.
             Tags { "LightMode" = "Always" }
-            ZWrite On
+            ZWrite [_ZWrite]
+            ColorMask [_ColorMask]
+            Blend [_SrcBlend] [_DstBlend]
             Cull [_Cull]
             HLSLPROGRAM
             #pragma vertex Vert

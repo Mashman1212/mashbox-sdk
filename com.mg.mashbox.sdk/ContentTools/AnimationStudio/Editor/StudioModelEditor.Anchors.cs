@@ -25,13 +25,16 @@ namespace MashBoxSDK.AnimationStudio
             }
         }
         private void CreateAnchor(Action<StudioModelDocument> loaded)
+            => CreateAnchorAtOrigin(null, loaded);
+        private void CreateAnchorAtOrigin(SceneView view, Action<StudioModelDocument> loaded)
         {
+            using var camera = new CreationCameraScope(view);
             CancelMarkingMenu(); EnsureWorkspace(loaded);
             int parent=Active;
             var names=StudioAnchorCatalog.Names.OrderBy(n=>n=="Stem_Anchor" ? 0 : 1);
             string type=names.FirstOrDefault(n=>!Document.nodes.Any(node=>node.parent==parent && node.name==n));
             if (type==null) throw new InvalidOperationException("All available anchor types already exist under this parent.");
-            int index=Document.AddAnchor(type,parent);
+            int index=Document.AddAnchor(type,parent,CreationPosition(parent));
             mode=ComponentMode.Object; pivot=false; search="";
             Rebuild(); SelectObject(index); Changed(false);
         }

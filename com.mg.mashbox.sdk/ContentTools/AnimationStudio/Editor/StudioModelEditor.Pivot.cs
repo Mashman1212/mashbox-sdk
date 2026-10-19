@@ -6,6 +6,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private bool pivotSnapHeld;
+        private KeyCode pivotSnapKey;
         private int pivotSnapControl, pivotSnapUndo = -1;
         private bool snapMovesObjects;
         private Vector3 objectSnapOffset;
@@ -40,7 +41,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool HandlePivotSnap(SceneView view)
         {
             var evt = Event.current;
-            if (evt.type == EventType.KeyUp && evt.keyCode == KeyCode.V)
+            if (evt.type == EventType.KeyUp && evt.keyCode == pivotSnapKey)
             {
                 bool held = pivotSnapHeld; pivotSnapHeld = false;
                 if (held) { evt.Use(); repaint(); return true; }
@@ -50,11 +51,11 @@ namespace MashBoxSDK.AnimationStudio
             if (!(pivot && CanAdjustPivot) && !objectMove && !componentMove)
             { EndPivotSnap(); return false; }
             int id = GUIUtility.GetControlID("MashBoxStudioPivotSnap".GetHashCode(), FocusType.Passive);
-            if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.V && !EditorGUIUtility.editingTextField && !evt.alt && !evt.control && !evt.command)
-            { pivotSnapHeld = true; vertexSnapView = view; evt.Use(); repaint(); return true; }
+            if (StudioShortcuts.Pressed(StudioShortcut.VertexSnap,evt) && !EditorGUIUtility.editingTextField)
+            { pivotSnapHeld = true; pivotSnapKey = evt.keyCode; vertexSnapView = view; evt.Use(); repaint(); return true; }
             if (pivotSnapControl != 0)
             {
-                if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
+                if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt))
                 {
                     Undo.RevertAllDownToGroup(pivotSnapUndo); EndPivotSnap(); evt.Use(); repaint(); return true;
                 }

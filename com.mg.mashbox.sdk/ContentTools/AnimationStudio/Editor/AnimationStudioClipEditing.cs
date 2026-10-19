@@ -79,8 +79,9 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawAnimationFileMenu()
         {
-            var rect = new Rect(0, 0, 48, 21);
-            if (!EditorGUI.DropdownButton(rect, new GUIContent("File"), FocusType.Passive, StudioTheme.Styles.menuDropdown)) return;
+            var content = new GUIContent("File");
+            var rect = new Rect(0, 0, StudioTheme.Styles.menuBarButton.CalcSize(content).x+4, 21);
+            if (!StudioMenu.MenuBarButton(viewport,rect,content)) return;
             var menu = new StudioMenu();
             if (EditingClip)
             {
@@ -88,7 +89,7 @@ namespace MashBoxSDK.AnimationStudio
                 menu.AddItem(new GUIContent("Save animation as…"), false, () => Guard(() => SaveClipSession(true)));
             }
             else menu.AddDisabledItem(new GUIContent("Save animation  Ctrl+S"));
-            menu.DropDown(rect);
+            menu.DropDown(rect,viewport,"File");
         }
 
         private void DrawClipDocument()

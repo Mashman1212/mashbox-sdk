@@ -15,14 +15,14 @@ namespace MashBoxSDK.AnimationStudio
             AssetDatabase.CreateAsset(doc, path); doc.Save(); return doc;
         }
 
-        public int AddEmptyTransform(int parent = -1)
+        public int AddEmptyTransform(int parent = -1, Vector3? position = null)
         {
             if (parent < -1 || parent >= nodes.Count) throw new ArgumentOutOfRangeException(nameof(parent));
             string name = ObjectNames.GetUniqueName(nodes.Where(n => n.parent == parent).Select(n => n.name).ToArray(), "Empty");
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Create empty transform");
             Undo.RegisterCompleteObjectUndo(this, "Create empty transform");
-            nodes.Add(new Node { name = name, parent = parent });
+            nodes.Add(new Node { name = name, parent = parent, position = position ?? Vector3.zero });
             EditorUtility.SetDirty(this);
             Undo.CollapseUndoOperations(group);
             return nodes.Count - 1;

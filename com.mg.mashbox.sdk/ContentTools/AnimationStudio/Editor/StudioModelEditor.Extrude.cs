@@ -47,8 +47,7 @@ namespace MashBoxSDK.AnimationStudio
         internal bool HandleExtrudeShortcut()
         {
             var evt = Event.current;
-            if (evt == null || EditorGUIUtility.editingTextField || evt.type != EventType.KeyDown ||
-                evt.keyCode != KeyCode.E || !(evt.control || evt.command) || evt.alt || evt.shift) return false;
+            if (evt == null || EditorGUIUtility.editingTextField || !StudioShortcuts.Pressed(StudioShortcut.Extrude,evt)) return false;
             // Consume even an unavailable command so Unity cannot edit main-scene objects.
             if (GUIUtility.hotControl == 0) Run(ExtrudeSelected);
             evt.Use(); return true;
@@ -63,7 +62,7 @@ namespace MashBoxSDK.AnimationStudio
             if (mode == ComponentMode.Face)
                 extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
             using (new EditorGUI.DisabledScope(!CanExtrude))
-                if (GUILayout.Button("Extrude Selection (Ctrl+E)")) Run(ExtrudeSelected);
+                if (GUILayout.Button("Extrude Selection ("+StudioShortcuts.Label(StudioShortcut.Extrude)+")")) Run(ExtrudeSelected);
             GUILayout.Label(mode == ComponentMode.Face
                 ? "Extrude along the selected normals, then move, rotate or scale the selected caps. Disable Keep Faces Together for separate face extrusions."
                 : "Extrude open boundary edges along their surface normals. The new outer edges stay selected for further editing.", StudioTheme.Styles.wordWrappedMiniLabel);

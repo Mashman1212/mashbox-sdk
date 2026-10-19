@@ -6,6 +6,8 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private StudioModelToolOptions toolOptions;
+        internal System.Action FocusToolOptions;
+        private Vector2 toolOptionsScroll;
         private GUIStyle toolIconStyle;
         internal void DrawViewportOptions(MashBoxStudioViewport view)
         {
@@ -29,13 +31,13 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DrawToolStrip()
         {
-            ToolButton(Tool.None, new GUIContent("↖", "Select (Q) · Double-click for options"));
+            ToolButton(Tool.None, new GUIContent("↖", "Select ("+StudioShortcuts.Label(StudioShortcut.Select)+") · Double-click for options"));
             var separator = GUILayoutUtility.GetRect(32, 9, GUILayout.Width(32), GUILayout.Height(9));
             if (Event.current.type == EventType.Repaint)
                 EditorGUI.DrawRect(new Rect(separator.x + 4, separator.y + 4, 24, 1), StudioTheme.Current.Border);
-            ToolButton(Tool.Move, new GUIContent(EditorGUIUtility.IconContent("MoveTool").image, "Move (W) · Double-click for options"));
-            ToolButton(Tool.Rotate, new GUIContent(EditorGUIUtility.IconContent("RotateTool").image, "Rotate (E) · Double-click for options"));
-            ToolButton(Tool.Scale, new GUIContent(EditorGUIUtility.IconContent("ScaleTool").image, "Scale (R) · Double-click for options"));
+            ToolButton(Tool.Move, new GUIContent(EditorGUIUtility.IconContent("MoveTool").image, "Move ("+StudioShortcuts.Label(StudioShortcut.Move)+") · Double-click for options"));
+            ToolButton(Tool.Rotate, new GUIContent(EditorGUIUtility.IconContent("RotateTool").image, "Rotate ("+StudioShortcuts.Label(StudioShortcut.Rotate)+") · Double-click for options"));
+            ToolButton(Tool.Scale, new GUIContent(EditorGUIUtility.IconContent("ScaleTool").image, "Scale ("+StudioShortcuts.Label(StudioShortcut.Scale)+") · Double-click for options"));
         }
         private void ToolButton(Tool next, GUIContent content)
         {
@@ -68,8 +70,18 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void OpenToolOptions()
         {
-            if (!toolOptions) toolOptions = ScriptableObject.CreateInstance<StudioModelToolOptions>();
-            toolOptions.Bind(this); toolOptions.ShowUtility(); toolOptions.Focus();
+            CloseToolOptions(); FocusToolOptions?.Invoke(); repaint();
+        }
+        internal void DrawEmbeddedToolOptions()
+        {
+            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel))
+            {
+                EditorGUIUtility.labelWidth = 115;
+                GUILayout.Label("TOOL OPTIONS", StudioTheme.Styles.panelHeader);
+                toolOptionsScroll = EditorGUILayout.BeginScrollView(toolOptionsScroll);
+                try { DrawToolOptions(); }
+                finally { EditorGUILayout.EndScrollView(); }
+            }
         }
         internal void CloseToolOptions() { if (toolOptions) toolOptions.Close(); toolOptions = null; }
         internal void DrawToolOptions()
@@ -79,11 +91,13 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.Label(cutTool == CutTool.EdgeLoop ? "Insert Edge Loop" : "Multi-Cut", StudioTheme.Styles.boldLabel);
                 EditorGUILayout.HelpBox(cutTool == CutTool.EdgeLoop
                     ? "Click-drag an edge to position the loop; release to apply. Shift snaps in 10% steps. Loops follow quad strips and stop at triangles, boundaries or non-manifold edges."
-                    : "Click edges or vertices to build cuts across adjacent faces. Enter or right-click applies the path. Backspace removes the last segment. Ctrl temporarily inserts edge loops; Shift snaps edge points in 10% steps.", MessageType.Info);
-                GUILayout.Label("Escape cancels a pending cut; Escape again or Q/W/E/R exits the tool.", StudioTheme.Styles.wordWrappedMiniLabel);
+                    : "Click edges or vertices to build cuts across adjacent faces. "+StudioShortcuts.Label(StudioShortcut.CommitCut)+" or "+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+" applies the path. "+StudioShortcuts.Label(StudioShortcut.RemoveCut)+" removes the last segment. Ctrl/Cmd inserts edge loops; Shift snaps in 10% steps.", MessageType.Info);
+                GUILayout.Label(StudioShortcuts.Label(StudioShortcut.Cancel)+" cancels a pending cut; press again to exit, or choose a transform tool.", StudioTheme.Styles.wordWrappedMiniLabel);
                 return;
             }
             GUILayout.Label(tool == Tool.None ? "Selection Tool" : tool + " Tool", StudioTheme.Styles.boldLabel);
+            bool nextXray = EditorGUILayout.Toggle(new GUIContent("X-ray mode", "Transparent meshes and full-strength edges (" + StudioShortcuts.Label(StudioShortcut.XRay) + ")."), displayXray);
+            if (nextXray != displayXray) SetXRayMode(nextXray);
             EditorGUI.BeginChangeCheck();
             if (tool != Tool.None) DrawOrientationPopup(true);
             xray = EditorGUILayout.Toggle(new GUIContent("Through selection", "Select components behind visible surfaces."), xray);

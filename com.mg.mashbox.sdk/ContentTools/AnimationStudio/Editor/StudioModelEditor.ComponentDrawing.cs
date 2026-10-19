@@ -12,9 +12,11 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly ProfilerMarker ComponentDrawMarker = new ProfilerMarker("MashBox Studio.Modeler.Component overlays");
         private static readonly ProfilerMarker ComponentBuildMarker = new ProfilerMarker("MashBox Studio.Modeler.Build overlay cache");
         private static readonly ProfilerMarker ObjectWireMarker = new ProfilerMarker("MashBox Studio.Modeler.Object outlines");
-        private Mesh componentSource, componentLines, componentDots, componentHighlight;
+        private Mesh componentSource, componentLines, componentDots, componentHighlight, componentHover;
         private Vector3[] componentPositions;
         private readonly HashSet<int> drawnComponents = new HashSet<int>();
+        private int hoveredComponent = -1, drawnHover = -1;
+        private ComponentMode hoverMode;
         private ComponentMode drawnMode;
         private Material componentMaterial;
         private static readonly int OverlayColor = Shader.PropertyToID("_Color"), OverlayMode = Shader.PropertyToID("_Mode"), OverlaySize = Shader.PropertyToID("_Size"), OverlayScreen = Shader.PropertyToID("_Viewport"), OverlayDepth = Shader.PropertyToID("_ZTest");
@@ -23,8 +25,8 @@ namespace MashBoxSDK.AnimationStudio
 
         private void ClearComponentDrawing()
         {
-            foreach (var mesh in new[]{componentLines,componentDots,componentHighlight}) if(mesh) UnityEngine.Object.DestroyImmediate(mesh);
-            componentLines=componentDots=componentHighlight=componentSource=null;
+            foreach (var mesh in new[]{componentLines,componentDots,componentHighlight,componentHover}) if(mesh) UnityEngine.Object.DestroyImmediate(mesh);
+            componentLines=componentDots=componentHighlight=componentHover=componentSource=null;drawnHover=-1;
             componentPositions=null;drawnComponents.Clear();
         }
         private void DisposeComponentDrawing()
@@ -76,37 +78,52 @@ namespace MashBoxSDK.AnimationStudio
                 if(componentHighlight)UnityEngine.Object.DestroyImmediate(componentHighlight);
                 componentHighlight=null;drawnMode=mode;drawnComponents.Clear();drawnComponents.UnionWith(Components);
                 if(Components.Count==0)return;
-                if(mode==ComponentMode.Vertex)componentHighlight=PointBatch(Components);
-                else if(mode==ComponentMode.Face)
-                {
-                    Faces();var indices=new List<int>();
-                    foreach(int face in Components)if(face>=0&&face<cachedFaceTriangles.Length)indices.AddRange(cachedFaceTriangles[face]);
-                    componentHighlight=OverlayMesh("selected faces",componentPositions,indices.ToArray(),MeshTopology.Triangles);
-                }
-                else if(mode==ComponentMode.Edge)
-                {
-                    var edges=Edges();var positions=new List<Vector3>();var ends=new List<Vector3>();var corners=new List<Vector2>();var indices=new List<int>();
-                    foreach(int edge in Components)
-                    {
-                        if(edge<0||edge>=edges.Count)continue;
-                        int start=positions.Count;var a=componentPositions[edges[edge].a];var b=componentPositions[edges[edge].b];
-                        for(int i=0;i<4;i++){positions.Add(a);ends.Add(b);}
-                        corners.Add(new Vector2(0,-.5f));corners.Add(new Vector2(0,.5f));corners.Add(new Vector2(1,.5f));corners.Add(new Vector2(1,-.5f));
-                        indices.Add(start);indices.Add(start+1);indices.Add(start+2);indices.Add(start);indices.Add(start+2);indices.Add(start+3);
-                    }
-                    componentHighlight=OverlayMesh("selected edges",positions.ToArray(),indices.ToArray(),MeshTopology.Triangles,corners.ToArray(),ends.ToArray());
-                }
+                componentHighlight=ComponentHighlight(Components);
                 ComponentOverlayBuilds++;
             }
+        }
+        private Mesh ComponentHighlight(IEnumerable<int> components)
+        {
+            Mesh highlight=null;
+            if(mode==ComponentMode.Vertex)highlight=PointBatch(components);
+            else if(mode==ComponentMode.Face)
+            {
+                Faces();var indices=new List<int>();
+                foreach(int face in components)if(face>=0&&face<cachedFaceTriangles.Length)indices.AddRange(cachedFaceTriangles[face]);
+                highlight=OverlayMesh("selected faces",componentPositions,indices.ToArray(),MeshTopology.Triangles);
+            }
+            else if(mode==ComponentMode.Edge)
+            {
+                var edges=Edges();var positions=new List<Vector3>();var ends=new List<Vector3>();var corners=new List<Vector2>();var indices=new List<int>();
+                foreach(int edge in components)
+                {
+                    if(edge<0||edge>=edges.Count)continue;
+                    int start=positions.Count;var a=componentPositions[edges[edge].a];var b=componentPositions[edges[edge].b];
+
+                    for(int i=0;i<4;i++){positions.Add(a);ends.Add(b);}
+                    corners.Add(new Vector2(0,-.5f));corners.Add(new Vector2(0,.5f));corners.Add(new Vector2(1,.5f));corners.Add(new Vector2(1,-.5f));
+                    indices.Add(start);indices.Add(start+1);indices.Add(start+2);indices.Add(start);indices.Add(start+2);indices.Add(start+3);
+                }
+                highlight=OverlayMesh("selected edges",positions.ToArray(),indices.ToArray(),MeshTopology.Triangles,corners.ToArray(),ends.ToArray());
+            }
+            return highlight;
+        }
+        private void EnsureComponentHover()
+        {
+            int next = Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
+            if(next==drawnHover && mode==hoverMode)return;
+            if(componentHover)UnityEngine.Object.DestroyImmediate(componentHover);
+            componentHover=null;drawnHover=next;hoverMode=mode;
+            if(next>=0)componentHover=ComponentHighlight(new[]{next});
         }
         private void DrawComponentBatches(SceneView view)
         {
             using(ComponentDrawMarker.Auto())
             {
-                ComponentOverlayDrawCalls=0;EnsureComponentDrawing();
+                ComponentOverlayDrawCalls=0;EnsureComponentDrawing();EnsureComponentHover();
                 if(!componentMaterial)componentMaterial=new Material(Shader.Find("Hidden/MashBox/ModelerComponents")) { hideFlags=HideFlags.HideAndDontSave };
                 componentMaterial.SetVector(OverlayScreen,new Vector4(view.camera.pixelWidth,view.camera.pixelHeight,0,0));
-                componentMaterial.SetFloat(OverlayDepth,(float)(xray?CompareFunction.Always:CompareFunction.LessEqual));
+                componentMaterial.SetFloat(OverlayDepth,(float)(displayXray?CompareFunction.Always:CompareFunction.LessEqual));
                 var matrix=Transforms[Active].localToWorldMatrix;
                 void Draw(Mesh mesh,Color color,int shaderMode,float size)
                 {
@@ -114,9 +131,17 @@ namespace MashBoxSDK.AnimationStudio
                     componentMaterial.SetColor(OverlayColor,color);componentMaterial.SetFloat(OverlayMode,shaderMode);componentMaterial.SetFloat(OverlaySize,size*EditorGUIUtility.pixelsPerPoint);
                     if(componentMaterial.SetPass(0)){Graphics.DrawMeshNow(mesh,matrix);ComponentOverlayDrawCalls++;}
                 }
-                Draw(componentLines,new Color(.3f,.65f,.72f,.45f),0,1);
                 if(mode==ComponentMode.Vertex)Draw(componentDots,new Color(.35f,.9f,.9f,1),1,4);
-                Draw(componentHighlight,new Color(1,.65f,.15f,.9f),mode==ComponentMode.Vertex?1:mode==ComponentMode.Edge?2:0,mode==ComponentMode.Vertex?5:4);
+                if(mode==ComponentMode.Edge)
+                {
+                    if(drawnHover>=0)DrawNativeComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),5);
+                    DrawNativeComponentEdges(Components,new Color(1,.65f,.15f,1),4);
+                }
+                else
+                {
+                    Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?7:5);
+                    Draw(componentHighlight,new Color(1,.65f,.15f,displayXray ? 1 : .9f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?5:4);
+                }
             }
         }
     }

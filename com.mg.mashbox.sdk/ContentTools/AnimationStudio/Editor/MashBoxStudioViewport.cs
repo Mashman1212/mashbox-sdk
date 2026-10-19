@@ -44,6 +44,14 @@ namespace MashBoxSDK.AnimationStudio
         }
         private IMGUIContainer markingMenu;
         private IMGUIContainer modelTools;
+        private IMGUIContainer modelToolOptions;
+        internal void BindModelToolOptions(System.Action draw)
+        {
+            BindViewportControl(ref modelToolOptions, "mashbox-model-tool-options", draw);
+            modelToolOptions.focusable = true;
+            UpdatePanelLayout(); ApplyTheme();
+        }
+        internal void FocusModelToolOptions() { modelToolOptions?.Focus(); Repaint(); }
         [SerializeField] internal bool modelGridVisible = true;
 
         internal void BindModelTools(System.Action draw)
@@ -129,7 +137,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
+            IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
         private static bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.layout.Contains(point);
 
@@ -215,6 +223,7 @@ namespace MashBoxSDK.AnimationStudio
 
         internal void ApplyTheme()
         {
+            UpdateWorkspaceStatisticsState();
             if (meshStatistics != null) meshStatistics.style.display = panelsModeling && StudioSettings.Current.showMeshStatistics ? DisplayStyle.Flex : DisplayStyle.None;
             var palette = StudioTheme.Current;
             if (modeSelector != null) modeSelector.style.backgroundColor = Color.clear;
@@ -227,6 +236,7 @@ namespace MashBoxSDK.AnimationStudio
             if (viewportOptions != null) viewportOptions.style.backgroundColor = Color.clear;
             if (studioSettings != null) studioSettings.style.backgroundColor = Color.clear;
             if (inspector != null) inspector.style.backgroundColor = palette.Panel;
+            if (modelToolOptions != null) modelToolOptions.style.backgroundColor = palette.Panel;
             if (rigControls != null) rigControls.style.backgroundColor = palette.Panel;
             if (modelTools != null)
             {

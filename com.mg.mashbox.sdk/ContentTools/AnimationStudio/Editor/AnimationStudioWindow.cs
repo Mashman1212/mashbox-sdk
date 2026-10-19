@@ -792,6 +792,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if (view.camera) view.camera.cameraType = CameraType.Preview;
                 EnsureModelEditor();
+                modelEditor.ConfigureModelDisplay(view);
                 modelEditor.ConfigureLightingCamera(view);
                 if (modelEditor.HandleModelDrop(view, LoadStudioModel) || modelEditor.HandleObjectDuplicate() || modelEditor.HandleObjectDelete()) return;
                 modelEditor.BeforeModelSceneGUI(view);

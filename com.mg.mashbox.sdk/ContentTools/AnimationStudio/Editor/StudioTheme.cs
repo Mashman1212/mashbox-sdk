@@ -213,7 +213,50 @@ namespace MashBoxSDK.AnimationStudio
                     return style;
                 }
             }
+            internal static GUIStyle menuBarButton
+            {
+                get
+                {
+                    var resources = GetResources();
+                    if (resources.Styles.TryGetValue("menuBarButton", out var style)) return style;
+                    style = new GUIStyle(menuDropdown)
+                    {
+                        alignment = TextAnchor.MiddleCenter,
+                        padding = new RectOffset(6, 6, 0, 0),
+                        border = new RectOffset()
+                    };
+                    foreach (var state in States(style)) state.background = resources.Texture(Current.Selection);
+                    style.normal.background = resources.Texture(Current.Button);
+                    style.hover.background = style.focused.background = resources.Texture(Current.Hover);
+                    resources.Styles.Add("menuBarButton", style);
+                    return style;
+                }
+            }
             internal static GUIStyle overlayButton => Overlay(false);
+            internal static GUIStyle modelPanel
+            {
+                get
+                {
+                    var resources = GetResources();
+                    if (resources.Styles.TryGetValue("modelPanel", out var style)) return style;
+                    style = new GUIStyle(GUIStyle.none) { padding = new RectOffset(8, 8, 8, 8), margin = new RectOffset() };
+                    resources.Styles.Add("modelPanel", style); return style;
+                }
+            }
+            internal static GUIStyle panelHeader
+            {
+                get
+                {
+                    var resources = GetResources();
+                    if (resources.Styles.TryGetValue("panelHeader", out var style)) return style;
+                    style = new GUIStyle(boldLabel)
+                    {
+                        alignment = TextAnchor.MiddleLeft, fixedHeight = 20,
+                        margin = new RectOffset(0, 0, 0, 4), padding = new RectOffset()
+                    };
+                    resources.Styles.Add("panelHeader", style); return style;
+                }
+            }
             internal static GUIStyle overlayDropdown => Overlay(true);
             internal static GUIStyle label => Get("label");
             internal static GUIStyle boldLabel => Get("boldLabel");

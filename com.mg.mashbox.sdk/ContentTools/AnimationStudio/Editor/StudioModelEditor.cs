@@ -221,8 +221,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DrawInspector()
         {
+            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel)) DrawChannelContent();
+        }
+        private void DrawChannelContent()
+        {
             EditorGUIUtility.labelWidth = 115;
-            GUILayout.Label("CHANNELS", StudioTheme.Styles.boldLabel);
+            GUILayout.Label("CHANNELS", StudioTheme.Styles.panelHeader);
             inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll);
             if (Document && Active >= 0)
             {
@@ -409,8 +413,12 @@ namespace MashBoxSDK.AnimationStudio
         internal void SceneGUI(SceneView view, Action<StudioModelDocument> loaded)
         {
             var evt = Event.current;
+            view.wantsMouseMove = true;
+            // Clear before a tool can consume the event or return early.
+            hoveredComponent = -1;
             DrawSnapStatus(view);
             if (evt.type == EventType.Used) return;
+            DrawSceneWireframes(view.camera);
             if (!evt.isKey && HandlePivotSnap(view)) return;
             if (markingOpen)
             {
@@ -427,31 +435,11 @@ namespace MashBoxSDK.AnimationStudio
             if (CutToolSceneGUI(view)) return;
             if (mode != ComponentMode.Object && !CanEditComponents()) { mode = ComponentMode.Object; Components.Clear(); }
             if ((evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) && evt.commandName == "FrameSelected") { if (evt.type == EventType.ExecuteCommand) Frame(view); evt.Use(); }
-            if (evt.type == EventType.KeyDown && !EditorGUIUtility.editingTextField && !evt.alt && !evt.control && !evt.command)
-            {
-                bool used = true;
-                switch (evt.keyCode)
-                {
-                    case KeyCode.Q: ActivateTool(Tool.None); break;
-                    case KeyCode.W: ActivateTool(Tool.Move); break;
-                    case KeyCode.E: ActivateTool(Tool.Rotate); break;
-                    case KeyCode.R: ActivateTool(Tool.Scale); break;
-                    case KeyCode.D: if (CanAdjustPivot) pivot = !pivot; break;
-                    case KeyCode.F: Frame(view); break;
-                    case KeyCode.Alpha1: mode = ComponentMode.Object; Components.Clear(); break;
-                    case KeyCode.Alpha2: if (CanEditComponents()) mode = ComponentMode.Vertex; pivot = false; Components.Clear(); break;
-                    case KeyCode.Alpha3: if (CanEditComponents()) mode = ComponentMode.Edge; pivot = false; Components.Clear(); break;
-                    case KeyCode.Alpha4: if (CanEditComponents()) mode = ComponentMode.Face; pivot = false; Components.Clear(); break;
-                    case KeyCode.Escape:
-                        if (gestureUndo >= 0) { Undo.RevertAllDownToGroup(gestureUndo); gestureUndo = -1; Rebuild(); }
-                        marquee = false; GUIUtility.hotControl = 0; pivot = false; break;
-                    default: used = false; break;
-                }
-                if (used) { evt.Use(); repaint(); }
-            }
+            HandleModelKeyboard(view);
             int id = GUIUtility.GetControlID("StudioModelSelection".GetHashCode(), FocusType.Passive);
             if (evt.type == EventType.Layout && !evt.alt) HandleUtility.AddDefaultControl(id);
             DrawAnchorMarkers(view);
+            UpdateComponentHover(view, id);
             DrawComponents(view);
             if (evt.rawType == EventType.MouseDown && evt.button == 0 && !evt.alt && gestureUndo < 0)
             { Undo.IncrementCurrentGroup(); gestureUndo = Undo.GetCurrentGroup(); }
@@ -585,19 +573,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawComponents(SceneView view)
         {
-            if (Event.current.type != EventType.Repaint || Active < 0) return;
+            if (Event.current.type != EventType.Repaint || !Document) return;
             var old = Handles.color; var depth = Handles.zTest;
-            Handles.zTest = xray ? UnityEngine.Rendering.CompareFunction.Always : UnityEngine.Rendering.CompareFunction.LessEqual;
+            Handles.zTest = displayXray ? UnityEngine.Rendering.CompareFunction.Always : UnityEngine.Rendering.CompareFunction.LessEqual;
             try
             {
-                if (mode == ComponentMode.Object)
-                {
-                    Handles.color = new Color(.2f, .9f, .75f, .7f);
-                    if (!StudioSettings.Current.hideObjectWireframe)
-                        using (ObjectWireMarker.Auto()) DrawSelectedObjectWireframes();
-                    return;
-                }
-                if (!ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy) return;
+                if (mode == ComponentMode.Object || Active < 0 || !ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy) return;
                 DrawComponentBatches(view);
             }
             finally { Handles.color = old; Handles.zTest = depth; }
@@ -629,23 +610,50 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (!ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy) return;
             if (!additive && !subtract) Components.Clear();
+            if (click)
+            {
+                int best = FindComponentAt(view, end);
+                if (best >= 0) { if (subtract) Components.Remove(best); else Components.Add(best); }
+                return;
+            }
             var vertices = ActiveMesh.vertices; var edges = Edges(); var t = Transforms[Active];
-            int best = -1; float bestDistance = mode == ComponentMode.Face ? float.PositiveInfinity : 12;
-            int count = ComponentCount(); var clickRay = HandleUtility.GUIPointToWorldRay(end);
+            int count = ComponentCount();
             for (int i = 0; i < count; i++)
             {
                 Vector3 world = mode == ComponentMode.Vertex ? t.TransformPoint(vertices[i]) : mode == ComponentMode.Edge ? t.TransformPoint((vertices[edges[i].a] + vertices[edges[i].b]) * .5f) : t.TransformPoint(FaceCenter(Faces()[i], vertices));
                 if (view.camera.WorldToViewportPoint(world).z <= 0 || (!xray && Occluded(view, world))) continue;
-                if (click)
-                {
-                    float distance = Vector2.Distance(end, HandleUtility.WorldToGUIPoint(world));
-                    if (mode == ComponentMode.Edge) distance = HandleUtility.DistancePointLine(end, HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].a])), HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].b])));
-                    if (mode == ComponentMode.Face && !RayFace(clickRay, cachedFaceTriangles[i], vertices, t, out distance)) continue;
-                    if (distance < bestDistance) { bestDistance = distance; best = i; }
-                }
-                else if (rect.Contains(HandleUtility.WorldToGUIPoint(world))) { if (subtract) Components.Remove(i); else Components.Add(i); }
+                if (rect.Contains(HandleUtility.WorldToGUIPoint(world))) { if (subtract) Components.Remove(i); else Components.Add(i); }
             }
-            if (best >= 0) { if (subtract) Components.Remove(best); else Components.Add(best); }
+        }
+        // Hover and click share the same tolerance, occlusion and polygon hit rules.
+        private int FindComponentAt(SceneView view, Vector2 pointer)
+        {
+            if (mode == ComponentMode.Object || !ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy) return -1;
+            var vertices = ActiveMesh.vertices; var edges = Edges(); var t = Transforms[Active];
+            int best = -1; float bestDistance = mode == ComponentMode.Face ? float.PositiveInfinity : 12;
+            int count = ComponentCount(); var ray = HandleUtility.GUIPointToWorldRay(pointer);
+            for (int i = 0; i < count; i++)
+            {
+                Vector3 world = mode == ComponentMode.Vertex ? t.TransformPoint(vertices[i]) : mode == ComponentMode.Edge ? t.TransformPoint((vertices[edges[i].a] + vertices[edges[i].b]) * .5f) : t.TransformPoint(FaceCenter(Faces()[i], vertices));
+                if (view.camera.WorldToViewportPoint(world).z <= 0 || (!xray && Occluded(view, world))) continue;
+                float distance = Vector2.Distance(pointer, HandleUtility.WorldToGUIPoint(world));
+                if (mode == ComponentMode.Edge) distance = HandleUtility.DistancePointLine(pointer, HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].a])), HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].b])));
+                if (mode == ComponentMode.Face && !RayFace(ray, cachedFaceTriangles[i], vertices, t, out distance)) continue;
+                if (distance < bestDistance) { bestDistance = distance; best = i; }
+            }
+            return best;
+        }
+        private void UpdateComponentHover(SceneView view, int selectionId)
+        {
+            var evt = Event.current;
+            if (evt.type == EventType.MouseMove || evt.type == EventType.MouseLeaveWindow ||
+                evt.type == EventType.KeyDown || evt.type == EventType.KeyUp) view.Repaint();
+            if (evt.type != EventType.Repaint || mode == ComponentMode.Object || pivot || pivotSnapHeld ||
+                marquee || evt.alt || GUIUtility.hotControl != 0 || HandleUtility.nearestControl != selectionId ||
+                EditorWindow.mouseOverWindow != view) return;
+            var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
+            if (!canvas.Contains(evt.mousePosition) || (view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition))) return;
+            hoveredComponent = FindComponentAt(view, evt.mousePosition);
         }
         private static bool VisiblePoint(SceneView view, Vector3 point, Rect rect) => view.camera.WorldToViewportPoint(point).z > 0 && rect.Contains(HandleUtility.WorldToGUIPoint(point));
         private Vector3[] PickVertices(int index)

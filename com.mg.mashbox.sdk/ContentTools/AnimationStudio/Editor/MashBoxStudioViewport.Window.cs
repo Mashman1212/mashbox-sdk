@@ -43,8 +43,7 @@ namespace MashBoxSDK.AnimationStudio
         internal bool HandleWindowShortcut()
         {
             var evt = Event.current;
-            if (evt.type != EventType.KeyDown || evt.keyCode != KeyCode.F11 ||
-                evt.alt || evt.control || evt.command || evt.shift || GUIUtility.hotControl != 0) return false;
+            if (!StudioShortcuts.Pressed(StudioShortcut.Maximize,evt) || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0) return false;
             evt.Use();
             // Rebuild the dock layout outside the current SceneView IMGUI pass.
             EditorApplication.delayCall += () => { if (this) ToggleMaximized(); };

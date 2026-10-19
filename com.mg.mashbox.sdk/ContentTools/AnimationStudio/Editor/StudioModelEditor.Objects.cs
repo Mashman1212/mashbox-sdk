@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             if (evt == null || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0 || cutTool != CutTool.None) return false;
-            bool key = evt.type == EventType.KeyDown && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace) && !evt.alt && !evt.control && !evt.command;
+            bool key = StudioShortcuts.Pressed(StudioShortcut.Delete,evt);
             bool command = (evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) && (evt.commandName == "Delete" || evt.commandName == "SoftDelete");
             if (!key && !command) return false;
             if (evt.type != EventType.ValidateCommand)

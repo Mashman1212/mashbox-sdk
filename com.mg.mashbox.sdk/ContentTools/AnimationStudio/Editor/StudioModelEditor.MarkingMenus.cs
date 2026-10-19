@@ -7,12 +7,12 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal enum MarkingLevel { Components, Transform, Pivot, Selection, UV, UVSets }
+        internal enum MarkingLevel { Components, Transform, Pivot, Selection, UV, UVSets, AxisSpace }
         internal enum MarkingAction
         {
             None, Object, Vertex, Edge, Face, TransformMenu, PivotMenu, SelectionMenu, UVMenu, UVSetsMenu,
             Move, Rotate, Scale, Axes, EditPivot, CenterPivot, Freeze, SelectAll, Clear, Frame, Through,
-            OpenUV, UV0, UV1, UV2, UV3, UV4, UV5, UV6, UV7
+            OpenUV, UV0, UV1, UV2, UV3, UV4, UV5, UV6, UV7, ObjectAxes, WorldAxes
         }
         // Clockwise, starting north. Empty sectors do not perform an action.
         private static readonly MarkingAction[][] MarkingItems =
@@ -28,7 +28,9 @@ namespace MashBoxSDK.AnimationStudio
             new[] { MarkingAction.OpenUV, MarkingAction.None, MarkingAction.UVSetsMenu, MarkingAction.None,
                 MarkingAction.None, MarkingAction.None, MarkingAction.None, MarkingAction.None },
             new[] { MarkingAction.UV0, MarkingAction.UV1, MarkingAction.UV2, MarkingAction.UV3,
-                MarkingAction.UV4, MarkingAction.UV5, MarkingAction.UV6, MarkingAction.UV7 }
+                MarkingAction.UV4, MarkingAction.UV5, MarkingAction.UV6, MarkingAction.UV7 },
+            new[] { MarkingAction.None, MarkingAction.None, MarkingAction.WorldAxes, MarkingAction.None,
+                MarkingAction.None, MarkingAction.None, MarkingAction.ObjectAxes, MarkingAction.None }
         };
         private static readonly Vector2[] MarkingOffsets =
         {
@@ -37,6 +39,7 @@ namespace MashBoxSDK.AnimationStudio
         };
         private struct MarkingParent { internal MarkingLevel Level; internal Vector2 Origin; }
         private readonly List<MarkingParent> markingParents = new List<MarkingParent>(4);
+        private int markingButton;
         private bool markingOpen, suppressModelContext;
         private SceneView markingView;
         private MarkingLevel markingLevel;
@@ -67,11 +70,12 @@ namespace MashBoxSDK.AnimationStudio
         private bool MarkingActionEnabled(MarkingAction action)
         {
             if (action == MarkingAction.None) return false;
+            if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes) return true;
             if (action == MarkingAction.Object || action == MarkingAction.TransformMenu || action == MarkingAction.SelectionMenu ||
                 action == MarkingAction.Move || action == MarkingAction.Rotate || action == MarkingAction.Scale || action == MarkingAction.Axes || action == MarkingAction.Through) return true;
             if (action == MarkingAction.Vertex || action == MarkingAction.Edge || action == MarkingAction.Face)
                 return ActiveMesh && CanEditComponents();
-            if (action == MarkingAction.UVMenu || action == MarkingAction.UVSetsMenu || action == MarkingAction.OpenUV || action >= MarkingAction.UV0)
+            if (action == MarkingAction.UVMenu || action == MarkingAction.UVSetsMenu || action == MarkingAction.OpenUV || (action >= MarkingAction.UV0 && action <= MarkingAction.UV7))
                 return true;
             if (action == MarkingAction.PivotMenu || action == MarkingAction.EditPivot || action == MarkingAction.CenterPivot)
                 return CanAdjustPivot;
@@ -84,6 +88,8 @@ namespace MashBoxSDK.AnimationStudio
             switch (action)
             {
                 case MarkingAction.Object: return "Object Mode";
+                case MarkingAction.ObjectAxes: return "Object";
+                case MarkingAction.WorldAxes: return "World";
                 case MarkingAction.TransformMenu: return "Transform ›";
                 case MarkingAction.PivotMenu: return "Pivot ›";
                 case MarkingAction.SelectionMenu: return "Selection ›";
@@ -97,7 +103,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.Axes: return local ? "World Axes" : "Local Axes";
                 case MarkingAction.Through: return xray ? "Visible Only" : "Through Selection";
                 case MarkingAction.OpenUV: return "UV Editor";
-                default: return action >= MarkingAction.UV0 ? "UV " + (action - MarkingAction.UV0) : action.ToString();
+                default: return action >= MarkingAction.UV0 && action <= MarkingAction.UV7 ? "UV " + (action - MarkingAction.UV0) : action.ToString();
             }
         }
         private bool MarkingIsCurrent(MarkingAction action) =>
@@ -107,7 +113,8 @@ namespace MashBoxSDK.AnimationStudio
             (action == MarkingAction.Face && mode == ComponentMode.Face) ||
             (action == MarkingAction.Move && tool == Tool.Move) ||
             (action == MarkingAction.Rotate && tool == Tool.Rotate) ||
-            (action == MarkingAction.Scale && tool == Tool.Scale);
+            (action == MarkingAction.Scale && tool == Tool.Scale) ||
+            (action == MarkingAction.ObjectAxes && local) || (action == MarkingAction.WorldAxes && !local);
 
         // Called before SceneView gets RMB, so its fly camera and native context menu
         // cannot claim the gesture. Alt navigation and existing handle drags pass through.
@@ -117,26 +124,18 @@ namespace MashBoxSDK.AnimationStudio
             // End its Undo group here so the next pivot/transform drag starts fresh.
             if (Event.current.rawType == EventType.MouseUp && Event.current.button == 0 && gestureUndo >= 0)
             { Undo.CollapseUndoOperations(gestureUndo); gestureUndo = -1; }
-            if (HandleSaveShortcut()) return;
-            if (HandleExtrudeShortcut()) return;
-            if (HandleGridSnapKey(view)) return;
-            if (HandleSizeShortcut(Event.current)) return;
-            // Intercept V before Unity's native vertex-snap shortcut. Mouse picking runs
-            // after SceneView has configured its camera and viewport coordinates.
-            if (Event.current.isKey && HandlePivotSnap(view)) return;
-            // Native handles can consume Escape before duringSceneGui. Cancel our
-            // complete gesture here so both mesh edits and temporary pivots roll back.
-            if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape && gestureUndo >= 0)
+            if (HandleModelKeyboard(view)) return;
+            int id = GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(), FocusType.Passive);
+            // Space selection remains available in a cut tool without applying its pending path.
+            if (markingOpen || (Event.current.type == EventType.MouseDown && StudioShortcuts.Matches(StudioShortcut.AxisMenu,Event.current)))
             {
-                int group = gestureUndo; gestureUndo = -1;
-                Undo.RevertAllDownToGroup(group); Rebuild();
-                marquee = false; GUIUtility.hotControl = 0; pivot = false;
-                Event.current.Use(); repaint(); return;
+                HandleModelMarkingEvent(view,Event.current,id);
+                if (markingOpen || Event.current.type == EventType.Used) return;
             }
             if (cutTool != CutTool.None)
             {
                 var evt = Event.current;
-                if (!evt.alt && evt.type == EventType.MouseDown && evt.button == 1 &&
+                if (evt.type == EventType.MouseDown && StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt) &&
                     (!(view is MashBoxStudioViewport studio) || studio.ModelCanvasRect.Contains(evt.mousePosition)))
                 {
                     Run(() => CommitCuts(new List<StudioMeshCuts.Cut>(pendingCuts)));
@@ -145,7 +144,6 @@ namespace MashBoxSDK.AnimationStudio
                 else if (evt.type == EventType.ContextClick) evt.Use();
                 return;
             }
-            int id = GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(), FocusType.Passive);
             HandleModelMarkingEvent(view, Event.current, id);
         }
         internal void HandleModelMarkingEvent(SceneView view, Event evt, int id)
@@ -156,24 +154,25 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if (evt.type != EventType.MouseDown) return;
                 suppressModelContext = false;
-                if (evt.button != 1 || evt.alt || GUIUtility.hotControl != 0) return;
+                bool axes = StudioShortcuts.Matches(StudioShortcut.AxisMenu,evt);
+                if ((!axes && !StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt)) || GUIUtility.hotControl != 0) return;
                 // Leave floating viewport controls available for their own input.
                 if (view is MashBoxStudioViewport overlayView && overlayView.IsOverViewportControls(evt.mousePosition)) return;
                 var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(276, 68, Mathf.Max(0, view.position.width - 674), Mathf.Max(0, view.position.height - 76));
                 if (!canvas.Contains(evt.mousePosition)) return;
-                markingView = view; markingControl = id; GUIUtility.hotControl = id;
+                markingView = view; markingButton = evt.button; markingControl = id; GUIUtility.hotControl = id;
                 GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
                 markingOpen = true; suppressModelContext = true; markingParents.Clear();
                 markingPointer = GUIUtility.GUIToScreenPoint(evt.mousePosition);
-                SetMarkingLevel(MarkingLevel.Components, markingPointer);
+                SetMarkingLevel(axes ? MarkingLevel.AxisSpace : MarkingLevel.Components, markingPointer);
                 evt.Use(); repaint(); return;
             }
             if (view != markingView) return;
-            if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
+            if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt))
             { CancelMarkingMenu(); evt.Use(); return; }
             if (evt.type == EventType.MouseLeaveWindow || GUIUtility.hotControl != markingControl)
             { CancelMarkingMenu(); return; }
-            if (evt.type == EventType.MouseDrag || evt.type == EventType.MouseMove || (evt.type == EventType.MouseUp && evt.button == 1))
+            if (evt.type == EventType.MouseDrag || evt.type == EventType.MouseMove || (evt.type == EventType.MouseUp && evt.button == markingButton))
             {
                 markingPointer = GUIUtility.GUIToScreenPoint(evt.mousePosition);
                 UpdateMarkingHover();
@@ -269,7 +268,12 @@ namespace MashBoxSDK.AnimationStudio
                 float shade = markingHover == i && enabled ? .40f : .29f;
                 EditorGUI.DrawRect(rect, neutral ? new Color(shade, shade, shade) : markingHover == i && enabled ? palette.Hover : palette.Button);
                 markingLabel.normal.textColor = enabled ? palette.Text : palette.Muted;
-                GUI.Label(rect, MarkingText(action), markingLabel);
+                if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes)
+                {
+                    GUI.Toggle(new Rect(rect.x+6,rect.center.y-8,16,16),MarkingIsCurrent(action),GUIContent.none,EditorStyles.toggle);
+                    GUI.Label(new Rect(rect.x+22,rect.y,rect.width-24,rect.height),MarkingText(action),markingLabel);
+                }
+                else GUI.Label(rect, MarkingText(action), markingLabel);
             }
             if (markingParents.Count > 0)
             {
@@ -311,6 +315,8 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.Rotate: ActivateTool(Tool.Rotate); break;
                 case MarkingAction.Scale: ActivateTool(Tool.Scale); break;
                 case MarkingAction.Axes: local = !local; break;
+                case MarkingAction.ObjectAxes: local = true; break;
+                case MarkingAction.WorldAxes: local = false; break;
                 case MarkingAction.EditPivot: pivot = !pivot; break;
                 case MarkingAction.CenterPivot: CenterEditingPivot(); break;
                 case MarkingAction.Freeze: Document.Freeze(Active, Transforms); Changed(); break;
@@ -322,9 +328,9 @@ namespace MashBoxSDK.AnimationStudio
                     if (mode == ComponentMode.Object) { for (int i = 0; i < Transforms.Length; i++) objects.Add(i); if (Active < 0 && Transforms.Length > 0) Active = 0; }
                     else { for (int i = 0; i < ComponentCount(); i++) Components.Add(i); }
                     break;
-                default: if (action >= MarkingAction.UV0) StudioUVEditor.Open(this, action - MarkingAction.UV0); break;
+                default: if (action >= MarkingAction.UV0 && action <= MarkingAction.UV7) StudioUVEditor.Open(this, action - MarkingAction.UV0); break;
             }
-            repaint();
+            repaint(); toolOptions?.Repaint();
         }
         private void SetComponentMode(ComponentMode next)
         {

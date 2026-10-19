@@ -92,7 +92,7 @@ namespace MashBoxSDK.AnimationStudio
             // live drag. Keep the payload so it can be brought back and dropped.
             if (evt.type == EventType.MouseDown && DragAndDrop.GetGenericData(HierarchyDragKey) is HierarchyDragPayload)
                 CancelHierarchyDrag();
-            if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape &&
+            if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt) &&
                 (hierarchyDragControl != 0 || DragAndDrop.GetGenericData(HierarchyDragKey) is HierarchyDragPayload))
             { CancelHierarchyDrag(); evt.Use(); repaint(); }
         }

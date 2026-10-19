@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        // Rebuilt only after edits/Undo/load, never by reading mesh buffers on every repaint.
+        // Scene totals are rebuilt only after edits/Undo/load; selection counts follow the active components.
         private readonly Dictionary<StudioModelDocument.Node, long[]> statisticsCache = new Dictionary<StudioModelDocument.Node, long[]>();
         private static readonly string[] StatisticsLabels = { "Verts", "Edges", "Faces", "Tris", "UVs" };
         internal (long[] scene, long[] selected) MeshStatistics()
@@ -23,10 +23,59 @@ namespace MashBoxSDK.AnimationStudio
                 var renderer = Transforms[i].GetComponent<Renderer>();
                 if (!renderer || !renderer.enabled) continue;
                 if (!statisticsCache.TryGetValue(node, out var counts)) statisticsCache[node] = counts = CountMesh(node);
-                bool isSelected = objects.Contains(i) || HasSelectedParent(i);
+                bool isSelected = mode == ComponentMode.Object && (objects.Contains(i) || HasSelectedParent(i));
                 for (int c = 0; c < 5; c++) { scene[c] += counts[c]; if (isSelected) selected[c] += counts[c]; }
             }
+            if (mode != ComponentMode.Object && Active >= 0 && ActiveMesh && Transforms[Active].gameObject.activeInHierarchy)
+            {
+                var renderer = Transforms[Active].GetComponent<Renderer>();
+                if (renderer && renderer.enabled) selected = CountSelectedComponents();
+            }
             return (scene, selected);
+        }
+        private long[] CountSelectedComponents()
+        {
+            var counts = new long[5];
+            if (Components.Count == 0) return counts;
+            var mesh = ActiveMesh; var positions = mesh.vertices;
+            var vertices = new HashSet<int>();
+            var edges = new HashSet<(Vector3, Vector3)>();
+            void Vertex(int i) { if (i >= 0 && i < positions.Length) vertices.Add(i); }
+            void Edge(int a, int b)
+            {
+                Vertex(a); Vertex(b);
+                var x = positions[a]; var y = positions[b];
+                if (x != y && !edges.Contains((y, x))) edges.Add((x, y));
+            }
+            if (mode == ComponentMode.Vertex)
+                foreach (int index in Components) Vertex(index);
+            else if (mode == ComponentMode.Edge)
+            {
+                var allEdges = Edges();
+                foreach (int index in Components)
+                    if (index >= 0 && index < allEdges.Count) Edge(allEdges[index].a, allEdges[index].b);
+            }
+            else if (mode == ComponentMode.Face)
+            {
+                var faces = Faces();
+                foreach (int index in Components)
+                {
+                    if (index < 0 || index >= faces.Count) continue;
+                    counts[2]++;
+                    var face = faces[index];
+                    for (int e = 0; e < face.Vertices.Count; e++) Edge(face.Vertices[e], face.Vertices[(e + 1) % face.Vertices.Count]);
+                    counts[3] += cachedFaceTriangles[index].Count / 3;
+                    foreach (int vertex in cachedFaceTriangles[index]) Vertex(vertex);
+                }
+            }
+            var selectedPositions = new HashSet<Vector3>(vertices.Select(i => positions[i]));
+            counts[0] = selectedPositions.Count; counts[1] = edges.Count;
+            // Coincident seam vertices are edited together when welding is enabled.
+            if (weld && mode != ComponentMode.Face)
+                for (int i = 0; i < positions.Length; i++) if (selectedPositions.Contains(positions[i])) vertices.Add(i);
+            var uv = new List<Vector2>(); mesh.GetUVs(0, uv);
+            counts[4] = vertices.Count(i => i < uv.Count);
+            return counts;
         }
         private static long[] CountMesh(StudioModelDocument.Node node)
         {

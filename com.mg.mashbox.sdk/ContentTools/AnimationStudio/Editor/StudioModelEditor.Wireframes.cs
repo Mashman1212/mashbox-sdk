@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
-
 namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
@@ -14,35 +13,79 @@ namespace MashBoxSDK.AnimationStudio
             internal Mesh baked;
             internal readonly List<Vector3> vertices = new List<Vector3>();
         }
+        private readonly Vector3[] outlineSegment = new Vector3[2];
+        private Camera outlineCamera;
         private readonly Dictionary<StudioModelDocument.Node, SelectionWireframe> selectionWireframes = new Dictionary<StudioModelDocument.Node, SelectionWireframe>();
         private void ClearSelectionWireframes()
         {
             ClearComponentDrawing();
-            foreach (var wire in selectionWireframes.Values) if (wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked);
+            foreach(var wire in selectionWireframes.Values) if(wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked);
             selectionWireframes.Clear();
         }
         internal IEnumerable<int> SelectedWireframeNodes()
+        { foreach(int i in VisibleWireframeNodes()) if(objects.Contains(i)||HasSelectedParent(i))yield return i; }
+        internal IEnumerable<int> VisibleWireframeNodes()
         {
-            if (!Document) yield break;
-            // Iterate each node once even if both it and its parent are selected.
-            for (int i = 0; i < Transforms.Length; i++)
+            if(!Document)yield break;
+            for(int i=0;i<Transforms.Length;i++)
             {
-                if (!Document.nodes[i].mesh || !Transforms[i].gameObject.activeInHierarchy || (!objects.Contains(i) && !HasSelectedParent(i))) continue;
-                var renderer = Transforms[i].GetComponent<Renderer>();
-                if (renderer && renderer.enabled) yield return i;
+                if(!Document.nodes[i].mesh||!Transforms[i].gameObject.activeInHierarchy)continue;
+                var renderer=Transforms[i].GetComponent<Renderer>();if(renderer&&renderer.enabled)yield return i;
             }
         }
-        private void DrawSelectedObjectWireframes()
+        private void DrawSceneWireframes(Camera camera)
         {
-            foreach (int i in SelectedWireframeNodes())
-            {
-                var lines = SelectionWireframeLines(i);
-                if (lines.Length == 0) continue;
-                using (new Handles.DrawingScope(Transforms[i].localToWorldMatrix)) Handles.DrawLines(lines);
-            }
+            if(Event.current.type!=EventType.Repaint)return;
+            using(ObjectWireMarker.Auto()) DrawVisibleObjectWireframes(camera);
         }
-        // Local-space edge endpoints use the same transform as the renderer, including
-        // rotation, nonuniform scale and inherited shear. Bounds are only used for framing.
+        private void DrawVisibleObjectWireframes(Camera camera)
+        {
+            outlineCamera=camera;
+            var depth=Handles.zTest;bool lighting=Handles.lighting;
+            try
+            {
+                Handles.zTest=displayXray?UnityEngine.Rendering.CompareFunction.Always:UnityEngine.Rendering.CompareFunction.LessEqual;
+                Handles.lighting=false;
+                foreach(int i in VisibleWireframeNodes())
+                {
+                    if(StudioSettings.Current.hideObjectWireframe&&(mode==ComponentMode.Object||i!=Active))continue;
+                    var lines=SelectionWireframeLines(i);
+                    var color=objects.Contains(i)||HasSelectedParent(i)?new Color(.2f,.9f,.75f,1):new Color(.12f,.15f,.18f,1);
+                    using(new Handles.DrawingScope(color,Matrix4x4.identity))
+                        for(int e=0;e+1<lines.Length;e+=2) DrawNativeEdge(Transforms[i].TransformPoint(lines[e]),Transforms[i].TransformPoint(lines[e+1]),2);
+                }
+            }
+            finally {Handles.zTest=depth;Handles.lighting=lighting;}
+        }
+        private void DrawNativeEdge(Vector3 a,Vector3 b,float width)
+        {
+            outlineSegment[0]=OffsetOutlineDepth(a);outlineSegment[1]=OffsetOutlineDepth(b);
+            Handles.DrawAAPolyLine(width,outlineSegment);
+        }
+        private Vector3 OffsetOutlineDepth(Vector3 point)
+        {
+            if(!outlineCamera || displayXray)return point;
+            // Move along the viewing ray: screen position stays identical, while the
+            // normal editor line no longer competes with its own surface depth.
+            const float fraction=.001f;
+            if(!outlineCamera.orthographic)return Vector3.LerpUnclamped(point,outlineCamera.transform.position,fraction);
+            float distance=Mathf.Max(outlineCamera.nearClipPlane,Vector3.Dot(point-outlineCamera.transform.position,outlineCamera.transform.forward));
+            return point-outlineCamera.transform.forward*(distance*fraction);
+        }
+        private void DrawNativeComponentEdges(IEnumerable<int> selected,Color color,float width)
+        {
+            var depth=Handles.zTest;bool lighting=Handles.lighting;
+            try
+            {
+                Handles.zTest=displayXray?UnityEngine.Rendering.CompareFunction.Always:UnityEngine.Rendering.CompareFunction.LessEqual;
+                Handles.lighting=false;var edges=Edges();
+                using(new Handles.DrawingScope(color,Matrix4x4.identity))
+                    foreach(int id in selected)if(id>=0&&id<edges.Count)
+                    {var edge=edges[id];DrawNativeEdge(Transforms[Active].TransformPoint(componentPositions[edge.a]),Transforms[Active].TransformPoint(componentPositions[edge.b]),width);}
+            }
+            finally {Handles.zTest=depth;Handles.lighting=lighting;}
+        }
+        internal Vector3[] VisibleWireframeLines(int index,Camera camera)=>SelectionWireframeLines(index);
         internal Vector3[] SelectionWireframeLines(int index)
         {
             var node = Document.nodes[index]; var mesh = node.mesh;
@@ -83,6 +126,7 @@ namespace MashBoxSDK.AnimationStudio
                     else if (topology == MeshTopology.LineStrip) for (int i = 0; i + 1 < list.Length; i++) Edge(list[i], list[i + 1]);
                 }
                 wire.indices = indices.ToArray(); wire.lines = new Vector3[indices.Count];
+
                 if (node.skinned) wire.baked = new Mesh { name = "MashBox Studio selection preview", hideFlags = HideFlags.HideAndDontSave };
                 else for (int i = 0; i < wire.lines.Length; i++) wire.lines[i] = wire.vertices[wire.indices[i]];
                 selectionWireframes.Add(node, wire);
@@ -92,8 +136,10 @@ namespace MashBoxSDK.AnimationStudio
                 Transforms[index].GetComponent<SkinnedMeshRenderer>().BakeMesh(wire.baked);
                 wire.baked.GetVertices(wire.vertices);
                 for (int i = 0; i < wire.lines.Length; i++) wire.lines[i] = wire.vertices[wire.indices[i]];
+
             }
             return wire.lines;
         }
+
     }
 }

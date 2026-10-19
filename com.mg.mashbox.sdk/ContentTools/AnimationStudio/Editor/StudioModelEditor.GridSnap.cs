@@ -6,6 +6,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private bool gridSnapHeld;
+        private KeyCode gridSnapKey;
         private SceneView gridSnapView;
 
         private void ClearGridSnap()
@@ -16,16 +17,15 @@ namespace MashBoxSDK.AnimationStudio
         private bool HandleGridSnapKey(SceneView view)
         {
             var evt = Event.current;
-            if (evt.type == EventType.KeyUp && evt.keyCode == KeyCode.X)
+            if (evt.type == EventType.KeyUp && evt.keyCode == gridSnapKey)
             {
                 bool held = gridSnapHeld; ClearGridSnap();
                 if (held) { evt.Use(); repaint(); return true; }
             }
-            if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape) ClearGridSnap();
-            if (evt.type != EventType.KeyDown || evt.keyCode != KeyCode.X ||
-                EditorGUIUtility.editingTextField || evt.alt || evt.control || evt.command) return false;
+            if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt)) ClearGridSnap();
+            if (!StudioShortcuts.Pressed(StudioShortcut.GridSnap,evt) || EditorGUIUtility.editingTextField) return false;
             // Navigation can retain keyboard focus. Also allow X to be pressed mid-drag.
-            gridSnapHeld = true; gridSnapView = view;
+            gridSnapHeld = true; gridSnapKey = evt.keyCode; gridSnapView = view;
             evt.Use(); repaint(); return true;
         }
 
