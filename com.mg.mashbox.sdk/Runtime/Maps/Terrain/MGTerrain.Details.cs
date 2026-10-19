@@ -1324,7 +1324,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ReleaseDensityDetailBrg();
             m_FixedCandidateCaches.Clear();
             m_ResidentDensityDetails.Clear();
-            m_WorldCellAllocations.Clear();
             m_MissingFixedDetailCandidates.Clear();
             foreach (DensityDetailChunk chunk in m_DensityDetailCache.Values)
                 DestroyDensityDetailChunk(chunk);
@@ -1731,27 +1730,18 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 distantScale = distantAllocation / (float)Math.Max(1L, distantInstances);
             }
 
-            // A cell's density budget must not change when it crosses a tile border.
+            // Worlds retain selected populations without a view-dependent count quota.
             if (UsesWorldBudget)
             {
-                nearScale = m_World.NearDetailScale;
-                distantScale = m_World.DistantDetailScale;
+                nearScale = distantScale = 1f;
             }
 
             // Draw by stable LOD/distance priority, but share the remaining
             // budget proportionally between all middle/far cells. The old
             // first-come cutoff made entire cells alternately disappear when
             // two candidates exchanged sort order during camera movement.
-            if (!m_ResidentSelectionOrdered) m_VisibleDensityDetails.Sort((left, right) =>
-            {
-                int lodComparison = left.densityLod.CompareTo(right.densityLod);
-                if (lodComparison != 0)
-                    return lodComparison;
-                int xComparison = left.chunk.worldBounds.center.x.CompareTo(right.chunk.worldBounds.center.x);
-                if (xComparison != 0)
-                    return xComparison;
-                return left.chunk.worldBounds.center.z.CompareTo(right.chunk.worldBounds.center.z);
-            });
+            // World submission already sorted this selection before drawing.
+            if (!UsesWorldBudget) SortVisibleDensityDetails();
 
             if (TryPrepareDensityDetailBrg(camera, budget, nearScale, distantScale))
             {
@@ -1823,6 +1813,25 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     m_AppearanceCaptureLayerSubmissions[visible.chunk.layerIndex] += submittedInstances;
             }
             FlushDenseDetailBatchAccumulators(camera);
+        }
+
+        static int CompareVisibleDensityDetails(VisibleDensityDetail left, VisibleDensityDetail right)
+        {
+            int comparison = left.densityLod.CompareTo(right.densityLod);
+            if (comparison != 0) return comparison;
+            comparison = left.chunk.worldBounds.center.x.CompareTo(right.chunk.worldBounds.center.x);
+            if (comparison != 0) return comparison;
+            comparison = left.chunk.worldBounds.center.z.CompareTo(right.chunk.worldBounds.center.z);
+            if (comparison != 0) return comparison;
+            // Different foliage layers occupy the same spatial grid. List.Sort is
+            // unstable: treating them as equal reshuffles an already-sorted list
+            // every pass, moving fractional budget shares between fixed cells.
+            return left.chunk.layerIndex.CompareTo(right.chunk.layerIndex);
+        }
+
+        void SortVisibleDensityDetails()
+        {
+            if (!m_ResidentSelectionOrdered) m_VisibleDensityDetails.Sort(CompareVisibleDensityDetails);
         }
 
         int GetVisibleDensityDetailInstanceCount(VisibleDensityDetail visible)
@@ -2917,6 +2926,13 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             List<RenderPart> sourceParts = GetRenderParts(prototype);
             result.sourcePartCount = sourceParts.Count;
+            bool firstBounds = true;
+            foreach (var part in sourceParts)
+            {
+                var bounds = TransformBounds(TreeDistanceBounds(part.mesh, part.material), part.relativeMatrix);
+                if (firstBounds) { result.treeBounds = bounds; firstBounds = false; }
+                else result.treeBounds.Encapsulate(bounds);
+            }
             if (sourceParts.Count <= 1)
             {
                 result.parts.AddRange(sourceParts);

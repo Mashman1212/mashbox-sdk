@@ -87,9 +87,7 @@ namespace MashBoxSDK.MapTools
                     // Start with the first selected terrain's density-distance and instance settings.
                     using var source = new SerializedObject(chunks[0]);
                     using var settings = new SerializedObject(destination);
-                    int budget = source.FindProperty("m_MaxVisibleDenseDetailInstances").intValue;
                     float distance = source.FindProperty("m_MaxDensityDetailDistance").floatValue;
-                    if (budget > 0) settings.FindProperty("m_VisibleDetailBudget").intValue = budget;
                     if (distance > 0) settings.FindProperty("m_DetailDistance").floatValue = distance;
                     settings.ApplyModifiedProperties();
                 }
@@ -161,7 +159,7 @@ namespace MashBoxSDK.MapTools
         void DrawSettingsTab(MGTerrainWorld world)
         {
             DrawWorldCollision(world);
-            EditorGUILayout.HelpBox("One renderer and overall detail budget. Child MG Terrain components retain their existing painted data and editing tools. Distant chunk detail resources are released automatically; surface meshes and colliders stay loaded.", MessageType.Info);
+            EditorGUILayout.HelpBox("One renderer with no visible-instance count cap. Child MG Terrain components retain their painted data and editing tools. Distance culling and density LOD control visible foliage; cell construction and uploads remain spread across frames.", MessageType.Info);
             DrawPropertiesExcluding(serializedObject, "m_Script", "m_Quality");
             if (serializedObject.ApplyModifiedProperties())
             {
@@ -349,7 +347,7 @@ namespace MashBoxSDK.MapTools
                 bool enterChildren = true;
                 while (child.NextVisible(enterChildren) && !SerializedProperty.EqualContents(child, end))
                 {
-                    EditorGUILayout.PropertyField(child, true);
+                    if (child.name != "m_DistantDetailBudgetReserve") EditorGUILayout.PropertyField(child, true);
                     enterChildren = false;
                 }
             }

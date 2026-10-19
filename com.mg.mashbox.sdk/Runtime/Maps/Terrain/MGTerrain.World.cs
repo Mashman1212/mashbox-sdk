@@ -60,51 +60,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnTransformParentChanged() => RefreshWorldOwnership();
         internal long WorldSubmittedDetails => m_WorldPendingDraw ? m_LastSubmittedDensityDetailInstances : 0;
-        internal long WorldDetailDemand
-        {
-            get
-            {
-                if (!m_WorldPendingDraw) return 0;
-                long count = 0;
-                foreach (var visible in m_VisibleDensityDetails) count += GetVisibleDensityDetailInstanceCount(visible);
-                return count;
-            }
-        }
-
-        internal void AccumulateWorldDetailDemand(ref long near, ref long distant)
-        {
-            if (!m_WorldPendingDraw) return;
-            foreach (var visible in m_VisibleDensityDetails)
-                if ((visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0)) near += GetVisibleDensityDetailInstanceCount(visible);
-                else distant += GetVisibleDensityDetailInstanceCount(visible);
-        }
-        readonly Dictionary<DensityDetailChunk, int> m_WorldCellAllocations = new Dictionary<DensityDetailChunk, int>();
-
-        // All draw paths use the same integer allocation; independently rounding a
-        // small cell's proportional share to zero can erase an entire sparse tile.
         int GetBudgetedDetailInstanceCount(VisibleDensityDetail visible, float scale)
         {
             if (UsesWorldBudget)
-                return m_WorldCellAllocations.TryGetValue(visible.chunk, out int count) ? count : 0;
+                return GetVisibleDensityDetailInstanceCount(visible);
             return Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale);
-        }
-
-        internal int AllocateWorldDetailCells(float nearScale, float distantScale, int budget,
-            ref double nearRemainder, ref double distantRemainder)
-        {
-            m_WorldCellAllocations.Clear();
-            if (!m_WorldPendingDraw) return 0;
-            int allocated = 0;
-            foreach (var visible in m_VisibleDensityDetails)
-            {
-                int population = GetVisibleDensityDetailInstanceCount(visible);
-                int count = (visible.prototype.Kind == InstanceKind.Tree || visible.densityLod == 0)
-                    ? MGTerrainWorld.AllocateCellShare(population, nearScale, budget - allocated, ref nearRemainder)
-                    : MGTerrainWorld.AllocateCellShare(population, distantScale, budget - allocated, ref distantRemainder);
-                m_WorldCellAllocations[visible.chunk] = count;
-                allocated += count;
-            }
-            return allocated;
         }
 
         internal void PrepareWorldCamera(Camera camera, float unloadDistance)
@@ -121,7 +81,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             try
             {
                 // Only the detail streaming camera may unload persistent GPU batches.
-                bool canStream = !Application.isPlaying || !m_UseBatchRendererGroup || IsDensityDetailStreamingCamera(camera);
+                bool canStream = !UseResidentDetailStreaming || IsDensityDetailStreamingCamera(camera);
                 m_WorldReuseSelection = UsesWorldBudget && UseResidentDetailStreaming && canStream
                     && !m_DetailRenderCacheDirty && CanReuseDensityDetailStreamingSet(camera);
                 // Grass streaming distance must not unload a tile that still has visible trees.
@@ -155,6 +115,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         internal void SubmitWorldDetails(Camera camera, int budget)
         {
             if (!m_WorldPendingDraw) return;
+            if (UseResidentDetailStreaming && !IsDensityDetailStreamingCamera(camera)) return;
+            SortVisibleDensityDetails();
             m_WorldDrawBudget = budget;
             try
             {

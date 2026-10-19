@@ -5470,6 +5470,11 @@ namespace MashBoxSDK.MapTools
             if (pack == null)
                 throw new ArgumentNullException(nameof(pack));
 
+            // Enforce at the package boundary as well, including diagnostic uploads.
+            var invalidLocations = MapContentPackValidator.ValidateExportAssetLocations(pack);
+            if (invalidLocations.Count > 0)
+                throw new InvalidOperationException(string.Join("\n\n", invalidLocations.Select(issue => issue.Message)));
+
             // Protect the loaded source scene for the entire export, including deletion of the
             // temporary copied scene. Bakery can process that deletion during AssetDatabase.Refresh
             // and clear serialized renderer lightmap assignments after the copied scene was closed.

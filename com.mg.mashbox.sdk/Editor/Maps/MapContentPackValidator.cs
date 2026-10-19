@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -66,6 +66,9 @@ namespace MashBoxSDK.MapTools
             var issues = new List<MapValidationIssue>();
             if (pack == null)
                 return issues;
+
+            // Run before screenshot checks, which can return early.
+            issues.AddRange(ValidateExportAssetLocations(pack));
 
             if (pack.Scene == null)
                 issues.Add(new MapValidationIssue(MapValidationSeverity.Error, "A scene is required before this map can be built or published."));
@@ -893,6 +896,26 @@ namespace MashBoxSDK.MapTools
                 AddLikelyLightmapAssetsInFolder(bakeryFolder, paths);
 
             return paths.ToList();
+        }
+
+        internal static List<MapValidationIssue> ValidateExportAssetLocations(
+            MashBoxSDK.ContentTools.Editor.MapContentPackDefinition pack)
+        {
+            var issues = new List<MapValidationIssue>();
+            if (pack == null) return issues;
+            var invalidPaths = CollectMapExportDependencyPaths(pack)
+                .Where(path => path.StartsWith("Assets/Settings/", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (invalidPaths.Length == 0) return issues;
+
+            issues.Add(new MapValidationIssue(MapValidationSeverity.Error,
+                "This map references content in Assets/Settings, which is a reserved project settings folder and cannot be included in a map upload. " +
+                "Sky and Fog / Volume profiles stored here can be replaced by the cooker's project settings.\n\n" +
+                "Move these assets into your map's content folder using Unity's Project window so their references are preserved, " +
+                "then save the scene and validate again. For example: Assets/Maps/YourMap/Settings/.\n\n" +
+                "Assets to move:\n" + string.Join("\n", invalidPaths.Select(path => "- " + path))));
+            return issues;
         }
 
         private static List<string> CollectMapExportDependencyPaths(MashBoxSDK.ContentTools.Editor.MapContentPackDefinition pack)
