@@ -4080,6 +4080,23 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
+            // Diagnostics stay accessible without a mod.io account, Mod ID, or game install.
+            // Custom Folder still needs an explicit compatible game for private storage routing.
+            var devGames = GameRegistry.Games
+                .Where(game => GameTargetUnityVersionValidator.IsValidForPublishing(game.DisplayName, out _))
+                .Select(game => game.DisplayName).ToArray();
+            if (!devGames.Contains(privateDevTargetGame))
+                privateDevTargetGame = devGames.Contains(currentGame) ? currentGame : devGames.FirstOrDefault();
+            using (new EditorGUILayout.HorizontalScope())
+            using (new EditorGUI.DisabledScope(isMapPublishInProgress || selected == null || selected.Scene == null || devGames.Length == 0))
+            {
+                if (devGames.Length > 0)
+                    privateDevTargetGame = devGames[EditorGUILayout.Popup("Dev Inspection Game",
+                        Mathf.Max(0, Array.IndexOf(devGames, privateDevTargetGame)), devGames)];
+                if (GUILayout.Button("Save Private Publish to Dev", GUILayout.Height(26f)))
+                    SavePrivatePublishToDevAsync(selected, privateDevTargetGame);
+            }
+
             if (isMapPublishInProgress)
             {
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
@@ -4915,13 +4932,15 @@ namespace MashBoxSDK.MapTools
                 () => SavePrivatePublishToDevAsync(pack, currentGame));
         }
 
+        [SerializeField] private string privateDevTargetGame;
+
         private async void SavePrivatePublishToDevAsync(MapContentPackDefinition pack, string currentGame)
         {
             if (isMapPublishInProgress || pack == null || pack.Scene == null) return;
             if (!EditorUtility.DisplayDialog("Save Private Publish to Dev?",
                 "Are you sure you want to send this map privately to a developer?\n\n" +
                 "Only use this if you are having publishing issues and a developer is available to inspect them. " +
-                "Contact the developer before sending. This uploads your map and its assets for inspection; it does not publish to mod.io. " +
+                $"Contact the developer before sending. This uploads your map and its assets for {currentGame} inspection; it does not publish to mod.io. " +
                 "The submission is kept until a developer removes it.", "Save Private Publish to Dev", "Cancel")) return;
             try
             {
