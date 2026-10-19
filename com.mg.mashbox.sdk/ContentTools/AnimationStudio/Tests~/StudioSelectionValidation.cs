@@ -56,7 +56,7 @@ namespace MashBoxSDK.AnimationStudio
     Call(window,"SelectRigRectangle",new Rect(20,0,20,20),true);
     Check(((IList)Get(window,"rigSelection")).Count==2,"Shift-marquee adds enclosed controls");
     Check((bool)Get(window,"lockActorMeshes"),"Mesh selection is locked by default");
-    Event.current=null;Call(window,"FlushEdits");foreach(var v in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>())v.Close();UnityEngine.Object.DestroyImmediate(window);
+    Event.current=null;Call(window,"FlushEdits");foreach(var v in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())v.Close();UnityEngine.Object.DestroyImmediate(window);
     File.WriteAllText("selection-result.txt","PASS");EditorApplication.Exit(0);
    }
    catch(Exception e) { Debug.LogException(e);File.WriteAllText("selection-result.txt",e.ToString());EditorApplication.Exit(1); }

@@ -48,7 +48,7 @@ namespace MashBoxSDK.AnimationStudio
     Call(window,"DeleteTimelineKeys",take,layer.keys);
     Check(layer.keys.Count==1 && layer.keys[0].boneChannels[1]==0 && take.keys.Count==5,"Layer deletion preserves unselected controls and base motion");
     Call(window,"FlushEdits");
-    foreach(var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) view.Close();
+    foreach(var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) view.Close();
     UnityEngine.Object.DestroyImmediate(window);
     File.WriteAllText("timeline-result.txt","PASS"); EditorApplication.Exit(0);
    }

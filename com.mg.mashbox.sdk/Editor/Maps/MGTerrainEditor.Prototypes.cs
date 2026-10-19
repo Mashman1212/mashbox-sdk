@@ -308,6 +308,76 @@ namespace MashBoxSDK.MapTools
         int m_GrassPaintSubId;
         int m_GrassPaintPopulation;
         Texture2D m_GrassStrokeIds;
+        bool m_RandomGrassSubIds;
+        int m_GrassSubIdMask = 255;
+        int m_GrassMixSeed = 1;
+        int m_GrassStrokeSubIdMask;
+
+        int AvailableGrassSubIds(MGTerrain terrain, int prototype)
+        {
+            terrain.GetDetailSourceMaterials(prototype, m_DetailSourceMaterials);
+            int mask = 0;
+            for (int id = 0; id < 8; id++)
+                foreach (var material in m_DetailSourceMaterials)
+                    if (material != null && material.HasProperty("_GrassUseArrays")
+                        && MGGrassDetailLayers.SlotInfo(material, id, out _, out Texture2D source) && source != null)
+                    { mask |= 1 << id; break; }
+            return mask;
+        }
+
+        void DrawGrassMixControls(MGTerrain terrain)
+        {
+            using (new EditorGUI.DisabledScope(Application.isPlaying || serializedObject.isEditingMultipleObjects))
+            {
+                int mode = GUILayout.Toolbar(m_RandomGrassSubIds ? 1 : 0, new[] { "Single ID", "Random Mix" });
+                if ((mode == 1) != m_RandomGrassSubIds)
+                { FinishDetailStroke(); m_RandomGrassSubIds = mode == 1; }
+                if (!m_RandomGrassSubIds) return;
+                int available = AvailableGrassSubIds(terrain, m_SelectedPrototype);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("All Available")) { FinishDetailStroke(); m_GrassSubIdMask = available; }
+                    if (GUILayout.Button("Selected Only")) { FinishDetailStroke(); m_GrassSubIdMask = 1 << m_GrassPaintSubId; }
+                }
+                EditorGUI.BeginChangeCheck();
+                int seed = EditorGUILayout.IntField("Mix Seed", m_GrassMixSeed);
+                if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassMixSeed = seed; }
+                if (GUILayout.Button("New Mix")) { FinishDetailStroke(); unchecked { m_GrassMixSeed++; } }
+                EditorGUILayout.HelpBox("Click thumbnails to include or exclude IDs. Each painted texel chooses an included ID with equal probability. Overlapping strokes keep the same mix; change Mix Seed for a different pattern. Replace ID Only preserves density.", MessageType.Info);
+                bool valid = (m_GrassSubIdMask & available) != 0;
+                if (!valid) EditorGUILayout.HelpBox("Include at least one available sub-ID to paint a random mix.", MessageType.Warning);
+                using (new EditorGUI.DisabledScope(!valid))
+                    if (GUILayout.Button("Paint Random Mix"))
+                    {
+                        FinishDetailStroke();
+                        serializedObject.ApplyModifiedProperties();
+                        m_PaintDetailIndex = MGGrassDetailLayers.EnsureShared(terrain, m_SelectedPrototype, m_GrassPaintPopulation);
+                        serializedObject.Update();
+                        m_SelectedPaintLayers.Clear();
+                        m_PaintChannel = 0;
+                        SetDetailPainting(true);
+                        Repaint(); SceneView.RepaintAll(); GUIUtility.ExitGUI();
+                    }
+            }
+        }
+
+        internal static byte RandomGrassSubId(int x, int z, int seed, int mask, int fallback)
+        {
+            mask &= 255;
+            int count = 0;
+            for (int id = 0; id < 8; id++) if ((mask & (1 << id)) != 0) count++;
+            if (count == 0) return (byte)(fallback & 7);
+            unchecked
+            {
+                uint hash = (uint)x * 0x9E3779B9u ^ (uint)z * 0x85EBCA6Bu ^ (uint)seed;
+                hash ^= hash >> 16; hash *= 0x7FEB352Du;
+                hash ^= hash >> 15; hash *= 0x846CA68Bu; hash ^= hash >> 16;
+                int choice = (int)(hash % (uint)count);
+                for (int id = 0; id < 8; id++)
+                    if ((mask & (1 << id)) != 0 && choice-- == 0) return (byte)id;
+            }
+            return (byte)(fallback & 7);
+        }
 
         void DrawGrassSubIdGrid(MGTerrain terrain)
         {
@@ -333,6 +403,7 @@ namespace MashBoxSDK.MapTools
                         GUIUtility.ExitGUI();
                     }
             }
+            DrawGrassMixControls(terrain);
             int columns = Mathf.Clamp(Mathf.FloorToInt((EditorGUIUtility.currentViewWidth - 42f) / 88f), 1, 8);
             for (int row = 0; row < Mathf.CeilToInt(8f / columns); row++)
             {
@@ -356,23 +427,32 @@ namespace MashBoxSDK.MapTools
                         { existing = i; break; }
                     }
                     bool available = thumbnail != null;
-                    bool selected = existing >= 0 && existing == m_PaintDetailIndex && id == m_GrassPaintSubId;
+                    bool selected = m_RandomGrassSubIds ? available && (m_GrassSubIdMask & (1 << id)) != 0
+                        : existing >= 0 && existing == m_PaintDetailIndex && id == m_GrassPaintSubId;
                     Rect cell = new Rect(strip.x + column * width, strip.y, width - 4f, 94f);
                     Color previous = GUI.backgroundColor;
                     if (selected) GUI.backgroundColor = new Color(.4f, .7f, 1f);
                     bool clicked;
                     using (new EditorGUI.DisabledScope(!available || Application.isPlaying || serializedObject.isEditingMultipleObjects))
-                        clicked = GUI.Button(cell, new GUIContent("", available ? "Paint Sub-ID " + id + ": " + label : "Assign this slot in the grass material first."));
+                        clicked = GUI.Button(cell, new GUIContent("", available ? (m_RandomGrassSubIds ? "Include/exclude Sub-ID " : "Paint Sub-ID ") + id + ": " + label : "Assign this slot in the grass material first."));
                     GUI.backgroundColor = previous;
                     if (Event.current.type == EventType.Repaint && thumbnail != null)
                         GUI.DrawTexture(new Rect(cell.x + 5, cell.y + 20, cell.width - 10, 50), thumbnail, ScaleMode.ScaleToFit, true);
-                    GUI.Label(new Rect(cell.x + 5, cell.y + 3, cell.width - 10, 18), "Sub-ID " + id, EditorStyles.miniBoldLabel);
+                    GUI.Label(new Rect(cell.x + 5, cell.y + 3, cell.width - 10, 18), (m_RandomGrassSubIds && selected ? "✓ " : "") + "Sub-ID " + id, EditorStyles.miniBoldLabel);
                     GUI.Label(new Rect(cell.x + 3, cell.y + 72, cell.width - 6, 18), new GUIContent(label, label), EditorStyles.centeredGreyMiniLabel);
                     if (!clicked) continue;
+                    if (m_RandomGrassSubIds)
+                    {
+                        FinishDetailStroke();
+                        m_GrassSubIdMask ^= 1 << id;
+                        Repaint();
+                        GUIUtility.ExitGUI();
+                    }
                     FinishDetailStroke();
                     serializedObject.ApplyModifiedProperties();
                     m_PaintDetailIndex = MGGrassDetailLayers.EnsureShared(terrain, m_SelectedPrototype, m_GrassPaintPopulation);
                     m_GrassPaintSubId = id;
+                    m_SelectedPaintLayers.Clear();
                     serializedObject.Update();
                     m_PaintChannel = 0;
                     SetDetailPainting(true);

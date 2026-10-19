@@ -60,7 +60,7 @@ namespace MashBoxSDK.AnimationStudio
                 Check(Vector3.Distance(br.Bones[bar].position,hr.Ends[1].position)<.001f,"Generic bone constraint can snap to another actor bone");
                 Call(window,"FlushEdits");
                 Check(File.ReadAllText(AssetDatabase.GetAssetPath(take)).Contains("targetActor:"),"Attachment references and settings persist with the take");
-                foreach(var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) view.Close();
+                foreach(var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) view.Close();
                 UnityEngine.Object.DestroyImmediate(window); window=null;
                 File.WriteAllText("constraints-result.txt","PASS: hand IK follows bike, maintain offset, independent keys, FK bake, disable, frame range, cycle rejection, bone attachment and persistence.");
                 EditorApplication.Exit(0);

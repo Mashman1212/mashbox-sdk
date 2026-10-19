@@ -10,7 +10,7 @@ public static class StudioMarkingIntegrationValidation
 {
     private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
     private static AnimationStudioWindow controller;
-    private static AnimationStudioViewport view;
+    private static MashBoxStudioViewport view;
     private static StudioModelEditor editor;
     private static double next;
     private static int step;
@@ -38,7 +38,7 @@ public static class StudioMarkingIntegrationValidation
     {
         AnimationStudioWindow.Open();
         controller = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
-        view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First();
+        view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();
         view.position = new Rect(100, 100, 1300, 850);
         typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Flags).Invoke(controller, new object[] { true });
         var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);

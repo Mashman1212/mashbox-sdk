@@ -1750,9 +1750,14 @@ namespace MashBoxSDK.MapTools
                 EditorGUI.BeginChangeCheck();
                 bool idOnly = EditorGUILayout.Toggle(new GUIContent("Replace ID Only", "Change the grass type without changing density. Leave off to paint towards Target Density / Texel."), m_GrassIdOnly);
                 if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassIdOnly = idOnly; }
-                EditorGUI.BeginChangeCheck();
-                int id = EditorGUILayout.IntSlider("Paint Grass Sub-ID", m_GrassPaintSubId, 0, 7);
-                if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassPaintSubId = id; }
+                if (m_RandomGrassSubIds)
+                    EditorGUILayout.LabelField("Paint Grass Sub-IDs", "Random mix — choose IDs below");
+                else
+                {
+                    EditorGUI.BeginChangeCheck();
+                    int id = EditorGUILayout.IntSlider("Paint Grass Sub-ID", m_GrassPaintSubId, 0, 7);
+                    if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassPaintSubId = id; }
+                }
             }
             m_SelectedPrototype = selectedDetail.PrototypeIndex;
             long totalDensity = selectedDetail.RepresentedInstanceCount;
@@ -2036,6 +2041,10 @@ namespace MashBoxSDK.MapTools
             var detail = terrain.DensityDetailLayers[m_PaintDetailIndex];
             if (detail.PaletteSourceOnly || detail.PrototypeIndex < 0 || detail.PrototypeIndex >= terrain.Prototypes.Count)
             { EditorUtility.DisplayDialog("Cannot Paint Detail", "Select a rendered detail layer with a valid prototype, not a palette source-only layer.", "OK"); return false; }
+            m_GrassStrokeSubIdMask = m_RandomGrassSubIds && m_PaintChannel == 0 && detail.GrassIdMap != null
+                ? m_GrassSubIdMask & AvailableGrassSubIds(terrain, detail.PrototypeIndex) : 0;
+            if (m_RandomGrassSubIds && m_PaintChannel == 0 && detail.GrassIdMap != null && m_GrassStrokeSubIdMask == 0)
+            { Debug.LogWarning("Include at least one available grass sub-ID before painting a random mix.", terrain); return false; }
             Texture2D source = m_PaintChannel == 0 ? detail.DensityMap : m_PaintChannel == 1 ? detail.SizeMap : detail.HealthMap;
             TextureFormat format = m_PaintChannel == 0 ? TextureFormat.R16 : TextureFormat.RHalf;
             if (source != null && (!source.isReadable || source.format != format))
@@ -2150,8 +2159,11 @@ namespace MashBoxSDK.MapTools
                 if (m_GrassStrokeIds != null && !erase && influence > 0)
                 {
                     var ids = m_GrassStrokeIds.GetPixelData<byte>(0);
-                    changed |= ids[index] != (byte)m_GrassPaintSubId;
-                    ids[index] = (byte)m_GrassPaintSubId;
+                    byte id = m_RandomGrassSubIds
+                        ? RandomGrassSubId(x, z, m_GrassMixSeed, m_GrassStrokeSubIdMask, m_GrassPaintSubId)
+                        : (byte)m_GrassPaintSubId;
+                    changed |= ids[index] != id;
+                    ids[index] = id;
 
                 }
                 bool replaceIdOnly = m_GrassStrokeIds != null && m_GrassIdOnly && !erase;

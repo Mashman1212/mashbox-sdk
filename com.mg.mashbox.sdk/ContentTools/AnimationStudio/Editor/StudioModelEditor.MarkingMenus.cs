@@ -118,6 +118,7 @@ namespace MashBoxSDK.AnimationStudio
             if (Event.current.rawType == EventType.MouseUp && Event.current.button == 0 && gestureUndo >= 0)
             { Undo.CollapseUndoOperations(gestureUndo); gestureUndo = -1; }
             if (HandleSaveShortcut()) return;
+            if (HandleExtrudeShortcut()) return;
             if (HandleGridSnapKey(view)) return;
             if (HandleSizeShortcut(Event.current)) return;
             // Intercept V before Unity's native vertex-snap shortcut. Mouse picking runs
@@ -136,7 +137,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var evt = Event.current;
                 if (!evt.alt && evt.type == EventType.MouseDown && evt.button == 1 &&
-                    (!(view is AnimationStudioViewport studio) || studio.ModelCanvasRect.Contains(evt.mousePosition)))
+                    (!(view is MashBoxStudioViewport studio) || studio.ModelCanvasRect.Contains(evt.mousePosition)))
                 {
                     Run(() => CommitCuts(new List<StudioMeshCuts.Cut>(pendingCuts)));
                     ResetCutGesture(); suppressModelContext = true; evt.Use(); repaint();
@@ -157,8 +158,8 @@ namespace MashBoxSDK.AnimationStudio
                 suppressModelContext = false;
                 if (evt.button != 1 || evt.alt || GUIUtility.hotControl != 0) return;
                 // Leave floating viewport controls available for their own input.
-                if (view is AnimationStudioViewport overlayView && overlayView.IsOverViewportControls(evt.mousePosition)) return;
-                var canvas = view is AnimationStudioViewport studio ? studio.ModelCanvasRect : new Rect(276, 68, Mathf.Max(0, view.position.width - 674), Mathf.Max(0, view.position.height - 76));
+                if (view is MashBoxStudioViewport overlayView && overlayView.IsOverViewportControls(evt.mousePosition)) return;
+                var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(276, 68, Mathf.Max(0, view.position.width - 674), Mathf.Max(0, view.position.height - 76));
                 if (!canvas.Contains(evt.mousePosition)) return;
                 markingView = view; markingControl = id; GUIUtility.hotControl = id;
                 GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;

@@ -22,19 +22,19 @@ namespace MashBoxSDK.AnimationStudio
                 using (var rig = new AuthoringRig(source,null)) { take.bonePaths = rig.Paths; take.keys.Add(rig.Rest.Copy(0)); }
                 string path = AssetDatabase.GenerateUniqueAssetPath("Assets/Entry Take.asset"); AssetDatabase.CreateAsset(take,path);
                 AnimationStudioWindow.OpenInStudio(take);
-                var views = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>();
+                var views = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>();
                 Check(views.Length == 1 && views[0].Studio,"Opening take creates one bound Studio viewport");
                 var owner = views[0].Studio;
                 Check(typeof(AnimationStudioWindow).GetField("take",Flags).GetValue(owner) == take,"Entry point loads the requested take");
                 AnimationStudioWindow.OpenInStudio(take);
-                Check(Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().Length == 1,"Reopening reuses viewport");
+                Check(Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().Length == 1,"Reopening reuses viewport");
                 var inspector = UnityEditor.Editor.CreateEditor(take);
                 Check(inspector is AnimationTakeEditor,"Take asset gets dedicated inspector"); UnityEngine.Object.DestroyImmediate(inspector);
                 var script = MonoScript.FromScriptableObject(take);
                 Check(((MonoImporter)AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(script))).GetIcon(),"Script importer has persistent custom icon");
                 views[0].Close(); UnityEngine.Object.DestroyImmediate(owner);
                 AnimationStudioWindow.OpenInStudio(null);
-                views = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>();
+                views = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>();
                 Check(views.Length == 1 && typeof(AnimationStudioWindow).GetField("take",Flags).GetValue(views[0].Studio) == take,"Fresh controller restores last saved take");
                 owner = views[0].Studio;
                 var activeRig = (AuthoringRig)typeof(AnimationStudioWindow).GetField("rig",Flags).GetValue(owner);

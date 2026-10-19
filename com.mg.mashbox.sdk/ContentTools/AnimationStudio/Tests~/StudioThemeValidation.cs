@@ -15,7 +15,7 @@ public sealed class StudioThemeValidation : EditorWindow
     private static bool hadPrefs, preview;
     private static string oldPrefs, errors = "";
     private static AnimationStudioWindow controller;
-    private static AnimationStudioViewport viewport;
+    private static MashBoxStudioViewport viewport;
     private int paletteIndex;
     private bool finished;
     public static void Preview() { preview = true; Run(); }
@@ -32,7 +32,7 @@ public sealed class StudioThemeValidation : EditorWindow
             Check(StudioSettings.Current.theme == "graphite" && StudioSettings.Current.gridSpacing == .25f && StudioSettings.Current.uvPointSize == 8, "Unknown themes and invalid numeric settings are sanitized");
             StudioSettings.Reset();
             AnimationStudioWindow.Open(); controller = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
-            viewport = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First();
+            viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();
             typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Fields).Invoke(controller, new object[] { true });
             StudioUVEditor.Open(null); StudioSettingsWindow.Open();
             var window = CreateInstance<StudioThemeValidation>(); window.ShowUtility(); window.Repaint();
@@ -54,7 +54,7 @@ public sealed class StudioThemeValidation : EditorWindow
                 StudioSettings.Current.gridSpacing = .5f; StudioSettings.Current.gridOpacity = .7f; StudioSettings.Current.uvPointSize = 5;
                 StudioSettings.Save(); StudioSettings.Reload();
                 Check(StudioSettings.Current.theme == palette.Id && StudioSettings.Current.gridSpacing == .5f && StudioSettings.Current.uvPointSize == 5, palette.Name + " preference round-trip");
-                var panel = (IMGUIContainer)typeof(AnimationStudioViewport).GetField("inspector", Fields).GetValue(viewport);
+                var panel = (IMGUIContainer)typeof(MashBoxStudioViewport).GetField("inspector", Fields).GetValue(viewport);
                 Check(panel.style.backgroundColor.value == palette.Panel, palette.Name + " updates an existing viewport");
                 var originalSkin = GUI.skin; var originalText = EditorStyles.label.normal.textColor; var originalBackground = GUI.backgroundColor;
                 using (StudioTheme.Scope())

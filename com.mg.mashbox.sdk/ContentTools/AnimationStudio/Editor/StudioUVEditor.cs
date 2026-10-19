@@ -49,6 +49,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawThemedGUI()
         {
             owner?.HandleSaveShortcut();
+            if(owner != null && owner.HasBlendShape) { EditorGUILayout.HelpBox("Bake Current Pose before editing blend shape UVs.",MessageType.Info);return; }
             var selectedMesh = owner != null && owner.Document ? owner.ActiveMesh : null;
             if (mesh != selectedMesh)
             {

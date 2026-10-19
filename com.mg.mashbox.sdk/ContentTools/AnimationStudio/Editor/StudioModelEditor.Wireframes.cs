@@ -17,6 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         private readonly Dictionary<StudioModelDocument.Node, SelectionWireframe> selectionWireframes = new Dictionary<StudioModelDocument.Node, SelectionWireframe>();
         private void ClearSelectionWireframes()
         {
+            ClearComponentDrawing();
             foreach (var wire in selectionWireframes.Values) if (wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked);
             selectionWireframes.Clear();
         }

@@ -10,7 +10,7 @@ public static class StudioChannelBoxValidation
 {
     private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
     private static AnimationStudioWindow controller;
-    private static AnimationStudioViewport view;
+    private static MashBoxStudioViewport view;
     private static StudioModelEditor editor;
     private static double next;
     private static int step;
@@ -20,7 +20,7 @@ public static class StudioChannelBoxValidation
     {
         AnimationStudioWindow.Open();
         controller = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
-        view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First();
+        view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();
         view.position = new Rect(100, 100, 1300, 850);
         typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Flags).Invoke(controller, new object[] { true });
         typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Flags).Invoke(controller, new object[] { null });
@@ -61,8 +61,8 @@ public static class StudioChannelBoxValidation
             switch (step++)
             {
                 case 0:
-                    var tabs = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("modeTabs", Flags).GetValue(view);
-                    var inspector = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("inspector", Flags).GetValue(view);
+                    var tabs = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("modeTabs", Flags).GetValue(view);
+                    var inspector = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("inspector", Flags).GetValue(view);
                     Require(tabs.resolvedStyle.height >= 59 && inspector.resolvedStyle.top >= 67, "Menu bar or inspector did not reserve the second toolbar row");
                     view.SendEvent(new Event { type = EventType.MouseDown, button = 1, mousePosition = new Vector2(600, 50) });
                     Require(!Field<bool>("markingOpen"), "Marking menu intercepted the menu bar");
@@ -81,7 +81,7 @@ public static class StudioChannelBoxValidation
                     Require(!view.drawGizmos, "Preview gizmo isolation was lost");
                     Require(string.IsNullOrEmpty(errors), errors);
                     view.modelGridVisible = false; view.Repaint();
-                    var strip = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("modelTools", Flags).GetValue(view);
+                    var strip = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("modelTools", Flags).GetValue(view);
                     Require(strip.resolvedStyle.width == 32 && strip.resolvedStyle.display == UnityEngine.UIElements.DisplayStyle.Flex, "Tool strip is not visible");
                     // Dispatch a real UIElements/IMGUI double-click to the Move icon.
                     var toolPoint = new Vector2(strip.worldBound.x + 16, strip.worldBound.y + 48);
@@ -95,10 +95,10 @@ public static class StudioChannelBoxValidation
                     editor.ActivateTool(Tool.Rotate);
                     Require(Resources.FindObjectsOfTypeAll<StudioModelToolOptions>().Length == 1 && Field<Tool>("tool") == Tool.Rotate, "Tool Options did not remain bound to the active tool");
                     typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Flags).Invoke(controller, new object[] { false });
-                    var modes = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("modeTabs", Flags).GetValue(view);
+                    var modes = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("modeTabs", Flags).GetValue(view);
                     Require(modes.style.height.value.value == 36, "Animation mode did not restore its toolbar height");
                     Require(Resources.FindObjectsOfTypeAll<StudioModelToolOptions>().Length == 0, "Tool Options remained open after leaving Modeling");
-                    var hiddenStrip = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("modelTools", Flags).GetValue(view);
+                    var hiddenStrip = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("modelTools", Flags).GetValue(view);
                     Require(hiddenStrip.style.display.value == UnityEngine.UIElements.DisplayStyle.None, "Model tools remained visible in Animation");
                     Finish(0, "PASS: Channel translation/rotation/scale/visibility, Undo/Redo, pivot geometry preservation, Select tool, toolbar layout, marking menus, actual double-click Tool Options, tool switching, grid state and animation cleanup; no GUI exceptions.");
                     break;

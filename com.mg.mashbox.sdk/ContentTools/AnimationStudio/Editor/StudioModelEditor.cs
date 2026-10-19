@@ -114,6 +114,7 @@ namespace MashBoxSDK.AnimationStudio
             lightingWindow?.Close(); previewLighting?.Dispose(); previewLighting = null;
             ClearSelectionWireframes();
             CloseToolOptions();
+            DisposeComponentDrawing();
             CancelMarkingMenu();
             Undo.undoRedoPerformed -= OnUndo; EditorApplication.update -= Tick;
             if (Scene.IsValid()) EditorSceneManager.ClosePreviewScene(Scene);
@@ -130,13 +131,14 @@ namespace MashBoxSDK.AnimationStudio
             CommitHierarchyRenameOnClick();
             HandleHierarchyDragCancellation();
             HandleModelDrop(null, loaded);
+            HandleExtrudeShortcut();
             HandleObjectDuplicate();
             HandleObjectDelete();
             GUILayout.Label("Hierarchy", StudioTheme.Styles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button(new GUIContent("Import FBX…", "Add a model to this workspace."))) Run(() => ImportPath(EditorUtility.OpenFilePanel("Import FBX into workspace", "", "fbx"), loaded));
-                if (GUILayout.Button(new GUIContent("Open…", "Open a saved workspace."), GUILayout.Width(60)))
+                if (GUILayout.Button(new GUIContent("Import FBXâ€¦", "Add a model to this workspace."))) Run(() => ImportPath(EditorUtility.OpenFilePanel("Import FBX into workspace", "", "fbx"), loaded));
+                if (GUILayout.Button(new GUIContent("Openâ€¦", "Open a saved workspace."), GUILayout.Width(60)))
                     Run(() => OpenWorkspace(loaded));
             }
             StudioModelDocument next;
@@ -244,6 +246,9 @@ namespace MashBoxSDK.AnimationStudio
                 if (EditorGUI.EndChangeCheck()) Run(() => SetObjectChannels(p, r, s, visible));
             }
             else GUILayout.Label("No selection", StudioTheme.Styles.miniLabel);
+            DrawMaterialChannels();
+            DrawBlendShapeChannels();
+            DrawExtrusionOptions();
             GUILayout.Space(8);
             if (!string.IsNullOrEmpty(error)) EditorGUILayout.HelpBox(error, MessageType.Error);
             EditorGUILayout.EndScrollView();
@@ -364,7 +369,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             view.Frame(bounds, true);
             // Account for the hierarchy and inspector covering the sides of the SceneView.
-            float canvasWidth = view is AnimationStudioViewport studio ? studio.ModelCanvasRect.width : view.position.width - 680;
+            float canvasWidth = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect.width : view.position.width - 680;
             view.size *= Mathf.Clamp(view.position.width / Mathf.Max(250, canvasWidth), 1, 2.5f);
         }
         private List<(int a, int b)> Edges()
@@ -566,6 +571,7 @@ namespace MashBoxSDK.AnimationStudio
         { for (int p = Document.nodes[i].parent; p >= 0; p = Document.nodes[p].parent) if (objects.Contains(p)) return true; return false; }
         internal bool CanEditComponents()
         {
+            if (HasBlendShape) return false;
             if (!ActiveMesh || !Document.nodes[Active].skinned) return true;
             var n = Document.nodes[Active]; var poses = n.mesh.bindposes;
             for (int i = 0; i < n.bones.Length && i < poses.Length; i++)
@@ -587,31 +593,12 @@ namespace MashBoxSDK.AnimationStudio
                 if (mode == ComponentMode.Object)
                 {
                     Handles.color = new Color(.2f, .9f, .75f, .7f);
-                    DrawSelectedObjectWireframes();
+                    if (!StudioSettings.Current.hideObjectWireframe)
+                        using (ObjectWireMarker.Auto()) DrawSelectedObjectWireframes();
                     return;
                 }
                 if (!ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy) return;
-                var verts = ActiveMesh.vertices; var t = Transforms[Active];
-                var edges = Edges();
-                Handles.color = new Color(.3f, .65f, .72f, .45f);
-                foreach (var edge in edges) Handles.DrawLine(t.TransformPoint(verts[edge.a]), t.TransformPoint(verts[edge.b]));
-                if (mode == ComponentMode.Vertex) for (int i = 0; i < verts.Length; i++)
-                {
-                    var world = t.TransformPoint(verts[i]); if (view.camera.WorldToViewportPoint(world).z <= 0) continue;
-                    Handles.color = Components.Contains(i) ? new Color(1, .65f, .15f) : new Color(.35f, .9f, .9f);
-                    Handles.DotHandleCap(0, world, Quaternion.identity, HandleUtility.GetHandleSize(world) * .022f, EventType.Repaint);
-                }
-                Handles.color = new Color(1, .65f, .15f, .9f);
-                foreach (int i in Components)
-                {
-                    if (mode == ComponentMode.Edge && i < edges.Count) Handles.DrawAAPolyLine(4, t.TransformPoint(verts[edges[i].a]), t.TransformPoint(verts[edges[i].b]));
-                    if (mode == ComponentMode.Face && i >= 0 && i < Faces().Count)
-                    {
-                        var triangles = cachedFaceTriangles[i];
-                        for (int j = 0; j < triangles.Count; j += 3)
-                            Handles.DrawAAConvexPolygon(t.TransformPoint(verts[triangles[j]]), t.TransformPoint(verts[triangles[j + 1]]), t.TransformPoint(verts[triangles[j + 2]]));
-                    }
-                }
+                DrawComponentBatches(view);
             }
             finally { Handles.color = old; Handles.zTest = depth; }
         }

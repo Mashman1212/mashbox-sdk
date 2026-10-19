@@ -10,7 +10,7 @@ public static class StudioModelMenusIntegrationValidation
 {
     private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
     private static AnimationStudioWindow controller;
-    private static AnimationStudioViewport view;
+    private static MashBoxStudioViewport view;
     private static StudioModelEditor editor;
     private static double next;
     private static int step;
@@ -20,7 +20,7 @@ public static class StudioModelMenusIntegrationValidation
     {
         AnimationStudioWindow.Open();
         controller = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
-        view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First();
+        view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();
         view.position = new Rect(100, 100, 1300, 850);
         typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Flags).Invoke(controller, new object[] { true });
         typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Flags).Invoke(controller, new object[] { null });
@@ -45,8 +45,8 @@ public static class StudioModelMenusIntegrationValidation
             switch (step++)
             {
                 case 0:
-                    var tabs = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("modeTabs", Flags).GetValue(view);
-                    var inspector = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("inspector", Flags).GetValue(view);
+                    var tabs = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("modeTabs", Flags).GetValue(view);
+                    var inspector = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("inspector", Flags).GetValue(view);
                     Require(tabs.resolvedStyle.height >= 59 && inspector.resolvedStyle.top >= 67, "Menu bar or inspector did not reserve the second toolbar row");
                     view.SendEvent(new Event { type = EventType.MouseDown, button = 1, mousePosition = new Vector2(600, 50) });
                     Require(!Field<bool>("markingOpen"), "Marking menu intercepted the menu bar");
@@ -65,7 +65,7 @@ public static class StudioModelMenusIntegrationValidation
                     Require(!view.drawGizmos, "Preview gizmo isolation was lost");
                     Require(string.IsNullOrEmpty(errors), errors);
                     typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Flags).Invoke(controller, new object[] { false });
-                    var modes = (UnityEngine.UIElements.IMGUIContainer)typeof(AnimationStudioViewport).GetField("modeTabs", Flags).GetValue(view);
+                    var modes = (UnityEngine.UIElements.IMGUIContainer)typeof(MashBoxStudioViewport).GetField("modeTabs", Flags).GetValue(view);
                     Require(modes.style.height.value.value == 36, "Animation mode did not restore its toolbar height");
                     Finish(0, "PASS: Empty MashBox Studio creates a saved cube, renders the modeling menus with clear panel spacing, excludes the toolbar from RMB gestures, preserves nested marking menus and gizmo isolation, and restores the animation layout without GUI exceptions.");
                     break;

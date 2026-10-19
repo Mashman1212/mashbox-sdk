@@ -14,7 +14,7 @@ namespace MashBoxSDK.AnimationStudio
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static readonly List<string> Results = new List<string>();
         static AnimationStudioWindow controller;
-        static AnimationStudioViewport view;
+        static MashBoxStudioViewport view;
         static StudioModelEditor editor;
         static StudioModelDocument doc, other;
         static string oldModel, errors = "", path;
@@ -37,7 +37,7 @@ namespace MashBoxSDK.AnimationStudio
             AnimationStudioWindow.Open(); controller = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First(); Mode(true);
             typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Private).Invoke(controller, new object[] { doc });
             editor = (StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor", Private).GetValue(controller); editor.SelectObject(0);
-            view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.Focus(); Snapshot();
+            view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.Focus(); Snapshot();
             Application.logMessageReceived += Log; EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + .5;
         }
         static void Log(string text, string stack, LogType type) { if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert) errors += text + "\n" + stack; }
@@ -65,7 +65,7 @@ namespace MashBoxSDK.AnimationStudio
                         editor.Load(other); Unwritten("Loading another workspace does not silently save the previous one");
                         editor.Load(doc); editor.SelectObject(0);
                         Check(Vector3.Distance(editor.Transforms[0].position,new Vector3(.3f,.2f,.1f)) < .0001f, "Unsaved edits survive switching away and back");
-                        view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.Focus(); break;
+                        view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.Focus(); break;
                     case 4:
                         view.SendEvent(new Event { type = EventType.KeyDown, keyCode = KeyCode.S, modifiers = EventModifiers.Control });
                         Check(!File.ReadAllBytes(path).SequenceEqual(disk), "Ctrl+S explicitly writes the edited workspace");

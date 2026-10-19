@@ -132,7 +132,7 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 
-    public sealed partial class AnimationStudioViewport
+    public sealed partial class MashBoxStudioViewport
     {
         internal void SetClipUnsavedChanges(bool dirty)
         {

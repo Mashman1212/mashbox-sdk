@@ -54,7 +54,7 @@ namespace MashBoxSDK.AnimationStudio
                 Check(take.Evaluate(8).effectors[0].weight==1 && Quaternion.Angle(take.Evaluate(8).effectors[0].rotation,oldRotation)<.001f,"IK position key activates IK without keying target rotation");
                 Call(window,"FlushEdits");
                 Check(File.ReadAllText(AssetDatabase.GetAssetPath(take)).Contains("selective: 1"),"Channel masks serialize with the take");
-                foreach(var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) view.Close(); UnityEngine.Object.DestroyImmediate(window);
+                foreach(var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) view.Close(); UnityEngine.Object.DestroyImmediate(window);
                 File.WriteAllText("channel-keys-result.txt","PASS: selected position/rotation, unchanged other curves, merge, draft retention, modifier and text guards, plain tools, IK activation and persistence."); EditorApplication.Exit(0);
             }
             catch(Exception e) { Debug.LogException(e); File.WriteAllText("channel-keys-result.txt",e.ToString()); EditorApplication.Exit(1); }

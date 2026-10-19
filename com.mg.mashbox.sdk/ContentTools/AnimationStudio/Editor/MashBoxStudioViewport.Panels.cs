@@ -4,7 +4,7 @@ using UnityEngine.UIElements;
 
 namespace MashBoxSDK.AnimationStudio
 {
-    public sealed partial class AnimationStudioViewport
+    public sealed partial class MashBoxStudioViewport
     {
         internal const string LeftWidthKey = "MashBox.Studio.HierarchyWidth";
         internal const string RightWidthKey = "MashBox.Studio.ChannelsWidth";

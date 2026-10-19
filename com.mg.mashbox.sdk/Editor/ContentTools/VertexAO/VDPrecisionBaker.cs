@@ -8,8 +8,29 @@ using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
 // Editor-only, deterministic geometry sampling. No cameras, colliders or pipeline changes.
-internal static class VDPrecisionBaker
+public static class VDPrecisionBaker
 {
+    // Reuses the production sampler without adding scene handlers or touching the source.
+    public static float[] SampleIsolated(Mesh mesh, float distance, float bias, int samples, float falloff, bool twoSided, Func<float,bool> cancel = null)
+    {
+        if(!mesh || !mesh.isReadable || distance<=0 || !float.IsFinite(distance) || !float.IsFinite(bias))
+            throw new InvalidOperationException("Use a readable mesh and a positive finite AO distance.");
+        var scene=UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();
+        try
+        {
+            var go=new GameObject("Vertex AO sample");SceneManager.MoveGameObjectToScene(go,scene);
+            var filter=go.AddComponent<MeshFilter>();filter.sharedMesh=mesh;go.AddComponent<MeshRenderer>();
+            var settings=new Settings {distance=distance,bias=Mathf.Clamp(bias,0,distance*.1f),samples=samples,falloff=falloff,twoSided=twoSided,sceneOccluders=false,output=Output.Red};
+            using(var job=new Job(new[]{filter},settings))
+            {
+                bool done=false;
+                while(!done){done=job.Step();if(cancel!=null&&cancel(job.completed/(float)Math.Max(1,job.total)))throw new OperationCanceledException();}
+                return (float[])job.results[0].visibility.Clone();
+            }
+        }
+        finally {UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(scene);}
+    }
+
     internal enum Output { RGB, Red, Green, Blue, Alpha, RGBA }
     [Serializable] internal class Settings
     {

@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static readonly List<string> Results = new List<string>();
-        static AnimationStudioWindow controller; static AnimationStudioViewport view; static StudioModelEditor editor;
+        static AnimationStudioWindow controller; static MashBoxStudioViewport view; static StudioModelEditor editor;
         static string oldModel, errors = ""; static bool hadModel; static int step; static double next;
         static string ModelKey => "MashBox.LastModel." + Application.dataPath;
         static void Check(bool value, string label) { if (!value) throw new Exception(label); Results.Add("PASS: " + label); }
@@ -46,7 +46,7 @@ namespace MashBoxSDK.AnimationStudio
                 typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Private).Invoke(controller, new object[] { doc });
                 editor = (StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor", Private).GetValue(controller); editor.SelectObject(0);
                 editor.Transforms[1].gameObject.SetActive(false); editor.Transforms[2].gameObject.SetActive(false);
-                view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.position = new Rect(100, 100, 1400, 800);
+                view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.position = new Rect(100, 100, 1400, 800);
                 view.pivot = Vector3.zero; view.rotation = Quaternion.identity; view.orthographic = true; view.size = 2; view.Focus();
                 Application.logMessageReceived += Log; EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + 1;
             }

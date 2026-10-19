@@ -1,7 +1,14 @@
 {
   "name": "MashBoxSDK.AnimationStudio.Editor",
   "rootNamespace": "MashBoxSDK.AnimationStudio",
-  "includePlatforms": ["Editor"],
-  "defineConstraints": ["UNITY_6000_0_OR_NEWER"],
-  "autoReferenced": true
+  "includePlatforms": [
+    "Editor"
+  ],
+  "defineConstraints": [
+    "UNITY_6000_0_OR_NEWER"
+  ],
+  "autoReferenced": true,
+  "references": [
+    "MashBoxSDK.Tools.Editor"
+  ]
 }

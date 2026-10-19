@@ -16,7 +16,7 @@ namespace MashBoxSDK.AnimationStudio
         private StudioMeshCuts.Point? cutStart, cutHover, loopSeed;
         private int cutControl;
         private bool cutDragging;
-        private bool CanCutMesh => ActiveMesh && ActiveMesh.isReadable && !Document.nodes[Active].skinned && ActiveMesh.blendShapeCount == 0 && ActiveMesh.boneWeights.Length == 0;
+        private bool CanCutMesh => !HasBlendShape && ActiveMesh && ActiveMesh.isReadable && !Document.nodes[Active].skinned && ActiveMesh.blendShapeCount == 0 && ActiveMesh.boneWeights.Length == 0;
         internal void ActivateCutTool(CutTool next)
         {
             if (!CanCutMesh) { error = "Select an editable static mesh to use the cut tools."; repaint(); return; }
@@ -68,8 +68,8 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (evt.alt) return true;
             if (evt.type == EventType.Layout) HandleUtility.AddDefaultControl(cutControl);
-            var canvas = view is AnimationStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,0,view.position.width,view.position.height);
-            bool overCanvas = canvas.Contains(evt.mousePosition) && (!(view is AnimationStudioViewport overlay) || !overlay.IsOverViewportControls(evt.mousePosition));
+            var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,0,view.position.width,view.position.height);
+            bool overCanvas = canvas.Contains(evt.mousePosition) && (!(view is MashBoxStudioViewport overlay) || !overlay.IsOverViewportControls(evt.mousePosition));
             bool loop = cutTool == CutTool.EdgeLoop || evt.control || evt.command || cutDragging;
             if (overCanvas && (evt.type == EventType.MouseMove || evt.type == EventType.MouseDrag || evt.type == EventType.MouseDown || evt.type == EventType.Repaint))
             {
@@ -153,7 +153,7 @@ namespace MashBoxSDK.AnimationStudio
                 foreach(var point in new[]{cutStart,cutHover})if(point.HasValue)
                 { var world=transform.TransformPoint(cutTopology.Position(point.Value));Handles.color=Color.yellow;Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*.035f,EventType.Repaint); }
                 Handles.BeginGUI();
-                var rect=view is AnimationStudioViewport studio?studio.ModelCanvasRect:new Rect(0,0,view.position.width,view.position.height);
+                var rect=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(0,0,view.position.width,view.position.height);
                 GUI.Label(new Rect(rect.x+8,rect.y+38,rect.width-16,40),cutTool==CutTool.EdgeLoop?"Insert Edge Loop · drag an edge, release to insert · Shift: snap · Esc: exit":"Multi-Cut · click edges/vertices · Enter/RMB: apply · Ctrl: edge loop · Esc: cancel",StudioTheme.Styles.wordWrappedMiniLabel);
                 Handles.EndGUI();
             }

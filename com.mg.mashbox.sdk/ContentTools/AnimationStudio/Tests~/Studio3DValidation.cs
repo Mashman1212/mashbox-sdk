@@ -120,7 +120,7 @@ namespace MashBoxSDK.AnimationStudio
                 typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", privateFlags).Invoke(window, new object[] { false });
                 typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", privateFlags).Invoke(window, new object[] { true });
                 Check(dataBefore == EditorJsonUtility.ToJson(doc), "Switching Animation / Modeling preserves working model data");
-                foreach (var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) view.Close();
+                foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) view.Close();
                 Object.DestroyImmediate(window);
                 File.WriteAllLines(Path.Combine(Directory.GetParent(Application.dataPath).FullName, "studio3d-result.txt"), Results);
                 EditorApplication.Exit(0);

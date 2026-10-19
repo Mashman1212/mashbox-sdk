@@ -15,14 +15,14 @@ namespace MashBoxSDK.AnimationStudio
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static readonly List<string> Results = new List<string>();
         static AnimationStudioWindow controller;
-        static AnimationStudioViewport view;
+        static MashBoxStudioViewport view;
         static string oldSettings, oldModel, errors = "";
         static bool hadSettings, hadModel;
         static int step;
         static double next;
         static string ModelKey => "MashBox.LastModel." + Application.dataPath;
         static void Check(bool value, string label) { if (!value) throw new Exception(label); Results.Add("PASS: " + label); }
-        static IMGUIContainer Element(string field) => (IMGUIContainer)typeof(AnimationStudioViewport).GetField(field, Private).GetValue(view);
+        static IMGUIContainer Element(string field) => (IMGUIContainer)typeof(MashBoxStudioViewport).GetField(field, Private).GetValue(view);
         public static void Run()
         {
             hadSettings = EditorPrefs.HasKey(StudioSettings.PreferenceKey); oldSettings = EditorPrefs.GetString(StudioSettings.PreferenceKey);
@@ -60,7 +60,7 @@ namespace MashBoxSDK.AnimationStudio
                 AnimationStudioWindow.Open(); controller = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
                 typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Private).Invoke(controller, new object[] { true });
                 typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Private).Invoke(controller, new object[] { doc });
-                view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.position = new Rect(100, 100, 1400, 800);
+                view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.position = new Rect(100, 100, 1400, 800);
                 Application.logMessageReceived += Log; EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + 1;
             }
             catch (Exception e) { Finish(e.ToString()); }

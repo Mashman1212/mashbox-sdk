@@ -6,7 +6,8 @@ using UnityEngine.UIElements;
 
 namespace MashBoxSDK.AnimationStudio
 {
-    public sealed partial class AnimationStudioViewport : SceneView
+    [UnityEngine.Scripting.APIUpdating.MovedFrom(true, sourceNamespace: "MashBoxSDK.AnimationStudio", sourceAssembly: "MashBoxSDK.AnimationStudio.Editor", sourceClassName: "AnimationStudioViewport")]
+    public sealed partial class MashBoxStudioViewport : SceneView
     {
         // This window owns an isolated asset-preview scene. Unity's stage handler
         // would replace that scene, culling mask and skybox settings on prefab entry/exit.
@@ -19,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EditorApplication.delayCall += () =>
             {
-                foreach (var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>())
+                foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
 #if MashBoxDev
                     if (view) AnimationStudioWindow.RestoreExistingViewport(view);
 #else
@@ -110,7 +111,7 @@ namespace MashBoxSDK.AnimationStudio
             BindViewportControl(ref viewportOptions, "mashbox-viewport-options", options);
             BindViewportControl(ref studioSettings, "mashbox-studio-settings", settings);
             modelMenuBar.style.top = 0; modelMenuBar.style.left = PanelMargin + ModeSelectorWidth + 20; modelMenuBar.style.right = 0; modelMenuBar.style.height = 24;
-            viewportOptions.style.width = 174; viewportOptions.style.height = 24;
+            viewportOptions.style.width = 202; viewportOptions.style.height = 24;
             studioSettings.style.width = 24; studioSettings.style.height = 24;
             UpdatePanelLayout(); ApplyTheme();
         }

@@ -7,7 +7,7 @@ using UnityEngine.Rendering;
 namespace MashBoxSDK.AnimationStudio
 {
     // Polygon boundaries are retained separately from Unity's render triangles.
-    internal sealed class StudioMeshCuts
+    internal sealed partial class StudioMeshCuts
     {
         internal sealed class Face { internal int Submesh; internal List<int> Vertices; }
         internal struct Point

@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
             public string theme = "graphite";
             public bool neutralMarkingMenus = true;
             public bool showMeshStatistics = true;
+            public bool hideObjectWireframe;
             public float gridSpacing = .25f, gridOpacity = 1, uvPointSize = 4;
             public float handleSize = 1;
         }
@@ -38,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static void Save()
         {
             Sanitize(Current); EditorPrefs.SetString(PreferenceKey, JsonUtility.ToJson(Current));
-            foreach (var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) { view.ApplyTheme(); view.Repaint(); }
+            foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) { view.ApplyTheme(); view.Repaint(); }
             foreach (var window in Resources.FindObjectsOfTypeAll<EditorWindow>())
                 if (window.GetType().Namespace == typeof(StudioSettings).Namespace) window.Repaint();
         }
@@ -76,6 +77,7 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.Space(12);
                 GUILayout.Label("Viewport", StudioTheme.Styles.boldLabel);
                 settings.showMeshStatistics = EditorGUILayout.Toggle("Mesh statistics", settings.showMeshStatistics);
+                settings.hideObjectWireframe = !EditorGUILayout.Toggle("Object wireframe", !settings.hideObjectWireframe);
                 settings.handleSize = EditorGUILayout.Slider(new GUIContent("Handle size", "Resize modeling handles with + and − in the viewport."), settings.handleSize, .25f, 3);
                 settings.gridSpacing = EditorGUILayout.FloatField(new GUIContent("Grid spacing", "Distance between minor grid lines, in world units."), settings.gridSpacing);
                 settings.gridOpacity = EditorGUILayout.Slider("Grid opacity", settings.gridOpacity, 0, 1);

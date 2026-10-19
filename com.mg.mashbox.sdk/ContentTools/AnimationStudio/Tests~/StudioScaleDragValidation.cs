@@ -11,7 +11,7 @@ public static class StudioScaleDragValidation
 {
     const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
     static AnimationStudioWindow controller;
-    static AnimationStudioViewport view;
+    static MashBoxStudioViewport view;
     static StudioModelEditor editor;
     static int scenario, step;
     static double next;
@@ -45,7 +45,7 @@ public static class StudioScaleDragValidation
             typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Flags).Invoke(controller,new object[]{true});
             typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Flags).Invoke(controller,new object[]{doc});
             editor = (StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor", Flags).GetValue(controller);
-            view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.position = new Rect(100,100,1600,900);
+            view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.position = new Rect(100,100,1600,900);
             oldHandleSize = StudioSettings.Current.handleSize; StudioSettings.Current.handleSize = 1;
             Setup(); view.Focus(); SceneView.duringSceneGui += Capture; Application.logMessageReceived += Log;
             EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + 1;

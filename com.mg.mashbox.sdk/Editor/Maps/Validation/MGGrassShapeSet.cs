@@ -12,5 +12,7 @@ namespace MashBoxSDK.MapTools
         public Mesh bakedMesh;
         public Texture2DArray positions;
         public Texture2DArray uvs;
+        public bool bakeVertexAO;
+        public Texture2DArray vertexAO;
     }
 }

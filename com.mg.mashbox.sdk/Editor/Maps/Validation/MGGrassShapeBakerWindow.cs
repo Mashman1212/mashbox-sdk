@@ -48,6 +48,7 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.PropertyField(serialized.FindProperty("sourceFbx"), new GUIContent("Source FBX"));
                 EditorGUILayout.PropertyField(serialized.FindProperty("bakeRotationAndScale"), new GUIContent("Bake Rotation and Scale"));
                 EditorGUILayout.PropertyField(serialized.FindProperty("boundsPadding"), new GUIContent("Extra Bounds Padding"));
+                EditorGUILayout.PropertyField(serialized.FindProperty("bakeVertexAO"),new GUIContent("Bake Vertex AO from Red"));
                 serialized.ApplyModifiedProperties();
                 EditorGUILayout.HelpBox("Keep the MGShapeID second UV set from Maya. Mesh names map explicitly to IDs below. Display translations are ignored; rotations/scales are baked by default. Freeze negative scales before export. Add enough bounds padding for wind and distance scaling.", MessageType.None);
                 if (recipe.sourceFbx != null)
@@ -105,6 +106,7 @@ namespace MashBoxSDK.MapTools
                     EditorGUILayout.ObjectField("Shared Mesh", recipe.bakedMesh, typeof(Mesh), false);
                     EditorGUILayout.ObjectField("Positions", recipe.positions, typeof(Texture2DArray), false);
                     EditorGUILayout.ObjectField("UVs", recipe.uvs, typeof(Texture2DArray), false);
+                    EditorGUILayout.ObjectField("Vertex AO (R8)", recipe.vertexAO, typeof(Texture2DArray), false);
                 }
                 EditorGUILayout.Space();
                 material = (Material)EditorGUILayout.ObjectField("GodGrass Material", material, typeof(Material), false);
@@ -158,10 +160,10 @@ namespace MashBoxSDK.MapTools
             expanded = EditorGUILayout.Foldout(expanded, "Grass Shape Layers (Sub-IDs 0–7)", true);
             if (!expanded) return;
             var properties = MaterialEditor.GetMaterialProperties(editor.targets);
-            foreach (var name in new[] { "_GrassUseShapes", "_GrassShapePositions", "_GrassShapeUVs" })
+            foreach (var name in new[] { "_GrassUseShapes", "_GrassShapePositions", "_GrassShapeUVs", "_GrassUseShapeAO", "_GrassShapeAO" })
             {
                 var property = properties.FirstOrDefault(p => p.name == name);
-                if (property != null) editor.ShaderProperty(property, name == "_GrassUseShapes" ? "Use Shape Arrays" : name == "_GrassShapePositions" ? "Position Array" : "UV Array");
+                if (property != null) editor.ShaderProperty(property, name == "_GrassUseShapes" ? "Use Shape Arrays" : name == "_GrassShapePositions" ? "Position Array" : name == "_GrassShapeUVs" ? "UV Array" : name == "_GrassUseShapeAO" ? "Use Shape AO Array" : "Vertex AO Array (R8)");
             }
             EditorGUILayout.HelpBox("Use the baker's shared mesh. Shape and texture layer use the same painted Sub-ID; the Default / Preview Sub-ID above previews both. Normals remain controlled by Normal Up / Spherical Blend.", MessageType.None);
             if (GUILayout.Button("Open Grass Shape Baker")) MGGrassShapeBakerWindow.Open();

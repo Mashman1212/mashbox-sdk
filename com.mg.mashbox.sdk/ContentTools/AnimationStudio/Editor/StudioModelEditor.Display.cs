@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private bool displayLighting = true, displayTextures = true;
-        private readonly Dictionary<Material, Material> previewMaterials = new Dictionary<Material, Material>();
+        private readonly Dictionary<(Material source, int slice), Material> previewMaterials = new Dictionary<(Material source, int slice), Material>();
         private Material neutralLit, neutralPreview;
 
         private void DrawDisplayToggles()
@@ -18,6 +18,26 @@ namespace MashBoxSDK.AnimationStudio
             bool lit = DisplayToggle(displayLighting, false, displayLighting ? "Lighting on — click for unlit" : "Unlit — click for lighting");
             bool textured = DisplayToggle(displayTextures, true, displayTextures ? "Materials and textures on — click for neutral shading" : "Neutral shading — click for materials and textures");
             if (lit != displayLighting || textured != displayTextures) SetDisplayMode(lit, textured);
+            DrawObjectWireframeToggle();
+        }
+        private static readonly Vector3[] WireframeIconLines = {
+            new Vector3(-7,-3),new Vector3(3,-3), new Vector3(3,-3),new Vector3(3,7),
+            new Vector3(3,7),new Vector3(-7,7), new Vector3(-7,7),new Vector3(-7,-3),
+            new Vector3(-3,-7),new Vector3(7,-7), new Vector3(7,-7),new Vector3(7,3),
+            new Vector3(7,3),new Vector3(-3,3), new Vector3(-3,3),new Vector3(-3,-7),
+            new Vector3(-7,-3),new Vector3(-3,-7), new Vector3(3,-3),new Vector3(7,-7),
+            new Vector3(3,7),new Vector3(7,3), new Vector3(-7,7),new Vector3(-3,3)
+        };
+        private static void DrawObjectWireframeToggle()
+        {
+            var rect=GUILayoutUtility.GetRect(24,24,GUILayout.Width(24),GUILayout.Height(24));
+            bool visible=!StudioSettings.Current.hideObjectWireframe;
+            bool next=GUI.Toggle(rect,visible,new GUIContent("", "Object wireframe — show or hide selected-object outlines. Component editing overlays stay visible."),StudioTheme.Styles.overlayButton);
+            if(next!=visible){StudioSettings.Current.hideObjectWireframe=!next;StudioSettings.Save();}
+            if(Event.current.type!=EventType.Repaint)return;
+            Handles.BeginGUI();
+            using(new Handles.DrawingScope(StudioTheme.Current.Text,Matrix4x4.Translate(rect.center))) Handles.DrawLines(WireframeIconLines);
+            Handles.EndGUI();
         }
         private static bool DisplayToggle(bool value, bool textureIcon, string tooltip)
         {
@@ -61,17 +81,19 @@ namespace MashBoxSDK.AnimationStudio
                 if (!renderer) continue;
                 var node = Document.nodes[i];
                 var originals = node.materials ?? Array.Empty<Material>();
-                if (LightingSettings.studioLights && displayLighting && displayTextures) { renderer.sharedMaterials = originals; continue; }
                 int slots = Math.Max(originals.Length,node.mesh ? node.mesh.subMeshCount : 1);
                 var materials = new Material[slots];
                 for(int slot=0;slot<slots;slot++)
-                    materials[slot] = DisplayMaterial(slot<originals.Length ? originals[slot] : null);
+                    materials[slot] = DisplayMaterial(slot<originals.Length ? originals[slot] : null, node.previewTextureSlice);
                 renderer.sharedMaterials = materials;
             }
         }
-        private Material DisplayMaterial(Material source)
+        private static bool IsGodGrass(Material source) => source && source.HasProperty("_GrassBaseArray");
+        private Material DisplayMaterial(Material source, int slice = 0)
         {
-            if (displayLighting && LightingSettings.studioLights)
+            // Editable geometry already contains its pose; terrain deformation must not run again.
+            if (LightingSettings.studioLights && displayLighting && displayTextures && !IsGodGrass(source) && source) return source;
+            if (displayLighting && LightingSettings.studioLights && !displayTextures)
             {
                 if (!neutralLit)
                 {
@@ -88,11 +110,11 @@ namespace MashBoxSDK.AnimationStudio
                 if (!neutralPreview) neutralPreview = NewPreviewMaterial(null);
                 return neutralPreview;
             }
-            if (!previewMaterials.TryGetValue(source,out var material))
-            { material = NewPreviewMaterial(source); previewMaterials.Add(source,material); }
+            if (!previewMaterials.TryGetValue((source,slice),out var material))
+            { material = NewPreviewMaterial(source,slice); previewMaterials.Add((source,slice),material); }
             return material;
         }
-        private Material NewPreviewMaterial(Material source)
+        private Material NewPreviewMaterial(Material source, int slice = 0)
         {
             var material = new Material(Shader.Find("Hidden/MashBox/AnimationStudioPreview")) { name=displayLighting ? "Studio Camera Light" : "Studio Unlit", hideFlags=HideFlags.HideAndDontSave };
             material.SetFloat("_Unlit",displayLighting ? 0 : 1);
@@ -112,7 +134,9 @@ namespace MashBoxSDK.AnimationStudio
                 if(source.HasProperty("_Cull")) material.SetFloat("_Cull",source.GetFloat("_Cull"));
                 else if(source.HasProperty("_CullMode")) material.SetFloat("_Cull",source.GetFloat("_CullMode"));
             }
-            material.SetColor("_Color",color); return material;
+            material.SetColor("_Color",color);
+            ConfigureTexturePreview(material,source,slice);
+            return material;
         }
         private void ClearDisplayMaterials()
         {

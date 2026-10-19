@@ -158,6 +158,31 @@ namespace MashBoxSDK.MapTools
             bounds.Expand(padding * 2); mesh.bounds = bounds;
         }
 
+        public static Texture2DArray BuildAO(Shape[] shapes)
+        {
+            Validate(shapes);
+            if(!SystemInfo.SupportsTextureFormat(TextureFormat.R8))throw new InvalidOperationException("This device cannot store single-channel R8 shape AO.");
+            int count=shapes[0].positions.Length,width=Mathf.Min(256,Mathf.NextPowerOfTwo(count)),height=(count+width-1)/width;
+            var array=new Texture2DArray(width,height,SliceCount,TextureFormat.R8,false,true)
+            {name="Shape Vertex AO",filterMode=FilterMode.Point,wrapMode=TextureWrapMode.Clamp,anisoLevel=0};
+            try
+            {
+                for(int slice=0;slice<SliceCount;slice++)
+                {
+                    var shape=shapes[slice]??shapes[0];var data=Enumerable.Repeat((byte)255,width*height).ToArray();
+                    for(int i=0;i<count;i++)
+                    {
+                        float value=shape.colors!=null&&shape.colors.Length==count?shape.colors[i].r:1;
+                        if(!Finite(value))throw new InvalidOperationException("AO contains a non-finite red value.");
+                        data[i]=(byte)Mathf.RoundToInt(Mathf.Clamp01(value)*255);
+                    }
+                    array.SetPixelData(data,0,slice);
+                }
+                array.Apply(false,false);return array;
+            }
+            catch {Object.DestroyImmediate(array);throw;}
+        }
+
         static T Store<T>(T created, string path) where T : Object
         {
             T existing = AssetDatabase.LoadAssetAtPath<T>(path);
@@ -184,6 +209,7 @@ namespace MashBoxSDK.MapTools
                 recipe.bakedMesh = Store(mesh, stem + "_Mesh.asset"); mesh = null;
                 recipe.positions = Store(positions, stem + "_Positions.asset"); positions = null;
                 recipe.uvs = Store(uvs, stem + "_UVs.asset"); uvs = null;
+                if(recipe.bakeVertexAO)recipe.vertexAO=Store(BuildAO(shapes),stem+"_AO.asset");
                 EditorUtility.SetDirty(recipe); AssetDatabase.SaveAssets();
             }
             finally { if (mesh) Object.DestroyImmediate(mesh); if (positions) Object.DestroyImmediate(positions); if (uvs) Object.DestroyImmediate(uvs); }
@@ -198,6 +224,11 @@ namespace MashBoxSDK.MapTools
             material.SetTexture("_GrassShapePositions", recipe.positions);
             material.SetTexture("_GrassShapeUVs", recipe.uvs);
             material.SetFloat("_GrassUseShapes", 1);
+            if(material.HasProperty("_GrassShapeAO"))
+            {
+                material.SetTexture("_GrassShapeAO",recipe.bakeVertexAO?recipe.vertexAO:null);
+                material.SetFloat("_GrassUseShapeAO",recipe.bakeVertexAO&&recipe.vertexAO?1:0);
+            }
             material.enableInstancing = true;
             EditorUtility.SetDirty(material); AssetDatabase.SaveAssets();
         }

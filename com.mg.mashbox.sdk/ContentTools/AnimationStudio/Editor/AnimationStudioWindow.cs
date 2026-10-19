@@ -29,7 +29,7 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool neutralShading = true;
         [SerializeField] private Vector2 scroll;
         private AuthoringRig rig;
-        private AnimationStudioViewport viewport;
+        private MashBoxStudioViewport viewport;
         private bool hadViewport;
         private UnityEngine.SceneManagement.Scene emptyWorkspace;
         private PoseKey pose;
@@ -195,7 +195,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorApplication.delayCall -= Restore;
             ReleaseRig();
         }
-        internal static void RestoreExistingViewport(AnimationStudioViewport view)
+        internal static void RestoreExistingViewport(MashBoxStudioViewport view)
         {
             if (!view || EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode) return;
             var window = view.Studio;
@@ -208,7 +208,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!this || rig != null || EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode) return;
             // A hidden controller can survive closing the viewport. Never recreate it on reload or Play.
-            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().FirstOrDefault(view => view.Studio == this);
+            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault(view => view.Studio == this);
             if (!viewport) return;
             if (take && take.character) { character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>(); }
             if (character)
@@ -373,7 +373,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OpenViewport()
         {
-            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().FirstOrDefault();
+            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
             bool migrateHost = viewport && !viewport.dockableHost;
             var previousPivot = migrateHost ? viewport.pivot : Vector3.zero;
             var previousRotation = migrateHost ? viewport.rotation : Quaternion.identity;
@@ -382,7 +382,7 @@ namespace MashBoxSDK.AnimationStudio
             if (migrateHost)
             {
                 var previous = viewport;
-                viewport = CreateInstance<AnimationStudioViewport>();
+                viewport = CreateInstance<MashBoxStudioViewport>();
                 viewport.dockableHost = true;
                 viewport.titleContent = new GUIContent("MashBox Studio");
                 viewport.position = previous.position;
@@ -393,7 +393,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (!viewport)
             {
-                viewport = CreateInstance<AnimationStudioViewport>();
+                viewport = CreateInstance<MashBoxStudioViewport>();
                 viewport.dockableHost = true;
                 viewport.titleContent = new GUIContent("MashBox Studio");
                 viewport.position = new Rect(150, 100, 1100, 800);

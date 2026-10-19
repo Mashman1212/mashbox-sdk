@@ -53,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
                 using(var r=new AuthoringRig(synthetic,null)) Check(Vector3.Distance(r.Root.transform.position,synthetic.transform.position)<.00001f && Quaternion.Angle(r.Root.transform.rotation,synthetic.transform.rotation)<.001f,"Source root translation and orientation survive preview construction");
                 Call(window,"FlushEdits");
                 UnityEngine.Object.DestroyImmediate(source); UnityEngine.Object.DestroyImmediate(preset); UnityEngine.Object.DestroyImmediate(synthetic);
-                foreach(var v in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
+                foreach(var v in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
                 File.WriteAllText("vehicle-outfit-result.txt","PASS: actual frame anchors, equipped defaults, joint attachment, isolated renderers, stable bone paths, handle offsets, reusable presets and source-root alignment."); EditorApplication.Exit(0);
             }
             catch(Exception e) { Debug.LogException(e); File.WriteAllText("vehicle-outfit-result.txt",e.ToString()); EditorApplication.Exit(1); }

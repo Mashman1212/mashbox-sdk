@@ -66,7 +66,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!pivotSnapHeld || evt.type != EventType.MouseDown || evt.button != 0 || evt.alt || GUIUtility.hotControl != 0) return false;
             // Axis/plane handles own their drag; do not replace it with a free snap.
             if (IsMoveHandle(HandleUtility.nearestControl) || componentMove) return false;
-            if (view is AnimationStudioViewport studio && (!studio.ModelCanvasRect.Contains(evt.mousePosition) || studio.IsOverViewportControls(evt.mousePosition))) return false;
+            if (view is MashBoxStudioViewport studio && (!studio.ModelCanvasRect.Contains(evt.mousePosition) || studio.IsOverViewportControls(evt.mousePosition))) return false;
             if (pivot && Document.IsBone(Active)) return false;
             snapMovesObjects = objectMove;
             if (objectMove)

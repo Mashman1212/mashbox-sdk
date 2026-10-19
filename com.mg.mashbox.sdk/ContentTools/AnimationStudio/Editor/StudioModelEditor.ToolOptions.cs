@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         private StudioModelToolOptions toolOptions;
         private GUIStyle toolIconStyle;
-        internal void DrawViewportOptions(AnimationStudioViewport view)
+        internal void DrawViewportOptions(MashBoxStudioViewport view)
         {
             DrawOrientationPopup(false);
             EditorGUI.BeginChangeCheck();

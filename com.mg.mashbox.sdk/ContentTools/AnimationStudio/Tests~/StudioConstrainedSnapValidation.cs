@@ -11,7 +11,7 @@ public static class StudioConstrainedSnapValidation
 {
     const BindingFlags Flags=BindingFlags.NonPublic|BindingFlags.Instance;
     static AnimationStudioWindow controller;
-    static AnimationStudioViewport view;
+    static MashBoxStudioViewport view;
     static StudioModelEditor editor;
     static readonly StudioModelEditor.MoveAxes[] axes={StudioModelEditor.MoveAxes.X,StudioModelEditor.MoveAxes.Y,StudioModelEditor.MoveAxes.Z,StudioModelEditor.MoveAxes.XY,StudioModelEditor.MoveAxes.XZ,StudioModelEditor.MoveAxes.YZ};
     static int scenario,step;
@@ -43,7 +43,7 @@ public static class StudioConstrainedSnapValidation
             typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode",Flags).Invoke(controller,new object[]{true});
             typeof(AnimationStudioWindow).GetMethod("LoadStudioModel",Flags).Invoke(controller,new object[]{doc});
             editor=(StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor",Flags).GetValue(controller);
-            view=Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First();view.position=new Rect(100,100,1800,950);
+            view=Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();view.position=new Rect(100,100,1800,950);
             view.pivot=new Vector3(.5f,.5f,0);view.rotation=Quaternion.Euler(25,135,0);view.size=3.8f;view.orthographic=true;
             oldSize=StudioSettings.Current.handleSize;oldSpacing=StudioSettings.Current.gridSpacing;
             StudioSettings.Current.handleSize=1;StudioSettings.Current.gridSpacing=.5f;

@@ -23,8 +23,11 @@ namespace MashBoxSDK.AnimationStudio
             public Quaternion rotation = Quaternion.identity;
             public Quaternion pivotRotation = Quaternion.identity;
             public Mesh mesh;
+            [SerializeReference] public StudioBlendShape blendShape;
             public int[] cutPolygons, cutTriangles;
             public Material[] materials = Array.Empty<Material>();
+            public int previewTextureSlice;
+            public bool vertexAOBaked;
             public bool skinned, active = true;
             public int[] bones = Array.Empty<int>();
             public int rootBone = -1;
@@ -173,6 +176,7 @@ namespace MashBoxSDK.AnimationStudio
         public void Repivot(int index, Transform[] transforms, Vector3 worldPosition)
         {
             if (IsBone(index)) throw new InvalidOperationException("Bone origins define the skin rig. Use Move for bones; pivot editing is available on mesh objects and groups.");
+            if(nodes[index].blendShape!=null) throw new InvalidOperationException("Bake Current Pose before editing a blend shape pivot.");
             var t = transforms[index];
             // Translation only: retain the exact linear transform, including any inherited shear.
             var matrix = t.localToWorldMatrix; matrix.SetColumn(3, new Vector4(worldPosition.x, worldPosition.y, worldPosition.z, 1));
@@ -181,6 +185,7 @@ namespace MashBoxSDK.AnimationStudio
         public void Freeze(int index, Transform[] transforms)
         {
             if (IsBone(index)) throw new InvalidOperationException("Freeze is unavailable on skin bones.");
+            if(nodes[index].blendShape!=null) throw new InvalidOperationException("Bake Current Pose before freezing a blend shape.");
             var t = transforms[index];
             var placement = t.localPosition;
             var matrix = (t.parent ? t.parent.localToWorldMatrix : Matrix4x4.identity) * Matrix4x4.Translate(placement);

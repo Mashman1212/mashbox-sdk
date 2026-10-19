@@ -15,7 +15,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static readonly List<string> Results = new List<string>();
-        static AnimationStudioWindow controller; static AnimationStudioViewport view; static StudioModelEditor editor;
+        static AnimationStudioWindow controller; static MashBoxStudioViewport view; static StudioModelEditor editor;
         static string oldModel, errors = ""; static bool hadModel; static int step, countBefore, mainRoots;
         static double next; static GameObject prefab; static Mesh meshAsset; static string prefabPath; static Vector2 pointer;
         static string ModelKey => "MashBox.LastModel." + Application.dataPath;
@@ -53,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
                 typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Private).Invoke(controller, new object[] { true });
                 typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Private).Invoke(controller, new object[] { doc });
                 editor = (StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor", Private).GetValue(controller); editor.SelectObject(cube);
-                view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.position = new Rect(100, 100, 1400, 800); view.Focus();
+                view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.position = new Rect(100, 100, 1400, 800); view.Focus();
                 mainRoots = SceneManager.GetActiveScene().rootCount;
                 Application.logMessageReceived += Log; EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + 1;
             }
@@ -95,7 +95,7 @@ namespace MashBoxSDK.AnimationStudio
                     case 4:
                         Check(editor.Document.nodes.Count == countBefore + 2, "Imported model supports Redo");
                         countBefore = editor.Document.nodes.Count;
-                        var hierarchy = (IMGUIContainer)typeof(AnimationStudioViewport).GetField("rigControls", Private).GetValue(view);
+                        var hierarchy = (IMGUIContainer)typeof(MashBoxStudioViewport).GetField("rigControls", Private).GetValue(view);
                         Drop(meshAsset, hierarchy.layout.position + new Vector2(90, 240)); break;
                     case 5:
                         Check(editor.Document.nodes.Count == countBefore + 1 && editor.ActiveMesh && editor.ActiveMesh != meshAsset, "Hierarchy drop imports a standalone mesh into an editable copy");

@@ -11,7 +11,7 @@ public static class StudioObjectVertexSnapValidation
 {
     const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
     static AnimationStudioWindow controller;
-    static AnimationStudioViewport view;
+    static MashBoxStudioViewport view;
     static StudioModelEditor editor;
     static Vector3 source, destination, sourcePosition, targetPosition;
     static Vector2 sourceScreen, targetScreen;
@@ -60,7 +60,7 @@ public static class StudioObjectVertexSnapValidation
             sourcePosition=editor.Transforms[0].position; targetPosition=editor.Transforms[1].position;
             source=sourcePosition+new Vector3(.5f,.5f,-.5f); destination=targetPosition+new Vector3(-.5f,.5f,-.5f);
             meshBefore=editor.ActiveMesh.vertices; diskBefore=File.ReadAllBytes(AssetDatabase.GetAssetPath(doc));
-            view=Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.position=new Rect(100,100,1600,850);
+            view=Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.position=new Rect(100,100,1600,850);
             view.pivot=Vector3.zero; view.rotation=Quaternion.identity; view.size=3; view.orthographic=true; view.Focus();
             SceneView.duringSceneGui+=Capture; Application.logMessageReceived+=Log; EditorApplication.update+=Tick;
             next=EditorApplication.timeSinceStartup+1;

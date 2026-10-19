@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         internal sealed class Item
         {
             internal string Text;
+            internal string Shortcut;
             internal bool Checked, Enabled = true, Separator;
             internal Action Action;
             internal readonly List<Item> Children = new List<Item>();
@@ -27,7 +28,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (branch == null) { branch = new Item { Text = parts[i] }; level.Add(branch); }
                 level = branch.Children;
             }
-            level.Add(new Item { Text = parts[parts.Length - 1], Checked = selected, Enabled = enabled, Action = action });
+            var label = parts[parts.Length - 1].Split('\t');
+            level.Add(new Item { Text = label[0], Shortcut = label.Length > 1 ? label[1] : "", Checked = selected, Enabled = enabled, Action = action });
         }
         internal void AddSeparator(string path)
         {
@@ -56,7 +58,8 @@ namespace MashBoxSDK.AnimationStudio
         private readonly List<int> selected = new List<int>();
         private Rect anchor;
         private int activeColumn;
-        private GUIStyle textStyle;
+        private GUIStyle textStyle, shortcutStyle;
+        private float columnWidth = ColumnWidth;
         private bool positioning;
         internal static StudioMenuPopup Open(StudioMenu menu, Rect screenAnchor)
         {
@@ -70,13 +73,18 @@ namespace MashBoxSDK.AnimationStudio
         private Vector2 MenuSize()
         {
             float height = 0;
+            columnWidth = ColumnWidth;
+            var measure = new GUIStyle(EditorStyles.label) { fontSize = 12 };
+            foreach (var column in columns) foreach (var item in column)
+                columnWidth = Mathf.Max(columnWidth, measure.CalcSize(new GUIContent(item.Text)).x +
+                    measure.CalcSize(new GUIContent(item.Shortcut)).x + 80);
             foreach (var column in columns)
             {
                 float current = Padding * 2;
                 foreach (var item in column) current += item.Separator ? 7 : RowHeight;
                 height = Mathf.Max(height, current);
             }
-            return new Vector2(ColumnWidth * columns.Count, height);
+            return new Vector2(columnWidth * columns.Count, height);
         }
         private void SelectRow(int column, int row, bool expand)
         {
@@ -155,18 +163,25 @@ namespace MashBoxSDK.AnimationStudio
             int hitColumn = -1, hitRow = -1;
             for (int c = 0; c < columns.Count; c++)
             {
-                float x = c * ColumnWidth, y = Padding;
+                float x = c * columnWidth, y = Padding;
                 if (c > 0) EditorGUI.DrawRect(new Rect(x, 0, 1, position.height), StudioTheme.Current.Border);
                 for (int r = 0; r < columns[c].Count; r++)
                 {
                     var item = columns[c][r];
-                    if (item.Separator) { EditorGUI.DrawRect(new Rect(x + 10, y + 3, ColumnWidth - 20, 1), StudioTheme.Current.Border); y += 7; continue; }
-                    var rect = new Rect(x + Padding, y, ColumnWidth - Padding * 2, RowHeight); y += RowHeight;
+                    if (item.Separator) { EditorGUI.DrawRect(new Rect(x + 10, y + 3, columnWidth - 20, 1), StudioTheme.Current.Border); y += 7; continue; }
+                    var rect = new Rect(x + Padding, y, columnWidth - Padding * 2, RowHeight); y += RowHeight;
                     if (rect.Contains(evt.mousePosition)) { hitColumn = c; hitRow = r; }
                     if (selected[c] == r && item.Enabled) EditorGUI.DrawRect(rect, StudioTheme.Current.Selection);
                     textStyle.normal.textColor = item.Enabled ? StudioTheme.Current.Text : StudioTheme.Current.Muted;
                     if (item.Checked) GUI.Label(new Rect(rect.x + 3, rect.y, 18, rect.height), "✓", textStyle);
-                    GUI.Label(new Rect(rect.x + 24, rect.y, rect.width - 46, rect.height), item.Text, textStyle);
+                    float shortcutWidth = string.IsNullOrEmpty(item.Shortcut) ? 0 : textStyle.CalcSize(new GUIContent(item.Shortcut)).x + 16;
+                    GUI.Label(new Rect(rect.x + 24, rect.y, rect.width - 46 - shortcutWidth, rect.height), item.Text, textStyle);
+                    if (shortcutWidth > 0)
+                    {
+                        if (shortcutStyle == null) shortcutStyle = new GUIStyle(textStyle) { alignment = TextAnchor.MiddleRight };
+                        shortcutStyle.normal.textColor = StudioTheme.Current.Muted;
+                        GUI.Label(new Rect(rect.xMax - 18 - shortcutWidth, rect.y, shortcutWidth, rect.height), item.Shortcut, shortcutStyle);
+                    }
                     if (item.Children.Count > 0) GUI.Label(new Rect(rect.xMax - 18, rect.y, 16, rect.height), "›", textStyle);
                 }
             }

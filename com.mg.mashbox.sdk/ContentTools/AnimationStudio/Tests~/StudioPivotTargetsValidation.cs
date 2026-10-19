@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static readonly List<string> Results = new List<string>();
-        static AnimationStudioWindow controller; static AnimationStudioViewport view; static StudioModelEditor editor;
+        static AnimationStudioWindow controller; static MashBoxStudioViewport view; static StudioModelEditor editor;
         static string oldModel, errors = ""; static bool hadModel; static int step; static double next;
         static Vector3 beforePosition; static Quaternion beforeOrientation;
         static Vector2 mouse;
@@ -80,7 +80,7 @@ namespace MashBoxSDK.AnimationStudio
                 typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode", Private).Invoke(controller, new object[] { true });
                 typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Private).Invoke(controller, new object[] { doc });
                 editor = (StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor", Private).GetValue(controller); editor.SelectObject(0);
-                view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First();
+                view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();
                 view.position = new Rect(100, 100, 1800, 900); view.pivot = Vector3.zero; view.rotation = Quaternion.identity; view.size = 4; view.orthographic = true; view.Focus();
                 Application.logMessageReceived += Log; EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + 1;
             }

@@ -11,7 +11,7 @@ public static class StudioComponentPivotValidation
 {
     const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
     static AnimationStudioWindow controller;
-    static AnimationStudioViewport view;
+    static MashBoxStudioViewport view;
     static StudioModelEditor editor;
     static Vector3[] beforeDrag;
     static HashSet<int> selected;
@@ -51,7 +51,7 @@ public static class StudioComponentPivotValidation
             editor.SelectObject(0);
             originalHandleSize = StudioSettings.Current.handleSize;
             ValidateActions();
-            view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First();
+            view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();
             view.position = new Rect(100, 100, 1400, 850);
             Setup(); view.Focus();
             SceneView.duringSceneGui += Capture; Application.logMessageReceived += Log;

@@ -15,7 +15,7 @@ namespace MashBoxSDK.AnimationStudio
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static readonly List<string> Results = new List<string>();
         static AnimationStudioWindow controller;
-        static AnimationStudioViewport view;
+        static MashBoxStudioViewport view;
         static StudioModelEditor editor;
         static string path, oldModel, errors = "";
         static bool hadModel;
@@ -42,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
                 typeof(AnimationStudioWindow).GetMethod("LoadStudioModel", Private).Invoke(controller, new object[] { doc });
                 editor = (StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor", Private).GetValue(controller);
                 editor.SelectObject(0);
-                view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.Focus();
+                view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.Focus();
                 mainRoots = SceneManager.GetActiveScene().rootCount;
                 Application.logMessageReceived += Log; EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + 1;
             }

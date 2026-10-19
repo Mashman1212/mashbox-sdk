@@ -60,7 +60,7 @@ namespace MashBoxSDK.AnimationStudio
                 UnityEngine.Object.DestroyImmediate(baked);
                 Call(window,"FlushEdits");
                 Check(File.ReadAllText(AssetDatabase.GetAssetPath(take)).Contains("Shoulder correction"),"Layer names, memberships, offsets and keys persist in the asset");
-                foreach(var v in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
+                foreach(var v in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
                 File.WriteAllText("layers-result.txt","PASS: additive/override weighting, base protection, masks, mute/solo, mode conversion, constant offsets, IK layers, hotkeys, export and persistence."); EditorApplication.Exit(0);
             }
             catch(Exception e) { Debug.LogException(e); File.WriteAllText("layers-result.txt",e.ToString()); EditorApplication.Exit(1); }

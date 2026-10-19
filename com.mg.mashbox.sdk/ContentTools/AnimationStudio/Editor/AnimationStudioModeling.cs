@@ -60,13 +60,13 @@ namespace MashBoxSDK.AnimationStudio
             var content = modelingMode
                 ? new GUIContent(" Modeling", EditorGUIUtility.IconContent("Mesh Icon").image, "Switch studio mode")
                 : new GUIContent(" Animation", EditorGUIUtility.IconContent("AnimationClip Icon").image, "Switch studio mode");
-            var rect = new Rect(0, 0, AnimationStudioViewport.ModeSelectorWidth, 21);
+            var rect = new Rect(0, 0, MashBoxStudioViewport.ModeSelectorWidth, 21);
             if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, StudioTheme.Styles.menuDropdown)) return;
             var menu = new StudioMenu();
             menu.AddItem(new GUIContent("Animation"), !modelingMode, () => SwitchStudioMode(false));
             menu.AddItem(new GUIContent("Modeling"), modelingMode, () => SwitchStudioMode(true));
             menu.AddSeparator("");
-            menu.AddItem(new GUIContent(viewport.IsStudioMaximized ? "Restore View  F11" : "Maximize View  F11"), false, viewport.ToggleMaximized);
+            menu.AddItem(new GUIContent(viewport.IsStudioMaximized ? "Restore View\tF11" : "Maximize View\tF11"), false, viewport.ToggleMaximized);
             menu.DropDown(rect);
         }
         private void DrawModelViewportOptions()

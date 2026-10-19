@@ -14,7 +14,7 @@ namespace MashBoxSDK.AnimationStudio
         const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         static readonly List<string> Results = new List<string>();
         static AnimationStudioWindow controller;
-        static AnimationStudioViewport view;
+        static MashBoxStudioViewport view;
         static StudioModelDocument doc;
         static string oldModel, errors = "";
         static bool hadModel;
@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
             AnimationStudioWindow.Open(); controller = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
             typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode",Private).Invoke(controller,new object[] {true});
             typeof(AnimationStudioWindow).GetMethod("LoadStudioModel",Private).Invoke(controller,new object[] {doc});
-            view = Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().First(); view.Focus();
+            view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(); view.Focus();
             Application.logMessageReceived += Log; EditorApplication.update += Tick; next = EditorApplication.timeSinceStartup + 1;
         }
         static void Log(string text, string stack, LogType type) { if(type == LogType.Error || type == LogType.Exception || type == LogType.Assert) errors += text + "\n" + stack; }
@@ -46,13 +46,13 @@ namespace MashBoxSDK.AnimationStudio
                     case 0:
                         Check(view.dockableHost && Parent(view).GetType().Name == "DockArea","MashBox Studio opens inside Unity's dockable tab container");
                         int id = view.GetInstanceID(); Open();
-                        Check(view.GetInstanceID() == id && Resources.FindObjectsOfTypeAll<AnimationStudioViewport>().Length == 1,"Reopening reuses the existing studio tab");
+                        Check(view.GetInstanceID() == id && Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().Length == 1,"Reopening reuses the existing studio tab");
                         // Exercise migration from an already-open utility host.
                         view.Close();
-                        var legacy = ScriptableObject.CreateInstance<AnimationStudioViewport>(); legacy.Studio = controller;
+                        var legacy = ScriptableObject.CreateInstance<MashBoxStudioViewport>(); legacy.Studio = controller;
                         legacy.ShowUtility(); legacy.pivot = new Vector3(2,3,4); legacy.rotation = Quaternion.Euler(20,40,0); legacy.size = 7; legacy.orthographic = true; legacy.modelGridVisible = false;
                         typeof(AnimationStudioWindow).GetField("viewport",Private).SetValue(controller,legacy);
-                        Open(); view = (AnimationStudioViewport)typeof(AnimationStudioWindow).GetField("viewport",Private).GetValue(controller);
+                        Open(); view = (MashBoxStudioViewport)typeof(AnimationStudioWindow).GetField("viewport",Private).GetValue(controller);
                         Check(!legacy && Parent(view).GetType().Name == "DockArea","Existing utility studio migrates into a dockable host");
                         Check(Vector3.Distance(view.pivot,new Vector3(2,3,4)) < .001f && Quaternion.Angle(view.rotation,Quaternion.Euler(20,40,0)) < .001f && Mathf.Abs(view.size-7)<.001f && view.orthographic,"Migration retains camera framing and projection");
                         Check(!view.modelGridVisible && view.Studio == controller,"Migration retains grid visibility and studio ownership");

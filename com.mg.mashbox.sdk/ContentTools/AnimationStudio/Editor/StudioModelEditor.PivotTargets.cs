@@ -48,8 +48,8 @@ namespace MashBoxSDK.AnimationStudio
             if (!pivot || !CanAdjustPivot ||
                 evt.alt || pivotSnapHeld || GUIUtility.hotControl != 0 || evt.type == EventType.MouseLeaveWindow)
             { pivotHover = null; return false; }
-            var canvas = view is AnimationStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
-            if (!canvas.Contains(evt.mousePosition) || (view is AnimationStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition)))
+            var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
+            if (!canvas.Contains(evt.mousePosition) || (view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition)))
             { pivotHover = null; return false; }
             if (evt.type == EventType.MouseMove || evt.type == EventType.MouseDown)
             {

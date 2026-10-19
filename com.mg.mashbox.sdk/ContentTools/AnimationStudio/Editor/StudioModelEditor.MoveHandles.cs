@@ -100,7 +100,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (Event.current.type != EventType.Repaint) return;
             var text = SnapStatusText; if (text == null) return;
-            var canvas = view is AnimationStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
+            var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
             Handles.BeginGUI();
             var content = new GUIContent(text);
             var style = EditorStyles.whiteLabel;

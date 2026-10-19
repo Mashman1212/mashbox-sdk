@@ -178,6 +178,9 @@ namespace MashBoxSDK.MapTools
                             editor.m_WorldPaintDelegate = true;
                             editor.m_PaintDetailIndex = index;
                             editor.m_GrassPaintSubId = m_GrassPaintSubId;
+                            editor.m_RandomGrassSubIds = m_RandomGrassSubIds;
+                            editor.m_GrassSubIdMask = m_GrassSubIdMask;
+                            editor.m_GrassMixSeed = m_GrassMixSeed;
                             editor.m_GrassIdOnly = m_GrassIdOnly;
                             editor.m_GrassPaintPopulation = m_GrassPaintPopulation;
                             editor.m_PaintChannel = channel; editor.m_PaintDensity = m_PaintDensity;

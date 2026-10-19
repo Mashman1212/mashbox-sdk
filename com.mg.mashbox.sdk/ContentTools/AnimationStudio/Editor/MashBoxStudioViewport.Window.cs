@@ -4,7 +4,7 @@ using System.Reflection;
 
 namespace MashBoxSDK.AnimationStudio
 {
-    public sealed partial class AnimationStudioViewport
+    public sealed partial class MashBoxStudioViewport
     {
         private const BindingFlags WindowMembers = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         private static readonly FieldInfo HostField = typeof(EditorWindow).GetField("m_Parent", WindowMembers);

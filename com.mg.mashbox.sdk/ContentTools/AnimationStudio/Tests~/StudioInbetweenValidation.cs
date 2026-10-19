@@ -33,7 +33,7 @@ namespace MashBoxSDK.AnimationStudio
     AnimationStudioWindow.OpenInStudio(take); var window=Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
     var request=Call(window,"CaptureInbetween",take,10,50); Directory.CreateDirectory(Job);
     File.WriteAllText(Job+"/request.json",JsonUtility.ToJson(request)); File.WriteAllText(Job+"/take-path.txt",AssetDatabase.GetAssetPath(take));
-    Call(window,"FlushEdits"); foreach(var v in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
+    Call(window,"FlushEdits"); foreach(var v in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
     Debug.Log("PASS: actual Humanoid poses exported for local Kimodo"); EditorApplication.Exit(0);
    }
    catch(Exception e) { Debug.LogException(e); EditorApplication.Exit(1); }
@@ -61,7 +61,7 @@ namespace MashBoxSDK.AnimationStudio
     Check(take.layers[0].keys.Skip(1).Take(39).Any(k=>k.bones.Select((b,i)=>Quaternion.Angle(b.rotation,before[k.frame].bones[i].rotation)).Max()>1),"Interior frames contain generated motion");
     take.layers[0].muted=true;
     Check(Quaternion.Angle(take.Evaluate(25).bones[10].rotation,before[25].bones[10].rotation)<.01f,"Muting restores source animation");
-    Call(window,"FlushEdits"); foreach(var v in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
+    Call(window,"FlushEdits"); foreach(var v in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) v.Close(); UnityEngine.Object.DestroyImmediate(window);
     File.WriteAllText(Job+"/unity-result.txt","PASS"); EditorApplication.Exit(0);
    }
    catch(Exception e) { Debug.LogException(e); File.WriteAllText(Job+"/unity-result.txt",e.ToString()); EditorApplication.Exit(1); }

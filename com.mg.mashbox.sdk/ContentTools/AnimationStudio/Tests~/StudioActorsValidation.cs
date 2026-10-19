@@ -53,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
                 Call(window,"FlushEdits");
                 var path=AssetDatabase.GetAssetPath(take);
                 Check(File.ReadAllText(path).Contains("actors:"),"Actor references save with the session");
-                foreach(var view in Resources.FindObjectsOfTypeAll<AnimationStudioViewport>()) view.Close();
+                foreach(var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) view.Close();
                 UnityEngine.Object.DestroyImmediate(window); window=null;
                 File.WriteAllText("actors-result.txt","PASS: actual bike rig, shared scene/clock, separate persisted keys, pedal linkage, source FBX import and generic bake."); EditorApplication.Exit(0);
             }

@@ -34,7 +34,15 @@ namespace MashBoxSDK.MapTools
             {
                 var layer = terrain.DensityDetailLayers[i];
                 if (layer.PrototypeIndex != prototype || layer.PaletteSourceOnly) continue;
-                if (layer.GrassIdMap != null) { hasShared = true; width = layer.DensityMap.width; height = layer.DensityMap.height; continue; }
+                if (layer.GrassIdMap != null)
+                {
+                    hasShared = true;
+                    // World definitions can have IDs before this tile receives its first density stroke.
+                    var resolutionMap = layer.DensityMap != null ? layer.DensityMap : layer.GrassIdMap;
+                    width = resolutionMap.width;
+                    height = resolutionMap.height;
+                    continue;
+                }
                 if (layer.GeneratedByPalette != null) throw new InvalidOperationException("Convert palette-generated grass to standalone paint before using shared populations.");
                 sources.Add(i);
                 if (layer.DensityMap != null)
