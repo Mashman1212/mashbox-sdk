@@ -9,10 +9,8 @@ namespace MashBoxSDK.AnimationStudio
     {
         private int timelineRangeStart=-1, timelineRangeEnd=-1;
         private bool timelineRangeDrag;
-        private AnimationTake timelineSelectionActor, timelineClipboardActor;
-        private List<PoseKey> timelineSelectionKeys, timelineClipboardTrack;
-        private List<PoseKey> timelineClipboard = new List<PoseKey>();
-        private int timelineClipboardOrigin;
+        private AnimationTake timelineSelectionActor;
+        private List<PoseKey> timelineSelectionKeys;
         [SerializeField] private AnimationTake timelineViewTake;
         [SerializeField] private int timelineViewFirst;
         [SerializeField] private int timelineViewLast = -1;
@@ -104,9 +102,16 @@ namespace MashBoxSDK.AnimationStudio
             TimelineSharedFrame(actor,key.frame)<=Mathf.Max(timelineRangeStart,timelineRangeEnd);
         private void CopyTimelineKeys(AnimationTake actor,List<PoseKey> keys)
         {
-            timelineClipboard=keys.Where(k=>TimelineInRange(actor,k)).Select(k=>k.Copy(k.frame)).ToList();
-            timelineClipboardActor=actor; timelineClipboardTrack=keys;
-            timelineClipboardOrigin=Mathf.RoundToInt((float)Mathf.Min(timelineRangeStart,timelineRangeEnd)/take.frameRate*actor.frameRate);
+            if(timelineRangeStart<0) return;
+            FlushEdits();
+            float origin=Mathf.Min(timelineRangeStart,timelineRangeEnd)/(float)take.frameRate;
+            var selected=keys.Where(k=>TimelineInRange(actor,k)).ToArray();
+            InSelectedActor(actor,()=>
+            {
+                SelectedControlMasks(out var bones,out var effectors);
+                var clipboard=StudioKeyClipboard.Capture(actor,keys,selected,bones,effectors,origin);
+                if(clipboard.keys.Length>0) clipboard.Store();
+            });
         }
         private void DeleteTimelineKeys(AnimationTake actor,List<PoseKey> keys)
         {
@@ -237,36 +242,23 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void PasteTimelineKeys(AnimationTake actor,List<PoseKey> keys,int destination)
         {
-            if(timelineClipboard.Count==0 || actor!=timelineClipboardActor || keys!=timelineClipboardTrack) return;
-            FinishSceneEdit(); FinishActorEdits(); playing=false;
-            Undo.RegisterCompleteObjectUndo(actor,"Paste timeline keys");
-            if(actor!=take) Undo.RecordObject(take,"Extend timeline");
-            int origin=Mathf.RoundToInt((float)destination/take.frameRate*actor.frameRate);
-            foreach(var source in timelineClipboard)
-            {
-                int target=origin+source.frame-timelineClipboardOrigin;
-                keys.RemoveAll(k=>k.frame==target); keys.Add(source.Copy(target));
-            }
-            keys.Sort((a,b)=>a.frame.CompareTo(b.frame));
-            actor.lastFrame=Mathf.Max(actor.lastFrame,keys.Max(k=>k.frame));
-            take.lastFrame=Mathf.Max(take.lastFrame,Mathf.CeilToInt((float)actor.lastFrame/actor.frameRate*take.frameRate));
-            timelineRangeStart=destination;
-            timelineRangeEnd=TimelineSharedFrame(actor,origin+timelineClipboard.Max(k=>k.frame)-timelineClipboardOrigin);
-            EditorUtility.SetDirty(actor); Save(); Seek(frame);
+            PasteCachedKeys(actor,keys,destination,false);
         }
         private void TimelineContextMenu(AnimationTake actor,List<PoseKey> keys,int atFrame)
         {
             var menu=new GenericMenu();
             int count=SelectedTimelineKeys(actor,keys).Count(k=>TimelineInRange(actor,k));
-            if(count>0) menu.AddItem(new GUIContent("Copy selected keys"),false,()=>CopyTimelineKeys(actor,keys));
+            if(count>0) menu.AddItem(new GUIContent("Copy selected keys"),false,()=>Guard(()=>CopyTimelineKeys(actor,keys)));
             else menu.AddDisabledItem(new GUIContent("Copy selected keys"));
             if(count>0)
                 menu.AddItem(new GUIContent("Delete keys for selected controls"),false,()=>DeleteTimelineKeys(actor,keys));
             else menu.AddDisabledItem(new GUIContent("Delete keys for selected controls"));
             menu.AddSeparator("");
-            if(timelineClipboard.Count>0 && actor==timelineClipboardActor && keys==timelineClipboardTrack)
-                menu.AddItem(new GUIContent("Paste keys at frame "+atFrame+" (replace matching keys)"),false,()=>PasteTimelineKeys(actor,keys,atFrame));
-            else menu.AddDisabledItem(new GUIContent("Paste keys (copy from this actor and layer first)"));
+            AddClipboardMenuItems(actor,keys,atFrame,(label,enabled,action)=>
+            {
+                if(enabled) menu.AddItem(new GUIContent(label),false,()=>Guard(action));
+                else menu.AddDisabledItem(new GUIContent(label));
+            });
             menu.AddItem(new GUIContent("Clear range selection"),false,()=>{ timelineRangeStart=timelineRangeEnd=-1; viewport?.Repaint(); });
             if(MotionGenerationAvailable)
             {
@@ -379,9 +371,9 @@ namespace MashBoxSDK.AnimationStudio
                 if(evt.keyCode==KeyCode.Delete || evt.keyCode==KeyCode.Backspace)
                 { if(timelineRangeStart>=0) DeleteTimelineKeys(timelineActor,layerKeys); evt.Use(); }
                 else if((evt.control || evt.command) && evt.keyCode==KeyCode.C)
-                { CopyTimelineKeys(timelineActor,layerKeys); evt.Use(); }
+                { Guard(()=>CopyTimelineKeys(timelineActor,layerKeys)); evt.Use(); }
                 else if((evt.control || evt.command) && evt.keyCode==KeyCode.V)
-                { PasteTimelineKeys(timelineActor,layerKeys,frame); evt.Use(); }
+                { Guard(()=>PasteTimelineKeys(timelineActor,layerKeys,frame)); evt.Use(); }
             }
             switch (evt.GetTypeForControl(id))
             {

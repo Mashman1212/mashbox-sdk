@@ -109,7 +109,7 @@ static class MGGrassSubIdSizeValidation
                 Set(m,"_GrassLayer03_GrassWidthMultiplier",1);Set(m,"_GrassLayer03_GrassHeightMultiplier",2);RectInt tall=Capture(m,mesh,name+"_03_Height2");
                 Check(Math.Abs(tall.height-baseline.height*2)<=3 && Math.Abs(tall.width-baseline.width)<=2 && Math.Abs(tall.y-baseline.y)<=2,"Height or root anchoring wrong");
                 Set(m,"_GrassLayer03_GrassHeightMultiplier",1);Set(m,"_GrassLayer04_GrassWidthMultiplier",2);Set(m,"_GrassLayer04_GrassHeightMultiplier",2);
-                RectInt other=Capture(m,mesh,name+"_04_OtherIndex");Check(other==baseline,"Another index changed this index's size");
+                RectInt other=Capture(m,mesh,name+"_04_OtherIndex");Check(other.Equals(baseline),"Another index changed this index's size");
                 Set(m,"_GrassUseLayerParameters",0);Set(m,"_GrassWidthMultiplier",2);RectInt shared=Capture(m,mesh,name+"_05_Shared");
                 Check(Math.Abs(shared.width-wide.width)<=2 && Math.Abs(shared.height-wide.height)<=2,"Shared fallback size failed");
                 log.AppendLine($"PASS {name}: all 16 per-index defaults 1; width {baseline.width}->{wide.width}, height {baseline.height}->{tall.height}, root anchored, other index isolated, shared fallback correct; actual HDRP shader captures.");

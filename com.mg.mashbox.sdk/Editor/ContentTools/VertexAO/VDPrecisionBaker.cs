@@ -178,7 +178,7 @@ internal static class VDPrecisionBaker
                 if (settings.sceneOccluders)
                 {
                     var scenes = new HashSet<Scene>(targets.Select(t => t.gameObject.scene));
-                    occluders = Object.FindObjectsByType<MeshFilter>()
+                    occluders = Object.FindObjectsByType<MeshFilter>(FindObjectsSortMode.None)
                         .Where(f => scenes.Contains(f.gameObject.scene) && f.gameObject.activeInHierarchy
                             && f.TryGetComponent<MeshRenderer>(out var renderer) && renderer.enabled);
                 }
