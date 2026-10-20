@@ -10,17 +10,84 @@ namespace MashBoxSDK.AnimationStudio
         {
             internal int[] indices;
             internal Vector3[] lines;
+            internal int[] orderedIndices, stripEnds;
+            internal Vector3[] worldVertices, strokePoints;
             internal Mesh baked;
             internal readonly List<Vector3> vertices = new List<Vector3>();
+            internal GraphicsBuffer positionBuffer, edgeBuffer;
+            internal GraphicsBuffer adjacentBuffer;
+            internal int[] adjacent;
+            internal bool batchPositionsDirty = true;
         }
         private readonly Vector3[] outlineSegment = new Vector3[2];
+        private Texture2D componentEdgeStroke;
+        private Texture2D ComponentEdgeStroke
+        {
+            get
+            {
+                if(componentEdgeStroke)return componentEdgeStroke;
+                const int samples=64;
+                componentEdgeStroke=new Texture2D(1,samples,TextureFormat.RGBA32,false,true)
+                {hideFlags=HideFlags.HideAndDontSave,wrapMode=TextureWrapMode.Clamp,filterMode=FilterMode.Bilinear};
+                // Three-pixel stroke: two-pixel opaque core, half-pixel AA borders.
+                var pixels=new Color[samples];
+                for(int i=0;i<samples;i++)
+                {
+                    float t=(float)i/(samples-1);
+                    pixels[i]=new Color(1,1,1,Mathf.Clamp01(Mathf.Min(t,1-t)*6));
+                }
+                componentEdgeStroke.SetPixels(pixels);componentEdgeStroke.Apply(false,true);
+                return componentEdgeStroke;
+            }
+        }
         private Camera outlineCamera;
+        private Vector3 outlineCameraPosition, outlineCameraForward;
+        private bool outlineOrthographic;
+        private float outlineNearClip;
+        internal int ObjectWireDrawCalls { get; private set; }
+        internal bool UseBatchedWireframes { get; set; } = true;
+        internal bool SelectionOutlineEnabled { get; set; } = true;
         private readonly Dictionary<StudioModelDocument.Node, SelectionWireframe> selectionWireframes = new Dictionary<StudioModelDocument.Node, SelectionWireframe>();
         private void ClearSelectionWireframes()
         {
             ClearComponentDrawing();
-            foreach(var wire in selectionWireframes.Values) if(wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked);
+            foreach(var wire in selectionWireframes.Values) { if(wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked); ReleaseWireBatch(wire); }
             selectionWireframes.Clear();
+        }
+        private void PositionsChanged()
+        {
+            var mesh=ActiveMesh;
+            // Separating UV/normal seams can change position-based edge deduplication.
+            // Rebuild only that mesh in this case, never every object in the scene.
+            if(!weld&&Document)
+                foreach(var node in Document.nodes)
+                    if(node.mesh==mesh&&selectionWireframes.TryGetValue(node,out var oldWire))
+                    {
+                        if(oldWire.baked)UnityEngine.Object.DestroyImmediate(oldWire.baked);
+                        ReleaseWireBatch(oldWire);
+                        selectionWireframes.Remove(node);
+                    }
+            // A deformation keeps polygon/edge indices intact. Update only their
+            // position buffers, including other nodes sharing this mesh.
+            foreach(var pair in selectionWireframes)
+            {
+                var wire=pair.Value;
+                if(pair.Key.mesh!=mesh||wire.baked)continue;
+                int count=wire.vertices.Count;
+                mesh.GetVertices(wire.vertices);
+                wire.batchPositionsDirty = true;
+                if(wire.vertices.Count!=count){ClearSelectionWireframes();break;}
+                for(int i=0;i<wire.lines.Length;i++)wire.lines[i]=wire.vertices[wire.indices[i]];
+            }
+            RefreshComponentPositions();
+            CaptureUndoMeshVersions();
+            componentFrameValid=false;pivotTargetCache.Clear();pivotHover=null;
+            if(Document)
+            {
+                foreach(var node in Document.nodes)if(node.mesh==mesh)statisticsCache.Remove(node);
+                EditorUtility.SetDirty(Document);
+            }
+            repaint();
         }
         internal IEnumerable<int> SelectedWireframeNodes()
         { foreach(int i in VisibleWireframeNodes()) if(objects.Contains(i)||HasSelectedParent(i))yield return i; }
@@ -41,6 +108,8 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawVisibleObjectWireframes(Camera camera)
         {
             outlineCamera=camera;
+            if(camera){outlineCameraPosition=camera.transform.position;outlineCameraForward=camera.transform.forward;outlineOrthographic=camera.orthographic;outlineNearClip=camera.nearClipPlane;}
+            ObjectWireDrawCalls=0;
             var depth=Handles.zTest;bool lighting=Handles.lighting;
             try
             {
@@ -48,19 +117,98 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.lighting=false;
                 foreach(int i in VisibleWireframeNodes())
                 {
-                    if(StudioSettings.Current.hideObjectWireframe&&(mode==ComponentMode.Object||i!=Active))continue;
-                    var lines=SelectionWireframeLines(i);
-                    var color=objects.Contains(i)||HasSelectedParent(i)?new Color(.2f,.9f,.75f,1):new Color(.12f,.15f,.18f,1);
+                    bool selected=objects.Contains(i)||HasSelectedParent(i);
+                    bool highlight=selected&&SelectionOutlineEnabled&&mode==ComponentMode.Object;
+                    bool drawWire=!StudioSettings.Current.hideObjectWireframe || (mode!=ComponentMode.Object&&i==Active);
+                    if(!drawWire&&!highlight)continue;
+                    SelectionWireframeLines(i);
+                    var wire=selectionWireframes[Document.nodes[i]];
+                    var color=highlight?new Color(1,.65f,.15f,1):selected?new Color(.2f,.9f,.75f,1):new Color(.12f,.15f,.18f,1);
+                    float width=highlight?1.2f:1.25f;
                     using(new Handles.DrawingScope(color,Matrix4x4.identity))
-                        for(int e=0;e+1<lines.Length;e+=2) DrawNativeEdge(Transforms[i].TransformPoint(lines[e]),Transforms[i].TransformPoint(lines[e+1]),2);
+                    {
+                        if (UseBatchedWireframes && DrawWireBatch(wire,Transforms[i].localToWorldMatrix,color,width,camera)) ObjectWireDrawCalls++;
+                        else ObjectWireDrawCalls+=DrawNativeWireframe(wire,Transforms[i].localToWorldMatrix,width);
+                    }
                 }
             }
             finally {Handles.zTest=depth;Handles.lighting=lighting;}
         }
-        private void DrawNativeEdge(Vector3 a,Vector3 b,float width)
+        private static void BuildWireframeStrokes(SelectionWireframe wire,int[] canonical)
+        {
+            int edgeCount=wire.indices.Length/2;
+            var adjacency=new List<int>[canonical.Length];
+            for(int e=0;e<edgeCount;e++)
+            {
+                int a=canonical[wire.indices[e*2]],b=canonical[wire.indices[e*2+1]];
+                if(adjacency[a]==null)adjacency[a]=new List<int>();
+                if(adjacency[b]==null)adjacency[b]=new List<int>();
+                adjacency[a].Add(e);adjacency[b].Add(e);
+            }
+            var starts=new Queue<int>();
+            for(int v=0;v<adjacency.Length;v++)if(adjacency[v]!=null&&(adjacency[v].Count&1)!=0)starts.Enqueue(v);
+            for(int v=0;v<adjacency.Length;v++)if(adjacency[v]!=null)starts.Enqueue(v);
+            var used=new bool[edgeCount];var next=new int[canonical.Length];
+            var ordered=new List<int>(wire.indices.Length);var ends=new List<int>();int maxPoints=2;
+            bool Take(int vertex,out int edge)
+            {
+                var adjacent=adjacency[vertex];
+                while(next[vertex]<adjacent.Count)
+                {
+                    edge=adjacent[next[vertex]++];
+                    if(!used[edge])return true;
+                }
+                edge=-1;return false;
+            }
+            // Build connected trails once. No added connector edges and no
+            // per-frame graph traversal, lists or arrays during drawing.
+            while(starts.Count>0)
+            {
+                int vertex=starts.Dequeue(),begin=ordered.Count;
+                while(Take(vertex,out int edge))
+                {
+                    used[edge]=true;
+                    int a=wire.indices[edge*2],b=wire.indices[edge*2+1];
+                    if(canonical[a]!=vertex){int swap=a;a=b;b=swap;}
+                    ordered.Add(a);ordered.Add(b);vertex=canonical[b];
+                }
+                if(ordered.Count==begin)continue;
+                ends.Add(ordered.Count/2);maxPoints=Mathf.Max(maxPoints,(ordered.Count-begin)/2+1);
+            }
+            wire.orderedIndices=ordered.ToArray();wire.stripEnds=ends.ToArray();
+            wire.worldVertices=new Vector3[wire.vertices.Count];wire.strokePoints=new Vector3[Mathf.Min(maxPoints,4096)];
+        }
+        private int DrawNativeWireframe(SelectionWireframe wire,Matrix4x4 matrix,float width)
+        {
+            for(int i=0;i<wire.vertices.Count;i++)wire.worldVertices[i]=OffsetOutlineDepth(matrix.MultiplyPoint3x4(wire.vertices[i]));
+            int begin=0,calls=0;
+            foreach(int end in wire.stripEnds)
+            {
+                int count=0;
+                for(int e=begin;e<end;e++)
+                {
+                    var a=wire.worldVertices[wire.orderedIndices[e*2]];var b=wire.worldVertices[wire.orderedIndices[e*2+1]];
+                    // A deformed/skinned seam can split a previously shared point.
+                    if(count>0&&!wire.strokePoints[count-1].Equals(a))
+                    {Handles.DrawAAPolyLine(width,count,wire.strokePoints);calls++;count=0;}
+                    if(count==0)wire.strokePoints[count++]=a;
+                    if(count==wire.strokePoints.Length)
+                    {
+                        Handles.DrawAAPolyLine(width,count,wire.strokePoints);calls++;
+                        wire.strokePoints[0]=wire.strokePoints[count-1];count=1;
+                    }
+                    wire.strokePoints[count++]=b;
+                }
+                if(count>1){Handles.DrawAAPolyLine(width,count,wire.strokePoints);calls++;}
+                begin=end;
+            }
+            return calls;
+        }
+        private void DrawNativeEdge(Vector3 a,Vector3 b,float width,Texture2D stroke=null)
         {
             outlineSegment[0]=OffsetOutlineDepth(a);outlineSegment[1]=OffsetOutlineDepth(b);
-            Handles.DrawAAPolyLine(width,outlineSegment);
+            if(stroke)Handles.DrawAAPolyLine(stroke,width,outlineSegment);
+            else Handles.DrawAAPolyLine(width,outlineSegment);
         }
         private Vector3 OffsetOutlineDepth(Vector3 point)
         {
@@ -68,9 +216,9 @@ namespace MashBoxSDK.AnimationStudio
             // Move along the viewing ray: screen position stays identical, while the
             // normal editor line no longer competes with its own surface depth.
             const float fraction=.001f;
-            if(!outlineCamera.orthographic)return Vector3.LerpUnclamped(point,outlineCamera.transform.position,fraction);
-            float distance=Mathf.Max(outlineCamera.nearClipPlane,Vector3.Dot(point-outlineCamera.transform.position,outlineCamera.transform.forward));
-            return point-outlineCamera.transform.forward*(distance*fraction);
+            if(!outlineOrthographic)return Vector3.LerpUnclamped(point,outlineCameraPosition,fraction);
+            float distance=Mathf.Max(outlineNearClip,Vector3.Dot(point-outlineCameraPosition,outlineCameraForward));
+            return point-outlineCameraForward*(distance*fraction);
         }
         private void DrawNativeComponentEdges(IEnumerable<int> selected,Color color,float width)
         {
@@ -81,7 +229,7 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.lighting=false;var edges=Edges();
                 using(new Handles.DrawingScope(color,Matrix4x4.identity))
                     foreach(int id in selected)if(id>=0&&id<edges.Count)
-                    {var edge=edges[id];DrawNativeEdge(Transforms[Active].TransformPoint(componentPositions[edge.a]),Transforms[Active].TransformPoint(componentPositions[edge.b]),width);}
+                    {var edge=edges[id];DrawNativeEdge(Transforms[Active].TransformPoint(componentPositions[edge.a]),Transforms[Active].TransformPoint(componentPositions[edge.b]),width,ComponentEdgeStroke);}
             }
             finally {Handles.zTest=depth;Handles.lighting=lighting;}
         }
@@ -100,19 +248,39 @@ namespace MashBoxSDK.AnimationStudio
                     if (!positions.TryGetValue(wire.vertices[i], out int id)) positions[wire.vertices[i]] = id = positions.Count;
                     canonical[i] = id;
                 }
-                var edges = new HashSet<(int, int)>(); var indices = new List<int>();
-                void Edge(int a, int b)
+                var edges = new Dictionary<(int, int),int>(); var indices = new List<int>(); var adjacent = new List<int>();
+                void Edge(int a, int b, int opposite = -1)
                 {
                     int x = canonical[a], y = canonical[b];
-                    if (x == y || !edges.Add((Math.Min(x, y), Math.Max(x, y)))) return;
+                    if(x==y)return;
+                    var key=(Math.Min(x,y),Math.Max(x,y));
+                    if(edges.TryGetValue(key,out int existing))
+                    {
+                        if(opposite>=0 && adjacent[existing*2+1]==0)
+                            adjacent[existing*2+1]=(canonical[indices[existing*2]]==x?1:-1)*(opposite+1);
+                        return;
+                    }
+                    edges.Add(key,indices.Count/2);
                     indices.Add(a); indices.Add(b);
+                    adjacent.Add(opposite+1); adjacent.Add(0);
                 }
                 bool triangles = true;
+                void FaceEdge(IList<int> face,int e)
+                {
+                    int a=face[e],b=face[(e+1)%face.Count],third=-1;
+                    var direction=wire.vertices[b]-wire.vertices[a];
+                    for(int k=2;k<face.Count;k++)
+                    {
+                        int candidate=face[(e+k)%face.Count];
+                        if(Vector3.Cross(direction,wire.vertices[candidate]-wire.vertices[a]).sqrMagnitude>1e-20f){third=candidate;break;}
+                    }
+                    Edge(a,b,third);
+                }
                 for (int sub = 0; sub < mesh.subMeshCount; sub++) if (mesh.GetTopology(sub) != MeshTopology.Triangles) triangles = false;
                 if (triangles)
                 {
                     foreach (var face in new StudioMeshCuts(node).Faces)
-                        for (int e = 0; e < face.Vertices.Count; e++) Edge(face.Vertices[e], face.Vertices[(e + 1) % face.Vertices.Count]);
+                        for (int e = 0; e < face.Vertices.Count; e++) FaceEdge(face.Vertices,e);
                 }
                 else for (int sub = 0; sub < mesh.subMeshCount; sub++)
                 {
@@ -120,12 +288,14 @@ namespace MashBoxSDK.AnimationStudio
                     if (topology == MeshTopology.Triangles || topology == MeshTopology.Quads)
                     {
                         int size = topology == MeshTopology.Quads ? 4 : 3;
-                        for (int i = 0; i < list.Length; i += size) for (int j = 0; j < size; j++) Edge(list[i + j], list[i + (j + 1) % size]);
+                        for (int i = 0; i < list.Length; i += size) for (int j = 0; j < size; j++) Edge(list[i + j], list[i + (j + 1) % size],list[i+(j+2)%size]);
                     }
                     else if (topology == MeshTopology.Lines) for (int i = 0; i + 1 < list.Length; i += 2) Edge(list[i], list[i + 1]);
                     else if (topology == MeshTopology.LineStrip) for (int i = 0; i + 1 < list.Length; i++) Edge(list[i], list[i + 1]);
                 }
                 wire.indices = indices.ToArray(); wire.lines = new Vector3[indices.Count];
+                wire.adjacent=adjacent.ToArray();
+                BuildWireframeStrokes(wire,canonical);
 
                 if (node.skinned) wire.baked = new Mesh { name = "MashBox Studio selection preview", hideFlags = HideFlags.HideAndDontSave };
                 else for (int i = 0; i < wire.lines.Length; i++) wire.lines[i] = wire.vertices[wire.indices[i]];
@@ -135,6 +305,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Transforms[index].GetComponent<SkinnedMeshRenderer>().BakeMesh(wire.baked);
                 wire.baked.GetVertices(wire.vertices);
+                wire.batchPositionsDirty = true;
                 for (int i = 0; i < wire.lines.Length; i++) wire.lines[i] = wire.vertices[wire.indices[i]];
 
             }

@@ -31,6 +31,18 @@ namespace MashBoxSDK.AnimationStudio
         private IMGUIContainer timeline;
         private IMGUIContainer inspector;
         private IMGUIContainer rigControls;
+        private IMGUIContainer statusBar;
+        internal void BindStatusBar(System.Func<string> text)
+        {
+            BindViewportControl(ref statusBar, "mashbox-status-bar", text == null ? null : (System.Action)(() => {
+                string value = text() ?? "Ready";
+                var rect = new Rect(6, 0, Mathf.Max(0, PanelWidths.x - 30), 24);
+                GUI.Label(rect, new GUIContent(value.Replace('\n', ' '), value), StudioTheme.Styles.miniLabel);
+                if (GUI.Button(new Rect(PanelWidths.x - 24, 0, 24, 24), new GUIContent("×", "Hide status bar — restore from Mesh Display"), StudioTheme.Styles.overlayButton))
+                { StudioSettings.Current.hideStatusBar = true; StudioSettings.Save(); }
+            }));
+            UpdatePanelLayout(); ApplyTheme();
+        }
         private IMGUIContainer modeSelector;
         private VisualElement studioMenuBackground;
         private IMGUIContainer modelMenuBar, viewportOptions, studioSettings;
@@ -69,7 +81,7 @@ namespace MashBoxSDK.AnimationStudio
                 modelTools.style.paddingTop = 5;
                 rootVisualElement.Add(modelTools);
             }
-            modelTools.onGUIHandler = StudioTheme.Wrap(draw);
+            modelTools.onGUIHandler = WrapStudioGUI(draw);
             modelTools.style.display = draw == null ? DisplayStyle.None : DisplayStyle.Flex;
             modelTools.BringToFront();
         }
@@ -84,7 +96,7 @@ namespace MashBoxSDK.AnimationStudio
                 markingMenu.style.top = 0; markingMenu.style.bottom = 0;
                 rootVisualElement.Add(markingMenu);
             }
-            markingMenu.onGUIHandler = StudioTheme.Wrap(draw);
+            markingMenu.onGUIHandler = WrapStudioGUI(draw);
             markingMenu.style.display = draw == null ? DisplayStyle.None : DisplayStyle.Flex;
             markingMenu.BringToFront();
         }
@@ -93,7 +105,10 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (modeSelector == null)
             {
-                studioMenuBackground = new VisualElement { name = "mashbox-studio-menu-background", pickingMode = PickingMode.Ignore };
+                studioMenuBackground = new VisualElement { name = "mashbox-studio-menu-background", pickingMode = PickingMode.Position };
+                studioMenuBackground.RegisterCallback<PointerDownEvent>(evt => evt.StopPropagation());
+                studioMenuBackground.RegisterCallback<PointerUpEvent>(evt => evt.StopPropagation());
+                studioMenuBackground.RegisterCallback<WheelEvent>(evt => evt.StopPropagation());
                 studioMenuBackground.style.position = Position.Absolute;
                 studioMenuBackground.style.left = 0; studioMenuBackground.style.right = 0;
                 studioMenuBackground.style.top = 0; studioMenuBackground.style.height = 24;
@@ -105,7 +120,7 @@ namespace MashBoxSDK.AnimationStudio
                 modeSelector.style.backgroundColor = Color.clear;
                 rootVisualElement.Add(modeSelector);
             }
-            modeSelector.onGUIHandler = StudioTheme.Wrap(draw); modeSelector.BringToFront();
+            modeSelector.onGUIHandler = WrapStudioGUI(draw, true); modeSelector.BringToFront();
             if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? 8 : 148; inspector.style.height = StyleKeyword.Auto; }
             if (rigControls != null) { rigControls.style.top = ModelingPanelTop; rigControls.style.bottom = modeling ? new StyleLength(8) : new StyleLength(StyleKeyword.Auto); }
             if (timeline != null) timeline.style.display = modeling ? DisplayStyle.None : DisplayStyle.Flex;
@@ -131,13 +146,13 @@ namespace MashBoxSDK.AnimationStudio
                 control.style.position = Position.Absolute;
                 rootVisualElement.Add(control);
             }
-            control.onGUIHandler = StudioTheme.Wrap(draw);
+            control.onGUIHandler = WrapStudioGUI(draw, elementName == "mashbox-model-menu");
             control.style.display = draw == null ? DisplayStyle.None : DisplayStyle.Flex;
             control.BringToFront();
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
+            (modeSelector != null && point.y >= 0 && point.y < 24) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(statusBar, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
         private static bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.layout.Contains(point);
 
@@ -153,7 +168,7 @@ namespace MashBoxSDK.AnimationStudio
                 rigControls.style.backgroundColor = StudioTheme.Current.Panel;
                 rootVisualElement.Add(rigControls);
             }
-            rigControls.onGUIHandler = StudioTheme.Wrap(draw);
+            rigControls.onGUIHandler = WrapStudioGUI(draw);
             rigControls.BringToFront();
         }
 
@@ -170,7 +185,7 @@ namespace MashBoxSDK.AnimationStudio
                 inspector.style.backgroundColor = StudioTheme.Current.Panel;
                 rootVisualElement.Add(inspector);
             }
-            inspector.onGUIHandler = StudioTheme.Wrap(draw);
+            inspector.onGUIHandler = WrapStudioGUI(draw);
             SetInspectorExpanded(true);
             inspector.BringToFront();
         }
@@ -197,12 +212,13 @@ namespace MashBoxSDK.AnimationStudio
                 timeline.style.backgroundColor = StudioTheme.Current.Header;
                 rootVisualElement.Add(timeline);
             }
-            timeline.onGUIHandler = StudioTheme.Wrap(draw);
+            timeline.onGUIHandler = WrapStudioGUI(draw);
             timeline.BringToFront();
         }
 
         internal void Bind(Scene scene)
         {
+            MarkDirty(DirtyState.Scene);
             customScene = scene;
             // Studio draws its own grid, controls and selection handles. Scene-wide
             // map/terrain gizmo callbacks must not run against this preview camera.
@@ -213,6 +229,7 @@ namespace MashBoxSDK.AnimationStudio
             sceneViewState.showSkybox = false;
             sceneViewState.showFog = false;
             sceneViewState.showImageEffects = false;
+            sceneViewState.alwaysRefresh = false;
             rotation = Quaternion.Euler(10, 180, 0);
             foreach (var overlay in overlayCanvas.overlays) overlay.displayed = false;
             // SceneView's stage handling otherwise culls ordinary preview scenes.
@@ -238,6 +255,8 @@ namespace MashBoxSDK.AnimationStudio
             if (inspector != null) inspector.style.backgroundColor = palette.Panel;
             if (modelToolOptions != null) modelToolOptions.style.backgroundColor = palette.Panel;
             if (rigControls != null) rigControls.style.backgroundColor = palette.Panel;
+            if (statusBar != null) statusBar.style.backgroundColor = palette.Header;
+            UpdatePanelLayout();
             if (modelTools != null)
             {
                 modelTools.style.backgroundColor = palette.ToolRail;

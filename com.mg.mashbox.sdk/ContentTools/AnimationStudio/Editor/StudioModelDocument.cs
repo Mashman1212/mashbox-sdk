@@ -21,6 +21,28 @@ namespace MashBoxSDK.AnimationStudio
             // Parent-space placement of the frozen channel origin. Zero for existing assets.
             public Vector3 positionOffset;
             public Quaternion rotation = Quaternion.identity;
+            [SerializeField] private Vector3 rotationChannels;
+            [SerializeField] private bool rotationChannelsSet;
+            internal Vector3 RotationChannels
+            {
+                get
+                {
+                    // A numeric edit owns its Euler representation, including turns
+                    // beyond 360 degrees. Reconcile only after an external rotation.
+                    if (!rotationChannelsSet || !SameRotation(Quaternion.Euler(rotationChannels), rotation))
+                    { rotationChannels = rotation.eulerAngles; rotationChannelsSet = true; }
+                    return rotationChannels;
+                }
+                set { rotationChannels = value; rotationChannelsSet = true; rotation = Quaternion.Euler(value); }
+            }
+            internal static bool SameRotation(Quaternion a, Quaternion b)
+            {
+                // Quaternion.Angle deliberately treats very small angles as zero.
+                // Compare components so fine gizmo changes still refresh the hint.
+                var difference = new Vector4(a.x-b.x, a.y-b.y, a.z-b.z, a.w-b.w);
+                var opposite = new Vector4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w);
+                return Mathf.Min(difference.sqrMagnitude, opposite.sqrMagnitude) < 1e-12f;
+            }
             public Quaternion pivotRotation = Quaternion.identity;
             public Mesh mesh;
             [SerializeReference] public StudioBlendShape blendShape;
@@ -60,7 +82,7 @@ namespace MashBoxSDK.AnimationStudio
 
         public int AppendModel(GameObject source)
         {
-            if (!AssetDatabase.Contains(this)) throw new InvalidOperationException("Save the workspace before adding a model.");
+            if (!HasStorage) throw new InvalidOperationException("Save the workspace before adding a model.");
             var captured = CaptureNodes(source); int first = nodes.Count;
             captured[0].name = ObjectNames.GetUniqueName(nodes.Where(n => n.parent < 0).Select(n => n.name).ToArray(), captured[0].name);
             foreach (var node in captured)
@@ -73,7 +95,7 @@ namespace MashBoxSDK.AnimationStudio
             Undo.SetCurrentGroupName("Import model"); Undo.RegisterCompleteObjectUndo(this, "Import model");
             try
             {
-                foreach (var node in captured) if (node.mesh) AssetDatabase.AddObjectToAsset(node.mesh, this);
+                foreach (var node in captured) if (node.mesh) AttachOwnedMesh(node.mesh);
                 nodes.AddRange(captured); EditorUtility.SetDirty(this);
                 // Retain owned meshes when nodes are undone so Redo keeps persistent references.
                 Undo.CollapseUndoOperations(group); return first;
@@ -164,10 +186,14 @@ namespace MashBoxSDK.AnimationStudio
         public void ApplyTransform(int index, Transform target)
         {
             var n = nodes[index]; target.localPosition = n.positionOffset + n.position; target.localRotation = n.rotation; target.localScale = n.scale;
+            TransformUtils.SetInspectorRotation(target, n.RotationChannels);
+            target.localRotation = n.rotation; // Preserve the stored quaternion exactly.
         }
         public void ReadTransform(int index, Transform source)
         {
-            var n = nodes[index]; n.position = source.localPosition - n.positionOffset; n.rotation = source.localRotation; n.scale = source.localScale;
+            var n = nodes[index]; n.position = source.localPosition - n.positionOffset;
+            if (!Node.SameRotation(n.rotation, source.localRotation)) n.RotationChannels = TransformUtils.GetInspectorRotation(source);
+            n.rotation = source.localRotation; n.scale = source.localScale;
             EditorUtility.SetDirty(this);
         }
         public bool IsBone(int index) => nodes.Any(n => n.skinned && (n.rootBone == index || n.bones.Contains(index)));
@@ -255,6 +281,7 @@ namespace MashBoxSDK.AnimationStudio
 
         public void Save()
         {
+            if (!string.IsNullOrEmpty(workspaceFile)) { SaveWorkspaceFile(); return; }
             foreach (var mesh in nodes.Select(n => n.mesh).Where(m => m).Distinct())
             {
                 if (AssetDatabase.Contains(this) && !AssetDatabase.Contains(mesh)) AssetDatabase.AddObjectToAsset(mesh, this);

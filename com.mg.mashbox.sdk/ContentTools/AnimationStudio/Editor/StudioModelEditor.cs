@@ -24,7 +24,13 @@ namespace MashBoxSDK.AnimationStudio
         private bool pivot, local = true, xray = true, weld = true;
         private Vector2 hierarchyScroll, inspectorScroll;
         private readonly HashSet<StudioModelDocument.Node> collapsedHierarchy = new HashSet<StudioModelDocument.Node>();
+        private List<int> hierarchyRows;
+        private readonly HashSet<int> hierarchyParents = new HashSet<int>();
+        private readonly Dictionary<StudioModelDocument.Node,(GUIContent label,GUIContent show,GUIContent hide)> hierarchyContents = new Dictionary<StudioModelDocument.Node,(GUIContent,GUIContent,GUIContent)>();
+        private int[] hierarchyDepths;
+        private bool hierarchyRowsSearching;
         private string search = "", error;
+        private static GUIContent hierarchyHeader;
         private bool marquee, additive, subtract;
         private Vector2 start, end;
         private int gestureUndo = -1;
@@ -33,14 +39,17 @@ namespace MashBoxSDK.AnimationStudio
         private Mesh edgeMesh;
         private List<(int a, int b)> cachedEdges;
         private readonly Action repaint;
+        private StudioModelDocument.Node[] previewNodes = Array.Empty<StudioModelDocument.Node>();
+        private readonly Dictionary<Mesh,int> undoMeshVersions = new Dictionary<Mesh,int>();
         internal StudioModelEditor(Action repaint)
         {
             this.repaint = repaint; Scene = EditorSceneManager.NewPreviewScene();
-            Undo.undoRedoPerformed += OnUndo;
+            Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
         }
         internal void Load(StudioModelDocument document)
         {
+            FinishChannelEdit();
             CancelHierarchyDrag();
             collapsedHierarchy.Clear();
             EndPivotSnap();
@@ -52,9 +61,11 @@ namespace MashBoxSDK.AnimationStudio
         private void Rebuild()
         {
             hierarchyRenameNode = null;
+            hierarchyRows = null; hierarchyContents.Clear(); hierarchyParents.Clear();
             var currentNodes = Document ? new HashSet<StudioModelDocument.Node>(Document.nodes) : new HashSet<StudioModelDocument.Node>();
             collapsedHierarchy.RemoveWhere(node => !currentNodes.Contains(node));
             componentFrameValid = false;
+            ResetHandleExtrusion();
             scaleDrag = null;
             moveDragControl = 0;
             gestureUndo = -1;
@@ -66,6 +77,7 @@ namespace MashBoxSDK.AnimationStudio
             statisticsCache.Clear();
             foreach (var go in Scene.GetRootGameObjects()) UnityEngine.Object.DestroyImmediate(go);
             Transforms = Document ? Document.Build(Scene) : Array.Empty<Transform>();
+            previewNodes = Document ? Document.nodes.ToArray() : Array.Empty<StudioModelDocument.Node>();
             edgeMesh = null; cachedEdges = null; cutTopology = null; cutMesh = null;
             faceNode = null; cachedFaces = null;
             previewLighting = new StudioPreviewLighting(Scene);
@@ -74,11 +86,50 @@ namespace MashBoxSDK.AnimationStudio
             if (Active >= Transforms.Length) Active = -1;
             objects.RemoveWhere(i => i < 0 || i >= Transforms.Length);
             Components.RemoveWhere(i => i < 0 || i >= ComponentCount());
+            CaptureUndoMeshVersions();
             repaint();
+        }
+        private void CaptureUndoMeshVersions()
+        {
+            undoMeshVersions.Clear();
+            if(Document)foreach(var node in Document.nodes)
+                if(node.mesh)undoMeshVersions[node.mesh]=EditorUtility.GetDirtyCount(node.mesh);
+        }
+        private void OnUndoEvent(in UndoRedoInfo info)
+        {
+            bool transformsOnly=info.undoName=="Transform model objects" || info.undoName=="Scale model objects" || info.undoName=="Edit object channels";
+            if(transformsOnly && RestoreObjectTransforms())return;
+            OnUndo();
+        }
+        private bool RestoreObjectTransforms()
+        {
+            if(!Document || Document.nodes.Count!=Transforms.Length || previewNodes.Length!=Transforms.Length)return false;
+            // A channel edit can also move a pivot and modify its mesh. Only reuse
+            // render caches when geometry and the preview hierarchy are unchanged.
+            for(int i=0;i<Transforms.Length;i++)
+            {
+                var node=Document.nodes[i];
+                if(!ReferenceEquals(node,previewNodes[i]) || !Transforms[i])return false;
+                if(node.parent>=Transforms.Length || node.parent < -1)return false;
+                var parent=node.parent>=0?Transforms[node.parent]:null;
+                if(Transforms[i].parent!=parent)return false;
+                if(node.mesh && (!undoMeshVersions.TryGetValue(node.mesh,out int version) || version!=EditorUtility.GetDirtyCount(node.mesh)))return false;
+            }
+            channelUndoGroup=-1;resetChannelFocus=true;
+            ResetCutGesture();ResetHandleExtrusion();scaleDrag=null;
+            moveDragControl=0;gestureUndo=-1;componentRotationControl=0;
+            for(int i=0;i<Transforms.Length;i++)
+            {
+                Document.ApplyTransform(i,Transforms[i]);
+                Transforms[i].gameObject.SetActive(Document.nodes[i].active);
+            }
+            Changed(false);
+            return true;
         }
         private void OnUndo()
         {
             if (!Document) return;
+            channelUndoGroup = -1; resetChannelFocus = true;
             ResetCutGesture();
             foreach (var mesh in Document.nodes.Select(node => node.mesh).Where(mesh => mesh).Distinct())
             {
@@ -102,11 +153,12 @@ namespace MashBoxSDK.AnimationStudio
             if (markingOpen && (!markingView || EditorWindow.focusedWindow != markingView)) CancelMarkingMenu();
             TickMarkingMenu();
         }
-        internal void Changed(bool geometryChanged = true) { componentFrameValid = false; if (geometryChanged) ClearSelectionWireframes(); pivotTargetCache.Clear(); pivotHover = null; statisticsCache.Clear(); if (Document) EditorUtility.SetDirty(Document); repaint(); }
+        internal void Changed(bool geometryChanged = true) { componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); repaint(); }
         internal void MeshTopologyChanged() { if (componentPivot) componentPivot.custom = false; Components.Clear(); Rebuild(); Changed(); }
         internal void Save() { if (Document) Document.Save(); }
         public void Dispose()
         {
+            FinishChannelEdit();
             CancelHierarchyDrag();
             EndPivotSnap();
             if (componentPivot) UnityEngine.Object.DestroyImmediate(componentPivot);
@@ -115,8 +167,10 @@ namespace MashBoxSDK.AnimationStudio
             ClearSelectionWireframes();
             CloseToolOptions();
             DisposeComponentDrawing();
+            if(wireBatchMaterial)UnityEngine.Object.DestroyImmediate(wireBatchMaterial);
+            if(componentEdgeStroke)UnityEngine.Object.DestroyImmediate(componentEdgeStroke);
             CancelMarkingMenu();
-            Undo.undoRedoPerformed -= OnUndo; EditorApplication.update -= Tick;
+            Undo.undoRedoEvent -= OnUndoEvent; EditorApplication.update -= Tick;
             if (Scene.IsValid()) EditorSceneManager.ClosePreviewScene(Scene);
             Document = null; Transforms = Array.Empty<Transform>(); Active = -1;
         }
@@ -134,97 +188,101 @@ namespace MashBoxSDK.AnimationStudio
             HandleExtrudeShortcut();
             HandleObjectDuplicate();
             HandleObjectDelete();
-            GUILayout.Label("Hierarchy", StudioTheme.Styles.boldLabel);
-            using (new EditorGUILayout.HorizontalScope())
+            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel))
             {
-                if (GUILayout.Button(new GUIContent("Import FBXâ€¦", "Add a model to this workspace."))) Run(() => ImportPath(EditorUtility.OpenFilePanel("Import FBX into workspace", "", "fbx"), loaded));
-                if (GUILayout.Button(new GUIContent("Openâ€¦", "Open a saved workspace."), GUILayout.Width(60)))
-                    Run(() => OpenWorkspace(loaded));
-            }
-            StudioModelDocument next;
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                GUILayout.Label("Workspace", GUILayout.Width(68));
-                next = (StudioModelDocument)EditorGUILayout.ObjectField(Document, typeof(StudioModelDocument), false);
-            }
-            if (next != Document) loaded(next);
-            search = EditorGUILayout.TextField(search, StudioTheme.Styles.toolbarSearchField);
-            hierarchyScroll = EditorGUILayout.BeginScrollView(hierarchyScroll);
-            var rowStyle = new GUIStyle(StudioTheme.Styles.miniButton) { alignment = TextAnchor.MiddleLeft };
-            var parents = Document ? new HashSet<int>(Document.nodes.Select(n => n.parent)) : new HashSet<int>();
-            if (Document) foreach (int i in HierarchyRows())
-            {
-                var n = Document.nodes[i]; if (!string.IsNullOrEmpty(search) && n.name.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                int depth = 0; for (int p = n.parent; p >= 0; p = Document.nodes[p].parent) depth++;
-                using (new EditorGUILayout.HorizontalScope())
+                if (hierarchyHeader == null)
+                    hierarchyHeader = new GUIContent("HIERARCHY", EditorGUIUtility.IconContent("UnityEditor.SceneHierarchyWindow").image);
+                GUILayout.Label(hierarchyHeader, StudioTheme.Styles.panelHeader);
+                search = EditorGUILayout.TextField(search, StudioTheme.Styles.toolbarSearchField);
+                hierarchyScroll = EditorGUILayout.BeginScrollView(hierarchyScroll);
+                var rowStyle = StudioTheme.Styles.hierarchyRow;
+                var rows = Document ? HierarchyRows() : null;
+                if (Document) foreach (int i in rows)
                 {
-                    GUILayout.Space(Mathf.Min(depth * 12, 96));
-                    var foldoutRect = GUILayoutUtility.GetRect(14, EditorGUIUtility.singleLineHeight, GUILayout.Width(14));
-                    if (parents.Contains(i))
+                    var n = Document.nodes[i]; if (!string.IsNullOrEmpty(search) && n.name.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    int depth = hierarchyDepths[i];
                     {
-                        bool expanded = !collapsedHierarchy.Contains(n);
-                        bool nextExpanded = EditorGUI.Foldout(foldoutRect, expanded, GUIContent.none, false);
-                        if (nextExpanded != expanded)
+                        float height = rowStyle.fixedHeight > 0 ? rowStyle.fixedHeight : EditorGUIUtility.singleLineHeight;
+                        var fullRow = GUILayoutUtility.GetRect(0,height,rowStyle,HierarchyRowLayout);
+                        fullRow.height = Mathf.Max(fullRow.height,height);
+                        fullRow.xMin += Mathf.Min(depth * 12, 96);
+                        var foldoutRect = new Rect(fullRow.x,fullRow.y,14,fullRow.height);
+                        if (hierarchyParents.Contains(i))
                         {
-                            if (nextExpanded) collapsedHierarchy.Remove(n); else collapsedHierarchy.Add(n);
-                            repaint();
+                            bool expanded = !collapsedHierarchy.Contains(n);
+                            bool nextExpanded = EditorGUI.Foldout(foldoutRect, expanded, GUIContent.none, false);
+                            if (nextExpanded != expanded)
+                            {
+                                if (nextExpanded) collapsedHierarchy.Remove(n); else collapsedHierarchy.Add(n);
+                                hierarchyRows = null;
+                                repaint();
+                            }
                         }
+                        if (!hierarchyContents.TryGetValue(n,out var contents) || contents.label.text != n.name)
+                        {
+                            contents = (new GUIContent(n.name, !string.IsNullOrEmpty(n.anchorType) ? AnchorIcon : EditorGUIUtility.IconContent(n.mesh ? "Mesh Icon" : "Transform Icon").image),
+                                new GUIContent("", "Show " + n.name), new GUIContent("", "Hide " + n.name));
+                            hierarchyContents[n] = contents;
+                        }
+                        var content = contents.label;
+                        var old = GUI.backgroundColor;
+                        var row = new Rect(fullRow.x+14,fullRow.y,Mathf.Max(0,fullRow.width-38),fullRow.height);
+                        HandleHierarchyContext(new Rect(row.x, row.y, row.width + 24, row.height), i);
+                        DrawHierarchyDragRow(row, content, rowStyle, i);
+                        GUI.backgroundColor = old;
+                        int nodeIndex = i;
+                        bool visible = GUI.Toggle(new Rect(row.xMax + 4, row.y, 20, row.height), n.active, n.active ? contents.hide : contents.show);
+
+                        if (visible != n.active) Run(() => SetHierarchyVisibility(nodeIndex, visible));
+                        row.xMax += 24;
+                        GUI.backgroundColor = old;
                     }
-                    var content = new GUIContent(n.name, !string.IsNullOrEmpty(n.anchorType) ? AnchorIcon : EditorGUIUtility.IconContent(n.mesh ? "Mesh Icon" : "Transform Icon").image);
-                    var old = GUI.backgroundColor; if (objects.Contains(i)) GUI.backgroundColor = StudioTheme.Current.Accent;
-                    var row = GUILayoutUtility.GetRect(content, rowStyle, GUILayout.ExpandWidth(true));
-                    DrawHierarchyDragRow(row, content, rowStyle, i);
-                    GUI.backgroundColor = old;
-                    int nodeIndex = i;
-                    bool visible = GUI.Toggle(new Rect(row.xMax + 4, row.y, 20, row.height), n.active, new GUIContent("", n.active ? "Hide " + n.name : "Show " + n.name));
-                    GUILayout.Space(24);
-                    if (visible != n.active) Run(() => SetHierarchyVisibility(nodeIndex, visible));
-                    row.xMax += 24;
-                    if (Event.current.type == EventType.ContextClick && row.Contains(Event.current.mousePosition))
-                    {
-                        mode = ComponentMode.Object;
-                        if (!objects.Contains(i)) SelectObject(i);
-                        var menu = HierarchyVisibilityMenu(nodeIndex);
-                        menu.DropDown(new Rect(Event.current.mousePosition, Vector2.zero)); Event.current.Use();
-                    }
-                    GUI.backgroundColor = old;
                 }
+                else EditorGUILayout.HelpBox("Create primitives or import FBX models into this workspace. Each imported model keeps its hierarchy.", MessageType.Info);
+                var rootDrop = GUILayoutUtility.GetRect(0, 32, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+                HandleHierarchyDrop(rootDrop, -1);
+                EditorGUILayout.EndScrollView();
             }
-            else EditorGUILayout.HelpBox("Create primitives or import FBX models into this workspace. Each imported model keeps its hierarchy.", MessageType.Info);
-            var rootDrop = GUILayoutUtility.GetRect(0, 32, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
-            HandleHierarchyDrop(rootDrop, -1);
-            EditorGUILayout.EndScrollView();
         }
+        private static readonly GUILayoutOption[] HierarchyRowLayout = { GUILayout.ExpandWidth(true) };
         private List<int> HierarchyRows()
         {
+            bool searching = !string.IsNullOrEmpty(search);
+            if (hierarchyRows != null && hierarchyDepths.Length == Document.nodes.Count && hierarchyRowsSearching == searching) return hierarchyRows;
+            hierarchyParents.Clear(); hierarchyDepths = new int[Document.nodes.Count];
             var children = new Dictionary<int, List<int>>();
             for (int i = 0; i < Document.nodes.Count; i++)
             {
                 int parent = Document.nodes[i].parent;
+                if (parent >= 0) hierarchyParents.Add(parent);
                 if (!children.TryGetValue(parent, out var siblings)) children[parent] = siblings = new List<int>();
                 siblings.Add(i);
             }
             var rows = new List<int>();
-            bool searching = !string.IsNullOrEmpty(search);
-            void Visit(int parent)
+            void Visit(int parent, int depth)
             {
                 if (!children.TryGetValue(parent, out var siblings)) return;
                 foreach (int i in siblings)
                 {
                     rows.Add(i);
+                    hierarchyDepths[i] = depth;
                     // Search can still find objects inside collapsed branches without
                     // changing the user's saved foldout choices for this session.
-                    if (searching || !collapsedHierarchy.Contains(Document.nodes[i])) Visit(i);
+                    if (searching || !collapsedHierarchy.Contains(Document.nodes[i])) Visit(i,depth + 1);
                 }
             }
-            Visit(-1); return rows;
+            Visit(-1,0); hierarchyRowsSearching = searching; hierarchyRows = rows; return rows;
         }
+        internal string StatusText => string.IsNullOrEmpty(error) ? "Ready" : error;
         internal void DrawInspector()
         {
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel)) DrawChannelContent();
         }
         private void DrawChannelContent()
         {
+            HandleChannelHistory();
+            FinishInactiveChannelEdit();
+            pendingChannelScrub = null;
             EditorGUIUtility.labelWidth = 115;
             GUILayout.Label("CHANNELS", StudioTheme.Styles.panelHeader);
             inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll);
@@ -240,12 +298,12 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 DrawAnchorChannels();
                 EditorGUI.BeginChangeCheck();
-                var p = DrawChannels("Position", n.position);
+                var p = DrawObjectChannels("Position", n.position);
                 using (new EditorGUI.DisabledScope(true)) DrawChannels("World Position", Transforms[Active].position);
                 EditorGUILayout.Space(4);
                 Vector3 r, s;
                 using (new EditorGUI.DisabledScope(pivot))
-                { r = DrawChannels("Rotation", n.rotation.eulerAngles); EditorGUILayout.Space(4); s = DrawChannels("Scale", n.scale); }
+                { r = DrawObjectChannels("Rotation", n.RotationChannels); EditorGUILayout.Space(4); s = DrawObjectChannels("Scale", n.scale); }
                 bool visible = EditorGUILayout.Toggle("Visibility", n.active);
                 if (EditorGUI.EndChangeCheck()) Run(() => SetObjectChannels(p, r, s, visible));
             }
@@ -253,8 +311,8 @@ namespace MashBoxSDK.AnimationStudio
             DrawMaterialChannels();
             DrawBlendShapeChannels();
             DrawExtrusionOptions();
-            GUILayout.Space(8);
-            if (!string.IsNullOrEmpty(error)) EditorGUILayout.HelpBox(error, MessageType.Error);
+            FinishInactiveChannelEdit();
+
             EditorGUILayout.EndScrollView();
         }
         private void ImportPath(string path, Action<StudioModelDocument> loaded)
@@ -344,8 +402,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SelectObject(int index, bool add = false, bool remove = false)
         {
+            FinishChannelEdit();
             if (!remove && Document && index >= 0 && index < Document.nodes.Count)
                 for (int p = Document.nodes[index].parent; p >= 0; p = Document.nodes[p].parent) collapsedHierarchy.Remove(Document.nodes[p]);
+                hierarchyRows = null;
             if (componentPivot) componentPivot.custom = false;
             StopCutTool();
             if (!add && !remove) objects.Clear();
@@ -366,10 +426,27 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (Transforms.Length == 0) return;
             var bounds = BoundsFor(Active >= 0 ? Active : 0);
-            if (mode != ComponentMode.Object && ActiveMesh && Components.Count > 0)
+            if (mode == ComponentMode.Object)
             {
+                // Frame the combined selection, independently of which object is active.
+                var selected = objects.Where(i => i >= 0 && i < Transforms.Length).ToArray();
+                if (selected.Length > 0)
+                {
+                    bounds = BoundsFor(selected[0]);
+                    for (int i = 1; i < selected.Length; i++) bounds.Encapsulate(BoundsFor(selected[i]));
+                }
+            }
+            else if (ActiveMesh && Components.Count > 0)
+            {
+                // Edges and faces resolve to their selected vertices in the current mode.
                 var vertices = ActiveMesh.vertices; var indices = SelectedVertices();
-                if (indices.Count > 0) { bounds = new Bounds(Transforms[Active].TransformPoint(vertices[indices.First()]), Vector3.one * .05f); foreach (int i in indices) bounds.Encapsulate(Transforms[Active].TransformPoint(vertices[i])); }
+                if (indices.Count > 0)
+                {
+                    bounds = new Bounds(Transforms[Active].TransformPoint(vertices[indices.First()]), Vector3.zero);
+                    foreach (int i in indices) bounds.Encapsulate(Transforms[Active].TransformPoint(vertices[i]));
+                    // Keep point/flat selections frameable without shifting their center.
+                    bounds.size = Vector3.Max(bounds.size, Vector3.one * .05f);
+                }
             }
             view.Frame(bounds, true);
             // Account for the hierarchy and inspector covering the sides of the SceneView.
@@ -414,8 +491,10 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             view.wantsMouseMove = true;
-            // Clear before a tool can consume the event or return early.
-            hoveredComponent = -1;
+            // Clear before drawing if a tool can consume the event or return early.
+            // Preserve the last target between pointer events so movement within it
+            // does not request another scene render.
+            if (evt.type == EventType.Repaint) hoveredComponent = -1;
             DrawSnapStatus(view);
             if (evt.type == EventType.Used) return;
             DrawSceneWireframes(view.camera);
@@ -437,7 +516,10 @@ namespace MashBoxSDK.AnimationStudio
             if ((evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) && evt.commandName == "FrameSelected") { if (evt.type == EventType.ExecuteCommand) Frame(view); evt.Use(); }
             HandleModelKeyboard(view);
             int id = GUIUtility.GetControlID("StudioModelSelection".GetHashCode(), FocusType.Passive);
-            if (evt.type == EventType.Layout && !evt.alt) HandleUtility.AddDefaultControl(id);
+            // Unity's RectSelection also registers its fallback on MouseMove.
+            // Keep Studio's replacement consistent across both passes, otherwise
+            // EndHandles sees a different hover control and requests another render.
+            if ((evt.type == EventType.Layout || evt.type == EventType.MouseMove) && !evt.alt) HandleUtility.AddDefaultControl(id);
             DrawAnchorMarkers(view);
             UpdateComponentHover(view, id);
             DrawComponents(view);
@@ -465,12 +547,18 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawHandle()
         {
+            if (handleExtrudeControl != 0 && GUIUtility.hotControl != handleExtrudeControl) ResetHandleExtrusion();
             if (Active >= 0 && !Transforms[Active].gameObject.activeInHierarchy) return;
             bool moveDragEvent = Event.current.type == EventType.MouseDrag;
+            // Native handles consume mouse-down (including rawType). Snapshot the
+            // modifier gesture before drawing, then confirm that a handle captured it.
+            bool shiftHandleMouseDown = Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
+                Event.current.shift && !Event.current.alt && !Event.current.control && !Event.current.command;
             var movePointer = Event.current.mousePosition;
             if (!Document || Active < 0 || marquee || (tool == Tool.None && !pivot)) return;
             var t = Transforms[Active]; var orientation = pivot || local ? PivotOrientation : Quaternion.identity;
-            var indices = mode == ComponentMode.Object ? null : SelectedVertices();
+            bool capturedScale = !pivot && tool == Tool.Scale && scaleDrag != null && scaleDrag.control == GUIUtility.hotControl;
+            var indices = mode == ComponentMode.Object ? null : capturedScale ? scaleDrag.componentIndices : handleExtrudeVertices ?? SelectedVertices();
             if (indices != null && indices.Count == 0) return;
             bool rotatingComponents = indices != null && !pivot && tool == Tool.Rotate;
             // Keep a component's movement axes fixed for the duration of the drag,
@@ -482,13 +570,14 @@ namespace MashBoxSDK.AnimationStudio
             // to apply only the new angular increment to the already-edited vertices.
             if (rotatingComponents && componentRotationControl != 0 && GUIUtility.hotControl == componentRotationControl)
                 orientation = componentHandleRotation;
-            var vertices = indices != null ? ActiveMesh.vertices : null;
-            Vector3 center = indices == null ? t.position : indices.Aggregate(Vector3.zero, (sum, i) => sum + t.TransformPoint(vertices[i])) / indices.Count;
+            var vertices = indices != null ? capturedScale ? scaleDrag.meshVertices : ActiveMesh.vertices : null;
+            Vector3 center = capturedScale ? scaleDrag.center : indices == null ? t.position : indices.Aggregate(Vector3.zero, (sum, i) => sum + t.TransformPoint(vertices[i])) / indices.Count;
             if (indices != null && HasComponentPivot) center = componentPivot.position;
             bool scaling = !pivot && tool == Tool.Scale;
             if (!scaling || (scaleDrag != null && scaleDrag.control != GUIUtility.hotControl)) scaleDrag = null;
             if (scaleDrag != null) { center = scaleDrag.center; orientation = scaleDrag.orientation; }
             EditorGUI.BeginChangeCheck();
+            int previousHotControl = GUIUtility.hotControl;
             var position = center; var rotation = orientation; var scale = Vector3.one;
             // Uniform drawing-space scaling changes the entire handle, including its pick
             // regions. Convert move results back to world space before editing geometry.
@@ -502,6 +591,12 @@ namespace MashBoxSDK.AnimationStudio
                 else scale = Handles.ScaleHandle(Vector3.one, handleCenter, orientation, HandleUtility.GetHandleSize(handleCenter));
             }
             bool handleChanged = EditorGUI.EndChangeCheck();
+            if (previousHotControl == 0 && GUIUtility.hotControl != 0 && shiftHandleMouseDown &&
+                !pivot && (mode == ComponentMode.Edge || mode == ComponentMode.Face))
+            {
+                handleExtrudeControl = GUIUtility.hotControl; handleExtrudePending = true;
+                handleExtrudeSourceSelection = Components.ToArray();
+            }
             if (scaling && GUIUtility.hotControl != 0 && scaleDrag == null)
                 scaleDrag = CaptureScaleDrag(GUIUtility.hotControl, center, orientation, indices, vertices);
             componentRotationControl = rotatingComponents ? GUIUtility.hotControl : 0;
@@ -520,6 +615,16 @@ namespace MashBoxSDK.AnimationStudio
                     position = SnapConstrainedGrid(moveDragOrigin, position, moveDragOrientation, moveDragAxes, StudioSettings.Current.gridSpacing);
             }
             if (!handleChanged) return;
+            if (handleExtrudeFailed) return;
+            if (handleExtrudePending)
+            {
+                if (!moveDragEvent || (tool == Tool.Move && (position - center).sqrMagnitude < 1e-12f) ||
+                    (tool == Tool.Rotate && Quaternion.Angle(rotation, orientation) < .0001f) ||
+                    (tool == Tool.Scale && (scale - Vector3.one).sqrMagnitude < 1e-12f)) return;
+                handleExtrudePending = false; handleExtrudeFailed = true;
+                Run(() => { BeginHandleExtrusion(position, center, rotation, orientation, scale); handleExtrudeFailed = false; });
+                return;
+            }
             Run(() => {
                 if (scaling) { if (scaleDrag != null) ApplyScaleDrag(scale); return; }
                 if (pivot) { MoveEditingPivot(position); return; }
@@ -552,7 +657,8 @@ namespace MashBoxSDK.AnimationStudio
                         Document.ReadTransform(i, target);
                     }
                 }
-                Changed(indices != null || pivot);
+                if (indices != null && !pivot) PositionsChanged();
+                else Changed(pivot);
             });
         }
         private bool HasSelectedParent(int i)
@@ -646,14 +752,25 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdateComponentHover(SceneView view, int selectionId)
         {
             var evt = Event.current;
-            if (evt.type == EventType.MouseMove || evt.type == EventType.MouseLeaveWindow ||
-                evt.type == EventType.KeyDown || evt.type == EventType.KeyUp) view.Repaint();
-            if (evt.type != EventType.Repaint || mode == ComponentMode.Object || pivot || pivotSnapHeld ||
-                marquee || evt.alt || GUIUtility.hotControl != 0 || HandleUtility.nearestControl != selectionId ||
-                EditorWindow.mouseOverWindow != view) return;
-            var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
-            if (!canvas.Contains(evt.mousePosition) || (view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition))) return;
-            hoveredComponent = FindComponentAt(view, evt.mousePosition);
+            bool pointerChanged = evt.type == EventType.MouseMove || evt.type == EventType.MouseLeaveWindow ||
+                evt.type == EventType.KeyDown || evt.type == EventType.KeyUp;
+            if (evt.type != EventType.Repaint && !pointerChanged) return;
+            int previous = Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
+            hoveredComponent = -1;
+            if (evt.type != EventType.MouseLeaveWindow && mode != ComponentMode.Object && !pivot && !pivotSnapHeld &&
+                !marquee && !evt.alt && GUIUtility.hotControl == 0 && HandleUtility.nearestControl == selectionId &&
+                EditorWindow.mouseOverWindow == view)
+            {
+                var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
+                if (canvas.Contains(evt.mousePosition) && !(view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition)))
+                    hoveredComponent = FindComponentAt(view, evt.mousePosition);
+            }
+            int next = Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
+            if (pointerChanged && previous != next)
+            {
+                if (view is MashBoxStudioViewport studioView) studioView.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);
+                else view.Repaint();
+            }
         }
         private static bool VisiblePoint(SceneView view, Vector3 point, Rect rect) => view.camera.WorldToViewportPoint(point).z > 0 && rect.Contains(HandleUtility.WorldToGUIPoint(point));
         private Vector3[] PickVertices(int index)

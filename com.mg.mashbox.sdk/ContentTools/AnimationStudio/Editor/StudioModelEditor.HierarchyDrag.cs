@@ -101,7 +101,14 @@ namespace MashBoxSDK.AnimationStudio
             if (DrawHierarchyRename(row, index)) return;
             int id = GUIUtility.GetControlID("StudioHierarchyRow".GetHashCode(), FocusType.Passive, row);
             var evt = Event.current;
-            if (evt.type == EventType.Repaint) style.Draw(row, content, row.Contains(evt.mousePosition), GUIUtility.hotControl == id, false, false);
+            if (evt.type == EventType.Repaint)
+            {
+                bool hovered = !StudioTheme.HoverSuppressed && row.Contains(evt.mousePosition);
+                bool pressed = !StudioTheme.HoverSuppressed && GUIUtility.hotControl == id;
+                if (objects.Contains(index) || pressed) EditorGUI.DrawRect(row, StudioTheme.Current.Selection);
+                else if (hovered) EditorGUI.DrawRect(row, StudioTheme.Current.Hover);
+                style.Draw(row, content, false, false, false, false);
+            }
             HandleHierarchyDrop(row, index);
             if (evt.type == EventType.MouseDown && row.Contains(evt.mousePosition) && (evt.button == 0 || evt.button == 2))
             {

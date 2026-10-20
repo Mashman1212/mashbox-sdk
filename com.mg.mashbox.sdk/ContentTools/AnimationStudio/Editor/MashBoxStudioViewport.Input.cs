@@ -34,14 +34,34 @@ namespace MashBoxSDK.AnimationStudio
                 if (studioInputHandlers.TryGetValue(container,out var previous) && container.onGUIHandler == previous.wrapped) continue;
                 var handler = new InputHandler { original = container.onGUIHandler };
                 // SceneView's native camera IMGUI container owns its main OnGUI callback.
-                bool canvas = ReferenceEquals(handler.original.Target,this) && handler.original.Method.DeclaringType == typeof(SceneView);
+                bool canvas = ReferenceEquals(handler.original.Target,this) &&
+                    (handler.original.Method.DeclaringType == typeof(SceneView) || handler.original.Method.Name == nameof(OnSceneGUI));
                 handler.wrapped = () => {
-                    if (studioInputActive != null && studioInputActive())
+                    var inputEvent = Event.current;
+                    bool menuBlocked = container != modelMenuBar && container != modeSelector && MenuInputBlocked;
+                    Vector2 mousePosition = inputEvent.mousePosition;
+                    if (menuBlocked)
                     {
-                        if (canvas) RouteStudioCanvasInput();
+                        // IMGUI derives button hover from mousePosition during Repaint,
+                        // even when its mouse events have already been consumed.
+                        inputEvent.mousePosition = new Vector2(-100000,-100000);
+                        if (inputEvent.isMouse || inputEvent.isKey || inputEvent.type == EventType.ScrollWheel || inputEvent.type == EventType.ContextClick || inputEvent.type == EventType.DragUpdated || inputEvent.type == EventType.DragPerform)
+                            inputEvent.Use();
+                    }
+                    if (!menuBlocked && studioInputActive != null && studioInputActive())
+                    {
+                        if (canvas)
+                        {
+                            var evt = Event.current;
+                            bool pointer = evt.isMouse || evt.type == EventType.ScrollWheel || evt.type == EventType.ContextClick || evt.type == EventType.DragUpdated || evt.type == EventType.DragPerform;
+                            bool toolbar = IsOverViewportControls(evt.mousePosition);
+                            if (pointer && toolbar) evt.Use();
+                            else RouteStudioCanvasInput();
+                        }
                         else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider)) studioKeyboard?.Invoke();
                     }
-                    handler.original();
+                    try { handler.original(); }
+                    finally { if (menuBlocked) inputEvent.mousePosition = mousePosition; }
                     // Panels get their text-field and rename handling first. Everything else
                     // stays in Studio instead of falling through to Unity's global shortcuts.
                     if (studioInputActive != null && studioInputActive() && Event.current.isKey)
@@ -69,6 +89,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         public override void OnDisable()
         {
+            ReleaseViewportRedraw();
+            ClearMenuInputShield();
             StopWorkspaceStatistics();
             EditorApplication.update -= TickStudioInput;
             StudioShortcuts.changed -= ReleaseStudioInput;
@@ -90,14 +112,14 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if (GUIUtility.hotControl != navigationControl) { ReleaseStudioInput(); return; }
                 if (evt.type == EventType.MouseDrag)
-                { ApplyStudioNavigation(navigation,navigation == StudioShortcut.Dolly ? -evt.delta : evt.delta); evt.Use(); Repaint(); return; }
+                { ApplyStudioNavigation(navigation,navigation == StudioShortcut.Dolly ? -evt.delta : evt.delta); evt.Use(); MarkDirty(DirtyState.Camera); return; }
                 if (evt.type == EventType.MouseUp && evt.button == navigationButton)
-                { ReleaseStudioInput(); evt.Use(); Repaint(); return; }
+                { ReleaseStudioInput(); evt.Use(); MarkDirty(DirtyState.Overlay); return; }
             }
             bool canvas = ModelCanvasRect.Contains(evt.mousePosition) && !IsOverViewportControls(evt.mousePosition);
             if (!canvas) return;
             if (evt.type == EventType.ScrollWheel && GUIUtility.hotControl == 0)
-            { ApplyStudioNavigation(StudioShortcut.Dolly,new Vector2(0,evt.delta.y*8)); evt.Use(); Repaint(); return; }
+            { ApplyStudioNavigation(StudioShortcut.Dolly,new Vector2(0,evt.delta.y*8)); evt.Use(); MarkDirty(DirtyState.Camera); return; }
             if (evt.type == EventType.MouseDown && GUIUtility.hotControl == 0)
             {
                 foreach (var action in new[] { StudioShortcut.Orbit, StudioShortcut.Pan, StudioShortcut.Dolly })

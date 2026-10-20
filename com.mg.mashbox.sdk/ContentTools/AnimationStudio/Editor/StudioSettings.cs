@@ -16,7 +16,13 @@ namespace MashBoxSDK.AnimationStudio
             public bool neutralMarkingMenus = true;
             public bool showMeshStatistics = true;
             public bool showWorkspaceFps;
+            public bool hideStatusBar;
+            public bool floatingStudioWindow;
             public bool hideObjectWireframe;
+            public bool disableViewportAntialiasing;
+            public bool useViewportSmaa;
+            public bool viewportVSync;
+            public bool disableViewportImageCache;
             public float gridSpacing = .25f, gridOpacity = 1, uvPointSize = 4;
             public float handleSize = 1;
         }
@@ -40,9 +46,17 @@ namespace MashBoxSDK.AnimationStudio
         internal static void Save()
         {
             Sanitize(Current); EditorPrefs.SetString(PreferenceKey, JsonUtility.ToJson(Current));
+            // Host replacement must happen after the preferences IMGUI event finishes.
+            EditorApplication.delayCall -= ApplyWindowMode;
+            EditorApplication.delayCall += ApplyWindowMode;
             foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) { view.ApplyTheme(); view.Repaint(); }
             foreach (var window in Resources.FindObjectsOfTypeAll<EditorWindow>())
                 if (window.GetType().Namespace == typeof(StudioSettings).Namespace) window.Repaint();
+        }
+        private static void ApplyWindowMode()
+        {
+            foreach (var studio in Resources.FindObjectsOfTypeAll<AnimationStudioWindow>())
+                studio.ApplyWindowModePreference();
         }
         internal static void Reset() { Current = new Preferences(); Save(); }
     }
@@ -77,7 +91,11 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.Space(12);
                 settings.neutralMarkingMenus = EditorGUILayout.ToggleLeft(new GUIContent("Neutral marking menus", "Keep right-click marking menus gray, regardless of the selected palette."), settings.neutralMarkingMenus);
                 GUILayout.Space(12);
+                DrawWindowMode();
                 GUILayout.Label("Viewport", StudioTheme.Styles.boldLabel);
+                DrawViewportAntialiasing();
+                DrawViewportVSync();
+                DrawViewportCache();
                 settings.showMeshStatistics = EditorGUILayout.Toggle("Mesh statistics", settings.showMeshStatistics);
                 settings.hideObjectWireframe = !EditorGUILayout.Toggle("Object wireframe", !settings.hideObjectWireframe);
                 settings.handleSize = EditorGUILayout.Slider(new GUIContent("Handle size", "Resize modeling handles with + and − in the viewport."), settings.handleSize, .25f, 3);
@@ -106,5 +124,39 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.DrawRect(new Rect(chip.x, chip.yMax - 6, chip.width, 6), palette.Accent);
             GUI.Label(new Rect(rect.x + 40, rect.y, rect.width - 44, rect.height), (active ? "✓ " : "") + palette.Name, StudioTheme.Styles.label);
         }
+        internal static void DrawWindowMode()
+        {
+            var settings = StudioSettings.Current;
+            bool dockable = !settings.floatingStudioWindow;
+            bool selected = EditorGUILayout.Toggle(new GUIContent("Dockable window", "Allow docking into Unity and show its tab strip. Disable for a floating utility window without the tab strip. The open workspace and camera are retained."), dockable);
+            if (selected == dockable) return;
+            settings.floatingStudioWindow = !selected;
+            StudioSettings.Save();
+        }
+        internal static void DrawViewportAntialiasing()
+        {
+            var settings = StudioSettings.Current;
+            int current = settings.disableViewportAntialiasing ? 0 : settings.useViewportSmaa ? 2 : 1;
+            int selected = EditorGUILayout.Popup(new GUIContent("Viewport anti-aliasing", "Built-in HDRP spatial AA. FXAA smooths color boundaries throughout the camera image. Studio motion blur is always disabled."), current, new[] { "Off", "FXAA", "SMAA (High)" });
+            if (selected == current) return;
+            settings.disableViewportAntialiasing = selected == 0;
+            settings.useViewportSmaa = selected == 2;
+            StudioSettings.Save();
+        }
+        internal static void DrawViewportCache()
+        {
+            var settings = StudioSettings.Current;
+            EditorGUI.BeginChangeCheck();
+            settings.disableViewportImageCache = !EditorGUILayout.Toggle(new GUIContent("Cache unchanged viewport", "Reuse the last modelling image until camera, geometry, selection or display state changes. Input and panels remain live."), !settings.disableViewportImageCache);
+            if (EditorGUI.EndChangeCheck()) StudioSettings.Save();
+        }
+        internal static void DrawViewportVSync()
+        {
+            var settings = StudioSettings.Current;
+            EditorGUI.BeginChangeCheck();
+            settings.viewportVSync = EditorGUILayout.Toggle(new GUIContent("VSync", "Synchronize Studio's window presentation with the display. Other Unity windows and project quality settings are unchanged."), settings.viewportVSync);
+            if (EditorGUI.EndChangeCheck()) StudioSettings.Save();
+        }
     }
 }
+

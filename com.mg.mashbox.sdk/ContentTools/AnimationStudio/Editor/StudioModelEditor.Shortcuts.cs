@@ -26,13 +26,15 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 else
                 {
+                    var extrusionSelection = handleExtrudeSourceSelection;
                     if (gestureUndo >= 0) { int group = gestureUndo; gestureUndo = -1; Undo.RevertAllDownToGroup(group); Rebuild(); }
+                    if (extrusionSelection != null) { Components.Clear(); foreach (int component in extrusionSelection) Components.Add(component); }
                     marquee = false; GUIUtility.hotControl = 0; pivot = false;
                 }
                 evt.Use(); repaint(); return true;
             }
             if (GUIUtility.hotControl == 0 && (Is(StudioShortcut.Undo) || Is(StudioShortcut.Redo)))
-            { if (Is(StudioShortcut.Undo)) Undo.PerformUndo(); else Undo.PerformRedo(); evt.Use(); return true; }
+            { PerformWorkspaceHistory(Is(StudioShortcut.Redo)); evt.Use(); return true; }
             if (Is(StudioShortcut.Preferences)) { StudioControlsPreferences.Open(); evt.Use(); return true; }
             if (Is(StudioShortcut.XRay)) { SetXRayMode(!displayXray); evt.Use(); return true; }
             if (cutTool != CutTool.None)

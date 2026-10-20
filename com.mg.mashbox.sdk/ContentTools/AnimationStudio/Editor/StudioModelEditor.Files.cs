@@ -14,24 +14,26 @@ namespace MashBoxSDK.AnimationStudio
 
         private void OpenWorkspace(Action<StudioModelDocument> loaded)
         {
-            string path = EditorUtility.OpenFilePanel("Open MashBox Studio workspace", Application.dataPath, "asset");
+            System.IO.Directory.CreateDirectory(StudioModelDocument.WorkspaceFolder);
+            string path = EditorUtility.OpenFilePanelWithFilters("Open MashBox Studio workspace", StudioModelDocument.WorkspaceFolder,
+                new[] { "MashBox Studio workspace", StudioModelDocument.WorkspaceExtension, "Legacy workspace (convert)", "asset" });
             if (string.IsNullOrEmpty(path)) return;
-            var document = AssetDatabase.LoadAssetAtPath<StudioModelDocument>(FileUtil.GetProjectRelativePath(path));
-            if (!document) throw new InvalidOperationException("Choose a MashBox Studio workspace .asset in this project.");
+            var document = StudioModelDocument.OpenFile(path);
+            if (!document) throw new InvalidOperationException("Choose a MashBox Studio workspace in this project.");
             loaded(document);
         }
 
         private void SaveAs()
         {
             if (!Document) return;
-            string original = AssetDatabase.GetAssetPath(Document);
-            string directory = string.IsNullOrEmpty(original) ? "Assets" : Path.GetDirectoryName(original).Replace('\\','/');
-            string path = EditorUtility.SaveFilePanelInProject("Save Workspace As", Document.name + " Copy", "asset", "Save an independent editable MashBox Studio workspace.", directory);
+            string original = Document.WorkspacePath;
+            Directory.CreateDirectory(StudioModelDocument.WorkspaceFolder);
+            string path = EditorUtility.SaveFilePanel("Save Workspace As", StudioModelDocument.WorkspaceFolder, Document.name + " Copy", StudioModelDocument.WorkspaceExtension);
             if (string.IsNullOrEmpty(path)) return;
+            path = StudioModelDocument.ValidateWorkspacePath(path);
             if (string.Equals(path,original,StringComparison.OrdinalIgnoreCase)) { Save(); return; }
             var copy = Document.SaveAs(path);
             if (WorkspaceSavedAs != null) WorkspaceSavedAs(copy); else Load(copy);
-            EditorGUIUtility.PingObject(copy);
         }
 
         // Keep selected subtrees once, plus skeleton dependencies needed by skinned meshes.

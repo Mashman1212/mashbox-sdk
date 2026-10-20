@@ -10,9 +10,9 @@ namespace MashBoxSDK.AnimationStudio
     {
         public static StudioModelDocument CreateEmpty(string path)
         {
-            if (AssetDatabase.LoadMainAssetAtPath(path)) throw new InvalidOperationException("Choose a new model filename.");
+            if (System.IO.File.Exists(path) || (path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase) && AssetDatabase.LoadMainAssetAtPath(path))) throw new InvalidOperationException("Choose a new model filename.");
             var doc = CreateInstance<StudioModelDocument>();
-            AssetDatabase.CreateAsset(doc, path); doc.Save(); return doc;
+            if (path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)) AssetDatabase.CreateAsset(doc, path); else doc.SetWorkspacePath(path); doc.Save(); return doc;
         }
 
         public int AddEmptyTransform(int parent = -1, Vector3? position = null)
@@ -30,14 +30,14 @@ namespace MashBoxSDK.AnimationStudio
 
         public int AddPrimitive(PrimitiveType type)
         {
-            if (!AssetDatabase.Contains(this)) throw new InvalidOperationException("Save the working model before creating geometry.");
+            if (!HasStorage) throw new InvalidOperationException("Save the working model before creating geometry.");
             var mesh = BuildPrimitive(type);
             string name = ObjectNames.GetUniqueName(nodes.Select(n => n.name).ToArray(), type.ToString());
             mesh.name = name + " Mesh";
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Create " + type);
             Undo.RegisterCompleteObjectUndo(this, "Create " + type);
-            AssetDatabase.AddObjectToAsset(mesh, this);
+            AttachOwnedMesh(mesh);
             // Undo removes the node, while its owned mesh stays available for Redo.
             // Destroying a persistent subasset through creation undo loses its asset reference.
             var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;

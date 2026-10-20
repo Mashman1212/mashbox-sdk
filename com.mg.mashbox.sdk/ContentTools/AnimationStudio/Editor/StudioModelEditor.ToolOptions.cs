@@ -96,12 +96,12 @@ namespace MashBoxSDK.AnimationStudio
                 return;
             }
             GUILayout.Label(tool == Tool.None ? "Selection Tool" : tool + " Tool", StudioTheme.Styles.boldLabel);
-            bool nextXray = EditorGUILayout.Toggle(new GUIContent("X-ray mode", "Transparent meshes and full-strength edges (" + StudioShortcuts.Label(StudioShortcut.XRay) + ")."), displayXray);
-            if (nextXray != displayXray) SetXRayMode(nextXray);
             EditorGUI.BeginChangeCheck();
             if (tool != Tool.None) DrawOrientationPopup(true);
             xray = EditorGUILayout.Toggle(new GUIContent("Through selection", "Select components behind visible surfaces."), xray);
             if (tool != Tool.None) weld = EditorGUILayout.Toggle(new GUIContent("Keep seams together", "Move coincident vertices across UV and normal splits together."), weld);
+            if (tool == Tool.Scale && mode != ComponentMode.Object)
+                preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges and faces cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
             if (EditorGUI.EndChangeCheck()) repaint();
             if (tool == Tool.Move)
             {
@@ -137,7 +137,8 @@ namespace MashBoxSDK.AnimationStudio
                 for (int axis = 0; axis < 3; axis++)
                 {
                     var field = new Rect(row.x + titleWidth + axis * (axisWidth + 4), row.y, axisWidth, row.height);
-                    value[axis] = EditorGUI.DelayedFloatField(field, new GUIContent(axis == 0 ? "X" : axis == 1 ? "Y" : "Z"), value[axis]);
+                    GUI.SetNextControlName(ChannelNames[label][axis]);
+                    value[axis] = EditorGUI.FloatField(field, ChannelAxes[axis], value[axis]);
                 }
             }
             finally { EditorGUIUtility.labelWidth = previousLabelWidth; EditorGUI.indentLevel = previousIndent; }
@@ -147,9 +148,19 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!Document || Active < 0) return;
             var node = Document.nodes[Active];
-            Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup(); Undo.SetCurrentGroupName("Edit object channels");
-            Undo.RegisterCompleteObjectUndo(Document, "Edit object channels");
-            if (pivot && mode == ComponentMode.Object)
+            bool axisScrub = !pivot && (pendingChannelScrub == "Position" || pendingChannelScrub == "Rotation");
+            if (!axisScrub && position == node.position && (pivot || (rotation == node.RotationChannels && scale == node.scale)) && visible == node.active) return;
+            int control = ChannelEditControl(out bool text);
+            if (channelUndoGroup >= 0 && (control == 0 || control != channelUndoControl || text != channelUndoText || channelUndoNode != Active)) FinishChannelEdit();
+            if (channelUndoGroup < 0)
+            {
+                Undo.IncrementCurrentGroup(); channelUndoGroup = Undo.GetCurrentGroup();
+                channelUndoControl = control; channelUndoText = text; channelUndoNode = Active;
+                Undo.SetCurrentGroupName("Edit object channels");
+                Undo.RegisterCompleteObjectUndo(Document, "Edit object channels");
+            }
+            if (axisScrub) ApplyChannelScrub();
+            else if (pivot && mode == ComponentMode.Object)
             {
                 if (position != node.position)
                 {
@@ -157,9 +168,10 @@ namespace MashBoxSDK.AnimationStudio
                     Document.Repivot(Active, Transforms, Transforms[Active].parent ? Transforms[Active].parent.TransformPoint(localPosition) : localPosition);
                 }
             }
-            else { node.position = position; node.rotation = Quaternion.Euler(rotation); node.scale = scale; Document.ApplyTransform(Active, Transforms[Active]); }
+            else { node.position = position; node.RotationChannels = rotation; node.scale = scale; Document.ApplyTransform(Active, Transforms[Active]); }
             node.active = visible; Transforms[Active].gameObject.SetActive(visible);
-            Undo.CollapseUndoOperations(group); Changed();
+            if (control == 0) FinishChannelEdit();
+            Changed(pivot);
         }
     }
     internal sealed class StudioModelToolOptions : EditorWindow

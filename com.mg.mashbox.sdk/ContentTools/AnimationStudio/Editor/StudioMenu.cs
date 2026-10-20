@@ -21,15 +21,17 @@ namespace MashBoxSDK.AnimationStudio
         internal void AddDisabledItem(GUIContent label) => Add(label.text, false, false, null);
         private void Add(string path, bool selected, bool enabled, Action action)
         {
-            var parts = path.Split('/'); var level = Items;
+            // Shortcut alternatives may contain '/'; only the label defines the menu path.
+            int shortcutStart = path.IndexOf('\t');
+            string shortcut = shortcutStart >= 0 ? path.Substring(shortcutStart + 1) : "";
+            var parts = (shortcutStart >= 0 ? path.Substring(0, shortcutStart) : path).Split('/'); var level = Items;
             for (int i = 0; i < parts.Length - 1; i++)
             {
                 var branch = level.Find(item => item.Text == parts[i] && !item.Separator);
                 if (branch == null) { branch = new Item { Text = parts[i] }; level.Add(branch); }
                 level = branch.Children;
             }
-            var label = parts[parts.Length - 1].Split('\t');
-            level.Add(new Item { Text = label[0], Shortcut = label.Length > 1 ? label[1] : "", Checked = selected, Enabled = enabled, Action = action });
+            level.Add(new Item { Text = parts[parts.Length - 1], Shortcut = shortcut, Checked = selected, Enabled = enabled, Action = action });
         }
         internal void AddSeparator(string path)
         {
@@ -67,18 +69,22 @@ namespace MashBoxSDK.AnimationStudio
 
     internal sealed class StudioMenuPopup : EditorWindow
     {
-        internal const float ColumnWidth = 224, RowHeight = 25, Padding = 4;
+        internal const float RowHeight = 25, Padding = 4;
         private readonly List<List<StudioMenu.Item>> columns = new List<List<StudioMenu.Item>>();
         private readonly List<int> selected = new List<int>();
         private Rect anchor;
         private int activeColumn;
         private GUIStyle textStyle, shortcutStyle;
-        private float columnWidth = ColumnWidth;
+        private readonly List<StudioMenuColumnPopup> submenus = new List<StudioMenuColumnPopup>();
         private bool positioning;
+        private bool shown;
         private static StudioMenuPopup current;
         private EditorWindow menuBarOwner;
+        private MashBoxStudioViewport inputOwner;
         private string menuBarItem;
         internal static bool HasMenuBar(EditorWindow owner) => owner && current && current.menuBarOwner == owner;
+        internal static bool BlocksInput(MashBoxStudioViewport owner) => owner && current && current.inputOwner == owner;
+        internal static void CloseInputMenu(MashBoxStudioViewport owner) { if (BlocksInput(owner)) current.Close(); }
         internal static bool IsMenuBarItemOpen(EditorWindow owner,string item) => HasMenuBar(owner) && current.menuBarItem == item;
         internal static void CloseMenuBar(EditorWindow owner) { if (HasMenuBar(owner)) current.Close(); }
         internal static StudioMenuPopup Open(StudioMenu menu, Rect screenAnchor, EditorWindow menuBarOwner = null, string menuBarItem = null)
@@ -91,6 +97,8 @@ namespace MashBoxSDK.AnimationStudio
             foreach (var previous in Resources.FindObjectsOfTypeAll<StudioMenuPopup>()) previous.Close();
             var window = CreateInstance<StudioMenuPopup>();
             current = window; window.menuBarOwner = menuBarOwner;
+            window.inputOwner = menuBarOwner as MashBoxStudioViewport ?? focusedWindow as MashBoxStudioViewport;
+            window.inputOwner?.SetMenuInputBlocked(true);
             window.wantsMouseMove = true; window.ReplaceMenu(menu,screenAnchor,menuBarItem);
             return window;
         }
@@ -102,25 +110,25 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnDisable()
         {
+            foreach (var submenu in submenus) if (submenu) submenu.Close();
+            submenus.Clear();
             if (current == this) current=null;
+            if (inputOwner) inputOwner.SetMenuInputBlocked(false);
             if (menuBarOwner) menuBarOwner.Repaint();
         }
         internal int ColumnCount => columns.Count;
-        private Vector2 MenuSize()
+        private Vector2 ColumnSize(int index)
         {
-            float height = 0;
-            columnWidth = ColumnWidth;
+            float width = 80, height = Padding * 2;
             var measure = new GUIStyle(EditorStyles.label) { fontSize = 12 };
-            foreach (var column in columns) foreach (var item in column)
-                columnWidth = Mathf.Max(columnWidth, measure.CalcSize(new GUIContent(item.Text)).x +
-                    measure.CalcSize(new GUIContent(item.Shortcut)).x + 80);
-            foreach (var column in columns)
+            foreach (var item in columns[index])
             {
-                float current = Padding * 2;
-                foreach (var item in column) current += item.Separator ? 7 : RowHeight;
-                height = Mathf.Max(height, current);
+                height += item.Separator ? 7 : RowHeight;
+                if (item.Separator) continue;
+                float shortcut = string.IsNullOrEmpty(item.Shortcut) ? 0 : measure.CalcSize(new GUIContent(item.Shortcut)).x + 16;
+                width = Mathf.Max(width, measure.CalcSize(new GUIContent(item.Text)).x + shortcut + 46 + Padding * 2);
             }
-            return new Vector2(columnWidth * columns.Count, height);
+            return new Vector2(Mathf.Ceil(width), height);
         }
         private void SelectRow(int column, int row, bool expand)
         {
@@ -130,8 +138,7 @@ namespace MashBoxSDK.AnimationStudio
             while (columns.Count > column + 1) { columns.RemoveAt(columns.Count - 1); selected.RemoveAt(selected.Count - 1); }
             var item = columns[column][row];
             if (expand && item.Enabled && item.Children.Count > 0) { columns.Add(item.Children); selected.Add(-1); }
-            var size = MenuSize();
-            if ((position.size - size).sqrMagnitude > 1) PositionPopup();
+            PositionPopup();
             Repaint();
         }
         private void InvokeSelected()
@@ -161,20 +168,65 @@ namespace MashBoxSDK.AnimationStudio
             positioning = true;
             try
             {
-                var size = MenuSize();
+                var size = ColumnSize(0);
                 var bounds = UnityEditorInternal.InternalEditorUtility.GetBoundsOfDesktopAtPoint(anchor.center);
                 var origin = new Vector2(Mathf.Clamp(anchor.x, bounds.xMin, Mathf.Max(bounds.xMin, bounds.xMax - size.x)),
                     anchor.yMax + size.y <= bounds.yMax ? anchor.yMax : Mathf.Max(bounds.yMin, anchor.y - size.y));
-                position = new Rect(origin, size);
-                ShowPopup(); Focus();
+                // ShowPopup creates the native window and may replace its initial
+                // bounds. Apply the measured rectangle after creation, only once.
+                if (!shown) { shown = true; ShowPopup(); }
+                minSize = maxSize = size;
+                var rootRect = new Rect(origin, size);
+                position = rootRect;
+                while (submenus.Count >= columns.Count)
+                {
+                    var last = submenus[submenus.Count - 1]; submenus.RemoveAt(submenus.Count - 1);
+                    if (last) last.Close();
+                }
+                Rect parent = rootRect;
+                for (int c = 1; c < columns.Count; c++)
+                {
+                    bool create = submenus.Count < c;
+                    if (create)
+                    {
+                        var child = CreateInstance<StudioMenuColumnPopup>(); child.Owner = this; child.Column = c;
+                        child.wantsMouseMove = true; submenus.Add(child);
+                    }
+                    float rowY = Padding;
+                    for (int r = 0; r < selected[c - 1]; r++) rowY += columns[c - 1][r].Separator ? 7 : RowHeight;
+                    var childSize = ColumnSize(c);
+                    float x = parent.xMax;
+                    if (x + childSize.x > bounds.xMax) x = parent.xMin - childSize.x;
+                    var childPosition = new Vector2(Mathf.Clamp(x,bounds.xMin,Mathf.Max(bounds.xMin,bounds.xMax-childSize.x)),
+                        Mathf.Clamp(parent.y + rowY - Padding,bounds.yMin,Mathf.Max(bounds.yMin,bounds.yMax-childSize.y)));
+                    var submenu = submenus[c - 1];
+                    if (create) submenu.ShowPopup();
+                    submenu.minSize = submenu.maxSize = childSize;
+                    var childRect = new Rect(childPosition,childSize);
+                    submenu.position = childRect;
+                    submenu.Repaint(); parent = childRect;
+                }
+                if (activeColumn == 0) Focus();
+                else if (activeColumn <= submenus.Count) submenus[activeColumn - 1].Focus();
             }
             finally { positioning = false; }
         }
-        private void OnLostFocus() { if (!positioning) Close(); }
-        private void OnGUI() { using (StudioTheme.Scope()) DrawThemedGUI(); }
-        private void DrawThemedGUI()
+        private void OnLostFocus() => CheckFocusLater();
+        internal void CheckFocusLater()
+        {
+            EditorApplication.delayCall += () => {
+                if (!this || positioning || focusedWindow == this) return;
+                foreach (var submenu in submenus) if (submenu && focusedWindow == submenu) return;
+                Close();
+            };
+        }
+        private void OnGUI() => DrawColumn(0);
+        internal void DrawColumn(int column)
+        { using (StudioTheme.Scope()) DrawThemedGUI(column); }
+        private void DrawThemedGUI(int column)
         {
             if (columns.Count == 0) { Close(); return; }
+            if (column >= columns.Count) return;
             if (textStyle == null) textStyle = new GUIStyle(StudioTheme.Styles.label) { fontSize = 12, alignment = TextAnchor.MiddleLeft, clipping = TextClipping.Clip };
             var evt = Event.current;
             if (evt.type == EventType.KeyDown)
@@ -195,12 +247,12 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 evt.Use(); return;
             }
-            EditorGUI.DrawRect(new Rect(Vector2.zero, position.size), StudioTheme.Current.Panel);
+            var size = ColumnSize(column);
+            EditorGUI.DrawRect(new Rect(Vector2.zero, size), StudioTheme.Current.Panel);
             int hitColumn = -1, hitRow = -1;
-            for (int c = 0; c < columns.Count; c++)
             {
-                float x = c * columnWidth, y = Padding;
-                if (c > 0) EditorGUI.DrawRect(new Rect(x, 0, 1, position.height), StudioTheme.Current.Border);
+                int c = column;
+                float x = 0, y = Padding, columnWidth = size.x;
                 for (int r = 0; r < columns[c].Count; r++)
                 {
                     var item = columns[c][r];
@@ -228,6 +280,16 @@ namespace MashBoxSDK.AnimationStudio
                 else if (evt.type == EventType.MouseUp && evt.button == 0)
                 { SelectRow(hitColumn, hitRow, true); InvokeSelected(); evt.Use(); }
             }
+            if (evt.isMouse || evt.type == EventType.ScrollWheel || evt.type == EventType.ContextClick)
+                evt.Use();
         }
+    }
+
+    internal sealed class StudioMenuColumnPopup : EditorWindow
+    {
+        internal StudioMenuPopup Owner;
+        internal int Column;
+        private void OnGUI() { if (Owner) Owner.DrawColumn(Column); else Close(); }
+        private void OnLostFocus() { if (Owner) Owner.CheckFocusLater(); }
     }
 }

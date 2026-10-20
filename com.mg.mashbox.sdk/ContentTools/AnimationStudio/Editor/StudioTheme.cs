@@ -80,11 +80,17 @@ namespace MashBoxSDK.AnimationStudio
                 texture.Apply(); DropdownTextures.Add(color, texture); return texture;
             }
         }
-        private static readonly Dictionary<string, Resources> Cache = new Dictionary<string, Resources>();
+        internal static bool HoverSuppressed { get; private set; }
+        internal static void WithoutHover(Action draw)
+        {
+            bool previous = HoverSuppressed; HoverSuppressed = true;
+            try { draw?.Invoke(); } finally { HoverSuppressed = previous; }
+        }
+        private static readonly Dictionary<(Palette palette, bool dark, bool suppressHover), Resources> Cache = new Dictionary<(Palette, bool, bool), Resources>();
         static StudioTheme() { AssemblyReloadEvents.beforeAssemblyReload += Dispose; EditorApplication.quitting += Dispose; }
         private static Resources GetResources()
         {
-            string key = Current.Id + (EditorGUIUtility.isProSkin ? ":dark" : ":light");
+            var key = (Current, EditorGUIUtility.isProSkin, HoverSuppressed);
             if (!Cache.TryGetValue(key, out var resource)) Cache[key] = resource = new Resources();
             return resource;
         }
@@ -114,6 +120,10 @@ namespace MashBoxSDK.AnimationStudio
                     style.border = new RectOffset(2, 14, 2, 2);
                 }
             }
+            if (HoverSuppressed)
+            {
+                style.hover = style.normal; style.onHover = style.onNormal;
+            }
             return style;
         }
         private static GUISkin Skin(Resources resource)
@@ -142,7 +152,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (implicitStates == null)
                     implicitStates = new[] { EditorStyles.label, EditorStyles.foldout, EditorStyles.toggle, EditorStyles.numberField, EditorStyles.textField, EditorStyles.objectField, EditorStyles.popup, EditorStyles.helpBox, EditorStyles.boldLabel }.SelectMany(States).ToArray();
                 if (savedText.Count <= level) savedText.Add(new Color[implicitStates.Length]);
-                for (int i = 0; i < implicitStates.Length; i++) { savedText[level][i] = implicitStates[i].textColor; implicitStates[i].textColor = Current.Text; }
+                var text = Current.Text;
+                for (int i = 0; i < implicitStates.Length; i++) { savedText[level][i] = implicitStates[i].textColor; implicitStates[i].textColor = text; }
                 GUI.skin = Skin(GetResources()); GUI.color = GUI.contentColor = GUI.backgroundColor = Color.white;
             }
             public void Dispose()
@@ -165,6 +176,26 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static class Styles
         {
+            internal static GUIStyle hierarchyRow
+            {
+                get
+                {
+                    var resources = GetResources();
+                    if (resources.Styles.TryGetValue("hierarchyRow", out var style)) return style;
+                    var button = miniButton;
+                    style = new GUIStyle(GUIStyle.none)
+                    {
+                        alignment = TextAnchor.MiddleLeft, font = button.font,
+                        fontSize = button.fontSize, fontStyle = button.fontStyle,
+                        padding = new RectOffset(button.padding.left, button.padding.right, button.padding.top, button.padding.bottom),
+                        margin = new RectOffset(button.margin.left, button.margin.right, button.margin.top, button.margin.bottom),
+                        fixedHeight = button.fixedHeight
+                    };
+                    style.normal.textColor = Current.Text;
+                    resources.Styles.Add("hierarchyRow", style);
+                    return style;
+                }
+            }
             private static GUIStyle Get(string name)
             {
                 var resources = GetResources();
@@ -198,6 +229,7 @@ namespace MashBoxSDK.AnimationStudio
                 style.hover.background = style.focused.background = dropdown ? resources.Dropdown(palette.Button) : resources.Texture(palette.Button);
                 style.active.background = style.onNormal.background = style.onHover.background = style.onActive.background = style.onFocused.background =
                     dropdown ? resources.Dropdown(palette.Selection) : resources.Texture(palette.Selection);
+                if (HoverSuppressed) { style.hover = style.normal; style.onHover = style.onNormal; }
                 resources.Styles.Add(key, style); return style;
             }
             internal static GUIStyle menuDropdown

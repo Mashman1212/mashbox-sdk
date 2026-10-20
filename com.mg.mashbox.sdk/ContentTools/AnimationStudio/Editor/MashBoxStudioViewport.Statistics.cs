@@ -7,7 +7,6 @@ namespace MashBoxSDK.AnimationStudio
     public sealed partial class MashBoxStudioViewport
     {
         private IMGUIContainer workspaceStatsButton, workspaceStats;
-        private bool workspaceStatsTicking;
         private double workspaceSampleStart = -1, workspaceLastFrame = -1;
         private int workspaceSampleFrames;
         internal double WorkspaceFps { get; private set; }
@@ -38,8 +37,7 @@ namespace MashBoxSDK.AnimationStudio
             workspaceStats.style.backgroundColor = palette.Panel;
             workspaceStats.style.borderLeftColor = workspaceStats.style.borderRightColor = palette.Border;
             workspaceStats.style.borderTopColor = workspaceStats.style.borderBottomColor = palette.Border;
-            if(visible && !workspaceStatsTicking) { EditorApplication.update += TickWorkspaceStatistics; workspaceStatsTicking = true; }
-            else if(!visible) StopWorkspaceStatistics();
+            if(!visible) StopWorkspaceStatistics();
         }
         internal void SetWorkspaceStatsVisible(bool visible)
         {
@@ -61,14 +59,16 @@ namespace MashBoxSDK.AnimationStudio
             using(new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel))
             {
                 GUILayout.Label("WORKSPACE",StudioTheme.Styles.boldLabel);
-                GUILayout.Label(WorkspaceFps > 0 ? WorkspaceFps.ToString("F1") + " FPS" : "Measuring FPS…",StudioTheme.Styles.label);
+                GUILayout.Label(ViewportImageReused ? "Cached (idle)" : WorkspaceFps > 0 ? System.Math.Ceiling(WorkspaceFps).ToString("F0") + " FPS" : "Measuring FPS…",StudioTheme.Styles.label);
             }
         }
         internal void RecordWorkspaceFrame(double now)
         {
             if(!panelsModeling || !StudioSettings.Current.showWorkspaceFps) return;
             if(workspaceLastFrame < 0 || now < workspaceLastFrame || now-workspaceLastFrame > 1)
-            { workspaceSampleStart = now; workspaceSampleFrames = 0; WorkspaceFps = 0; }
+            // Measure naturally requested frames only. Idle time starts a new sample
+            // without clearing the last reading or scheduling another scene render.
+            { workspaceSampleStart = now; workspaceSampleFrames = 0; }
             else
             {
                 workspaceSampleFrames++;
@@ -78,10 +78,8 @@ namespace MashBoxSDK.AnimationStudio
             }
             workspaceLastFrame = now;
         }
-        private void TickWorkspaceStatistics() { if(this && panelsModeling && StudioSettings.Current.showWorkspaceFps) Repaint(); else StopWorkspaceStatistics(); }
         private void StopWorkspaceStatistics()
         {
-            EditorApplication.update -= TickWorkspaceStatistics; workspaceStatsTicking = false;
             workspaceSampleStart = workspaceLastFrame = -1; workspaceSampleFrames = 0; WorkspaceFps = 0;
         }
     }

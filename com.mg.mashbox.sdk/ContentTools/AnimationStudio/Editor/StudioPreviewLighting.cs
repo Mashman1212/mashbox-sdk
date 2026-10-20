@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -25,7 +26,10 @@ namespace MashBoxSDK.AnimationStudio
         private readonly bool hdrp;
         private bool studioLights;
         private readonly Dictionary<SceneView,(Color background, CameraClearFlags clearFlags)> cameraColors = new Dictionary<SceneView,(Color,CameraClearFlags)>();
-        private readonly Dictionary<SceneView,(Component data, bool preview, LayerMask mask, bool effects, Color background, object clearMode)> cameras = new Dictionary<SceneView,(Component,bool,LayerMask,bool,Color,object)>();
+        private readonly Dictionary<SceneView,(Component data, bool preview, LayerMask mask, bool effects, Color background, object clearMode, object aa, object aaQuality)> cameras = new Dictionary<SceneView,(Component,bool,LayerMask,bool,Color,object,object,object)>();
+        private readonly Dictionary<Component,(bool custom,object frames,object mask)> cameraFrameSettings = new Dictionary<Component,(bool,object,object)>();
+        private readonly Dictionary<SceneView,(Component data,bool lights,bool aa,bool smaa)> configuredCameras = new Dictionary<SceneView,(Component,bool,bool,bool)>();
+        internal int CameraConfigurationCount { get; private set; }
 
         internal StudioPreviewLighting(Scene scene)
         {
@@ -93,7 +97,7 @@ namespace MashBoxSDK.AnimationStudio
             Key.shadows = s.shadows ? LightShadows.Soft : LightShadows.None;
             Key.shadowStrength = Mathf.Clamp01(s.shadowStrength); Fill.shadows = LightShadows.None;
             if (hdKey) Set(hdKey,"shadowDimmer",Mathf.Clamp01(s.shadowStrength));
-            if (exposure) Parameter(exposure,"fixedExposure",-ev);
+            if (exposure) Parameter(exposure,"fixedExposure",studioLights ? -ev : 0);
             ground.SetActive(studioLights && s.ground); ground.transform.localPosition = new Vector3(0,s.groundHeight,0);
             ground.transform.localScale = Vector3.one * Mathf.Clamp(s.groundSize,1,200) / 10;
             if (groundMaterial.HasProperty("_BaseColor")) groundMaterial.SetColor("_BaseColor",s.groundColor);
@@ -105,24 +109,74 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!view.camera) return;
             if (!cameraColors.ContainsKey(view)) cameraColors.Add(view,(view.camera.backgroundColor,view.camera.clearFlags));
-            var background = new Color(.35f,.35f,.35f,1);
+            // Preserve the original neutral viewport gray in display space. HDRP's
+            // camera-preview path needs the explicit linear equivalent below.
+            Color background = new Color32(71,71,71,255);
             view.camera.clearFlags = CameraClearFlags.SolidColor;
             view.camera.backgroundColor = background;
             if (!hdrp || !view.camera || CameraDataType == null || !profile) return;
             if (!cameras.ContainsKey(view))
             {
                 var data = view.camera.GetComponent(CameraDataType) ?? view.camera.gameObject.AddComponent(CameraDataType);
-                cameras.Add(view,(data,(bool)Get(data,"isEditorCameraPreview"),(LayerMask)Get(data,"volumeLayerMask"),view.sceneViewState.showImageEffects,(Color)Get(data,"backgroundColorHDR"),Get(data,"clearColorMode")));
+                cameras.Add(view,(data,(bool)Get(data,"isEditorCameraPreview"),(LayerMask)Get(data,"volumeLayerMask"),view.sceneViewState.showImageEffects,(Color)Get(data,"backgroundColorHDR"),Get(data,"clearColorMode"),Get(data,"antialiasing"),Get(data,"SMAAQuality")));
             }
             var state = cameras[view];
             // HDRP's regular asset preview forcibly disables exposure and shadows.
             // Camera-preview mode retains preview-scene isolation while enabling them.
-            Set(state.data,"isEditorCameraPreview",studioLights); Set(state.data,"volumeLayerMask",(LayerMask)1);
+            bool antialiasing = !StudioSettings.Current.disableViewportAntialiasing;
+            bool smaa = StudioSettings.Current.useViewportSmaa;
+            view.sceneViewState.showImageEffects = studioLights || antialiasing;
+            // Native layout, input and repaint passes share these camera settings.
+            // Rebuild the reflected HDRP overrides only when their inputs change.
+            if (configuredCameras.TryGetValue(view,out var configured) && configured.data == state.data &&
+                configured.lights == studioLights && configured.aa == antialiasing && configured.smaa == smaa) return;
+            // Regular asset previews disable HDRP post-processing, including AA.
+            // Keep camera-preview rendering enabled for SMAA even with studio lights off.
+            Set(state.data,"isEditorCameraPreview",studioLights || antialiasing); Set(state.data,"volumeLayerMask",(LayerMask)1);
+            Set(state.data,"antialiasing",Enum.Parse(state.aa.GetType(),!antialiasing ? "None" : StudioSettings.Current.useViewportSmaa ? "SubpixelMorphologicalAntiAliasing" : "FastApproximateAntialiasing"));
+            Set(state.data,"SMAAQuality",Enum.Parse(state.aaQuality.GetType(),"High"));
+            ConfigureFrameSettings(state.data, studioLights || antialiasing, !studioLights);
             // Camera-preview mode bypasses Unity's gray asset-preview background.
             // Set HDRP's own clear color explicitly; Camera.backgroundColor alone is ignored.
             Set(state.data,"clearColorMode",Enum.Parse(state.clearMode.GetType(),"Color"));
             Set(state.data,"backgroundColorHDR",background.linear);
-            view.sceneViewState.showImageEffects = studioLights;
+            configuredCameras[view] = (state.data,studioLights,antialiasing,smaa);
+            CameraConfigurationCount++;
+        }
+        private void ConfigureFrameSettings(Component data, bool postprocessing, bool neutralPreview)
+        {
+            // Per-camera overrides prevent project Volume defaults from adding effects
+            // when the post-processing path is enabled solely to run spatial AA.
+            const string framesName = "m_RenderingPathCustomFrameSettings";
+            const string maskName = "renderingPathCustomFrameSettingsOverrideMask";
+            if (!cameraFrameSettings.ContainsKey(data))
+                cameraFrameSettings.Add(data,((bool)Get(data,"customRenderingSettings"),Get(data,framesName),Get(data,maskName)));
+            // Start from independent copies of the original settings so switching back
+            // to Studio lights restores all lighting passes and preserves Undo/resume.
+            object frames = RuntimeHelpers.GetObjectValue(cameraFrameSettings[data].frames);
+            object mask = RuntimeHelpers.GetObjectValue(cameraFrameSettings[data].mask), bits = Get(mask,"mask");
+            var setEnabled = frames.GetType().GetMethod("SetEnabled",Members);
+            var fieldType = setEnabled.GetParameters()[0].ParameterType;
+            var indexer = bits.GetType().GetProperty("Item");
+            void Override(string name,bool enabled)
+            {
+                object field = Enum.Parse(fieldType,name);
+                setEnabled.Invoke(frames,new[] {field,(object)enabled});
+                indexer.SetValue(bits,true,new object[] {(uint)Convert.ToInt32(field)});
+            }
+            Override("Postprocess",postprocessing);
+            Override("Antialiasing",!StudioSettings.Current.disableViewportAntialiasing);
+            Override("ExposureControl",studioLights);
+            foreach (string effect in new[] {"MotionBlur","DepthOfField","Bloom","PaniniProjection","LensFlareScreenSpace","LensFlareDataDriven","LensDistortion","ChromaticAberration","Vignette","ColorGrading","Tonemapping","FilmGrain","Dithering","CustomPostProcess"})
+                Override(effect,false);
+            // Neutral modelling materials shade themselves. They do not sample HDRP
+            // lighting, reflection, fog or motion buffers. Keep geometry, transparency,
+            // depth and spatial AA while omitting those unused render passes.
+            if (neutralPreview)
+                foreach (string effect in new[] {"LitShaderMode","DepthPrepassWithDeferredRendering","ClearGBuffers","TransparentPrepass","TransparentPostpass","Decals","Refraction","Distortion","RoughDistortion","MotionVectors","ObjectMotionVectors","ShadowMaps","ContactShadows","ScreenSpaceShadows","SSR","TransparentSSR","SSAO","SSGI","SubsurfaceScattering","VolumetricClouds","AtmosphericScattering","Volumetrics","ReflectionProbe","PlanarProbe","LightLayers","RayTracing","AdaptiveProbeVolume","FPTLForForwardOpaque","BigTilePrepass","ComputeLightVariants","ComputeMaterialVariants","CustomPass"})
+                    Override(effect,false);
+            Set(mask,"mask",bits); Set(data,framesName,frames); Set(data,maskName,mask);
+            Set(data,"customRenderingSettings",true);
         }
         private static object Get(object target,string name) => target.GetType().GetField(name,Members)?.GetValue(target) ?? target.GetType().GetProperty(name,Members)?.GetValue(target);
         private static void Set(object target,string name,object value)
@@ -139,6 +193,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void RestoreCameras()
         {
+            configuredCameras.Clear();
             foreach (var pair in cameraColors)
             {
                 if (!pair.Key || !pair.Key.camera) continue;
@@ -151,9 +206,18 @@ namespace MashBoxSDK.AnimationStudio
                 if (!pair.Key || !pair.Value.data) continue;
                 Set(pair.Value.data,"isEditorCameraPreview",pair.Value.preview); Set(pair.Value.data,"volumeLayerMask",pair.Value.mask);
                 Set(pair.Value.data,"backgroundColorHDR",pair.Value.background); Set(pair.Value.data,"clearColorMode",pair.Value.clearMode);
+                Set(pair.Value.data,"antialiasing",pair.Value.aa); Set(pair.Value.data,"SMAAQuality",pair.Value.aaQuality);
                 pair.Key.sceneViewState.showImageEffects = pair.Value.effects;
             }
             cameras.Clear();
+            foreach (var pair in cameraFrameSettings)
+            {
+                if (!pair.Key) continue;
+                Set(pair.Key,"customRenderingSettings",pair.Value.custom);
+                Set(pair.Key,"m_RenderingPathCustomFrameSettings",pair.Value.frames);
+                Set(pair.Key,"renderingPathCustomFrameSettingsOverrideMask",pair.Value.mask);
+            }
+            cameraFrameSettings.Clear();
         }
         public void Dispose()
         {

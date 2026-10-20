@@ -64,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
         [Serializable] private sealed class Profile { public List<Override> overrides = new List<Override>(); }
         private static Profile profile;
         private static readonly Dictionary<StudioShortcut,Binding[]> bindingCache = new Dictionary<StudioShortcut,Binding[]>();
+        private static readonly Dictionary<StudioShortcut,string> labelCache = new Dictionary<StudioShortcut,string>();
         internal static event Action changed;
         private static Binding Key(KeyCode key, StudioModifiers modifiers = StudioModifiers.None, bool shift = false, bool any = false) => new Binding(key, modifiers, shift, any);
         internal static readonly Definition[] Definitions = {
@@ -116,7 +117,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static bool Matches(StudioShortcut action, Event evt, bool release = false) => Bindings(action).Any(b => b.Matches(evt, release));
         internal static bool Pressed(StudioShortcut action, Event evt) => evt != null && evt.type == EventType.KeyDown && Matches(action,evt);
-        internal static string Label(StudioShortcut action) => string.Join(" / ",Bindings(action).Select(b => b.ToString()));
+        internal static string Label(StudioShortcut action)
+        {
+            if(labelCache.TryGetValue(action,out var label))return label;
+            return labelCache[action]=string.Join(" / ",Bindings(action).Select(b => b.ToString()));
+        }
         internal static string MenuLabel(string label, StudioShortcut action) => Label(action) is string keys && keys.Length > 0 ? label+"\t"+keys : label;
         internal static void Set(StudioShortcut action, IEnumerable<Binding> bindings)
         {
@@ -131,7 +136,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void Reload()
         {
-            bindingCache.Clear();
+            bindingCache.Clear();labelCache.Clear();
             try { profile = JsonUtility.FromJson<Profile>(EditorPrefs.GetString(PreferenceKey,"")) ?? new Profile(); }
             catch { profile = new Profile(); }
             if (profile.overrides == null) profile.overrides = new List<Override>();
@@ -140,7 +145,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static void Save()
         {
-            bindingCache.Clear();
+            bindingCache.Clear();labelCache.Clear();
             EditorPrefs.SetString(PreferenceKey,JsonUtility.ToJson(profile)); changed?.Invoke();
             foreach (var window in Resources.FindObjectsOfTypeAll<EditorWindow>())
                 if (window.GetType().Namespace == typeof(StudioShortcuts).Namespace) window.Repaint();

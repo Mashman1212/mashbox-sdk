@@ -13,15 +13,29 @@ namespace MashBoxSDK.AnimationStudio
             internal Vector3 center;
             internal Quaternion orientation;
             internal int[] nodes, vertices;
-            internal Vector3[] positions, scales, meshVertices;
+            internal HashSet<int> componentIndices;
+            internal Vector3[] positions, scales, meshVertices, workingVertices;
+            internal bool undoRegistered;
             internal Vector3 factor = Vector3.one;
         }
         private ScaleDrag scaleDrag;
+        private bool preventNegativeScale = true;
+
+        private Vector3 ConstrainComponentScale(Vector3 factor)
+        {
+            if (!preventNegativeScale || !FiniteScalePoint(factor)) return factor;
+            return new Vector3(Mathf.Max(1e-6f, factor.x), Mathf.Max(1e-6f, factor.y), Mathf.Max(1e-6f, factor.z));
+        }
 
         private ScaleDrag CaptureScaleDrag(int control, Vector3 center, Quaternion orientation, HashSet<int> indices, Vector3[] vertices)
         {
             var drag = new ScaleDrag { control = control, center = center, orientation = orientation };
-            if (indices != null) { drag.vertices = indices.ToArray(); drag.meshVertices = vertices; }
+            if (indices != null)
+            {
+                drag.componentIndices = new HashSet<int>(indices);
+                drag.vertices = indices.ToArray(); drag.meshVertices = vertices;
+                drag.workingVertices = (Vector3[])vertices.Clone();
+            }
             else
             {
                 drag.nodes = objects.Where(i => !HasSelectedParent(i)).ToArray();
@@ -40,25 +54,36 @@ namespace MashBoxSDK.AnimationStudio
         private bool ApplyScaleDrag(Vector3 factor)
         {
             var drag = scaleDrag;
+            if (drag != null && drag.vertices != null) factor = ConstrainComponentScale(factor);
             if (drag == null || !InvertibleScale(factor)) return false;
+            // The handle keeps changing beyond a clamped axis, but the mesh does not.
+            // Avoid repeating mesh uploads, normal/tangent rebuilds, undo and redraws.
+            if (factor.Equals(drag.factor)) return false;
+            var inverseOrientation = Quaternion.Inverse(drag.orientation);
             Vector3 ScalePoint(Vector3 point) => drag.center + drag.orientation *
-                Vector3.Scale(Quaternion.Inverse(drag.orientation) * (point - drag.center), factor);
+                Vector3.Scale(inverseOrientation * (point - drag.center), factor);
             // ScaleHandle reports the total factor since mouse-down. Always apply it
             // to the captured geometry, never multiply it into the previous update.
             if (drag.vertices != null)
             {
                 var transform = Transforms[Active];
-                var values = (Vector3[])drag.meshVertices.Clone();
+                var localToWorld = transform.localToWorldMatrix;
+                var worldToLocal = transform.worldToLocalMatrix;
+                var values = drag.workingVertices;
                 foreach (int i in drag.vertices)
                 {
-                    var world = ScalePoint(transform.TransformPoint(drag.meshVertices[i]));
-                    values[i] = transform.InverseTransformPoint(world);
+                    var world = ScalePoint(localToWorld.MultiplyPoint3x4(drag.meshVertices[i]));
+                    values[i] = worldToLocal.MultiplyPoint3x4(world);
                     if (!FiniteScalePoint(world) || !FiniteScalePoint(values[i])) return false;
                 }
-                PreserveFaceTopology();
-                Undo.RegisterCompleteObjectUndo(ActiveMesh, "Scale mesh components");
+                if (!drag.undoRegistered)
+                {
+                    PreserveFaceTopology();
+                    Undo.RegisterCompleteObjectUndo(ActiveMesh, "Scale mesh components");
+                    drag.undoRegistered = true;
+                }
                 ActiveMesh.vertices = values; ActiveMesh.RecalculateNormals(); ActiveMesh.RecalculateBounds();
-                if (ActiveMesh.uv.Length == ActiveMesh.vertexCount) ActiveMesh.RecalculateTangents();
+                if (ActiveMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.TexCoord0)) ActiveMesh.RecalculateTangents();
                 EditorUtility.SetDirty(ActiveMesh);
             }
             else
@@ -73,7 +98,11 @@ namespace MashBoxSDK.AnimationStudio
                     var localPosition = parent ? parent.InverseTransformPoint(positions[i]) : positions[i];
                     if (!FiniteScalePoint(positions[i]) || !FiniteScalePoint(localPosition) || !InvertibleScale(scales[i])) return false;
                 }
-                Undo.RegisterCompleteObjectUndo(Document, "Scale model objects");
+                if (!drag.undoRegistered)
+                {
+                    Undo.RegisterCompleteObjectUndo(Document, "Scale model objects");
+                    drag.undoRegistered = true;
+                }
                 for (int i = 0; i < drag.nodes.Length; i++)
                 {
                     var target = Transforms[drag.nodes[i]];
@@ -82,7 +111,8 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             drag.factor = factor;
-            Changed(drag.vertices != null);
+            if (drag.vertices != null) PositionsChanged();
+            else Changed(false);
             return true;
         }
     }

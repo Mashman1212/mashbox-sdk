@@ -57,7 +57,7 @@ namespace MashBoxSDK.AnimationStudio
             cutControl = GUIUtility.GetControlID("MashBoxStudioCutTool".GetHashCode(), FocusType.Passive);
             if (HandleModelKeyboard(view)) return true;
             if (evt.alt) return true;
-            if (evt.type == EventType.Layout) HandleUtility.AddDefaultControl(cutControl);
+            if (evt.type == EventType.Layout || evt.type == EventType.MouseMove) HandleUtility.AddDefaultControl(cutControl);
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,0,view.position.width,view.position.height);
             bool overCanvas = canvas.Contains(evt.mousePosition) && (!(view is MashBoxStudioViewport overlay) || !overlay.IsOverViewportControls(evt.mousePosition));
             bool loop = cutTool == CutTool.EdgeLoop || evt.control || evt.command || cutDragging;

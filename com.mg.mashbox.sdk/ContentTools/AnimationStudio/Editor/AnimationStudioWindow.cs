@@ -371,10 +371,16 @@ namespace MashBoxSDK.AnimationStudio
             else pose = rig.Rest.Copy(0);
             OpenViewport();
         }
+        internal void ApplyWindowModePreference()
+        {
+            if (viewport && viewport.dockableHost == StudioSettings.Current.floatingStudioWindow)
+                OpenViewport();
+        }
         private void OpenViewport()
         {
             if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
-            bool migrateHost = viewport && !viewport.dockableHost;
+            bool dockable = !StudioSettings.Current.floatingStudioWindow;
+            bool migrateHost = viewport && viewport.dockableHost != dockable;
             var previousPivot = migrateHost ? viewport.pivot : Vector3.zero;
             var previousRotation = migrateHost ? viewport.rotation : Quaternion.identity;
             float previousSize = migrateHost ? viewport.size : 1;
@@ -383,21 +389,21 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var previous = viewport;
                 viewport = CreateInstance<MashBoxStudioViewport>();
-                viewport.dockableHost = true;
+                viewport.dockableHost = dockable;
                 viewport.titleContent = new GUIContent("MashBox Studio");
                 viewport.position = previous.position;
                 viewport.modelGridVisible = previous.modelGridVisible;
                 viewport.cameraMode = previous.cameraMode;
-                viewport.Show();
+                if (dockable) viewport.Show(); else viewport.ShowUtility();
                 previous.Close();
             }
             if (!viewport)
             {
                 viewport = CreateInstance<MashBoxStudioViewport>();
-                viewport.dockableHost = true;
+                viewport.dockableHost = dockable;
                 viewport.titleContent = new GUIContent("MashBox Studio");
                 viewport.position = new Rect(150, 100, 1100, 800);
-                viewport.Show();
+                if (dockable) viewport.Show(); else viewport.ShowUtility();
                 viewport.position = new Rect(150, 100, 1100, 800);
             }
             viewport.titleContent = new GUIContent("MashBox Studio");

@@ -47,8 +47,12 @@ public static class StudioMenuBarValidation
                 Mouse(EventType.MouseDown,0);
                 Check(StudioMenuPopup.IsMenuBarItemOpen(host,"File"),"Clicking File activates the menu bar");
                 var popup=Resources.FindObjectsOfTypeAll<StudioMenuPopup>().Single();
+                var parentSize=popup.position.size;
                 typeof(StudioMenuPopup).GetMethod("SelectRow",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(popup,new object[]{0,1,true});
                 Check(popup.ColumnCount==2,"A submenu can expand before switching headings");
+                var child=Resources.FindObjectsOfTypeAll<StudioMenuColumnPopup>().Single();
+                Check(Mathf.Abs(child.position.x-popup.position.xMax)<1 && Mathf.Abs(child.position.y-(popup.position.y+StudioMenuPopup.RowHeight))<1,"Submenu opens flush to the right and aligns with its parent row");
+                Check(popup.position.size==parentSize && child.position.height<popup.position.height,"Parent and child retain their own measured dimensions");
                 Mouse(EventType.MouseMove,1);
                 Check(StudioMenuPopup.IsMenuBarItemOpen(host,"Edit"),"Hovering onto Edit switches its dropdown without a click");
                 Check(Resources.FindObjectsOfTypeAll<StudioMenuPopup>().Single()==popup && popup.ColumnCount==1,"Switching reuses the popup and clears the old submenu");

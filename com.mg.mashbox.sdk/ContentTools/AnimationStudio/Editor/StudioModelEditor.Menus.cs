@@ -22,7 +22,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Export Selection… (FBX)", CanExportSelection, () => Export(true));
                 });
                 MenuButton("Edit", menu => {
-                    AddCommand(menu, StudioShortcuts.MenuLabel("Undo",StudioShortcut.Undo), Document, Undo.PerformUndo); AddCommand(menu, StudioShortcuts.MenuLabel("Redo",StudioShortcut.Redo), Document, Undo.PerformRedo);
+                    AddCommand(menu, StudioShortcuts.MenuLabel("Undo",StudioShortcut.Undo), Document, () => PerformWorkspaceHistory(false)); AddCommand(menu, StudioShortcuts.MenuLabel("Redo",StudioShortcut.Redo), Document, () => PerformWorkspaceHistory(true));
                     menu.AddSeparator(""); AddCommand(menu, StudioShortcuts.MenuLabel("Duplicate",StudioShortcut.Duplicate), CanDuplicateObjects, DuplicateSelectedObjects);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Delete",StudioShortcut.Delete), CanDeleteObjects, DeleteSelectedObjects);
                     menu.AddSeparator(""); AddCommand(menu, "Preferences…", true, StudioControlsPreferences.Open);
@@ -84,6 +84,9 @@ namespace MashBoxSDK.AnimationStudio
                 MenuButton("Mesh Display", menu => {
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("X-ray Mode", StudioShortcut.XRay)), displayXray, () => SetXRayMode(!displayXray));
                     menu.AddSeparator("");
+                    menu.AddItem(new GUIContent("Status Bar"), !StudioSettings.Current.hideStatusBar, () => {
+                        StudioSettings.Current.hideStatusBar = !StudioSettings.Current.hideStatusBar; StudioSettings.Save();
+                    });
                     menu.AddItem(new GUIContent("Mesh Statistics"), StudioSettings.Current.showMeshStatistics, () => {
                         StudioSettings.Current.showMeshStatistics = !StudioSettings.Current.showMeshStatistics; StudioSettings.Save();
                     });
@@ -186,8 +189,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!Document)
             {
-                if (!AssetDatabase.IsValidFolder("Assets/Studio Models")) AssetDatabase.CreateFolder("Assets", "Studio Models");
-                var path = AssetDatabase.GenerateUniqueAssetPath("Assets/Studio Models/Untitled Workspace.asset");
+                var path = StudioModelDocument.NewWorkspacePath();
                 loaded(StudioModelDocument.CreateEmpty(path));
             }
         }

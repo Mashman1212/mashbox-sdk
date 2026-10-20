@@ -16,16 +16,19 @@ namespace MashBoxSDK.AnimationStudio
         private void EnsureModelEditor()
         {
             if (modelEditor != null) return;
-            if (!modelDocument) modelDocument = AssetDatabase.LoadAssetAtPath<StudioModelDocument>(EditorPrefs.GetString("MashBox.LastModel." + Application.dataPath, ""));
-            modelEditor = new StudioModelEditor(() => { Repaint(); viewport?.Repaint(); });
+            if (!modelDocument) modelDocument = StudioModelDocument.OpenFile(EditorPrefs.GetString("MashBox.LastModel." + Application.dataPath, ""));
+            if (modelDocument && AssetDatabase.Contains(modelDocument)) modelDocument = modelDocument.SaveAs(StudioModelDocument.NewWorkspacePath(modelDocument.name));
+            if (modelDocument) EditorPrefs.SetString("MashBox.LastModel." + Application.dataPath, modelDocument.WorkspacePath);
+            modelEditor = new StudioModelEditor(() => { Repaint(); viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene); });
             modelEditor.WorkspaceSavedAs = LoadStudioModel;
             if (modelDocument) modelEditor.Load(modelDocument);
         }
         private void ReleaseModelEditor() { modelEditor?.Dispose(); modelEditor = null; }
         private void LoadStudioModel(StudioModelDocument document)
         {
+            if (document && AssetDatabase.Contains(document)) document = document.SaveAs(StudioModelDocument.NewWorkspacePath(document.name));
             modelDocument = document; EnsureModelEditor(); modelEditor.Load(document);
-            EditorPrefs.SetString("MashBox.LastModel." + Application.dataPath, document ? AssetDatabase.GetAssetPath(document) : "");
+            EditorPrefs.SetString("MashBox.LastModel." + Application.dataPath, document ? document.WorkspacePath : "");
             viewport.Bind(modelEditor.Scene); modelEditor.Frame(viewport);
         }
         private void BindStudioMode()
@@ -48,6 +51,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindWorkspaceStatistics();
             viewport.BindModelToolOptions(modelingMode ? (System.Action)(() => modelEditor?.DrawEmbeddedToolOptions()) : null);
             if (modelEditor != null) modelEditor.FocusToolOptions = viewport.FocusModelToolOptions;
+            viewport.BindStatusBar(modelingMode ? (System.Func<string>)(() => modelEditor?.StatusText ?? "Ready") : null);
             viewport.BindStatistics(modelingMode ? (System.Action)(() => modelEditor?.DrawStatistics()) : null);
             viewport.BindMarkingMenu(modelingMode ? (System.Action)(() => modelEditor?.DrawMarkingMenu()) : null);
             viewport.BindModelInput(modelingMode ? (System.Func<bool>)(() => modelingMode) : null,

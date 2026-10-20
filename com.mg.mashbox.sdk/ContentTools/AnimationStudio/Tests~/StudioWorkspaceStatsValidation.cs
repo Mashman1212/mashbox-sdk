@@ -28,7 +28,7 @@ public static class StudioWorkspaceStatsValidation
             for(int i=0;i<=60;i++)view.RecordWorkspaceFrame(100+i/60d);
             Check(Math.Abs(view.WorkspaceFps-60)<.1,"Workspace FPS counts actual viewport frames over elapsed editor time");
             view.RecordWorkspaceFrame(110);
-            Check(view.WorkspaceFps==0,"Long idle gaps reset FPS measurement");
+            Check(Math.Abs(view.WorkspaceFps-60)<.1,"Idle gaps preserve the last FPS reading while restarting the sample");
             for(int i=1;i<=30;i++)view.RecordWorkspaceFrame(110+i/30d);
             Check(Math.Abs(view.WorkspaceFps-30)<.1,"FPS adapts to slower viewport rendering");
             view.BindModes(()=>{},false);

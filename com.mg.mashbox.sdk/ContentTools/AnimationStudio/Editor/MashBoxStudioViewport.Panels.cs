@@ -73,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 leftDivider = CreatePanelDivider(1, "mashbox-hierarchy-divider");
                 rightDivider = CreatePanelDivider(2, "mashbox-channels-divider");
-                toolOptionsDivider = new IMGUIContainer(DrawToolOptionsDivider) { name = "mashbox-tool-options-divider", tooltip = "Drag to resize Tool Options and Channels" };
+                toolOptionsDivider = new IMGUIContainer(WrapStudioGUI(DrawToolOptionsDivider)) { name = "mashbox-tool-options-divider", tooltip = "Drag to resize Tool Options and Channels" };
                 toolOptionsDivider.style.position = Position.Absolute;
                 toolOptionsDivider.style.height = DividerWidth;
                 rootVisualElement.Add(toolOptionsDivider);
@@ -82,7 +82,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private IMGUIContainer CreatePanelDivider(int side, string elementName)
         {
-            var divider = new IMGUIContainer(() => DrawPanelDivider(side)) { name = elementName, tooltip = "Drag to resize panel" };
+            var divider = new IMGUIContainer(WrapStudioGUI(() => DrawPanelDivider(side))) { name = elementName, tooltip = "Drag to resize panel" };
             divider.style.position = Position.Absolute; divider.style.width = DividerWidth;
             rootVisualElement.Add(divider); return divider;
         }
@@ -90,7 +90,18 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!panelsInitialized) return;
             var widths = PanelWidths;
-            if (rigControls != null) { rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x; }
+            bool showStatus = panelsModeling && statusBar != null && !StudioSettings.Current.hideStatusBar;
+            if (rigControls != null)
+            {
+                rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x;
+                if (panelsModeling) rigControls.style.bottom = showStatus ? 40 : PanelMargin;
+            }
+            if (statusBar != null)
+            {
+                statusBar.style.left = HierarchyLeft; statusBar.style.width = widths.x;
+                statusBar.style.bottom = PanelMargin; statusBar.style.height = 24;
+                statusBar.style.display = showStatus ? DisplayStyle.Flex : DisplayStyle.None;
+            }
             if (inspector != null)
             {
                 inspector.style.right = PanelMargin; inspector.style.width = widths.y;
