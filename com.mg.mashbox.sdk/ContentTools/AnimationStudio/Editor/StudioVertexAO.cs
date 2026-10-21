@@ -150,7 +150,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(!string.IsNullOrEmpty(message))EditorGUILayout.HelpBox(message,MessageType.Info);
             }
         }
-        void Run(Action action){try{action();}catch(OperationCanceledException){message="Bake cancelled; mesh colors unchanged.";}catch(Exception e){message=e.Message;Debug.LogException(e);}}
+        void Run(Action action){try{action();}catch(OperationCanceledException){message="Bake cancelled; mesh colors unchanged.";}catch(Exception e){message=e.Message;}}
     }
     internal sealed partial class StudioModelEditor
     {

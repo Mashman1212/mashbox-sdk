@@ -106,7 +106,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             anchor=screenAnchor;menuBarItem=item;activeColumn=0;
             columns.Clear();selected.Clear();columns.Add(menu.Items);selected.Add(-1);
-            PositionPopup();Repaint();menuBarOwner?.Repaint();
+            PositionPopup();Repaint();RepaintMenuOwner();
         }
         private void OnDisable()
         {
@@ -114,7 +114,12 @@ namespace MashBoxSDK.AnimationStudio
             submenus.Clear();
             if (current == this) current=null;
             if (inputOwner) inputOwner.SetMenuInputBlocked(false);
-            if (menuBarOwner) menuBarOwner.Repaint();
+            RepaintMenuOwner();
+        }
+        private void RepaintMenuOwner()
+        {
+            if(menuBarOwner is MashBoxStudioViewport studio)studio.RepaintUI();
+            else if(menuBarOwner)menuBarOwner.Repaint();
         }
         internal int ColumnCount => columns.Count;
         private Vector2 ColumnSize(int index)
@@ -249,6 +254,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             var size = ColumnSize(column);
             EditorGUI.DrawRect(new Rect(Vector2.zero, size), StudioTheme.Current.Panel);
+            StudioTheme.DrawPopupBorder(new Rect(Vector2.zero, size));
             int hitColumn = -1, hitRow = -1;
             {
                 int c = column;

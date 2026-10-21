@@ -16,13 +16,13 @@ namespace MashBoxSDK.AnimationStudio
         private float toolResizeStartY, toolResizeStartHeight, toolResizeOriginalHeight;
         internal float ToolOptionsHeight => Mathf.Clamp(
             float.IsNaN(preferredToolHeight) || float.IsInfinity(preferredToolHeight) ? 220 : preferredToolHeight,
-            80, Mathf.Max(80, position.height - ModelingPanelTop - PanelMargin - DividerWidth - 120));
+            80, Mathf.Max(80, StudioContentHeight - ModelingPanelTop - PanelMargin - DividerWidth - 120));
         private const float MinLeft = 180, MinRight = 220, MaxPanel = 600, MinCanvas = 320, DividerWidth = 8;
-        private const float PanelMargin = 8, ModelToolsWidth = 40;
-        private const float ModelingPanelTop = 32;
+        private const float PanelMargin = 8;
+        private const float ModelingPanelTop = 8;
         internal const float ModeSelectorWidth = 128;
-        private float HierarchyLeft => PanelMargin + (panelsModeling ? ModelToolsWidth : 0);
-        private float PanelLayoutWidth => PanelMargin * 2 + DividerWidth * 2 + (panelsModeling ? ModelToolsWidth : 0);
+        private float HierarchyLeft => PanelMargin;
+        private float PanelLayoutWidth => PanelMargin * 2 + DividerWidth * 2;
         private float preferredLeft = 260, preferredRight = 350;
         private bool panelsInitialized, panelsModeling;
         private IMGUIContainer leftDivider, rightDivider;
@@ -35,9 +35,9 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 var widths = PanelWidths;
-                float left = PanelMargin + ModelToolsWidth + widths.x + DividerWidth;
-                float right = position.width - PanelMargin - widths.y - DividerWidth;
-                return new Rect(left, ModelingPanelTop, Mathf.Max(0, right - left), Mathf.Max(0, position.height - ModelingPanelTop - PanelMargin));
+                float left = HierarchyLeft + widths.x + DividerWidth;
+                float right = StudioContentWidth - PanelMargin - widths.y - DividerWidth;
+                return new Rect(left, ModelingPanelTop, Mathf.Max(0, right - left), Mathf.Max(0, StudioContentHeight - ModelingPanelTop - PanelMargin));
             }
         }
         internal Vector2 PanelWidths
@@ -45,7 +45,7 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 float left = ValidWidth(preferredLeft, 260, MinLeft), right = ValidWidth(preferredRight, 350, MinRight);
-                float budget = Mathf.Max(MinLeft + MinRight, position.width - PanelLayoutWidth - MinCanvas);
+                float budget = Mathf.Max(MinLeft + MinRight, StudioContentWidth - PanelLayoutWidth - MinCanvas);
                 if (left + right > budget)
                 {
                     float extra = left + right - MinLeft - MinRight;
@@ -125,7 +125,7 @@ namespace MashBoxSDK.AnimationStudio
             float optionsTop = overlayTop;
             if (viewportOptions != null) { viewportOptions.style.left = canvasLeft + 40; viewportOptions.style.top = optionsTop; }
             if (studioSettings != null) { studioSettings.style.left = canvasLeft + 8; studioSettings.style.top = optionsTop; }
-            if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop + 32; }
+            if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop; }
             LayoutWorkspaceStatistics(widths.y);
             if (leftDivider == null || rightDivider == null) return;
             leftDivider.style.left = HierarchyLeft + widths.x;
@@ -170,7 +170,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void ResizePanel(int side, float requestedWidth)
         {
             var widths = PanelWidths;
-            float budget = Mathf.Max(MinLeft + MinRight, position.width - PanelLayoutWidth - MinCanvas);
+            float budget = Mathf.Max(MinLeft + MinRight, StudioContentWidth - PanelLayoutWidth - MinCanvas);
             if (side == 1) { preferredRight = widths.y; preferredLeft = Mathf.Clamp(ValidWidth(requestedWidth, 260, MinLeft), MinLeft, Mathf.Min(MaxPanel, budget - widths.y)); }
             else { preferredLeft = widths.x; preferredRight = Mathf.Clamp(ValidWidth(requestedWidth, 350, MinRight), MinRight, Mathf.Min(MaxPanel, budget - widths.x)); }
             UpdatePanelLayout(); Repaint();

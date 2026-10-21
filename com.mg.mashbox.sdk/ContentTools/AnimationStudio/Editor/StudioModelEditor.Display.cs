@@ -20,11 +20,13 @@ namespace MashBoxSDK.AnimationStudio
             StudioSettings.Save();
             // Native wire modes add hard rasterized lines and force triangle wire drawing.
             // Studio owns its edge overlay; the camera supplies shaded color or depth only.
-            view.cameraMode = SceneView.GetBuiltinCameraMode(DrawCameraMode.Textured);
+            var cameraMode = DrawCameraMode.Textured;
+            if (view.cameraMode.drawMode != cameraMode) view.cameraMode = SceneView.GetBuiltinCameraMode(cameraMode);
             ApplyDisplayMaterials(); repaint(); view.Repaint();
         }
         internal void ConfigureModelDisplay(SceneView view)
         {
+            if (view is MashBoxStudioViewport studio && studio.NativeToolbarsEnabled) return;
             var mode = view.cameraMode.drawMode;
             if (mode == DrawCameraMode.Wireframe || mode == DrawCameraMode.TexturedWire) SetModelDrawMode(view, mode);
         }
@@ -37,59 +39,13 @@ namespace MashBoxSDK.AnimationStudio
         private readonly Dictionary<(Material source, int slice), Material> previewMaterials = new Dictionary<(Material source, int slice), Material>();
         private Material neutralLit, neutralPreview;
 
-        private void DrawDisplayToggles()
+        internal bool ToolbarLocalAxes => local;
+        internal bool ToolbarLighting => displayLighting;
+        internal bool ToolbarTextures => displayTextures;
+        internal void SetToolbarLocalAxes(bool value)
         {
-            GUILayout.Space(4);
-            bool lit = DisplayToggle(displayLighting, false, displayLighting ? "Lighting on — click for unlit" : "Unlit — click for lighting");
-            bool textured = DisplayToggle(displayTextures, true, displayTextures ? "Materials and textures on — click for neutral shading" : "Neutral shading — click for materials and textures");
-            if (lit != displayLighting || textured != displayTextures) SetDisplayMode(lit, textured);
-            DrawObjectWireframeToggle();
-        }
-        private static readonly Vector3[] WireframeIconLines = {
-            new Vector3(-7,-3),new Vector3(3,-3), new Vector3(3,-3),new Vector3(3,7),
-            new Vector3(3,7),new Vector3(-7,7), new Vector3(-7,7),new Vector3(-7,-3),
-            new Vector3(-3,-7),new Vector3(7,-7), new Vector3(7,-7),new Vector3(7,3),
-            new Vector3(7,3),new Vector3(-3,3), new Vector3(-3,3),new Vector3(-3,-7),
-            new Vector3(-7,-3),new Vector3(-3,-7), new Vector3(3,-3),new Vector3(7,-7),
-            new Vector3(3,7),new Vector3(7,3), new Vector3(-7,7),new Vector3(-3,3)
-        };
-        private static void DrawObjectWireframeToggle()
-        {
-            var rect=GUILayoutUtility.GetRect(24,24,GUILayout.Width(24),GUILayout.Height(24));
-            bool visible=!StudioSettings.Current.hideObjectWireframe;
-            bool next=GUI.Toggle(rect,visible,new GUIContent("", "Object wireframe — show or hide wireframes on all visible meshes. Component editing overlays stay visible."),StudioTheme.Styles.overlayButton);
-            if(next!=visible){StudioSettings.Current.hideObjectWireframe=!next;StudioSettings.Save();}
-            if(Event.current.type!=EventType.Repaint)return;
-            Handles.BeginGUI();
-            using(new Handles.DrawingScope(StudioTheme.Current.Text,Matrix4x4.Translate(rect.center))) Handles.DrawLines(WireframeIconLines);
-            Handles.EndGUI();
-        }
-        private static bool DisplayToggle(bool value, bool textureIcon, string tooltip)
-        {
-            var rect = GUILayoutUtility.GetRect(24,24,GUILayout.Width(24),GUILayout.Height(24));
-            bool next = GUI.Toggle(rect,value,new GUIContent("",tooltip),StudioTheme.Styles.overlayButton);
-            if (Event.current.type != EventType.Repaint) return next;
-            var color = StudioTheme.Current.Text;
-            if (textureIcon)
-            {
-                var area = new Rect(rect.center.x-7,rect.center.y-7,14,14);
-                EditorGUI.DrawRect(area,StudioTheme.Alpha(color,.25f));
-                for(int y=0;y<4;y++) for(int x=0;x<4;x++) if((x+y)%2==0)
-                    EditorGUI.DrawRect(new Rect(area.x+x*3.5f,area.y+y*3.5f,3.5f,3.5f),color);
-            }
-            else
-            {
-                Handles.BeginGUI(); var previous = Handles.color; Handles.color = color;
-                Vector3 center = rect.center;
-                Handles.DrawWireDisc(center,Vector3.forward,4);
-                for(int i=0;i<8;i++) {
-                    float angle = i*Mathf.PI/4;
-                    var direction = new Vector3(Mathf.Cos(angle),Mathf.Sin(angle));
-                    Handles.DrawLine(center+direction*6,center+direction*9);
-                }
-                Handles.color = previous; Handles.EndGUI();
-            }
-            return next;
+            if (local == value) return;
+            local = value; repaint(); toolOptions?.Repaint();
         }
         internal void SetDisplayMode(bool lighting, bool textures)
         {

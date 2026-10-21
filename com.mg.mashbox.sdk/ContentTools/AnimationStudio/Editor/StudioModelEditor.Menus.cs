@@ -6,12 +6,21 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        private static readonly string[] ModelMenuTitles = { "File", "Edit", "Window", "Create", "Select", "Modify", "Mesh", "Edit Mesh", "Mesh Tools", "Deform", "Mesh Display", "UV", "Lighting" };
+        private readonly System.Collections.Generic.Dictionary<string,(GUIContent content,GUILayoutOption[] layout,GUIStyle style)> menuBarContents = new System.Collections.Generic.Dictionary<string,(GUIContent,GUILayoutOption[],GUIStyle)>();
         internal void DrawMenuBar(SceneView view, Action<StudioModelDocument> loaded)
         {
-            void MenuButton(string title, Action<StudioMenu> populate) => DrawMenuButton(view,title,populate);
             using (new EditorGUILayout.HorizontalScope(GUIStyle.none))
             {
-                MenuButton("File", menu => {
+                foreach(string title in ModelMenuTitles)DrawMenuButton(view,title,loaded);
+                GUILayout.FlexibleSpace();
+            }
+        }
+        private void PopulateModelMenu(string title,StudioMenu menu,SceneView view,Action<StudioModelDocument> loaded)
+        {
+            switch(title)
+            {
+                case "File": {
                     menu.AddItem(new GUIContent("Open Workspace…"), false, () => Run(() => OpenWorkspace(loaded)));
                     menu.AddItem(new GUIContent("Import FBX…"), false, () => Run(() => ImportPath(EditorUtility.OpenFilePanel("Import FBX into workspace", "", "fbx"), loaded)));
                     menu.AddSeparator("");
@@ -20,14 +29,19 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddSeparator("");
                     AddCommand(menu, "Export All… (FBX)", Document && Document.nodes.Count > 0, Export);
                     AddCommand(menu, "Export Selection… (FBX)", CanExportSelection, () => Export(true));
-                });
-                MenuButton("Edit", menu => {
+                
+                    break; }
+                case "Edit": {
                     AddCommand(menu, StudioShortcuts.MenuLabel("Undo",StudioShortcut.Undo), Document, () => PerformWorkspaceHistory(false)); AddCommand(menu, StudioShortcuts.MenuLabel("Redo",StudioShortcut.Redo), Document, () => PerformWorkspaceHistory(true));
                     menu.AddSeparator(""); AddCommand(menu, StudioShortcuts.MenuLabel("Duplicate",StudioShortcut.Duplicate), CanDuplicateObjects, DuplicateSelectedObjects);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Delete",StudioShortcut.Delete), CanDeleteObjects, DeleteSelectedObjects);
                     menu.AddSeparator(""); AddCommand(menu, "Preferences…", true, StudioControlsPreferences.Open);
-                });
-                MenuButton("Create", menu => {
+                
+                    break; }
+                case "Window": {
+                    if (view is MashBoxStudioViewport studioToolbarView) studioToolbarView.AddStudioToolbarMenu(menu);
+                    break; }
+                case "Create": {
                     AddVehiclePartMenu(menu, view, loaded);
                     foreach (var type in new[] { PrimitiveType.Cube, PrimitiveType.Sphere, PrimitiveType.Plane, PrimitiveType.Quad, PrimitiveType.Cylinder })
                     { var primitive = type; menu.AddItem(new GUIContent("Polygon Primitives/" + type), false, () => Run(() => CreatePrimitive(primitive, view, loaded))); }
@@ -35,8 +49,9 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Empty Transform", true, () => CreateEmptyTransform(false, view, loaded));
                     AddCommand(menu, "Empty Child", Document && Active >= 0, () => CreateEmptyTransform(true, view, loaded));
                     AddCommand(menu, "Anchor Point", StudioAnchorCatalog.Names.Length > 0, () => CreateAnchorAtOrigin(view, loaded));
-                });
-                MenuButton("Select", menu => {
+                
+                    break; }
+                case "Select": {
                     AddAction(menu, "All", MarkingAction.SelectAll, view); AddAction(menu, "Deselect", MarkingAction.Clear, view);
                     AddCommand(menu, "Invert Selection", Document && (mode == ComponentMode.Object || ActiveMesh), InvertSelection);
                     menu.AddSeparator("");
@@ -44,24 +59,28 @@ namespace MashBoxSDK.AnimationStudio
                     AddAction(menu, "Edge", MarkingAction.Edge, view); AddAction(menu, "Face", MarkingAction.Face, view);
                     menu.AddSeparator(""); AddAction(menu, "Frame Selection", MarkingAction.Frame, view);
                     menu.AddItem(new GUIContent("Through Selection"), xray, () => { xray = !xray; repaint(); });
-                });
-                MenuButton("Modify", menu => {
+                
+                    break; }
+                case "Modify": {
                     AddAction(menu, pivot ? "Lock Pivot" : "Edit Pivot", MarkingAction.EditPivot, view);
                     AddAction(menu, "Center Pivot", MarkingAction.CenterPivot, view); AddAction(menu, "Freeze Transforms", MarkingAction.Freeze, view);
                     menu.AddSeparator(""); menu.AddItem(new GUIContent("Local Axes"), local, () => { local = !local; repaint(); });
-                });
-                MenuButton("Mesh", menu => {
+                
+                    break; }
+                case "Mesh": {
                     menu.AddItem(new GUIContent("Create Foliage Morph Set…"), false, () => { var recipe = ScriptableObject.CreateInstance<StudioFoliageMorphSet>(); ProjectWindowUtil.CreateAsset(recipe, "Foliage Morph Set.asset"); });
                     AddAction(menu, "UV Editor", MarkingAction.OpenUV, view);
-                });
-                MenuButton("Edit Mesh", menu => {
+                
+                    break; }
+                case "Edit Mesh": {
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected);
                     menu.AddSeparator("");
                     AddAction(menu, "Vertex Mode", MarkingAction.Vertex, view);
                     AddAction(menu, "Edge Mode", MarkingAction.Edge, view); AddAction(menu, "Face Mode", MarkingAction.Face, view);
                     menu.AddSeparator(""); menu.AddItem(new GUIContent("Keep Seams Together"), weld, () => { weld = !weld; repaint(); });
-                });
-                MenuButton("Mesh Tools", menu => {
+                
+                    break; }
+                case "Mesh Tools": {
                     if (CanCutMesh)
                     {
                         menu.AddItem(new GUIContent("Insert Edge Loop"), cutTool == CutTool.EdgeLoop, () => Run(() => ActivateCutTool(CutTool.EdgeLoop)));
@@ -76,12 +95,14 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));
                     AddAction(menu, "Move", MarkingAction.Move, view); AddAction(menu, "Rotate", MarkingAction.Rotate, view); AddAction(menu, "Scale", MarkingAction.Scale, view);
                     menu.AddSeparator(""); menu.AddItem(new GUIContent("Tool Options…"), false, OpenToolOptions);
-                });
-                MenuButton("Deform", menu => {
+                
+                    break; }
+                case "Deform": {
                     AddCommand(menu, "Blend Shape", Document && SelectedBlendMeshes.Length >= 2, CreateSelectedBlendShape);
                     AddCommand(menu, "Bake Current Pose", HasBlendShape, BakeSelectedBlendShape);
-                });
-                MenuButton("Mesh Display", menu => {
+                
+                    break; }
+                case "Mesh Display": {
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("X-ray Mode", StudioShortcut.XRay)), displayXray, () => SetXRayMode(!displayXray));
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent("Status Bar"), !StudioSettings.Current.hideStatusBar, () => {
@@ -100,12 +121,14 @@ namespace MashBoxSDK.AnimationStudio
                     AddDisplay(menu, view, "Shaded Wireframe", DrawCameraMode.TexturedWire);
                     if (view is MashBoxStudioViewport studio)
                         menu.AddItem(new GUIContent("Grid"), studio.modelGridVisible, () => { studio.modelGridVisible = !studio.modelGridVisible; repaint(); });
-                });
-                MenuButton("UV", menu => {
+                
+                    break; }
+                case "UV": {
                     AddAction(menu, "UV Editor", MarkingAction.OpenUV, view);
                     for (int i = 0; i < 8; i++) AddAction(menu, "UV Sets/UV " + i, MarkingAction.UV0 + i, view);
-                });
-                MenuButton("Lighting", menu => {
+                
+                    break; }
+                case "Lighting": {
                     AddCommand(menu, "Bake Vertex AO (Red)…", Document, () => StudioVertexAOWindow.Open(this));
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent("Camera Lighting"), !LightingSettings.studioLights, () => EditLighting(s => s.studioLights = false));
@@ -114,16 +137,25 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("Lighting Settings…"), false, OpenLighting);
                     menu.AddItem(new GUIContent("Shadows"), LightingSettings.studioLights && LightingSettings.shadows, () => EditLighting(s => { s.shadows = !(s.studioLights && s.shadows); s.studioLights = true; }));
                     menu.AddItem(new GUIContent("Ground Plane"), LightingSettings.studioLights && LightingSettings.ground, () => EditLighting(s => { s.ground = !(s.studioLights && s.ground); s.studioLights = true; }));
-                });
-                GUILayout.FlexibleSpace();
+                
+                    break; }
             }
         }
-        private void DrawMenuButton(SceneView view, string title, Action<StudioMenu> populate)
+        private void DrawMenuButton(SceneView view,string title,Action<StudioModelDocument> loaded)
         {
-            var content = new GUIContent(title);
-            var rect = GUILayoutUtility.GetRect(content, StudioTheme.Styles.menuBarButton, GUILayout.Width(StudioTheme.Styles.menuBarButton.CalcSize(content).x + 4));
-            if (!StudioMenu.MenuBarButton(view,rect,content)) return;
-            CancelMarkingMenu(); var menu = new StudioMenu(); populate(menu); menu.DropDown(rect,view,title);
+            var style=StudioTheme.Styles.menuBarButton;
+            if(!menuBarContents.TryGetValue(title,out var entry))
+                entry=(new GUIContent(title),null,null);
+            // Theme styles are immutable per palette. Measure again only when the
+            // style changes, rather than allocating text layout every GUI event.
+            if(entry.layout==null||!ReferenceEquals(entry.style,style))
+            {
+                entry.layout=new[]{GUILayout.Width(style.CalcSize(entry.content).x+4)};
+                entry.style=style;menuBarContents[title]=entry;
+            }
+            var rect=GUILayoutUtility.GetRect(entry.content,style,entry.layout);
+            if(!StudioMenu.MenuBarButton(view,rect,entry.content))return;
+            CancelMarkingMenu();var menu=new StudioMenu();PopulateModelMenu(title,menu,view,loaded);menu.DropDown(rect,view,title);
         }
         private void AddCommand(StudioMenu menu, string label, bool enabled, Action action)
         {

@@ -12,8 +12,9 @@ namespace MashBoxSDK.AnimationStudio
         private DirtyState viewportDirty = DirtyState.All;
         private object vSyncParent;
         private bool originalViewportVSync, appliedViewportVSync;
+#if MASHBOX_STUDIO_TESTS
         internal int ViewportRenderCount { get; private set; }
-
+#endif
         // Unity owns event delivery, layout and repaint coalescing. Only unchanged
         // modelling Repaints may reuse the last image; all input/layout stays native.
         public new void Repaint() => MarkDirty(DirtyState.Scene);
@@ -24,6 +25,7 @@ namespace MashBoxSDK.AnimationStudio
             if ((state & (DirtyState.Scene | DirtyState.Camera)) != 0) state |= DirtyState.Overlay;
             if ((state & DirtyState.Overlay) != 0) state |= DirtyState.UI;
             viewportDirty |= state;
+            SyncStudioToolbarState();
             base.Repaint();
         }
 
@@ -37,7 +39,11 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 base.OnSceneGUI();
-                if (repaint) { ViewportRenderCount++; FinishViewportImageCapture(); }
+                if (repaint) { 
+#if MASHBOX_STUDIO_TESTS
+                ViewportRenderCount++;
+#endif
+ FinishViewportImageCapture(); }
             }
             finally { capturingViewport = false; }
         }

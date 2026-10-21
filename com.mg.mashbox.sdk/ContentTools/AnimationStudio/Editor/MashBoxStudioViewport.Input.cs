@@ -28,7 +28,7 @@ namespace MashBoxSDK.AnimationStudio
             if (active == null) { RestoreStudioInput(); return; }
             EditorApplication.update += TickStudioInput;
             StudioShortcuts.changed += ReleaseStudioInput;
-            foreach (var container in rootVisualElement.Query<IMGUIContainer>().ToList())
+            foreach (var container in StudioChromeRoot.Query<IMGUIContainer>().ToList())
             {
                 if (container.onGUIHandler == null) continue;
                 if (studioInputHandlers.TryGetValue(container,out var previous) && container.onGUIHandler == previous.wrapped) continue;
@@ -36,6 +36,7 @@ namespace MashBoxSDK.AnimationStudio
                 // SceneView's native camera IMGUI container owns its main OnGUI callback.
                 bool canvas = ReferenceEquals(handler.original.Target,this) &&
                     (handler.original.Method.DeclaringType == typeof(SceneView) || handler.original.Method.Name == nameof(OnSceneGUI));
+                if(!canvas)BindStudioHoverRedraw(container);
                 handler.wrapped = () => {
                     var inputEvent = Event.current;
                     bool menuBlocked = container != modelMenuBar && container != modeSelector && MenuInputBlocked;
@@ -75,8 +76,31 @@ namespace MashBoxSDK.AnimationStudio
         {
             ReleaseStudioInput();
             foreach (var pair in studioInputHandlers)
+            {
+                UnbindStudioHoverRedraw(pair.Key);
                 if (pair.Key.onGUIHandler == pair.Value.wrapped) pair.Key.onGUIHandler = pair.Value.original;
+            }
             studioInputHandlers.Clear();
+        }
+        private static void DirtyStudioHover<T>(T evt) where T:EventBase<T>,new()
+        {
+            // Moving between controls inside one IMGUI container doesn't change
+            // the retained element under the pointer. Explicitly invalidate its
+            // hover paint; entry/exit alone only updates the first/last item.
+            (evt.currentTarget as IMGUIContainer)?.MarkDirtyRepaint();
+        }
+        private static void BindStudioHoverRedraw(IMGUIContainer control)
+        {
+            UnbindStudioHoverRedraw(control);
+            control.RegisterCallback<PointerMoveEvent>(DirtyStudioHover,TrickleDown.TrickleDown);
+            control.RegisterCallback<PointerEnterEvent>(DirtyStudioHover,TrickleDown.TrickleDown);
+            control.RegisterCallback<PointerLeaveEvent>(DirtyStudioHover,TrickleDown.TrickleDown);
+        }
+        private static void UnbindStudioHoverRedraw(IMGUIContainer control)
+        {
+            control.UnregisterCallback<PointerMoveEvent>(DirtyStudioHover,TrickleDown.TrickleDown);
+            control.UnregisterCallback<PointerEnterEvent>(DirtyStudioHover,TrickleDown.TrickleDown);
+            control.UnregisterCallback<PointerLeaveEvent>(DirtyStudioHover,TrickleDown.TrickleDown);
         }
         private void ReleaseStudioInput()
         {
@@ -89,6 +113,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public override void OnDisable()
         {
+            ReleaseStudioToolbars();
             ReleaseViewportRedraw();
             ClearMenuInputShield();
             StopWorkspaceStatistics();

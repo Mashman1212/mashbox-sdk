@@ -43,6 +43,10 @@ namespace MashBoxSDK.AnimationStudio
         private bool DrawHierarchyRename(Rect row, int index)
         {
             if (hierarchyRenameNode != Document.nodes[index]) return false;
+            return DrawActiveHierarchyRename(row,index);
+        }
+        private bool DrawActiveHierarchyRename(Rect row,int index)
+        {
             hierarchyRenameScreenRect = new Rect(GUIUtility.GUIToScreenPoint(row.position), row.size);
             var evt = Event.current;
             bool cancel = evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape;
@@ -149,6 +153,10 @@ namespace MashBoxSDK.AnimationStudio
         private void HandleHierarchyDrop(Rect rect, int parent)
         {
             if (!(DragAndDrop.GetGenericData(HierarchyDragKey) is HierarchyDragPayload payload)) return;
+            HandleActiveHierarchyDrop(rect,parent,payload);
+        }
+        private void HandleActiveHierarchyDrop(Rect rect,int parent,HierarchyDragPayload payload)
+        {
             var evt = Event.current;
             if (!rect.Contains(evt.mousePosition)) return;
             string reason = "Drop into the source workspace.";

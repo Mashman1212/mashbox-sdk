@@ -12,6 +12,20 @@ namespace MashBoxSDK.AnimationStudio
         // Scene totals are rebuilt only after edits/Undo/load; selection counts follow the active components.
         private readonly Dictionary<StudioModelDocument.Node, long[]> statisticsCache = new Dictionary<StudioModelDocument.Node, long[]>();
         private static readonly string[] StatisticsLabels = { "Verts", "Edges", "Faces", "Tris", "UVs" };
+        private static readonly GUIContent[] StatisticsHeaders={new GUIContent("Scene"),new GUIContent("Selected")};
+        private static readonly GUIContent[] StatisticsRowContent=Array.ConvertAll(StatisticsLabels,s=>new GUIContent(s));
+        private readonly GUIContent[] statisticsValues=new GUIContent[10];
+        private readonly long[] statisticsLastValues=new long[10];
+        private readonly GUIContent statisticsComponentText=new GUIContent();
+        private int statisticsLastComponentCount=-1;
+        private ComponentMode statisticsLastMode;
+        private GUIContent StatisticsValue(int index,long value)
+        {
+            if(statisticsValues[index]==null)statisticsValues[index]=new GUIContent();
+            if(statisticsValues[index].text.Length==0||statisticsLastValues[index]!=value)
+            {statisticsLastValues[index]=value;statisticsValues[index].text=value.ToString("N0");}
+            return statisticsValues[index];
+        }
         internal (long[] scene, long[] selected) MeshStatistics()
         {
             var scene = new long[5]; var selected = new long[5];
@@ -119,22 +133,26 @@ namespace MashBoxSDK.AnimationStudio
             if (Event.current.type != EventType.Repaint || !StudioSettings.Current.showMeshStatistics) return;
             var counts = MeshStatistics();
             // Text stays readable over both lit geometry and the gray viewport, without a panel fill.
-            void Label(Rect rect, string text)
+            void Label(Rect rect, GUIContent text)
             {
                 var color = GUI.contentColor;
                 GUI.contentColor = Color.black; GUI.Label(new Rect(rect.x + 1, rect.y + 1, rect.width, rect.height), text, StudioTheme.Styles.miniLabel);
                 GUI.contentColor = Color.white; GUI.Label(rect, text, StudioTheme.Styles.miniLabel); GUI.contentColor = color;
             }
-            Label(new Rect(64, 0, 88, 18), "Scene"); Label(new Rect(158, 0, 90, 18), "Selected");
+            Label(new Rect(64, 0, 88, 18), StatisticsHeaders[0]); Label(new Rect(158, 0, 90, 18), StatisticsHeaders[1]);
             for (int i = 0; i < StatisticsLabels.Length; i++)
             {
                 float y = 18 + i * 17;
-                Label(new Rect(0, y, 64, 18), StatisticsLabels[i]);
-                Label(new Rect(64, y, 88, 18), counts.scene[i].ToString("N0"));
-                Label(new Rect(158, y, 90, 18), counts.selected[i].ToString("N0"));
+                Label(new Rect(0, y, 64, 18), StatisticsRowContent[i]);
+                Label(new Rect(64, y, 88, 18), StatisticsValue(i,counts.scene[i]));
+                Label(new Rect(158, y, 90, 18), StatisticsValue(i+5,counts.selected[i]));
             }
             if (mode != ComponentMode.Object && Components.Count > 0)
-                Label(new Rect(0, 106, 256, 18), $"Selected {mode.ToString().ToLowerInvariant()}: {Components.Count:N0}");
+            {
+                if(statisticsLastMode!=mode||statisticsLastComponentCount!=Components.Count)
+                {statisticsLastMode=mode;statisticsLastComponentCount=Components.Count;statisticsComponentText.text=$"Selected {mode.ToString().ToLowerInvariant()}: {Components.Count:N0}";}
+                Label(new Rect(0, 106, 256, 18), statisticsComponentText);
+            }
         }
     }
 }

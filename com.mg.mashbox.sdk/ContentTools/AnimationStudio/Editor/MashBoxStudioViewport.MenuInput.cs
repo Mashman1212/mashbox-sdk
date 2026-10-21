@@ -49,22 +49,41 @@ namespace MashBoxSDK.AnimationStudio
                 menuInputShield.RegisterCallback<WheelEvent>(evt => evt.StopImmediatePropagation());
                 menuInputShield.RegisterCallback<DragUpdatedEvent>(evt => evt.StopImmediatePropagation());
                 menuInputShield.RegisterCallback<DragPerformEvent>(evt => evt.StopImmediatePropagation());
-                rootVisualElement.Add(menuInputShield);
+                StudioChromeRoot.Add(menuInputShield);
             }
             EditorApplication.update -= KeepMenuShieldOnTop;
             bool visible=blocked || menuShieldPointer>=0;
             if (menuInputShield != null) menuInputShield.style.display=visible?DisplayStyle.Flex:DisplayStyle.None;
-            if (visible) {EditorApplication.update+=KeepMenuShieldOnTop;KeepMenuShieldOnTop();}
+            rootVisualElement.UnregisterCallback<GeometryChangedEvent>(OnMenuShieldGeometryChanged);
+            if (visible)
+            {
+                rootVisualElement.RegisterCallback<GeometryChangedEvent>(OnMenuShieldGeometryChanged);
+                KeepMenuShieldOnTop();
+            }
             foreach (var container in rootVisualElement.Query<IMGUIContainer>().ToList()) container.MarkDirtyRepaint();
             RepaintUI();
         }
         private void KeepMenuShieldOnTop()
         {
-            if (!this || menuInputShield == null) {EditorApplication.update-=KeepMenuShieldOnTop;return;}
+            if (!this || menuInputShield == null)return;
+            // Reordering the shield then both headers on every editor tick
+            // dirties the retained UI three times, even when nothing changed.
+            if(MenuShieldOrderCorrect())return;
             menuInputShield.BringToFront();
             // Menubar hover switching remains available above the blocked content.
             modelMenuBar?.BringToFront();modeSelector?.BringToFront();
         }
+        private bool MenuShieldOrderCorrect()
+        {
+            var children=StudioChromeRoot.hierarchy;
+            int index=children.childCount-1;
+            if(modeSelector!=null && modeSelector.parent==StudioChromeRoot)
+            {if(index<0||children[index--]!=modeSelector)return false;}
+            if(modelMenuBar!=null && modelMenuBar.parent==StudioChromeRoot)
+            {if(index<0||children[index--]!=modelMenuBar)return false;}
+            return index>=0&&children[index]==menuInputShield;
+        }
+        private void OnMenuShieldGeometryChanged(GeometryChangedEvent evt) => KeepMenuShieldOnTop();
         private void EndMenuShieldPointer()
         {
             int pointer=menuShieldPointer;menuShieldPointer=-1;
@@ -74,6 +93,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ClearMenuInputShield()
         {
             EditorApplication.update-=KeepMenuShieldOnTop;
+            rootVisualElement.UnregisterCallback<GeometryChangedEvent>(OnMenuShieldGeometryChanged);
             int pointer=menuShieldPointer;menuShieldPointer=-1;
             if(menuInputShield!=null && pointer>=0 && menuInputShield.HasPointerCapture(pointer))menuInputShield.ReleasePointer(pointer);
             EditorApplication.update-=KeepMenuShieldOnTop;

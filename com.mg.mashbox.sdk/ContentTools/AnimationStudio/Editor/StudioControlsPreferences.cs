@@ -26,9 +26,11 @@ namespace MashBoxSDK.AnimationStudio
         internal void DrawControls()
         {
             StudioSettingsWindow.DrawWindowMode();
+            StudioSettingsWindow.DrawToolbarIconSize();
             StudioSettingsWindow.DrawViewportAntialiasing();
             StudioSettingsWindow.DrawViewportVSync();
             StudioSettingsWindow.DrawViewportCache();
+            StudioSettingsWindow.DrawIncrementalGarbageCollection();
             GUILayout.Space(8);
             EditorGUILayout.LabelField("MashBox Studio — Modelling Controls", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Bindings apply to Studio modelling and its UV editor. Unity's shortcut profile is unchanged. Click a binding to record a replacement, + to add an alternative, or × to remove it. Changes save immediately for this user.", MessageType.None);

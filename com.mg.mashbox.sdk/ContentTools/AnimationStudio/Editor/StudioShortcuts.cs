@@ -115,7 +115,12 @@ namespace MashBoxSDK.AnimationStudio
             var entry = profile.overrides.Find(o => o.id == action);
             return bindingCache[action] = entry != null ? entry.bindings.ToArray() : Find(action).defaults;
         }
-        internal static bool Matches(StudioShortcut action, Event evt, bool release = false) => Bindings(action).Any(b => b.Matches(evt, release));
+        internal static bool Matches(StudioShortcut action, Event evt, bool release = false)
+        {
+            var bindings=Bindings(action);
+            for(int i=0;i<bindings.Length;i++)if(bindings[i].Matches(evt,release))return true;
+            return false;
+        }
         internal static bool Pressed(StudioShortcut action, Event evt) => evt != null && evt.type == EventType.KeyDown && Matches(action,evt);
         internal static string Label(StudioShortcut action)
         {

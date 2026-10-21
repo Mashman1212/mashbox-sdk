@@ -27,6 +27,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnEnable()
         {
+            preview.ReportError = text => error = text;
             Undo.undoRedoPerformed += Changed;
             EditorApplication.playModeStateChanged += OnPlayMode;
         }

@@ -17,8 +17,12 @@ namespace MashBoxSDK.AnimationStudio
         private int cachedNearestControl;
         private CacheViewState cachedView;
         internal bool ViewportCacheReady => viewportCacheReady && cachedScene && cachedOverlay;
+#if MASHBOX_STUDIO_TESTS
         internal int ViewportCachePresentCount { get; private set; }
+#endif
+#if MASHBOX_STUDIO_TESTS
         internal int ViewportCacheCaptureCount { get; private set; }
+#endif
         internal bool ViewportImageReused { get; private set; }
         private bool UseViewportCache => panelsModeling && !StudioSettings.Current.disableViewportImageCache &&
             !EditorApplication.isPlayingOrWillChangePlaymode && NativeSceneTarget != null && SceneBlitMaterial != null && OverlayBlitMaterial != null;
@@ -57,7 +61,9 @@ namespace MashBoxSDK.AnimationStudio
             Graphics.DrawTexture(rect, cachedOverlay, uv, 0, 0, 0, 0, Color.white, cachedOverlayMaterial);
             viewportDirty = DirtyState.None;
             ViewportImageReused = true;
-            ViewportCachePresentCount++;
+#if MASHBOX_STUDIO_TESTS
+                ViewportCachePresentCount++;
+#endif
             return true;
         }
         private void BeginViewportImageCapture()
@@ -102,7 +108,9 @@ namespace MashBoxSDK.AnimationStudio
                 cachedView = CurrentCacheView();
                 cachedNearestControl = HandleUtility.nearestControl;
                 viewportCacheReady = true;
+#if MASHBOX_STUDIO_TESTS
                 ViewportCacheCaptureCount++;
+#endif
             }
             finally { capturingViewport = false; }
         }

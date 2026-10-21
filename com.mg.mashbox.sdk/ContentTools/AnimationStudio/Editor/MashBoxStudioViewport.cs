@@ -55,7 +55,6 @@ namespace MashBoxSDK.AnimationStudio
             UpdatePanelLayout(); ApplyTheme();
         }
         private IMGUIContainer markingMenu;
-        private IMGUIContainer modelTools;
         private IMGUIContainer modelToolOptions;
         internal void BindModelToolOptions(System.Action draw)
         {
@@ -65,26 +64,6 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void FocusModelToolOptions() { modelToolOptions?.Focus(); Repaint(); }
         [SerializeField] internal bool modelGridVisible = true;
-
-        internal void BindModelTools(System.Action draw)
-        {
-            if (modelTools == null)
-            {
-                modelTools = new IMGUIContainer { name = "mashbox-model-tools" };
-                modelTools.style.position = Position.Absolute;
-                modelTools.style.top = ModelingPanelTop; modelTools.style.bottom = 8;
-                modelTools.style.left = PanelMargin; modelTools.style.width = ModelToolsWidth;
-                modelTools.style.backgroundColor = StudioTheme.Current.ToolRail;
-                modelTools.style.borderRightWidth = 1;
-                modelTools.style.borderRightColor = StudioTheme.Current.Border;
-                modelTools.style.paddingLeft = 3;
-                modelTools.style.paddingTop = 5;
-                rootVisualElement.Add(modelTools);
-            }
-            modelTools.onGUIHandler = WrapStudioGUI(draw);
-            modelTools.style.display = draw == null ? DisplayStyle.None : DisplayStyle.Flex;
-            modelTools.BringToFront();
-        }
 
         internal void BindMarkingMenu(System.Action draw)
         {
@@ -152,9 +131,9 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            (modeSelector != null && point.y >= 0 && point.y < 24) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(statusBar, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
-        private static bool IsOverControl(IMGUIContainer control, Vector2 point) =>
-            control != null && control.resolvedStyle.display != DisplayStyle.None && control.layout.Contains(point);
+            IsOverNativeToolbar(point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(statusBar, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
+        private bool IsOverControl(IMGUIContainer control, Vector2 point) =>
+            control != null && control.resolvedStyle.display != DisplayStyle.None && control.worldBound.Contains(rootVisualElement.LocalToWorld(point));
 
         internal void BindRigControls(System.Action draw)
         {
@@ -231,7 +210,7 @@ namespace MashBoxSDK.AnimationStudio
             sceneViewState.showImageEffects = false;
             sceneViewState.alwaysRefresh = false;
             rotation = Quaternion.Euler(10, 180, 0);
-            foreach (var overlay in overlayCanvas.overlays) overlay.displayed = false;
+            InitializeStudioToolbars();
             // SceneView's stage handling otherwise culls ordinary preview scenes.
             typeof(SceneView).GetProperty("overrideSceneCullingMask", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
                 ?.SetValue(this, EditorSceneManager.GetSceneCullingMask(scene));
@@ -240,6 +219,7 @@ namespace MashBoxSDK.AnimationStudio
 
         internal void ApplyTheme()
         {
+            InitializeStudioToolbars();
             UpdateWorkspaceStatisticsState();
             if (meshStatistics != null) meshStatistics.style.display = panelsModeling && StudioSettings.Current.showMeshStatistics ? DisplayStyle.Flex : DisplayStyle.None;
             var palette = StudioTheme.Current;
@@ -257,11 +237,6 @@ namespace MashBoxSDK.AnimationStudio
             if (rigControls != null) rigControls.style.backgroundColor = palette.Panel;
             if (statusBar != null) statusBar.style.backgroundColor = palette.Header;
             UpdatePanelLayout();
-            if (modelTools != null)
-            {
-                modelTools.style.backgroundColor = palette.ToolRail;
-                modelTools.style.borderRightColor = palette.Border;
-            }
             if (timeline != null) timeline.style.backgroundColor = palette.Header;
         }
         internal void DrawGroundGrid()

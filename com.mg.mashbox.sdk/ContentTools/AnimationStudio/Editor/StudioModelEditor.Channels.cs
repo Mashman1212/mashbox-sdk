@@ -7,6 +7,61 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        private static readonly GUIContent ChannelHeaderContent = new GUIContent("CHANNELS");
+        private static readonly GUILayoutOption[] ChannelHeaderLayout = { GUILayout.ExpandWidth(true) };
+        private static readonly GUIContent ChannelSensitivityHit = new GUIContent();
+        private static readonly float[] ChannelSensitivities = { 1f, 2f, 3f, 4f };
+        private static readonly GUIContent[] ChannelSensitivityIcons = new GUIContent[4];
+        private static GUIContent ChannelSensitivityIcon(int state)
+        {
+            if (ChannelSensitivityIcons[state] != null) return ChannelSensitivityIcons[state];
+            // Render once at 2x resolution with coverage sampling for a crisp,
+            // smooth circular gauge. Fill starts at six o'clock: bottom left, top left, top right, bottom right.
+            const int size = 32, samples = 4;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) {
+                name = "Studio channel sensitivity " + state, hideFlags = HideFlags.HideAndDontSave,
+                filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp
+            };
+            var pixels = new Color[size * size];
+            float sweep = (state + 1) * Mathf.PI * .5f;
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    int coverage = 0;
+                    for (int sy = 0; sy < samples; sy++)
+                        for (int sx = 0; sx < samples; sx++)
+                        {
+                            float dx = x + (sx + .5f) / samples - size * .5f;
+                            float dy = y + (sy + .5f) / samples - size * .5f;
+                            float radius = Mathf.Sqrt(dx * dx + dy * dy);
+                            float angle = Mathf.Repeat(Mathf.Atan2(dx, dy) - Mathf.PI, Mathf.PI * 2);
+                            bool rim = radius >= 9 && radius <= 13;
+                            bool fill = radius < 9 && angle <= sweep;
+                            if (rim || fill) coverage++;
+                        }
+                    pixels[y * size + x] = new Color(.8f, .8f, .8f, coverage / (float)(samples * samples));
+                }
+            texture.SetPixels(pixels); texture.Apply(false, true);
+            return ChannelSensitivityIcons[state] = new GUIContent(texture, "Channel drag sensitivity: " + ChannelSensitivities[state] + "x (click to cycle)");
+        }
+        private void DrawChannelHeader()
+        {
+            var style = StudioTheme.Styles.panelHeader;
+            var rect = GUILayoutUtility.GetRect(0, 18, ChannelHeaderLayout);
+            var button = new Rect(rect.xMax - 16, rect.center.y - 8, 16, 16);
+            GUI.Label(new Rect(rect.x, rect.y, Mathf.Max(0, rect.width - 20), rect.height), ChannelHeaderContent, style);
+            int state = 0;
+            for (int i = 1; i < ChannelSensitivities.Length; i++)
+                if (Mathf.Abs(ChannelSensitivities[i] - StudioSettings.Current.channelDragSensitivity) < Mathf.Abs(ChannelSensitivities[state] - StudioSettings.Current.channelDragSensitivity)) state = i;
+            var icon = ChannelSensitivityIcon(state);
+            GUI.DrawTexture(button, icon.image, ScaleMode.ScaleToFit, true);
+            ChannelSensitivityHit.tooltip = icon.tooltip;
+            if (GUI.Button(button, ChannelSensitivityHit, GUIStyle.none))
+            {
+                StudioSettings.Current.channelDragSensitivity = ChannelSensitivities[(state + 1) % ChannelSensitivities.Length];
+                StudioSettings.Save();
+            }
+        }
         private int channelUndoGroup = -1, channelUndoControl, channelUndoNode;
         private bool channelUndoText, resetChannelFocus;
         private int channelScrubAxis;

@@ -1,3 +1,5 @@
+Performance validation fixtures require `MASHBOX_STUDIO_TESTS` in the disposable test build. Normal Studio builds exclude their counters and diagnostic switches. Never add this symbol to a user project.
+
 # Isolated Unity validation
 
 These fixtures are excluded from SDK compilation. Never invoke their Run methods in a working game project: they exit the editor after testing.

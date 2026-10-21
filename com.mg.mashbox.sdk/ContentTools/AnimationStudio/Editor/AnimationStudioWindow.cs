@@ -170,6 +170,8 @@ namespace MashBoxSDK.AnimationStudio
 
         private void OnEnable()
         {
+            audioPreview.ReportError = text => message = text;
+            audioPreview.ReportError = text => message = text;
 #if MashBoxDev
             RestoreMotionJob();
             minSize = new Vector2(470, 640);
@@ -257,7 +259,7 @@ namespace MashBoxSDK.AnimationStudio
         private void Guard(Action action)
         {
             try { action(); message = null; }
-            catch (Exception ex) { message = ex.GetBaseException().Message; Debug.LogException(ex); playing = false; }
+            catch (Exception ex) { message = ex.GetBaseException().Message; playing = false; }
             Repaint();
         }
 
@@ -328,7 +330,7 @@ namespace MashBoxSDK.AnimationStudio
                 else { ReleaseRig(); }
             }
             using (new EditorGUI.DisabledScope(rig == null))
-                if (GUILayout.Button("New take…")) Guard(NewTake);
+                if (GUILayout.Button("New takeâ€¦")) Guard(NewTake);
             if (!take)
             {
                 var example = AssetDatabase.LoadAssetAtPath<AnimationTake>("Assets/MashBox/MashBox Studio Examples/SM Reach Take.asset");
@@ -342,7 +344,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.DrawRect(rect, new Color(0.075f, 0.10f, 0.14f));
             EditorGUI.DrawRect(new Rect(rect.x, rect.y, 4, rect.height), new Color(0.15f, 0.78f, 0.72f));
             GUI.Label(new Rect(18, rect.y + 10, rect.width - 30, 24), "MASHBOX  /  ANIMATION STUDIO", new GUIStyle(StudioTheme.Styles.boldLabel) { fontSize = 17, normal = { textColor = Color.white } });
-            GUI.Label(new Rect(18, rect.y + 36, rect.width - 30, 20), "POSE   ·   KEYFRAME   ·   BAKE", StudioTheme.Styles.miniLabel);
+            GUI.Label(new Rect(18, rect.y + 36, rect.width - 30, 20), "POSE   Â·   KEYFRAME   Â·   BAKE", StudioTheme.Styles.miniLabel);
         }
 
         private void BuildOrFocus()
@@ -457,9 +459,9 @@ namespace MashBoxSDK.AnimationStudio
             bool nextAutoKey = EditorGUILayout.Toggle(new GUIContent("Auto Key", "When enabled, pose edits insert or replace a key at the current frame. S always keys the pose."), autoKey);
             if (nextAutoKey != autoKey) { FinishSceneEdit(); autoKey = nextAutoKey; }
             EditorGUILayout.HelpBox(unkeyedPose
-                ? "Unkeyed pose — press S or Key pose to keep it. Scrubbing, playback, or closing the workspace discards unkeyed changes."
-                : autoKey ? "Auto Key is ON — pose edits write keys at the current frame."
-                : "Auto Key is OFF — pose freely, then press S to insert or replace a pose key.", MessageType.None);
+                ? "Unkeyed pose â€” press S or Key pose to keep it. Scrubbing, playback, or closing the workspace discards unkeyed changes."
+                : autoKey ? "Auto Key is ON â€” pose edits write keys at the current frame."
+                : "Auto Key is OFF â€” pose freely, then press S to insert or replace a pose key.", MessageType.None);
             EditorGUI.BeginChangeCheck();
             int fps = EditorGUILayout.IntField("Frames per second", take.frameRate);
             int end = EditorGUILayout.IntField("Last frame", take.lastFrame);
@@ -511,7 +513,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     var effector = pose.effectors[control];
                     EditorGUI.BeginChangeCheck();
-                    float weight = EditorGUILayout.Slider("IK blend (0 FK → 1 IK)", effector.weight, 0, 1);
+                    float weight = EditorGUILayout.Slider("IK blend (0 FK â†’ 1 IK)", effector.weight, 0, 1);
                     Vector3 position = poleMode ? effector.pole : effector.position;
                     Vector3 rotation = effector.rotation.eulerAngles;
                     if(!selectionTransformsDrawn)
@@ -528,11 +530,11 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     using (new EditorGUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button("Match → IK"))
+                        if (GUILayout.Button("Match â†’ IK"))
                         {
                             pose.effectors[control] = rig.MatchEffector(control, 1); Commit("Match IK to current pose");
                         }
-                        if (GUILayout.Button("Match all → FK"))
+                        if (GUILayout.Button("Match all â†’ FK"))
                         {
                             pose = rig.Capture(); Commit("Match FK to solved pose");
                         }
@@ -543,7 +545,7 @@ namespace MashBoxSDK.AnimationStudio
                         }
                     }
                 }
-                EditorGUILayout.HelpBox("Match → IK preserves the current pose. Targets stay fixed in character space as hips and spine move. Use FK hips for body motion while the feet remain pinned.", MessageType.None);
+                EditorGUILayout.HelpBox("Match â†’ IK preserves the current pose. Targets stay fixed in character space as hips and spine move. Use FK hips for body motion while the feet remain pinned.", MessageType.None);
             }
             else
             {
@@ -587,7 +589,7 @@ namespace MashBoxSDK.AnimationStudio
             using (new EditorGUI.DisabledScope(!importClip))
                 if (GUILayout.Button("Open clip for editing")) OpenClipForEditing(importClip);
             using (new EditorGUI.DisabledScope(!importClip))
-                if (GUILayout.Button("Import clip into a new take…")) Guard(ImportClip);
+                if (GUILayout.Button("Import clip into a new takeâ€¦")) Guard(ImportClip);
             using (new EditorGUI.DisabledScope(!Selection.activeGameObject || EditorUtility.IsPersistent(Selection.activeGameObject)))
                 if (GUILayout.Button("Capture selected live character pose")) Guard(CaptureLive);
             humanoidExport = EditorGUILayout.Toggle("Bake Humanoid muscles", humanoidExport && rig.Animator);
@@ -604,10 +606,10 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUILayout.HelpBox("Choose a standalone .anim clip inside Assets to overwrite, or bake a new clip first. Imported model clips cannot be overwritten.", MessageType.Info);
             using (new EditorGUI.DisabledScope(!EditingClip && !CanOverwriteClip(take.outputClip)))
                 if (GUILayout.Button(EditingClip ? "Save animation" : "Save to referenced clip", GUILayout.Height(32))) Guard(() => { if (EditingClip) SaveClipSession(); else SaveToReferencedClip(); });
-            if (GUILayout.Button("Bake new animation clip…")) Guard(Bake);
+            if (GUILayout.Button("Bake new animation clipâ€¦")) Guard(Bake);
             using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField(sceneDraft ? (autoKey ? "Posing… key commits on release" : "Posing… press S to key") : unkeyedPose ? "Unkeyed pose · S to key" : EditingClip ? (clipSessionDirty ? "Unsaved animation changes" : "Animation saved") : pendingSave ? "Keys queued for save" : "Take saved", StudioTheme.Styles.miniLabel);
+                EditorGUILayout.LabelField(sceneDraft ? (autoKey ? "Posingâ€¦ key commits on release" : "Posingâ€¦ press S to key") : unkeyedPose ? "Unkeyed pose Â· S to key" : EditingClip ? (clipSessionDirty ? "Unsaved animation changes" : "Animation saved") : pendingSave ? "Keys queued for save" : "Take saved", StudioTheme.Styles.miniLabel);
                 if (GUILayout.Button("Save now", GUILayout.Width(85))) Guard(() => { if (EditingClip) SaveClipSession(); else FlushEdits(); });
             }
         }
@@ -1045,3 +1047,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

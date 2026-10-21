@@ -59,6 +59,15 @@ namespace MashBoxSDK.AnimationStudio
         };
         internal static Palette Current => Array.Find(Palettes, p => p.Id == StudioSettings.Current.theme) ?? Palettes[0];
         internal static Color Alpha(Color color, float alpha) { color.a = alpha; return color; }
+        internal static void DrawPopupBorder(Rect rect)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            var color = Current.Border;
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 1), color);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - 1, rect.width, 1), color);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y, 1, rect.height), color);
+            EditorGUI.DrawRect(new Rect(rect.xMax - 1, rect.y, 1, rect.height), color);
+        }
         private sealed class Resources
         {
             internal GUISkin Skin;
@@ -128,7 +137,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static GUISkin Skin(Resources resource)
         {
-            if (resource.Skin) return resource.Skin;
+            return resource.Skin ? resource.Skin : CreateSkin(resource);
+        }
+        // Keep the captured initialization lambda out of the per-panel draw path.
+        private static GUISkin CreateSkin(Resources resource)
+        {
             resource.Skin = UnityEngine.Object.Instantiate(GUI.skin); resource.Skin.hideFlags = HideFlags.HideAndDontSave;
             foreach (var property in typeof(GUISkin).GetProperties(BindingFlags.Instance | BindingFlags.Public))
                 if (property.PropertyType == typeof(GUIStyle) && property.CanRead && property.CanWrite)

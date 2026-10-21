@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!GUILayout.Button(new GUIContent(label, tooltip ?? label), GUILayout.Height(22))) return;
             try { CancelInteraction(); action(); feedback = label; }
-            catch (Exception e) { feedback = e.Message; Debug.LogWarning("UV Editor: " + e.Message); }
+            catch (Exception e) { feedback = e.Message;  }
             Repaint();
         }
         private void Row(string a, Action first, string b, Action second)

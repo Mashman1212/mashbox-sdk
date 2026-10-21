@@ -1,3 +1,6 @@
+using System;
+using System.Linq.Expressions;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -5,6 +8,34 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        // Unity exposes explicit sizes for move/scale, but its rotation size
+        // parameters are internal. Bind once to the native implementation so
+        // radius changes retain native ring picking, snapping and drag feedback.
+        // The compiled delegate passes the value-type parameters without boxing
+        // or reflection allocations during GUI events.
+        private static readonly Func<Handles.RotationHandleIds, Quaternion, Vector3, float, Quaternion> SizedRotationHandle = CreateSizedRotationHandle();
+        private static Func<Handles.RotationHandleIds, Quaternion, Vector3, float, Quaternion> CreateSizedRotationHandle()
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic;
+            var param = typeof(Handles).GetNestedType("RotationHandleParam", flags);
+            var constructor = param.GetConstructor(flags | BindingFlags.Instance, null,
+                new[] { param.GetNestedType("Handle", flags), typeof(Vector3), typeof(float), typeof(float), typeof(bool), typeof(bool) }, null);
+            var ids = Expression.Parameter(typeof(Handles.RotationHandleIds), "ids");
+            var rotation = Expression.Parameter(typeof(Quaternion), "rotation");
+            var center = Expression.Parameter(typeof(Vector3), "center");
+            var size = Expression.Parameter(typeof(float), "size");
+            var defaults = Expression.Property(null, param.GetProperty("Default", flags | BindingFlags.Static));
+            var parameters = Expression.New(constructor,
+                Expression.Field(defaults, "handles"),
+                Expression.Multiply(Expression.Field(defaults, "axisSize"), size),
+                Expression.Multiply(Expression.Field(defaults, "xyzSize"), size),
+                Expression.Multiply(Expression.Field(defaults, "cameraAxisSize"), size),
+                Expression.Field(defaults, "enableRayDrag"), Expression.Field(defaults, "displayXYZCircle"));
+            var method = typeof(Handles).GetMethod("DoRotationHandle", flags | BindingFlags.Static, null,
+                new[] { typeof(Handles.RotationHandleIds), typeof(Quaternion), typeof(Vector3), param }, null);
+            return Expression.Lambda<Func<Handles.RotationHandleIds, Quaternion, Vector3, float, Quaternion>>(
+                Expression.Call(method, ids, rotation, center, parameters), ids, rotation, center, size).Compile();
+        }
         internal static bool HandleSizeShortcut(Event evt)
         {
             // SceneView navigation retains keyboardControl after orbit/pan ends.

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEditor;
@@ -9,9 +8,6 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        private static readonly ProfilerMarker ComponentDrawMarker = new ProfilerMarker("MashBox Studio.Modeler.Component overlays");
-        private static readonly ProfilerMarker ComponentBuildMarker = new ProfilerMarker("MashBox Studio.Modeler.Build overlay cache");
-        private static readonly ProfilerMarker ObjectWireMarker = new ProfilerMarker("MashBox Studio.Modeler.Object outlines");
         private Mesh componentSource, componentLines, componentDots, componentHighlight, componentHover;
         private Vector3[] componentPositions;
         private readonly List<Vector3> componentPositionBuffer = new List<Vector3>();
@@ -28,9 +24,12 @@ namespace MashBoxSDK.AnimationStudio
         private ComponentMode drawnMode;
         private Material componentMaterial;
         private static readonly int OverlayColor = Shader.PropertyToID("_Color"), OverlayMode = Shader.PropertyToID("_Mode"), OverlaySize = Shader.PropertyToID("_Size"), OverlayScreen = Shader.PropertyToID("_Viewport"), OverlayDepth = Shader.PropertyToID("_ZTest");
+#if MASHBOX_STUDIO_TESTS
         internal int ComponentOverlayBuilds { get; private set; }
+#endif
+#if MASHBOX_STUDIO_TESTS
         internal int ComponentOverlayDrawCalls { get; private set; }
-
+#endif
         private void ClearComponentDrawing()
         {
             foreach (var mesh in new[]{componentLines,componentDots,componentHighlight,componentHover}) if(mesh) UnityEngine.Object.DestroyImmediate(mesh);
@@ -96,28 +95,34 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(componentSource!=ActiveMesh)
             {
-                using(ComponentBuildMarker.Auto())
                 {
                     ClearComponentDrawing();componentSource=ActiveMesh;componentPositions=ActiveMesh.vertices;
                     var edges=Edges();var indices=new int[edges.Count*2];
                     for(int i=0;i<edges.Count;i++){indices[i*2]=edges[i].a;indices[i*2+1]=edges[i].b;}
                     componentLines=OverlayMesh("component edges",componentPositions,indices,MeshTopology.Lines);
-                    drawnMode=(ComponentMode)(-1);ComponentOverlayBuilds++;
+                    drawnMode=(ComponentMode)(-1);
+#if MASHBOX_STUDIO_TESTS
+                ComponentOverlayBuilds++;
+#endif
                 }
             }
             if(mode==ComponentMode.Vertex&&!componentDots)
             {
-                using(ComponentBuildMarker.Auto())
-                { var all=new int[componentPositions.Length];for(int i=0;i<all.Length;i++)all[i]=i;componentDots=PointBatch(all);ComponentOverlayBuilds++; }
+                { var all=new int[componentPositions.Length];for(int i=0;i<all.Length;i++)all[i]=i;componentDots=PointBatch(all);
+#if MASHBOX_STUDIO_TESTS
+                ComponentOverlayBuilds++;
+#endif
+ }
             }
             if(mode==drawnMode&&drawnComponents.SetEquals(Components))return;
-            using(ComponentBuildMarker.Auto())
             {
                 DestroyComponentOverlay(componentHighlight);
                 componentHighlight=null;drawnMode=mode;drawnComponents.Clear();drawnComponents.UnionWith(Components);
                 if(Components.Count==0)return;
                 componentHighlight=ComponentHighlight(Components);
+#if MASHBOX_STUDIO_TESTS
                 ComponentOverlayBuilds++;
+#endif
             }
         }
         private Mesh ComponentHighlight(IEnumerable<int> components)
@@ -158,9 +163,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawComponentBatches(SceneView view)
         {
-            using(ComponentDrawMarker.Auto())
             {
-                ComponentOverlayDrawCalls=0;EnsureComponentDrawing();EnsureComponentHover();
+#if MASHBOX_STUDIO_TESTS
+                ComponentOverlayDrawCalls=0;
+#endif
+EnsureComponentDrawing();EnsureComponentHover();
                 if(!componentMaterial)componentMaterial=new Material(Shader.Find("Hidden/MashBox/ModelerComponents")) { hideFlags=HideFlags.HideAndDontSave };
                 componentMaterial.SetVector(OverlayScreen,new Vector4(view.camera.pixelWidth,view.camera.pixelHeight,0,0));
                 componentMaterial.SetFloat(OverlayDepth,(float)(displayXray?CompareFunction.Always:CompareFunction.LessEqual));
@@ -169,7 +176,11 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     if(!mesh||mesh.vertexCount==0||mesh.GetIndexCount(0)==0)return;
                     componentMaterial.SetColor(OverlayColor,color);componentMaterial.SetFloat(OverlayMode,shaderMode);componentMaterial.SetFloat(OverlaySize,size*EditorGUIUtility.pixelsPerPoint);
-                    if(componentMaterial.SetPass(0)){Graphics.DrawMeshNow(mesh,matrix);ComponentOverlayDrawCalls++;}
+                    if(componentMaterial.SetPass(0)){Graphics.DrawMeshNow(mesh,matrix);
+#if MASHBOX_STUDIO_TESTS
+                ComponentOverlayDrawCalls++;
+#endif
+}
                 }
                 if(mode==ComponentMode.Vertex)Draw(componentDots,new Color(.35f,.9f,.9f,1),1,4);
                 if(mode==ComponentMode.Edge)

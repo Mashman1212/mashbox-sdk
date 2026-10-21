@@ -31,6 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorPrefs.SetString("MashBox.LastModel." + Application.dataPath, document ? document.WorkspacePath : "");
             viewport.Bind(modelEditor.Scene); modelEditor.Frame(viewport);
         }
+        internal StudioModelEditor ToolbarModelEditor => modelingMode ? modelEditor : null;
         private void BindStudioMode()
         {
             if (!viewport) return;
@@ -45,9 +46,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             viewport.BindModes(DrawStudioModes, modelingMode);
             viewport.BindViewportControls(
-                DrawStudioMenuBar,
-                modelingMode ? (System.Action)DrawModelViewportOptions : null, DrawStudioSettings);
-            viewport.BindModelTools(modelingMode ? (System.Action)(() => modelEditor?.DrawToolStrip()) : null);
+                DrawStudioMenuBar, null, null);
             viewport.BindWorkspaceStatistics();
             viewport.BindModelToolOptions(modelingMode ? (System.Action)(() => modelEditor?.DrawEmbeddedToolOptions()) : null);
             if (modelEditor != null) modelEditor.FocusToolOptions = viewport.FocusModelToolOptions;
@@ -78,15 +77,6 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddSeparator("");
             menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel(viewport.IsStudioMaximized ? "Restore View" : "Maximize View",StudioShortcut.Maximize)), false, viewport.ToggleMaximized);
             menu.DropDown(rect);
-        }
-        private void DrawModelViewportOptions()
-        {
-            using (new EditorGUILayout.HorizontalScope()) modelEditor?.DrawViewportOptions(viewport);
-        }
-        private void DrawStudioSettings()
-        {
-            var content = new GUIContent(EditorGUIUtility.IconContent("SettingsIcon").image, "MashBox Studio settings — Appearance and preferences");
-            if (GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
         }
         private void SwitchStudioMode(bool modeling)
         {

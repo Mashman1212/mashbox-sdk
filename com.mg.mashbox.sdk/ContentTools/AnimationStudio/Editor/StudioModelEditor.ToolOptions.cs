@@ -8,62 +8,8 @@ namespace MashBoxSDK.AnimationStudio
         private StudioModelToolOptions toolOptions;
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
-        private GUIStyle toolIconStyle;
-        internal void DrawViewportOptions(MashBoxStudioViewport view)
-        {
-            DrawOrientationPopup(false);
-            EditorGUI.BeginChangeCheck();
-            GUILayout.Space(8);
-            var gridRect = GUILayoutUtility.GetRect(24, 24, GUILayout.Width(24), GUILayout.Height(24));
-            bool grid = GUI.Toggle(gridRect, view.modelGridVisible, new GUIContent("", "Show the modeling ground grid"), StudioTheme.Styles.overlayButton);
-            if (Event.current.type == EventType.Repaint)
-            {
-                var icon = new Rect(gridRect.center.x - 6, gridRect.center.y - 6, 13, 13);
-                for (int line = 0; line < 4; line++)
-                {
-                    EditorGUI.DrawRect(new Rect(icon.x + line * 4, icon.y, 1, icon.height), StudioTheme.Current.Text);
-                    EditorGUI.DrawRect(new Rect(icon.x, icon.y + line * 4, icon.width, 1), StudioTheme.Current.Text);
-                }
-            }
-            if (EditorGUI.EndChangeCheck()) { view.modelGridVisible = grid; repaint(); toolOptions?.Repaint(); }
-            DrawDisplayToggles();
-
-        }
-        internal void DrawToolStrip()
-        {
-            ToolButton(Tool.None, new GUIContent("↖", "Select ("+StudioShortcuts.Label(StudioShortcut.Select)+") · Double-click for options"));
-            var separator = GUILayoutUtility.GetRect(32, 9, GUILayout.Width(32), GUILayout.Height(9));
-            if (Event.current.type == EventType.Repaint)
-                EditorGUI.DrawRect(new Rect(separator.x + 4, separator.y + 4, 24, 1), StudioTheme.Current.Border);
-            ToolButton(Tool.Move, new GUIContent(EditorGUIUtility.IconContent("MoveTool").image, "Move ("+StudioShortcuts.Label(StudioShortcut.Move)+") · Double-click for options"));
-            ToolButton(Tool.Rotate, new GUIContent(EditorGUIUtility.IconContent("RotateTool").image, "Rotate ("+StudioShortcuts.Label(StudioShortcut.Rotate)+") · Double-click for options"));
-            ToolButton(Tool.Scale, new GUIContent(EditorGUIUtility.IconContent("ScaleTool").image, "Scale ("+StudioShortcuts.Label(StudioShortcut.Scale)+") · Double-click for options"));
-        }
-        private void ToolButton(Tool next, GUIContent content)
-        {
-            var rect = GUILayoutUtility.GetRect(32, 32, GUILayout.Width(32), GUILayout.Height(32));
-            var evt = Event.current;
-            if (evt.type == EventType.MouseDown && evt.button == 0 && evt.clickCount == 2 && rect.Contains(evt.mousePosition))
-            { ActivateTool(next); OpenToolOptions(); evt.Use(); }
-            if (toolIconStyle == null)
-                toolIconStyle = new GUIStyle(GUIStyle.none) { alignment = TextAnchor.MiddleCenter, fontSize = 20 };
-            var palette = StudioTheme.Current;
-            toolIconStyle.normal.textColor = toolIconStyle.hover.textColor = toolIconStyle.active.textColor = palette.Text;
-            toolIconStyle.onNormal.textColor = toolIconStyle.onHover.textColor = toolIconStyle.onActive.textColor = palette.Text;
-            bool selected = cutTool == CutTool.None && tool == next;
-            if (evt.type == EventType.Repaint)
-            {
-                EditorGUI.DrawRect(rect, selected ? palette.ToolSelection : rect.Contains(evt.mousePosition) ? palette.Hover : palette.ToolRail);
-                if (selected)
-                {
-                    EditorGUI.DrawRect(new Rect(rect.x, rect.y, 2, rect.height), palette.Accent);
-                    EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 1), palette.Border);
-                    EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - 1, rect.width, 1), palette.Border);
-                }
-            }
-            if (GUI.Toggle(rect, selected, content, toolIconStyle) && !selected) ActivateTool(next);
-            GUILayout.Space(3);
-        }
+        internal int ToolbarTransformState => cutTool != CutTool.None ? 0 : tool == Tool.None ? 1 : tool == Tool.Move ? 2 : tool == Tool.Rotate ? 3 : tool == Tool.Scale ? 4 : 0;
+        internal bool ToolbarToolSelected(Tool value) => cutTool == CutTool.None && tool == value;
         internal void ActivateTool(Tool next)
         {
             StopCutTool(); tool = next; pivot = false; repaint(); toolOptions?.Repaint();
@@ -138,7 +84,14 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     var field = new Rect(row.x + titleWidth + axis * (axisWidth + 4), row.y, axisWidth, row.height);
                     GUI.SetNextControlName(ChannelNames[label][axis]);
-                    value[axis] = EditorGUI.FloatField(field, ChannelAxes[axis], value[axis]);
+                    // Limit the readout, not the stored transform. Merely painting
+                    // or focusing a field must not round the document's values.
+                    float displayed = (float)System.Math.Round(value[axis], 4, System.MidpointRounding.AwayFromZero);
+                    EditorGUI.BeginChangeCheck();
+                    bool scrubbing = Event.current.type == EventType.MouseDrag && GUIUtility.hotControl != 0;
+                    float edited = EditorGUI.FloatField(field, ChannelAxes[axis], displayed);
+                    if (EditorGUI.EndChangeCheck())
+                        value[axis] = scrubbing ? value[axis] + (edited - displayed) * StudioSettings.Current.channelDragSensitivity : edited;
                 }
             }
             finally { EditorGUIUtility.labelWidth = previousLabelWidth; EditorGUI.indentLevel = previousIndent; }
@@ -188,3 +141,5 @@ namespace MashBoxSDK.AnimationStudio
         private void OnInspectorUpdate() { Repaint(); }
     }
 }
+
+

@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool extrudeFacesTogether = true;
         private bool CanExtrude => CanCutMesh && (mode == ComponentMode.Face || mode == ComponentMode.Edge) && Components.Count > 0;
         private int handleExtrudeControl;
+        private Vector3 handleExtrudeCenter;
         private bool handleExtrudePending, handleExtrudeFailed;
         private System.Collections.Generic.HashSet<int> handleExtrudeVertices;
         private int[] handleExtrudeSourceSelection;
@@ -19,6 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             handleExtrudeControl = 0; handleExtrudePending = handleExtrudeFailed = false;
             handleExtrudeVertices = null; handleExtrudeSourceSelection = null;
+            handleExtrudeCenter = Vector3.zero;
         }
 
         private void BeginHandleExtrusion(Vector3 position, Vector3 center, Quaternion rotation, Quaternion orientation, Vector3 scale)
@@ -47,6 +49,9 @@ namespace MashBoxSDK.AnimationStudio
             cutTopology = null; cutMesh = null; ClearComponentDrawing();
             Components.Clear(); SelectExtrusionResult(result, faces != null);
             handleExtrudeVertices = new System.Collections.Generic.HashSet<int>(result.MovingVertices);
+            // New caps and wall tips have different vertex multiplicities from the
+            // source selection. Keep the native handle's reference point continuous.
+            handleExtrudeCenter = tool == Tool.Move ? position : center;
             if (tool == Tool.Scale)
             {
                 scaleDrag = CaptureScaleDrag(handleExtrudeControl, center, orientation, handleExtrudeVertices, result.SourceVertices);

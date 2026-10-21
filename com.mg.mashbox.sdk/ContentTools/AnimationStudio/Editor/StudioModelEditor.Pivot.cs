@@ -12,16 +12,16 @@ namespace MashBoxSDK.AnimationStudio
         private Vector3 objectSnapOffset;
         private SceneView vertexSnapView;
 
-        private Vector3 DrawPivotHandle(Vector3 center, Quaternion orientation)
+        private Vector3 DrawPivotHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
-            var next = DrawMoveHandle(center, orientation);
-            DrawPivotMarker(next, orientation);
+            var next = DrawMoveHandle(center, orientation, sizeMultiplier);
+            DrawPivotMarker(next, orientation, sizeMultiplier);
             return next;
         }
-        private static void DrawPivotMarker(Vector3 center, Quaternion orientation)
+        private static void DrawPivotMarker(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
             if (Event.current.type != EventType.Repaint) return;
-            float radius = HandleUtility.GetHandleSize(center) * .25f;
+            float radius = HandleUtility.GetHandleSize(center) * .25f * sizeMultiplier;
             using (new Handles.DrawingScope())
             {
                 Handles.color = Handles.xAxisColor;

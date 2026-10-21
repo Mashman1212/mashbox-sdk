@@ -44,9 +44,19 @@ namespace MashBoxSDK.AnimationStudio
         private Vector3 outlineCameraPosition, outlineCameraForward;
         private bool outlineOrthographic;
         private float outlineNearClip;
+#if MASHBOX_STUDIO_TESTS
         internal int ObjectWireDrawCalls { get; private set; }
+#endif
+        #if MASHBOX_STUDIO_TESTS
         internal bool UseBatchedWireframes { get; set; } = true;
+#else
+        private const bool UseBatchedWireframes = true;
+#endif
+        #if MASHBOX_STUDIO_TESTS
         internal bool SelectionOutlineEnabled { get; set; } = true;
+#else
+        private const bool SelectionOutlineEnabled = true;
+#endif
         private readonly Dictionary<StudioModelDocument.Node, SelectionWireframe> selectionWireframes = new Dictionary<StudioModelDocument.Node, SelectionWireframe>();
         private void ClearSelectionWireframes()
         {
@@ -103,13 +113,15 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawSceneWireframes(Camera camera)
         {
             if(Event.current.type!=EventType.Repaint)return;
-            using(ObjectWireMarker.Auto()) DrawVisibleObjectWireframes(camera);
+            DrawVisibleObjectWireframes(camera);
         }
         private void DrawVisibleObjectWireframes(Camera camera)
         {
             outlineCamera=camera;
             if(camera){outlineCameraPosition=camera.transform.position;outlineCameraForward=camera.transform.forward;outlineOrthographic=camera.orthographic;outlineNearClip=camera.nearClipPlane;}
-            ObjectWireDrawCalls=0;
+#if MASHBOX_STUDIO_TESTS
+                ObjectWireDrawCalls=0;
+#endif
             var depth=Handles.zTest;bool lighting=Handles.lighting;
             try
             {
@@ -127,8 +139,16 @@ namespace MashBoxSDK.AnimationStudio
                     float width=highlight?1.2f:1.25f;
                     using(new Handles.DrawingScope(color,Matrix4x4.identity))
                     {
-                        if (UseBatchedWireframes && DrawWireBatch(wire,Transforms[i].localToWorldMatrix,color,width,camera)) ObjectWireDrawCalls++;
-                        else ObjectWireDrawCalls+=DrawNativeWireframe(wire,Transforms[i].localToWorldMatrix,width);
+                        if (UseBatchedWireframes && DrawWireBatch(wire,Transforms[i].localToWorldMatrix,color,width,camera)) {
+#if MASHBOX_STUDIO_TESTS
+                ObjectWireDrawCalls++;
+#endif
+                        } else {
+#if MASHBOX_STUDIO_TESTS
+                                                        ObjectWireDrawCalls+=
+#endif
+                            DrawNativeWireframe(wire,Transforms[i].localToWorldMatrix,width);
+                        }
                     }
                 }
             }

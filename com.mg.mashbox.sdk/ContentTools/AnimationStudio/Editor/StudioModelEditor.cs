@@ -36,6 +36,9 @@ namespace MashBoxSDK.AnimationStudio
         private int gestureUndo = -1;
         private int componentRotationControl;
         private Quaternion componentHandleRotation;
+        private Handles.RotationHandleIds rotationHandleIds;
+        private int worldObjectRotationControl;
+        private Quaternion worldObjectHandleRotation;
         private Mesh edgeMesh;
         private List<(int a, int b)> cachedEdges;
         private readonly Action repaint;
@@ -69,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
             scaleDrag = null;
             moveDragControl = 0;
             gestureUndo = -1;
-            componentRotationControl = 0;
+            componentRotationControl = worldObjectRotationControl = 0;
             ClearDisplayMaterials();
             previewLighting?.Dispose(); previewLighting = null;
             ClearSelectionWireframes();
@@ -117,7 +120,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             channelUndoGroup=-1;resetChannelFocus=true;
             ResetCutGesture();ResetHandleExtrusion();scaleDrag=null;
-            moveDragControl=0;gestureUndo=-1;componentRotationControl=0;
+            moveDragControl=0;gestureUndo=-1;componentRotationControl=worldObjectRotationControl=0;
             for(int i=0;i<Transforms.Length;i++)
             {
                 Document.ApplyTransform(i,Transforms[i]);
@@ -177,7 +180,7 @@ namespace MashBoxSDK.AnimationStudio
         private void Run(Action action)
         {
             try { action(); error = null; }
-            catch (Exception e) { error = e.GetBaseException().Message; Debug.LogException(e); }
+            catch (Exception e) { error = e.GetBaseException().Message; }
             repaint();
         }
         internal void DrawHierarchy(Action<StudioModelDocument> loaded)
@@ -197,14 +200,18 @@ namespace MashBoxSDK.AnimationStudio
                 hierarchyScroll = EditorGUILayout.BeginScrollView(hierarchyScroll);
                 var rowStyle = StudioTheme.Styles.hierarchyRow;
                 var rows = Document ? HierarchyRows() : null;
+                int visibleRows=0;
+                if(Document)foreach(int i in rows)
+                    if(string.IsNullOrEmpty(search)||Document.nodes[i].name.IndexOf(search,StringComparison.OrdinalIgnoreCase)>=0)visibleRows++;
+                float rowHeight=Mathf.Max(EditorGUIUtility.singleLineHeight,rowStyle.fixedHeight)+rowStyle.margin.vertical;
+                var rowArea=Document?GUILayoutUtility.GetRect(0,visibleRows*rowHeight,HierarchyRowLayout):Rect.zero;
+                int visibleRow=0;
                 if (Document) foreach (int i in rows)
                 {
                     var n = Document.nodes[i]; if (!string.IsNullOrEmpty(search) && n.name.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
                     int depth = hierarchyDepths[i];
                     {
-                        float height = rowStyle.fixedHeight > 0 ? rowStyle.fixedHeight : EditorGUIUtility.singleLineHeight;
-                        var fullRow = GUILayoutUtility.GetRect(0,height,rowStyle,HierarchyRowLayout);
-                        fullRow.height = Mathf.Max(fullRow.height,height);
+                        var fullRow = new Rect(rowArea.x,rowArea.y+(visibleRow++)*rowHeight+rowStyle.margin.top,rowArea.width,rowHeight-rowStyle.margin.vertical);
                         fullRow.xMin += Mathf.Min(depth * 12, 96);
                         var foldoutRect = new Rect(fullRow.x,fullRow.y,14,fullRow.height);
                         if (hierarchyParents.Contains(i))
@@ -233,7 +240,7 @@ namespace MashBoxSDK.AnimationStudio
                         int nodeIndex = i;
                         bool visible = GUI.Toggle(new Rect(row.xMax + 4, row.y, 20, row.height), n.active, n.active ? contents.hide : contents.show);
 
-                        if (visible != n.active) Run(() => SetHierarchyVisibility(nodeIndex, visible));
+                        if (visible != n.active) ChangeHierarchyVisibility(nodeIndex, visible);
                         row.xMax += 24;
                         GUI.backgroundColor = old;
                     }
@@ -244,6 +251,7 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUILayout.EndScrollView();
             }
         }
+        private void ChangeHierarchyVisibility(int index,bool visible) => Run(() => SetHierarchyVisibility(index,visible));
         private static readonly GUILayoutOption[] HierarchyRowLayout = { GUILayout.ExpandWidth(true) };
         private List<int> HierarchyRows()
         {
@@ -284,7 +292,7 @@ namespace MashBoxSDK.AnimationStudio
             FinishInactiveChannelEdit();
             pendingChannelScrub = null;
             EditorGUIUtility.labelWidth = 115;
-            GUILayout.Label("CHANNELS", StudioTheme.Styles.panelHeader);
+            DrawChannelHeader();
             inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll);
             if (Document && Active >= 0)
             {
@@ -561,6 +569,7 @@ namespace MashBoxSDK.AnimationStudio
             var indices = mode == ComponentMode.Object ? null : capturedScale ? scaleDrag.componentIndices : handleExtrudeVertices ?? SelectedVertices();
             if (indices != null && indices.Count == 0) return;
             bool rotatingComponents = indices != null && !pivot && tool == Tool.Rotate;
+            bool rotatingWorldObjects = indices == null && !pivot && tool == Tool.Rotate && !local;
             // Keep a component's movement axes fixed for the duration of the drag,
             // even when the edit changes the surrounding surface normals.
             if (indices != null && !pivot && tool == Tool.Move && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
@@ -571,26 +580,59 @@ namespace MashBoxSDK.AnimationStudio
             if (rotatingComponents && componentRotationControl != 0 && GUIUtility.hotControl == componentRotationControl)
                 orientation = componentHandleRotation;
             var vertices = indices != null ? capturedScale ? scaleDrag.meshVertices : ActiveMesh.vertices : null;
-            Vector3 center = capturedScale ? scaleDrag.center : indices == null ? t.position : indices.Aggregate(Vector3.zero, (sum, i) => sum + t.TransformPoint(vertices[i])) / indices.Count;
+            Vector3 center = capturedScale ? scaleDrag.center : indices == null ? t.position : ComponentSelectionCenter(vertices, indices);
             if (indices != null && HasComponentPivot) center = componentPivot.position;
+            if (handleExtrudeVertices != null && handleExtrudeControl != 0 && GUIUtility.hotControl == handleExtrudeControl)
+                center = handleExtrudeCenter;
             bool scaling = !pivot && tool == Tool.Scale;
             if (!scaling || (scaleDrag != null && scaleDrag.control != GUIUtility.hotControl)) scaleDrag = null;
             if (scaleDrag != null) { center = scaleDrag.center; orientation = scaleDrag.orientation; }
             EditorGUI.BeginChangeCheck();
             int previousHotControl = GUIUtility.hotControl;
             var position = center; var rotation = orientation; var scale = Vector3.one;
-            // Uniform drawing-space scaling changes the entire handle, including its pick
-            // regions. Convert move results back to world space before editing geometry.
+            // Resize native handle geometry and picking without scaling its drawing
+            // matrix: Unity expands line strokes in that space as well.
             float handleSize = StudioSettings.Current.handleSize * (pivot ? 1.25f : 1f);
-            using (new Handles.DrawingScope(Matrix4x4.Scale(Vector3.one * handleSize)))
+            using (new Handles.DrawingScope(Matrix4x4.identity))
             {
-                var handleCenter = center / handleSize;
-                if (pivot) position = DrawPivotHandle(handleCenter, orientation) * handleSize;
-                else if (tool == Tool.Move) position = DrawMoveHandle(handleCenter, orientation) * handleSize;
-                else if (tool == Tool.Rotate) rotation = Handles.RotationHandle(orientation, handleCenter);
-                else scale = Handles.ScaleHandle(Vector3.one, handleCenter, orientation, HandleUtility.GetHandleSize(handleCenter));
+                var handleCenter = center;
+                if (pivot) position = DrawPivotHandle(handleCenter, orientation, handleSize);
+                else if (tool == Tool.Move) position = DrawMoveHandle(handleCenter, orientation, handleSize);
+                else if (tool == Tool.Rotate)
+                {
+                    rotationHandleIds = Handles.RotationHandleIds.@default;
+                    var rotationEvent = Event.current;
+                    var modifiers = rotationEvent.modifiers;
+                    // Unity assigns Ctrl+Shift to ray-based rotation. In Studio,
+                    // Ctrl owns increment snapping; Shift must not switch its drag mode.
+                    if (rotationEvent.control || rotationEvent.command)
+                        rotationEvent.modifiers = modifiers & ~EventModifiers.Shift;
+                    try { rotation = SizedRotationHandle(rotationHandleIds, orientation, handleCenter, handleSize); }
+                    finally { rotationEvent.modifiers = modifiers; }
+                }
+                else scale = Handles.ScaleHandle(Vector3.one, handleCenter, orientation, HandleUtility.GetHandleSize(handleCenter) * handleSize);
             }
             bool handleChanged = EditorGUI.EndChangeCheck();
+            if (rotatingWorldObjects)
+            {
+                if (worldObjectRotationControl != previousHotControl) worldObjectRotationControl = 0;
+                if (worldObjectRotationControl == 0 && GUIUtility.hotControl != 0)
+                {
+                    worldObjectRotationControl = GUIUtility.hotControl;
+                    worldObjectHandleRotation = orientation;
+                }
+                if (handleChanged && worldObjectRotationControl != 0 && GUIUtility.hotControl == worldObjectRotationControl)
+                {
+                    // The world gizmo stays aligned to identity, but Unity returns
+                    // the total turn since mouse-down. Apply only the new increment;
+                    // Layout/Repaint must not reset this reference between drags.
+                    var total = rotation;
+                    rotation = total * Quaternion.Inverse(worldObjectHandleRotation);
+                    worldObjectHandleRotation = total;
+                }
+                if (GUIUtility.hotControl == 0) worldObjectRotationControl = 0;
+            }
+            else worldObjectRotationControl = 0;
             if (previousHotControl == 0 && GUIUtility.hotControl != 0 && shiftHandleMouseDown &&
                 !pivot && (mode == ComponentMode.Edge || mode == ComponentMode.Face))
             {
@@ -643,6 +685,8 @@ namespace MashBoxSDK.AnimationStudio
                     ActiveMesh.vertices = vertices; ActiveMesh.RecalculateNormals(); ActiveMesh.RecalculateBounds();
                     if (ActiveMesh.uv.Length == ActiveMesh.vertexCount) ActiveMesh.RecalculateTangents(); EditorUtility.SetDirty(ActiveMesh);
                     UpdateComponentPivotAfterTransform(position, center, rotation, orientation);
+                    if (handleExtrudeVertices != null && tool == Tool.Move)
+                        handleExtrudeCenter = position;
                 }
                 else
                 {
