@@ -24,6 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!viewport) return;
             viewport.SetClipUnsavedChanges(clipSession && clipSessionDirty);
+            UpdateWorkspaceSaveState();
             viewport.Repaint();
         }
 
@@ -135,20 +136,53 @@ namespace MashBoxSDK.AnimationStudio
 
     public sealed partial class MashBoxStudioViewport
     {
+        private bool clipUnsavedChanges, workspaceUnsavedChanges;
+        private string workspaceSaveName, workspaceSaveDestination;
         internal void SetClipUnsavedChanges(bool dirty)
         {
-            hasUnsavedChanges = dirty;
-            saveChangesMessage = "Save changes to the animation clip before closing MashBox Studio?";
+            clipUnsavedChanges = dirty;
+            UpdateStudioUnsavedChanges();
         }
-
+        internal void SetWorkspaceUnsavedChanges(bool dirty, string name, string destination = null)
+        {
+            workspaceUnsavedChanges = dirty;
+            workspaceSaveName = name;
+            workspaceSaveDestination = destination;
+            UpdateStudioUnsavedChanges();
+        }
+        private void UpdateStudioUnsavedChanges()
+        {
+            hasUnsavedChanges = workspaceUnsavedChanges || clipUnsavedChanges;
+            saveChangesMessage = workspaceUnsavedChanges
+                ? clipUnsavedChanges ? "Save workspace and animation changes before closing MashBox Studio?"
+                    : "Save changes to \"" + workspaceSaveName + "\" before closing MashBox Studio?"
+                : "Save changes to the animation clip before closing MashBox Studio?";
+            if (workspaceUnsavedChanges)
+                saveChangesMessage += string.IsNullOrEmpty(workspaceSaveDestination)
+                    ? "\n\nChoose a filename when you click Save."
+                    : "\n\nFile: " + workspaceSaveDestination;
+        }
+        public new void OnDestroy()
+        {
+            try { if (Studio) Studio.StudioViewportClosed(this); }
+            finally { base.OnDestroy(); }
+        }
         public override void SaveChanges()
         {
-            if (Studio && !Studio.SaveClipSession()) return;
+            if (!Studio) return;
+            // A canceled filename dialog leaves the native dirty flag set, which
+            // tells Unity to cancel closing the tab/window.
+            if (workspaceUnsavedChanges && !Studio.SaveWorkspaceForClose()) return;
+            if (clipUnsavedChanges && !Studio.SaveClipSession()) return;
             base.SaveChanges();
         }
         public override void DiscardChanges()
         {
-            if (Studio) Studio.DiscardClipChanges();
+            if (Studio)
+            {
+                if (workspaceUnsavedChanges) Studio.DiscardWorkspaceForClose();
+                if (clipUnsavedChanges) Studio.DiscardClipChanges();
+            }
             base.DiscardChanges();
         }
     }

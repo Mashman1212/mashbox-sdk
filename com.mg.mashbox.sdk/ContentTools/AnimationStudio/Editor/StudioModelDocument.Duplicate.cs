@@ -30,7 +30,7 @@ namespace MashBoxSDK.AnimationStudio
                         scale = n.scale, pivotRotation = n.pivotRotation, active = n.active, skinned = n.skinned,
                         materials = n.materials?.ToArray() ?? System.Array.Empty<Material>(), previewTextureSlice = n.previewTextureSlice, vertexAOBaked = n.vertexAOBaked,
                         bones = n.bones?.Select(Remap).ToArray() ?? System.Array.Empty<int>(), rootBone = Remap(n.rootBone),
-                        cutPolygons = n.cutPolygons?.ToArray(), cutTriangles = n.cutTriangles?.ToArray(), blendShape = n.blendShape?.Copy()
+                        normalGroups = n.normalGroups?.ToArray(), cutPolygons = n.cutPolygons?.ToArray(), cutTriangles = n.cutTriangles?.ToArray(), blendShape = n.blendShape?.Copy()
                     };
                     copies.Add(copy);
                     if (n.mesh) { copy.mesh = Instantiate(n.mesh); copy.mesh.name = n.mesh.name; }

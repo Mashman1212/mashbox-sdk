@@ -49,10 +49,11 @@ namespace MashBoxSDK.AnimationStudio
                 foreach (int index in meshSlots.Distinct())
                 {
                     var node = created[index];
-                    var mesh = BuildPrimitive(node.name == "Griptape" ? PrimitiveType.Plane : PrimitiveType.Cube);
+                    var mesh = BuildPrimitive(node.name == "Griptape" ? PrimitiveType.Plane : PrimitiveType.Cube, out var polygons);
                     owned.Add(mesh); mesh.name = node.name + " Placeholder";
                     mesh.vertices = mesh.vertices.Select(v => v * .1f).ToArray(); mesh.RecalculateBounds();
                     node.mesh = mesh; node.materials = new[] { material };
+                    node.cutPolygons = polygons; node.cutTriangles = mesh.triangles;
                 }
                 Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
                 Undo.SetCurrentGroupName("Create " + template.vehicle + " " + template.part);

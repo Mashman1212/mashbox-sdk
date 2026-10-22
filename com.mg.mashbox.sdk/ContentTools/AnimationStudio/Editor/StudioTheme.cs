@@ -288,6 +288,27 @@ namespace MashBoxSDK.AnimationStudio
                     resources.Styles.Add("modelPanel", style); return style;
                 }
             }
+            internal static GUIStyle hierarchyInset
+            {
+                get
+                {
+                    var resources = GetResources();
+                    if (resources.Styles.TryGetValue("hierarchyInset", out var style)) return style;
+                    style = new GUIStyle(GUIStyle.none) { padding = new RectOffset(4, 4, 4, 4), margin = new RectOffset(0, 0, 4, 0) };
+                    style.normal.background = resources.Texture(Color.Lerp(Current.Panel, Color.black, .06f));
+                    resources.Styles.Add("hierarchyInset", style); return style;
+                }
+            }
+            internal static GUIStyle hierarchyVisibilityButton
+            {
+                get
+                {
+                    var resources = GetResources();
+                    if (resources.Styles.TryGetValue("hierarchyVisibilityButton", out var style)) return style;
+                    style = new GUIStyle(GUIStyle.none) { alignment = TextAnchor.MiddleCenter, imagePosition = ImagePosition.ImageOnly };
+                    resources.Styles.Add("hierarchyVisibilityButton", style); return style;
+                }
+            }
             internal static GUIStyle panelHeader
             {
                 get

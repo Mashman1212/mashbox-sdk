@@ -7,6 +7,28 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        private System.Collections.Generic.Dictionary<StudioModelDocument.Node, bool> hierarchyIsolationVisibility;
+        private StudioModelDocument.Node hierarchyIsolatedNode;
+        private void ClearHierarchyIsolation() { hierarchyIsolationVisibility = null; hierarchyIsolatedNode = null; }
+        internal void ToggleHierarchyIsolation(int index)
+        {
+            if (!Document || index < 0 || index >= Document.nodes.Count) return;
+            if (hierarchyIsolatedNode != null && !Document.nodes.Contains(hierarchyIsolatedNode)) ClearHierarchyIsolation();
+            var clicked = Document.nodes[index];
+            if (hierarchyIsolatedNode == clicked && hierarchyIsolationVisibility != null)
+            {
+                var previous = hierarchyIsolationVisibility;
+                ClearHierarchyIsolation();
+                ChangeHierarchyVisibility("Restore visibility", i => previous.TryGetValue(Document.nodes[i], out bool visible) ? visible : Document.nodes[i].active);
+                return;
+            }
+            if (hierarchyIsolationVisibility == null)
+                hierarchyIsolationVisibility = Document.nodes.ToDictionary(node => node, node => node.active);
+            hierarchyIsolatedNode = clicked;
+            var roots = objects.Contains(index) && objects.Count > 1 ? objects.ToArray() : new[] { index };
+            ChangeHierarchyVisibility("Isolate visibility", i => roots.Any(root => IsHierarchyDescendant(i, root) || IsHierarchyDescendant(root, i)));
+        }
+
         internal bool HandleHierarchyContext(Rect row, int index)
         {
             var evt = Event.current;
@@ -42,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetHierarchyVisibility(int index, bool visible)
         {
             if (!Document || index < 0 || index >= Document.nodes.Count) return;
+            ClearHierarchyIsolation();
             // Showing a child also enables its parent chain so it can actually appear.
             ChangeHierarchyVisibility(visible ? "Show object" : "Hide object", i =>
                 i == index ? visible : visible && IsHierarchyDescendant(index, i) ? true : Document.nodes[i].active);
@@ -50,15 +73,17 @@ namespace MashBoxSDK.AnimationStudio
         internal void IsolateHierarchyObject(int index)
         {
             if (!Document || index < 0 || index >= Document.nodes.Count) return;
+            ClearHierarchyIsolation();
             // Keep the selected branch and the ancestors required to display it.
             ChangeHierarchyVisibility("Isolate visibility", i => IsHierarchyDescendant(i, index) || IsHierarchyDescendant(index, i));
         }
 
-        internal void ShowAllHierarchyObjects() => ChangeHierarchyVisibility("Show all objects", i => true);
+        internal void ShowAllHierarchyObjects() { ClearHierarchyIsolation(); ChangeHierarchyVisibility("Show all objects", i => true); }
 
         internal void IsolateHierarchySelection()
         {
             if (!Document) return;
+            ClearHierarchyIsolation();
             var selection = objects.Where(i => i >= 0 && i < Document.nodes.Count).ToArray();
             if (selection.Length == 0) return;
             ChangeHierarchyVisibility("Isolate selected", i => selection.Any(selected =>
@@ -67,6 +92,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void ChangeHierarchyVisibility(string label, Func<int, bool> visibility)
         {
+            FinishLiveTool();
             if (!Document) return;
             var values = new bool[Document.nodes.Count]; bool changed = false;
             for (int i = 0; i < values.Length; i++) { values[i] = visibility(i); changed |= values[i] != Document.nodes[i].active; }

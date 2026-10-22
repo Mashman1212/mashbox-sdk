@@ -37,7 +37,7 @@ namespace MashBoxSDK.AnimationStudio
             public float[] rotationChannels;
             public bool active, skinned, ao;
             public int slice, rootBone;
-            public int[] bones, materials, polygons, topologyTriangles;
+            public int[] bones, materials, polygons, topologyTriangles, normalGroups;
             public BlendData blend;
         }
         [Serializable] private sealed class BlendData
@@ -90,7 +90,7 @@ namespace MashBoxSDK.AnimationStudio
                     rotationChannels = new[] { node.RotationChannels.x, node.RotationChannels.y, node.RotationChannels.z },
                     active = node.active, skinned = node.skinned, ao = node.vertexAOBaked, slice = node.previewTextureSlice,
                     bones = node.bones, rootBone = node.rootBone, mesh = MeshId(node.mesh),
-                    materials = (node.materials ?? Array.Empty<Material>()).Select(MaterialId).ToArray(), polygons = node.cutPolygons,
+                    materials = (node.materials ?? Array.Empty<Material>()).Select(MaterialId).ToArray(), polygons = node.cutPolygons, normalGroups = node.normalGroups,
                     // A matching triangle cache is reconstructed from the saved mesh instead of written twice.
                     topologyTriangles = node.cutTriangles != null && node.mesh && node.cutTriangles.SequenceEqual(MeshTriangles(node.mesh)) ? null : node.cutTriangles,
                     blend = CaptureBlend(node.blendShape)
@@ -169,13 +169,17 @@ namespace MashBoxSDK.AnimationStudio
                     var polygons = node.polygons != null && node.polygons.Length > 0 ? node.polygons : null;
                     var triangles = node.topologyTriangles != null && node.topologyTriangles.Length > 0 ? node.topologyTriangles : polygons != null && mesh ? mesh.triangles : null;
                     ValidatePolygons(polygons, mesh);
+                    // JsonUtility restores an absent optional array as empty.
+                    var groups = node.normalGroups != null && node.normalGroups.Length > 0 ? node.normalGroups : null;
+                    if (groups != null && (!mesh || groups.Length != mesh.vertexCount || groups.Any(g => g < 0 || g >= mesh.vertexCount)))
+                        throw new InvalidDataException("Invalid normal smoothing groups.");
                     document.nodes.Add(new StudioModelDocument.Node {
                         name = node.name, anchorType = node.anchor, sourcePath = node.source, parent = node.parent,
                         position = node.position, rotation = node.rotation, scale = node.scale, positionOffset = node.origin, pivotRotation = node.axes,
                         active = node.active, skinned = node.skinned, vertexAOBaked = node.ao, previewTextureSlice = node.slice,
                         bones = node.bones ?? Array.Empty<int>(), rootBone = node.rootBone, mesh = mesh,
                         materials = (node.materials ?? Array.Empty<int>()).Select(MaterialAt).ToArray(),
-                        cutPolygons = polygons, cutTriangles = triangles, blendShape = RestoreBlend(node.blend)
+                        cutPolygons = polygons, cutTriangles = triangles, normalGroups = groups, blendShape = RestoreBlend(node.blend)
                     });
                     if (node.rotationChannels != null && node.rotationChannels.Length > 0)
                     {
@@ -188,7 +192,12 @@ namespace MashBoxSDK.AnimationStudio
                         document.nodes[document.nodes.Count - 1].rotation = node.rotation;
                     }
                 }
-                document.SetWorkspacePath(path); return document;
+                document.SetWorkspacePath(path);
+                // Reconstructing meshes marks native objects dirty; these values
+                // came from disk and do not represent unsaved user edits.
+                UnityEditor.EditorUtility.ClearDirty(document);
+                foreach (var mesh in instances) UnityEditor.EditorUtility.ClearDirty(mesh);
+                return document;
             }
             catch (Exception error)
             {

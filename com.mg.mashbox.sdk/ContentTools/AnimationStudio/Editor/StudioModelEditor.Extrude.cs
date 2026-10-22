@@ -7,8 +7,8 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        private float extrusionDistance = .1f;
-        private bool extrudeFacesTogether = true;
+        private float extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .1f);
+        private bool extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         private bool CanExtrude => CanCutMesh && (mode == ComponentMode.Face || mode == ComponentMode.Edge) && Components.Count > 0;
         private int handleExtrudeControl;
         private Vector3 handleExtrudeCenter;
@@ -74,28 +74,32 @@ namespace MashBoxSDK.AnimationStudio
             }
         }
 
+        private ToolChannelPane extrudeToolPane;
+        private void CloseExtrudeToolWindow() { if (extrudeToolPane) extrudeToolPane.Close(); extrudeToolPane = null; }
         internal void ExtrudeSelected()
         {
-            if (!CanExtrude) throw new InvalidOperationException("Select faces or open boundary edges on an editable static mesh. Bake a live blend shape before changing its topology.");
-            if (GUIUtility.hotControl != 0) return;
-            var topology = new StudioMeshCuts(Document.nodes[Active]);
-            int[] faces = mode == ComponentMode.Face ? Components.OrderBy(i => i).ToArray() : null;
-            var edges = mode == ComponentMode.Edge ? Components.OrderBy(i => i).Select(i => Edges()[i]).ToArray() : null;
-            StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
-            Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
-            const string label = "Extrude mesh components";
-            Undo.SetCurrentGroupName(label);
-            Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, ActiveMesh }, label);
-            try
-            {
-                var result = topology.Extrude(Document.nodes[Active], faces, edges, extrusionDistance, extrudeFacesTogether, weld);
-                EditorUtility.SetDirty(ActiveMesh); EditorUtility.SetDirty(Document);
-                MeshTopologyChanged();
-                SelectExtrusionResult(result, faces != null);
-                tool = Tool.Move; pivot = false; error = null; Changed();
-            }
-            catch { Undo.RevertAllDownToGroup(group); throw; }
-            finally { Undo.CollapseUndoOperations(group); }
+            if (extrudeToolPane) { extrudeToolPane.Focus(); return; }
+            if (!CanExtrude) throw new InvalidOperationException("Select faces or open boundary edges on an editable static mesh.");
+            extrudeToolPane = ToolChannelPane.Open("Extrude", DrawLiveExtrudeFields, () => extrudeToolPane = null,
+                new Vector2(300, 160), new Vector2(260, 150),
+                execute: () => ApplyLiveTool(LiveTool.Extrude), canExecute: () => CanRunLiveTool(LiveTool.Extrude),
+                failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
+                preview: () => QueueLiveTool(LiveTool.Extrude), cancelPreview: () => CancelLiveTool(LiveTool.Extrude));
+            QueueLiveTool(LiveTool.Extrude);
+        }
+        private void DrawLiveExtrudeFields()
+        {
+            EditorGUI.BeginChangeCheck();
+            extrusionDistance = EditorGUILayout.FloatField(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
+            if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
+            if (EditorGUI.EndChangeCheck()) StoreExtrusionDefaults();
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Close cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
+        }
+
+        private void StoreExtrusionDefaults()
+        {
+            ToolChannelPane.SetFloatDefault("Extrude", "Distance", extrusionDistance);
+            ToolChannelPane.SetFloatDefault("Extrude", "Together", extrudeFacesTogether ? 1 : 0);
         }
 
         internal bool HandleExtrudeShortcut()
@@ -103,7 +107,7 @@ namespace MashBoxSDK.AnimationStudio
             var evt = Event.current;
             if (evt == null || EditorGUIUtility.editingTextField || !StudioShortcuts.Pressed(StudioShortcut.Extrude,evt)) return false;
             // Consume even an unavailable command so Unity cannot edit main-scene objects.
-            if (GUIUtility.hotControl == 0) Run(ExtrudeSelected);
+            if (GUIUtility.hotControl == 0) Run(ExtrudeSelected, false);
             evt.Use(); return true;
         }
 
@@ -112,11 +116,18 @@ namespace MashBoxSDK.AnimationStudio
             if (mode != ComponentMode.Face && mode != ComponentMode.Edge) return;
             GUILayout.Space(8);
             GUILayout.Label("EXTRUDE", StudioTheme.Styles.boldLabel);
+            EditorGUI.BeginChangeCheck();
             extrusionDistance = EditorGUILayout.FloatField(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
-            if (mode == ComponentMode.Face)
-                extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
+            if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
+            if (EditorGUI.EndChangeCheck()) { StoreExtrusionDefaults(); QueueLiveTool(LiveTool.Extrude); extrudeToolPane?.Repaint(); }
             using (new EditorGUI.DisabledScope(!CanExtrude))
-                if (GUILayout.Button("Extrude Selection ("+StudioShortcuts.Label(StudioShortcut.Extrude)+")")) Run(ExtrudeSelected);
+                if (GUILayout.Button("Extrude Options ("+StudioShortcuts.Label(StudioShortcut.Extrude)+")")) Run(ExtrudeSelected, false);
+            if (HasLiveTool(LiveTool.Extrude) || (previewQueued && queuedTool == LiveTool.Extrude))
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Apply")) Run(() => ApplyLiveTool(LiveTool.Extrude), false);
+                    if (GUILayout.Button("Cancel")) CancelLiveTool(LiveTool.Extrude);
+                }
             GUILayout.Label(mode == ComponentMode.Face
                 ? "Extrude along the selected normals, then move, rotate or scale the selected caps. Disable Keep Faces Together for separate face extrusions."
                 : "Extrude open boundary edges along their surface normals. The new outer edges stay selected for further editing.", StudioTheme.Styles.wordWrappedMiniLabel);

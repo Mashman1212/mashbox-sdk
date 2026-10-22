@@ -6,12 +6,29 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private StudioModelToolOptions toolOptions;
+        private EditorWindow ToolChannelPaneOwner
+        {
+            get
+            {
+                foreach (var viewport in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
+                    if (viewport.Studio?.ToolbarModelEditor == this) return viewport;
+                return EditorWindow.focusedWindow;
+            }
+        }
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
         internal int ToolbarTransformState => cutTool != CutTool.None ? 0 : tool == Tool.None ? 1 : tool == Tool.Move ? 2 : tool == Tool.Rotate ? 3 : tool == Tool.Scale ? 4 : 0;
+        internal ComponentMode ToolbarComponentMode => mode;
+        internal bool CanSetToolbarComponentMode(ComponentMode value) => value == ComponentMode.Object || CanEditComponents();
+        internal void SetToolbarComponentMode(ComponentMode value)
+        {
+            if (!CanSetToolbarComponentMode(value)) return;
+            StopCutTool(); SetComponentMode(value); repaint(); toolOptions?.Repaint();
+        }
         internal bool ToolbarToolSelected(Tool value) => cutTool == CutTool.None && tool == value;
         internal void ActivateTool(Tool next)
         {
+            FinishLiveTool();
             StopCutTool(); tool = next; pivot = false; repaint(); toolOptions?.Repaint();
         }
         internal void OpenToolOptions()
@@ -45,7 +62,6 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             if (tool != Tool.None) DrawOrientationPopup(true);
             xray = EditorGUILayout.Toggle(new GUIContent("Through selection", "Select components behind visible surfaces."), xray);
-            if (tool != Tool.None) weld = EditorGUILayout.Toggle(new GUIContent("Keep seams together", "Move coincident vertices across UV and normal splits together."), weld);
             if (tool == Tool.Scale && mode != ComponentMode.Object)
                 preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges and faces cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
             if (EditorGUI.EndChangeCheck()) repaint();
@@ -99,6 +115,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SetObjectChannels(Vector3 position, Vector3 rotation, Vector3 scale, bool visible)
         {
+            FinishLiveTool();
             if (!Document || Active < 0) return;
             var node = Document.nodes[Active];
             bool axisScrub = !pivot && (pendingChannelScrub == "Position" || pendingChannelScrub == "Rotation");

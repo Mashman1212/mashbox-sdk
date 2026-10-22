@@ -14,6 +14,8 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly PropertyInfo NativeCanvasRoot = typeof(OverlayCanvas).GetProperty("rootVisualElement", WindowMembers);
         [SerializeField] private int studioToolbarVersion;
         private int studioToolbarState = -1;
+        private Mesh studioToolbarMesh;
+        private int studioToolbarActive = -1;
         internal event Action StudioToolbarStateChanged;
         private VisualElement studioOverlayRoot;
         private readonly List<Overlay> studioToolbarOverlays = new List<Overlay>();
@@ -57,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
                 cameraMode = SceneView.GetBuiltinCameraMode(DrawCameraMode.Textured);
             }
             PlaceStudioMenuAboveToolbars();
-            SyncStudioToolbarState();
+            SyncStudioToolbarState(true);
         }
         private void RestrictStudioDockTargets()
         {
@@ -90,9 +92,21 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (MenuInputBlocked) KeepMenuShieldOnTop();
         }
+        private bool HasLeftDockedToolbar => HasDockedToolbar("overlay-toolbar__left");
+        private bool HasRightDockedToolbar => HasDockedToolbar("overlay-toolbar__right");
+        private bool HasDockedToolbar(string dockName)
+        {
+            if (studioOverlayRoot == null || !overlayCanvas.overlaysEnabled) return false;
+            var dock = studioOverlayRoot.Q(dockName);
+            if (dock == null) return false;
+            foreach (var overlay in studioToolbarOverlays)
+                if (overlay.displayed && !overlay.floating && dock.Contains(overlay.rootVisualElement)) return true;
+            return false;
+        }
         private void OnStudioToolbarGeometry(GeometryChangedEvent evt)
         {
             if (evt.currentTarget is VisualElement root) StyleStudioToolbar(root);
+            UpdatePanelLayout();
         }
         private static void StyleStudioToolbar(VisualElement root)
         {
@@ -129,7 +143,7 @@ namespace MashBoxSDK.AnimationStudio
                     return;
                 }
                 if (element.style.height.value.value != height) element.style.height = height;
-                if (element is StudioToolbarSettings || element.ClassListContains("unity-editor-toolbar-toggle") || element.ClassListContains("unity-editor-toolbar-button"))
+                if (element.ClassListContains("unity-editor-toolbar-toggle") || element.ClassListContains("unity-editor-toolbar-button"))
                 {
                     if (element.style.width.value.value != height) element.style.width = height;
                     element.style.minWidth = element.style.maxWidth = height;
@@ -171,27 +185,36 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void AddStudioToolbarMenu(StudioMenu menu)
         {
-            foreach (var overlay in studioToolbarOverlays)
+            // Unity's canvas is the registry. Query it when opening the menu so
+            // restored, hidden and newly registered toolbars are included too.
+            foreach (var overlay in overlayCanvas.overlays)
             {
-                if (overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) continue;
+                if (!(overlay is ToolbarOverlay) || overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) continue;
                 var item = overlay;
                 bool visible = overlayCanvas.overlaysEnabled && item.displayed;
-                menu.AddItem(new GUIContent(item.displayName), visible, () => {
+                string label = item.id == DisplayToolbarId ? StudioViewportToolbar.DisplayName : item.displayName;
+                menu.AddItem(new GUIContent(label), visible, () => {
                     overlayCanvas.overlaysEnabled = true;
                     item.displayed = !visible;
+                    UpdatePanelLayout();
                     MarkDirty(DirtyState.UI);
                 });
             }
         }
-        internal void SyncStudioToolbarState()
+        internal void SyncStudioToolbarState(bool force = false)
         {
             var editor = Studio?.ToolbarModelEditor;
             int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.Wireframe ? 16 : 0) |
-                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8);
-            if (state == studioToolbarState) return;
+                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0);
+            // Track selection identity without reading skin bind-pose arrays on
+            // every dirty redraw. Controls validate component editing on refresh.
+            var mesh = editor?.ActiveMesh;
+            int active = editor?.Active ?? -1;
+            if (!force && state == studioToolbarState && mesh == studioToolbarMesh && active == studioToolbarActive) return;
             studioToolbarState = state;
+            studioToolbarMesh = mesh; studioToolbarActive = active;
             StudioToolbarStateChanged?.Invoke();
         }
         private void ReleaseStudioToolbars()

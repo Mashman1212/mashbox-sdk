@@ -31,7 +31,7 @@ namespace MashBoxSDK.AnimationStudio
         public int AddPrimitive(PrimitiveType type)
         {
             if (!HasStorage) throw new InvalidOperationException("Save the working model before creating geometry.");
-            var mesh = BuildPrimitive(type);
+            var mesh = BuildPrimitive(type, out var polygons);
             string name = ObjectNames.GetUniqueName(nodes.Select(n => n.name).ToArray(), type.ToString());
             mesh.name = name + " Mesh";
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
@@ -42,30 +42,39 @@ namespace MashBoxSDK.AnimationStudio
             // Destroying a persistent subasset through creation undo loses its asset reference.
             var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
             var material = pipeline ? pipeline.defaultMaterial : AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat");
-            nodes.Add(new Node { name = name, mesh = mesh, materials = new[] { material } });
+            nodes.Add(new Node { name = name, mesh = mesh, materials = new[] { material }, cutPolygons = polygons, cutTriangles = mesh.triangles });
             EditorUtility.SetDirty(this); EditorUtility.SetDirty(mesh);
             Undo.CollapseUndoOperations(group);
             return nodes.Count - 1;
         }
 
         // Generate directly into owned mesh data; never instantiate objects in the gameplay scene.
-        internal static Mesh BuildPrimitive(PrimitiveType type)
+        internal static Mesh BuildPrimitive(PrimitiveType type) => BuildPrimitive(type, out _);
+        internal static Mesh BuildPrimitive(PrimitiveType type, out int[] polygons)
         {
             var vertices = new List<Vector3>(); var normals = new List<Vector3>();
-            var uv = new List<Vector2>(); var triangles = new List<int>();
+            var uv = new List<Vector2>(); var triangles = new List<int>(); var faces = new List<int>();
             void Vertex(Vector3 p, Vector3 n, Vector2 t) { vertices.Add(p); normals.Add(n); uv.Add(t); }
-            void Triangle(int a, int b, int c)
+            void Triangle(int a, int b, int c, bool record = true)
             {
                 if (Vector3.Dot(Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]), normals[a] + normals[b] + normals[c]) < 0)
                 { int swap = b; b = c; c = swap; }
                 triangles.Add(a); triangles.Add(b); triangles.Add(c);
+                if (record) { faces.Add(0); faces.Add(3); faces.Add(a); faces.Add(b); faces.Add(c); }
+            }
+            void RecordQuad(int a, int b, int c, int d)
+            {
+                if (Vector3.Dot(Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]), normals[a] + normals[b] + normals[c]) < 0)
+                { int swap = b; b = d; d = swap; }
+                faces.Add(0); faces.Add(4); faces.Add(a); faces.Add(b); faces.Add(c); faces.Add(d);
             }
             void Quad(Vector3 center, Vector3 right, Vector3 up, Vector3 normal)
             {
                 int start = vertices.Count;
                 Vertex(center - right - up, normal, new Vector2(0, 0)); Vertex(center + right - up, normal, new Vector2(1, 0));
                 Vertex(center + right + up, normal, new Vector2(1, 1)); Vertex(center - right + up, normal, new Vector2(0, 1));
-                Triangle(start, start + 1, start + 2); Triangle(start, start + 2, start + 3);
+                Triangle(start, start + 1, start + 2, false); Triangle(start, start + 2, start + 3, false);
+                RecordQuad(start, start + 1, start + 2, start + 3);
             }
             const int segments = 32, rings = 16;
             switch (type)
@@ -92,8 +101,9 @@ namespace MashBoxSDK.AnimationStudio
                     for (int y = 0; y < rings; y++) for (int x = 0; x < segments; x++)
                     {
                         int a = y * (segments + 1) + x, b = a + segments + 1;
-                        if (y > 0) Triangle(a, a + 1, b);
-                        if (y < rings - 1) Triangle(a + 1, b + 1, b);
+                        if (y > 0) Triangle(a, a + 1, b, y == rings - 1);
+                        if (y < rings - 1) Triangle(a + 1, b + 1, b, y == 0);
+                        if (y > 0 && y < rings - 1) RecordQuad(a, a + 1, b + 1, b);
                     }
                     break;
                 case PrimitiveType.Cylinder:
@@ -103,7 +113,7 @@ namespace MashBoxSDK.AnimationStudio
                         var n = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
                         Vertex(n * .5f + Vector3.down, n, new Vector2(u, 0)); Vertex(n * .5f + Vector3.up, n, new Vector2(u, 1));
                     }
-                    for (int x = 0; x < segments; x++) { int a = x * 2; Triangle(a, a + 1, a + 2); Triangle(a + 1, a + 3, a + 2); }
+                    for (int x = 0; x < segments; x++) { int a = x * 2; Triangle(a, a + 1, a + 2, false); Triangle(a + 1, a + 3, a + 2, false); RecordQuad(a, a + 1, a + 3, a + 2); }
                     foreach (float sign in new[] { -1f, 1f })
                     {
                         int center = vertices.Count; var n = Vector3.up * sign;
@@ -121,7 +131,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             var mesh = new Mesh { name = type + " Mesh" };
             mesh.SetVertices(vertices); mesh.SetNormals(normals); mesh.SetUVs(0, uv); mesh.SetTriangles(triangles, 0);
-            mesh.RecalculateBounds(); mesh.RecalculateTangents(); return mesh;
+            mesh.RecalculateBounds(); mesh.RecalculateTangents(); polygons = faces.ToArray(); return mesh;
         }
     }
 }

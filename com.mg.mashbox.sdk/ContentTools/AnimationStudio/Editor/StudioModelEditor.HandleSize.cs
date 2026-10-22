@@ -36,6 +36,43 @@ namespace MashBoxSDK.AnimationStudio
             return Expression.Lambda<Func<Handles.RotationHandleIds, Quaternion, Vector3, float, Quaternion>>(
                 Expression.Call(method, ids, rotation, center, parameters), ids, rotation, center, size).Compile();
         }
+        private static readonly (Func<float> read, Action<float> write) RotationPreviewAngle = CreateRotationPreviewAngleAccess();
+        private static (Func<float>, Action<float>) CreateRotationPreviewAngleAccess()
+        {
+            var disc = typeof(Editor).Assembly.GetType("UnityEditorInternal.Disc");
+            var field = disc?.GetField("s_RotationDist", BindingFlags.Static | BindingFlags.NonPublic);
+            if (field == null || field.FieldType != typeof(float)) return default;
+            var angle = Expression.Parameter(typeof(float), "angle");
+            return (Expression.Lambda<Func<float>>(Expression.Field(null, field)).Compile(),
+                Expression.Lambda<Action<float>>(Expression.Block(Expression.Assign(Expression.Field(null, field), angle), Expression.Empty()), angle).Compile());
+        }
+        private readonly struct RotationPreviewScope : IDisposable
+        {
+            private readonly bool wrapped;
+            private readonly float fullAngle;
+            internal RotationPreviewScope(Handles.RotationHandleIds ids)
+            {
+                fullAngle = 0; wrapped = false;
+                int hot = GUIUtility.hotControl;
+                if (Event.current == null || Event.current.type != EventType.Repaint || hot == 0 ||
+                    (hot != ids.x && hot != ids.y && hot != ids.z && hot != ids.cameraAxis) || RotationPreviewAngle.read == null) return;
+                fullAngle = RotationPreviewAngle.read();
+                if (Mathf.Abs(fullAngle) < 360) return;
+                // Native Disc draws an extra translucent disc for each complete
+                // turn. Wrap only while painting Studio's preview; native drag
+                // accumulation and snapping retain their full angle afterwards.
+                wrapped = true;
+                RotationPreviewAngle.write(fullAngle % 360f);
+            }
+            public void Dispose()
+            {
+                if (wrapped) RotationPreviewAngle.write(fullAngle);
+            }
+        }
+        private static Quaternion DrawSizedRotationHandle(Handles.RotationHandleIds ids, Quaternion rotation, Vector3 center, float size)
+        {
+            using (new RotationPreviewScope(ids)) return SizedRotationHandle(ids, rotation, center, size);
+        }
         internal static bool HandleSizeShortcut(Event evt)
         {
             // SceneView navigation retains keyboardControl after orbit/pan ends.

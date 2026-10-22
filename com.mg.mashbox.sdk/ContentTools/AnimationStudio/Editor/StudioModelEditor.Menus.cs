@@ -6,7 +6,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        private static readonly string[] ModelMenuTitles = { "File", "Edit", "Window", "Create", "Select", "Modify", "Mesh", "Edit Mesh", "Mesh Tools", "Deform", "Mesh Display", "UV", "Lighting" };
+        private static readonly string[] ModelMenuTitles = { "File", "Edit", "Window", "Display", "Create", "Select", "Modify", "Mesh", "Mesh Tools", "Deform", "Mesh Display", "UV", "Lighting" };
         private readonly System.Collections.Generic.Dictionary<string,(GUIContent content,GUILayoutOption[] layout,GUIStyle style)> menuBarContents = new System.Collections.Generic.Dictionary<string,(GUIContent,GUILayoutOption[],GUIStyle)>();
         internal void DrawMenuBar(SceneView view, Action<StudioModelDocument> loaded)
         {
@@ -21,7 +21,9 @@ namespace MashBoxSDK.AnimationStudio
             switch(title)
             {
                 case "File": {
+                    menu.AddItem(new GUIContent("New Workspace"), false, () => Run(() => NewWorkspace(loaded)));
                     menu.AddItem(new GUIContent("Open Workspace…"), false, () => Run(() => OpenWorkspace(loaded)));
+                    AddRecentFilesMenu(menu, loaded);
                     menu.AddItem(new GUIContent("Import FBX…"), false, () => Run(() => ImportPath(EditorUtility.OpenFilePanel("Import FBX into workspace", "", "fbx"), loaded)));
                     menu.AddSeparator("");
                     AddCommand(menu, StudioShortcuts.MenuLabel("Save Workspace",StudioShortcut.Save), Document, Save);
@@ -32,14 +34,44 @@ namespace MashBoxSDK.AnimationStudio
                 
                     break; }
                 case "Edit": {
-                    AddCommand(menu, StudioShortcuts.MenuLabel("Undo",StudioShortcut.Undo), Document, () => PerformWorkspaceHistory(false)); AddCommand(menu, StudioShortcuts.MenuLabel("Redo",StudioShortcut.Redo), Document, () => PerformWorkspaceHistory(true));
+                    if (Document)
+                    {
+                        menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Undo",StudioShortcut.Undo)), false, () => Run(() => PerformWorkspaceHistory(false), false));
+                        menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Redo",StudioShortcut.Redo)), false, () => Run(() => PerformWorkspaceHistory(true), false));
+                    }
+                    else
+                    {
+                        menu.AddDisabledItem(new GUIContent(StudioShortcuts.MenuLabel("Undo",StudioShortcut.Undo)));
+                        menu.AddDisabledItem(new GUIContent(StudioShortcuts.MenuLabel("Redo",StudioShortcut.Redo)));
+                    }
                     menu.AddSeparator(""); AddCommand(menu, StudioShortcuts.MenuLabel("Duplicate",StudioShortcut.Duplicate), CanDuplicateObjects, DuplicateSelectedObjects);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Delete",StudioShortcut.Delete), CanDeleteObjects, DeleteSelectedObjects);
                     menu.AddSeparator(""); AddCommand(menu, "Preferences…", true, StudioControlsPreferences.Open);
                 
                     break; }
                 case "Window": {
+                    menu.AddItem(new GUIContent("Themes…"), false, StudioSettingsWindow.Open);
+                    break; }
+                case "Display": {
+                    menu.AddItem(new GUIContent("Tool Options"), !StudioSettings.Current.hideToolOptions, () => {
+                        StudioSettings.Current.hideToolOptions = !StudioSettings.Current.hideToolOptions;
+                        StudioSettings.Save();
+                        if (!StudioSettings.Current.hideToolOptions) OpenToolOptions();
+                    });
+
+                    menu.AddSeparator("");
                     if (view is MashBoxStudioViewport studioToolbarView) studioToolbarView.AddStudioToolbarMenu(menu);
+                    menu.AddSeparator("");
+                    menu.AddItem(new GUIContent("Mesh Statistics"), StudioSettings.Current.showMeshStatistics, () => {
+                        StudioSettings.Current.showMeshStatistics = !StudioSettings.Current.showMeshStatistics; StudioSettings.Save();
+                    });
+                    menu.AddItem(new GUIContent("Notifications"), !StudioSettings.Current.hideStatusBar, () => {
+                        StudioSettings.Current.hideStatusBar = !StudioSettings.Current.hideStatusBar; StudioSettings.Save();
+                    });
+                    menu.AddItem(new GUIContent("Orientation Gizmo"), !StudioSettings.Current.hideOrientationAxes, () => {
+                        StudioSettings.Current.hideOrientationAxes = !StudioSettings.Current.hideOrientationAxes;
+                        StudioSettings.Save();
+                    });
                     break; }
                 case "Create": {
                     AddVehiclePartMenu(menu, view, loaded);
@@ -72,15 +104,11 @@ namespace MashBoxSDK.AnimationStudio
                     AddAction(menu, "UV Editor", MarkingAction.OpenUV, view);
                 
                     break; }
-                case "Edit Mesh": {
-                    AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected);
-                    menu.AddSeparator("");
-                    AddAction(menu, "Vertex Mode", MarkingAction.Vertex, view);
-                    AddAction(menu, "Edge Mode", MarkingAction.Edge, view); AddAction(menu, "Face Mode", MarkingAction.Face, view);
-                    menu.AddSeparator(""); menu.AddItem(new GUIContent("Keep Seams Together"), weld, () => { weld = !weld; repaint(); });
-                
-                    break; }
                 case "Mesh Tools": {
+                    AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected);
+                    AddCommand(menu, "Bevel…", CanBevelEdges, OpenBevelTool);
+                    AddCommand(menu, "Merge Vertices", CanMergeVertices, () => Run(MergeSelectedVertices));
+                    menu.AddSeparator("");
                     if (CanCutMesh)
                     {
                         menu.AddItem(new GUIContent("Insert Edge Loop"), cutTool == CutTool.EdgeLoop, () => Run(() => ActivateCutTool(CutTool.EdgeLoop)));
@@ -94,7 +122,6 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));
                     AddAction(menu, "Move", MarkingAction.Move, view); AddAction(menu, "Rotate", MarkingAction.Rotate, view); AddAction(menu, "Scale", MarkingAction.Scale, view);
-                    menu.AddSeparator(""); menu.AddItem(new GUIContent("Tool Options…"), false, OpenToolOptions);
                 
                     break; }
                 case "Deform": {
@@ -103,17 +130,14 @@ namespace MashBoxSDK.AnimationStudio
                 
                     break; }
                 case "Mesh Display": {
+                    AddCommand(menu, "Soften", CanAdjustEdgeNormals, () => ApplyEdgeNormals(false));
+                    AddCommand(menu, "Harden", CanAdjustEdgeNormals, () => ApplyEdgeNormals(true));
+                    AddCommand(menu, "Soften…", CanAdjustEdgeNormals, OpenSoftenTool);
+                    menu.AddSeparator("");
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("X-ray Mode", StudioShortcut.XRay)), displayXray, () => SetXRayMode(!displayXray));
                     menu.AddSeparator("");
-                    menu.AddItem(new GUIContent("Status Bar"), !StudioSettings.Current.hideStatusBar, () => {
-                        StudioSettings.Current.hideStatusBar = !StudioSettings.Current.hideStatusBar; StudioSettings.Save();
-                    });
-                    menu.AddItem(new GUIContent("Mesh Statistics"), StudioSettings.Current.showMeshStatistics, () => {
-                        StudioSettings.Current.showMeshStatistics = !StudioSettings.Current.showMeshStatistics; StudioSettings.Save();
-                    });
-                    menu.AddSeparator("");
                     AddCommand(menu, "Recalculate Normals", ActiveMesh && CanEditComponents(), () => {
-                        Undo.RegisterCompleteObjectUndo(ActiveMesh, "Recalculate normals"); ActiveMesh.RecalculateNormals(); ActiveMesh.RecalculateTangents(); Changed();
+                        Undo.RegisterCompleteObjectUndo(ActiveMesh, "Recalculate normals"); RecalculateEditableNormals(ActiveMesh); ActiveMesh.RecalculateTangents(); Changed();
                     });
                     menu.AddSeparator("");
                     AddDisplay(menu, view, "Shaded", DrawCameraMode.Textured);
@@ -221,8 +245,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!Document)
             {
-                var path = StudioModelDocument.NewWorkspacePath();
-                loaded(StudioModelDocument.CreateEmpty(path));
+                loaded(CreateTemporaryWorkspace());
             }
         }
         private void InvertSelection()

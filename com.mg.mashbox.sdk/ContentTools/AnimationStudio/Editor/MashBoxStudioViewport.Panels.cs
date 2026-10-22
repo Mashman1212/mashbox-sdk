@@ -19,6 +19,7 @@ namespace MashBoxSDK.AnimationStudio
             80, Mathf.Max(80, StudioContentHeight - ModelingPanelTop - PanelMargin - DividerWidth - 120));
         private const float MinLeft = 180, MinRight = 220, MaxPanel = 600, MinCanvas = 320, DividerWidth = 8;
         private const float PanelMargin = 8;
+        private const float PanelCornerRadius = 8;
         private const float ModelingPanelTop = 8;
         internal const float ModeSelectorWidth = 128;
         private float HierarchyLeft => PanelMargin;
@@ -90,34 +91,48 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!panelsInitialized) return;
             var widths = PanelWidths;
-            bool showStatus = panelsModeling && statusBar != null && !StudioSettings.Current.hideStatusBar;
+            bool showTools = panelsModeling && modelToolOptions != null && modelToolOptions.onGUIHandler != null && !StudioSettings.Current.hideToolOptions;
+            bool showChannels = panelsModeling && inspector != null && inspector.onGUIHandler != null && inspector.style.display.value != DisplayStyle.None;
+            float rightRadius = panelsModeling && !HasRightDockedToolbar ? PanelCornerRadius : 0;
             if (rigControls != null)
             {
                 rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x;
-                if (panelsModeling) rigControls.style.bottom = showStatus ? 40 : PanelMargin;
+                if (panelsModeling) rigControls.style.bottom = PanelMargin;
+                float leftRadius = panelsModeling && !HasLeftDockedToolbar ? PanelCornerRadius : 0;
+                rigControls.style.borderTopLeftRadius = rigControls.style.borderBottomLeftRadius = leftRadius;
+                rigControls.style.overflow = panelsModeling ? Overflow.Hidden : Overflow.Visible;
             }
-            if (statusBar != null)
+            LayoutStatusMessages();
+            if (orientationAxes != null)
             {
-                statusBar.style.left = HierarchyLeft; statusBar.style.width = widths.x;
-                statusBar.style.bottom = PanelMargin; statusBar.style.height = 24;
-                statusBar.style.display = showStatus ? DisplayStyle.Flex : DisplayStyle.None;
+                orientationAxes.style.left = HierarchyLeft + widths.x + 8;
+                orientationAxes.style.bottom = 0;
+                orientationAxes.style.width = 64; orientationAxes.style.height = 64;
+                orientationAxes.style.display = panelsModeling && !StudioSettings.Current.hideOrientationAxes ? DisplayStyle.Flex : DisplayStyle.None;
             }
             if (inspector != null)
             {
                 inspector.style.right = PanelMargin; inspector.style.width = widths.y;
-                inspector.style.top = panelsModeling ? ModelingPanelTop + ToolOptionsHeight + DividerWidth : ModelingPanelTop;
+                inspector.style.top = showTools ? ModelingPanelTop + ToolOptionsHeight + DividerWidth : ModelingPanelTop;
+                // Only the outer right corners of the visible panel stack are rounded.
+                inspector.style.borderTopRightRadius = 0;
+                inspector.style.borderBottomRightRadius = rightRadius;
+                inspector.style.overflow = panelsModeling ? Overflow.Hidden : Overflow.Visible;
             }
             if (modelToolOptions != null)
             {
                 modelToolOptions.style.right = PanelMargin; modelToolOptions.style.width = widths.y;
                 modelToolOptions.style.top = ModelingPanelTop; modelToolOptions.style.height = ToolOptionsHeight;
-                modelToolOptions.style.display = panelsModeling ? DisplayStyle.Flex : DisplayStyle.None;
+                modelToolOptions.style.display = showTools ? DisplayStyle.Flex : DisplayStyle.None;
+                modelToolOptions.style.borderTopRightRadius = 0;
+                modelToolOptions.style.borderBottomRightRadius = !showChannels ? rightRadius : 0;
+                modelToolOptions.style.overflow = Overflow.Hidden;
             }
             if (toolOptionsDivider != null)
             {
                 toolOptionsDivider.style.right = PanelMargin; toolOptionsDivider.style.width = widths.y;
                 toolOptionsDivider.style.top = ModelingPanelTop + ToolOptionsHeight;
-                toolOptionsDivider.style.display = panelsModeling ? DisplayStyle.Flex : DisplayStyle.None;
+                toolOptionsDivider.style.display = showTools ? DisplayStyle.Flex : DisplayStyle.None;
             }
             float canvasLeft = HierarchyLeft + widths.x + DividerWidth;
             float overlayTop = ModelingPanelTop;

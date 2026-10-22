@@ -96,7 +96,7 @@ namespace MashBoxSDK.AnimationStudio
             new Definition(StudioShortcut.VertexSnap,"Snapping (hold)","Vertex snap",Key(KeyCode.V,shift:true)),
             new Definition(StudioShortcut.GridSnap,"Snapping (hold)","Grid snap",Key(KeyCode.X,shift:true)),
             new Definition(StudioShortcut.Orbit,"Mouse navigation","Orbit",Key(KeyCode.Mouse0,StudioModifiers.Alt,shift:true)),
-            new Definition(StudioShortcut.Pan,"Mouse navigation","Pan",Key(KeyCode.Mouse2,shift:true),Key(KeyCode.Mouse2,StudioModifiers.Alt,shift:true)),
+            new Definition(StudioShortcut.Pan,"Mouse navigation","Pan",Key(KeyCode.Mouse2,StudioModifiers.Alt,shift:true)),
             new Definition(StudioShortcut.Dolly,"Mouse navigation","Zoom / dolly",Key(KeyCode.Mouse1,StudioModifiers.Alt,shift:true)),
             new Definition(StudioShortcut.MarkingMenu,"Mouse navigation","Marking menu / apply cuts",Key(KeyCode.Mouse1,shift:true),Key(KeyCode.Mouse1,StudioModifiers.Action)),
             new Definition(StudioShortcut.AxisMenu,"Mouse navigation","Object / World axes menu",Key(KeyCode.Mouse1,StudioModifiers.Action|StudioModifiers.Shift)),

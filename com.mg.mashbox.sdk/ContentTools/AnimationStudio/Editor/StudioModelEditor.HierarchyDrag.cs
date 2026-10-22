@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -80,6 +80,40 @@ namespace MashBoxSDK.AnimationStudio
         }
         private int hierarchyDragControl, hierarchyDragButton;
         private Vector2 hierarchyDragStart;
+        private EventModifiers hierarchyClickModifiers;
+        private StudioModelDocument hierarchySelectionDocument;
+        private StudioModelDocument.Node hierarchyLastClickedNode;
+
+        private void SelectHierarchyRow(int index, bool keepMultiSelection)
+        {
+            var visible = new System.Collections.Generic.List<int>();
+            foreach (int row in HierarchyRows())
+                if (string.IsNullOrEmpty(search) || Document.nodes[row].name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
+                    visible.Add(row);
+            int lastClicked = hierarchySelectionDocument == Document && hierarchyLastClickedNode != null
+                ? Document.nodes.IndexOf(hierarchyLastClickedNode) : Active;
+            var evt = Event.current;
+            var modifiers = evt.modifiers;
+            System.Collections.Generic.List<int> selection;
+            try
+            {
+                evt.modifiers = hierarchyClickModifiers;
+                // Use the same range/toggle rules as Unity's hierarchy and TreeView.
+#pragma warning disable CS0618
+                selection = UnityEditorInternal.InternalEditorUtility.GetNewSelection(index, visible,
+                    objects.ToList(), lastClicked, keepMultiSelection, false, true);
+#pragma warning restore CS0618
+            }
+            finally { evt.modifiers = modifiers; }
+            FinishChannelEdit();
+            if (componentPivot) componentPivot.custom = false;
+            StopCutTool(); mode = ComponentMode.Object; Components.Clear();
+            objects.Clear(); objects.UnionWith(selection);
+            Active = objects.Contains(index) ? index : objects.Count > 0 ? objects.Last() : -1;
+            hierarchySelectionDocument = Document;
+            hierarchyLastClickedNode = Document.nodes[index];
+            repaint();
+        }
         // Keep the OS drag loop separate from IMGUI event handling for editor tests.
         private Action<string> beginHierarchyDrag = DragAndDrop.StartDrag;
         private void CancelHierarchyDrag()
@@ -124,7 +158,7 @@ namespace MashBoxSDK.AnimationStudio
                     evt.Use(); repaint(); return;
                 }
                 mode = ComponentMode.Object;
-                if (!objects.Contains(index)) SelectObject(index, evt.shift, evt.control || evt.command);
+                hierarchyClickModifiers = evt.modifiers;
                 hierarchyDragControl = id; hierarchyDragButton = evt.button;
                 hierarchyDragStart = GUIUtility.GUIToScreenPoint(evt.mousePosition);
                 GUIUtility.hotControl = id; evt.Use();
@@ -133,6 +167,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if ((GUIUtility.GUIToScreenPoint(evt.mousePosition) - hierarchyDragStart).sqrMagnitude >= 25)
                 {
+                    SelectHierarchyRow(index, true);
                     DragAndDrop.PrepareStartDrag();
                     DragAndDrop.objectReferences = Array.Empty<UnityEngine.Object>(); DragAndDrop.paths = Array.Empty<string>();
                     var selection = objects.ToArray();
@@ -146,7 +181,7 @@ namespace MashBoxSDK.AnimationStudio
             else if (evt.type == EventType.MouseUp && evt.button == hierarchyDragButton && GUIUtility.hotControl == id)
             {
                 if (row.Contains(evt.mousePosition) && hierarchyDragButton == 0)
-                    SelectObject(index, evt.shift, evt.control || evt.command);
+                    SelectHierarchyRow(index, false);
                 GUIUtility.hotControl = 0; hierarchyDragControl = 0; evt.Use();
             }
         }

@@ -60,6 +60,10 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var renderer = Transforms[i] ? Transforms[i].GetComponent<Renderer>() : null;
                 if (!renderer) continue;
+                // A depth-only surface still occludes the grid and rear edges.
+                // Pure wireframe renders only Studio's edge overlay; keep the
+                // renderer enabled for picking and restore surfaces in shaded modes.
+                renderer.forceRenderingOff = wireframeOnly;
                 var node = Document.nodes[i];
                 var originals = node.materials ?? Array.Empty<Material>();
                 int slots = Math.Max(originals.Length,node.mesh ? node.mesh.subMeshCount : 1);

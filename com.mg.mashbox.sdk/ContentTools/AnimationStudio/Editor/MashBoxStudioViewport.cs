@@ -31,16 +31,156 @@ namespace MashBoxSDK.AnimationStudio
         private IMGUIContainer timeline;
         private IMGUIContainer inspector;
         private IMGUIContainer rigControls;
-        private IMGUIContainer statusBar;
-        internal void BindStatusBar(System.Func<string> text)
+        private VisualElement statusBar;
+        private readonly System.Collections.Generic.List<StatusToast> statusMessages = new System.Collections.Generic.List<StatusToast>();
+        private IVisualElementScheduledItem statusAnimation;
+        private bool statusEnabled;
+        private const double StatusFadeIn = .18, StatusHold = 2.1, StatusFadeOut = .4;
+        private sealed class StatusToast
         {
-            BindViewportControl(ref statusBar, "mashbox-status-bar", text == null ? null : (System.Action)(() => {
-                string value = text() ?? "Ready";
-                var rect = new Rect(6, 0, Mathf.Max(0, PanelWidths.x - 30), 24);
-                GUI.Label(rect, new GUIContent(value.Replace('\n', ' '), value), StudioTheme.Styles.miniLabel);
-                if (GUI.Button(new Rect(PanelWidths.x - 24, 0, 24, 24), new GUIContent("×", "Hide status bar — restore from Mesh Display"), StudioTheme.Styles.overlayButton))
-                { StudioSettings.Current.hideStatusBar = true; StudioSettings.Save(); }
-            }));
+            internal Label label;
+            internal double started, hold;
+        }
+        internal void ShowStatusMessage(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+            EnsureStatusMessages();
+            if (!statusEnabled || StudioSettings.Current.hideStatusBar) return;
+            var label = new Label(message.Replace('\n', ' ')) { pickingMode = PickingMode.Ignore, tooltip = message };
+            label.style.minHeight = 30;
+            label.style.paddingLeft = label.style.paddingRight = 12;
+            label.style.paddingTop = label.style.paddingBottom = 6;
+            label.style.marginTop = 6;
+            label.style.whiteSpace = WhiteSpace.Normal;
+            label.style.unityTextAlign = TextAnchor.MiddleCenter;
+            label.style.fontSize = 13;
+            label.style.backgroundColor = StudioTheme.Current.Header;
+            label.style.color = StudioTheme.Current.Text;
+            label.style.borderTopLeftRadius = label.style.borderTopRightRadius = 4;
+            label.style.borderBottomLeftRadius = label.style.borderBottomRightRadius = 4;
+            label.style.opacity = 0;
+            statusBar.Add(label);
+            // Allow roughly 25 characters per second, with the short-message minimum.
+            // Store the duration once so every message has its own stable expiry.
+            statusMessages.Add(new StatusToast {
+                label = label, started = EditorApplication.timeSinceStartup,
+                hold = System.Math.Max(StatusHold, message.Trim().Length / 25d)
+            });
+            // Newest is appended at the bottom; existing messages move upward.
+            LayoutStatusMessages(); statusBar.BringToFront();
+            statusAnimation.Resume();
+            RepaintUI();
+            TickStatusMessages();
+        }
+        private void EnsureStatusMessages()
+        {
+            if (statusBar != null) return;
+            statusBar = new VisualElement { name = "mashbox-status-notifications", pickingMode = PickingMode.Ignore };
+            statusBar.style.position = Position.Absolute;
+            statusBar.style.bottom = PanelMargin;
+            rootVisualElement.Add(statusBar);
+            statusAnimation = statusBar.schedule.Execute(TickStatusMessages).Every(16);
+            statusAnimation.Pause();
+        }
+        private void LayoutStatusMessages()
+        {
+            if (statusBar == null) return;
+            float width = Mathf.Min(520, Mathf.Max(0, StudioContentWidth - 32));
+            statusBar.style.width = width;
+            statusBar.style.left = Mathf.Max(16, (StudioContentWidth - width) * .5f);
+            statusBar.style.display = statusEnabled && !StudioSettings.Current.hideStatusBar && statusMessages.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+        private void TickStatusMessages()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            bool changed = false;
+            for (int i = statusMessages.Count - 1; i >= 0; i--)
+            {
+                var toast = statusMessages[i]; double age = now - toast.started;
+                if (age >= StatusFadeIn + toast.hold + StatusFadeOut)
+                { toast.label.RemoveFromHierarchy(); statusMessages.RemoveAt(i); changed = true; continue; }
+                float opacity;
+                if (age < StatusFadeIn) opacity = (float)(age / StatusFadeIn);
+                else if (age < StatusFadeIn + toast.hold) opacity = 1;
+                else opacity = 1 - (float)((age - StatusFadeIn - toast.hold) / StatusFadeOut);
+                opacity = Mathf.Clamp01(opacity);
+                if (toast.label.style.opacity.value != opacity)
+                { toast.label.style.opacity = opacity; changed = true; }
+            }
+            if (changed)
+            {
+                LayoutStatusMessages();
+                statusBar.MarkDirtyRepaint();
+                RepaintUI();
+            }
+            // Keep the scheduler alive through the finite notification lifetime.
+            // Holding fully opaque messages causes no redraws; an empty stack stops it.
+            if (statusMessages.Count == 0) statusAnimation?.Pause();
+        }
+        private void ClearStatusMessages()
+        {
+            statusAnimation?.Pause();
+            statusMessages.Clear(); statusBar?.Clear();
+            LayoutStatusMessages();
+            RepaintUI();
+        }
+        private IMGUIContainer orientationAxes;
+        private readonly Vector3[] orientationAxisLine = new Vector3[2];
+        private static readonly GUIContent[] OrientationAxisLabels = { new GUIContent("X"), new GUIContent("Y"), new GUIContent("Z") };
+        private GUIStyle orientationAxisLabelStyle;
+        private void DrawOrientationAxes()
+        {
+            if (Event.current.type != EventType.Repaint || !camera) return;
+            var inverse = Quaternion.Inverse(camera.transform.rotation);
+            // Paint the farthest axis first so overlapping axis labels read in 3D.
+            var x = inverse * Vector3.right;
+            var y = inverse * Vector3.up;
+            var z = inverse * Vector3.forward;
+            Handles.BeginGUI();
+            using (new Handles.DrawingScope())
+            {
+                int drawn = 0;
+                for (int pass = 0; pass < 3; pass++)
+                {
+                    int next = -1; float depth = float.NegativeInfinity;
+                    for (int axis = 0; axis < 3; axis++)
+                    {
+                        float candidate = axis == 0 ? x.z : axis == 1 ? y.z : z.z;
+                        if ((drawn & (1 << axis)) == 0 && candidate > depth)
+                        { next = axis; depth = candidate; }
+                    }
+                    drawn |= 1 << next;
+                    DrawOrientationAxis(next == 0 ? x : next == 1 ? y : z,
+                        next == 0 ? Handles.xAxisColor : next == 1 ? Handles.yAxisColor : Handles.zAxisColor, next);
+                }
+            }
+            Handles.EndGUI();
+        }
+        private void DrawOrientationAxis(Vector3 direction, Color color, int axis)
+        {
+            if (orientationAxisLabelStyle == null)
+                orientationAxisLabelStyle = new GUIStyle(EditorStyles.boldLabel) {
+                    alignment = TextAnchor.MiddleCenter, fontSize = 12,
+                    padding = new RectOffset(), margin = new RectOffset()
+                };
+            var origin = new Vector3(32, 32, 0);
+            var projected = new Vector3(direction.x, -direction.y, 0);
+            var tip = origin + projected * 23 + projected.normalized * 2;
+            Handles.color = color;
+            orientationAxisLine[0] = origin;
+            orientationAxisLine[1] = origin + projected * 17;
+            Handles.DrawAAPolyLine(3f, orientationAxisLine);
+            orientationAxisLabelStyle.normal.textColor = color;
+            GUI.Label(new Rect(tip.x-8, tip.y-8, 16, 16), OrientationAxisLabels[axis], orientationAxisLabelStyle);
+        }
+        internal void BindStatusBar(bool enabled)
+        {
+            statusEnabled = enabled;
+            EnsureStatusMessages();
+            if (!enabled) ClearStatusMessages();
+            LayoutStatusMessages();
+            BindViewportControl(ref orientationAxes, "mashbox-orientation-axes", enabled ? (System.Action)DrawOrientationAxes : null);
+            orientationAxes.pickingMode = PickingMode.Ignore;
             UpdatePanelLayout(); ApplyTheme();
         }
         private IMGUIContainer modeSelector;
@@ -62,7 +202,12 @@ namespace MashBoxSDK.AnimationStudio
             modelToolOptions.focusable = true;
             UpdatePanelLayout(); ApplyTheme();
         }
-        internal void FocusModelToolOptions() { modelToolOptions?.Focus(); Repaint(); }
+        internal void FocusModelToolOptions()
+        {
+            if (StudioSettings.Current.hideToolOptions)
+            { StudioSettings.Current.hideToolOptions = false; StudioSettings.Save(); }
+            UpdatePanelLayout(); modelToolOptions?.Focus(); modelToolOptions?.MarkDirtyRepaint(); RepaintUI();
+        }
         [SerializeField] internal bool modelGridVisible = true;
 
         internal void BindMarkingMenu(System.Action draw)
@@ -131,7 +276,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverNativeToolbar(point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(statusBar, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
+            IsOverNativeToolbar(point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
         private bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.worldBound.Contains(rootVisualElement.LocalToWorld(point));
 
@@ -235,7 +380,7 @@ namespace MashBoxSDK.AnimationStudio
             if (inspector != null) inspector.style.backgroundColor = palette.Panel;
             if (modelToolOptions != null) modelToolOptions.style.backgroundColor = palette.Panel;
             if (rigControls != null) rigControls.style.backgroundColor = palette.Panel;
-            if (statusBar != null) statusBar.style.backgroundColor = palette.Header;
+            foreach (var toast in statusMessages) { toast.label.style.backgroundColor = palette.Header; toast.label.style.color = palette.Text; }
             UpdatePanelLayout();
             if (timeline != null) timeline.style.backgroundColor = palette.Header;
         }
@@ -276,3 +421,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

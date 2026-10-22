@@ -334,6 +334,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SetComponentMode(ComponentMode next)
         {
+            FinishLiveTool();
             if (mode == next) return;
             mode = next; pivot = false; Components.Clear();
         }

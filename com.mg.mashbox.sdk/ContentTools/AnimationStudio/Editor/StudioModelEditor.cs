@@ -21,7 +21,7 @@ namespace MashBoxSDK.AnimationStudio
         private readonly HashSet<int> objects = new HashSet<int>();
         private ComponentMode mode;
         private Tool tool = Tool.Move;
-        private bool pivot, local = true, xray = true, weld = true;
+        private bool pivot, local, xray = true, weld = true;
         private Vector2 hierarchyScroll, inspectorScroll;
         private readonly HashSet<StudioModelDocument.Node> collapsedHierarchy = new HashSet<StudioModelDocument.Node>();
         private List<int> hierarchyRows;
@@ -29,7 +29,14 @@ namespace MashBoxSDK.AnimationStudio
         private readonly Dictionary<StudioModelDocument.Node,(GUIContent label,GUIContent show,GUIContent hide)> hierarchyContents = new Dictionary<StudioModelDocument.Node,(GUIContent,GUIContent,GUIContent)>();
         private int[] hierarchyDepths;
         private bool hierarchyRowsSearching;
-        private string search = "", error;
+        private string search = "", statusText;
+        internal Action<string> StatusMessage;
+        private string error
+        {
+            get => statusText;
+            set { statusText = value; if (!string.IsNullOrWhiteSpace(value)) StatusMessage?.Invoke(value); }
+        }
+        private void NotifyFile(string path, string operation) => StatusMessage?.Invoke(Path.GetFileName(path) + " " + operation + ".");
         private static GUIContent hierarchyHeader;
         private bool marquee, additive, subtract;
         private Vector2 start, end;
@@ -52,7 +59,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void Load(StudioModelDocument document)
         {
+            CancelLiveTool(); CloseExtrudeToolWindow();
             FinishChannelEdit();
+            ClearHierarchyIsolation();
+            CloseMergeToolWindow();
+            CloseNormalsToolWindow();
+            CloseBevelToolWindow();
             CancelHierarchyDrag();
             collapsedHierarchy.Clear();
             EndPivotSnap();
@@ -60,6 +72,7 @@ namespace MashBoxSDK.AnimationStudio
             ClearGridSnap();
             CancelMarkingMenu();
             StopCutTool(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild();
+            WorkspaceSaveStateChanged?.Invoke();
         }
         private void Rebuild()
         {
@@ -100,6 +113,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnUndoEvent(in UndoRedoInfo info)
         {
+            CancelLiveTool(true);
             bool transformsOnly=info.undoName=="Transform model objects" || info.undoName=="Scale model objects" || info.undoName=="Edit object channels";
             if(transformsOnly && RestoreObjectTransforms())return;
             OnUndo();
@@ -156,12 +170,26 @@ namespace MashBoxSDK.AnimationStudio
             if (markingOpen && (!markingView || EditorWindow.focusedWindow != markingView)) CancelMarkingMenu();
             TickMarkingMenu();
         }
-        internal void Changed(bool geometryChanged = true) { componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); repaint(); }
-        internal void MeshTopologyChanged() { if (componentPivot) componentPivot.custom = false; Components.Clear(); Rebuild(); Changed(); }
-        internal void Save() { if (Document) Document.Save(); }
+        internal void Changed(bool geometryChanged = true) { componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
+        internal void MeshTopologyChanged() { if (Document) foreach (var node in Document.nodes) if (node.normalGroups != null && (!node.mesh || node.normalGroups.Length != node.mesh.vertexCount)) node.normalGroups = null; if (componentPivot) componentPivot.custom = false; Components.Clear(); Rebuild(); Changed(); }
+        internal void Save()
+        {
+            FinishLiveTool();
+            if (!Document) return;
+            FinishChannelEdit();
+            if (!Document.HasStorage || IsTemporaryWorkspace) { SaveAs(); return; }
+            Document.Save(); RememberRecentFile(Document.WorkspacePath);
+            NotifyFile(Document.WorkspacePath, "saved");
+            WorkspaceSaveStateChanged?.Invoke();
+        }
         public void Dispose()
         {
+            CancelLiveTool(); CloseExtrudeToolWindow();
             FinishChannelEdit();
+            ClearHierarchyIsolation();
+            CloseMergeToolWindow();
+            CloseNormalsToolWindow();
+            CloseBevelToolWindow();
             CancelHierarchyDrag();
             EndPivotSnap();
             if (componentPivot) UnityEngine.Object.DestroyImmediate(componentPivot);
@@ -177,9 +205,9 @@ namespace MashBoxSDK.AnimationStudio
             if (Scene.IsValid()) EditorSceneManager.ClosePreviewScene(Scene);
             Document = null; Transforms = Array.Empty<Transform>(); Active = -1;
         }
-        private void Run(Action action)
+        private void Run(Action action, bool finishPreview = true)
         {
-            try { action(); error = null; }
+            try { if (finishPreview) FinishLiveTool(); action(); error = null; }
             catch (Exception e) { error = e.GetBaseException().Message; }
             repaint();
         }
@@ -197,6 +225,7 @@ namespace MashBoxSDK.AnimationStudio
                     hierarchyHeader = new GUIContent("HIERARCHY", EditorGUIUtility.IconContent("UnityEditor.SceneHierarchyWindow").image);
                 GUILayout.Label(hierarchyHeader, StudioTheme.Styles.panelHeader);
                 search = EditorGUILayout.TextField(search, StudioTheme.Styles.toolbarSearchField);
+                EditorGUILayout.BeginVertical(StudioTheme.Styles.hierarchyInset);
                 hierarchyScroll = EditorGUILayout.BeginScrollView(hierarchyScroll);
                 var rowStyle = StudioTheme.Styles.hierarchyRow;
                 var rows = Document ? HierarchyRows() : null;
@@ -212,7 +241,8 @@ namespace MashBoxSDK.AnimationStudio
                     int depth = hierarchyDepths[i];
                     {
                         var fullRow = new Rect(rowArea.x,rowArea.y+(visibleRow++)*rowHeight+rowStyle.margin.top,rowArea.width,rowHeight-rowStyle.margin.vertical);
-                        fullRow.xMin += Mathf.Min(depth * 12, 96);
+                        var visibilityRect = new Rect(fullRow.x, fullRow.y, 18, fullRow.height);
+                        fullRow.xMin += 20 + Mathf.Min(depth * 12, 96);
                         var foldoutRect = new Rect(fullRow.x,fullRow.y,14,fullRow.height);
                         if (hierarchyParents.Contains(i))
                         {
@@ -228,20 +258,21 @@ namespace MashBoxSDK.AnimationStudio
                         if (!hierarchyContents.TryGetValue(n,out var contents) || contents.label.text != n.name)
                         {
                             contents = (new GUIContent(n.name, !string.IsNullOrEmpty(n.anchorType) ? AnchorIcon : EditorGUIUtility.IconContent(n.mesh ? "Mesh Icon" : "Transform Icon").image),
-                                new GUIContent("", "Show " + n.name), new GUIContent("", "Hide " + n.name));
+                                new GUIContent(EditorGUIUtility.IconContent("scenevis_hidden").image, "Show " + n.name + "\nAlt-click to isolate; Alt-click again to restore visibility."), new GUIContent(EditorGUIUtility.IconContent("scenevis_visible").image, "Hide " + n.name + "\nAlt-click to isolate; Alt-click again to restore visibility."));
                             hierarchyContents[n] = contents;
                         }
                         var content = contents.label;
                         var old = GUI.backgroundColor;
-                        var row = new Rect(fullRow.x+14,fullRow.y,Mathf.Max(0,fullRow.width-38),fullRow.height);
-                        HandleHierarchyContext(new Rect(row.x, row.y, row.width + 24, row.height), i);
+                        var row = new Rect(fullRow.x+14,fullRow.y,Mathf.Max(0,fullRow.width-14),fullRow.height);
+                        HandleHierarchyContext(row, i);
                         DrawHierarchyDragRow(row, content, rowStyle, i);
                         GUI.backgroundColor = old;
-                        int nodeIndex = i;
-                        bool visible = GUI.Toggle(new Rect(row.xMax + 4, row.y, 20, row.height), n.active, n.active ? contents.hide : contents.show);
-
-                        if (visible != n.active) ChangeHierarchyVisibility(nodeIndex, visible);
-                        row.xMax += 24;
+                        bool isolate = Event.current.alt;
+                        if (GUI.Button(visibilityRect, n.active ? contents.hide : contents.show, StudioTheme.Styles.hierarchyVisibilityButton))
+                        {
+                            if (isolate) Run(() => ToggleHierarchyIsolation(i));
+                            else ChangeHierarchyVisibility(i, !n.active);
+                        }
                         GUI.backgroundColor = old;
                     }
                 }
@@ -249,6 +280,7 @@ namespace MashBoxSDK.AnimationStudio
                 var rootDrop = GUILayoutUtility.GetRect(0, 32, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
                 HandleHierarchyDrop(rootDrop, -1);
                 EditorGUILayout.EndScrollView();
+                EditorGUILayout.EndVertical();
             }
         }
         private void ChangeHierarchyVisibility(int index,bool visible) => Run(() => SetHierarchyVisibility(index,visible));
@@ -336,14 +368,17 @@ namespace MashBoxSDK.AnimationStudio
             }
             var source = AssetDatabase.LoadAssetAtPath<GameObject>(relative);
             if (!source) throw new InvalidOperationException("Unity could not import this model.");
-            ImportModel(source, loaded);
+            ImportModel(source, loaded, path);
         }
-        internal void ImportModel(GameObject source, Action<StudioModelDocument> loaded)
+        internal void ImportModel(GameObject source, Action<StudioModelDocument> loaded) => ImportModel(source, loaded, AssetDatabase.GetAssetPath(source));
+        private void ImportModel(GameObject source, Action<StudioModelDocument> loaded, string recentPath)
         {
             CancelMarkingMenu(); EnsureWorkspace(loaded);
             int root = Document.AppendModel(source);
             mode = ComponentMode.Object; pivot = false; search = "";
             Rebuild(); SelectObject(root); Changed();
+            RememberRecentFile(recentPath);
+            NotifyFile(string.IsNullOrEmpty(recentPath) ? source.name : recentPath, "loaded");
         }
         internal static string ExportTo(string path, GameObject root)
         {
@@ -389,6 +424,7 @@ namespace MashBoxSDK.AnimationStudio
                 // For a multi-model workspace, use the active model root as the export origin.
                 var origin = Active >= 0 && Active < nodes.Length && nodes[Active] ? nodes[Active].root.position : Vector3.zero;
                 ExportTo(path, ExportRoot(nodes.Where(t => t).ToArray(), scene, origin));
+                NotifyFile(path, "saved");
             }
             finally { EditorSceneManager.ClosePreviewScene(scene); foreach (var mesh in exportMeshes) UnityEngine.Object.DestroyImmediate(mesh); }
         }
@@ -410,6 +446,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SelectObject(int index, bool add = false, bool remove = false)
         {
+            FinishLiveTool();
             FinishChannelEdit();
             if (!remove && Document && index >= 0 && index < Document.nodes.Count)
                 for (int p = Document.nodes[index].parent; p >= 0; p = Document.nodes[p].parent) collapsedHierarchy.Remove(Document.nodes[p]);
@@ -498,6 +535,12 @@ namespace MashBoxSDK.AnimationStudio
         internal void SceneGUI(SceneView view, Action<StudioModelDocument> loaded)
         {
             var evt = Event.current;
+            if (evt.type == EventType.MouseDown && !evt.alt && (evt.button == 0 || evt.button == 2) &&
+                (!(view is MashBoxStudioViewport liveView) || (liveView.ModelCanvasRect.Contains(evt.mousePosition) && !liveView.IsOverViewportControls(evt.mousePosition))))
+            {
+                try { FinishLiveTool(); }
+                catch (Exception exception) { error = exception.Message; evt.Use(); return; }
+            }
             view.wantsMouseMove = true;
             // Clear before drawing if a tool can consume the event or return early.
             // Preserve the last target between pointer events so movement within it
@@ -507,6 +550,11 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type == EventType.Used) return;
             DrawSceneWireframes(view.camera);
             if (!evt.isKey && HandlePivotSnap(view)) return;
+            // Unmodified middle mouse belongs to Studio tools, never SceneView pan.
+            // Consume unused events here, after snapping has had first refusal and
+            // before Unity's native camera navigation runs.
+            if (evt.isMouse && evt.button == 2 && !evt.alt && GUIUtility.hotControl == 0)
+            { evt.Use(); return; }
             if (markingOpen)
             {
                 // The menu owns input, but the current selection and tool still render below it.
@@ -564,7 +612,7 @@ namespace MashBoxSDK.AnimationStudio
                 Event.current.shift && !Event.current.alt && !Event.current.control && !Event.current.command;
             var movePointer = Event.current.mousePosition;
             if (!Document || Active < 0 || marquee || (tool == Tool.None && !pivot)) return;
-            var t = Transforms[Active]; var orientation = pivot || local ? PivotOrientation : Quaternion.identity;
+            var t = Transforms[Active]; var orientation = local ? PivotOrientation : Quaternion.identity;
             bool capturedScale = !pivot && tool == Tool.Scale && scaleDrag != null && scaleDrag.control == GUIUtility.hotControl;
             var indices = mode == ComponentMode.Object ? null : capturedScale ? scaleDrag.componentIndices : handleExtrudeVertices ?? SelectedVertices();
             if (indices != null && indices.Count == 0) return;
@@ -572,7 +620,7 @@ namespace MashBoxSDK.AnimationStudio
             bool rotatingWorldObjects = indices == null && !pivot && tool == Tool.Rotate && !local;
             // Keep a component's movement axes fixed for the duration of the drag,
             // even when the edit changes the surrounding surface normals.
-            if (indices != null && !pivot && tool == Tool.Move && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
+            if ((pivot || (indices != null && tool == Tool.Move)) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
                 orientation = moveDragOrientation;
             // RotationHandle returns the orientation reached since mouse-down. Mesh edits
             // do not rotate the object's transform, so retain the last handle orientation
@@ -607,7 +655,7 @@ namespace MashBoxSDK.AnimationStudio
                     // Ctrl owns increment snapping; Shift must not switch its drag mode.
                     if (rotationEvent.control || rotationEvent.command)
                         rotationEvent.modifiers = modifiers & ~EventModifiers.Shift;
-                    try { rotation = SizedRotationHandle(rotationHandleIds, orientation, handleCenter, handleSize); }
+                    try { rotation = DrawSizedRotationHandle(rotationHandleIds, orientation, handleCenter, handleSize); }
                     finally { rotationEvent.modifiers = modifiers; }
                 }
                 else scale = Handles.ScaleHandle(Vector3.one, handleCenter, orientation, HandleUtility.GetHandleSize(handleCenter) * handleSize);
@@ -654,7 +702,14 @@ namespace MashBoxSDK.AnimationStudio
                     handleChanged = (position - center).sqrMagnitude > 1e-12f;
                 }
                 else if (gridSnapHeld)
-                    position = SnapConstrainedGrid(moveDragOrigin, position, moveDragOrientation, moveDragAxes, StudioSettings.Current.gridSpacing);
+                {
+                    if (moveDragAxes == MoveAxes.Free)
+                        position = TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(movePointer), StudioSettings.Current.gridSpacing, out var ground)
+                            ? ground : center;
+                    else
+                        position = SnapConstrainedGrid(moveDragOrigin, position, moveDragOrientation, moveDragAxes, StudioSettings.Current.gridSpacing);
+                    handleChanged = (position - center).sqrMagnitude > 1e-12f;
+                }
             }
             if (!handleChanged) return;
             if (handleExtrudeFailed) return;
@@ -682,7 +737,7 @@ namespace MashBoxSDK.AnimationStudio
                         else world = center + orientation * Vector3.Scale(Quaternion.Inverse(orientation) * (world - center), scale);
                         vertices[i] = t.InverseTransformPoint(world);
                     }
-                    ActiveMesh.vertices = vertices; ActiveMesh.RecalculateNormals(); ActiveMesh.RecalculateBounds();
+                    ActiveMesh.vertices = vertices; RecalculateEditableNormals(ActiveMesh); ActiveMesh.RecalculateBounds();
                     if (ActiveMesh.uv.Length == ActiveMesh.vertexCount) ActiveMesh.RecalculateTangents(); EditorUtility.SetDirty(ActiveMesh);
                     UpdateComponentPivotAfterTransform(position, center, rotation, orientation);
                     if (handleExtrudeVertices != null && tool == Tool.Move)

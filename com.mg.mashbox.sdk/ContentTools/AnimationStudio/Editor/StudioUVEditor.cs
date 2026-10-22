@@ -72,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button("Frame All", StudioTheme.Styles.toolbarButton)) FrameUVs(uv, false);
                 if (GUILayout.Button("0–1", StudioTheme.Styles.toolbarButton, GUILayout.Width(34))) { zoom = 1; pan = Vector2.zero; }
-                if (GUILayout.Button("Settings", StudioTheme.Styles.toolbarButton, GUILayout.Width(64))) StudioSettingsWindow.Open();
+                if (GUILayout.Button("Settings", StudioTheme.Styles.toolbarButton, GUILayout.Width(64))) StudioControlsPreferences.Open();
             }
             using (new EditorGUILayout.HorizontalScope())
             {

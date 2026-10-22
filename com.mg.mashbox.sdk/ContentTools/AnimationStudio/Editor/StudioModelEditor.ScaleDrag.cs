@@ -82,7 +82,7 @@ namespace MashBoxSDK.AnimationStudio
                     Undo.RegisterCompleteObjectUndo(ActiveMesh, "Scale mesh components");
                     drag.undoRegistered = true;
                 }
-                ActiveMesh.vertices = values; ActiveMesh.RecalculateNormals(); ActiveMesh.RecalculateBounds();
+                ActiveMesh.vertices = values; RecalculateEditableNormals(ActiveMesh); ActiveMesh.RecalculateBounds();
                 if (ActiveMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.TexCoord0)) ActiveMesh.RecalculateTangents();
                 EditorUtility.SetDirty(ActiveMesh);
             }

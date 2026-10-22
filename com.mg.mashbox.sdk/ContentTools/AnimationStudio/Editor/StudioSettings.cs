@@ -17,6 +17,8 @@ namespace MashBoxSDK.AnimationStudio
             public bool showMeshStatistics = true;
             public bool showWorkspaceFps;
             public bool hideStatusBar;
+            public bool hideOrientationAxes;
+            public bool hideToolOptions;
             public bool floatingStudioWindow;
             public bool hideObjectWireframe;
             public bool disableViewportAntialiasing;
@@ -79,8 +81,8 @@ namespace MashBoxSDK.AnimationStudio
         private Vector2 scroll;
         internal static void Open()
         {
-            var window = GetWindow<StudioSettingsWindow>(true, "MashBox Studio Settings", true);
-            window.minSize = new Vector2(440, 540); window.ShowUtility(); window.Focus();
+            var window = GetWindow<StudioSettingsWindow>(true, "MashBox Studio Themes", true);
+            window.minSize = new Vector2(440, 320); window.ShowUtility(); window.Focus();
         }
         private void OnGUI()
         {
@@ -92,8 +94,7 @@ namespace MashBoxSDK.AnimationStudio
             scroll = EditorGUILayout.BeginScrollView(scroll);
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins))
             {
-                if (GUILayout.Button("Controls and Shortcuts…")) StudioControlsPreferences.Open();
-                GUILayout.Label("Appearance", StudioTheme.Styles.boldLabel);
+                GUILayout.Label("Themes", StudioTheme.Styles.boldLabel);
                 GUILayout.Label("Choose a palette. Changes apply immediately to MashBox Studio and its tool windows.", StudioTheme.Styles.wordWrappedMiniLabel);
                 GUILayout.Space(8);
                 for (int i = 0; i < StudioTheme.Palettes.Length; i += 2)
@@ -103,29 +104,39 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUI.BeginChangeCheck();
                 GUILayout.Space(12);
                 settings.neutralMarkingMenus = EditorGUILayout.ToggleLeft(new GUIContent("Neutral marking menus", "Keep right-click marking menus gray, regardless of the selected palette."), settings.neutralMarkingMenus);
-                GUILayout.Space(12);
-                DrawWindowMode();
-                DrawToolbarIconSize();
-                GUILayout.Label("Viewport", StudioTheme.Styles.boldLabel);
-                DrawViewportAntialiasing();
-                DrawViewportVSync();
-                DrawViewportCache();
-                DrawIncrementalGarbageCollection();
-                settings.showMeshStatistics = EditorGUILayout.Toggle("Mesh statistics", settings.showMeshStatistics);
-                settings.hideObjectWireframe = !EditorGUILayout.Toggle("Object wireframe", !settings.hideObjectWireframe);
-                settings.handleSize = EditorGUILayout.Slider(new GUIContent("Handle size", "Resize modeling handles with + and − in the viewport."), settings.handleSize, .25f, 3);
-                settings.gridSpacing = EditorGUILayout.FloatField(new GUIContent("Grid spacing", "Distance between minor grid lines, in world units."), settings.gridSpacing);
-                settings.gridOpacity = EditorGUILayout.Slider("Grid opacity", settings.gridOpacity, 0, 1);
-                GUILayout.Space(12);
-                GUILayout.Label("UV Editor", StudioTheme.Styles.boldLabel);
-                settings.uvPointSize = EditorGUILayout.Slider("UV point size", settings.uvPointSize, 2, 8);
                 if (EditorGUI.EndChangeCheck()) StudioSettings.Save();
                 GUILayout.Space(12);
-                GUILayout.Label("Appearance and controls are saved for this user. The incremental GC toggle changes this Unity project's Player setting.", StudioTheme.Styles.wordWrappedMiniLabel);
-                GUILayout.Space(8);
-                if (GUILayout.Button("Restore MashBox Studio Defaults")) StudioSettings.Reset();
+                if (GUILayout.Button("Restore Theme Defaults"))
+                {
+                    settings.theme = "graphite"; settings.neutralMarkingMenus = true;
+                    StudioSettings.Save();
+                }
             }
             EditorGUILayout.EndScrollView();
+        }
+        internal static void DrawGeneralSettings()
+        {
+            DrawWindowMode();
+            DrawToolbarIconSize();
+            GUILayout.Space(8);
+            GUILayout.Label("Viewport", StudioTheme.Styles.boldLabel);
+            DrawViewportAntialiasing();
+            DrawViewportVSync();
+            DrawViewportCache();
+            DrawIncrementalGarbageCollection();
+            var settings = StudioSettings.Current;
+            EditorGUI.BeginChangeCheck();
+            settings.hideObjectWireframe = !EditorGUILayout.Toggle("Object wireframe", !settings.hideObjectWireframe);
+            settings.handleSize = EditorGUILayout.Slider(new GUIContent("Handle size", "Resize modeling handles with + and − in the viewport."), settings.handleSize, .25f, 3);
+            settings.gridSpacing = EditorGUILayout.FloatField(new GUIContent("Grid spacing", "Distance between minor grid lines, in world units."), settings.gridSpacing);
+            settings.gridOpacity = EditorGUILayout.Slider("Grid opacity", settings.gridOpacity, 0, 1);
+            GUILayout.Space(12);
+            GUILayout.Label("UV Editor", StudioTheme.Styles.boldLabel);
+            settings.uvPointSize = EditorGUILayout.Slider("UV point size", settings.uvPointSize, 2, 8);
+            if (EditorGUI.EndChangeCheck()) StudioSettings.Save();
+            GUILayout.Space(12);
+            GUILayout.Label("Settings are saved for this user. The incremental GC toggle changes this Unity project's Player setting.", StudioTheme.Styles.wordWrappedMiniLabel);
+            if (GUILayout.Button("Restore MashBox Studio Defaults")) StudioSettings.Reset();
         }
         private void DrawPalette(StudioTheme.Palette palette)
         {

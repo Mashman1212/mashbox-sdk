@@ -113,6 +113,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public override void OnDisable()
         {
+            ClearStatusMessages();
             ReleaseStudioToolbars();
             ReleaseViewportRedraw();
             ClearMenuInputShield();
@@ -141,6 +142,10 @@ namespace MashBoxSDK.AnimationStudio
                 if (evt.type == EventType.MouseUp && evt.button == navigationButton)
                 { ReleaseStudioInput(); evt.Use(); MarkDirty(DirtyState.Overlay); return; }
             }
+            // Defer plain middle mouse to the modeling tools. Their SceneGUI runs
+            // with the camera configured and consumes unused middle-button events.
+            // An Alt-pan already in progress retains its gesture until mouse-up.
+            if (!navigating && evt.isMouse && evt.button == 2 && !evt.alt) return;
             bool canvas = ModelCanvasRect.Contains(evt.mousePosition) && !IsOverViewportControls(evt.mousePosition);
             if (!canvas) return;
             if (evt.type == EventType.ScrollWheel && GUIUtility.hotControl == 0)

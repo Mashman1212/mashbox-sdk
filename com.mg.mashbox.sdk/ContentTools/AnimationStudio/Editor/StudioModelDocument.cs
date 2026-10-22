@@ -47,6 +47,7 @@ namespace MashBoxSDK.AnimationStudio
             public Mesh mesh;
             [SerializeReference] public StudioBlendShape blendShape;
             public int[] cutPolygons, cutTriangles;
+            public int[] normalGroups;
             public Material[] materials = Array.Empty<Material>();
             public int previewTextureSlice;
             public bool vertexAOBaked;
@@ -132,6 +133,7 @@ namespace MashBoxSDK.AnimationStudio
                         node.mesh = Instantiate(mesh); node.mesh.name = mesh.name + " Editable";
                         // Fail before saving if an importer cannot supply CPU geometry.
                         var vertices = node.mesh.vertices;
+                        CaptureMeshTopology(node);
                     }
                     if (skin)
                     {

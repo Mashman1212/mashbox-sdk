@@ -16,20 +16,56 @@ namespace MashBoxSDK.AnimationStudio
         private void EnsureModelEditor()
         {
             if (modelEditor != null) return;
-            if (!modelDocument) modelDocument = StudioModelDocument.OpenFile(EditorPrefs.GetString("MashBox.LastModel." + Application.dataPath, ""));
             if (modelDocument && AssetDatabase.Contains(modelDocument)) modelDocument = modelDocument.SaveAs(StudioModelDocument.NewWorkspacePath(modelDocument.name));
-            if (modelDocument) EditorPrefs.SetString("MashBox.LastModel." + Application.dataPath, modelDocument.WorkspacePath);
             modelEditor = new StudioModelEditor(() => { Repaint(); viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene); });
+            modelEditor.StatusMessage = message => viewport?.ShowStatusMessage(message);
             modelEditor.WorkspaceSavedAs = LoadStudioModel;
+            modelEditor.WorkspaceSaveStateChanged = UpdateWorkspaceSaveState;
             if (modelDocument) modelEditor.Load(modelDocument);
+            // Readiness can change while overlays are being restored. Refresh their
+            // binding even when the new editor has the same tool/display values.
+            viewport?.SyncStudioToolbarState(true);
         }
-        private void ReleaseModelEditor() { modelEditor?.Dispose(); modelEditor = null; }
+        private void ReleaseModelEditor()
+        {
+            modelEditor?.Dispose(); modelEditor = null;
+            viewport?.SyncStudioToolbarState(true);
+        }
         private void LoadStudioModel(StudioModelDocument document)
         {
             if (document && AssetDatabase.Contains(document)) document = document.SaveAs(StudioModelDocument.NewWorkspacePath(document.name));
             modelDocument = document; EnsureModelEditor(); modelEditor.Load(document);
-            EditorPrefs.SetString("MashBox.LastModel." + Application.dataPath, document ? document.WorkspacePath : "");
             viewport.Bind(modelEditor.Scene); modelEditor.Frame(viewport);
+        }
+        private void UpdateWorkspaceSaveState()
+        {
+            if (viewport) viewport.SetWorkspaceUnsavedChanges(modelEditor != null && modelEditor.HasUnsavedWorkspaceChanges,
+                modelDocument ? modelDocument.name : "workspace", modelEditor?.WorkspaceSaveDestination);
+        }
+        internal bool SaveWorkspaceForClose()
+        {
+            EnsureModelEditor();
+            modelEditor.Save();
+            UpdateWorkspaceSaveState();
+            return !modelEditor.HasUnsavedWorkspaceChanges;
+        }
+        internal void DiscardWorkspaceForClose()
+        {
+            modelEditor?.DiscardWorkspaceForClose();
+            modelDocument = null;
+            UpdateWorkspaceSaveState();
+        }
+        internal void StudioViewportClosed(MashBoxStudioViewport closed)
+        {
+            // A host-mode change replaces the viewport before closing the old one.
+            // Only the actual active window ending clears the workspace session.
+            if (!ReferenceEquals(viewport, closed)) return;
+            viewport = null;
+            modelEditor?.DiscardWorkspaceForClose();
+            ReleaseModelEditor();
+            modelDocument = null;
+            EditorPrefs.DeleteKey("MashBox.LastModel." + Application.dataPath);
+            StudioModelEditor.ClearTemporaryWorkspaceFile();
         }
         internal StudioModelEditor ToolbarModelEditor => modelingMode ? modelEditor : null;
         private void BindStudioMode()
@@ -50,7 +86,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindWorkspaceStatistics();
             viewport.BindModelToolOptions(modelingMode ? (System.Action)(() => modelEditor?.DrawEmbeddedToolOptions()) : null);
             if (modelEditor != null) modelEditor.FocusToolOptions = viewport.FocusModelToolOptions;
-            viewport.BindStatusBar(modelingMode ? (System.Func<string>)(() => modelEditor?.StatusText ?? "Ready") : null);
+            viewport.BindStatusBar(modelingMode);
             viewport.BindStatistics(modelingMode ? (System.Action)(() => modelEditor?.DrawStatistics()) : null);
             viewport.BindMarkingMenu(modelingMode ? (System.Action)(() => modelEditor?.DrawMarkingMenu()) : null);
             viewport.BindModelInput(modelingMode ? (System.Func<bool>)(() => modelingMode) : null,
@@ -58,6 +94,7 @@ namespace MashBoxSDK.AnimationStudio
                 () => modelEditor?.ReleaseShortcutHolds());
             viewport.minSize = new Vector2(1050, 600);
             if (!modelingMode) viewport.SetInspectorExpanded(inspectorExpanded);
+            viewport.SyncStudioToolbarState(true);
         }
         private void DrawStudioMenuBar()
         {

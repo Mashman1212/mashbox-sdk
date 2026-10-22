@@ -79,6 +79,16 @@ namespace MashBoxSDK.AnimationStudio
             for (int axis = 0; axis < 3; axis++) if (((int)axes & (1 << axis)) != 0) point[axis] = Mathf.Round(point[axis] / spacing) * spacing;
             return ConstrainMove(origin, orientation * point, orientation, axes);
         }
+        internal static bool TrySnapFreeMoveToGrid(Ray ray, float spacing, out Vector3 target)
+        {
+            target = default;
+            if (spacing <= 0 || float.IsNaN(spacing) || float.IsInfinity(spacing) ||
+                !new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float distance)) return false;
+            var point = ray.GetPoint(distance);
+            target = new Vector3(Mathf.Round(point.x / spacing) * spacing, 0,
+                Mathf.Round(point.z / spacing) * spacing);
+            return true;
+        }
         private bool TryMoveSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)
         {
             var point = PivotCameraPoint(view, mouse);

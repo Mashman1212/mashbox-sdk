@@ -131,7 +131,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     bool selected=objects.Contains(i)||HasSelectedParent(i);
                     bool highlight=selected&&SelectionOutlineEnabled&&mode==ComponentMode.Object;
-                    bool drawWire=!StudioSettings.Current.hideObjectWireframe || (mode!=ComponentMode.Object&&i==Active);
+                    bool drawWire=wireframeOnly || !StudioSettings.Current.hideObjectWireframe || (mode!=ComponentMode.Object&&i==Active);
                     if(!drawWire&&!highlight)continue;
                     SelectionWireframeLines(i);
                     var wire=selectionWireframes[Document.nodes[i]];
