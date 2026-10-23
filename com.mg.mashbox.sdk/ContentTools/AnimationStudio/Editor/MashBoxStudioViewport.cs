@@ -354,7 +354,7 @@ namespace MashBoxSDK.AnimationStudio
             sceneViewState.showFog = false;
             sceneViewState.showImageEffects = false;
             sceneViewState.alwaysRefresh = false;
-            rotation = Quaternion.Euler(10, 180, 0);
+            // Binding a scene must not change an existing camera view.
             InitializeStudioToolbars();
             // SceneView's stage handling otherwise culls ordinary preview scenes.
             typeof(SceneView).GetProperty("overrideSceneCullingMask", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)

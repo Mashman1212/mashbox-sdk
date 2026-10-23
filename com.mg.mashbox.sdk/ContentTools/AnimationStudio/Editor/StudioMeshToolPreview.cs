@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,9 +9,9 @@ namespace MashBoxSDK.AnimationStudio
 {
     // A transaction owns only the touched meshes. Geometry is evaluated off-scene
     // from an immutable source, then published atomically into existing Mesh objects.
-    internal sealed class StudioMeshToolPreview : IDisposable
+    internal sealed partial class StudioMeshToolPreview : IDisposable
     {
-        internal sealed class Target
+        internal sealed partial class Target
         {
             internal readonly Mesh Live, Source;
             internal readonly StudioModelDocument.Node Work;
@@ -19,35 +20,53 @@ namespace MashBoxSDK.AnimationStudio
             private readonly int[][] polygons, triangles, groups;
             internal int PublishedVersion;
             internal bool StructureChanged;
+            internal int VertexUpdateStart;
+            internal IList<Vector3> PublishedPositions;
+            internal StudioMeshCuts.BevelVertexMap Welds;
+            internal StudioMeshCuts.BevelVertexUpdate VertexUpdate;
             private readonly bool wasDirty;
             internal Target(StudioModelDocument document, StudioModelDocument.Node node)
             {
-                Live = node.mesh; wasDirty = EditorUtility.IsDirty(Live); Source = UnityEngine.Object.Instantiate(Live);
+                Live = node.mesh; wasDirty = EditorUtility.IsDirty(Live); Source = StudioWorkspaceText.ReadableSnapshot(Live);
                 Source.hideFlags = HideFlags.HideAndDontSave;
-                Work = new StudioModelDocument.Node { mesh = UnityEngine.Object.Instantiate(Live), skinned = node.skinned, blendShape = node.blendShape };
+                Work = new StudioModelDocument.Node { mesh = StudioWorkspaceText.ReadableSnapshot(Live), skinned = node.skinned, blendShape = node.blendShape };
                 Work.mesh.hideFlags = HideFlags.HideAndDontSave;
                 nodes = document.nodes.Where(n => n.mesh == Live).ToArray();
                 polygons = nodes.Select(n => n.cutPolygons?.ToArray()).ToArray();
                 triangles = nodes.Select(n => n.cutTriangles?.ToArray()).ToArray();
                 groups = nodes.Select(n => n.normalGroups?.ToArray()).ToArray();
-                Reset(); Topology = new StudioMeshCuts(Work);
+                Reset(); Work.mesh.MarkDynamic(); Live.MarkDynamic(); Topology = new StudioMeshCuts(Work);
                 PublishedVersion = EditorUtility.GetDirtyCount(Live);
             }
             internal void Reset()
             {
+                ReleaseGpuPreview(); IsBevelPreview=false;
+                VertexUpdateStart = 0; PublishedPositions = null; Welds = null; VertexUpdate=null;
                 CopyMesh(Source, Work.mesh);
                 Work.cutPolygons = polygons[0]; Work.cutTriangles = triangles[0]; Work.normalGroups = groups[0];
             }
             internal void Publish()
             {
+                StudioMeshCuts.ProfileBevelUpload("publish.start");
                 StructureChanged = Live.vertexCount != Work.mesh.vertexCount || !SameArray(nodes[0].cutPolygons, Work.cutPolygons) || !SameArray(nodes[0].cutTriangles, Work.cutTriangles);
-                if (!CopyVertexStreams(Work.mesh, Live)) CopyMesh(Work.mesh, Live);
+                StudioMeshCuts.ProfileBevelUpload("publish.structure");
+                int start = !StructureChanged ? VertexUpdateStart : 0;
+                // Reuse the validated affected-range packet. Taking a fresh native
+                // read-only snapshot here can copy every source vertex even when
+                // only a few corners changed.
+                bool updated=!StructureChanged && VertexUpdate!=null && VertexUpdate.Apply(Live,true);
+                if (!updated && !CopyVertexStreams(Work.mesh, Live, start)) CopyMesh(Work.mesh, Live);
                 foreach (var node in nodes)
                 { node.cutPolygons = Work.cutPolygons; node.cutTriangles = Work.cutTriangles; node.normalGroups = Work.normalGroups; }
+                StudioMeshCuts.ProfileBevelUpload("publish.finish");
                 EditorUtility.SetDirty(Live); PublishedVersion = EditorUtility.GetDirtyCount(Live);
+                StudioMeshCuts.ProfileBevelUpload("publish.dirty");
+                PublicationSequence++;
             }
             internal void Restore(bool afterUndo = false)
             {
+                ReleaseGpuPreview(); IsBevelPreview=false;
+                if (!Live) return; // Native Undo may have removed the created mesh.
                 // Native Undo may already have restored older geometry. Never overwrite it.
                 if (afterUndo && PublishedVersion != EditorUtility.GetDirtyCount(Live)) return;
                 StructureChanged = true;
@@ -57,7 +76,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (wasDirty) EditorUtility.SetDirty(Live); else EditorUtility.ClearDirty(Live);
             }
             internal void Dispose()
-            { UnityEngine.Object.DestroyImmediate(Source); UnityEngine.Object.DestroyImmediate(Work.mesh); }
+            { ReleaseGpuPreview(); UnityEngine.Object.DestroyImmediate(Source); UnityEngine.Object.DestroyImmediate(Work.mesh); }
         }
         internal readonly Target[] Targets;
         private readonly StudioModelDocument document;
@@ -72,12 +91,12 @@ namespace MashBoxSDK.AnimationStudio
             Targets = targets.ToArray();
         }
         private static bool SameArray(int[] a, int[] b) => ReferenceEquals(a, b) || (a != null && b != null && a.SequenceEqual(b));
-        private static bool CopyVertexStreams(Mesh source, Mesh destination)
+        private static bool CopyVertexStreams(Mesh source, Mesh destination, int vertexStart = 0)
         {
             if (source.vertexCount != destination.vertexCount || source.vertexBufferCount != destination.vertexBufferCount ||
                 source.subMeshCount != destination.subMeshCount || source.indexFormat != destination.indexFormat) return false;
-            using var data = Mesh.AcquireReadOnlyMeshData(source);
-            using (var previous = Mesh.AcquireReadOnlyMeshData(destination))
+            using var data = MeshUtility.AcquireReadOnlyMeshData(source);
+            using (var previous = MeshUtility.AcquireReadOnlyMeshData(destination))
             {
                 var a = data[0]; var b = previous[0];
                 for (int stream = 0; stream < source.vertexBufferCount; stream++)
@@ -95,13 +114,21 @@ namespace MashBoxSDK.AnimationStudio
                     var x = a.GetSubMesh(sub); var y = b.GetSubMesh(sub);
                     if (x.topology != y.topology || x.indexStart != y.indexStart || x.indexCount != y.indexCount || x.baseVertex != y.baseVertex) return false;
                 }
-                var indices = a.GetIndexData<ushort>(); var oldIndices = b.GetIndexData<ushort>();
-                if (indices.Length != oldIndices.Length) return false;
-                for (int i = 0; i < indices.Length; i++) if (indices[i] != oldIndices[i]) return false;
+                // A bevel's stable metadata token proves its indices unchanged.
+                // Other tools retain the full native comparison.
+                if (vertexStart == 0)
+                {
+                    var indices = a.GetIndexData<ushort>(); var oldIndices = b.GetIndexData<ushort>();
+                    if (indices.Length != oldIndices.Length) return false;
+                    for (int i = 0; i < indices.Length; i++) if (indices[i] != oldIndices[i]) return false;
+                }
             }
             const UnityEngine.Rendering.MeshUpdateFlags flags = UnityEngine.Rendering.MeshUpdateFlags.DontRecalculateBounds | UnityEngine.Rendering.MeshUpdateFlags.DontValidateIndices;
             for (int stream = 0; stream < source.vertexBufferCount; stream++)
-            { var bytes = data[0].GetVertexData<byte>(stream); destination.SetVertexBufferData(bytes, 0, 0, bytes.Length, stream, flags); }
+            {
+                var bytes = data[0].GetVertexData<byte>(stream); int offset = vertexStart * source.GetVertexBufferStride(stream);
+                destination.SetVertexBufferData(bytes, offset, offset, bytes.Length - offset, stream, flags);
+            }
             destination.bounds = source.bounds;
             destination.MarkModified();
             return true;
@@ -111,13 +138,13 @@ namespace MashBoxSDK.AnimationStudio
             // CopySerialized changes CPU geometry but can leave an already-bound
             // renderer using the old GPU buffers. Apply native mesh data so topology
             // replacement invalidates its buffers through the normal Mesh API.
-            using var sourceData = Mesh.AcquireReadOnlyMeshData(source);
+            using var sourceData = MeshUtility.AcquireReadOnlyMeshData(source);
             var writable = Mesh.AllocateWritableMeshData(1);
             try
             {
                 var input = sourceData[0]; var output = writable[0];
                 output.SetVertexBufferParams(source.vertexCount, source.GetVertexAttributes());
-                for (int stream = 0; stream < source.vertexBufferCount; stream++)
+                for (int stream = 0; stream < input.vertexBufferCount; stream++)
                     input.GetVertexData<byte>(stream).CopyTo(output.GetVertexData<byte>(stream));
                 if (source.indexFormat == UnityEngine.Rendering.IndexFormat.UInt32)
                 {

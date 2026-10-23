@@ -31,6 +31,23 @@ public static class VDPrecisionBaker
         finally {UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(scene);}
     }
 
+    // Shared acceleration for editor picking. The immutable local-space tree
+    // reuses the AO BVH; callers own mesh-version and transform invalidation.
+    public sealed class RayIndex
+    {
+        private readonly Bvh tree;
+        public RayIndex(Vector3[] positions, int[] indices)
+        {
+            if (indices.Length % 3 != 0) throw new ArgumentException("Triangle indices must be complete.");
+            var triangles = new Triangle[indices.Length / 3];
+            for (int i = 0; i < triangles.Length; i++)
+                triangles[i] = new Triangle(positions[indices[i * 3]], positions[indices[i * 3 + 1]], positions[indices[i * 3 + 2]]);
+            tree = new Bvh(triangles);
+        }
+        public bool Occluded(Vector3 origin, Vector3 direction, float limit)
+            => limit > 0 && tree.AnyHit(origin, direction, limit);
+    }
+
     internal enum Output { RGB, Red, Green, Blue, Alpha, RGBA }
     [Serializable] internal class Settings
     {
@@ -298,12 +315,13 @@ public static class VDPrecisionBaker
             this.a = a; e1 = b - a; e2 = c - a; center = (a + b + c) / 3;
             bounds = new Bounds(a, Vector3.zero); bounds.Encapsulate(b); bounds.Encapsulate(c);
         }
-        internal float Hit(Vector3 o, Vector3 d, float limit, bool twoSided)
+        internal float Hit(Vector3 o, Vector3 d, float limit, bool twoSided, float fixedTolerance = float.NaN)
         {
             Vector3 p = Vector3.Cross(d, e2);
             float determinant = Vector3.Dot(e1, p);
-            float epsilon = 1e-7f * Mathf.Sqrt(e1.sqrMagnitude * e2.sqrMagnitude);
-            if (twoSided ? Mathf.Abs(determinant) <= epsilon : determinant <= epsilon) return limit;
+            bool relative = float.IsNaN(fixedTolerance);
+            float epsilon = relative ? 1e-7f * Mathf.Sqrt(e1.sqrMagnitude * e2.sqrMagnitude) : fixedTolerance;
+            if (twoSided ? relative ? Mathf.Abs(determinant) <= epsilon : Mathf.Abs(determinant) < epsilon : determinant <= epsilon) return limit;
             float inv = 1 / determinant;
             Vector3 t = o - a;
             float u = Vector3.Dot(t, p) * inv;
@@ -333,14 +351,59 @@ public static class VDPrecisionBaker
             {
                 Vector3 size = bounds.size;
                 int axis = size.x > size.y ? (size.x > size.z ? 0 : 2) : (size.y > size.z ? 1 : 2);
-                Array.Sort(triangles, start, count, Comparer<Triangle>.Create((a, b) => a.center[axis].CompareTo(b.center[axis])));
+                Partition(start, start + count - 1, start + count / 2, axis);
                 node.left = Build(start, count / 2); node.right = Build(start + count / 2, count - count / 2); node.count = 0;
                 nodes[index] = node;
             }
             return index;
         }
+        private void Partition(int left, int right, int median, int axis)
+        {
+            while (left < right)
+            {
+                float a = triangles[left].center[axis], b = triangles[(left + right) / 2].center[axis], c = triangles[right].center[axis];
+                float pivot = Mathf.Max(Mathf.Min(a, b), Mathf.Min(Mathf.Max(a, b), c));
+                int i = left, j = right;
+                while (i <= j)
+                {
+                    while (triangles[i].center[axis] < pivot) i++;
+                    while (triangles[j].center[axis] > pivot) j--;
+                    if (i > j) break;
+                    var swap = triangles[i]; triangles[i] = triangles[j]; triangles[j] = swap; i++; j--;
+                }
+                if (median <= j) right = j; else if (median >= i) left = i; else return;
+            }
+        }
         internal float Hit(Vector3 origin, Vector3 direction, float limit, bool twoSided)
         { return nodes.Count == 0 ? limit : HitNode(0, origin, direction, limit, twoSided); }
+        internal bool AnyHit(Vector3 origin, Vector3 direction, float limit)
+            => nodes.Count > 0 && AnyHitNode(0, origin, direction, limit);
+        private bool AnyHitNode(int index, Vector3 origin, Vector3 direction, float limit)
+        {
+            var node = nodes[index];
+            if (!Intersects(node.bounds, origin, direction, limit)) return false;
+            if (node.count == 0)
+                return AnyHitNode(node.left, origin, direction, limit) || AnyHitNode(node.right, origin, direction, limit);
+            for (int i = node.start; i < node.start + node.count; i++)
+                if (triangles[i].Hit(origin, direction, limit, true, 1e-8f) < limit) return true;
+            return false;
+        }
+        private static bool Intersects(Bounds bounds, Vector3 origin, Vector3 direction, float limit)
+        {
+            float near = 0, far = limit;
+            var min = bounds.min; var max = bounds.max;
+            for (int a = 0; a < 3; a++)
+            {
+                if (Mathf.Abs(direction[a]) < 1e-12f) { if (origin[a] < min[a] || origin[a] > max[a]) return false; }
+                else
+                {
+                    float t0 = (min[a] - origin[a]) / direction[a], t1 = (max[a] - origin[a]) / direction[a];
+                    near = Mathf.Max(near, Mathf.Min(t0, t1)); far = Mathf.Min(far, Mathf.Max(t0, t1));
+                    if (near > far) return false;
+                }
+            }
+            return true;
+        }
         float HitNode(int index, Vector3 origin, Vector3 direction, float limit, bool twoSided)
         {
             var node = nodes[index];

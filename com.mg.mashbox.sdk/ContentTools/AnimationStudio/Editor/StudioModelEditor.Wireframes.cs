@@ -17,7 +17,8 @@ namespace MashBoxSDK.AnimationStudio
             internal GraphicsBuffer positionBuffer, edgeBuffer;
             internal GraphicsBuffer adjacentBuffer;
             internal int[] adjacent;
-            internal bool batchPositionsDirty = true;
+            internal bool batchPositionsDirty = true, linesDirty;
+            internal int vertexUpdateStart;
         }
         private readonly Vector3[] outlineSegment = new Vector3[2];
         private Texture2D componentEdgeStroke;
@@ -64,7 +65,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach(var wire in selectionWireframes.Values) { if(wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked); ReleaseWireBatch(wire); }
             selectionWireframes.Clear();
         }
-        private void PositionsChanged()
+        private void PositionsChanged(bool deferStatistics = false)
         {
             var mesh=ActiveMesh;
             // Separating UV/normal seams can change position-based edge deduplication.
@@ -85,7 +86,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(pair.Key.mesh!=mesh||wire.baked)continue;
                 int count=wire.vertices.Count;
                 mesh.GetVertices(wire.vertices);
-                wire.batchPositionsDirty = true;
+                wire.batchPositionsDirty = true; wire.vertexUpdateStart = 0;
                 if(wire.vertices.Count!=count){ClearSelectionWireframes();break;}
                 for(int i=0;i<wire.lines.Length;i++)wire.lines[i]=wire.vertices[wire.indices[i]];
             }
@@ -94,7 +95,7 @@ namespace MashBoxSDK.AnimationStudio
             componentFrameValid=false;pivotTargetCache.Clear();pivotHover=null;
             if(Document)
             {
-                foreach(var node in Document.nodes)if(node.mesh==mesh)statisticsCache.Remove(node);
+                InvalidatePositionStatistics(mesh, deferStatistics);
                 EditorUtility.SetDirty(Document);
             }
             repaint();
@@ -104,9 +105,9 @@ namespace MashBoxSDK.AnimationStudio
         internal IEnumerable<int> VisibleWireframeNodes()
         {
             if(!Document)yield break;
-            for(int i=0;i<Transforms.Length;i++)
+            for(int i=0;i<Transforms.Length && i<Document.nodes.Count;i++)
             {
-                if(!Document.nodes[i].mesh||!Transforms[i].gameObject.activeInHierarchy)continue;
+                if(!Transforms[i]||!Document.nodes[i].mesh||!Transforms[i].gameObject.activeInHierarchy)continue;
                 var renderer=Transforms[i].GetComponent<Renderer>();if(renderer&&renderer.enabled)yield return i;
             }
         }
@@ -133,7 +134,7 @@ namespace MashBoxSDK.AnimationStudio
                     bool highlight=selected&&SelectionOutlineEnabled&&mode==ComponentMode.Object;
                     bool drawWire=wireframeOnly || !StudioSettings.Current.hideObjectWireframe || (mode!=ComponentMode.Object&&i==Active);
                     if(!drawWire&&!highlight)continue;
-                    SelectionWireframeLines(i);
+                    SelectionWireframeLines(i, false);
                     var wire=selectionWireframes[Document.nodes[i]];
                     var color=highlight?new Color(1,.65f,.15f,1):selected?new Color(.2f,.9f,.75f,1):new Color(.12f,.15f,.18f,1);
                     float width=highlight?1.2f:1.25f;
@@ -254,7 +255,7 @@ namespace MashBoxSDK.AnimationStudio
             finally {Handles.zTest=depth;Handles.lighting=lighting;}
         }
         internal Vector3[] VisibleWireframeLines(int index,Camera camera)=>SelectionWireframeLines(index);
-        internal Vector3[] SelectionWireframeLines(int index)
+        internal Vector3[] SelectionWireframeLines(int index, bool updateLines = true)
         {
             var node = Document.nodes[index]; var mesh = node.mesh;
             if (!mesh) return Array.Empty<Vector3>();
@@ -325,10 +326,12 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Transforms[index].GetComponent<SkinnedMeshRenderer>().BakeMesh(wire.baked);
                 wire.baked.GetVertices(wire.vertices);
-                wire.batchPositionsDirty = true;
+                wire.batchPositionsDirty = true; wire.vertexUpdateStart = 0;
                 for (int i = 0; i < wire.lines.Length; i++) wire.lines[i] = wire.vertices[wire.indices[i]];
 
             }
+            if (updateLines && wire.linesDirty)
+            { for (int i = 0; i < wire.lines.Length; i++) wire.lines[i] = wire.vertices[wire.indices[i]]; wire.linesDirty = false; }
             return wire.lines;
         }
 

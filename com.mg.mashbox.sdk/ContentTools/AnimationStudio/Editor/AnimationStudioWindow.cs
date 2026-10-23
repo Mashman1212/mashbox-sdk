@@ -137,8 +137,8 @@ namespace MashBoxSDK.AnimationStudio
 #if MashBoxDev
             var window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().FirstOrDefault();
             if (!window) window = CreateInstance<AnimationStudioWindow>();
-            if (!asset && !window.take)
-                asset = AssetDatabase.LoadAssetAtPath<AnimationTake>(EditorPrefs.GetString("MashBox.LastTake." + Application.dataPath,""));
+            if (!asset && !window.take && !window.modelingMode)
+                asset = AssetDatabase.LoadAssetAtPath<AnimationTake>(StudioPreferenceStore.GetString("MashBox.LastTake." + Application.dataPath,""));
             if (asset) { window.modelingMode = false; window.LoadTake(asset); }
             else if (window.take && window.rig == null) window.Guard(window.BuildRig);
             else window.OpenViewport();
@@ -163,7 +163,7 @@ namespace MashBoxSDK.AnimationStudio
             FlushEdits();
             if (asset != clipSession) ReleaseClipSession();
             take = asset; character = asset.character; body = asset.body; frame = 0;
-            EditorPrefs.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(asset));
+            StudioPreferenceStore.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(asset));
             clothing = asset.clothing ?? Array.Empty<GameObject>(); outfitOptions = asset.outfitOptions ?? Array.Empty<OutfitOptions>();
             Guard(BuildRig);
         }
@@ -173,6 +173,8 @@ namespace MashBoxSDK.AnimationStudio
             audioPreview.ReportError = text => message = text;
             audioPreview.ReportError = text => message = text;
 #if MashBoxDev
+            LoadAnimationConfiguration();
+            modelingMode = StudioPreferenceStore.GetString("Studio.Mode", modelingMode ? "Modeling" : "Animation") == "Modeling";
             RestoreMotionJob();
             minSize = new Vector2(470, 640);
             SceneView.duringSceneGui += DuringSceneGUI;
@@ -187,6 +189,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnDisable()
         {
+            SaveAnimationConfiguration();
+            StudioPreferenceStore.Flush();
             ReleaseModelEditor();
             ReleaseImagePosePreview();
             SceneView.duringSceneGui -= DuringSceneGUI;
@@ -263,7 +267,7 @@ namespace MashBoxSDK.AnimationStudio
             Repaint();
         }
 
-        private void OnGUI() { using (StudioTheme.Scope()) DrawThemedGUI(); }
+        private void OnGUI() { using (StudioTheme.Scope()) { EditorGUI.BeginChangeCheck(); DrawThemedGUI(); if (EditorGUI.EndChangeCheck()) SaveAnimationConfiguration(); } }
         private void DrawThemedGUI()
         {
             DrawHeader();
@@ -381,6 +385,7 @@ namespace MashBoxSDK.AnimationStudio
         private void OpenViewport()
         {
             if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
+            bool freshViewport = !viewport;
             bool dockable = !StudioSettings.Current.floatingStudioWindow;
             bool migrateHost = viewport && viewport.dockableHost != dockable;
             var previousPivot = migrateHost ? viewport.pivot : Vector3.zero;
@@ -397,6 +402,7 @@ namespace MashBoxSDK.AnimationStudio
                 viewport.modelGridVisible = previous.modelGridVisible;
                 viewport.cameraMode = previous.cameraMode;
                 if (dockable) viewport.Show(); else viewport.ShowUtility();
+                StudioWindowOwnership.ReparentOwnedWindows(previous, viewport);
                 previous.Close();
             }
             if (!viewport)
@@ -404,10 +410,12 @@ namespace MashBoxSDK.AnimationStudio
                 viewport = CreateInstance<MashBoxStudioViewport>();
                 viewport.dockableHost = dockable;
                 viewport.titleContent = new GUIContent("MashBox Studio");
-                viewport.position = new Rect(150, 100, 1100, 800);
+                viewport.position = StudioPreferenceStore.GetBounds("Studio.Bounds", new Rect(150, 100, 1100, 800));
                 if (dockable) viewport.Show(); else viewport.ShowUtility();
-                viewport.position = new Rect(150, 100, 1100, 800);
+                viewport.position = StudioPreferenceStore.GetBounds("Studio.Bounds", new Rect(150, 100, 1100, 800));
             }
+            if (freshViewport) viewport.rotation = Quaternion.Euler(10, 180, 0);
+            viewport.InitializeStoredConfiguration();
             viewport.titleContent = new GUIContent("MashBox Studio");
             if (rig != null) viewport.Bind(rig.Scene);
             else
@@ -424,6 +432,11 @@ namespace MashBoxSDK.AnimationStudio
             viewport.SetInspectorExpanded(inspectorExpanded);
             BindStudioMode();
             if (migrateHost) { viewport.pivot = previousPivot; viewport.rotation = previousRotation; viewport.size = previousSize; viewport.orthographic = previousOrthographic; return; }
+            if (modelingMode)
+            {
+                if (freshViewport) modelEditor.Frame(viewport);
+                return;
+            }
             if (rig == null) return;
             var bounds = new Bounds(rig.Root.transform.position + Vector3.up, Vector3.one * 2);
             foreach (var renderer in rig.Root.GetComponentsInChildren<Renderer>()) bounds.Encapsulate(renderer.bounds);
@@ -643,7 +656,7 @@ namespace MashBoxSDK.AnimationStudio
         private void Save()
         {
             if (clipSession && (take == clipSession || inActorScope)) { MarkClipChanged(); return; }
-            if (EditorUtility.IsPersistent(take)) EditorPrefs.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(take));
+            if (EditorUtility.IsPersistent(take)) StudioPreferenceStore.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(take));
             if (pendingSave && pendingSave != take) FlushSave();
             EditorUtility.SetDirty(take);
             pendingSave = take;

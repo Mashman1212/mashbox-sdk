@@ -13,7 +13,8 @@ namespace MashBoxSDK.AnimationStudio
         [Serializable] internal sealed class Preferences
         {
             public string theme = "graphite";
-            public bool neutralMarkingMenus = true;
+            public Color customPrimary = new Color(.18f, .22f, .25f, 1);
+            public Color customSecondary = new Color(.85f, .70f, .47f, 1);
             public bool showMeshStatistics = true;
             public bool showWorkspaceFps;
             public bool hideStatusBar;
@@ -32,29 +33,40 @@ namespace MashBoxSDK.AnimationStudio
             public float handleSize = 1;
             public float channelDragSensitivity = 1;
             public int toolbarIconSize = 24;
+            public int undoLimit = 50;
         }
         internal static Preferences Current { get; private set; }
         static StudioSettings() { Reload(); }
         internal static void Reload()
         {
-            try { Current = JsonUtility.FromJson<Preferences>(EditorPrefs.GetString(PreferenceKey, EditorPrefs.GetString(LegacyPreferenceKey, ""))) ?? new Preferences(); }
+            try
+            {
+                Current = new Preferences();
+                string json = StudioPreferenceStore.GetString(PreferenceKey, StudioPreferenceStore.GetString(LegacyPreferenceKey, ""));
+                if (!string.IsNullOrEmpty(json)) JsonUtility.FromJsonOverwrite(json, Current);
+            }
             catch { Current = new Preferences(); }
             Sanitize(Current);
         }
         private static float Clamp(float value, float min, float max, float fallback) => float.IsNaN(value) || float.IsInfinity(value) ? fallback : Mathf.Clamp(value, min, max);
         private static void Sanitize(Preferences value)
         {
-            if (Array.FindIndex(StudioTheme.Palettes, p => p.Id == value.theme) < 0) value.theme = "graphite";
+            if (value.theme != "custom" && Array.FindIndex(StudioTheme.Palettes, p => p.Id == value.theme) < 0) value.theme = "graphite";
+            Color CleanColor(Color c, Color fallback) => new Color(Clamp(c.r,0,1,fallback.r),Clamp(c.g,0,1,fallback.g),Clamp(c.b,0,1,fallback.b),1);
+            value.customPrimary = CleanColor(value.customPrimary,new Color(.18f,.22f,.25f,1));
+            value.customSecondary = CleanColor(value.customSecondary,new Color(.85f,.70f,.47f,1));
             value.gridSpacing = Clamp(value.gridSpacing, .01f, 10, .25f);
             value.gridOpacity = Clamp(value.gridOpacity, 0, 1, 1);
             value.uvPointSize = Clamp(value.uvPointSize, 2, 8, 4);
             value.toolbarIconSize = value.toolbarIconSize == 16 ? 16 : 24;
+            value.undoLimit = Math.Max(1, value.undoLimit);
             value.handleSize = Clamp(value.handleSize, .25f, 3, 1);
-            value.channelDragSensitivity = Clamp(value.channelDragSensitivity, .1f, 4, 1);
+            value.channelDragSensitivity = StudioDragSensitivity.Normalize(Clamp(value.channelDragSensitivity, .1f, 4, 1));
         }
         internal static void Save()
         {
-            Sanitize(Current); EditorPrefs.SetString(PreferenceKey, JsonUtility.ToJson(Current));
+            Sanitize(Current); StudioPreferenceStore.SetString(PreferenceKey, JsonUtility.ToJson(Current));
+            StudioUndo.EnforceLimit();
             // Host replacement must happen after the preferences IMGUI event finishes.
             EditorApplication.delayCall -= ApplyWindowMode;
             EditorApplication.delayCall += ApplyWindowMode;
@@ -82,7 +94,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static void Open()
         {
             var window = GetWindow<StudioSettingsWindow>(true, "MashBox Studio Themes", true);
-            window.minSize = new Vector2(440, 320); window.ShowUtility(); window.Focus();
+            window.minSize = new Vector2(440, 320); StudioWindowOwnership.ShowUtility(window);
         }
         private void OnGUI()
         {
@@ -101,14 +113,24 @@ namespace MashBoxSDK.AnimationStudio
                 using (new EditorGUILayout.HorizontalScope())
                     for (int n = i; n < Mathf.Min(i + 2, StudioTheme.Palettes.Length); n++) DrawPalette(StudioTheme.Palettes[n]);
                 var settings = StudioSettings.Current;
-                EditorGUI.BeginChangeCheck();
                 GUILayout.Space(12);
-                settings.neutralMarkingMenus = EditorGUILayout.ToggleLeft(new GUIContent("Neutral marking menus", "Keep right-click marking menus gray, regardless of the selected palette."), settings.neutralMarkingMenus);
-                if (EditorGUI.EndChangeCheck()) StudioSettings.Save();
+                DrawPalette(StudioTheme.Custom);
+                EditorGUI.BeginChangeCheck();
+                var primary = EditorGUILayout.ColorField(new GUIContent("Primary", "Base color for the custom theme's surfaces."), settings.customPrimary, true, false, false);
+                var secondary = EditorGUILayout.ColorField(new GUIContent("Secondary", "Accent color for selections and highlights."), settings.customSecondary, true, false, false);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    settings.customPrimary = primary; settings.customSecondary = secondary; settings.theme = "custom";
+                    StudioSettings.Save();
+                }
+                GUILayout.Label("Choose two colors. Text, surfaces, borders and highlights adjust automatically.", StudioTheme.Styles.wordWrappedMiniLabel);
                 GUILayout.Space(12);
                 if (GUILayout.Button("Restore Theme Defaults"))
                 {
-                    settings.theme = "graphite"; settings.neutralMarkingMenus = true;
+                    var defaults = new StudioSettings.Preferences();
+                    settings.theme = defaults.theme;
+                    settings.customPrimary = defaults.customPrimary;
+                    settings.customSecondary = defaults.customSecondary;
                     StudioSettings.Save();
                 }
             }
@@ -116,8 +138,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void DrawGeneralSettings()
         {
+            StudioPreferenceStore.DrawTransferButtons();
             DrawWindowMode();
             DrawToolbarIconSize();
+            EditorGUI.BeginChangeCheck();
+            int undoLimit = EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions", "Maximum Studio modeling actions kept across Undo and Redo. Default 50; minimum 1. Lower values can reduce retained memory. A complete drag or tool operation counts as one action."), StudioSettings.Current.undoLimit);
+            if (EditorGUI.EndChangeCheck()) { StudioSettings.Current.undoLimit = Math.Max(1, undoLimit); StudioSettings.Save(); }
             GUILayout.Space(8);
             GUILayout.Label("Viewport", StudioTheme.Styles.boldLabel);
             DrawViewportAntialiasing();
@@ -135,7 +161,7 @@ namespace MashBoxSDK.AnimationStudio
             settings.uvPointSize = EditorGUILayout.Slider("UV point size", settings.uvPointSize, 2, 8);
             if (EditorGUI.EndChangeCheck()) StudioSettings.Save();
             GUILayout.Space(12);
-            GUILayout.Label("Settings are saved for this user. The incremental GC toggle changes this Unity project's Player setting.", StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Settings are saved in this project’s MashBoxStudio/Preferences folder. The incremental GC toggle changes this Unity project's Player setting.", StudioTheme.Styles.wordWrappedMiniLabel);
             if (GUILayout.Button("Restore MashBox Studio Defaults")) StudioSettings.Reset();
         }
         private void DrawPalette(StudioTheme.Palette palette)

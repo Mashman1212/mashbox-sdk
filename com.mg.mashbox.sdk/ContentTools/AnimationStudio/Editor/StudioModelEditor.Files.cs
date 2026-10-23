@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -43,7 +44,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             try
             {
-                var saved = JsonUtility.FromJson<RecentFiles>(EditorPrefs.GetString(RecentFilesKey, ""));
+                var saved = JsonUtility.FromJson<RecentFiles>(StudioPreferenceStore.GetString(RecentFilesKey, ""));
                 return (saved?.paths ?? new List<string>()).Where(p => !string.IsNullOrEmpty(p))
                     .Distinct(StringComparer.OrdinalIgnoreCase).Take(RecentFileLimit).ToList();
             }
@@ -61,23 +62,30 @@ namespace MashBoxSDK.AnimationStudio
             paths.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
             paths.Insert(0, path);
             if (paths.Count > RecentFileLimit) paths.RemoveRange(RecentFileLimit, paths.Count - RecentFileLimit);
-            EditorPrefs.SetString(RecentFilesKey, JsonUtility.ToJson(new RecentFiles { paths = paths }));
+            StudioPreferenceStore.SetString(RecentFilesKey, JsonUtility.ToJson(new RecentFiles { paths = paths }));
         }
         private void AddRecentFilesMenu(StudioMenu menu, Action<StudioModelDocument> loaded)
         {
+            if (menu.CatalogOnly)
+            {
+                // Recent-file navigation is deliberately excluded from keyboard shortcuts.
+                return;
+            }
             var paths = ReadRecentFiles();
             if (paths.Count == 0) { menu.AddDisabledItem(new GUIContent("Open Recents…/No recent files")); return; }
+            int recentSlot = 0;
             foreach (string path in paths)
             {
+                string commandKey = "Open Recents/Recent " + (++recentSlot);
                 string label = Path.GetFileName(path);
                 if (paths.Count(p => string.Equals(Path.GetFileName(p), label, StringComparison.OrdinalIgnoreCase)) > 1)
                     label += " (" + Path.GetDirectoryName(path).Replace('\\', '›').Replace('/', '›') + ")";
-                if (!File.Exists(path)) { menu.AddDisabledItem(new GUIContent("Open Recents…/" + label + " (missing)")); continue; }
+                if (!File.Exists(path)) { menu.AddDisabledItem(new GUIContent("Open Recents…/" + label + " (missing)"), commandKey, shortcutEligible: false); continue; }
                 string recent = path;
                 menu.AddItem(new GUIContent("Open Recents…/" + label), false, () => Run(() => {
                     if (string.Equals(Path.GetExtension(recent), ".fbx", StringComparison.OrdinalIgnoreCase)) ImportPath(recent, loaded);
                     else OpenWorkspacePath(recent, loaded);
-                }));
+                }), commandKey, shortcutEligible: false);
             }
         }
         internal bool HasUnsavedWorkspaceChanges => Document &&

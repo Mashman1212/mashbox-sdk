@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using UnityEditor;
 using UnityEngine;
@@ -23,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         private void OpenLighting()
         {
             if (!lightingWindow) lightingWindow = ScriptableObject.CreateInstance<StudioLightingWindow>();
-            lightingWindow.Bind(this); lightingWindow.ShowUtility(); lightingWindow.Focus();
+            lightingWindow.Bind(this); StudioWindowOwnership.ShowUtility(lightingWindow, ToolChannelPaneOwner);
         }
     }
 

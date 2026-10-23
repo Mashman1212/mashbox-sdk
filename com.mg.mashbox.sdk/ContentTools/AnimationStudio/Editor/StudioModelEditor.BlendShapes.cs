@@ -6,7 +6,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal bool HasBlendShape => Document && Active>=0 && Document.nodes[Active].blendShape!=null;
+        internal bool HasBlendShape => Document && Active>=0 && Active<Document.nodes.Count && Document.nodes[Active].blendShape!=null;
         private int[] SelectedBlendMeshes => Document ? HierarchyRows().Where(i=>objects.Contains(i)&&Document.nodes[i].mesh).ToArray() : new int[0];
         private void CreateSelectedBlendShape()
         {

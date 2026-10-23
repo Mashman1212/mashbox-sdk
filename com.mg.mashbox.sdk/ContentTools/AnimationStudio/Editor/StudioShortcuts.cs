@@ -59,15 +59,44 @@ namespace MashBoxSDK.AnimationStudio
         [Serializable] internal sealed class Override
         {
             public StudioShortcut id;
+            public string command;
             public List<Binding> bindings = new List<Binding>();
         }
-        [Serializable] private sealed class Profile { public List<Override> overrides = new List<Override>(); }
+        [Serializable] private sealed class Profile
+        {
+            public string format;
+            public int version;
+            public List<Override> overrides = new List<Override>();
+        }
+        internal static void Export(string path)
+        {
+            var exported = new Profile { format = "MashBoxStudio.Hotkeys", version = 1 };
+            foreach (var definition in Definitions)
+                exported.overrides.Add(new Override { id = definition.id, command = StudioModelCommands.Key(definition.id), bindings = Bindings(definition.id).Select(b => b.Copy()).ToList() });
+            StudioPreferenceStore.WriteAtomic(path, JsonUtility.ToJson(exported, true));
+        }
+        internal static void Import(string path)
+        {
+            var imported = JsonUtility.FromJson<Profile>(System.IO.File.ReadAllText(path));
+            if (imported == null || imported.format != "MashBoxStudio.Hotkeys" || imported.version != 1 || imported.overrides == null)
+                throw new System.IO.InvalidDataException("This is not a supported MashBox Studio hotkeys file.");
+            var ids = new HashSet<StudioShortcut>();
+            foreach (var entry in imported.overrides)
+            {
+                if (entry == null || (Find(entry.id) == null && entry.id != StudioShortcut.Preferences && ((int)entry.id >= 0 || (!string.IsNullOrEmpty(entry.command) && !StudioModelCommands.ValidKey(entry.id, entry.command)))) || !ids.Add(entry.id) || entry.bindings == null || entry.bindings.Any(b => b == null || b.key == KeyCode.None || !Enum.IsDefined(typeof(KeyCode), b.key) || ((int)b.modifiers & ~7) != 0))
+                    throw new System.IO.InvalidDataException("The hotkeys file contains invalid or duplicate bindings.");
+            }
+            imported.overrides.RemoveAll(entry => entry.id == StudioShortcut.Preferences); // Accept older exports without restoring the removed UI shortcut.
+            // Commit to disk before changing live bindings; a failed import leaves them intact.
+            StudioPreferenceStore.SelectHotkeys(path);
+            profile = imported; NotifyChanged();
+        }
         private static Profile profile;
         private static readonly Dictionary<StudioShortcut,Binding[]> bindingCache = new Dictionary<StudioShortcut,Binding[]>();
         private static readonly Dictionary<StudioShortcut,string> labelCache = new Dictionary<StudioShortcut,string>();
         internal static event Action changed;
         private static Binding Key(KeyCode key, StudioModifiers modifiers = StudioModifiers.None, bool shift = false, bool any = false) => new Binding(key, modifiers, shift, any);
-        internal static readonly Definition[] Definitions = {
+        private static readonly Definition[] BuiltinDefinitions = {
             new Definition(StudioShortcut.Select,"Tools","Select",Key(KeyCode.Q,shift:true)),
             new Definition(StudioShortcut.Move,"Tools","Move",Key(KeyCode.W,shift:true)),
             new Definition(StudioShortcut.Rotate,"Tools","Rotate",Key(KeyCode.E,shift:true)),
@@ -103,17 +132,62 @@ namespace MashBoxSDK.AnimationStudio
             new Definition(StudioShortcut.FrameAllUV,"UV editor","Frame all UVs",Key(KeyCode.A,shift:true)),
             new Definition(StudioShortcut.Preferences,"Workspace","Open controls preferences")
         };
+        internal static Definition[] Definitions => StudioModelCommands.Definitions(BuiltinDefinitions);
+        internal static int Revision { get; private set; }
+        private static readonly Dictionary<KeyCode, StudioShortcut[]> commandKeys = new Dictionary<KeyCode, StudioShortcut[]>();
+        private static int commandKeyRevision = -1;
+        private static bool defaultsQueued;
+        internal static void CatalogChanged()
+        {
+            Revision++; labelCache.Clear(); bindingCache.Clear();
+            if (defaultsQueued) return;
+            defaultsQueued = true; EditorApplication.delayCall += RefreshFactoryDefaults;
+        }
+        private static void RefreshFactoryDefaults()
+        { defaultsQueued = false; StudioPreferenceStore.WriteFactoryDefaults(); }
+        internal static string FactoryJson()
+        {
+            var defaults = new Profile { format = "MashBoxStudio.Hotkeys", version = 1 };
+            foreach (var definition in Definitions)
+                defaults.overrides.Add(new Override { id = definition.id, command = StudioModelCommands.Key(definition.id), bindings = definition.defaults.Select(b => b.Copy()).ToList() });
+            foreach (string key in StudioModelCommands.StandardKeys)
+            {
+                var id = StudioModelCommands.StableId(key);
+                if (!defaults.overrides.Exists(o => o.id == id)) defaults.overrides.Add(new Override { id = id, command = key, bindings = StudioModelCommands.StandardBindings(key).ToList() });
+            }
+            return JsonUtility.ToJson(defaults, true);
+        }
+        internal static bool MatchModelCommand(Event evt, out StudioShortcut command)
+        {
+            command = default;
+            if (evt == null || evt.type != EventType.KeyDown) return false;
+            if (commandKeyRevision != Revision)
+            {
+                commandKeys.Clear();
+                foreach (var group in Definitions.Where(d => (int)d.id < 0).SelectMany(d => Bindings(d.id).Select(b => (d.id, binding: b))).GroupBy(p => p.binding.key))
+                    commandKeys[group.Key] = group.Select(p => p.id).Distinct().ToArray();
+                commandKeyRevision = Revision;
+            }
+            if (!commandKeys.TryGetValue(evt.keyCode, out var candidates)) return false;
+            foreach (var candidate in candidates) if (Pressed(candidate, evt)) { command = candidate; return true; }
+            return false;
+        }
         static StudioShortcuts() { Reload(); }
         internal static StudioModifiers Modifiers(Event evt) => (evt.shift ? StudioModifiers.Shift : 0) |
             (evt.control || evt.command ? StudioModifiers.Action : 0) | (evt.alt ? StudioModifiers.Alt : 0);
         internal static string KeyName(KeyCode key) => key >= KeyCode.Alpha0 && key <= KeyCode.Alpha9 ? ((int)key-(int)KeyCode.Alpha0).ToString() :
             key == KeyCode.Mouse0 ? "Left mouse" : key == KeyCode.Mouse1 ? "Right mouse" : key == KeyCode.Mouse2 ? "Middle mouse" : key.ToString();
-        internal static Definition Find(StudioShortcut action) => Array.Find(Definitions, d => d.id == action);
+        internal static Definition Find(StudioShortcut action) => action == StudioShortcut.Preferences ? null : StudioModelCommands.Find(action) ?? Array.Find(BuiltinDefinitions, d => d.id == action);
         internal static Binding[] Bindings(StudioShortcut action)
         {
             if (bindingCache.TryGetValue(action,out var cached)) return cached;
             var entry = profile.overrides.Find(o => o.id == action);
-            return bindingCache[action] = entry != null ? entry.bindings.ToArray() : Find(action).defaults;
+            if (entry != null) return bindingCache[action] = entry.bindings.ToArray();
+            var defaults = Find(action)?.defaults ?? Array.Empty<Binding>();
+            // New standard chords must not steal an older explicit assignment.
+            if (StudioModelCommands.StandardKeys.Any(key => StudioModelCommands.StableId(key) == action))
+                defaults = defaults.Where(binding => !profile.overrides.Any(other => other.id != action && other.id != StudioShortcut.Preferences && !CanShare(action, other.id) && other.bindings.Any(b => Overlaps(binding, b)))).ToArray();
+            return bindingCache[action] = defaults;
         }
         internal static bool Matches(StudioShortcut action, Event evt, bool release = false)
         {
@@ -131,7 +205,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static void Set(StudioShortcut action, IEnumerable<Binding> bindings)
         {
             profile.overrides.RemoveAll(o => o.id == action);
-            profile.overrides.Add(new Override { id = action, bindings = bindings.Where(b => b != null && b.key != KeyCode.None).Select(b => b.Copy()).ToList() });
+            profile.overrides.Add(new Override { id = action, command = StudioModelCommands.Key(action), bindings = bindings.Where(b => b != null && b.key != KeyCode.None).Select(b => b.Copy()).ToList() });
             Save();
         }
         internal static void Reset(StudioShortcut? action = null)
@@ -141,17 +215,25 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void Reload()
         {
-            bindingCache.Clear();labelCache.Clear();
-            try { profile = JsonUtility.FromJson<Profile>(EditorPrefs.GetString(PreferenceKey,"")) ?? new Profile(); }
-            catch { profile = new Profile(); }
+            Revision++; bindingCache.Clear();labelCache.Clear();
+            try { profile = JsonUtility.FromJson<Profile>(StudioPreferenceStore.GetString(PreferenceKey,"")) ?? new Profile(); }
+            catch (Exception ex) { Debug.LogWarning("MashBox Studio could not load " + StudioPreferenceStore.HotkeysPath + ": " + ex.Message); profile = new Profile(); }
             if (profile.overrides == null) profile.overrides = new List<Override>();
-            profile.overrides.RemoveAll(o => o == null || Find(o.id) == null || o.bindings == null);
+            profile.overrides.RemoveAll(o => o == null || o.bindings == null); // Retain commands not registered yet (and legacy IDs without command paths).
             foreach (var entry in profile.overrides) entry.bindings.RemoveAll(b => b == null || !Enum.IsDefined(typeof(KeyCode),b.key));
+            profile.format = "MashBoxStudio.Hotkeys"; profile.version = 1;
+            // Reload is read-only: never replace a user's file with a filtered or
+            // temporarily incomplete startup catalog.
         }
         private static void Save()
         {
             bindingCache.Clear();labelCache.Clear();
-            EditorPrefs.SetString(PreferenceKey,JsonUtility.ToJson(profile)); changed?.Invoke();
+            profile.format = "MashBoxStudio.Hotkeys"; profile.version = 1;
+            StudioPreferenceStore.SetString(PreferenceKey,JsonUtility.ToJson(profile, true)); NotifyChanged();
+        }
+        private static void NotifyChanged()
+        {
+            Revision++; bindingCache.Clear(); labelCache.Clear(); changed?.Invoke();
             foreach (var window in Resources.FindObjectsOfTypeAll<EditorWindow>())
                 if (window.GetType().Namespace == typeof(StudioShortcuts).Namespace) window.Repaint();
         }
@@ -162,17 +244,53 @@ namespace MashBoxSDK.AnimationStudio
         internal static bool CanShare(StudioShortcut a, StudioShortcut b) =>
             (a == StudioShortcut.RemoveCut && b == StudioShortcut.Delete) || (b == StudioShortcut.RemoveCut && a == StudioShortcut.Delete) ||
             (a == StudioShortcut.FrameAllUV && !UsedInUV(b)) || (b == StudioShortcut.FrameAllUV && !UsedInUV(a));
+        private static bool Overlaps(Binding binding, Binding other) => binding.key == other.key &&
+            (binding.allowModifiers || other.allowModifiers || binding.modifiers == other.modifiers ||
+             ((binding.allowShift || other.allowShift) && (binding.modifiers & ~StudioModifiers.Shift) == (other.modifiers & ~StudioModifiers.Shift)));
         internal static string Conflict(StudioShortcut action, Binding binding)
         {
             foreach (var definition in Definitions)
             {
                 if (definition.id == action || CanShare(action,definition.id)) continue;
                 foreach (var other in Bindings(definition.id))
-                    if (binding.key == other.key && (binding.allowModifiers || other.allowModifiers || binding.modifiers == other.modifiers ||
-                        ((binding.allowShift || other.allowShift) && (binding.modifiers & ~StudioModifiers.Shift) == (other.modifiers & ~StudioModifiers.Shift))))
+                    if (Overlaps(binding, other))
                         return definition.name;
             }
             return null;
         }
     }
+    // Shared by focused Studio utility windows. Multiple focus callbacks may
+    // overlap while switching windows; restore Unity only after the last owner.
+    internal sealed class StudioShortcutFocusGuard
+    {
+        internal static readonly System.Reflection.PropertyInfo Dispatch =
+            typeof(UnityEditor.ShortcutManagement.ShortcutManager).Assembly.GetType("UnityEditor.ShortcutManagement.ShortcutIntegration")?
+                .GetProperty("enabled", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        private static readonly HashSet<StudioShortcutFocusGuard> owners = new HashSet<StudioShortcutFocusGuard>();
+        private static bool held, previous;
+        internal bool IsAcquired => owners.Contains(this);
+        static StudioShortcutFocusGuard() { AssemblyReloadEvents.beforeAssemblyReload += Reset; EditorApplication.quitting += Reset; }
+        internal bool Acquire()
+        {
+            if (Dispatch == null || !Dispatch.CanRead || !Dispatch.CanWrite) return false;
+            EditorApplication.delayCall -= RestoreIfUnused;
+            if (!held) { previous = (bool)Dispatch.GetValue(null); Dispatch.SetValue(null, false); held = true; }
+            owners.Add(this); return true;
+        }
+        internal void Release()
+        {
+            if (!owners.Remove(this) || owners.Count != 0) return;
+            var evt = Event.current;
+            if (evt != null && (evt.rawType == EventType.KeyDown || evt.rawType == EventType.KeyUp || evt.rawType == EventType.ExecuteCommand))
+                EditorApplication.delayCall += RestoreIfUnused;
+            else RestoreIfUnused();
+        }
+        private static void RestoreIfUnused()
+        {
+            EditorApplication.delayCall -= RestoreIfUnused;
+            if (held && owners.Count == 0) { Dispatch.SetValue(null, previous); held = false; }
+        }
+        private static void Reset() { owners.Clear(); RestoreIfUnused(); }
+    }
+
 }

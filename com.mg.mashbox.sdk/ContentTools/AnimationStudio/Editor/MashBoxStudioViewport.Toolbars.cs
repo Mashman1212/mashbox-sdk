@@ -10,6 +10,50 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class MashBoxStudioViewport
     {
+        [Serializable] private sealed class StoredToolbars
+        {
+            public bool enabled = true;
+            public List<StoredToolbar> items = new List<StoredToolbar>();
+        }
+        [Serializable] private sealed class StoredToolbar
+        {
+            public string id;
+            public int index;
+            public SaveData state;
+        }
+        private bool restoringStoredToolbars, restoredStoredToolbars;
+        private void SaveStoredToolbars()
+        {
+            if (restoringStoredToolbars || !restoredStoredToolbars || studioToolbarOverlays.Count == 0) return;
+            var saved = new StoredToolbars { enabled = overlayCanvas.overlaysEnabled };
+            foreach (var overlay in studioToolbarOverlays)
+            {
+                if (overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) continue;
+                var state = new SaveData(overlay);
+                // SaveData owns Unity's native container index; a tiny reader avoids private-field reflection.
+                var order = JsonUtility.FromJson<StoredToolbar>(JsonUtility.ToJson(state));
+                saved.items.Add(new StoredToolbar { id = overlay.id, index = order.index, state = state });
+            }
+            StudioPreferenceStore.SetString("Studio.Toolbars", JsonUtility.ToJson(saved));
+        }
+        private void RestoreStoredToolbars()
+        {
+            restoringStoredToolbars = true;
+            try
+            {
+                string raw = StudioPreferenceStore.GetString("Studio.Toolbars");
+                if (string.IsNullOrEmpty(raw)) return;
+                var saved = JsonUtility.FromJson<StoredToolbars>(raw);
+                if (saved?.items == null) return;
+                saved.items.Sort((a, b) => a.index.CompareTo(b.index));
+                foreach (var item in saved.items)
+                    foreach (var overlay in studioToolbarOverlays)
+                        if (overlay.id == item.id && item.state != null) overlayCanvas.RestoreOverlay(overlay, item.state);
+                overlayCanvas.overlaysEnabled = saved.enabled;
+            }
+            catch (ArgumentException ex) { Debug.LogWarning("MashBox Studio could not restore toolbar layout: " + ex.Message); }
+            finally { restoringStoredToolbars = false; restoredStoredToolbars = true; }
+        }
         private const string DisplayToolbarId = StudioViewportToolbar.Id;
         private static readonly PropertyInfo NativeCanvasRoot = typeof(OverlayCanvas).GetProperty("rootVisualElement", WindowMembers);
         [SerializeField] private int studioToolbarVersion;
@@ -58,6 +102,7 @@ namespace MashBoxSDK.AnimationStudio
                 studioToolbarVersion = 2;
                 cameraMode = SceneView.GetBuiltinCameraMode(DrawCameraMode.Textured);
             }
+            if (!restoredStoredToolbars) RestoreStoredToolbars();
             PlaceStudioMenuAboveToolbars();
             SyncStudioToolbarState(true);
         }
@@ -93,6 +138,7 @@ namespace MashBoxSDK.AnimationStudio
             if (MenuInputBlocked) KeepMenuShieldOnTop();
         }
         private bool HasLeftDockedToolbar => HasDockedToolbar("overlay-toolbar__left");
+        private bool HasBottomDockedToolbar => HasDockedToolbar("overlay-toolbar__bottom");
         private bool HasRightDockedToolbar => HasDockedToolbar("overlay-toolbar__right");
         private bool HasDockedToolbar(string dockName)
         {
@@ -105,6 +151,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnStudioToolbarGeometry(GeometryChangedEvent evt)
         {
+            SaveStoredToolbars();
             if (evt.currentTarget is VisualElement root) StyleStudioToolbar(root);
             UpdatePanelLayout();
         }
@@ -187,18 +234,24 @@ namespace MashBoxSDK.AnimationStudio
         {
             // Unity's canvas is the registry. Query it when opening the menu so
             // restored, hidden and newly registered toolbars are included too.
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var overlay in overlayCanvas.overlays)
             {
-                if (!(overlay is ToolbarOverlay) || overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) continue;
+                if (!(overlay is ToolbarOverlay) || overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly || !seen.Add(overlay.id)) continue;
                 var item = overlay;
                 bool visible = overlayCanvas.overlaysEnabled && item.displayed;
-                string label = item.id == DisplayToolbarId ? StudioViewportToolbar.DisplayName : item.displayName;
-                menu.AddItem(new GUIContent(label), visible, () => {
+                // Saved Unity layouts may retain an obsolete displayName. The
+                // toolbar declaration owns its current user-facing name; its ID
+                // stays unchanged so visibility and docking still restore.
+                string label = item.GetType().GetCustomAttribute<OverlayAttribute>(false)?.displayName;
+                if (string.IsNullOrWhiteSpace(label)) label = string.IsNullOrWhiteSpace(item.displayName) ? item.id : item.displayName;
+                label = label.Replace('/', '∕'); // A toolbar title is one menu leaf.
+                menu.AddItem(new GUIContent("Toolbars/" + label), visible, () => {
                     overlayCanvas.overlaysEnabled = true;
-                    item.displayed = !visible;
+                    item.displayed = !visible; SaveStoredToolbars();
                     UpdatePanelLayout();
                     MarkDirty(DirtyState.UI);
-                });
+                }, commandKey: "Toolbars/" + item.id, shortcutEligible: false);
             }
         }
         internal void SyncStudioToolbarState(bool force = false)
@@ -213,6 +266,7 @@ namespace MashBoxSDK.AnimationStudio
             var mesh = editor?.ActiveMesh;
             int active = editor?.Active ?? -1;
             if (!force && state == studioToolbarState && mesh == studioToolbarMesh && active == studioToolbarActive) return;
+            if (storedConfigurationInitialized) StudioPreferenceStore.SetFloat("Studio.GridVisible", modelGridVisible ? 1 : 0);
             studioToolbarState = state;
             studioToolbarMesh = mesh; studioToolbarActive = active;
             StudioToolbarStateChanged?.Invoke();

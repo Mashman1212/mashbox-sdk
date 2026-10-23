@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -34,8 +35,8 @@ namespace MashBoxSDK.AnimationStudio
             (mode == ComponentMode.Object || (ActiveMesh && CanEditComponents() && SelectedVertices().Count > 0));
 
         private readonly System.Collections.Generic.HashSet<Vector3> componentCenterPoints = new System.Collections.Generic.HashSet<Vector3>();
-        private Vector3 ComponentSelectionCenter() => ComponentSelectionCenter(ActiveMesh.vertices, SelectedVertices());
-        private Vector3 ComponentSelectionCenter(Vector3[] vertices, System.Collections.Generic.HashSet<int> indices)
+        private Vector3 ComponentSelectionCenter() => ComponentSelectionCenter(ComponentPositions(), SelectedVertices());
+        private Vector3 ComponentSelectionCenter(System.Collections.Generic.IList<Vector3> vertices, System.Collections.Generic.HashSet<int> indices)
         {
             // UV and hard-normal splits are render vertices, not extra geometric
             // points. Their multiplicity must not move the selection's center.

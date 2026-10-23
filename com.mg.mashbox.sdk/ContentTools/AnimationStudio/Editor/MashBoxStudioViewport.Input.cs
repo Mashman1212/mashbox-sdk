@@ -113,6 +113,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         public override void OnDisable()
         {
+            SaveStoredConfiguration();
+            StudioPreferenceStore.Flush();
             ClearStatusMessages();
             ReleaseStudioToolbars();
             ReleaseViewportRedraw();

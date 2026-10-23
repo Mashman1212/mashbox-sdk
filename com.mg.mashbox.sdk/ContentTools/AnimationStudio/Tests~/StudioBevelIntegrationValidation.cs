@@ -1,3 +1,4 @@
+using EditorPrefs = MashBoxSDK.AnimationStudio.StudioPreferenceStore;
 using System;using System.IO;using System.Linq;using System.Collections.Generic;using System.Reflection;using MashBoxSDK.AnimationStudio;using UnityEditor;using UnityEngine;using UnityEngine.Rendering;using Object=UnityEngine.Object;
 public static class StudioBevelIntegrationValidation
 {

@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
                 foreach (int i in NormalTargets())
                 {
                     var node = Document.nodes[i]; var mesh = node.mesh;
-                    if (node.skinned || node.blendShape != null || mesh.blendShapeCount > 0 || mesh.bindposes.Length > 0 || !mesh.isReadable) return false;
+                    if (node.skinned || node.blendShape != null || mesh.blendShapeCount > 0 || mesh.bindposes.Length > 0) return false;
                     for (int sub = 0; sub < mesh.subMeshCount; sub++) if (mesh.GetTopology(sub) != MeshTopology.Triangles) return false;
                     found = true;
                 }
@@ -62,10 +63,10 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseNormalsToolWindow() { if (softenToolPane) softenToolPane.Close(); softenToolPane = null; }
         private void OpenSoftenTool()
         {
-            if (softenToolPane) { softenToolPane.Focus(); return; }
+            if (softenToolPane) { QueueLiveTool(LiveTool.Soften); softenToolPane.Repaint(); softenToolPane.Focus(); return; }
             softenToolPane = ToolChannelPane.Open("Soften Edges", DrawSoftenTool, () => softenToolPane = null,
                 execute: () => ApplyLiveTool(LiveTool.Soften), canExecute: () => CanRunLiveTool(LiveTool.Soften), failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
-                preview: () => QueueLiveTool(LiveTool.Soften), cancelPreview: () => CancelLiveTool(LiveTool.Soften));
+                preview: () => QueueLiveTool(LiveTool.Soften), cancelPreview: () => CancelLiveTool(LiveTool.Soften), history: PerformWorkspaceHistory);
             QueueLiveTool(LiveTool.Soften);
         }
         private void DrawSoftenTool()

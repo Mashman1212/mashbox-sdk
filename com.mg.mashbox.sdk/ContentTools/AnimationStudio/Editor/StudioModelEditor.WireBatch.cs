@@ -32,11 +32,11 @@ namespace MashBoxSDK.AnimationStudio
             {
                 wire.positionBuffer=new GraphicsBuffer(GraphicsBuffer.Target.Structured,wire.vertices.Count,12);
                 wire.edgeBuffer=new GraphicsBuffer(GraphicsBuffer.Target.Structured,wire.indices.Length,4);
-                wire.edgeBuffer.SetData(wire.indices);wire.batchPositionsDirty=true;
+                wire.edgeBuffer.SetData(wire.indices);wire.batchPositionsDirty=true;wire.vertexUpdateStart=0;
                 wire.adjacentBuffer=new GraphicsBuffer(GraphicsBuffer.Target.Structured,wire.adjacent.Length,4);
                 wire.adjacentBuffer.SetData(wire.adjacent);
             }
-            if(wire.batchPositionsDirty){wire.positionBuffer.SetData(wire.vertices);wire.batchPositionsDirty=false;WireBatchUploads++;}
+            if(wire.batchPositionsDirty){int start=wire.vertexUpdateStart;wire.positionBuffer.SetData(wire.vertices,start,start,wire.vertices.Count-start);wire.batchPositionsDirty=false;WireBatchUploads++;}
             wireBatchMaterial.SetBuffer(WirePositions,wire.positionBuffer);wireBatchMaterial.SetBuffer(WireEdges,wire.edgeBuffer);
             wireBatchMaterial.SetBuffer(WireAdjacent,wire.adjacentBuffer);
             wireBatchMaterial.SetMatrix(WireMatrix,matrix);

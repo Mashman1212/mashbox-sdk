@@ -40,7 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         public StudioViewportToolbar() : base(StudioToolbarOrientation.Id) { }
     }
 
-    [Overlay(typeof(MashBoxStudioViewport), Id, "Display", true,
+    [Overlay(typeof(MashBoxStudioViewport), Id, "Viewport Shading", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
         defaultDockIndex = 3, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioDisplayToolbar : ToolbarOverlay
@@ -327,7 +327,7 @@ namespace MashBoxSDK.AnimationStudio
         internal const string Id = "MashBox/Viewport/Wireframe";
         public StudioToolbarWireOnly() : base("studio-toolbar-wireframe", "Toolbars/wireframe", "Wireframe only") { }
         protected override bool Read(StudioModelEditor editor) => editor.ModelDrawMode == DrawCameraMode.Wireframe;
-        protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetModelDrawMode(view, enabled ? DrawCameraMode.Wireframe : DrawCameraMode.TexturedWire);
+        protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetModelDrawModeEnabled(view, DrawCameraMode.Wireframe, enabled);
     }
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
     internal sealed class StudioToolbarShadedWire : StudioToolbarToggle
@@ -335,7 +335,7 @@ namespace MashBoxSDK.AnimationStudio
         internal const string Id = "MashBox/Viewport/ShadedWireframe";
         public StudioToolbarShadedWire() : base("studio-toolbar-shaded-wireframe", "Toolbars/ShadedWireframe", "Shaded wireframe") { }
         protected override bool Read(StudioModelEditor editor) => editor.ModelDrawMode == DrawCameraMode.TexturedWire;
-        protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetModelDrawMode(view, enabled ? DrawCameraMode.TexturedWire : DrawCameraMode.Textured);
+        protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetModelDrawModeEnabled(view, DrawCameraMode.TexturedWire, enabled);
     }
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
     internal sealed class StudioToolbarLighting : StudioToolbarToggle

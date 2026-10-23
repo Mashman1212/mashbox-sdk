@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -123,7 +124,7 @@ namespace MashBoxSDK.AnimationStudio
         Material material;string message;
         internal static void Open(StudioModelEditor editor)
         {
-            var w=GetWindow<StudioVertexAOWindow>(true,"Shape Vertex AO");w.editor=editor;w.minSize=new Vector2(420,560);w.Show();
+            var w=GetWindow<StudioVertexAOWindow>(true,"Shape Vertex AO");w.editor=editor;w.minSize=new Vector2(420,560);StudioWindowOwnership.ShowUtility(w,editor.ToolChannelPaneOwner);
         }
         void OnGUI()
         {

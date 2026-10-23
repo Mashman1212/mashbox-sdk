@@ -164,7 +164,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public new void OnDestroy()
         {
-            try { if (Studio) Studio.StudioViewportClosed(this); }
+            try { StudioWindowOwnership.CloseOwnedWindows(this); if (Studio) Studio.StudioViewportClosed(this); }
             finally { base.OnDestroy(); }
         }
         public override void SaveChanges()

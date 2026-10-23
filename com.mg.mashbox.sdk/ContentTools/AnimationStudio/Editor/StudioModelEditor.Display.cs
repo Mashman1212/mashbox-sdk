@@ -8,16 +8,44 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        private void SaveDisplayConfiguration()
+        {
+            StudioPreferenceStore.SetFloat("Model.ThroughSelection", xray ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.PreventNegativeScale", preventNegativeScale ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.LocalAxes", local ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.Lighting", displayLighting ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.Textures", displayTextures ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.XRay", displayXray ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.WireframeOnly", wireframeOnly ? 1 : 0);
+        }
+        private void LoadDisplayConfiguration()
+        {
+            xray = StudioPreferenceStore.GetFloat("Model.ThroughSelection", 1) >= .5f;
+            preventNegativeScale = StudioPreferenceStore.GetFloat("Model.PreventNegativeScale", 1) >= .5f;
+            local = StudioPreferenceStore.GetFloat("Model.LocalAxes", 0) >= .5f;
+            displayLighting = StudioPreferenceStore.GetFloat("Model.Lighting", 1) >= .5f;
+            displayTextures = StudioPreferenceStore.GetFloat("Model.Textures", 1) >= .5f;
+            displayXray = StudioPreferenceStore.GetFloat("Model.XRay", 0) >= .5f;
+            wireframeOnly = StudioPreferenceStore.GetFloat("Model.WireframeOnly", 0) >= .5f;
+            ApplyDisplayMaterials();
+        }
         private bool displayLighting = true, displayTextures = true;
         private bool displayXray;
         private bool wireframeOnly;
         internal DrawCameraMode ModelDrawMode => wireframeOnly ? DrawCameraMode.Wireframe :
             StudioSettings.Current.hideObjectWireframe ? DrawCameraMode.Textured : DrawCameraMode.TexturedWire;
+        // Shared on/off semantics for toolbar buttons, menu clicks and shortcuts.
+        // Wireframe-only returns to shaded wireframe; shaded wireframe returns to shaded.
+        internal void SetModelDrawModeEnabled(SceneView view, DrawCameraMode mode, bool enabled)
+        {
+            SetModelDrawMode(view, enabled ? mode :
+                mode == DrawCameraMode.TexturedWire ? DrawCameraMode.Textured : DrawCameraMode.TexturedWire);
+        }
         internal void SetModelDrawMode(SceneView view, DrawCameraMode mode)
         {
             wireframeOnly = mode == DrawCameraMode.Wireframe;
             StudioSettings.Current.hideObjectWireframe = mode == DrawCameraMode.Textured;
-            StudioSettings.Save();
+            SaveDisplayConfiguration(); StudioSettings.Save();
             // Native wire modes add hard rasterized lines and force triangle wire drawing.
             // Studio owns its edge overlay; the camera supplies shaded color or depth only.
             var cameraMode = DrawCameraMode.Textured;
@@ -34,7 +62,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetXRayMode(bool enabled)
         {
             if (displayXray == enabled) return;
-            displayXray = enabled; ApplyDisplayMaterials(); repaint();
+            displayXray = enabled; SaveDisplayConfiguration(); ApplyDisplayMaterials(); repaint();
         }
         private readonly Dictionary<(Material source, int slice), Material> previewMaterials = new Dictionary<(Material source, int slice), Material>();
         private Material neutralLit, neutralPreview;
@@ -45,11 +73,11 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetToolbarLocalAxes(bool value)
         {
             if (local == value) return;
-            local = value; repaint(); toolOptions?.Repaint();
+            local = value; SaveDisplayConfiguration(); repaint(); toolOptions?.Repaint();
         }
         internal void SetDisplayMode(bool lighting, bool textures)
         {
-            displayLighting = lighting; displayTextures = textures;
+            displayLighting = lighting; displayTextures = textures; SaveDisplayConfiguration();
             ApplyDisplayMaterials(); repaint();
         }
         private void ApplyDisplayMaterials()

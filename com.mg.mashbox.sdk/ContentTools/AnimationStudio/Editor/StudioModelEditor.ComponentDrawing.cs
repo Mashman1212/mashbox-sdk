@@ -36,6 +36,7 @@ namespace MashBoxSDK.AnimationStudio
             componentLines=componentDots=componentHighlight=componentHover=componentSource=null;drawnHover=-1;
             componentPositions=null;drawnComponents.Clear();
             componentGeometry.Clear();componentPositionBuffer.Clear();
+            componentFaceUseSource=null; componentFaceOffsets=componentFaceUses=null;
         }
         private void DisposeComponentDrawing()
         {
@@ -57,12 +58,17 @@ namespace MashBoxSDK.AnimationStudio
             for(int i=componentGeometry.Count-1;i>=0;i--)if(ReferenceEquals(componentGeometry[i].mesh,mesh))componentGeometry.RemoveAt(i);
             UnityEngine.Object.DestroyImmediate(mesh);
         }
-        private void RefreshComponentPositions()
+        private void RefreshComponentPositions(int start = 0, IList<Vector3> positions = null)
         {
             if(componentSource!=ActiveMesh||componentPositions==null)return;
-            ActiveMesh.GetVertices(componentPositionBuffer);
-            if(componentPositionBuffer.Count!=componentPositions.Length){ClearComponentDrawing();return;}
-            componentPositionBuffer.CopyTo(componentPositions);
+            if (positions != null && positions.Count == componentPositions.Length)
+                for (int i = start; i < componentPositions.Length; i++) componentPositions[i] = positions[i];
+            else
+            {
+                ActiveMesh.GetVertices(componentPositionBuffer);
+                if(componentPositionBuffer.Count!=componentPositions.Length){ClearComponentDrawing();return;}
+                componentPositionBuffer.CopyTo(componentPositions);
+            }
             foreach(var geometry in componentGeometry)
             {
                 if(!geometry.mesh)continue;
@@ -97,9 +103,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 {
                     ClearComponentDrawing();componentSource=ActiveMesh;componentPositions=ActiveMesh.vertices;
-                    var edges=Edges();var indices=new int[edges.Count*2];
-                    for(int i=0;i<edges.Count;i++){indices[i*2]=edges[i].a;indices[i*2+1]=edges[i].b;}
-                    componentLines=OverlayMesh("component edges",componentPositions,indices,MeshTopology.Lines);
+                    // Regular polygon edges already use the GPU wire batch.
+                    // Do not allocate/upload an unused second whole-mesh line mesh.
                     drawnMode=(ComponentMode)(-1);
 #if MASHBOX_STUDIO_TESTS
                 ComponentOverlayBuilds++;

@@ -28,7 +28,9 @@ namespace MashBoxSDK.AnimationStudio
 
         private static readonly GUIContent BevelJunctionContent = new GUIContent("Intersect junction style", "Grid (Uniform) connects subdivided edge profiles through a rounded corner patch. Cap (N-gon) keeps one corner face. Zero subdivisions always creates a flat chamfer.");
 
-        private bool CanBevelEdges => mode == ComponentMode.Edge && Components.Count > 0 && ActiveMesh && ActiveMesh.isReadable && CanEditComponents() &&
+        // Runtime import Read/Write flags do not determine editor eligibility:
+        // previews obtain readable working copies through the Editor snapshot API.
+        private bool CanBevelEdges => mode == ComponentMode.Edge && Components.Count > 0 && ActiveMesh && CanEditComponents() &&
 
             !Document.nodes[Active].skinned && Document.nodes[Active].blendShape == null && ActiveMesh.blendShapeCount == 0 && ActiveMesh.bindposes.Length == 0;
 
@@ -40,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
 
             if (!CanBevelEdges) throw new InvalidOperationException("Select edges on an editable static mesh to bevel.");
 
-            if (bevelToolPane) { bevelToolPane.Focus(); return; }
+            if (bevelToolPane) { QueueLiveTool(LiveTool.Bevel); bevelToolPane.Repaint(); bevelToolPane.Focus(); return; }
 
             bevelToolPane = ToolChannelPane.Open("Bevel", DrawBevelTool, () => bevelToolPane = null,
 
@@ -48,7 +50,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 execute: () => ApplyLiveTool(LiveTool.Bevel), canExecute: () => CanRunLiveTool(LiveTool.Bevel), failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
 
-                preview: () => QueueLiveTool(LiveTool.Bevel), cancelPreview: () => CancelLiveTool(LiveTool.Bevel));
+                preview: () => QueueLiveTool(LiveTool.Bevel), cancelPreview: () => CancelLiveTool(LiveTool.Bevel), history: PerformWorkspaceHistory);
 
             QueueLiveTool(LiveTool.Bevel);
 
@@ -68,7 +70,7 @@ namespace MashBoxSDK.AnimationStudio
 
             ToolChannelPane.EnumParameter(BevelTool, "Junction", BevelJunctionContent, StudioMeshCuts.BevelJunction.Uniform);
 
-            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Close cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
 
         }
 

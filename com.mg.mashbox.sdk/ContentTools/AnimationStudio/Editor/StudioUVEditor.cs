@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -25,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly string[] Channels = Enumerable.Range(0, 8).Select(i => "UV " + i).ToArray();
         internal static void Open(StudioModelEditor editor, int selectedChannel = -1)
         {
-            var window = GetWindow<StudioUVEditor>("UV Editor"); window.owner = editor; window.minSize = new Vector2(780, 500); window.Show();
+            var window = GetWindow<StudioUVEditor>("UV Editor"); window.owner = editor; window.minSize = new Vector2(780, 500); StudioWindowOwnership.Show(window, editor.ToolChannelPaneOwner);
             if (selectedChannel >= 0) { window.channel = Mathf.Clamp(selectedChannel, 0, 7); window.CancelInteraction(); window.selection.Clear(); window.pinned.Clear(); window.Repaint(); }
             window.Repaint();
         }

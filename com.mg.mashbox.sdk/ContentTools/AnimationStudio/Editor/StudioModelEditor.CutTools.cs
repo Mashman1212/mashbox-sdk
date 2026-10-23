@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -16,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         private StudioMeshCuts.Point? cutStart, cutHover, loopSeed;
         private int cutControl;
         private bool cutDragging;
-        private bool CanCutMesh => !HasBlendShape && ActiveMesh && ActiveMesh.isReadable && !Document.nodes[Active].skinned && ActiveMesh.blendShapeCount == 0 && ActiveMesh.boneWeights.Length == 0;
+        private bool CanCutMesh => !HasBlendShape && ActiveMesh && !Document.nodes[Active].skinned && ActiveMesh.blendShapeCount == 0 && ActiveMesh.boneWeights.Length == 0;
         internal void ActivateCutTool(CutTool next)
         {
             if (!CanCutMesh) { error = "Select an editable static mesh to use the cut tools."; repaint(); return; }

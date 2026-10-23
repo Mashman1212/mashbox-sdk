@@ -1,3 +1,4 @@
+using EditorPrefs = MashBoxSDK.AnimationStudio.StudioPreferenceStore;
 using System;
 using System.IO;
 using System.Linq;

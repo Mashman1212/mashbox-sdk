@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using UnityEditor;
 using UnityEngine;
 
@@ -6,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private StudioModelToolOptions toolOptions;
-        private EditorWindow ToolChannelPaneOwner
+        internal EditorWindow ToolChannelPaneOwner
         {
             get
             {
@@ -64,7 +65,7 @@ namespace MashBoxSDK.AnimationStudio
             xray = EditorGUILayout.Toggle(new GUIContent("Through selection", "Select components behind visible surfaces."), xray);
             if (tool == Tool.Scale && mode != ComponentMode.Object)
                 preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges and faces cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
-            if (EditorGUI.EndChangeCheck()) repaint();
+            if (EditorGUI.EndChangeCheck()) { SaveDisplayConfiguration(); repaint(); }
             if (tool == Tool.Move)
             {
                 using (new EditorGUI.DisabledScope(!MarkingActionEnabled(MarkingAction.EditPivot)))
@@ -80,8 +81,8 @@ namespace MashBoxSDK.AnimationStudio
             if (labelled) rect = EditorGUI.PrefixLabel(rect, new GUIContent("Orientation"));
             if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, style)) return;
             var menu = new StudioMenu();
-            menu.AddItem(new GUIContent("Local"), local, () => { local = true; repaint(); toolOptions?.Repaint(); });
-            menu.AddItem(new GUIContent("World"), !local, () => { local = false; repaint(); toolOptions?.Repaint(); });
+            menu.AddItem(new GUIContent("Local"), local, () => { SetToolbarLocalAxes(true); });
+            menu.AddItem(new GUIContent("World"), !local, () => { SetToolbarLocalAxes(false); });
             menu.DropDown(rect);
         }
         private static Vector3 DrawChannels(string label, Vector3 value)

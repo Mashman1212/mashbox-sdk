@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly System.Collections.Generic.Dictionary<string, float> FloatDefaults = new System.Collections.Generic.Dictionary<string, float>();
         private static readonly System.Collections.Generic.HashSet<string> DirtyDefaults = new System.Collections.Generic.HashSet<string>();
         private static readonly System.Collections.Generic.Dictionary<(string, string), string> DefaultKeys = new System.Collections.Generic.Dictionary<(string, string), string>();
-        private static readonly GUIContent CloseContent = new GUIContent("×", "Close tool window");
+        private static readonly GUIContent CloseContent = new GUIContent("\u00d7", "Close tool window");
         internal static string DefaultKey(string tool, string parameter)
         {
             var pair = (tool, parameter);
@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
             string key = DefaultKey(tool, parameter);
             if (!FloatDefaults.TryGetValue(key, out float value))
             {
-                value = EditorPrefs.GetFloat(key, fallback);
+                value = StudioPreferenceStore.GetFloat(key, fallback);
                 if (float.IsNaN(value) || float.IsInfinity(value)) value = fallback;
                 FloatDefaults[key] = value;
             }
@@ -45,10 +45,48 @@ namespace MashBoxSDK.AnimationStudio
             { value = Mathf.Clamp(edited, minimum, maximum); SetFloatDefault(tool, parameter, value); }
             return value;
         }
+        private static ToolChannelPane drawingPane;
+        private int integerControl, integerStart;
+        private double integerRemainder;
+        private void EndIntegerScrub()
+        {
+            if (integerControl == 0) return;
+            if (GUIUtility.hotControl == integerControl) GUIUtility.hotControl = 0;
+            integerControl = 0; integerRemainder = 0; EditorGUIUtility.SetWantsMouseJumping(0);
+        }
+        private int IntegerField(Rect rect, GUIContent label, int value, int minimum, int maximum)
+        {
+            int id = GUIUtility.GetControlID("StudioIntegerScrub".GetHashCode(), FocusType.Passive, rect);
+            var evt = Event.current;
+            var drag = new Rect(rect.x, rect.y, Mathf.Min(EditorGUIUtility.labelWidth, rect.width), rect.height);
+            EditorGUIUtility.AddCursorRect(drag, MouseCursor.SlideArrow);
+            if (integerControl != 0 && GUIUtility.hotControl != integerControl) EndIntegerScrub();
+            if (GUI.enabled && evt.type == EventType.MouseDown && evt.button == 0 && !evt.alt && drag.Contains(evt.mousePosition) && GUIUtility.hotControl == 0)
+            {
+                integerControl = id; integerStart = value; integerRemainder = 0;
+                GUIUtility.hotControl = id; GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
+                EditorGUIUtility.SetWantsMouseJumping(1); evt.Use();
+            }
+            if (integerControl == id && GUIUtility.hotControl == id)
+            {
+                if (evt.type == EventType.MouseDrag)
+                {
+                    int edited = StudioDragSensitivity.StepInteger(ref integerRemainder, value, StudioDragSensitivity.UnscaledDragDelta.x, dragSensitivity, minimum, maximum);
+                    if (edited != value) { value = edited; GUI.changed = true; }
+                    evt.Use();
+                }
+                else if (evt.rawType == EventType.MouseUp && evt.button == 0) { EndIntegerScrub(); evt.Use(); }
+                else if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
+                { if (value != integerStart) { value = integerStart; GUI.changed = true; } EndIntegerScrub(); evt.Use(); }
+            }
+            return EditorGUI.IntField(rect, label, value);
+        }
         internal static int IntParameter(string tool, string parameter, GUIContent label, int fallback, int minimum, int maximum)
         {
             int value = Mathf.Clamp(Mathf.RoundToInt(GetFloatDefault(tool, parameter, fallback)), minimum, maximum);
-            EditorGUI.BeginChangeCheck(); int edited = EditorGUILayout.IntField(label, value);
+            var rect = EditorGUILayout.GetControlRect();
+            EditorGUI.BeginChangeCheck();
+            int edited = drawingPane ? drawingPane.IntegerField(rect, label, value, minimum, maximum) : EditorGUI.IntField(rect, label, value);
             if (EditorGUI.EndChangeCheck()) { value = Mathf.Clamp(edited, minimum, maximum); SetFloatDefault(tool, parameter, value); }
             return value;
         }
@@ -63,10 +101,57 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void FlushDefaults()
         {
-            foreach (string key in DirtyDefaults) EditorPrefs.SetFloat(key, FloatDefaults[key]);
+            foreach (string key in DirtyDefaults) StudioPreferenceStore.SetFloat(key, FloatDefaults[key]);
             DirtyDefaults.Clear();
         }
-        private void OnLostFocus() => FlushDefaults();
+        internal static void ReloadPreferences()
+        {
+            foreach (var pane in Resources.FindObjectsOfTypeAll<ToolChannelPane>()) pane.Close();
+            FloatDefaults.Clear(); DirtyDefaults.Clear();
+        }
+        private readonly StudioShortcutFocusGuard shortcutFocus = new StudioShortcutFocusGuard();
+        private void OnEnable()
+        {
+            rootVisualElement.RegisterCallback<UnityEngine.UIElements.KeyDownEvent>(ShieldShortcut, UnityEngine.UIElements.TrickleDown.TrickleDown);
+        }
+        private void ShieldShortcut(UnityEngine.UIElements.KeyDownEvent evt)
+        {
+            if (!evt.ctrlKey && !evt.commandKey && !evt.altKey) return;
+            // Let IMGUI fields handle ordinary text editing. Other modified
+            // keys are pane commands, never Unity main-menu accelerators.
+            bool textEdit = !evt.altKey && (evt.keyCode == KeyCode.A || evt.keyCode == KeyCode.C || evt.keyCode == KeyCode.V || evt.keyCode == KeyCode.X);
+            if (textEdit) return;
+            var key = new Event { type = EventType.KeyDown, keyCode = evt.keyCode, modifiers = evt.modifiers };
+            HandlePaneHistory(key);
+            evt.imguiEvent?.Use();
+            evt.StopImmediatePropagation();
+        }
+        private void OnFocus() => shortcutFocus.Acquire();
+        private void OnLostFocus() { EndIntegerScrub(); shortcutFocus.Release(); FlushDefaults(); SaveBounds(); }
+        private Action<bool> history;
+        private bool historyQueued, redoQueued;
+        private void ApplyQueuedHistory()
+        {
+            historyQueued = false;
+            if (!this || history == null) return;
+            rootVisualElement.focusController?.focusedElement?.Blur();
+            EditorGUIUtility.editingTextField = false;
+            history(redoQueued); Repaint();
+        }
+        private bool HandlePaneHistory(Event evt)
+        {
+            bool undo = StudioShortcuts.Pressed(StudioShortcut.Undo, evt), redo = StudioShortcuts.Pressed(StudioShortcut.Redo, evt);
+            if (!undo && !redo) return false;
+            EndIntegerScrub(); evt.Use();
+            // Undo affects live geometry and selection. Never mutate them inside
+            // an open IMGUI area/scroll group or Unity text-field callback.
+            if (!historyQueued && history != null)
+            {
+                historyQueued = true; redoQueued = redo; EditorApplication.delayCall += ApplyQueuedHistory;
+            }
+            return true;
+        }
+        private void SaveBounds() => StudioPreferenceStore.SetBounds("ToolChannelPane.Bounds", position);
         private const float HeaderHeight = 20, Padding = 10, GripSize = 10;
         private Action draw, closed, execute, preview, cancelPreview;
         private Func<bool> canExecute;
@@ -79,51 +164,31 @@ namespace MashBoxSDK.AnimationStudio
         private string sensitivityKey;
         internal static ToolChannelPane Open(string title, Action draw, Action closed = null,
             Vector2? initialSize = null, Vector2? minimumSize = null,
-            Action execute = null, Func<bool> canExecute = null, Action<Exception> failed = null, EditorWindow owner = null, Action preview = null, Action cancelPreview = null)
+            Action execute = null, Func<bool> canExecute = null, Action<Exception> failed = null, EditorWindow owner = null, Action preview = null, Action cancelPreview = null, Action<bool> history = null)
         {
+            foreach (var pane in Resources.FindObjectsOfTypeAll<ToolChannelPane>()) pane.Close();
             var window = CreateInstance<ToolChannelPane>();
             window.titleContent = new GUIContent(title);
             window.sensitivityKey = "MashBox.Studio.ToolDragSensitivity." + title;
-            window.dragSensitivity = StudioDragSensitivity.Normalize(EditorPrefs.GetFloat(window.sensitivityKey, 1));
+            window.dragSensitivity = StudioDragSensitivity.Normalize(StudioPreferenceStore.GetFloat(window.sensitivityKey, 1));
             window.minSize = minimumSize ?? new Vector2(200, 116);
             var size = Vector2.Max(initialSize ?? new Vector2(240, 124), window.minSize);
             window.draw = draw; window.closed = closed; window.preview = preview; window.cancelPreview = cancelPreview;
+            window.history = history;
             window.execute = execute; window.canExecute = canExecute; window.failed = failed;
             // Native ownership keeps the compact borderless pane above its Studio
             // host without focus-stealing callbacks or a repaint/polling loop.
-            var ownerHandle = IntPtr.Zero;
-            if (Application.platform == RuntimePlatform.WindowsEditor && owner)
-            { owner.Focus(); ownerHandle = NativePaneOwnership.GetActiveWindow(); }
-            if (Application.platform == RuntimePlatform.WindowsEditor)
-            {
-                window.ShowPopup();
-                var paneHandle = NativePaneOwnership.GetActiveWindow();
-                if (ownerHandle != IntPtr.Zero && paneHandle != IntPtr.Zero && paneHandle != ownerHandle)
-                    NativePaneOwnership.SetOwner(paneHandle, ownerHandle);
-            }
-            else window.ShowUtility();
-            // The native popup can replace its initial bounds when first shown.
-            window.position = new Rect(new Vector2(200, 200), size);
+            StudioWindowOwnership.ShowUtility(window, owner, borderless: Application.platform == RuntimePlatform.WindowsEditor);
+            // The native utility host can adjust its initial bounds when first shown.
+            var bounds = StudioPreferenceStore.GetBounds("ToolChannelPane.Bounds", new Rect(new Vector2(200, 200), size));
+            bounds.size = Vector2.Max(bounds.size, window.minSize);
+            window.position = bounds;
             return window;
-        }
-        private static class NativePaneOwnership
-        {
-            [System.Runtime.InteropServices.DllImport("user32.dll")]
-            internal static extern IntPtr GetActiveWindow();
-            [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
-            private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
-            [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
-            private static extern int SetWindowLong(IntPtr window, int index, int value);
-            internal static void SetOwner(IntPtr window, IntPtr owner)
-            {
-                const int OwnerIndex = -8; // GWLP_HWNDPARENT for a top-level window.
-                if (IntPtr.Size == 8) SetWindowLongPtr(window, OwnerIndex, owner);
-                else SetWindowLong(window, OwnerIndex, owner.ToInt32());
-            }
         }
         private void OnGUI()
         {
             if (draw == null) { Close(); return; }
+            if (HandlePaneHistory(Event.current)) return;
             bool finishEdit = Event.current.type == EventType.MouseUp || Event.current.type == EventType.KeyUp;
             using (StudioTheme.Scope())
             {
@@ -138,7 +203,9 @@ namespace MashBoxSDK.AnimationStudio
                     try
                     {
                         EditorGUI.BeginChangeCheck();
-                        using (new StudioDragSensitivity.DragScope(dragSensitivity)) draw();
+                        var previousPane = drawingPane; drawingPane = this;
+                        try { using (new StudioDragSensitivity.DragScope(dragSensitivity)) draw(); }
+                        finally { drawingPane = previousPane; }
                         if (EditorGUI.EndChangeCheck()) preview?.Invoke();
                     }
                     finally { EditorGUILayout.EndScrollView(); }
@@ -147,12 +214,16 @@ namespace MashBoxSDK.AnimationStudio
                 if (execute != null) DrawCommands();
                 StudioTheme.DrawPopupBorder(new Rect(Vector2.zero, position.size));
                 if (finishEdit) FlushDefaults();
+                // Fields/buttons get first refusal (typing, copy/paste, tab and
+                // numeric edits). Consume anything left before global shortcuts.
+                var evt = Event.current;
+                if (evt.isKey || evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) evt.Use();
             }
         }
         private void DrawCommands()
         {
             // Commands are outside the scroll area with the same padding as fields.
-            float width = (position.width - Padding * 2 - 8) / 3;
+            float width = (position.width - Padding * 2 - 4) / 2;
             float y = position.height - Padding - 22;
             bool enabled = canExecute == null || canExecute();
             using (new EditorGUI.DisabledScope(!enabled))
@@ -160,7 +231,6 @@ namespace MashBoxSDK.AnimationStudio
                 if (GUI.Button(new Rect(Padding, y, width, 22), "Execute")) ExecuteCommand(true);
                 if (this && GUI.Button(new Rect(Padding + width + 4, y, width, 22), "Apply")) ExecuteCommand(false);
             }
-            if (this && GUI.Button(new Rect(Padding + (width + 4) * 2, y, width, 22), "Close")) Close();
         }
         internal bool ExecuteCommand(bool closeAfter)
         {
@@ -188,7 +258,7 @@ namespace MashBoxSDK.AnimationStudio
             GUI.Label(new Rect(17, 1, Mathf.Max(1, sensitivity.x-19), HeaderHeight-1), titleContent, StudioTheme.Styles.miniLabel);
             if (StudioDragSensitivity.DrawButton(sensitivity, dragSensitivity, out float next))
             {
-                dragSensitivity = next; EditorPrefs.SetFloat(sensitivityKey, next); Repaint();
+                dragSensitivity = next; StudioPreferenceStore.SetFloat(sensitivityKey, next); Repaint();
             }
             if (GUI.Button(close, CloseContent, StudioTheme.Styles.overlayButton)) { Close(); return; }
             for (int i = 0; i < 3; i++)
@@ -215,14 +285,16 @@ namespace MashBoxSDK.AnimationStudio
                     evt.Use(); Repaint();
                 }
                 else if (evt.type == EventType.MouseUp && evt.button == 0)
-                { GUIUtility.hotControl = 0; chromeControl = 0; evt.Use(); }
+                { GUIUtility.hotControl = 0; chromeControl = 0; SaveBounds(); evt.Use(); }
             }
             if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape && GUIUtility.hotControl == 0)
             { evt.Use(); Close(); }
         }
         private void OnDisable()
         {
-            FlushDefaults();
+            EndIntegerScrub(); shortcutFocus.Release();
+            EditorApplication.delayCall -= ApplyQueuedHistory; historyQueued = false; history = null;
+            SaveBounds(); FlushDefaults(); StudioPreferenceStore.Flush();
             if (chromeControl != 0 && GUIUtility.hotControl == chromeControl) GUIUtility.hotControl = 0;
             chromeControl = 0;
             cancelPreview?.Invoke(); cancelPreview = preview = null;

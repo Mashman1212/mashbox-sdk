@@ -16,8 +16,8 @@ namespace MashBoxSDK.AnimationStudio
         private float toolResizeStartY, toolResizeStartHeight, toolResizeOriginalHeight;
         internal float ToolOptionsHeight => Mathf.Clamp(
             float.IsNaN(preferredToolHeight) || float.IsInfinity(preferredToolHeight) ? 220 : preferredToolHeight,
-            80, Mathf.Max(80, StudioContentHeight - ModelingPanelTop - PanelMargin - DividerWidth - 120));
-        private const float MinLeft = 180, MinRight = 220, MaxPanel = 600, MinCanvas = 320, DividerWidth = 8;
+            80, Mathf.Max(80, StudioContentHeight - ModelingPanelTop - PanelMargin - ToolDividerHeight - 120));
+        private const float MinLeft = 180, MinRight = 220, MaxPanel = 600, MinCanvas = 320, DividerWidth = 8, ToolDividerHeight = 10;
         private const float PanelMargin = 8;
         private const float PanelCornerRadius = 8;
         private const float ModelingPanelTop = 8;
@@ -64,9 +64,9 @@ namespace MashBoxSDK.AnimationStudio
             if (!panelsInitialized)
             {
                 // Keep existing layouts when upgrading from the former preference keys.
-                preferredLeft = ValidWidth(EditorPrefs.GetFloat(LeftWidthKey, EditorPrefs.GetFloat("MashBox.MGStudio.HierarchyWidth", 260)), 260, MinLeft);
-                preferredRight = ValidWidth(EditorPrefs.GetFloat(RightWidthKey, EditorPrefs.GetFloat("MashBox.MGStudio.ChannelsWidth", 350)), 350, MinRight);
-                preferredToolHeight = EditorPrefs.GetFloat(ToolOptionsHeightKey, 220);
+                preferredLeft = ValidWidth(StudioPreferenceStore.GetFloat(LeftWidthKey, StudioPreferenceStore.GetFloat("MashBox.MGStudio.HierarchyWidth", 260)), 260, MinLeft);
+                preferredRight = ValidWidth(StudioPreferenceStore.GetFloat(RightWidthKey, StudioPreferenceStore.GetFloat("MashBox.MGStudio.ChannelsWidth", 350)), 350, MinRight);
+                preferredToolHeight = StudioPreferenceStore.GetFloat(ToolOptionsHeightKey, 220);
                 panelsInitialized = true;
                 rootVisualElement.RegisterCallback<GeometryChangedEvent>(_ => UpdatePanelLayout());
             }
@@ -74,9 +74,9 @@ namespace MashBoxSDK.AnimationStudio
             {
                 leftDivider = CreatePanelDivider(1, "mashbox-hierarchy-divider");
                 rightDivider = CreatePanelDivider(2, "mashbox-channels-divider");
-                toolOptionsDivider = new IMGUIContainer(WrapStudioGUI(DrawToolOptionsDivider)) { name = "mashbox-tool-options-divider", tooltip = "Drag to resize Tool Options and Channels" };
+                toolOptionsDivider = new IMGUIContainer(WrapStudioGUI(DrawToolOptionsDivider)) { name = "mashbox-tool-options-divider", tooltip = "drag to resize" };
                 toolOptionsDivider.style.position = Position.Absolute;
-                toolOptionsDivider.style.height = DividerWidth;
+                toolOptionsDivider.style.height = ToolDividerHeight;
                 rootVisualElement.Add(toolOptionsDivider);
             }
             UpdatePanelLayout(); leftDivider.BringToFront(); rightDivider.BringToFront();
@@ -93,13 +93,15 @@ namespace MashBoxSDK.AnimationStudio
             var widths = PanelWidths;
             bool showTools = panelsModeling && modelToolOptions != null && modelToolOptions.onGUIHandler != null && !StudioSettings.Current.hideToolOptions;
             bool showChannels = panelsModeling && inspector != null && inspector.onGUIHandler != null && inspector.style.display.value != DisplayStyle.None;
-            float rightRadius = panelsModeling && !HasRightDockedToolbar ? PanelCornerRadius : 0;
+            bool bottomDocked = HasBottomDockedToolbar;
+            float rightRadius = panelsModeling && !HasRightDockedToolbar && !bottomDocked ? PanelCornerRadius : 0;
             if (rigControls != null)
             {
                 rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x;
                 if (panelsModeling) rigControls.style.bottom = PanelMargin;
                 float leftRadius = panelsModeling && !HasLeftDockedToolbar ? PanelCornerRadius : 0;
-                rigControls.style.borderTopLeftRadius = rigControls.style.borderBottomLeftRadius = leftRadius;
+                rigControls.style.borderTopLeftRadius = leftRadius;
+                rigControls.style.borderBottomLeftRadius = bottomDocked ? 0 : leftRadius;
                 rigControls.style.overflow = panelsModeling ? Overflow.Hidden : Overflow.Visible;
             }
             LayoutStatusMessages();
@@ -113,7 +115,7 @@ namespace MashBoxSDK.AnimationStudio
             if (inspector != null)
             {
                 inspector.style.right = PanelMargin; inspector.style.width = widths.y;
-                inspector.style.top = showTools ? ModelingPanelTop + ToolOptionsHeight + DividerWidth : ModelingPanelTop;
+                inspector.style.top = showTools ? ModelingPanelTop + ToolOptionsHeight + ToolDividerHeight : ModelingPanelTop;
                 // Only the outer right corners of the visible panel stack are rounded.
                 inspector.style.borderTopRightRadius = 0;
                 inspector.style.borderBottomRightRadius = rightRadius;
@@ -192,7 +194,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SavePanelWidths()
         {
-            EditorPrefs.SetFloat(LeftWidthKey, preferredLeft); EditorPrefs.SetFloat(RightWidthKey, preferredRight);
+            StudioPreferenceStore.SetFloat(LeftWidthKey, preferredLeft); StudioPreferenceStore.SetFloat(RightWidthKey, preferredRight);
         }
         internal void ResizeToolOptions(float height)
         {
@@ -202,8 +204,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawToolOptionsDivider()
         {
-            var rect = new Rect(0, 0, PanelWidths.y, DividerWidth);
-            var grip = new Rect(rect.center.x - 24, 0, 48, DividerWidth);
+            var rect = new Rect(0, 0, PanelWidths.y, ToolDividerHeight);
+            var grip = rect;
             EditorGUIUtility.AddCursorRect(rect, MouseCursor.ResizeVertical);
             var evt = Event.current;
             int id = GUIUtility.GetControlID("MashBoxStudio.ToolOptionsDivider".GetHashCode(), FocusType.Passive);
@@ -212,7 +214,9 @@ namespace MashBoxSDK.AnimationStudio
                 var palette = StudioTheme.Current;
                 bool highlighted = resizingTools || rect.Contains(evt.mousePosition);
                 EditorGUI.DrawRect(grip, highlighted ? palette.Hover : palette.Button);
-                EditorGUI.DrawRect(new Rect(grip.x + 8, grip.center.y - 1, grip.width - 16, 2), highlighted ? palette.Accent : palette.Muted);
+                var handleColor = highlighted ? palette.Text : palette.Muted;
+                for (int column = 0; column < 5; column++)
+                    EditorGUI.DrawRect(new Rect(Mathf.Floor(grip.center.x) - 8 + column * 4, grip.center.y - 3, 1, 6), handleColor);
             }
             if (evt.type == EventType.MouseDown && evt.button == 0 && rect.Contains(evt.mousePosition) && GUIUtility.hotControl == 0)
             {
@@ -230,7 +234,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             else if (evt.type == EventType.MouseUp && evt.button == 0)
             {
-                EditorPrefs.SetFloat(ToolOptionsHeightKey, preferredToolHeight);
+                StudioPreferenceStore.SetFloat(ToolOptionsHeightKey, preferredToolHeight);
                 resizingTools = false; GUIUtility.hotControl = 0; evt.Use(); Repaint();
             }
             else if (StudioShortcuts.Pressed(StudioShortcut.Cancel, evt))

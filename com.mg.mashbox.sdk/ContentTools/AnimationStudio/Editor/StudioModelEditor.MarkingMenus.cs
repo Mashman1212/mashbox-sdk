@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -120,6 +121,8 @@ namespace MashBoxSDK.AnimationStudio
         // cannot claim the gesture. Alt navigation and existing handle drags pass through.
         internal void BeforeModelSceneGUI(SceneView view)
         {
+            view.wantsMouseEnterLeaveWindow = true;
+            if (CancelMarqueeOutside(view)) return;
             // Some native handles consume MouseUp before our normal scene callback.
             // End its Undo group here so the next pivot/transform drag starts fresh.
             if (Event.current.rawType == EventType.MouseUp && Event.current.button == 0 && gestureUndo >= 0)
@@ -258,15 +261,13 @@ namespace MashBoxSDK.AnimationStudio
             }
             DrawMarkingDragLine();
             var origin = GUIUtility.ScreenToGUIPoint(markingOrigin);
-            bool neutral = StudioSettings.Current.neutralMarkingMenus;
             var palette = StudioTheme.Current;
             for (int i = 0; i < 8; i++)
             {
                 var action = MarkingItems[(int)markingLevel][i]; if (action == MarkingAction.None) continue;
                 var rect = MarkingItemRect(origin, i); bool enabled = markingEnabled[i];
-                EditorGUI.DrawRect(new Rect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2), neutral ? new Color(.10f, .10f, .10f) : palette.Header);
-                float shade = markingHover == i && enabled ? .40f : .29f;
-                EditorGUI.DrawRect(rect, neutral ? new Color(shade, shade, shade) : markingHover == i && enabled ? palette.Hover : palette.Button);
+                EditorGUI.DrawRect(new Rect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2), palette.Header);
+                EditorGUI.DrawRect(rect, markingHover == i && enabled ? palette.Hover : palette.Button);
                 markingLabel.normal.textColor = enabled ? palette.Text : palette.Muted;
                 if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes)
                 {
@@ -278,8 +279,8 @@ namespace MashBoxSDK.AnimationStudio
             if (markingParents.Count > 0)
             {
                 var back = MarkingBackRect(origin);
-                EditorGUI.DrawRect(new Rect(back.x - 1, back.y - 1, back.width + 2, back.height + 2), new Color(.10f, .10f, .10f));
-                EditorGUI.DrawRect(back, neutral ? new Color(.29f, .29f, .29f) : palette.Button);
+                EditorGUI.DrawRect(new Rect(back.x - 1, back.y - 1, back.width + 2, back.height + 2), palette.Header);
+                EditorGUI.DrawRect(back, palette.Button);
                 markingLabel.normal.textColor = palette.Text;
                 GUI.Label(back, "‹ Back", markingLabel);
             }
@@ -314,15 +315,15 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.Move: ActivateTool(Tool.Move); break;
                 case MarkingAction.Rotate: ActivateTool(Tool.Rotate); break;
                 case MarkingAction.Scale: ActivateTool(Tool.Scale); break;
-                case MarkingAction.Axes: local = !local; break;
-                case MarkingAction.ObjectAxes: local = true; break;
-                case MarkingAction.WorldAxes: local = false; break;
+                case MarkingAction.Axes: SetToolbarLocalAxes(!local); break;
+                case MarkingAction.ObjectAxes: SetToolbarLocalAxes(true); break;
+                case MarkingAction.WorldAxes: SetToolbarLocalAxes(false); break;
                 case MarkingAction.EditPivot: pivot = !pivot; break;
                 case MarkingAction.CenterPivot: CenterEditingPivot(); break;
                 case MarkingAction.Freeze: Document.Freeze(Active, Transforms); Changed(); break;
                 case MarkingAction.OpenUV: StudioUVEditor.Open(this); break;
                 case MarkingAction.Frame: Frame(view); break;
-                case MarkingAction.Through: xray = !xray; break;
+                case MarkingAction.Through: xray = !xray; SaveDisplayConfiguration(); break;
                 case MarkingAction.Clear: Components.Clear(); if (mode == ComponentMode.Object) { objects.Clear(); Active = -1; } break;
                 case MarkingAction.SelectAll:
                     if (mode == ComponentMode.Object) { for (int i = 0; i < Transforms.Length; i++) objects.Add(i); if (Active < 0 && Transforms.Length > 0) Active = 0; }
@@ -334,9 +335,16 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SetComponentMode(ComponentMode next)
         {
-            FinishLiveTool();
+            if (next == ComponentMode.Object)
+            {
+                try { FinishLiveTool(); }
+                catch (System.InvalidOperationException) { CancelLiveTool(); }
+                CloseLiveToolPanes();
+            }
+            else FinishLiveTool();
             if (mode == next) return;
             mode = next; pivot = false; Components.Clear();
+            repaint();
         }
     }
 }

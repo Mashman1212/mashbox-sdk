@@ -62,8 +62,11 @@ public static class StudioLiveToolValidation
             stage="close rollback";pane.Close();Check(Shape(node.mesh)==original,"Close restores original geometry");Check(editor.Components.SetEquals(new[]{0}),"Close restores source selection");Check(!EditorUtility.IsDirty(document)&&!EditorUtility.IsDirty(node.mesh),"Cancellation preserves clean saved state");
             stage="apply and execute";Call(editor,"OpenBevelTool");Flush(editor);pane=(ToolChannelPane)Get(editor,"bevelToolPane");
             Check(pane.ExecuteCommand(false),"Apply succeeds");Check(pane&&Get(editor,"livePreview")==null,"Apply commits and leaves pane open");
-            var applied=Shape(node.mesh);Width(.05f);Call(editor,"QueueLiveTool",Enum.Parse(typeof(StudioModelEditor).GetNestedType("LiveTool",BindingFlags.NonPublic),"Bevel"));Flush(editor);
-            Check(Shape(node.mesh)!=applied,"Next edit has new baseline after Apply");pane.Close();Check(Shape(node.mesh)==applied,"Close preserves prior Apply");
+            Check(editor.Components.Count==0,"Bevel Apply clears edge selection");
+            var applied=Shape(node.mesh);Width(.05f);var bevelKind=Enum.Parse(typeof(StudioModelEditor).GetNestedType("LiveTool",BindingFlags.NonPublic),"Bevel");Call(editor,"QueueLiveTool",bevelKind);Flush(editor);
+            Check(Shape(node.mesh)==applied,"Parameter edit without reselecting does not rebevel");
+            editor.Components.Add(0);Call(editor,"QueueLiveTool",bevelKind);Flush(editor);
+            Check(Shape(node.mesh)!=applied,"Reselected edge edit has new baseline after Apply");pane.Close();Check(Shape(node.mesh)==applied,"Close preserves prior Apply");
             editor.PerformWorkspaceHistory(false);Check(Shape(node.mesh)==original,"One Undo restores pre-bevel source");editor.PerformWorkspaceHistory(true);Check(Shape(node.mesh)==applied,"Redo restores committed bevel");
             // Undo serializes document nodes; reacquire their references.
             node=document.nodes[0];editor.SelectObject(0);Mode(editor,StudioModelEditor.ComponentMode.Face,0);

@@ -84,7 +84,7 @@ namespace MashBoxSDK.AnimationStudio
 
         // Imported/native legacy meshes may have Read/Write disabled. The Editor
         // snapshot API can read them without modifying the mesh or its importer.
-        private static Mesh ReadableSnapshot(Mesh source)
+        internal static Mesh ReadableSnapshot(Mesh source)
         {
             var copy = new Mesh { name = source.name };
             try

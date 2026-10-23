@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach (var template in templates)
             {
                 var entry = template;
-                menu.AddItem(new GUIContent(entry.MenuPath), false, () => Run(() => CreateVehiclePart(entry, view, loaded)));
+                menu.AddItem(new GUIContent(entry.MenuPath), false, () => Run(() => CreateVehiclePart(entry, view, loaded)), shortcutEligible: false);
             }
         }
         internal void CreateVehiclePart(StudioVehiclePartCatalog.Template template, SceneView view, Action<StudioModelDocument> loaded)

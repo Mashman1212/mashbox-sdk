@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -49,6 +50,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             if (HandleExtrudeShortcut() || HandleObjectDuplicate() || HandleObjectDelete()) return true;
+            if (GUIUtility.hotControl == 0 && TryExecuteModelCommand(evt, view)) return true;
             if (cutTool != CutTool.None && !Is(StudioShortcut.Select) && !Is(StudioShortcut.Move) &&
                 !Is(StudioShortcut.Rotate) && !Is(StudioShortcut.Scale) && !Is(StudioShortcut.Frame)) return false;
             if (Is(StudioShortcut.Select)) ActivateTool(Tool.None);

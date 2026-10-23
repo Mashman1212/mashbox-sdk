@@ -11,14 +11,29 @@ namespace MashBoxSDK.AnimationStudio
     {
         // Scene totals are rebuilt only after edits/Undo/load; selection counts follow the active components.
         private readonly Dictionary<StudioModelDocument.Node, long[]> statisticsCache = new Dictionary<StudioModelDocument.Node, long[]>();
+        private readonly HashSet<StudioModelDocument.Node> deferredPositionStatistics = new HashSet<StudioModelDocument.Node>();
+        private void InvalidatePositionStatistics(Mesh mesh, bool defer)
+        {
+            if (!Document) return;
+            foreach (var node in Document.nodes)
+                if (node.mesh == mesh)
+                {
+                    if (defer) deferredPositionStatistics.Add(node);
+                    else statisticsCache.Remove(node);
+                }
+        }
+        private void FlushPositionStatistics()
+        {
+            if (deferredPositionStatistics.Count == 0) return;
+            foreach (var node in deferredPositionStatistics) statisticsCache.Remove(node);
+            deferredPositionStatistics.Clear();
+            repaint();
+        }
         private static readonly string[] StatisticsLabels = { "Verts", "Edges", "Faces", "Tris", "UVs" };
         private static readonly GUIContent[] StatisticsHeaders={new GUIContent("Scene"),new GUIContent("Selected")};
         private static readonly GUIContent[] StatisticsRowContent=Array.ConvertAll(StatisticsLabels,s=>new GUIContent(s));
         private readonly GUIContent[] statisticsValues=new GUIContent[10];
         private readonly long[] statisticsLastValues=new long[10];
-        private readonly GUIContent statisticsComponentText=new GUIContent();
-        private int statisticsLastComponentCount=-1;
-        private ComponentMode statisticsLastMode;
         private GUIContent StatisticsValue(int index,long value)
         {
             if(statisticsValues[index]==null)statisticsValues[index]=new GUIContent();
@@ -51,10 +66,10 @@ namespace MashBoxSDK.AnimationStudio
         {
             var counts = new long[5];
             if (Components.Count == 0) return counts;
-            var mesh = ActiveMesh; var positions = mesh.vertices;
+            var mesh = ActiveMesh; var positions = ComponentPositions();
             var vertices = new HashSet<int>();
             var edges = new HashSet<(Vector3, Vector3)>();
-            void Vertex(int i) { if (i >= 0 && i < positions.Length) vertices.Add(i); }
+            void Vertex(int i) { if (i >= 0 && i < positions.Count) vertices.Add(i); }
             void Edge(int a, int b)
             {
                 Vertex(a); Vertex(b);
@@ -86,9 +101,8 @@ namespace MashBoxSDK.AnimationStudio
             counts[0] = selectedPositions.Count; counts[1] = edges.Count;
             // Coincident seam vertices are edited together when welding is enabled.
             if (weld && mode != ComponentMode.Face)
-                for (int i = 0; i < positions.Length; i++) if (selectedPositions.Contains(positions[i])) vertices.Add(i);
-            var uv = new List<Vector2>(); mesh.GetUVs(0, uv);
-            counts[4] = vertices.Count(i => i < uv.Count);
+                ExpandWeldedSelection(vertices,positions);
+            counts[4] = mesh.HasVertexAttribute(VertexAttribute.TexCoord0) ? vertices.Count : 0;
             return counts;
         }
         private static long[] CountMesh(StudioModelDocument.Node node)
@@ -108,9 +122,25 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (triangleMesh)
             {
-                var topology = new StudioMeshCuts(node); faces = topology.Faces.Count;
-                foreach (var face in topology.Faces)
-                    for (int i = 0; i < face.Vertices.Count; i++) Edge(face.Vertices[i], face.Vertices[(i + 1) % face.Vertices.Count]);
+                // Counts need polygon boundaries, not a reconstructed neighbour graph.
+                // Position drags retain this metadata; avoid rebuilding the entire
+                // editable topology whenever their statistics are invalidated.
+                var polygons = node.cutPolygons;
+                if (polygons != null && node.cutTriangles != null && node.cutTriangles.SequenceEqual(mesh.triangles))
+                {
+                    for (int cursor = 0; cursor < polygons.Length;)
+                    {
+                        int count = polygons[cursor + 1]; cursor += 2; faces++;
+                        for (int i = 0; i < count; i++) Edge(polygons[cursor + i], polygons[cursor + (i + 1) % count]);
+                        cursor += count;
+                    }
+                }
+                else
+                {
+                    var topology = new StudioMeshCuts(node); faces = topology.Faces.Count;
+                    foreach (var face in topology.Faces)
+                        for (int i = 0; i < face.Vertices.Count; i++) Edge(face.Vertices[i], face.Vertices[(i + 1) % face.Vertices.Count]);
+                }
             }
             else for (int sub = 0; sub < mesh.subMeshCount; sub++)
             {
@@ -131,7 +161,13 @@ namespace MashBoxSDK.AnimationStudio
         internal void DrawStatistics()
         {
             if (Event.current.type != EventType.Repaint || !StudioSettings.Current.showMeshStatistics) return;
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("stats.start");
+#endif
             var counts = MeshStatistics();
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("stats.count");
+#endif
             // Text stays readable over both lit geometry and the gray viewport, without a panel fill.
             void Label(Rect rect, GUIContent text)
             {
@@ -146,12 +182,6 @@ namespace MashBoxSDK.AnimationStudio
                 Label(new Rect(0, y, 64, 18), StatisticsRowContent[i]);
                 Label(new Rect(64, y, 88, 18), StatisticsValue(i,counts.scene[i]));
                 Label(new Rect(158, y, 90, 18), StatisticsValue(i+5,counts.selected[i]));
-            }
-            if (mode != ComponentMode.Object && Components.Count > 0)
-            {
-                if(statisticsLastMode!=mode||statisticsLastComponentCount!=Components.Count)
-                {statisticsLastMode=mode;statisticsLastComponentCount=Components.Count;statisticsComponentText.text=$"Selected {mode.ToString().ToLowerInvariant()}: {Components.Count:N0}";}
-                Label(new Rect(0, 106, 256, 18), statisticsComponentText);
             }
         }
     }

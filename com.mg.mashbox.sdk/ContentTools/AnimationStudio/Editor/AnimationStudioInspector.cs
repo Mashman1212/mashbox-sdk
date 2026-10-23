@@ -42,6 +42,7 @@ namespace MashBoxSDK.AnimationStudio
             bool previousWide = EditorGUIUtility.wideMode;
             EditorGUIUtility.labelWidth = 135;
             EditorGUIUtility.wideMode = false;
+            EditorGUI.BeginChangeCheck();
             try
             {
                 using (new GUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins))
@@ -101,6 +102,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             finally
             {
+                if (EditorGUI.EndChangeCheck()) SaveAnimationConfiguration();
                 EditorGUIUtility.labelWidth = previousLabelWidth;
                 EditorGUIUtility.wideMode = previousWide;
             }

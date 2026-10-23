@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;

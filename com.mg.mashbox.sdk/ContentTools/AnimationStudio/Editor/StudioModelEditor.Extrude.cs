@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Linq;
 using UnityEditor;
@@ -78,13 +79,13 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseExtrudeToolWindow() { if (extrudeToolPane) extrudeToolPane.Close(); extrudeToolPane = null; }
         internal void ExtrudeSelected()
         {
-            if (extrudeToolPane) { extrudeToolPane.Focus(); return; }
+            if (extrudeToolPane) { QueueLiveTool(LiveTool.Extrude); extrudeToolPane.Repaint(); extrudeToolPane.Focus(); return; }
             if (!CanExtrude) throw new InvalidOperationException("Select faces or open boundary edges on an editable static mesh.");
             extrudeToolPane = ToolChannelPane.Open("Extrude", DrawLiveExtrudeFields, () => extrudeToolPane = null,
                 new Vector2(300, 160), new Vector2(260, 150),
                 execute: () => ApplyLiveTool(LiveTool.Extrude), canExecute: () => CanRunLiveTool(LiveTool.Extrude),
                 failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
-                preview: () => QueueLiveTool(LiveTool.Extrude), cancelPreview: () => CancelLiveTool(LiveTool.Extrude));
+                preview: () => QueueLiveTool(LiveTool.Extrude), cancelPreview: () => CancelLiveTool(LiveTool.Extrude), history: PerformWorkspaceHistory);
             QueueLiveTool(LiveTool.Extrude);
         }
         private void DrawLiveExtrudeFields()
@@ -93,7 +94,7 @@ namespace MashBoxSDK.AnimationStudio
             extrusionDistance = EditorGUILayout.FloatField(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
             if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
             if (EditorGUI.EndChangeCheck()) StoreExtrusionDefaults();
-            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Close cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
         }
 
         private void StoreExtrusionDefaults()

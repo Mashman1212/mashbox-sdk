@@ -23,12 +23,12 @@ namespace MashBoxSDK.AnimationStudio
         internal void MergeSelectedVertices()
         {
             if (!CanMergeVertices) throw new InvalidOperationException("Select at least two vertices on an editable static mesh.");
-            if (MergeSelectionCount() == 2) { ApplyMergeVertices(); return; }
-            if (mergeToolWindow) { mergeToolWindow.Focus(); return; }
+            if (MergeSelectionCount() == 2) { ApplyMergeVertices(); CloseMergeToolWindow(); return; }
+            if (mergeToolWindow) { QueueLiveTool(LiveTool.Merge); mergeToolWindow.Repaint(); mergeToolWindow.Focus(); return; }
             mergeToolWindow = ToolChannelPane.Open("Merge Vertices", DrawMergeVerticesTool, () => mergeToolWindow = null,
                 execute: () => ApplyLiveTool(LiveTool.Merge), canExecute: () => CanRunLiveTool(LiveTool.Merge) && !float.IsNaN(mergeDistance) && !float.IsInfinity(mergeDistance) && mergeDistance >= 0,
                 failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
-                preview: () => QueueLiveTool(LiveTool.Merge), cancelPreview: () => CancelLiveTool(LiveTool.Merge));
+                preview: () => QueueLiveTool(LiveTool.Merge), cancelPreview: () => CancelLiveTool(LiveTool.Merge), history: PerformWorkspaceHistory);
             QueueLiveTool(LiveTool.Merge);
         }
         private void DrawMergeVerticesTool()

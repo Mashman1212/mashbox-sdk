@@ -12,26 +12,36 @@ namespace MashBoxSDK.AnimationStudio
         {
             internal string Text;
             internal string Shortcut;
+            internal StudioShortcut? Command;
+            internal bool ShortcutEligible;
             internal bool Checked, Enabled = true, Separator;
             internal Action Action;
             internal readonly List<Item> Children = new List<Item>();
         }
         internal readonly List<Item> Items = new List<Item>();
-        internal void AddItem(GUIContent label, bool selected, Action action) => Add(label.text, selected, true, action);
-        internal void AddDisabledItem(GUIContent label) => Add(label.text, false, false, null);
-        private void Add(string path, bool selected, bool enabled, Action action)
+        private readonly string commandCategory;
+        internal readonly bool CatalogOnly;
+        internal StudioMenu(string commandCategory = null, bool catalogOnly = false)
+        { this.commandCategory = commandCategory; CatalogOnly = catalogOnly; }
+        internal void AddItem(GUIContent label, bool selected, Action action, string commandKey = null, bool shortcutEligible = true) => Add(label.text, selected, true, action, commandKey, shortcutEligible);
+        internal void AddDisabledItem(GUIContent label, string commandKey = null, bool shortcutEligible = true) => Add(label.text, false, false, null, commandKey, shortcutEligible);
+        private void Add(string path, bool selected, bool enabled, Action action, string commandKey, bool shortcutEligible)
         {
             // Shortcut alternatives may contain '/'; only the label defines the menu path.
             int shortcutStart = path.IndexOf('\t');
             string shortcut = shortcutStart >= 0 ? path.Substring(shortcutStart + 1) : "";
-            var parts = (shortcutStart >= 0 ? path.Substring(0, shortcutStart) : path).Split('/'); var level = Items;
+            string labelPath = shortcutStart >= 0 ? path.Substring(0, shortcutStart) : path;
+            shortcutEligible &= commandCategory != "Display";
+            StudioShortcut? command = shortcutEligible && commandCategory != null ? StudioModelCommands.Register(commandCategory, labelPath, commandKey) : null;
+            if (command.HasValue) shortcut = StudioShortcuts.Label(command.Value);
+            var parts = labelPath.Split('/'); var level = Items;
             for (int i = 0; i < parts.Length - 1; i++)
             {
                 var branch = level.Find(item => item.Text == parts[i] && !item.Separator);
                 if (branch == null) { branch = new Item { Text = parts[i] }; level.Add(branch); }
                 level = branch.Children;
             }
-            level.Add(new Item { Text = parts[parts.Length - 1], Shortcut = shortcut, Checked = selected, Enabled = enabled, Action = action });
+            level.Add(new Item { Text = parts[parts.Length - 1], Shortcut = shortcut, Command = command, ShortcutEligible = shortcutEligible, Checked = selected, Enabled = enabled, Action = action });
         }
         internal void AddSeparator(string path)
         {

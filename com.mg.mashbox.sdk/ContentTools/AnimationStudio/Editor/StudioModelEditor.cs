@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -39,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         private void NotifyFile(string path, string operation) => StatusMessage?.Invoke(Path.GetFileName(path) + " " + operation + ".");
         private static GUIContent hierarchyHeader;
         private bool marquee, additive, subtract;
+        private int marqueeControl;
         private Vector2 start, end;
         private int gestureUndo = -1;
         private int componentRotationControl;
@@ -48,12 +50,14 @@ namespace MashBoxSDK.AnimationStudio
         private Quaternion worldObjectHandleRotation;
         private Mesh edgeMesh;
         private List<(int a, int b)> cachedEdges;
+        private Dictionary<(int,int),int> cachedEdgeIndices;
         private readonly Action repaint;
         private StudioModelDocument.Node[] previewNodes = Array.Empty<StudioModelDocument.Node>();
         private readonly Dictionary<Mesh,int> undoMeshVersions = new Dictionary<Mesh,int>();
         internal StudioModelEditor(Action repaint)
         {
-            this.repaint = repaint; Scene = EditorSceneManager.NewPreviewScene();
+            this.repaint = () => { repaint(); RepaintLiveToolPanes(); }; Scene = EditorSceneManager.NewPreviewScene();
+            LoadDisplayConfiguration();
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
         }
@@ -90,7 +94,7 @@ namespace MashBoxSDK.AnimationStudio
             previewLighting?.Dispose(); previewLighting = null;
             ClearSelectionWireframes();
             pivotTargetCache.Clear(); pivotHover = null;
-            statisticsCache.Clear();
+            statisticsCache.Clear(); occlusionIndices.Clear();
             foreach (var go in Scene.GetRootGameObjects()) UnityEngine.Object.DestroyImmediate(go);
             Transforms = Document ? Document.Build(Scene) : Array.Empty<Transform>();
             previewNodes = Document ? Document.nodes.ToArray() : Array.Empty<StudioModelDocument.Node>();
@@ -113,7 +117,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnUndoEvent(in UndoRedoInfo info)
         {
+            bool hadPreview = livePreview != null || previewQueued;
             CancelLiveTool(true);
+            if (hadPreview) { OnUndo(); return; }
             bool transformsOnly=info.undoName=="Transform model objects" || info.undoName=="Scale model objects" || info.undoName=="Edit object channels";
             if(transformsOnly && RestoreObjectTransforms())return;
             OnUndo();
@@ -150,7 +156,13 @@ namespace MashBoxSDK.AnimationStudio
             ResetCutGesture();
             foreach (var mesh in Document.nodes.Select(node => node.mesh).Where(mesh => mesh).Distinct())
             {
-                if (!mesh.isReadable) continue;
+                if (!mesh.isReadable)
+                {
+                    var readable = StudioWorkspaceText.ReadableSnapshot(mesh);
+                    try { StudioMeshToolPreview.CopyMesh(readable, mesh); }
+                    finally { UnityEngine.Object.DestroyImmediate(readable); }
+                    continue;
+                }
                 // Undo restores the CPU mesh used by picking and wireframes, but a renderer
                 // can retain its previous vertex buffer. Invalidate and upload the restored
                 // data before rebuilding renderers; keep authored normals/UVs and readability.
@@ -184,6 +196,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            StudioModelCommands.Release(this); commandView = null; commandLoaded = null;
             CancelLiveTool(); CloseExtrudeToolWindow();
             FinishChannelEdit();
             ClearHierarchyIsolation();
@@ -469,7 +482,19 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void Frame(SceneView view)
         {
-            if (Transforms.Length == 0) return;
+            if (Transforms.Length == 0)
+            {
+                if (!view) return;
+                // Empty/new workspaces have no bounds to frame. Start at the
+                // grid origin, 10m away, pitched down 37 degrees with 38-degree yaw. SceneView
+                // size is a framing radius, so account for its configured FOV.
+                const float pitch = 37f, yaw = 38f, distance = 10f;
+                float framingSize = distance * Mathf.Sin(view.cameraSettings.fieldOfView * .5f * Mathf.Deg2Rad);
+                view.in2DMode = false; view.orthographic = false;
+                view.LookAtDirect(Vector3.zero, Quaternion.Euler(pitch, yaw, 0f), framingSize);
+                view.Repaint();
+                return;
+            }
             var bounds = BoundsFor(Active >= 0 ? Active : 0);
             if (mode == ComponentMode.Object)
             {
@@ -503,13 +528,15 @@ namespace MashBoxSDK.AnimationStudio
             if (ActiveMesh && edgeMesh == ActiveMesh && cachedEdges != null) return cachedEdges;
             var result = new List<(int, int)>(); if (!ActiveMesh) return result;
             var seen = new HashSet<(int, int)>();
+            cachedEdgeIndices = new Dictionary<(int,int),int>();
             // Use the same polygon boundaries as object outlines and cut tools, even
             // before the first cut. This list also drives picking and edge transforms.
             foreach (var face in Faces())
                 for (int i = 0; i < face.Vertices.Count; i++)
                 {
                     int a = face.Vertices[i], b = face.Vertices[(i + 1) % face.Vertices.Count];
-                    if (seen.Add((Math.Min(a, b), Math.Max(a, b)))) result.Add((a, b));
+                    if (seen.Add((Math.Min(a, b), Math.Max(a, b))))
+                    { cachedEdgeIndices.Add((Math.Min(a,b),Math.Max(a,b)),result.Count); result.Add((a,b)); }
                 }
             edgeMesh = ActiveMesh; cachedEdges = result; return result;
         }
@@ -524,24 +551,28 @@ namespace MashBoxSDK.AnimationStudio
                 if (mode == ComponentMode.Edge && c < edges.Count) { result.Add(edges[c].a); result.Add(edges[c].b); }
                 if (mode == ComponentMode.Face && c >= 0 && c < faces.Count) foreach (int vertex in faces[c].Vertices) result.Add(vertex);
             }
-            if (weld)
-            {
-                var vertices = ActiveMesh.vertices;
-                var positions = new HashSet<Vector3>(result.Select(i => vertices[i]));
-                for (int i = 0; i < vertices.Length; i++) if (positions.Contains(vertices[i])) result.Add(i);
-            }
+            if (weld) ExpandWeldedSelection(result,ComponentPositions());
             return result;
         }
+#if MASHBOX_STUDIO_TESTS
+        internal static Action<string> SceneProfileStage;
+        private static void ProfileScene(string name) { if (Event.current.type == EventType.Repaint) SceneProfileStage?.Invoke(name); }
+#endif
         internal void SceneGUI(SceneView view, Action<StudioModelDocument> loaded)
         {
             var evt = Event.current;
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("scene.start");
+#endif
+            if (CancelMarqueeOutside(view)) return;
+            if (evt.type == EventType.MouseUp || GUIUtility.hotControl == 0) FlushPositionStatistics();
             if (evt.type == EventType.MouseDown && !evt.alt && (evt.button == 0 || evt.button == 2) &&
                 (!(view is MashBoxStudioViewport liveView) || (liveView.ModelCanvasRect.Contains(evt.mousePosition) && !liveView.IsOverViewportControls(evt.mousePosition))))
             {
                 try { FinishLiveTool(); }
                 catch (Exception exception) { error = exception.Message; evt.Use(); return; }
             }
-            view.wantsMouseMove = true;
+            view.wantsMouseMove = true; view.wantsMouseEnterLeaveWindow = true;
             // Clear before drawing if a tool can consume the event or return early.
             // Preserve the last target between pointer events so movement within it
             // does not request another scene render.
@@ -549,6 +580,9 @@ namespace MashBoxSDK.AnimationStudio
             DrawSnapStatus(view);
             if (evt.type == EventType.Used) return;
             DrawSceneWireframes(view.camera);
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("scene.wireframes");
+#endif
             if (!evt.isKey && HandlePivotSnap(view)) return;
             // Unmodified middle mouse belongs to Studio tools, never SceneView pan.
             // Consume unused events here, after snapping has had first refusal and
@@ -563,7 +597,13 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     DrawAnchorMarkers(view);
                     DrawComponents(view);
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("scene.components");
+#endif
                     DrawHandle();
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("scene.handle");
+#endif
                 }
                 return;
             }
@@ -578,21 +618,30 @@ namespace MashBoxSDK.AnimationStudio
             if ((evt.type == EventType.Layout || evt.type == EventType.MouseMove) && !evt.alt) HandleUtility.AddDefaultControl(id);
             DrawAnchorMarkers(view);
             UpdateComponentHover(view, id);
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("scene.hover");
+#endif
             DrawComponents(view);
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("scene.components");
+#endif
             if (evt.rawType == EventType.MouseDown && evt.button == 0 && !evt.alt && gestureUndo < 0)
             { Undo.IncrementCurrentGroup(); gestureUndo = Undo.GetCurrentGroup(); }
             DrawHandle();
+#if MASHBOX_STUDIO_TESTS
+            ProfileScene("scene.handle");
+#endif
             if (PivotTargetSceneGUI(view, id)) return;
             if (evt.type == EventType.MouseDown && evt.button == 0 && !evt.alt && GUIUtility.hotControl == 0 && HandleUtility.nearestControl == id)
             {
                 start = end = evt.mousePosition; additive = evt.shift; subtract = evt.control || evt.command;
-                marquee = true; GUIUtility.hotControl = id; evt.Use();
+                marquee = true; marqueeControl = id; GUIUtility.hotControl = id; evt.Use();
             }
             if (marquee && evt.type == EventType.MouseDrag) { end = evt.mousePosition; evt.Use(); repaint(); }
             if (marquee && evt.type == EventType.MouseUp)
             {
                 end = evt.mousePosition; Run(() => Pick(view, Rect.MinMaxRect(Mathf.Min(start.x, end.x), Mathf.Min(start.y, end.y), Mathf.Max(start.x, end.x), Mathf.Max(start.y, end.y)), (end - start).sqrMagnitude < 16));
-                marquee = false; GUIUtility.hotControl = 0; evt.Use(); repaint();
+                marquee = false; marqueeControl = 0; GUIUtility.hotControl = 0; evt.Use(); repaint();
             }
             if (marquee && evt.type == EventType.Repaint)
             {
@@ -600,6 +649,23 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUI.DrawRect(rect, new Color(.15f, .85f, .75f, .15f)); GUI.Box(rect, GUIContent.none); Handles.EndGUI();
             }
             if (evt.rawType == EventType.MouseUp && gestureUndo >= 0) { Undo.CollapseUndoOperations(gestureUndo); gestureUndo = -1; }
+        }
+        private bool CancelMarqueeOutside(SceneView view)
+        {
+            if (!marquee) return false;
+            var evt = Event.current;
+            bool leaving = evt.rawType == EventType.MouseLeaveWindow;
+            bool pointer = evt.rawType == EventType.MouseDrag || evt.rawType == EventType.MouseMove || evt.rawType == EventType.MouseUp;
+            var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
+            if (!leaving && (!pointer || canvas.Contains(evt.mousePosition))) return false;
+            // Selection is resolved only on release. Abandon this gesture before
+            // handles/native SceneView process an outside drag or release.
+            marquee = false; start = end = Vector2.zero; additive = subtract = false;
+            if (GUIUtility.hotControl == marqueeControl) GUIUtility.hotControl = 0;
+            marqueeControl = 0;
+            if (gestureUndo >= 0) { Undo.CollapseUndoOperations(gestureUndo); gestureUndo = -1; }
+            if (pointer) evt.Use();
+            repaint(); return true;
         }
         private void DrawHandle()
         {
@@ -627,8 +693,9 @@ namespace MashBoxSDK.AnimationStudio
             // to apply only the new angular increment to the already-edited vertices.
             if (rotatingComponents && componentRotationControl != 0 && GUIUtility.hotControl == componentRotationControl)
                 orientation = componentHandleRotation;
-            var vertices = indices != null ? capturedScale ? scaleDrag.meshVertices : ActiveMesh.vertices : null;
-            Vector3 center = capturedScale ? scaleDrag.center : indices == null ? t.position : ComponentSelectionCenter(vertices, indices);
+            IList<Vector3> readVertices = indices != null ? capturedScale ? scaleDrag.meshVertices : ComponentPositions() : null;
+            var vertices=readVertices as Vector3[];
+            Vector3 center = capturedScale ? scaleDrag.center : indices == null ? t.position : ComponentSelectionCenter(readVertices, indices);
             if (indices != null && HasComponentPivot) center = componentPivot.position;
             if (handleExtrudeVertices != null && handleExtrudeControl != 0 && GUIUtility.hotControl == handleExtrudeControl)
                 center = handleExtrudeCenter;
@@ -671,11 +738,13 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 if (handleChanged && worldObjectRotationControl != 0 && GUIUtility.hotControl == worldObjectRotationControl)
                 {
-                    // The world gizmo stays aligned to identity, but Unity returns
-                    // the total turn since mouse-down. Apply only the new increment;
-                    // Layout/Repaint must not reset this reference between drags.
+                    // Axis/camera rings return the total turn since mouse-down.
+                    // The free-center sphere instead returns this mouse event's
+                    // increment against the supplied identity orientation. Applying
+                    // the ring correction to it cancels equal samples and jitters.
                     var total = rotation;
-                    rotation = total * Quaternion.Inverse(worldObjectHandleRotation);
+                    if (GUIUtility.hotControl != rotationHandleIds.xyz)
+                        rotation = total * Quaternion.Inverse(worldObjectHandleRotation);
                     worldObjectHandleRotation = total;
                 }
                 if (GUIUtility.hotControl == 0) worldObjectRotationControl = 0;
@@ -688,7 +757,7 @@ namespace MashBoxSDK.AnimationStudio
                 handleExtrudeSourceSelection = Components.ToArray();
             }
             if (scaling && GUIUtility.hotControl != 0 && scaleDrag == null)
-                scaleDrag = CaptureScaleDrag(GUIUtility.hotControl, center, orientation, indices, vertices);
+                scaleDrag = CaptureScaleDrag(GUIUtility.hotControl, center, orientation, indices, vertices ?? readVertices?.ToArray());
             componentRotationControl = rotatingComponents ? GUIUtility.hotControl : 0;
             componentHandleRotation = rotation;
             if ((pivot || tool == Tool.Move) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl && moveDragEvent)
@@ -712,6 +781,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             if (!handleChanged) return;
+            if (indices!=null && vertices==null) vertices=readVertices.ToArray();
             if (handleExtrudeFailed) return;
             if (handleExtrudePending)
             {
@@ -756,7 +826,7 @@ namespace MashBoxSDK.AnimationStudio
                         Document.ReadTransform(i, target);
                     }
                 }
-                if (indices != null && !pivot) PositionsChanged();
+                if (indices != null && !pivot) PositionsChanged(deferStatistics: GUIUtility.hotControl != 0);
                 else Changed(pivot);
             });
         }
@@ -823,13 +893,26 @@ namespace MashBoxSDK.AnimationStudio
             }
             var vertices = ActiveMesh.vertices; var edges = Edges(); var t = Transforms[Active];
             int count = ComponentCount();
+            var candidates = new List<int>(); var rays = new List<Ray>(); var limits = new List<float>();
             for (int i = 0; i < count; i++)
             {
                 Vector3 world = mode == ComponentMode.Vertex ? t.TransformPoint(vertices[i]) : mode == ComponentMode.Edge ? t.TransformPoint((vertices[edges[i].a] + vertices[edges[i].b]) * .5f) : t.TransformPoint(FaceCenter(Faces()[i], vertices));
-                if (view.camera.WorldToViewportPoint(world).z <= 0 || (!xray && Occluded(view, world))) continue;
-                if (rect.Contains(HandleUtility.WorldToGUIPoint(world))) { if (subtract) Components.Remove(i); else Components.Add(i); }
+                if (view.camera.WorldToViewportPoint(world).z <= 0) continue;
+                var screen = HandleUtility.WorldToGUIPoint(world);
+                if (!rect.Contains(screen)) continue;
+                candidates.Add(i);
+                if (xray) continue;
+                var ray = HandleUtility.GUIPointToWorldRay(screen);
+                rays.Add(ray); limits.Add(Vector3.Dot(world - ray.origin, ray.direction) - .001f);
+            }
+            var hidden = xray || candidates.Count == 0 ? null : OccludedBatch(rays.ToArray(), limits.ToArray(), CaptureOccluders());
+            for (int c = 0; c < candidates.Count; c++)
+            {
+                if (hidden != null && hidden[c]) continue;
+                if (subtract) Components.Remove(candidates[c]); else Components.Add(candidates[c]);
             }
         }
+
         // Hover and click share the same tolerance, occlusion and polygon hit rules.
         private int FindComponentAt(SceneView view, Vector2 pointer)
         {
@@ -837,14 +920,17 @@ namespace MashBoxSDK.AnimationStudio
             var vertices = ActiveMesh.vertices; var edges = Edges(); var t = Transforms[Active];
             int best = -1; float bestDistance = mode == ComponentMode.Face ? float.PositiveInfinity : 12;
             int count = ComponentCount(); var ray = HandleUtility.GUIPointToWorldRay(pointer);
+            OcclusionMesh[] occluders = null;
             for (int i = 0; i < count; i++)
             {
                 Vector3 world = mode == ComponentMode.Vertex ? t.TransformPoint(vertices[i]) : mode == ComponentMode.Edge ? t.TransformPoint((vertices[edges[i].a] + vertices[edges[i].b]) * .5f) : t.TransformPoint(FaceCenter(Faces()[i], vertices));
-                if (view.camera.WorldToViewportPoint(world).z <= 0 || (!xray && Occluded(view, world))) continue;
+                if (view.camera.WorldToViewportPoint(world).z <= 0) continue;
                 float distance = Vector2.Distance(pointer, HandleUtility.WorldToGUIPoint(world));
                 if (mode == ComponentMode.Edge) distance = HandleUtility.DistancePointLine(pointer, HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].a])), HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].b])));
                 if (mode == ComponentMode.Face && !RayFace(ray, cachedFaceTriangles[i], vertices, t, out distance)) continue;
-                if (distance < bestDistance) { bestDistance = distance; best = i; }
+                // Reject distant/non-improving candidates before any scene ray tests.
+                if (distance >= bestDistance || (!xray && Occluded(view, world, ref occluders))) continue;
+                bestDistance = distance; best = i;
             }
             return best;
         }
@@ -879,15 +965,106 @@ namespace MashBoxSDK.AnimationStudio
             try { Transforms[index].GetComponent<SkinnedMeshRenderer>().BakeMesh(baked); return baked.vertices; }
             finally { UnityEngine.Object.DestroyImmediate(baked); }
         }
-        private bool Occluded(SceneView view, Vector3 point)
+        // Transform snapshots are per pick. Local-space ray indices persist by
+        // mesh dirty version and are released on scene rebuild (load/Undo).
+        private sealed class OcclusionIndex
         {
-            var ray = HandleUtility.GUIPointToWorldRay(HandleUtility.WorldToGUIPoint(point)); float limit = Vector3.Dot(point - ray.origin, ray.direction) - .001f;
+            internal int Version;
+            internal VDPrecisionBaker.RayIndex Tree;
+        }
+        private readonly Dictionary<Mesh, OcclusionIndex> occlusionIndices = new Dictionary<Mesh, OcclusionIndex>();
+        private sealed class OcclusionMesh
+        {
+            internal Mesh Mesh;
+            internal Matrix4x4 WorldToLocal;
+            internal Bounds Bounds;
+            internal Vector3[] Vertices;
+            internal int[] Triangles;
+            internal VDPrecisionBaker.RayIndex Tree;
+            internal OcclusionIndex Cached;
+        }
+        private OcclusionMesh[] CaptureOccluders()
+        {
+            var result = new List<OcclusionMesh>();
             for (int n = 0; n < Transforms.Length; n++)
             {
-                var mesh = Document.nodes[n].mesh; if (!mesh || !Transforms[n].gameObject.activeInHierarchy) continue; var v = mesh.vertices; var tr = mesh.triangles; var t = Transforms[n];
-                for (int i = 0; i < tr.Length; i += 3) if (RayTriangle(ray, t.TransformPoint(v[tr[i]]), t.TransformPoint(v[tr[i + 1]]), t.TransformPoint(v[tr[i + 2]]), out float d) && d < limit) return true;
+                var mesh = Document.nodes[n].mesh;
+                if (!mesh || !Transforms[n].gameObject.activeInHierarchy) continue;
+                int version = EditorUtility.GetDirtyCount(mesh);
+                if (!occlusionIndices.TryGetValue(mesh, out var cached) || cached.Version != version)
+                    occlusionIndices[mesh] = cached = new OcclusionIndex { Version = version };
+                result.Add(new OcclusionMesh { Mesh = mesh, WorldToLocal = Transforms[n].worldToLocalMatrix, Bounds = mesh.bounds, Cached = cached, Tree = cached.Tree });
+            }
+            return result.ToArray();
+        }
+        private bool Occluded(SceneView view, Vector3 point, ref OcclusionMesh[] occluders)
+        {
+            var ray = HandleUtility.GUIPointToWorldRay(HandleUtility.WorldToGUIPoint(point));
+            float limit = Vector3.Dot(point - ray.origin, ray.direction) - .001f;
+            if (occluders == null) occluders = CaptureOccluders();
+            return Occluded(ray, limit, occluders);
+        }
+        private static bool Occluded(Ray ray, float limit, OcclusionMesh[] occluders)
+        {
+            if (limit <= 0) return false;
+            foreach (var entry in occluders)
+            {
+                var direction = entry.WorldToLocal.MultiplyVector(ray.direction);
+                float scale = direction.magnitude;
+                if (scale <= 1e-12f) continue;
+                var localRay = new Ray(entry.WorldToLocal.MultiplyPoint3x4(ray.origin), direction / scale);
+                float localLimit = limit * scale;
+                if (!entry.Bounds.IntersectRay(localRay, out float entryDistance) || entryDistance >= localLimit) continue;
+                PrepareOcclusionIndex(entry);
+                if (entry.Tree.Occluded(localRay.origin, localRay.direction, localLimit)) return true;
             }
             return false;
+        }
+        private static void PrepareOcclusionIndex(OcclusionMesh entry)
+        {
+            if (entry.Tree == null && entry.Cached != null) entry.Tree = entry.Cached.Tree;
+            if (entry.Tree != null) return;
+            entry.Vertices = entry.Mesh.vertices; entry.Triangles = entry.Mesh.triangles;
+            entry.Tree = new VDPrecisionBaker.RayIndex(entry.Vertices, entry.Triangles);
+            if (entry.Cached != null) entry.Cached.Tree = entry.Tree;
+        }
+        private static bool[] OccludedBatch(Ray[] rays, float[] limits, OcclusionMesh[] occluders)
+        {
+            // Unity mesh access and camera projection finish on the editor thread.
+            // Workers read only immutable triangles, matrices and value-type rays.
+            foreach (var entry in occluders)
+            {
+                if (entry.Tree != null) continue;
+                for (int r = 0; r < rays.Length; r++)
+                {
+                    if (limits[r] <= 0) continue;
+                    var direction = entry.WorldToLocal.MultiplyVector(rays[r].direction); float scale = direction.magnitude;
+                    if (scale <= 1e-12f) continue;
+                    var local = new Ray(entry.WorldToLocal.MultiplyPoint3x4(rays[r].origin), direction / scale);
+                    if (!entry.Bounds.IntersectRay(local, out float distance) || distance >= limits[r] * scale) continue;
+                    PrepareOcclusionIndex(entry); break;
+                }
+            }
+            var hidden = new bool[rays.Length];
+            void Query(int begin, int end)
+            {
+                for (int r = begin; r < end; r++)
+                {
+                    if (limits[r] <= 0) continue;
+                    foreach (var entry in occluders)
+                    {
+                        if (entry.Tree == null) continue;
+                        var direction = entry.WorldToLocal.MultiplyVector(rays[r].direction); float scale = direction.magnitude;
+                        if (scale <= 1e-12f) continue;
+                        if (entry.Tree.Occluded(entry.WorldToLocal.MultiplyPoint3x4(rays[r].origin), direction / scale, limits[r] * scale))
+                        { hidden[r] = true; break; }
+                    }
+                }
+            }
+            const int block = 128;
+            if (rays.Length <= block) Query(0, rays.Length);
+            else System.Threading.Tasks.Parallel.For(0, (rays.Length + block - 1) / block, b => Query(b * block, Math.Min(rays.Length, (b + 1) * block)));
+            return hidden;
         }
         internal static bool RayTriangle(Ray ray, Vector3 a, Vector3 b, Vector3 c, out float distance)
         {

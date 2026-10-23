@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -111,7 +112,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             drag.factor = factor;
-            if (drag.vertices != null) PositionsChanged();
+            if (drag.vertices != null) PositionsChanged(deferStatistics: GUIUtility.hotControl != 0);
             else Changed(false);
             return true;
         }

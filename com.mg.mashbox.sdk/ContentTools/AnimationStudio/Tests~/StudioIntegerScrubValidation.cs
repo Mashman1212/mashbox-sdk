@@ -1,0 +1,9 @@
+using System;using System.IO;using UnityEngine;using MashBoxSDK.AnimationStudio;
+public static class StudioIntegerScrubValidation {
+ public static void Run(){try{Validate();UnityEditor.EditorApplication.Exit(0);}catch(Exception e){UnityEngine.Debug.LogException(e);UnityEditor.EditorApplication.Exit(1);}}
+
+ public static void Validate(){int checks=0;void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;}
+ foreach(float ratio in new[]{.1f,1f,2f,4f})foreach(int start in new[]{0,1,10,10000}){double remainder=0;int value=start;for(int i=0;i<120;i++)value=StudioDragSensitivity.StepInteger(ref remainder,value,1,ratio,-100000,100000);int expected=start+(int)Math.Floor(120d*ratio/12);Check(Math.Abs(value-expected)<=1,"Integer rate independent of starting value");double one=0;int single=StudioDragSensitivity.StepInteger(ref one,start,120,ratio,-100000,100000);Check(Math.Abs(value-single)<=1,"Small events accumulate like one large event");for(int i=0;i<120;i++)value=StudioDragSensitivity.StepInteger(ref remainder,value,-1,ratio,-100000,100000);Check(Math.Abs(value-start)<=1,"Reversing a scrub returns to the start");}
+ foreach(float ratio in new[]{.1f,1f,2f,4f}){double remainder=0;int value=StudioDragSensitivity.StepInteger(ref remainder,0,-10000,ratio,0,32);Check(value==0&&remainder==0,"Lower clamp discards overshoot");value=StudioDragSensitivity.StepInteger(ref remainder,value,13/ratio,ratio,0,32);Check(value==1,"Direction reverses immediately after lower clamp");value=StudioDragSensitivity.StepInteger(ref remainder,32,10000,ratio,0,32);Check(value==32&&remainder==0,"Upper clamp discards overshoot");value=StudioDragSensitivity.StepInteger(ref remainder,value,-13/ratio,ratio,0,32);Check(value==31,"Direction reverses immediately after upper clamp");}
+ File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"../../integer-scrub-result.txt")),"PASS "+checks+" integer rate, accumulation, reversal and clamp assertions");}
+}

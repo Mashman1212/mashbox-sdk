@@ -1,11 +1,12 @@
-﻿using System;
+using System;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 namespace MashBoxSDK.AnimationStudio
 {
     internal static class StudioDragSensitivity
     {
-        private static readonly float[] Ratios = { 1f, 2f, 3f, 4f };
+        private static readonly float[] Ratios = { .1f, 1f, 2f, 4f };
         private static readonly GUIContent[] Icons = new GUIContent[4];
         private static readonly GUIContent Hit = new GUIContent();
         static StudioDragSensitivity()
@@ -34,25 +35,63 @@ namespace MashBoxSDK.AnimationStudio
             next = clicked ? Ratios[(state+1)%Ratios.Length] : multiplier;
             return clicked;
         }
-        // Apply only around tool content. Native numeric fields read mouse delta
-        // directly, so future Float/Double/Int fields inherit the ratio automatically.
+        // Numeric fields round each drag increment using their drag sensitivity.
+        // Scaling only Event.delta leaves that rounding coarse and erases fine
+        // movements. Scale the native sensitivity (and therefore its precision)
+        // temporarily, restoring it before another window/control can use it.
+        private static readonly FieldInfo NumericDragSensitivity = typeof(EditorGUI).GetField(
+            "s_DragSensitivity", BindingFlags.Static | BindingFlags.NonPublic);
+        internal static int StepInteger(ref double remainder, int value, float delta, float multiplier, int minimum, int maximum)
+        {
+            // Twelve logical pixels per step at 1x, independent of value size,
+            // pointer acceleration and native integer-field rounding.
+            remainder += delta * (double)Normalize(multiplier) / 12d;
+            if ((value==minimum && remainder<0) || (value==maximum && remainder>0))
+            { remainder=0; return value; }
+            // Event deltas are floats: an exact reverse can otherwise stop a
+            // few millionths of a pixel short of an integer threshold.
+            double whole = Math.Truncate(remainder + Math.Sign(remainder)*1e-7);
+            if (whole == 0) return value;
+            double next = Math.Max(minimum, Math.Min(maximum, value + whole));
+            remainder = next != value + whole ? 0 : remainder - whole;
+            if (Math.Abs(remainder)<1e-7) remainder=0;
+            return (int)next;
+        }
+        internal static Vector2 UnscaledDragDelta { get; private set; }
         internal readonly struct DragScope : IDisposable
         {
             private readonly Event evt;
-            private readonly Vector2 original;
+            private readonly Vector2 original, previousDelta;
+            private readonly double nativeSensitivity;
+            private readonly bool nativeScaled;
             internal DragScope(float multiplier)
             {
                 evt = Event.current; original = evt != null ? evt.delta : Vector2.zero;
-                if (evt != null && evt.type == EventType.MouseDrag && GUIUtility.hotControl != 0)
-                    evt.delta = original * Normalize(multiplier);
+                previousDelta = UnscaledDragDelta; UnscaledDragDelta = original;
+                nativeSensitivity = 0; nativeScaled = false;
+                if (evt == null || evt.type != EventType.MouseDrag || GUIUtility.hotControl == 0) return;
+                float ratio = Normalize(multiplier);
+                if (ratio == 1) return;
+                if (NumericDragSensitivity != null && NumericDragSensitivity.FieldType == typeof(double))
+                {
+                    nativeSensitivity = (double)NumericDragSensitivity.GetValue(null);
+                    NumericDragSensitivity.SetValue(null, nativeSensitivity * ratio);
+                    nativeScaled = true;
+                }
+                else evt.delta = original * ratio; // Compatibility with older editor implementations.
             }
-            public void Dispose() { if (evt != null) evt.delta = original; }
+            public void Dispose()
+            {
+                if (nativeScaled) NumericDragSensitivity.SetValue(null, nativeSensitivity);
+                if (evt != null) evt.delta = original;
+                UnscaledDragDelta = previousDelta;
+            }
         }
         internal static GUIContent Icon(int state)
         {
             if (Icons[state] != null) return Icons[state];
             // Render once at 2x resolution with coverage sampling for a crisp,
-            // smooth circular gauge. Fill starts at six o'clock: bottom left, top left, top right, bottom right.
+            // smooth circular gauge. Fill grows clockwise from the top-left quarter through the top half to a full circle; fuller means faster.
             const int size = 32, samples = 4;
             var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) {
                 name = "Studio drag sensitivity " + state, hideFlags = HideFlags.HideAndDontSave,
@@ -70,7 +109,7 @@ namespace MashBoxSDK.AnimationStudio
                             float dx = x + (sx + .5f) / samples - size * .5f;
                             float dy = y + (sy + .5f) / samples - size * .5f;
                             float radius = Mathf.Sqrt(dx * dx + dy * dy);
-                            float angle = Mathf.Repeat(Mathf.Atan2(dx, dy) - Mathf.PI, Mathf.PI * 2);
+                            float angle = Mathf.Repeat(Mathf.Atan2(dy, -dx), Mathf.PI * 2);
                             bool rim = radius >= 9 && radius <= 13;
                             bool fill = radius < 9 && angle <= sweep;
                             if (rim || fill) coverage++;

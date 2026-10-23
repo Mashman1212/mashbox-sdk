@@ -37,6 +37,11 @@ namespace MashBoxSDK.AnimationStudio
             internal float AppliedWidth;
 
             internal int Edges, AddedFaces;
+            internal int VertexUpdateStart;
+            internal IList<Vector3> PublishedPositions;
+            internal BevelVertexMap Welds;
+            internal BevelVertexUpdate VertexUpdate;
+            internal readonly List<(int,int)> RenderSelection = new List<(int,int)>();
 
             internal readonly HashSet<(Vector3, Vector3)> Selection = new HashSet<(Vector3, Vector3)>();
 
@@ -81,6 +86,8 @@ namespace MashBoxSDK.AnimationStudio
         {
 
             internal int Material;
+            internal int OriginalFace = -1;
+            internal bool SourceSurface;
 
             internal readonly List<int> Vertices = new List<int>();
 
@@ -106,7 +113,25 @@ namespace MashBoxSDK.AnimationStudio
 
             internal readonly HashSet<(int, int)> Selection = new HashSet<(int, int)>();
 
+            internal List<int>[][] Corners;
+            internal void Reset(BevelWavefrontPlan next)
+            {
+                if (!ReferenceEquals(Plan,next))
+                {
+                    Positions.Clear(); Positions.AddRange(next.Originals); Owners.Clear();
+                    for (int i=0;i<next.Originals.Length;i++) Owners.Add(i);
+                    Corners=null;
+                }
+                else
+                {
+                    TrimBevelTail(Positions,next.Originals.Length); TrimBevelTail(Owners,next.Originals.Length);
+                    if (Corners!=null) foreach (int face in next.AffectedFaces) Corners[face]=null;
+                }
+                Vertices.Clear(); Polygons.Clear();
+                JunctionAnchors.Clear(); NormalHints.Clear(); SourceHints.Clear(); Selection.Clear(); pointBins.Clear();
+            }
             internal float Width;
+            internal BevelWavefrontPlan Plan;
 
             internal double Precision;
 
@@ -119,6 +144,7 @@ namespace MashBoxSDK.AnimationStudio
             {
 
                 var delta = point - Originals[owner];
+                if (delta.sqrMagnitude <= Precision * Precision) return owner;
 
                 long x = (long)Math.Floor(delta.x / Precision), y = (long)Math.Floor(delta.y / Precision), z = (long)Math.Floor(delta.z / Precision);
 
@@ -234,6 +260,86 @@ namespace MashBoxSDK.AnimationStudio
 
 
 
+        private List<int>[] bevelSourceTriangles;
+        private int bevelInputFaceCount;
+        private readonly HashSet<(int, int)> bevelChartEdges = new HashSet<(int, int)>();
+        private List<int>[] BevelSourceTriangles(Mesh mesh)
+        {
+            if (bevelSourceTriangles != null) return bevelSourceTriangles;
+            var originalTriangles = new List<int>[Faces.Count];
+            var memberships = new List<int>[Positions.Length];
+            for (int f = 0; f < Faces.Count; f++)
+            {
+                originalTriangles[f] = new List<int>();
+                foreach (int vertex in Faces[f].Vertices)
+                {
+                    if (memberships[vertex] == null) memberships[vertex] = new List<int>();
+                    memberships[vertex].Add(f);
+                }
+            }
+            for (int sub = 0; sub < mesh.subMeshCount; sub++)
+            {
+                var triangles = mesh.GetTriangles(sub);
+                for (int i = 0; i < triangles.Length; i += 3)
+                {
+                    var candidates = memberships[triangles[i]];
+                    if (candidates == null) continue;
+                    foreach (int f in candidates)
+                    {
+                        var face = Faces[f];
+                        if (face.Submesh != sub || originalTriangles[f].Count >= (face.Vertices.Count - 2) * 3 ||
+                            !face.Vertices.Contains(triangles[i + 1]) || !face.Vertices.Contains(triangles[i + 2])) continue;
+                        originalTriangles[f].Add(triangles[i]); originalTriangles[f].Add(triangles[i + 1]); originalTriangles[f].Add(triangles[i + 2]);
+                        break;
+                    }
+                }
+            }
+            return bevelSourceTriangles = originalTriangles;
+        }
+        private void PrepareBevelSurfaceCharts(Mesh mesh, IEnumerable<(int a, int b)> selected)
+        {
+            var split = new HashSet<int>();
+            foreach (var pair in selected)
+            {
+                if (pair.a < 0 || pair.b < 0 || pair.a >= Positions.Length || pair.b >= Positions.Length) continue;
+                var key = Key(pair.a, pair.b);
+                if (!bevelChartEdges.Add(key) || !bevelEdges.TryGetValue(key, out var edge)) continue;
+                foreach (var use in edge.Uses)
+                {
+                    var face = Faces[use.face].Vertices;
+                    if (face.Count <= 3) continue;
+                    var origin = Positions[face[0]]; float scale = 0;
+                    foreach (int v in face) scale = Mathf.Max(scale, Vector3.Distance(origin, Positions[v]));
+                    foreach (int v in face)
+                        if (Math.Abs(Vector3.Dot(Positions[v] - origin, bevelNormals[use.face])) > Math.Max(bevelEpsilon * 8, scale * 1e-6))
+                        { split.Add(use.face); break; }
+                }
+            }
+            if (split.Count == 0) return;
+            if (bevelInputFaceCount == 0) bevelInputFaceCount = Faces.Count;
+            var triangles = BevelSourceTriangles(mesh);
+            // A warped polygon has no single supporting plane. Use its authored
+            // render facets as local planar charts; never flatten the surface or
+            // partition unrelated faces. These boundaries publish only on commit.
+            foreach (int f in split)
+            {
+                var face = Faces[f]; var indices = triangles[f];
+                if (indices.Count != (face.Vertices.Count - 2) * 3)
+                    throw new InvalidOperationException("The non-planar bevel face has no matching source triangulation.");
+                for (int i = 0; i < indices.Count; i += 3)
+                {
+                    var chart = new Face { Submesh = face.Submesh, Vertices = new List<int> { indices[i], indices[i + 1], indices[i + 2] } };
+                    if (i == 0) Faces[f] = chart; else Faces.Add(chart);
+                }
+            }
+            bevelSourceTriangles = null; bevelEdges = null; bevelIncident = null; bevelNormals = null; bevelWavefront = null;
+            PrepareBevelTopology(mesh);
+        }
+
+#if MASHBOX_STUDIO_TESTS
+        internal static Action<string> BevelProfileStage;
+        internal bool UseReferenceBevelWriter;
+#endif
         internal BevelResult BevelEdges(StudioModelDocument.Node node, IEnumerable<(int a, int b)> selected,
 
             BevelOptions options, Action beforeWrite = null)
@@ -252,9 +358,14 @@ namespace MashBoxSDK.AnimationStudio
 
                 options.Subdivisions < 0 || options.Subdivisions > 32 || !Enum.IsDefined(typeof(BevelJunction), options.Junction))
 
-                throw new InvalidOperationException("Bevel needs width 0–1, tension −1–1, and 0–32 internal subdivisions.");
+                throw new InvalidOperationException("Bevel needs width 0-1, tension -1 to 1, and 0-32 internal subdivisions.");
 
+#if MASHBOX_STUDIO_TESTS
+            BevelProfileStage?.Invoke("bevel.start");
+#endif
+            selected = new List<(int a, int b)>(selected);
             PrepareBevelTopology(mesh);
+            PrepareBevelSurfaceCharts(mesh, selected);
 
             var edges = bevelEdges; var incident = bevelIncident; var normals = bevelNormals; double epsilon = bevelEpsilon;
 
@@ -314,32 +425,36 @@ namespace MashBoxSDK.AnimationStudio
 
             if (estimate > 8000000) throw new InvalidOperationException("This bevel would generate too much geometry. Reduce the selection or subdivisions.");
 
-            BevelDraft draft = null;
+            var plan = PrepareBevelWavefront(targets, affected);
+            float width = Mathf.Min(options.Width, plan.Limit);
+            if (width <= epsilon) throw new InvalidOperationException("No room remains for a nondegenerate bevel before the first skeleton collision.");
+            // One analytic wavefront evaluation, followed by atomic validation.
+            // Never change the requested shape through repeated half-width retries.
+#if MASHBOX_STUDIO_TESTS
+            BevelProfileStage?.Invoke("bevel.prepare");
+#endif
+            BevelDraft draft;
+            try { draft = BuildBevelDraft(node, edges, incident, targets, affected, normals, options, width, epsilon); }
+            catch (BevelOverlap e) { throw new InvalidOperationException("The bevel junction cannot be constructed safely: " + e.Message); }
 
-            string overlap = null;
-
-            // Resolve local overlap before touching the live mesh. Normalized width
-
-            // reaches its useful maximum without silently inverting small faces.
-
-            for (int attempt = 0; attempt < 12; attempt++)
-
-            {
-
-                try { draft = BuildBevelDraft(node, edges, incident, targets, affected, normals, options, options.Width / (1 << attempt), epsilon); break; }
-
-                catch (BevelOverlap e) { overlap = e.Message; }
-
-            }
-
-            if (draft == null) throw new InvalidOperationException("Cannot bevel this selection without overlap: " + overlap);
-
-            return WriteBevelDraft(node, draft, targets.Count, beforeWrite, epsilon);
+#if MASHBOX_STUDIO_TESTS
+            BevelProfileStage?.Invoke("bevel.build");
+#endif
+#if MASHBOX_STUDIO_TESTS
+            var result = UseReferenceBevelWriter ? WriteBevelDraftReference(node, draft, targets.Count, beforeWrite, epsilon) : WriteBevelDraft(node, draft, targets.Count, beforeWrite, epsilon);
+#else
+            var result = WriteBevelDraft(node, draft, targets.Count, beforeWrite, epsilon);
+#endif
+#if MASHBOX_STUDIO_TESTS
+            BevelProfileStage?.Invoke("bevel.write");
+#endif
+            return result;
 
         }
 
 
 
+        private BevelDraft reusableBevelDraft;
         private BevelDraft BuildBevelDraft(StudioModelDocument.Node node, Dictionary<(int, int), BevelEdge> edges,
 
             Dictionary<int, List<BevelEdge>> incident, HashSet<(int, int)> targets, HashSet<int> affected,
@@ -348,53 +463,56 @@ namespace MashBoxSDK.AnimationStudio
 
         {
 
-            int count = 0; foreach (int id in welded) count = Math.Max(count, id + 1);
-
-            var originals = new Vector3[count];
-
-            for (int i = 0; i < Positions.Length; i++) originals[welded[i]] = Positions[i];
-
-            var draft = new BevelDraft { Width = width, Originals = originals, Precision = epsilon * 2 };
-
-            for (int i = 0; i < count; i++) draft.AddPoint(originals[i], i);
-
-            var distances = new Dictionary<int, float>();
-
-            foreach (int vertex in affected)
-
-            {
-
-                float length = float.PositiveInfinity;
-
-                foreach (var edge in incident[vertex]) length = Mathf.Min(length, Vector3.Distance(originals[edge.A], originals[edge.B]));
-
-                float distance = length * width * .45f;
-
-                if (distance <= epsilon) throw new BevelOverlap("Width is below the mesh's geometric precision.");
-
-                distances.Add(vertex, distance);
-
-            }
-
+            var plan = PrepareBevelWavefront(targets, affected);
+            var originals = plan.Originals;
+            var draft = reusableBevelDraft ?? (reusableBevelDraft = new BevelDraft());
+            draft.Reset(plan); draft.Width = width; draft.Originals = originals; draft.Precision = epsilon * 2; draft.Plan = plan;
+            var distances = plan.Distances;
             var cuts = new Dictionary<(int vertex, int other), int>();
-
-            int Cut(int vertex, int other)
-
+            var boundaryCuts = new Dictionary<(int,int), List<int>>();
+            var waveCorners = new Dictionary<(int,int),int>();
+            void BoundaryCut(int vertex, int other, int point)
             {
-
+                var key = BevelKey(vertex, other);
+                if (!boundaryCuts.TryGetValue(key, out var points)) boundaryCuts.Add(key, points = new List<int>());
+                if (!points.Contains(point)) points.Add(point);
+                var cutKey = (vertex, other);
+                if (!cuts.TryGetValue(cutKey, out int previous) ||
+                    (draft.Positions[point] - originals[vertex]).sqrMagnitude < (draft.Positions[previous] - originals[vertex]).sqrMagnitude)
+                    cuts[cutKey] = point;
+            }
+            // A shared edge may carry several distinct face-plane intersections.
+            // Keep their identities, then split its retained spans consistently.
+            // Choosing max/min travel for both incident faces would skew one rail.
+            foreach (int f in plan.SelectedFaces)
+            {
+                var v = Faces[f].Vertices;
+                for (int c = 0; c < v.Count; c++)
+                {
+                    int vertex = welded[v[c]], previous = welded[v[(c + v.Count - 1) % v.Count]], next = welded[v[(c + 1) % v.Count]];
+                    bool incoming = targets.Contains(BevelKey(previous, vertex)), outgoing = targets.Contains(BevelKey(vertex, next));
+                    if (!incoming && !outgoing) continue;
+                    int point = draft.AddPoint(originals[vertex] + plan.Velocities[f][c] * width, vertex);
+                    waveCorners.Add((f,c),point);
+                    if (!incoming) BoundaryCut(vertex, previous, point);
+                    if (!outgoing) BoundaryCut(vertex, next, point);
+                }
+            }
+            int Cut(int vertex, int other)
+            {
                 if (cuts.TryGetValue((vertex, other), out int id)) return id;
-
-                var direction = originals[other] - originals[vertex];
-
-                id = draft.AddPoint(originals[vertex] + BevelUnit(direction) * distances[vertex], vertex);
-
-                cuts.Add((vertex, other), id); return id;
-
+                id = draft.AddPoint(originals[vertex] + BevelUnit(originals[other] - originals[vertex]) * (distances[vertex] * width), vertex);
+                BoundaryCut(vertex, other, id);return id;
+            }
+            foreach (int vertex in affected) foreach (var edge in incident[vertex])
+            {
+                if (targets.Contains(BevelKey(edge.A,edge.B))) continue;
+                Cut(vertex, edge.A == vertex ? edge.B : edge.A);
             }
 
-            var corners = new List<int>[Faces.Count][];
+            var corners = draft.Corners ?? (draft.Corners = new List<int>[Faces.Count][]);
 
-            var sourceNormals = node.mesh.normals;
+            var sourceNormals = BevelSource(node.mesh).Normals;
 
             var sourceTriangles = new Dictionary<int, List<int>>();
 
@@ -446,13 +564,14 @@ namespace MashBoxSDK.AnimationStudio
 
             }
 
+            bool buildingSourceFaces=true;
             void AddFace(List<int> geometry, int sourceFace, int material, List<Vector3> normals = null)
 
             {
 
                 if (geometry.Count < 3) return;
 
-                var polygon = new BevelPolygon { Material = material };
+                var polygon = new BevelPolygon { Material = material, SourceSurface = buildingSourceFaces };
 
                 for (int i = 0; i < geometry.Count; i++)
 
@@ -480,12 +599,10 @@ namespace MashBoxSDK.AnimationStudio
 
             }
 
-            for (int f = 0; f < Faces.Count; f++)
-
+            foreach (int f in plan.AffectedFaces)
             {
-
-                var face = Faces[f]; var v = face.Vertices; corners[f] = new List<int>[v.Count];
-
+                var face=Faces[f]; var v=face.Vertices;
+                corners[f] = new List<int>[v.Count];
                 var polygon = new List<int>(); bool changed = false;
 
                 for (int c = 0; c < v.Count; c++)
@@ -508,46 +625,45 @@ namespace MashBoxSDK.AnimationStudio
 
                         if (!incoming && !outgoing) { path.Add(Cut(vertex, previous)); path.Add(Cut(vertex, next)); }
 
-                        else if (!incoming) path.Add(Cut(vertex, previous));
-
-                        else if (!outgoing) path.Add(Cut(vertex, next));
-
-                        else
-
-                        {
-
-                            Vector3 u = BevelUnit(originals[vertex] - originals[previous]), w = BevelUnit(originals[next] - originals[vertex]);
-
-                            Vector3 inwardA = Vector3.Cross(faceNormals[f], u), inwardB = Vector3.Cross(faceNormals[f], w);
-
-                            float cosine = Vector3.Dot(inwardA, inwardB), denominator = 1 + cosine;
-
-                            if (denominator < 1e-5f) throw new BevelOverlap("An acute corner leaves no room for the inset rails.");
-
-                            Vector3 point = originals[vertex] + (inwardA + inwardB) * (distances[vertex] / denominator);
-
-                            if (Vector3.Distance(point, originals[vertex]) > distances[vertex] / width * 1.1f)
-
-                                throw new BevelOverlap("The inset miter runs past an adjacent edge.");
-
-                            path.Add(draft.AddPoint(point, vertex));
-
-                        }
+                        else path.Add(waveCorners[(f,c)]);
 
                     }
 
                     if (affected.Contains(vertex)) foreach (int point in path) draft.JunctionAnchors.Add(point);
 
-                    polygon.AddRange(path);
-
+                }
+                for (int c = 0; c < v.Count; c++)
+                {
+                    var path = corners[f][c]; polygon.AddRange(path);
+                    int nextCorner = (c + 1) % v.Count;
+                    int from = path[path.Count - 1], to = corners[f][nextCorner][0];
+                    var key = BevelKey(welded[v[c]], welded[v[nextCorner]]);
+                    if (!targets.Contains(key) && boundaryCuts.TryGetValue(key, out var candidates))
+                    {
+                        var direction = draft.Positions[to] - draft.Positions[from]; double square = direction.sqrMagnitude;
+                        if (square > epsilon * epsilon)
+                        {
+                            var inserts = new List<(float t,int point)>();
+                            foreach (int point in candidates)
+                            {
+                                if (point == from || point == to) continue;
+                                var delta = draft.Positions[point] - draft.Positions[from]; float t = (float)(Vector3.Dot(delta,direction) / square);
+                                if (t <= 0 || t >= 1 || (delta - direction*t).sqrMagnitude > epsilon*epsilon*4) continue;
+                                inserts.Add((t,point));
+                            }
+                            inserts.Sort((a,b)=>a.t.CompareTo(b.t)); foreach (var insert in inserts) polygon.Add(insert.point);
+                        }
+                    }
                 }
 
                 if (changed) BevelValidateInset(polygon, draft.Positions, v, Positions, faceNormals[f], epsilon);
 
                 AddFace(polygon, f, face.Submesh);
+                if (!changed) draft.Polygons[draft.Polygons.Count - 1].OriginalFace = f;
 
             }
 
+            buildingSourceFaces=false;
             int steps = options.Subdivisions + 1;
 
             foreach (var key in targets)
@@ -610,9 +726,16 @@ namespace MashBoxSDK.AnimationStudio
 
                     int source = k * 2 < steps ? first.face : second.face;
 
-                    AddFace(new List<int> { b[k], a[k], a[k + 1], b[k + 1] }, source, Faces[source].Submesh,
-
-                        new List<Vector3> { nb[k], na[k], na[k + 1], nb[k + 1] });
+                    var strip = new List<int> { b[k], a[k], a[k + 1], b[k + 1] };
+                    var stripNormals = new List<Vector3> { nb[k], na[k], na[k + 1], nb[k + 1] };
+                    // A single-segment chamfer is a flat face, independent of the
+                    // curved profile's tension. Do not shade it like a round bevel.
+                    if (steps == 1)
+                    {
+                        var flat = BevelPolygonNormal(strip, draft.Positions);
+                        for (int i = 0; i < stripNormals.Count; i++) stripNormals[i] = flat;
+                    }
+                    AddFace(strip, source, Faces[source].Submesh, stripNormals);
 
                 }
 
@@ -840,7 +963,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 // Never dissolve unrelated source faces or the curved bevel strips.
 
-                if (index >= Faces.Count) continue;
+                if (!draft.Polygons[index].SourceSurface) continue;
 
                 var polygon = draft.Polygons[index];
 
@@ -888,6 +1011,7 @@ namespace MashBoxSDK.AnimationStudio
 
                         addFace(merged, source, polygon.Material, null);
 
+                        draft.Polygons[draft.Polygons.Count-1].SourceSurface=polygon.SourceSurface;
                         draft.Polygons[index] = draft.Polygons[draft.Polygons.Count - 1];
 
                         draft.Polygons.RemoveAt(draft.Polygons.Count - 1);
@@ -1362,6 +1486,32 @@ namespace MashBoxSDK.AnimationStudio
 
         }
 
+        // Filtered orient2d: use the standard double determinant error bound,
+        // then exact integer arithmetic for ambiguous binary32 input coordinates.
+        // This separates numerical sign tests from geometric offset tolerances.
+        // Background: J. Shewchuk, https://www.cs.cmu.edu/~quake/robust.html
+        private static int BevelOrientation(Vector2 a, Vector2 b, Vector2 c)
+        {
+            double left = ((double)a.x - c.x) * ((double)b.y - c.y);
+            double right = ((double)a.y - c.y) * ((double)b.x - c.x);
+            double determinant = left - right;
+            double error = (Math.Abs(left) + Math.Abs(right)) * 3.3306690738754716e-16;
+            if (Math.Abs(determinant) > error) return Math.Sign(determinant);
+            var ax = BevelFloatInteger(a.x); var ay = BevelFloatInteger(a.y);
+            var bx = BevelFloatInteger(b.x); var by = BevelFloatInteger(b.y);
+            var cx = BevelFloatInteger(c.x); var cy = BevelFloatInteger(c.y);
+            return ((ax - cx) * (by - cy) - (ay - cy) * (bx - cx)).Sign;
+        }
+        private static System.Numerics.BigInteger BevelFloatInteger(float value)
+        {
+            int bits = BitConverter.SingleToInt32Bits(value);
+            int exponent = (bits >> 23) & 255;
+            int mantissa = bits & 0x7fffff;
+            if (exponent != 0) mantissa |= 1 << 23;
+            // Every finite float is an integer multiple of 2^-149.
+            return new System.Numerics.BigInteger(bits < 0 ? -mantissa : mantissa) << (exponent == 0 ? 0 : exponent - 1);
+        }
+
         private static List<int> BevelTriangulate(IList<int> polygon, IList<Vector3> positions, double epsilon)
 
         {
@@ -1369,12 +1519,6 @@ namespace MashBoxSDK.AnimationStudio
             var normal = BevelPolygonNormal(polygon, positions); int axis = BevelAxis(normal);
 
             double sign = axis == 0 ? normal.x : axis == 1 ? normal.y : normal.z; sign = sign >= 0 ? 1 : -1;
-
-            float longest = 0;
-
-            for (int i = 0; i < polygon.Count; i++) longest = Mathf.Max(longest, Vector3.Distance(positions[polygon[i]], positions[polygon[(i + 1) % polygon.Count]]));
-
-            double tolerance = epsilon * Math.Max(epsilon, longest);
 
             var remaining = new List<int>(polygon); var triangles = new List<int>((polygon.Count - 2) * 3);
 
@@ -1392,7 +1536,7 @@ namespace MashBoxSDK.AnimationStudio
 
                     var pa = BevelProject(positions[a], axis); var pb = BevelProject(positions[b], axis); var pc = BevelProject(positions[c], axis);
 
-                    if (BevelCross(pa, pb, pc) * sign <= tolerance) continue;
+                    if (BevelOrientation(pa, pb, pc) * sign <= 0) continue;
 
                     bool occupied = false;
 
@@ -1404,7 +1548,7 @@ namespace MashBoxSDK.AnimationStudio
 
                         var p = BevelProject(positions[point], axis);
 
-                        if (BevelCross(pa, pb, p) * sign >= -tolerance && BevelCross(pb, pc, p) * sign >= -tolerance && BevelCross(pc, pa, p) * sign >= -tolerance) { occupied = true; break; }
+                        if (BevelOrientation(pa, pb, p) * sign >= 0 && BevelOrientation(pb, pc, p) * sign >= 0 && BevelOrientation(pc, pa, p) * sign >= 0) { occupied = true; break; }
 
                     }
 
@@ -1422,7 +1566,7 @@ namespace MashBoxSDK.AnimationStudio
 
             {
 
-                if (Vector3.Cross(positions[remaining[1]] - positions[remaining[0]], positions[remaining[2]] - positions[remaining[0]]).sqrMagnitude <= tolerance * tolerance)
+                if (BevelOrientation(BevelProject(positions[remaining[0]], axis), BevelProject(positions[remaining[1]], axis), BevelProject(positions[remaining[2]], axis)) == 0)
 
                     throw new BevelOverlap("The bevel created a zero-area triangle.");
 
@@ -1436,11 +1580,34 @@ namespace MashBoxSDK.AnimationStudio
 
 
 
-        private BevelResult WriteBevelDraft(StudioModelDocument.Node node, BevelDraft draft, int edgeCount, Action beforeWrite, double epsilon)
+#if MASHBOX_STUDIO_TESTS
+        private BevelResult WriteBevelDraftReference(StudioModelDocument.Node node, BevelDraft draft, int edgeCount, Action beforeWrite, double epsilon)
 
         {
+            var polygons=new List<BevelPolygon>();
+            foreach (int face in draft.Plan.StaticFaces) polygons.Add(new BevelPolygon { OriginalFace=face, Material=Faces[face].Submesh });
+            polygons.AddRange(draft.Polygons);
+
 
             var mesh = node.mesh; var colors = mesh.colors; var tangents = mesh.tangents;
+            var originalNormals = mesh.normals;
+            if (originalNormals.Length != Positions.Length)
+            {
+                // No authored normals: use area-weighted normals for retained
+                // source vertices rather than publishing zero-valued normals.
+                originalNormals = new Vector3[Positions.Length];
+                for (int sub = 0; sub < mesh.subMeshCount; sub++)
+                {
+                    var triangles = mesh.GetTriangles(sub);
+                    for (int i = 0; i < triangles.Length; i += 3)
+                    {
+                        int a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+                        var normal = Vector3.Cross(Positions[b] - Positions[a], Positions[c] - Positions[a]);
+                        originalNormals[a] += normal; originalNormals[b] += normal; originalNormals[c] += normal;
+                    }
+                }
+                for (int i = 0; i < originalNormals.Length; i++) originalNormals[i] = BevelUnit(originalNormals[i]);
+            }
 
             var sourceUV = new List<Vector4>[8]; var uv = new List<Vector4>[8]; var dimensions = new int[8];
 
@@ -1456,7 +1623,8 @@ namespace MashBoxSDK.AnimationStudio
 
             var used = new bool[draft.Vertices.Count];
 
-            foreach (var polygon in draft.Polygons) foreach (int vertex in polygon.Vertices) used[vertex] = true;
+            foreach (var polygon in polygons)
+                if (polygon.OriginalFace < 0) foreach (int vertex in polygon.Vertices) used[vertex] = true;
 
             for (int v = 0; v < draft.Vertices.Count; v++)
 
@@ -1521,11 +1689,40 @@ namespace MashBoxSDK.AnimationStudio
             var indices = new List<int>[mesh.subMeshCount]; for (int i = 0; i < indices.Length; i++) indices[i] = new List<int>();
 
             var metadata = new List<int>();
+            // Untouched faces retain their authored triangle diagonals and exact
+            // vertex attributes. An unrelated tiny/degenerate source triangle must
+            // not invalidate a local bevel elsewhere on an imported production mesh.
+            var originalTriangles = BevelSourceTriangles(mesh);
+            var originalRender = new Dictionary<int, int>();
+            int OriginalVertex(int source)
+            {
+                if (originalRender.TryGetValue(source, out int result)) return result;
+                result = positions.Count; originalRender.Add(source, result); positions.Add(Positions[source]);
+                var normal = originalNormals.Length == Positions.Length ? originalNormals[source] : Vector3.zero;
+                normals.Add(normal);
+                var key = (welded[source], normal.normalized);
+                if (!smoothing.TryGetValue(key, out int group)) { group = smoothing.Count; smoothing.Add(key, group); }
+                groups.Add(group);
+                if (colors.Length > 0) outputColors.Add(colors[source]);
+                if (tangents.Length > 0) outputTangents.Add(tangents[source]);
+                for (int c = 0; c < 8; c++) if (uv[c] != null) uv[c].Add(sourceUV[c][source]);
+                return result;
+            }
 
-            foreach (var polygon in draft.Polygons)
+            foreach (var polygon in polygons)
 
             {
 
+                if (polygon.OriginalFace >= 0)
+                {
+                    var face = Faces[polygon.OriginalFace]; var triangles = originalTriangles[polygon.OriginalFace];
+                    if (triangles.Count != (face.Vertices.Count - 2) * 3)
+                        throw new BevelOverlap("An untouched source face has no matching render triangulation.");
+                    metadata.Add(face.Submesh); metadata.Add(face.Vertices.Count);
+                    foreach (int vertex in face.Vertices) metadata.Add(OriginalVertex(vertex));
+                    foreach (int vertex in triangles) indices[face.Submesh].Add(OriginalVertex(vertex));
+                    continue;
+                }
                 var vertices = new List<int>(polygon.Vertices.Count); foreach (int v in polygon.Vertices) vertices.Add(render[v]);
 
                 metadata.Add(polygon.Material); metadata.Add(vertices.Count); metadata.AddRange(vertices);
@@ -1558,13 +1755,23 @@ namespace MashBoxSDK.AnimationStudio
 
             mesh.subMeshCount = indices.Length; for (int i = 0; i < indices.Length; i++) mesh.SetTriangles(indices[i], i, false);
 
-            if (uv[0] != null) mesh.RecalculateTangents(); else if (tangents.Length > 0) mesh.SetTangents(outputTangents);
+            if (uv[0] != null)
+            {
+                mesh.RecalculateTangents();
+                if (tangents.Length == Positions.Length && originalRender.Count > 0)
+                {
+                    mesh.GetTangents(outputTangents);
+                    foreach (var pair in originalRender) outputTangents[pair.Value] = tangents[pair.Key];
+                    mesh.SetTangents(outputTangents);
+                }
+            }
+            else if (tangents.Length > 0) mesh.SetTangents(outputTangents);
 
             mesh.RecalculateBounds(); mesh.UploadMeshData(false);
 
             node.cutPolygons = metadata.ToArray(); node.cutTriangles = mesh.triangles; node.normalGroups = groups.ToArray();
 
-            var result = new BevelResult { AppliedWidth = draft.Width, Edges = edgeCount, AddedFaces = draft.Polygons.Count - Faces.Count };
+            var result = new BevelResult { AppliedWidth = draft.Width, Edges = edgeCount, AddedFaces = draft.Polygons.Count + draft.Plan.StaticFaces.Count - (bevelInputFaceCount > 0 ? bevelInputFaceCount : Faces.Count) };
 
             foreach (var edge in draft.Selection) result.Selection.Add(NormalEdgePositionKeyForBevel(draft.Positions[edge.Item1], draft.Positions[edge.Item2]));
 
@@ -1572,6 +1779,7 @@ namespace MashBoxSDK.AnimationStudio
 
         }
 
+#endif
         internal static (Vector3, Vector3) NormalEdgePositionKeyForBevel(Vector3 a, Vector3 b)
 
         {

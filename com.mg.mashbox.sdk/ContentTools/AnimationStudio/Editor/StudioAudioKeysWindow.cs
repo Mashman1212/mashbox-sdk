@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var window = GetWindow<StudioAudioKeysWindow>("Audio Keys");
             window.preview.Dispose(); window.take = actor; window.selected = index;
-            window.minSize = new Vector2(440, 380); window.RefreshEvents(); window.Show();
+            window.minSize = new Vector2(440, 380); window.RefreshEvents(); StudioWindowOwnership.Show(window);
         }
         private void OnEnable()
         {

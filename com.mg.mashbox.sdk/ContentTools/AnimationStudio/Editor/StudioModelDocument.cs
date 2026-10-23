@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -130,7 +131,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (!mesh && StudioAnchorCatalog.Contains(t.name)) node.anchorType = t.name;
                     if (mesh)
                     {
-                        node.mesh = Instantiate(mesh); node.mesh.name = mesh.name + " Editable";
+                        node.mesh = StudioWorkspaceText.ReadableSnapshot(mesh); node.mesh.name = mesh.name + " Editable";
                         // Fail before saving if an importer cannot supply CPU geometry.
                         var vertices = node.mesh.vertices;
                         CaptureMeshTopology(node);
