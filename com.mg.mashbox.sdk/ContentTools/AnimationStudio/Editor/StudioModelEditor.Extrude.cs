@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        private float extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .1f);
+        private float extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .01f);
         private bool extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         private bool CanExtrude => CanCutMesh && (mode == ComponentMode.Face || mode == ComponentMode.Edge) && Components.Count > 0;
         private int handleExtrudeControl;
@@ -112,27 +112,5 @@ namespace MashBoxSDK.AnimationStudio
             evt.Use(); return true;
         }
 
-        private void DrawExtrusionOptions()
-        {
-            if (mode != ComponentMode.Face && mode != ComponentMode.Edge) return;
-            GUILayout.Space(8);
-            GUILayout.Label("EXTRUDE", StudioTheme.Styles.boldLabel);
-            EditorGUI.BeginChangeCheck();
-            extrusionDistance = EditorGUILayout.FloatField(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
-            if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
-            if (EditorGUI.EndChangeCheck()) { StoreExtrusionDefaults(); QueueLiveTool(LiveTool.Extrude); extrudeToolPane?.Repaint(); }
-            using (new EditorGUI.DisabledScope(!CanExtrude))
-                if (GUILayout.Button("Extrude Options ("+StudioShortcuts.Label(StudioShortcut.Extrude)+")")) Run(ExtrudeSelected, false);
-            if (HasLiveTool(LiveTool.Extrude) || (previewQueued && queuedTool == LiveTool.Extrude))
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    if (GUILayout.Button("Apply")) Run(() => ApplyLiveTool(LiveTool.Extrude), false);
-                    if (GUILayout.Button("Cancel")) CancelLiveTool(LiveTool.Extrude);
-                }
-            GUILayout.Label(mode == ComponentMode.Face
-                ? "Extrude along the selected normals, then move, rotate or scale the selected caps. Disable Keep Faces Together for separate face extrusions."
-                : "Extrude open boundary edges along their surface normals. The new outer edges stay selected for further editing.", StudioTheme.Styles.wordWrappedMiniLabel);
-            GUILayout.Label("Shift-drag a Move, Rotate or Scale handle to extrude using the current World/Object orientation.", StudioTheme.Styles.wordWrappedMiniLabel);
-        }
     }
 }

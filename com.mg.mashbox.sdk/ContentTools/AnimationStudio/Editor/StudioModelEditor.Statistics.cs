@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace MashBoxSDK.AnimationStudio
 {
@@ -25,15 +24,16 @@ namespace MashBoxSDK.AnimationStudio
         private void FlushPositionStatistics()
         {
             if (deferredPositionStatistics.Count == 0) return;
+            cachedSelectedStatistics = null;
             foreach (var node in deferredPositionStatistics) statisticsCache.Remove(node);
             deferredPositionStatistics.Clear();
             repaint();
         }
-        private static readonly string[] StatisticsLabels = { "Verts", "Edges", "Faces", "Tris", "UVs" };
-        private static readonly GUIContent[] StatisticsHeaders={new GUIContent("Scene"),new GUIContent("Selected")};
+        private static readonly string[] StatisticsLabels = { "Verts", "Edges", "Faces", "Tris" };
         private static readonly GUIContent[] StatisticsRowContent=Array.ConvertAll(StatisticsLabels,s=>new GUIContent(s));
-        private readonly GUIContent[] statisticsValues=new GUIContent[10];
-        private readonly long[] statisticsLastValues=new long[10];
+        private GUIStyle statisticsLabelStyle;
+        private readonly GUIContent[] statisticsValues=new GUIContent[8];
+        private readonly long[] statisticsLastValues=new long[8];
         private GUIContent StatisticsValue(int index,long value)
         {
             if(statisticsValues[index]==null)statisticsValues[index]=new GUIContent();
@@ -43,7 +43,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal (long[] scene, long[] selected) MeshStatistics()
         {
-            var scene = new long[5]; var selected = new long[5];
+            var scene = new long[4]; var selected = new long[4];
             if (!Document) return (scene, selected);
             for (int i = 0; i < Document.nodes.Count && i < Transforms.Length; i++)
             {
@@ -53,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (!renderer || !renderer.enabled) continue;
                 if (!statisticsCache.TryGetValue(node, out var counts)) statisticsCache[node] = counts = CountMesh(node);
                 bool isSelected = mode == ComponentMode.Object && (objects.Contains(i) || HasSelectedParent(i));
-                for (int c = 0; c < 5; c++) { scene[c] += counts[c]; if (isSelected) selected[c] += counts[c]; }
+                for (int c = 0; c < 4; c++) { scene[c] += counts[c]; if (isSelected) selected[c] += counts[c]; }
             }
             if (mode != ComponentMode.Object && Active >= 0 && ActiveMesh && Transforms[Active].gameObject.activeInHierarchy)
             {
@@ -62,11 +62,30 @@ namespace MashBoxSDK.AnimationStudio
             }
             return (scene, selected);
         }
+        private Mesh selectedStatisticsMesh;
+        private ComponentMode selectedStatisticsMode;
+        private bool selectedStatisticsWeld;
+        private int selectedStatisticsVersion;
+        private long[] cachedSelectedStatistics;
+        private readonly HashSet<int> selectedStatisticsComponents = new HashSet<int>();
         private long[] CountSelectedComponents()
         {
-            var counts = new long[5];
+            var mesh=ActiveMesh;
+            int version=mesh ? EditorUtility.GetDirtyCount(mesh) : 0;
+            bool deferred=Document && Active>=0 && deferredPositionStatistics.Contains(Document.nodes[Active]);
+            if(cachedSelectedStatistics!=null && selectedStatisticsMesh==mesh && selectedStatisticsMode==mode &&
+                selectedStatisticsWeld==weld && (selectedStatisticsVersion==version || deferred) &&
+                selectedStatisticsComponents.SetEquals(Components)) return cachedSelectedStatistics;
+            cachedSelectedStatistics=CalculateSelectedComponents();
+            selectedStatisticsMesh=mesh;selectedStatisticsMode=mode;selectedStatisticsWeld=weld;selectedStatisticsVersion=version;
+            selectedStatisticsComponents.Clear();selectedStatisticsComponents.UnionWith(Components);
+            return cachedSelectedStatistics;
+        }
+        private long[] CalculateSelectedComponents()
+        {
+            var counts = new long[4];
             if (Components.Count == 0) return counts;
-            var mesh = ActiveMesh; var positions = ComponentPositions();
+            var positions = ComponentPositions();
             var vertices = new HashSet<int>();
             var edges = new HashSet<(Vector3, Vector3)>();
             void Vertex(int i) { if (i >= 0 && i < positions.Count) vertices.Add(i); }
@@ -99,10 +118,6 @@ namespace MashBoxSDK.AnimationStudio
             }
             var selectedPositions = new HashSet<Vector3>(vertices.Select(i => positions[i]));
             counts[0] = selectedPositions.Count; counts[1] = edges.Count;
-            // Coincident seam vertices are edited together when welding is enabled.
-            if (weld && mode != ComponentMode.Face)
-                ExpandWeldedSelection(vertices,positions);
-            counts[4] = mesh.HasVertexAttribute(VertexAttribute.TexCoord0) ? vertices.Count : 0;
             return counts;
         }
         private static long[] CountMesh(StudioModelDocument.Node node)
@@ -155,8 +170,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if (type == MeshTopology.Lines) for (int i = 0; i + 1 < indices.Length; i += 2) Edge(indices[i], indices[i + 1]);
                 else if (type == MeshTopology.LineStrip) for (int i = 0; i + 1 < indices.Length; i++) Edge(indices[i], indices[i + 1]);
             }
-            var uv = new List<Vector2>(); mesh.GetUVs(0, uv);
-            return new[] { (long)ids.Count, edges.Count, faces, triangles, uv.Count };
+            return new[] { (long)ids.Count, edges.Count, faces, triangles };
         }
         internal void DrawStatistics()
         {
@@ -168,20 +182,29 @@ namespace MashBoxSDK.AnimationStudio
 #if MASHBOX_STUDIO_TESTS
             ProfileScene("stats.count");
 #endif
-            // Text stays readable over both lit geometry and the gray viewport, without a panel fill.
+            // Explicit presentation also updates styles retained across editor hot reload.
+            if (statisticsLabelStyle == null) statisticsLabelStyle = new GUIStyle(EditorStyles.label);
+            statisticsLabelStyle.fontSize = 11;
+            statisticsLabelStyle.normal.textColor = new Color(.82f, .82f, .82f, 1);
             void Label(Rect rect, GUIContent text)
             {
                 var color = GUI.contentColor;
-                GUI.contentColor = Color.black; GUI.Label(new Rect(rect.x + 1, rect.y + 1, rect.width, rect.height), text, StudioTheme.Styles.miniLabel);
-                GUI.contentColor = Color.white; GUI.Label(rect, text, StudioTheme.Styles.miniLabel); GUI.contentColor = color;
+                var tint = GUI.color;
+                var enabled = GUI.enabled;
+                GUI.enabled = true;
+                GUI.color = Color.white;
+                GUI.contentColor = Color.black; statisticsLabelStyle.Draw(new Rect(rect.x + 1, rect.y + 1, rect.width, rect.height), text, false, false, false, false);
+                GUI.contentColor = Color.white; statisticsLabelStyle.Draw(rect, text, false, false, false, false);
+                GUI.contentColor = color;
+                GUI.color = tint;
+                GUI.enabled = enabled;
             }
-            Label(new Rect(64, 0, 88, 18), StatisticsHeaders[0]); Label(new Rect(158, 0, 90, 18), StatisticsHeaders[1]);
             for (int i = 0; i < StatisticsLabels.Length; i++)
             {
-                float y = 18 + i * 17;
+                float y = i * 17;
                 Label(new Rect(0, y, 64, 18), StatisticsRowContent[i]);
                 Label(new Rect(64, y, 88, 18), StatisticsValue(i,counts.scene[i]));
-                Label(new Rect(158, y, 90, 18), StatisticsValue(i+5,counts.selected[i]));
+                Label(new Rect(158, y, 90, 18), StatisticsValue(i+4,counts.selected[i]));
             }
         }
     }

@@ -93,14 +93,15 @@ namespace MashBoxSDK.AnimationStudio
                 for (int i = 0; i < node.bones.Length; i++) if (node.bones[i] >= 0) node.bones[i] += first;
                 if (node.rootBone >= 0) node.rootBone += first;
             }
-            Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Import model"); Undo.RegisterCompleteObjectUndo(this, "Import model");
             try
             {
                 foreach (var node in captured) if (node.mesh) AttachOwnedMesh(node.mesh);
                 nodes.AddRange(captured); EditorUtility.SetDirty(this);
-                // Retain owned meshes when nodes are undone so Redo keeps persistent references.
-                Undo.CollapseUndoOperations(group); return first;
+                // Import establishes a document baseline. Older document snapshots omit the
+                // appended nodes, so retire only this document's incompatible history.
+                Undo.ClearUndo(this);
+                StudioSelectionUndoState.ImportBaseline(this);
+                return first;
             }
             catch
             {

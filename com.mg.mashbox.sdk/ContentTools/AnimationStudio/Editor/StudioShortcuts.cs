@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         Select, Move, Rotate, Scale, Pivot, Frame, Object, Vertex, Edge, Face,
         Save, SaveAs, Duplicate, Delete, Extrude, Undo, Redo, Cancel, CommitCut, RemoveCut,
         VertexSnap, GridSnap, LargerHandles, SmallerHandles, Maximize, Preferences,
-        Orbit, Pan, Dolly, MarkingMenu, FrameAllUV, SelectAll, AxisMenu, XRay
+        Orbit, Pan, Dolly, MarkingMenu, FrameAllUV, SelectAll, AxisMenu, XRay, PaintSelection, UnpaintSelection
     }
     [Flags] internal enum StudioModifiers { None = 0, Shift = 1, Action = 2, Alt = 4 }
 
@@ -107,6 +107,8 @@ namespace MashBoxSDK.AnimationStudio
             new Definition(StudioShortcut.Edge,"Selection","Edge mode",Key(KeyCode.Alpha3,shift:true)),
             new Definition(StudioShortcut.Face,"Selection","Face mode",Key(KeyCode.Alpha4,shift:true)),
             new Definition(StudioShortcut.SelectAll,"Selection","Select all",Key(KeyCode.A,StudioModifiers.Action)),
+            new Definition(StudioShortcut.PaintSelection,"Select","Paint selection (hold + left drag)",Key(KeyCode.Tab,any:true)),
+            new Definition(StudioShortcut.UnpaintSelection,"Select","Unpaint selection (hold + left drag)",Key(KeyCode.Tab,StudioModifiers.Action)),
             new Definition(StudioShortcut.Frame,"View","Frame selection",Key(KeyCode.F,shift:true)),
             new Definition(StudioShortcut.XRay,"View","X-ray mode",Key(KeyCode.X,StudioModifiers.Alt)),
             new Definition(StudioShortcut.Maximize,"View","Maximize / restore window",Key(KeyCode.F11),Key(KeyCode.Space,StudioModifiers.Shift)),
@@ -117,7 +119,7 @@ namespace MashBoxSDK.AnimationStudio
             new Definition(StudioShortcut.Undo,"Workspace","Undo",Key(KeyCode.Z,StudioModifiers.Action)),
             new Definition(StudioShortcut.Redo,"Workspace","Redo",Key(KeyCode.Y,StudioModifiers.Action),Key(KeyCode.Z,StudioModifiers.Action|StudioModifiers.Shift)),
             new Definition(StudioShortcut.Duplicate,"Workspace","Duplicate objects",Key(KeyCode.D,StudioModifiers.Action)),
-            new Definition(StudioShortcut.Delete,"Workspace","Delete objects",Key(KeyCode.Delete,shift:true),Key(KeyCode.Backspace,shift:true)),
+            new Definition(StudioShortcut.Delete,"Workspace","Delete selection",Key(KeyCode.Delete,shift:true),Key(KeyCode.Backspace,shift:true)),
             new Definition(StudioShortcut.Extrude,"Mesh","Extrude",Key(KeyCode.E,StudioModifiers.Action)),
             new Definition(StudioShortcut.Cancel,"Mesh","Cancel / exit tool",Key(KeyCode.Escape,any:true)),
             new Definition(StudioShortcut.CommitCut,"Cut tool","Apply cut path",Key(KeyCode.Return,any:true),Key(KeyCode.KeypadEnter,any:true)),

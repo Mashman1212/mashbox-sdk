@@ -18,9 +18,9 @@ namespace MashBoxSDK.AnimationStudio
             float.IsNaN(preferredToolHeight) || float.IsInfinity(preferredToolHeight) ? 220 : preferredToolHeight,
             80, Mathf.Max(80, StudioContentHeight - ModelingPanelTop - PanelMargin - ToolDividerHeight - 120));
         private const float MinLeft = 180, MinRight = 220, MaxPanel = 600, MinCanvas = 320, DividerWidth = 8, ToolDividerHeight = 10;
-        private const float PanelMargin = 8;
+        private const float PanelMargin = 4;
         private const float PanelCornerRadius = 8;
-        private const float ModelingPanelTop = 8;
+        private const float ModelingPanelTop = 4;
         internal const float ModeSelectorWidth = 128;
         private float HierarchyLeft => PanelMargin;
         private float PanelLayoutWidth => PanelMargin * 2 + DividerWidth * 2;
@@ -80,6 +80,7 @@ namespace MashBoxSDK.AnimationStudio
                 rootVisualElement.Add(toolOptionsDivider);
             }
             UpdatePanelLayout(); leftDivider.BringToFront(); rightDivider.BringToFront();
+            viewportCameraButton?.BringToFront(); viewportLightingButton?.BringToFront();
         }
         private IMGUIContainer CreatePanelDivider(int side, string elementName)
         {
@@ -140,15 +141,17 @@ namespace MashBoxSDK.AnimationStudio
             float overlayTop = ModelingPanelTop;
             if (modeSelector != null) { modeSelector.style.left = PanelMargin; modeSelector.style.top = 0; }
             float optionsTop = overlayTop;
-            if (viewportOptions != null) { viewportOptions.style.left = canvasLeft + 40; viewportOptions.style.top = optionsTop; }
-            if (studioSettings != null) { studioSettings.style.left = canvasLeft + 8; studioSettings.style.top = optionsTop; }
-            if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop; }
+            float overlayLeft = HierarchyLeft + widths.x + ModelingPanelTop;
+            if (viewportOptions != null) { viewportOptions.style.left = overlayLeft + 32; viewportOptions.style.top = optionsTop; }
+            if (studioSettings != null) { studioSettings.style.left = overlayLeft; studioSettings.style.top = optionsTop; }
+            LayoutCameraSettingsButton(overlayLeft, optionsTop);
+            if (meshStatistics != null) { meshStatistics.style.left = overlayLeft; meshStatistics.style.top = optionsTop + 32; }
             LayoutWorkspaceStatistics(widths.y);
             if (leftDivider == null || rightDivider == null) return;
             leftDivider.style.left = HierarchyLeft + widths.x;
             rightDivider.style.right = PanelMargin + widths.y;
             leftDivider.style.top = rightDivider.style.top = ModelingPanelTop;
-            leftDivider.style.bottom = rightDivider.style.bottom = panelsModeling ? 8 : 148;
+            leftDivider.style.bottom = rightDivider.style.bottom = panelsModeling ? PanelMargin : 148;
         }
         private void DrawPanelDivider(int side)
         {

@@ -1,51 +1,7 @@
-using EditorPrefs = MashBoxSDK.AnimationStudio.StudioPreferenceStore;
-using System;
-using System.Reflection;
-using MashBoxSDK.AnimationStudio;
-using UnityEditor;
-using UnityEngine;
-using UnityEngine.UIElements;
-using Object=UnityEngine.Object;
-public static class StudioWorkspaceStatsValidation
-{
-    static int checks;
-    static void Check(bool pass,string message){if(!pass)throw new Exception(message);checks++;Debug.Log("PASS "+message);}
-    public static void Run()
-    {
-        bool existed=EditorPrefs.HasKey(StudioSettings.PreferenceKey);string saved=EditorPrefs.GetString(StudioSettings.PreferenceKey);
-        var view=ScriptableObject.CreateInstance<MashBoxStudioViewport>();
-        try
-        {
-            view.position=new Rect(0,0,1400,800);view.BindModes(()=>{},true);view.BindWorkspaceStatistics();
-            view.SetWorkspaceStatsVisible(false);
-            var button=view.rootVisualElement.Q<IMGUIContainer>("mashbox-workspace-stats-button");
-            var box=view.rootVisualElement.Q<IMGUIContainer>("mashbox-workspace-stats");
-            Check(button.style.display.value==DisplayStyle.Flex && box.style.display.value==DisplayStyle.None,"FPS icon is present with box initially hidden");
-            Check(button.style.height.value.value==24 && button.style.width.value.value==24 && button.style.top.value.value==32,"FPS icon matches the existing viewport toolbar buttons");
-            float right=button.style.right.value.value;view.ResizePanel(2,450);
-            Check(button.style.right.value.value>right && button.style.right.value.value==box.style.right.value.value,"FPS icon and box stay anchored beside Tool Options while resizing");
-            view.SetWorkspaceStatsVisible(true);
-            Check(box.style.display.value==DisplayStyle.Flex && box.pickingMode==PickingMode.Ignore,"FPS box toggles on and remains click-through");
-            for(int i=0;i<=60;i++)view.RecordWorkspaceFrame(100+i/60d);
-            Check(Math.Abs(view.WorkspaceFps-60)<.1,"Workspace FPS counts actual viewport frames over elapsed editor time");
-            view.RecordWorkspaceFrame(110);
-            Check(Math.Abs(view.WorkspaceFps-60)<.1,"Idle gaps preserve the last FPS reading while restarting the sample");
-            for(int i=1;i<=30;i++)view.RecordWorkspaceFrame(110+i/30d);
-            Check(Math.Abs(view.WorkspaceFps-30)<.1,"FPS adapts to slower viewport rendering");
-            view.BindModes(()=>{},false);
-            Check(button.style.display.value==DisplayStyle.None && box.style.display.value==DisplayStyle.None && view.WorkspaceFps==0,"Leaving modeling hides stats and stops sampling");
-            view.BindModes(()=>{},true);
-            Check(box.style.display.value==DisplayStyle.Flex,"Returning to modeling restores visible FPS box");
-            view.SetWorkspaceStatsVisible(false);view.RecordWorkspaceFrame(120);
-            Check(view.WorkspaceFps==0,"Disabling stats stops frame sampling");
-            StudioSettings.Reload();Check(!StudioSettings.Current.showWorkspaceFps,"FPS toggle preference persists");
-            Debug.Log("STUDIO_WORKSPACE_STATS_VALIDATION_SUCCESS "+checks+" checks");
-        }
-        finally
-        {
-            Object.DestroyImmediate(view);
-            if(existed)EditorPrefs.SetString(StudioSettings.PreferenceKey,saved);else EditorPrefs.DeleteKey(StudioSettings.PreferenceKey);
-            StudioSettings.Reload();
-        }
-    }
+using System;using System.IO;using System.Linq;using UnityEditor;using UnityEngine;using UnityEngine.UIElements;using MashBoxSDK.AnimationStudio;using Object=UnityEngine.Object;
+public static class StudioWorkspaceStatsValidation {
+ static int checks;static void Check(bool v,string m){if(!v)throw new Exception(m);checks++;}
+ public static void Run(){string report=Path.GetFullPath(Path.Combine(Application.dataPath,"../../viewport-statistics-result.txt"));try{Validate();File.WriteAllText(report,"PASS "+checks+" direct-FPS/four-statistics assertions");EditorApplication.delayCall+=()=>EditorApplication.Exit(0);}catch(Exception e){File.WriteAllText(report,e.ToString());EditorApplication.Exit(1);}}
+ static void Validate(){var view=ScriptableObject.CreateInstance<MashBoxStudioViewport>();bool old=StudioSettings.Current.showWorkspaceFps;bool hidden=StudioSettings.Current.hideViewportFps;try{StudioSettings.Current.hideViewportFps=false;StudioSettings.Current.showWorkspaceFps=false;view.position=new Rect(0,0,1400,800);view.BindModes(()=>{},true);view.BindWorkspaceStatistics();var label=view.rootVisualElement.Q<IMGUIContainer>("mashbox-workspace-stats");Check(label!=null&&label.style.display.value==DisplayStyle.Flex,"FPS not directly visible with legacy preference off");Check(view.rootVisualElement.Q("mashbox-workspace-stats-button")==null,"Old FPS button remains");Check(label.style.height.value.value==24&&label.style.width.value.value==80,"FPS readout has wrong size");Check(label.style.top.value.value==view.ModelCanvasRect.y,"FPS not at previous top-right control position");Check(label.pickingMode==PickingMode.Ignore,"FPS readout intercepts viewport input");float right=label.style.right.value.value;view.ResizePanel(2,450);Check(label.style.right.value.value>right,"Readout does not follow right-panel resize");for(int i=0;i<=60;i++)view.RecordWorkspaceFrame(100+i/60d);Check(Math.Abs(view.WorkspaceFps-60)<.1,"60 FPS sample incorrect");view.RecordWorkspaceFrame(110);Check(Math.Abs(view.WorkspaceFps-60)<.1,"Idle erased last sample");for(int i=1;i<=30;i++)view.RecordWorkspaceFrame(110+i/30d);Check(Math.Abs(view.WorkspaceFps-30)<.1,"30 FPS sample incorrect");view.BindModes(()=>{},false);Check(label.style.display.value==DisplayStyle.None&&view.WorkspaceFps==0,"Animation mode did not stop sampling");view.BindModes(()=>{},true);Check(label.style.display.value==DisplayStyle.Flex,"Returning to modeling hid FPS");StudioSettings.Current.hideViewportFps=true;view.ApplyTheme();Check(label.style.display.value==DisplayStyle.None&&view.WorkspaceFps==0,"FPS hide toggle did not stop/hide display");for(int i=0;i<60;i++)view.RecordWorkspaceFrame(200+i/60d);Check(view.WorkspaceFps==0,"Hidden FPS kept sampling");Check(JsonUtility.FromJson<StudioSettings.Preferences>(JsonUtility.ToJson(StudioSettings.Current)).hideViewportFps,"FPS preference serialization lost hidden state");StudioSettings.Current.hideViewportFps=false;view.ApplyTheme();Check(label.style.display.value==DisplayStyle.Flex,"FPS show toggle did not restore readout");}finally{StudioSettings.Current.hideViewportFps=hidden;StudioSettings.Current.showWorkspaceFps=old;Object.DestroyImmediate(view);}
+ var doc=StudioModelDocument.CreateEmpty(StudioModelDocument.NewWorkspacePath("Four Statistics Validation"));doc.AddPrimitive(PrimitiveType.Cube);doc.AddPrimitive(PrimitiveType.Cube);using(var editor=new StudioModelEditor(()=>{})){editor.Load(doc);editor.SelectObject(0);var menu=new StudioMenu("Display");typeof(StudioModelEditor).GetMethod("PopulateModelMenu",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(editor,new object[]{"Display",menu,null,null});int gizmo=menu.Items.FindIndex(i=>i.Text=="Orientation Gizmo");Check(gizmo>=0&&menu.Items[gizmo+1].Text=="FPS Display","FPS Display is not immediately after Orientation Gizmo");Check(!menu.Items[gizmo+1].Command.HasValue,"FPS visibility registered as modeling hotkey");var counts=editor.MeshStatistics();Check(counts.scene.SequenceEqual(new long[]{16,24,12,24}),"Scene totals contain UVs or incorrect geometry counts");Check(counts.selected.SequenceEqual(new long[]{8,12,6,12}),"Selected object counts incorrect");editor.SetToolbarComponentMode(StudioModelEditor.ComponentMode.Vertex);editor.Components.Add(0);Check(editor.MeshStatistics().selected.SequenceEqual(new long[]{1,0,0,0}),"Vertex selection counts incorrect");editor.SetToolbarComponentMode(StudioModelEditor.ComponentMode.Edge);editor.Components.Add(0);Check(editor.MeshStatistics().selected.SequenceEqual(new long[]{2,1,0,0}),"Edge selection counts incorrect");editor.SetToolbarComponentMode(StudioModelEditor.ComponentMode.Face);editor.Components.Add(0);Check(editor.MeshStatistics().selected.SequenceEqual(new long[]{4,4,1,2}),"Face selection counts incorrect");doc.nodes[0].mesh.SetUVs(0,new System.Collections.Generic.List<Vector2>());editor.Changed();Check(editor.MeshStatistics().scene.SequenceEqual(new long[]{16,24,12,24}),"UV changes affected geometry-only totals");}}
 }

@@ -29,10 +29,16 @@ namespace MashBoxSDK.AnimationStudio
             moveDragOrigin = Handles.matrix.MultiplyPoint3x4(origin);
             moveDragOrientation = orientation;
         }
+#if MASHBOX_STUDIO_TESTS
+        internal static System.Action<Vector3,float> MoveHandleProbe;
+#endif
         private Vector3 DrawMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
             if (GUIUtility.hotControl == 0) moveDragControl = 0;
             float size = HandleUtility.GetHandleSize(center) * sizeMultiplier;
+#if MASHBOX_STUDIO_TESTS
+            MoveHandleProbe?.Invoke(center,size);
+#endif
             var result = center;
             using (new Handles.DrawingScope())
             {

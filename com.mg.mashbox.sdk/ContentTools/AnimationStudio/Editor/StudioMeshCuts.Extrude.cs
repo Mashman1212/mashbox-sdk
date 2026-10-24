@@ -150,7 +150,22 @@ namespace MashBoxSDK.AnimationStudio
             var compact = used.Select(i => positions[i]).ToList();
             foreach (var f in result) f.Vertices = f.Vertices.Select(i => remap[i]).ToList();
             var indices = Enumerable.Range(0, mesh.subMeshCount).Select(_ => new List<int>()).ToArray();
-            foreach (var f in result) Triangulate(f.Vertices, compact, indices[f.Submesh]);
+            // Extrusion changes connectivity only at the new walls. Retain authored
+            // render diagonals on original faces and remap selected caps onto their
+            // copied vertices. Retriangulating unrelated imported faces can reject
+            // valid small/warped quads and change their piecewise surface.
+            var sourceTriangles = BevelSourceTriangles(mesh);
+            for (int f = 0; f < Faces.Count; f++)
+            {
+                var triangles = sourceTriangles[f];
+                if (triangles.Count != (Faces[f].Vertices.Count - 2) * 3)
+                    throw new InvalidOperationException("An extrusion source face has no matching render triangulation.");
+                bool cap = faceMode && selected.Contains(f);
+                foreach (int vertex in triangles)
+                    indices[Faces[f].Submesh].Add(remap[cap ? top[(Group(f), vertex)] : vertex]);
+            }
+            for (int f = Faces.Count; f < result.Count; f++)
+                Triangulate(result[f].Vertices, compact, indices[result[f].Submesh]);
             // Build connectivity from a valid normal extrusion, then place only its
             // new tips/caps using the handle's world/object-space transformation.
             if (transform != null) foreach (int id in used.Where(moving.Contains))

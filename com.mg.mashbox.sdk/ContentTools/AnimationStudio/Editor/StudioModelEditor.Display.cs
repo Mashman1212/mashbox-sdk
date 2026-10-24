@@ -16,6 +16,7 @@ namespace MashBoxSDK.AnimationStudio
             StudioPreferenceStore.SetFloat("Model.Lighting", displayLighting ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.Textures", displayTextures ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.XRay", displayXray ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.BackfaceCulling", backfaceCulling ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.WireframeOnly", wireframeOnly ? 1 : 0);
         }
         private void LoadDisplayConfiguration()
@@ -26,11 +27,79 @@ namespace MashBoxSDK.AnimationStudio
             displayLighting = StudioPreferenceStore.GetFloat("Model.Lighting", 1) >= .5f;
             displayTextures = StudioPreferenceStore.GetFloat("Model.Textures", 1) >= .5f;
             displayXray = StudioPreferenceStore.GetFloat("Model.XRay", 0) >= .5f;
+            backfaceCulling = StudioPreferenceStore.GetFloat("Model.BackfaceCulling", 1) >= .5f;
             wireframeOnly = StudioPreferenceStore.GetFloat("Model.WireframeOnly", 0) >= .5f;
             ApplyDisplayMaterials();
         }
         private bool displayLighting = true, displayTextures = true;
         private bool displayXray;
+        private bool backfaceCulling = true;
+        internal bool BackfaceCulling => backfaceCulling;
+        internal void SetBackfaceCulling(bool enabled)
+        {
+            if (backfaceCulling == enabled) return;
+            backfaceCulling = enabled;
+            SaveDisplayConfiguration(); ApplyDisplayMaterials(); repaint();
+        }
+        private readonly Dictionary<Material, Material> culledSourceMaterials = new Dictionary<Material, Material>();
+        private static readonly string[] DisplayCullProperties = { "_Cull", "_CullMode", "_CullModeForward", "_TransparentCullMode" };
+        private CommandBuffer blackBackfaceCommands;
+        private readonly List<(Renderer renderer, int submesh, Material material)> blackBackfaceDraws = new List<(Renderer, int, Material)>();
+        private readonly Dictionary<Material, Material> blackBackfaceMaterials = new Dictionary<Material, Material>();
+        private void AddBlackBackfaces(Renderer renderer, Material[] materials)
+        {
+            if (backfaceCulling || wireframeOnly || displayXray) return;
+            var mesh = renderer is SkinnedMeshRenderer skin ? skin.sharedMesh : renderer.GetComponent<MeshFilter>()?.sharedMesh;
+            if (!mesh || materials.Length == 0) return;
+            for (int sub = 0; sub < mesh.subMeshCount; sub++)
+            {
+                var source = materials[Math.Min(sub, materials.Length - 1)];
+                if (!source || source.HasProperty("_BlackBackfaces")) continue;
+                if (!blackBackfaceMaterials.TryGetValue(source, out var black))
+                {
+                    black = NewPreviewMaterial(source);
+                    black.name = "Studio black back faces";
+                    black.SetFloat("_Cull", (float)CullMode.Front);
+                    black.SetFloat("_ZWrite", 0);
+                    if (source.HasProperty("_Cutoff")) black.SetFloat("_Cutoff", source.GetFloat("_Cutoff"));
+                    else if (source.HasProperty("_AlphaCutoff")) black.SetFloat("_Cutoff", source.GetFloat("_AlphaCutoff"));
+                    blackBackfaceMaterials.Add(source, black);
+                }
+                if (blackBackfaceCommands == null) blackBackfaceCommands = new CommandBuffer { name = "Studio black back faces" };
+                blackBackfaceDraws.Add((renderer, sub, black));
+            }
+        }
+        private void DrawBlackBackfaces()
+        {
+            if (blackBackfaceCommands == null) return;
+            blackBackfaceCommands.Clear();
+            foreach (var draw in blackBackfaceDraws)
+                if (draw.renderer && draw.renderer.enabled && !draw.renderer.forceRenderingOff && draw.renderer.shadowCastingMode != ShadowCastingMode.ShadowsOnly && draw.renderer.gameObject.activeInHierarchy)
+                    blackBackfaceCommands.DrawRenderer(draw.renderer, draw.material, draw.submesh, 0);
+            Graphics.ExecuteCommandBuffer(blackBackfaceCommands);
+        }
+        private void ConfigureDisplayCulling(Material material)
+        {
+            if (material.HasProperty("_BlackBackfaces")) material.SetFloat("_BlackBackfaces", 1);
+            foreach (var property in DisplayCullProperties)
+                if (material.HasProperty(property)) material.SetFloat(property, (float)(backfaceCulling ? CullMode.Back : CullMode.Off));
+            if (material.HasProperty("_DoubleSidedEnable"))
+            {
+                material.SetFloat("_DoubleSidedEnable", backfaceCulling ? 0 : 1);
+                if (backfaceCulling) material.DisableKeyword("_DOUBLESIDED_ON");
+                else material.EnableKeyword("_DOUBLESIDED_ON");
+            }
+        }
+        private Material CulledSourceMaterial(Material source)
+        {
+            if (!culledSourceMaterials.TryGetValue(source, out var material))
+            {
+                material = new Material(source) { name = source.name + " (Studio preview)", hideFlags = HideFlags.HideAndDontSave };
+                ConfigureDisplayCulling(material);
+                culledSourceMaterials.Add(source, material);
+            }
+            return material;
+        }
         private bool wireframeOnly;
         internal DrawCameraMode ModelDrawMode => wireframeOnly ? DrawCameraMode.Wireframe :
             StudioSettings.Current.hideObjectWireframe ? DrawCameraMode.Textured : DrawCameraMode.TexturedWire;
@@ -99,13 +168,14 @@ namespace MashBoxSDK.AnimationStudio
                 for(int slot=0;slot<slots;slot++)
                     materials[slot] = DisplayMaterial(slot<originals.Length ? originals[slot] : null, node.previewTextureSlice);
                 renderer.sharedMaterials = materials;
+                AddBlackBackfaces(renderer, materials);
             }
         }
         private static bool IsGodGrass(Material source) => source && source.HasProperty("_GrassBaseArray");
         private Material DisplayMaterial(Material source, int slice = 0)
         {
             // Editable geometry already contains its pose; terrain deformation must not run again.
-            if (!displayXray && !wireframeOnly && LightingSettings.studioLights && displayLighting && displayTextures && !IsGodGrass(source) && source) return source;
+            if (!displayXray && !wireframeOnly && LightingSettings.studioLights && displayLighting && displayTextures && !IsGodGrass(source) && source) return CulledSourceMaterial(source);
             if (!displayXray && !wireframeOnly && displayLighting && LightingSettings.studioLights && !displayTextures)
             {
                 if (!neutralLit)
@@ -115,6 +185,7 @@ namespace MashBoxSDK.AnimationStudio
                     neutralLit = new Material(template) { name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
                     foreach(var property in new[] {"_BaseColor","_Color"}) if(neutralLit.HasProperty(property)) neutralLit.SetColor(property,new Color(.65f,.65f,.65f));
                     foreach(var property in new[] {"_Smoothness","_Glossiness","_Metallic"}) if(neutralLit.HasProperty(property)) neutralLit.SetFloat(property,0);
+                    ConfigureDisplayCulling(neutralLit);
                 }
                 return neutralLit;
             }
@@ -161,10 +232,17 @@ namespace MashBoxSDK.AnimationStudio
                 material.SetOverrideTag("RenderType", "Transparent");
                 material.renderQueue = (int)RenderQueue.Transparent;
             }
+            ConfigureDisplayCulling(material);
             return material;
         }
         private void ClearDisplayMaterials()
         {
+            blackBackfaceCommands?.Release(); blackBackfaceCommands = null;
+            blackBackfaceDraws.Clear();
+            foreach (var material in blackBackfaceMaterials.Values) if (material) UnityEngine.Object.DestroyImmediate(material);
+            blackBackfaceMaterials.Clear();
+            foreach (var material in culledSourceMaterials.Values) if (material) UnityEngine.Object.DestroyImmediate(material);
+            culledSourceMaterials.Clear();
             foreach(var material in previewMaterials.Values) if(material) UnityEngine.Object.DestroyImmediate(material);
             previewMaterials.Clear();
             if(neutralLit) UnityEngine.Object.DestroyImmediate(neutralLit);

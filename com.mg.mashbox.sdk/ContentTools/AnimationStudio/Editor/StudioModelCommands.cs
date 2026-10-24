@@ -29,6 +29,8 @@ namespace MashBoxSDK.AnimationStudio
         private static string Canonical(string category, string path)
         {
             string key = Normalize(category + "/" + path);
+            // Preserve the AO shortcut identity when Lighting is renamed Render.
+            if (key.StartsWith("Render/", StringComparison.Ordinal)) return "Lighting/" + key.Substring("Render/".Length);
             // Keep stored shortcut identities while Deform moves into Mesh Tools.
             if (key.StartsWith("Mesh Tools/Deform/", StringComparison.Ordinal)) return key.Substring("Mesh Tools/".Length);
             if (key == "Modify/Lock Pivot") return "Modify/Edit Pivot";
@@ -68,7 +70,7 @@ namespace MashBoxSDK.AnimationStudio
             var defaults = StudioShortcuts.Find(id)?.defaults ?? StandardBindings(key);
             int slash = key.IndexOf('/');
             bool deform = key.StartsWith("Deform/", StringComparison.Ordinal);
-            definitions[id] = new StudioShortcuts.Definition(id, deform ? "Mesh Tools" : key.Substring(0, slash), deform ? key : key.Substring(slash + 1), defaults);
+            definitions[id] = new StudioShortcuts.Definition(id, deform ? "Mesh Tools" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key.Substring(slash + 1), defaults);
             paths[id] = key; keys[key] = id; ordered = null;
             StudioShortcuts.CatalogChanged();
             return id;
@@ -83,7 +85,7 @@ namespace MashBoxSDK.AnimationStudio
                 case StudioShortcut.Maximize: return "Window";
                 case StudioShortcut.LargerHandles: case StudioShortcut.SmallerHandles: return "View";
                 case StudioShortcut.Frame: case StudioShortcut.SelectAll: case StudioShortcut.Object: case StudioShortcut.Vertex:
-                case StudioShortcut.Edge: case StudioShortcut.Face: return "Select";
+                case StudioShortcut.Edge: case StudioShortcut.Face: case StudioShortcut.PaintSelection: case StudioShortcut.UnpaintSelection: return "Select";
                 case StudioShortcut.Pivot: case StudioShortcut.VertexSnap: case StudioShortcut.GridSnap: case StudioShortcut.AxisMenu: return "Modify";
                 case StudioShortcut.Select: case StudioShortcut.Move: case StudioShortcut.Rotate: case StudioShortcut.Scale: return "Modify";
                 case StudioShortcut.Extrude: case StudioShortcut.CommitCut: case StudioShortcut.RemoveCut: return "Mesh Tools";

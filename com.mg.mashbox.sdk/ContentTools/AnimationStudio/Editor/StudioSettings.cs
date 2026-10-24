@@ -16,7 +16,8 @@ namespace MashBoxSDK.AnimationStudio
             public Color customPrimary = new Color(.18f, .22f, .25f, 1);
             public Color customSecondary = new Color(.85f, .70f, .47f, 1);
             public bool showMeshStatistics = true;
-            public bool showWorkspaceFps;
+            public bool showWorkspaceFps; // Legacy popup preference; retained for profile compatibility.
+            public bool hideViewportFps;
             public bool hideStatusBar;
             public bool hideOrientationAxes;
             public bool hideToolOptions;

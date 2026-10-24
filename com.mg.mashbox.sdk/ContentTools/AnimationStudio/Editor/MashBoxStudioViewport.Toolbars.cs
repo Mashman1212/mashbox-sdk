@@ -48,7 +48,10 @@ namespace MashBoxSDK.AnimationStudio
                 saved.items.Sort((a, b) => a.index.CompareTo(b.index));
                 foreach (var item in saved.items)
                     foreach (var overlay in studioToolbarOverlays)
-                        if (overlay.id == item.id && item.state != null) overlayCanvas.RestoreOverlay(overlay, item.state);
+                        if (overlay.id == item.id && item.state != null)
+                        {
+                            overlayCanvas.RestoreOverlay(overlay, item.state);
+                        }
                 overlayCanvas.overlaysEnabled = saved.enabled;
             }
             catch (ArgumentException ex) { Debug.LogWarning("MashBox Studio could not restore toolbar layout: " + ex.Message); }
@@ -78,8 +81,9 @@ namespace MashBoxSDK.AnimationStudio
                 // toolbars. Keep the menu above that entire layout, not inside it.
                 var top = studioOverlayRoot.Q("overlay-toolbar__top");
                 if (top != null) top.style.marginTop = 24;
-                var floating = studioOverlayRoot.Q("Floating");
-                if (floating != null) floating.style.top = 24;
+                // Keep the floating container's native zero origin. Changing its
+                // CSS top makes Unity subtract that inset again during snapping.
+                // The menu is layered above floating overlays separately.
             }
             RestrictStudioDockTargets();
             studioToolbarOverlays.Clear();
@@ -260,7 +264,7 @@ namespace MashBoxSDK.AnimationStudio
             int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.Wireframe ? 16 : 0) |
-                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0);
+                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0);
             // Track selection identity without reading skin bind-pose arrays on
             // every dirty redraw. Controls validate component editing on refresh.
             var mesh = editor?.ActiveMesh;
@@ -274,7 +278,9 @@ namespace MashBoxSDK.AnimationStudio
         private void ReleaseStudioToolbars()
         {
             foreach (var overlay in studioToolbarOverlays)
+            {
                 overlay.rootVisualElement.UnregisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
+            }
             studioToolbarOverlays.Clear();
             if (modelMenuBar != null) UnbindStudioHoverRedraw(modelMenuBar);
             if (modeSelector != null) UnbindStudioHoverRedraw(modeSelector);

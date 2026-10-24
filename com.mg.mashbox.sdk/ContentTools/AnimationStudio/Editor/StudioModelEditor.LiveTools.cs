@@ -12,7 +12,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             CancelLiveTool(); LoadDisplayConfiguration();
             mergeDistance = ToolChannelPane.GetFloatDefault("Merge Vertices", "Distance", .001f);
-            extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .1f);
+            extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .01f);
             extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         }
         private enum LiveTool { Bevel, Merge, Soften, Extrude }
@@ -300,8 +300,15 @@ namespace MashBoxSDK.AnimationStudio
             if (!liveValid) throw new InvalidOperationException("Correct the tool values or close its pane to cancel the preview.");
             string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Merge ? "Merge vertices" : liveTool == LiveTool.Soften ? "Soften edges" : "Extrude mesh components";
             var finishedTool = liveTool;
+            var selectionBefore = CaptureSelection();
+            selectionBefore.mode = liveMode; selectionBefore.components = (int[])liveSelection.Clone();
             bool changed = livePreview.HasChanges;
-            if (changed) livePreview.Commit(label); else livePreview.Restore();
+            if (changed)
+            {
+                if (liveTool == LiveTool.Bevel) Components.Clear();
+                livePreview.Commit(label, () => RecordSelectionChange(selectionBefore, false, label));
+            }
+            else livePreview.Restore();
             // Completion keeps the object and component mode active, but a bevel
             // must not leave generated edges armed for an accidental second bevel.
             bool clearBevelSelection = changed && liveTool == LiveTool.Bevel;

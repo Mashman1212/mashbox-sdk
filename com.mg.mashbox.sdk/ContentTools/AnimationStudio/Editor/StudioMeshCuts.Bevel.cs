@@ -263,7 +263,7 @@ namespace MashBoxSDK.AnimationStudio
         private List<int>[] bevelSourceTriangles;
         private int bevelInputFaceCount;
         private readonly HashSet<(int, int)> bevelChartEdges = new HashSet<(int, int)>();
-        private List<int>[] BevelSourceTriangles(Mesh mesh)
+        internal List<int>[] BevelSourceTriangles(Mesh mesh)
         {
             if (bevelSourceTriangles != null) return bevelSourceTriangles;
             var originalTriangles = new List<int>[Faces.Count];
@@ -664,6 +664,39 @@ namespace MashBoxSDK.AnimationStudio
             }
 
             buildingSourceFaces=false;
+            // A terminal profile is constrained by the untouched vertex fan.
+            // A shared miter profile has one identity and one control for both
+            // incident strips. Projecting each control independently along its
+            // edge creates two different curves across the same boundary.
+            var profileUses = new Dictionary<(int,int),int>();
+            var selectedDegree = new Dictionary<int,int>();
+            void ProfileUse(int a, int b)
+            {
+                var key = BevelKey(a,b);
+                profileUses.TryGetValue(key,out int count); profileUses[key]=count+1;
+            }
+            foreach (var key in targets)
+            {
+                selectedDegree.TryGetValue(key.Item1,out int da); selectedDegree[key.Item1]=da+1;
+                selectedDegree.TryGetValue(key.Item2,out int db); selectedDegree[key.Item2]=db+1;
+                var edge=edges[key]; var first=edge.Uses[0]; var second=edge.Uses[1];
+                int ca=first.corner, cb=(ca+1)%Faces[first.face].Vertices.Count;
+                int sa=second.corner, sb=(sa+1)%Faces[second.face].Vertices.Count;
+                ProfileUse(corners[first.face][ca][corners[first.face][ca].Count-1],corners[second.face][sb][0]);
+                ProfileUse(corners[first.face][cb][0],corners[second.face][sa][corners[second.face][sa].Count-1]);
+            }
+            Vector3 ProfileControl(int owner, int a, int b, Vector3 tangent)
+            {
+                // At an edge termination the original edge intersects every
+                // unchanged incident supporting plane at the original vertex.
+                // Keeping that control preserves the end plane for all profile
+                // samples. Coincident miter boundaries likewise share this control.
+                if (selectedDegree[owner]==1 || profileUses[BevelKey(a,b)]>1) return originals[owner];
+                // A multi-way junction trims each independent profile in its
+                // cross-section; the vertex mesh joins the remaining boundary.
+                return originals[owner] - tangent * Vector3.Dot(originals[owner] -
+                    (draft.Positions[a]+draft.Positions[b])*.5f,tangent);
+            }
             int steps = options.Subdivisions + 1;
 
             foreach (var key in targets)
@@ -692,9 +725,9 @@ namespace MashBoxSDK.AnimationStudio
 
                 var tangent = BevelUnit(originals[vb] - originals[va]);
 
-                var controlA = originals[va] - tangent * Vector3.Dot(originals[va] - (draft.Positions[pa] + draft.Positions[qa]) * .5f, tangent);
+                var controlA = ProfileControl(va,pa,qa,tangent);
 
-                var controlB = originals[vb] - tangent * Vector3.Dot(originals[vb] - (draft.Positions[pb] + draft.Positions[qb]) * .5f, tangent);
+                var controlB = ProfileControl(vb,pb,qb,tangent);
 
                 for (int k = 0; k <= steps; k++)
 
@@ -949,12 +982,6 @@ namespace MashBoxSDK.AnimationStudio
 
         {
 
-            var origin = draft.Positions[ring[0]];
-
-            foreach (int point in ring)
-
-                if (Math.Abs(Vector3.Dot(draft.Positions[point] - origin, normal)) > epsilon * 4) return false;
-
             foreach (int index in candidates)
 
             {
@@ -977,14 +1004,20 @@ namespace MashBoxSDK.AnimationStudio
 
                 // therefore have the opposite geometric normal before merging.
 
-                if (Math.Abs(Vector3.Dot(BevelPolygonNormal(geometry, draft.Positions), normal)) < .9999f) continue;
-
+                // Test against the original supporting plane, not the normal of
+                // a small generated cap. Normalizing a tiny cap magnifies binary32
+                // error, so testing a distant face corner against it rejects truly
+                // coplanar ends and retains an artificial divider.
+                int receivingSource = draft.Vertices[polygon.Vertices[0]].SourceFace;
+                var planeNormal = bevelNormals[receivingSource];
+                var planeOrigin = Positions[Faces[receivingSource].Vertices[0]];
                 bool coplanar = true;
-
                 foreach (int point in geometry)
-
-                    if (Math.Abs(Vector3.Dot(draft.Positions[point] - origin, normal)) > epsilon * 4) { coplanar = false; break; }
-
+                    if (Math.Abs(Vector3.Dot(draft.Positions[point]-planeOrigin,planeNormal))>epsilon*4)
+                    { coplanar=false; break; }
+                if (coplanar) foreach (int point in ring)
+                    if (Math.Abs(Vector3.Dot(draft.Positions[point]-planeOrigin,planeNormal))>epsilon*4)
+                    { coplanar=false; break; }
                 if (!coplanar) continue;
 
                 for (int edge = 0; edge < ring.Count; edge++)

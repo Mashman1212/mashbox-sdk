@@ -25,7 +25,9 @@ namespace MashBoxSDK.AnimationStudio
             studioInputActive = active; studioKeyboard = keyboard; releaseStudioHolds = releaseHolds;
             EditorApplication.update -= TickStudioInput;
             StudioShortcuts.changed -= ReleaseStudioInput;
+            UnbindSelectionPaintInput();
             if (active == null) { RestoreStudioInput(); return; }
+            BindSelectionPaintInput();
             EditorApplication.update += TickStudioInput;
             StudioShortcuts.changed += ReleaseStudioInput;
             foreach (var container in StudioChromeRoot.Query<IMGUIContainer>().ToList())
@@ -56,7 +58,7 @@ namespace MashBoxSDK.AnimationStudio
                             var evt = Event.current;
                             bool pointer = evt.isMouse || evt.type == EventType.ScrollWheel || evt.type == EventType.ContextClick || evt.type == EventType.DragUpdated || evt.type == EventType.DragPerform;
                             bool toolbar = IsOverViewportControls(evt.mousePosition);
-                            if (pointer && toolbar) evt.Use();
+                            if (pointer && toolbar) { releaseStudioHolds?.Invoke(); evt.Use(); }
                             else RouteStudioCanvasInput();
                         }
                         else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider)) studioKeyboard?.Invoke();
@@ -72,8 +74,79 @@ namespace MashBoxSDK.AnimationStudio
                 container.onGUIHandler = handler.wrapped;
             }
         }
+        private KeyCode selectionPaintHeldKey;
+        private bool selectionPaintHoldCancelled;
+        internal bool SelectionPaintHoldActive => selectionPaintHeldKey != KeyCode.None;
+        internal void RearmSelectionPaintHold()
+        {
+            if (SelectionPaintHoldActive && !selectionPaintHoldCancelled)
+                DispatchSelectionPaintKey(EventType.KeyDown, selectionPaintHeldKey, Event.current.modifiers);
+        }
+        private Vector2 selectionPaintInputPointer;
+        private bool selectionPaintInputInside;
+        private void BindSelectionPaintInput()
+        {
+            rootVisualElement.RegisterCallback<KeyDownEvent>(SelectionPaintKeyDown, TrickleDown.TrickleDown);
+            rootVisualElement.RegisterCallback<KeyUpEvent>(SelectionPaintKeyUp, TrickleDown.TrickleDown);
+            rootVisualElement.RegisterCallback<PointerMoveEvent>(SelectionPaintPointerMove, TrickleDown.TrickleDown);
+            rootVisualElement.RegisterCallback<PointerLeaveEvent>(SelectionPaintPointerLeave);
+        }
+        private void UnbindSelectionPaintInput()
+        {
+            rootVisualElement.UnregisterCallback<KeyDownEvent>(SelectionPaintKeyDown, TrickleDown.TrickleDown);
+            rootVisualElement.UnregisterCallback<KeyUpEvent>(SelectionPaintKeyUp, TrickleDown.TrickleDown);
+            rootVisualElement.UnregisterCallback<PointerMoveEvent>(SelectionPaintPointerMove, TrickleDown.TrickleDown);
+            rootVisualElement.UnregisterCallback<PointerLeaveEvent>(SelectionPaintPointerLeave);
+            selectionPaintInputInside = false;
+        }
+        private void SelectionPaintPointerMove(PointerMoveEvent evt)
+        {
+            selectionPaintInputPointer = rootVisualElement.WorldToLocal(evt.position);
+            selectionPaintInputInside = ModelCanvasRect.Contains(selectionPaintInputPointer) && !IsOverViewportControls(selectionPaintInputPointer);
+            if (!selectionPaintInputInside) releaseStudioHolds?.Invoke();
+        }
+        private void SelectionPaintPointerLeave(PointerLeaveEvent evt)
+        {
+            if (evt.target != rootVisualElement) return;
+            // IMGUI mouse capture can retarget pointer events without leaving the window.
+            // Only a pointer outside the root bounds represents an actual leave.
+            if (rootVisualElement.contentRect.Contains(rootVisualElement.WorldToLocal(evt.position))) return;
+            selectionPaintInputInside = false; releaseStudioHolds?.Invoke();
+        }
+        private bool DispatchSelectionPaintKey(EventType type, KeyCode keyCode, EventModifiers modifiers)
+        {
+            if (type == EventType.KeyUp && keyCode == selectionPaintHeldKey)
+            { selectionPaintHeldKey = KeyCode.None; selectionPaintHoldCancelled = false; }
+            if (studioInputActive == null || !studioInputActive() || MenuInputBlocked || EditorGUIUtility.editingTextField) return false;
+            var editor = Studio?.ToolbarModelEditor;
+            if (editor == null) return false;
+            var key = new Event { type = type, keyCode = keyCode, modifiers = modifiers, mousePosition = selectionPaintInputPointer };
+            if (type == EventType.KeyDown)
+            {
+                if (SelectionPaintHoldActive && StudioShortcuts.Pressed(StudioShortcut.Cancel, key)) selectionPaintHoldCancelled = true;
+                if (editor.ToolbarComponentMode != StudioModelEditor.ComponentMode.Object &&
+                    (StudioShortcuts.Pressed(StudioShortcut.PaintSelection, key) || StudioShortcuts.Pressed(StudioShortcut.UnpaintSelection, key)))
+                {
+                    if (selectionPaintHeldKey != keyCode) selectionPaintHoldCancelled = false;
+                    selectionPaintHeldKey = keyCode;
+                }
+            }
+            bool handled = editor.HandleSelectionPaintKey(this, key, selectionPaintInputInside);
+            return handled || (type == EventType.KeyDown && selectionPaintHeldKey == keyCode);
+        }
+        private void SelectionPaintKeyDown(KeyDownEvent evt)
+        {
+            if (!DispatchSelectionPaintKey(EventType.KeyDown, evt.keyCode, evt.modifiers)) return;
+            evt.imguiEvent?.Use(); evt.StopImmediatePropagation();
+        }
+        private void SelectionPaintKeyUp(KeyUpEvent evt)
+        {
+            if (!DispatchSelectionPaintKey(EventType.KeyUp, evt.keyCode, evt.modifiers)) return;
+            evt.imguiEvent?.Use(); evt.StopImmediatePropagation();
+        }
         private void RestoreStudioInput()
         {
+            UnbindSelectionPaintInput();
             ReleaseStudioInput();
             foreach (var pair in studioInputHandlers)
             {
@@ -105,6 +178,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ReleaseStudioInput()
         {
             if (navigating && GUIUtility.hotControl == navigationControl) GUIUtility.hotControl = 0;
+            selectionPaintHeldKey = KeyCode.None; selectionPaintHoldCancelled = false;
             navigating = false; releaseStudioHolds?.Invoke();
         }
         private void TickStudioInput()
@@ -169,6 +243,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ApplyStudioNavigation(StudioShortcut action, Vector2 delta)
         {
+            delta *= NavigationSensitivity;
             if (action == StudioShortcut.Orbit)
             {
                 if (in2DMode || isRotationLocked) return;

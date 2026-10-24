@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "Select", "Create", "Modify", "Window", "Display", "Mesh Tools", "Mesh Display", "UV", "Lighting" };
+        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "Select", "Create", "Modify", "Window", "Display", "Mesh Tools", "Mesh Display", "UV", "Render" };
         private readonly System.Collections.Generic.Dictionary<string,(GUIContent content,GUILayoutOption[] layout,GUIStyle style)> menuBarContents = new System.Collections.Generic.Dictionary<string,(GUIContent,GUILayoutOption[],GUIStyle)>();
         internal void DrawMenuBar(SceneView view, Action<StudioModelDocument> loaded)
         {
@@ -46,7 +46,7 @@ namespace MashBoxSDK.AnimationStudio
                         menu.AddDisabledItem(new GUIContent(StudioShortcuts.MenuLabel("Redo",StudioShortcut.Redo)));
                     }
                     menu.AddSeparator(""); AddCommand(menu, StudioShortcuts.MenuLabel("Duplicate",StudioShortcut.Duplicate), CanDuplicateObjects, DuplicateSelectedObjects);
-                    AddCommand(menu, StudioShortcuts.MenuLabel("Delete",StudioShortcut.Delete), CanDeleteObjects, DeleteSelectedObjects);
+                    AddCommand(menu, StudioShortcuts.MenuLabel("Delete",StudioShortcut.Delete), CanDeleteSelection, DeleteSelection);
                     menu.AddSeparator(""); AddCommand(menu, "Preferences…", true, StudioControlsPreferences.Open, shortcutEligible: false);
                 
                     break; }
@@ -71,6 +71,10 @@ namespace MashBoxSDK.AnimationStudio
                     });
                     menu.AddItem(new GUIContent("Orientation Gizmo"), !StudioSettings.Current.hideOrientationAxes, () => {
                         StudioSettings.Current.hideOrientationAxes = !StudioSettings.Current.hideOrientationAxes;
+                        StudioSettings.Save();
+                    });
+                    menu.AddItem(new GUIContent("FPS Display"), !StudioSettings.Current.hideViewportFps, () => {
+                        StudioSettings.Current.hideViewportFps = !StudioSettings.Current.hideViewportFps;
                         StudioSettings.Save();
                     });
                     break; }
@@ -145,15 +149,8 @@ namespace MashBoxSDK.AnimationStudio
                     for (int i = 0; i < 8; i++) AddAction(menu, "UV Sets/UV " + i, MarkingAction.UV0 + i, view);
                 
                     break; }
-                case "Lighting": {
+                case "Render": {
                     AddCommand(menu, "Bake Vertex AO (Red)…", Document, () => StudioVertexAOWindow.Open(this));
-                    menu.AddSeparator("");
-                    menu.AddItem(new GUIContent("Camera Lighting"), !LightingSettings.studioLights, () => EditLighting(s => s.studioLights = false));
-                    menu.AddItem(new GUIContent("Studio Lights"), LightingSettings.studioLights, () => EditLighting(s => s.studioLights = true));
-                    menu.AddSeparator("");
-                    menu.AddItem(new GUIContent("Lighting Settings…"), false, OpenLighting, shortcutEligible: false);
-                    menu.AddItem(new GUIContent("Shadows"), LightingSettings.studioLights && LightingSettings.shadows, () => EditLighting(s => { s.shadows = !(s.studioLights && s.shadows); s.studioLights = true; }));
-                    menu.AddItem(new GUIContent("Ground Plane"), LightingSettings.studioLights && LightingSettings.ground, () => EditLighting(s => { s.ground = !(s.studioLights && s.ground); s.studioLights = true; }));
                 
                     break; }
             }
@@ -220,7 +217,7 @@ namespace MashBoxSDK.AnimationStudio
             private readonly Vector3 pivot;
             private readonly Quaternion rotation;
             private readonly float size;
-            private readonly bool orthographic;
+            private readonly bool orthographic, in2DMode;
             internal CreationCameraScope(SceneView view)
             {
                 this.view = view;
@@ -228,10 +225,11 @@ namespace MashBoxSDK.AnimationStudio
                 rotation = view ? view.rotation : Quaternion.identity;
                 size = view ? view.size : 1;
                 orthographic = view && view.orthographic;
+                in2DMode = view && view.in2DMode;
             }
             public void Dispose()
             {
-                if (view) { view.orthographic = orthographic; view.LookAtDirect(pivot, rotation, size); }
+                if (view) { view.in2DMode = in2DMode; view.orthographic = orthographic; view.LookAtDirect(pivot, rotation, size); }
             }
         }
         private void EnsureWorkspace(Action<StudioModelDocument> loaded)
@@ -243,12 +241,14 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void InvertSelection()
         {
+            var before = CaptureSelection();
             if (mode == ComponentMode.Object)
             {
                 for (int i = 0; i < Transforms.Length; i++) if (!objects.Remove(i)) objects.Add(i);
                 Active = -1; foreach (int i in objects) { Active = i; break; }
             }
             else for (int i = 0; i < ComponentCount(); i++) if (!Components.Remove(i)) Components.Add(i);
+            RecordSelectionChange(before);
             repaint();
         }
     }

@@ -6,81 +6,76 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class MashBoxStudioViewport
     {
-        private IMGUIContainer workspaceStatsButton, workspaceStats;
+        private IMGUIContainer workspaceStats;
+        private readonly GUIContent workspaceFpsContent = new GUIContent("— FPS", "Viewport FPS");
+        private GUIStyle workspaceFpsStyle;
         private double workspaceSampleStart = -1, workspaceLastFrame = -1;
         private int workspaceSampleFrames;
         internal double WorkspaceFps { get; private set; }
         internal void BindWorkspaceStatistics()
         {
-            BindViewportControl(ref workspaceStatsButton,"mashbox-workspace-stats-button",DrawWorkspaceStatsButton);
-            BindViewportControl(ref workspaceStats,"mashbox-workspace-stats",DrawWorkspaceStats);
-            workspaceStatsButton.style.width = workspaceStatsButton.style.height = 24;
-            workspaceStats.style.width = 132; workspaceStats.style.height = 54;
+            BindViewportControl(ref workspaceStats, "mashbox-workspace-stats", DrawWorkspaceStats);
+            workspaceStats.style.width = 80; workspaceStats.style.height = 24;
             workspaceStats.pickingMode = PickingMode.Ignore;
-            workspaceStats.style.borderLeftWidth = workspaceStats.style.borderRightWidth = 1;
-            workspaceStats.style.borderTopWidth = workspaceStats.style.borderBottomWidth = 1;
             UpdatePanelLayout(); UpdateWorkspaceStatisticsState();
         }
         private void LayoutWorkspaceStatistics(float rightWidth)
         {
             float right = PanelMargin + rightWidth + DividerWidth + 8;
-            if(workspaceStatsButton != null) { workspaceStatsButton.style.top = ModelingPanelTop; workspaceStatsButton.style.right = right; }
-            if(workspaceStats != null) { workspaceStats.style.top = ModelingPanelTop + 32; workspaceStats.style.right = right; }
+            if (workspaceStats != null) { workspaceStats.style.top = ModelingPanelTop; workspaceStats.style.right = right; }
         }
         private void UpdateWorkspaceStatisticsState()
         {
-            if(workspaceStatsButton == null) return;
-            bool visible = panelsModeling && StudioSettings.Current.showWorkspaceFps;
-            workspaceStatsButton.style.display = panelsModeling ? DisplayStyle.Flex : DisplayStyle.None;
+            if (workspaceStats == null) return;
+            bool visible = panelsModeling && !StudioSettings.Current.hideViewportFps;
             workspaceStats.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
-            var palette = StudioTheme.Current;
-            workspaceStats.style.backgroundColor = palette.Panel;
-            workspaceStats.style.borderLeftColor = workspaceStats.style.borderRightColor = palette.Border;
-            workspaceStats.style.borderTopColor = workspaceStats.style.borderBottomColor = palette.Border;
-            if(!visible) StopWorkspaceStatistics();
-        }
-        internal void SetWorkspaceStatsVisible(bool visible)
-        {
-            StudioSettings.Current.showWorkspaceFps = visible; StudioSettings.Save();
-            UpdateWorkspaceStatisticsState(); Repaint();
-        }
-        private void DrawWorkspaceStatsButton()
-        {
-            var rect = new Rect(0,0,24,24);
-            bool visible = StudioSettings.Current.showWorkspaceFps;
-            bool next = GUI.Toggle(rect,visible,new GUIContent("","Workspace stats — show FPS"),StudioTheme.Styles.overlayButton);
-            if(next != visible) SetWorkspaceStatsVisible(next);
-            if(Event.current.type != EventType.Repaint) return;
-            var color = visible ? StudioTheme.Current.Accent : StudioTheme.Current.Text;
-            for(int i=0;i<3;i++) EditorGUI.DrawRect(new Rect(5+i*5,17-(4+i*4),3,4+i*4),color);
+            if (!visible) StopWorkspaceStatistics();
         }
         private void DrawWorkspaceStats()
         {
-            using(new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel))
-            {
-                GUILayout.Label("WORKSPACE",StudioTheme.Styles.boldLabel);
-                GUILayout.Label(ViewportImageReused ? "Cached (idle)" : WorkspaceFps > 0 ? System.Math.Ceiling(WorkspaceFps).ToString("F0") + " FPS" : "Measuring FPS…",StudioTheme.Styles.label);
-            }
+            if (Event.current.type != EventType.Repaint) return;
+            if (workspaceFpsStyle == null) workspaceFpsStyle = new GUIStyle(EditorStyles.label);
+            // Reapply presentation after hot reload, which can retain the cached GUIStyle.
+            workspaceFpsStyle.alignment = TextAnchor.MiddleRight;
+            workspaceFpsStyle.fontSize = 11;
+            workspaceFpsStyle.normal.textColor = new Color(.82f, .82f, .82f, 1);
+            var color = GUI.contentColor;
+            var tint = GUI.color;
+            var enabled = GUI.enabled;
+            GUI.enabled = true;
+            GUI.color = Color.white;
+            GUI.contentColor = Color.black;
+            workspaceFpsStyle.Draw(new Rect(1, 1, 79, 24), workspaceFpsContent, false, false, false, false);
+            GUI.contentColor = Color.white;
+            workspaceFpsStyle.Draw(new Rect(0, 0, 79, 24), workspaceFpsContent, false, false, false, false);
+            GUI.contentColor = color;
+            GUI.color = tint;
+            GUI.enabled = enabled;
         }
         internal void RecordWorkspaceFrame(double now)
         {
-            if(!panelsModeling || !StudioSettings.Current.showWorkspaceFps) return;
-            if(workspaceLastFrame < 0 || now < workspaceLastFrame || now-workspaceLastFrame > 1)
-            // Measure naturally requested frames only. Idle time starts a new sample
-            // without clearing the last reading or scheduling another scene render.
+            if (!panelsModeling || StudioSettings.Current.hideViewportFps) return;
+            if (workspaceLastFrame < 0 || now < workspaceLastFrame || now - workspaceLastFrame > 1)
+            // Sample only naturally requested viewport frames. Idle retains the
+            // last reading and starts a fresh sample when interaction resumes.
             { workspaceSampleStart = now; workspaceSampleFrames = 0; }
             else
             {
                 workspaceSampleFrames++;
-                double elapsed = now-workspaceSampleStart;
-                if(elapsed >= .5)
-                { WorkspaceFps = workspaceSampleFrames/elapsed; workspaceSampleStart = now; workspaceSampleFrames = 0; }
+                double elapsed = now - workspaceSampleStart;
+                if (elapsed >= .5)
+                {
+                    WorkspaceFps = workspaceSampleFrames / elapsed;
+                    workspaceFpsContent.text = System.Math.Ceiling(WorkspaceFps).ToString("F0") + " FPS";
+                    workspaceSampleStart = now; workspaceSampleFrames = 0;
+                }
             }
             workspaceLastFrame = now;
         }
         private void StopWorkspaceStatistics()
         {
             workspaceSampleStart = workspaceLastFrame = -1; workspaceSampleFrames = 0; WorkspaceFps = 0;
+            workspaceFpsContent.text = "— FPS";
         }
     }
 }

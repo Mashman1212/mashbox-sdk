@@ -18,6 +18,7 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
         _Unlit ("Unlit preview", Float) = 0
         _CameraLighting ("Camera lighting", Float) = 0
         _Opacity ("Preview opacity", Range(0, 1)) = 1
+        [HideInInspector] _BlackBackfaces ("Black back faces", Float) = 0
         [HideInInspector] _ZWrite ("Depth write", Float) = 1
         [HideInInspector] _SrcBlend ("Source blend", Float) = 1
         [HideInInspector] _DstBlend ("Destination blend", Float) = 0
@@ -37,7 +38,7 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
             float _Cutoff;
             float _Unlit, _VertexAOStrength;
             float _CameraLighting;
-            float _Opacity;
+            float _Opacity, _BlackBackfaces;
             struct Attributes { float4 vertex : POSITION; float3 normal : NORMAL; float4 tangent : TANGENT; float2 uv : TEXCOORD0; float4 color : COLOR; };
             struct Varyings { float4 position : SV_POSITION; float3 normal : TEXCOORD0; float2 uv : TEXCOORD1; float4 tangent : TEXCOORD2; float ao : TEXCOORD3; };
             Varyings Vert(Attributes input)
@@ -83,6 +84,7 @@ Shader "Hidden/MashBox/AnimationStudioPreview"
                 albedo.rgb = (lerp(luminance.xxx,albedo.rgb,_Saturation)-.5)*_Contrast+.5;
                 albedo.rgb *= _Brightness;
                 clip(albedo.a - _Cutoff);
+                if (_BlackBackfaces > .5 && facing < 0) return float4(0, 0, 0, _Opacity);
                 return float4(saturate(albedo.rgb) * lerp(shade, 1, _Unlit) * saturate(1-(1-input.ao)*_VertexAOStrength), _Opacity);
             }
         ENDHLSL

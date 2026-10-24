@@ -33,6 +33,10 @@ namespace MashBoxSDK.AnimationStudio
         private IMGUIContainer rigControls;
         private VisualElement statusBar;
         private readonly System.Collections.Generic.List<StatusToast> statusMessages = new System.Collections.Generic.List<StatusToast>();
+        private readonly System.Collections.Generic.Dictionary<string, double> statusLastShown = new System.Collections.Generic.Dictionary<string, double>(System.StringComparer.Ordinal);
+        private readonly System.Collections.Generic.List<string> expiredStatusKeys = new System.Collections.Generic.List<string>();
+        private const int MaxStatusMessages = 6;
+        private const double StatusRepeatCooldown = 2;
         private IVisualElementScheduledItem statusAnimation;
         private bool statusEnabled;
         private const double StatusFadeIn = .18, StatusHold = 2.1, StatusFadeOut = .4;
@@ -46,7 +50,23 @@ namespace MashBoxSDK.AnimationStudio
             if (string.IsNullOrWhiteSpace(message)) return;
             EnsureStatusMessages();
             if (!statusEnabled || StudioSettings.Current.hideStatusBar) return;
-            var label = new Label(message.Replace('\n', ' ')) { pickingMode = PickingMode.Ignore, tooltip = message };
+            string text = message.Replace('\n', ' ').Trim();
+            double now = EditorApplication.timeSinceStartup;
+            // Suppression must not refresh a toast's lifetime or schedule redraws.
+            expiredStatusKeys.Clear();
+            foreach (var pair in statusLastShown)
+                if (now - pair.Value >= StatusRepeatCooldown) expiredStatusKeys.Add(pair.Key);
+            foreach (string key in expiredStatusKeys) statusLastShown.Remove(key);
+            if (statusLastShown.ContainsKey(text)) return;
+            foreach (var toast in statusMessages)
+                if (toast.label.text == text && now - toast.started < StatusFadeIn + toast.hold + StatusFadeOut) return;
+            statusLastShown[text] = now;
+            while (statusMessages.Count >= MaxStatusMessages)
+            {
+                statusMessages[0].label.RemoveFromHierarchy();
+                statusMessages.RemoveAt(0);
+            }
+            var label = new Label(text) { pickingMode = PickingMode.Ignore, tooltip = message };
             label.style.minHeight = 30;
             label.style.paddingLeft = label.style.paddingRight = 12;
             label.style.paddingTop = label.style.paddingBottom = 6;
@@ -63,7 +83,7 @@ namespace MashBoxSDK.AnimationStudio
             // Allow roughly 25 characters per second, with the short-message minimum.
             // Store the duration once so every message has its own stable expiry.
             statusMessages.Add(new StatusToast {
-                label = label, started = EditorApplication.timeSinceStartup,
+                label = label, started = now,
                 hold = System.Math.Max(StatusHold, message.Trim().Length / 25d)
             });
             // Newest is appended at the bottom; existing messages move upward.
@@ -120,7 +140,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ClearStatusMessages()
         {
             statusAnimation?.Pause();
-            statusMessages.Clear(); statusBar?.Clear();
+            statusMessages.Clear(); statusBar?.Clear(); statusLastShown.Clear(); expiredStatusKeys.Clear();
             LayoutStatusMessages();
             RepaintUI();
         }
@@ -191,7 +211,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             BindViewportControl(ref meshStatistics, "mashbox-mesh-statistics", draw);
             meshStatistics.pickingMode = PickingMode.Ignore;
-            meshStatistics.style.width = 256; meshStatistics.style.height = 132;
+            meshStatistics.style.width = 256; meshStatistics.style.height = 72;
+            BindCameraSettingsButton();
             UpdatePanelLayout(); ApplyTheme();
         }
         private IMGUIContainer markingMenu;
@@ -245,8 +266,8 @@ namespace MashBoxSDK.AnimationStudio
                 rootVisualElement.Add(modeSelector);
             }
             modeSelector.onGUIHandler = WrapStudioGUI(draw, true); modeSelector.BringToFront();
-            if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? 8 : 148; inspector.style.height = StyleKeyword.Auto; }
-            if (rigControls != null) { rigControls.style.top = ModelingPanelTop; rigControls.style.bottom = modeling ? new StyleLength(8) : new StyleLength(StyleKeyword.Auto); }
+            if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? PanelMargin : 148; inspector.style.height = StyleKeyword.Auto; }
+            if (rigControls != null) { rigControls.style.top = ModelingPanelTop; rigControls.style.bottom = modeling ? new StyleLength(PanelMargin) : new StyleLength(StyleKeyword.Auto); }
             if (timeline != null) timeline.style.display = modeling ? DisplayStyle.None : DisplayStyle.Flex;
             BindPanelResizers(modeling);
             ApplyTheme();
@@ -276,7 +297,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverNativeToolbar(point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point) || IsOverControl(workspaceStatsButton, point);
+            IsOverNativeToolbar(point) || IsOverControl(viewportCameraButton, point) || IsOverControl(viewportLightingButton, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
         private bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.worldBound.Contains(rootVisualElement.LocalToWorld(point));
 

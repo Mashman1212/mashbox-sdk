@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             if (evt == null || !evt.isKey || EditorGUIUtility.editingTextField || hierarchyRenameNode != null) return false;
+            if (HandleSelectionPaintKey(view)) return true;
             if (markingOpen)
             {
                 if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt)) CancelMarkingMenu();
@@ -60,15 +61,16 @@ namespace MashBoxSDK.AnimationStudio
             else if (Is(StudioShortcut.Pivot)) { if (CanAdjustPivot) pivot = !pivot; }
             else if (Is(StudioShortcut.Frame)) Frame(view);
             else if (Is(StudioShortcut.SelectAll)) { if (Document) ExecuteMarkingAction(MarkingAction.SelectAll,view); }
-            else if (Is(StudioShortcut.Object)) { mode = ComponentMode.Object; Components.Clear(); }
-            else if (Is(StudioShortcut.Vertex)) { if (CanEditComponents()) mode = ComponentMode.Vertex; pivot = false; Components.Clear(); }
-            else if (Is(StudioShortcut.Edge)) { if (CanEditComponents()) mode = ComponentMode.Edge; pivot = false; Components.Clear(); }
-            else if (Is(StudioShortcut.Face)) { if (CanEditComponents()) mode = ComponentMode.Face; pivot = false; Components.Clear(); }
+            else if (Is(StudioShortcut.Object)) { SetComponentMode(ComponentMode.Object); }
+            else if (Is(StudioShortcut.Vertex)) { if (CanEditComponents()) SetComponentMode(ComponentMode.Vertex); }
+            else if (Is(StudioShortcut.Edge)) { if (CanEditComponents()) SetComponentMode(ComponentMode.Edge); }
+            else if (Is(StudioShortcut.Face)) { if (CanEditComponents()) SetComponentMode(ComponentMode.Face); }
             else return false;
             evt.Use(); repaint(); return true;
         }
         internal void ReleaseShortcutHolds()
         {
+            FinishSelectionPaint();
             if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
             EndPivotSnap(); ClearGridSnap();
         }

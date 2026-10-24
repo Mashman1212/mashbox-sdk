@@ -38,7 +38,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     editor.Load(doc); editor.SelectObject(a);
                     var stats = editor.MeshStatistics();
-                    Check(stats.scene.SequenceEqual(new long[] { 16, 24, 12, 24, 48 }), "Two cubes report geometric vertices, polygon edges/faces, render triangles and UV entries");
+                    Check(stats.scene.SequenceEqual(new long[] { 16, 24, 12, 24 }), "Two cubes report geometric vertices, polygon edges/faces, render triangles only");
                     Check(stats.selected.SequenceEqual(new long[] { 8, 12, 6, 12, 24 }), "Selected object counts are separate from workspace totals");
                     var cache = (System.Collections.IDictionary)typeof(StudioModelEditor).GetField("statisticsCache", Private).GetValue(editor);
                     var cached = cache[doc.nodes[a]]; editor.MeshStatistics();
@@ -50,9 +50,9 @@ namespace MashBoxSDK.AnimationStudio
                     editor.Transforms[b].gameObject.SetActive(true);
                     Undo.IncrementCurrentGroup(); Undo.RegisterCompleteObjectUndo(doc.nodes[a].mesh, "Remove test UVs");
                     doc.nodes[a].mesh.SetUVs(0, new List<Vector2>()); editor.Changed();
-                    Check(editor.MeshStatistics().scene[4] == 24, "UV edits invalidate cached counts");
+                    Check(editor.MeshStatistics().scene.SequenceEqual(new long[] { 16, 24, 12, 24 }), "UV edits preserve geometry-only totals");
                     Undo.PerformUndo();
-                    Check(editor.MeshStatistics().scene[4] == 48, "Undo refreshes statistics");
+                    Check(editor.MeshStatistics().scene.SequenceEqual(new long[] { 16, 24, 12, 24 }), "Undo preserves geometry-only totals");
                     editor.Load(null);
                     Check(editor.MeshStatistics().scene.All(n => n == 0), "Empty workspace reports zero statistics");
                 }

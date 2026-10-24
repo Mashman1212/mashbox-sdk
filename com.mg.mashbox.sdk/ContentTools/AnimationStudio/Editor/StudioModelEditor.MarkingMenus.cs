@@ -122,6 +122,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void BeforeModelSceneGUI(SceneView view)
         {
             view.wantsMouseEnterLeaveWindow = true;
+            if (BeforeSelectionPaintInput(view)) return;
             if (CancelMarqueeOutside(view)) return;
             // Some native handles consume MouseUp before our normal scene callback.
             // End its Undo group here so the next pivot/transform drag starts fresh.
@@ -306,6 +307,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void ExecuteMarkingAction(MarkingAction action, SceneView view)
         {
             if (!MarkingActionEnabled(action)) return;
+            var before = action == MarkingAction.Clear || action == MarkingAction.SelectAll ? CaptureSelection() : null;
             switch (action)
             {
                 case MarkingAction.Object: SetComponentMode(ComponentMode.Object); break;
@@ -331,10 +333,12 @@ namespace MashBoxSDK.AnimationStudio
                     break;
                 default: if (action >= MarkingAction.UV0 && action <= MarkingAction.UV7) StudioUVEditor.Open(this, action - MarkingAction.UV0); break;
             }
+            RecordSelectionChange(before);
             repaint(); toolOptions?.Repaint();
         }
         private void SetComponentMode(ComponentMode next)
         {
+            FinishSelectionPaint();
             if (next == ComponentMode.Object)
             {
                 try { FinishLiveTool(); }
@@ -343,7 +347,9 @@ namespace MashBoxSDK.AnimationStudio
             }
             else FinishLiveTool();
             if (mode == next) return;
+            var before = CaptureSelection();
             mode = next; pivot = false; Components.Clear();
+            RecordSelectionChange(before);
             repaint();
         }
     }

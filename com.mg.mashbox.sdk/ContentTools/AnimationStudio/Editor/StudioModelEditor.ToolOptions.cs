@@ -18,6 +18,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
+        internal string ToolOptionsTitle => CameraOptionsVisible ? "Camera Settings"
+            : LightingOptionsVisible ? "Viewport Lighting"
+            : cutTool == CutTool.EdgeLoop ? "Insert Edge Loop"
+            : cutTool != CutTool.None ? "Multi-Cut"
+            : tool == Tool.None ? "Selection Tool" : tool + " Tool";
         internal int ToolbarTransformState => cutTool != CutTool.None ? 0 : tool == Tool.None ? 1 : tool == Tool.Move ? 2 : tool == Tool.Rotate ? 3 : tool == Tool.Scale ? 4 : 0;
         internal ComponentMode ToolbarComponentMode => mode;
         internal bool CanSetToolbarComponentMode(ComponentMode value) => value == ComponentMode.Object || CanEditComponents();
@@ -29,8 +34,9 @@ namespace MashBoxSDK.AnimationStudio
         internal bool ToolbarToolSelected(Tool value) => cutTool == CutTool.None && tool == value;
         internal void ActivateTool(Tool next)
         {
+            FinishSelectionPaint();
             FinishLiveTool();
-            StopCutTool(); tool = next; pivot = false; repaint(); toolOptions?.Repaint();
+            StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; repaint(); toolOptions?.Repaint();
         }
         internal void OpenToolOptions()
         {
@@ -41,7 +47,7 @@ namespace MashBoxSDK.AnimationStudio
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel))
             {
                 EditorGUIUtility.labelWidth = 115;
-                GUILayout.Label("TOOL OPTIONS", StudioTheme.Styles.panelHeader);
+                GUILayout.Label(ToolOptionsTitle.ToUpperInvariant(), StudioTheme.Styles.panelHeader);
                 toolOptionsScroll = EditorGUILayout.BeginScrollView(toolOptionsScroll);
                 try { DrawToolOptions(); }
                 finally { EditorGUILayout.EndScrollView(); }
@@ -50,16 +56,16 @@ namespace MashBoxSDK.AnimationStudio
         internal void CloseToolOptions() { if (toolOptions) toolOptions.Close(); toolOptions = null; }
         internal void DrawToolOptions()
         {
+            if (CameraOptionsVisible) { DrawViewportCameraOptions(); return; }
+            if (LightingOptionsVisible) { DrawViewportLightingOptions(); return; }
             if (cutTool != CutTool.None)
             {
-                GUILayout.Label(cutTool == CutTool.EdgeLoop ? "Insert Edge Loop" : "Multi-Cut", StudioTheme.Styles.boldLabel);
                 EditorGUILayout.HelpBox(cutTool == CutTool.EdgeLoop
                     ? "Click-drag an edge to position the loop; release to apply. Shift snaps in 10% steps. Loops follow quad strips and stop at triangles, boundaries or non-manifold edges."
                     : "Click edges or vertices to build cuts across adjacent faces. "+StudioShortcuts.Label(StudioShortcut.CommitCut)+" or "+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+" applies the path. "+StudioShortcuts.Label(StudioShortcut.RemoveCut)+" removes the last segment. Ctrl/Cmd inserts edge loops; Shift snaps in 10% steps.", MessageType.Info);
                 GUILayout.Label(StudioShortcuts.Label(StudioShortcut.Cancel)+" cancels a pending cut; press again to exit, or choose a transform tool.", StudioTheme.Styles.wordWrappedMiniLabel);
                 return;
             }
-            GUILayout.Label(tool == Tool.None ? "Selection Tool" : tool + " Tool", StudioTheme.Styles.boldLabel);
             EditorGUI.BeginChangeCheck();
             if (tool != Tool.None) DrawOrientationPopup(true);
             xray = EditorGUILayout.Toggle(new GUIContent("Through selection", "Select components behind visible surfaces."), xray);
@@ -148,11 +154,12 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed class StudioModelToolOptions : EditorWindow
     {
         private StudioModelEditor editor;
-        internal void Bind(StudioModelEditor value) { editor = value; titleContent = new GUIContent("Tool Options"); minSize = new Vector2(300, 175); }
+        internal void Bind(StudioModelEditor value) { editor = value; titleContent = new GUIContent(value.ToolOptionsTitle); minSize = new Vector2(300, 175); }
         private void OnGUI() { using (StudioTheme.Scope()) { EditorGUI.DrawRect(new Rect(Vector2.zero, position.size), StudioTheme.Current.Panel); DrawThemedGUI(); } }
         private void DrawThemedGUI()
         {
             if (editor == null) { GUILayout.Label("Open tool options from MashBox Studio."); return; }
+            if (titleContent.text != editor.ToolOptionsTitle) titleContent = new GUIContent(editor.ToolOptionsTitle);
             EditorGUIUtility.labelWidth = 145;
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins)) editor.DrawToolOptions();
         }

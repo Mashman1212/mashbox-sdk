@@ -47,7 +47,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal const string Id = "MashBox/Display";
         public StudioDisplayToolbar() : base(StudioToolbarWireOnly.Id,
-            StudioToolbarShadedWire.Id, StudioToolbarLighting.Id, StudioToolbarTextures.Id) { }
+            StudioToolbarShadedWire.Id, StudioToolbarLighting.Id, StudioToolbarTextures.Id, StudioToolbarBackfaceCulling.Id) { }
     }
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Transform Tools", true,
@@ -216,7 +216,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             // An active tool is a radio selection; clicking it again must not
             // leave the model state and its native toggle visually out of sync.
-            if (enabled) editor.ActivateTool(target);
+            if (enabled || editor.CameraOptionsVisible || editor.LightingOptionsVisible) { editor.ActivateTool(target); SetValueWithoutNotify(Read(editor)); }
             else SetValueWithoutNotify(Read(editor));
         }
     }
@@ -352,6 +352,14 @@ namespace MashBoxSDK.AnimationStudio
         public StudioToolbarTextures() : base("studio-toolbar-textures", "Material Icon", "Material textures (off shows neutral shading)") { }
         protected override bool Read(StudioModelEditor editor) => editor.ToolbarTextures;
         protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetDisplayMode(editor.ToolbarLighting, enabled);
+    }
+    [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
+    internal sealed class StudioToolbarBackfaceCulling : StudioToolbarToggle
+    {
+        internal const string Id = "MashBox/Viewport/BackfaceCulling";
+        public StudioToolbarBackfaceCulling() : base("studio-toolbar-backface-culling", "PreMatCube", "Backface culling (off shows both sides)") { }
+        protected override bool Read(StudioModelEditor editor) => editor.BackfaceCulling;
+        protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetBackfaceCulling(enabled);
     }
     // One 24px master per icon and skin. Native 32/64px artwork is reduced once;
     // UI Toolkit scales the same cached texture for the 16px preference.

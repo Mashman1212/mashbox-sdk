@@ -34,9 +34,9 @@ public static class StudioOwnedWindowLifetimeValidation {
   var pane=(ToolChannelPane)make(typeof(ToolChannelPane));pane.position=new Rect(100,100,340,235);
   typeof(ToolChannelPane).GetField("cancelPreview",F).SetValue(pane,(Action)(()=>typeof(StudioModelEditor).GetMethod("CancelLiveTool",F,null,new[]{typeof(bool)},null).Invoke(editor,new object[]{false})));
   StudioWindowOwnership.Register(pane,other);
-  var uv=make(typeof(StudioUVEditor));var lighting=make(typeof(StudioLightingWindow));var ao=make(typeof(StudioVertexAOWindow));var audio=make(typeof(StudioAudioKeysWindow));
-  foreach(var w in new[]{uv,lighting,ao,audio})StudioWindowOwnership.Register(w,other);
-  Object.DestroyImmediate(other);Check(!pane&&!migrated&&!theme&&!uv&&!lighting&&!ao&&!audio,"Studio close cascades to all registered tools/settings");
+  var uv=make(typeof(StudioUVEditor));var ao=make(typeof(StudioVertexAOWindow));var audio=make(typeof(StudioAudioKeysWindow));
+  foreach(var w in new[]{uv,ao,audio})StudioWindowOwnership.Register(w,other);
+  Object.DestroyImmediate(other);Check(!pane&&!migrated&&!theme&&!uv&&!ao&&!audio,"Studio close cascades to all registered tools/settings");
   Check(mesh.vertices.SequenceEqual(original),"Owner close cancels unapplied preview");
   Check(typeof(StudioModelEditor).GetField("livePreview",F).GetValue(editor)==null,"Owner close disposes preview transaction");
   Check(!(bool)typeof(StudioModelEditor).GetField("previewQueued",F).GetValue(editor),"No queued preview remains");

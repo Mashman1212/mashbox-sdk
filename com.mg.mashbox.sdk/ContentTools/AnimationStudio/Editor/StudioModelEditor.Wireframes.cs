@@ -65,7 +65,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach(var wire in selectionWireframes.Values) { if(wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked); ReleaseWireBatch(wire); }
             selectionWireframes.Clear();
         }
-        private void PositionsChanged(bool deferStatistics = false)
+        private void PositionsChanged(bool deferStatistics = false, IList<Vector3> markerPositions = null, int[] markerIndices = null)
         {
             var mesh=ActiveMesh;
             // Separating UV/normal seams can change position-based edge deduplication.
@@ -90,7 +90,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(wire.vertices.Count!=count){ClearSelectionWireframes();break;}
                 for(int i=0;i<wire.lines.Length;i++)wire.lines[i]=wire.vertices[wire.indices[i]];
             }
-            RefreshComponentPositions();
+            RefreshComponentPositions(0, markerPositions, markerIndices);
             CaptureUndoMeshVersions();
             componentFrameValid=false;pivotTargetCache.Clear();pivotHover=null;
             if(Document)
@@ -236,7 +236,7 @@ namespace MashBoxSDK.AnimationStudio
             if(!outlineCamera || displayXray)return point;
             // Move along the viewing ray: screen position stays identical, while the
             // normal editor line no longer competes with its own surface depth.
-            const float fraction=.001f;
+            const float fraction=.00001f;
             if(!outlineOrthographic)return Vector3.LerpUnclamped(point,outlineCameraPosition,fraction);
             float distance=Mathf.Max(outlineNearClip,Vector3.Dot(point-outlineCameraPosition,outlineCameraForward));
             return point-outlineCameraForward*(distance*fraction);
@@ -286,22 +286,30 @@ namespace MashBoxSDK.AnimationStudio
                     adjacent.Add(opposite+1); adjacent.Add(0);
                 }
                 bool triangles = true;
-                void FaceEdge(IList<int> face,int e)
-                {
-                    int a=face[e],b=face[(e+1)%face.Count],third=-1;
-                    var direction=wire.vertices[b]-wire.vertices[a];
-                    for(int k=2;k<face.Count;k++)
-                    {
-                        int candidate=face[(e+k)%face.Count];
-                        if(Vector3.Cross(direction,wire.vertices[candidate]-wire.vertices[a]).sqrMagnitude>1e-20f){third=candidate;break;}
-                    }
-                    Edge(a,b,third);
-                }
                 for (int sub = 0; sub < mesh.subMeshCount; sub++) if (mesh.GetTopology(sub) != MeshTopology.Triangles) triangles = false;
                 if (triangles)
                 {
-                    foreach (var face in new StudioMeshCuts(node).Faces)
-                        for (int e = 0; e < face.Vertices.Count; e++) FaceEdge(face.Vertices,e);
+                    var topology = new StudioMeshCuts(node);
+                    var renderTriangles = topology.BevelSourceTriangles(mesh);
+                    var faceEdges = new Dictionary<(int,int),int>();
+                    for (int f = 0; f < topology.Faces.Count; f++)
+                    {
+                        faceEdges.Clear();
+                        var trianglesForFace = renderTriangles[f];
+                        for (int t = 0; t < trianglesForFace.Count; t += 3)
+                            for (int e = 0; e < 3; e++)
+                            {
+                                int a = trianglesForFace[t+e], b = trianglesForFace[t+(e+1)%3];
+                                faceEdges[(Math.Min(a,b),Math.Max(a,b))] = trianglesForFace[t+(e+2)%3];
+                            }
+                        var face = topology.Faces[f].Vertices;
+                        for (int e = 0; e < face.Count; e++)
+                        {
+                            int a = face[e], b = face[(e+1)%face.Count];
+                            int third = faceEdges.TryGetValue((Math.Min(a,b),Math.Max(a,b)),out int opposite) ? opposite : -1;
+                            Edge(a,b,third);
+                        }
+                    }
                 }
                 else for (int sub = 0; sub < mesh.subMeshCount; sub++)
                 {
@@ -309,7 +317,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (topology == MeshTopology.Triangles || topology == MeshTopology.Quads)
                     {
                         int size = topology == MeshTopology.Quads ? 4 : 3;
-                        for (int i = 0; i < list.Length; i += size) for (int j = 0; j < size; j++) Edge(list[i + j], list[i + (j + 1) % size],list[i+(j+2)%size]);
+                        for (int i = 0; i < list.Length; i += size) for (int j = 0; j < size; j++) Edge(list[i + j], list[i + (j + 1) % size],list[i+(size == 4 ? (j == 0 || j == 3 ? 2 : 0) : (j+2)%size)]);
                     }
                     else if (topology == MeshTopology.Lines) for (int i = 0; i + 1 < list.Length; i += 2) Edge(list[i], list[i + 1]);
                     else if (topology == MeshTopology.LineStrip) for (int i = 0; i + 1 < list.Length; i++) Edge(list[i], list[i + 1]);

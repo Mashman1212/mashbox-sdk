@@ -10,6 +10,37 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        internal bool CanDeleteSelection => mode == ComponentMode.Object ? CanDeleteObjects
+            : Document && ActiveMesh && CanEditComponents() && Components.Count > 0;
+        internal void DeleteSelection()
+        {
+            if (!CanDeleteSelection) return;
+            if (mode == ComponentMode.Object) { DeleteSelectedObjects(); return; }
+            var node = Document.nodes[Active];
+            var topology = new StudioMeshCuts(node);
+            var selectedFaces = mode == ComponentMode.Face ? new HashSet<int>(Components) : new HashSet<int>();
+            var selectedVertices = mode == ComponentMode.Vertex ? SelectedVertices() : new HashSet<int>();
+            var edges = mode == ComponentMode.Edge ? Edges() : null;
+            var selectedEdges = edges == null ? new List<(int a, int b)>()
+                : Components.Where(c => c >= 0 && c < edges.Count).Select(c => edges[c]).ToList();
+            int group = -1;
+            string label = "Delete model " + mode.ToString().ToLowerInvariant() + " selection";
+            try
+            {
+                var used = topology.DeleteComponents(node, selectedFaces, selectedVertices, selectedEdges, weld, () => {
+                    Undo.IncrementCurrentGroup(); group = Undo.GetCurrentGroup(); Undo.SetCurrentGroupName(label);
+                    Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, ActiveMesh }, label);
+                });
+                if (used == null) return;
+                foreach (var shared in Document.nodes.Where(n => n.mesh == node.mesh))
+                    if (shared.normalGroups != null && shared.normalGroups.Length == topology.Positions.Length)
+                        shared.normalGroups = used.Select(v => shared.normalGroups[v]).ToArray();
+                EditorUtility.SetDirty(ActiveMesh);
+                MeshTopologyChanged();
+            }
+            catch { if (group >= 0) Undo.RevertAllDownToGroup(group); throw; }
+            finally { if (group >= 0) Undo.CollapseUndoOperations(group); }
+        }
         internal bool CanDeleteObjects => Document && mode == ComponentMode.Object && objects.Count > 0;
         internal void DeleteSelectedObjects()
         {
@@ -30,8 +61,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!key && !command) return false;
             if (evt.type != EventType.ValidateCommand)
             {
-                if (CanDeleteObjects) Run(DeleteSelectedObjects);
-                else if (mode != ComponentMode.Object) { error = "Switch to Object mode to delete objects."; repaint(); }
+                if (CanDeleteSelection) Run(DeleteSelection);
             }
             // Never let Unity delete an unrelated selection from the main scene.
             evt.Use(); return true;
@@ -53,10 +83,10 @@ namespace MashBoxSDK.AnimationStudio
             {
                 DragAndDrop.AcceptDrag();
                 // Snapshot payload before importing/rebuilding changes Unity's drag state.
+                using var camera = new CreationCameraScope(view ? view : commandView);
                 Run(() => {
                     foreach (var source in sources) ImportDroppedSource(source, loaded);
                     foreach (var path in paths) ImportPath(path, loaded);
-                    if (view) Frame(view);
                 });
             }
             evt.Use(); return true;

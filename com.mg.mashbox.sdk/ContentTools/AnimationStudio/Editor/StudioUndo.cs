@@ -40,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static event NativeUndo.UndoRedoEventCallback undoRedoEvent
         { add { NativeUndo.undoRedoEvent += value; } remove { NativeUndo.undoRedoEvent -= value; } }
         internal static int GetCurrentGroup() => NativeUndo.GetCurrentGroup();
+        internal static bool HasCurrentAction => actions.Any(a => a.applied && a.group == GetCurrentGroup());
         internal static void SetCurrentGroupName(string name)
         {
             // A native group-name marker survives ClearUndo(identifier) as an

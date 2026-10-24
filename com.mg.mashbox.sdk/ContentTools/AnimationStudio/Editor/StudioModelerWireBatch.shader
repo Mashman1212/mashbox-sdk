@@ -20,24 +20,37 @@ Shader "Hidden/MashBox/ModelerWireBatch"
             float4x4 _WireObjectToWorld;
             float4 _WireViewport,_WireColor,_WireCamera,_WireForward;
             float _WireWidth,_WireXRay;
-            struct Output { float4 position:SV_POSITION; noperspective float2 pixel:TEXCOORD0; nointerpolation float segmentLength:TEXCOORD1; nointerpolation float valid:TEXCOORD2; };
+            struct Output
+            {
+                float4 position:SV_POSITION;
+                noperspective float2 pixel:TEXCOORD0;
+                nointerpolation float segmentLength:TEXCOORD1;
+                nointerpolation float valid:TEXCOORD2;
+                nointerpolation float4 edgeA:TEXCOORD3,edgeB:TEXCOORD4,faceC:TEXCOORD5,faceD:TEXCOORD6;
+                nointerpolation float2 adjacent:TEXCOORD7;
+                noperspective float3 ndc:TEXCOORD8;
+            };
+            struct Fragment { float4 color:SV_Target; float depth:SV_Depth; };
             float3 Bias(float3 p)
             {
                 if(_WireXRay>.5)return p;
-                if(_WireCamera.w<.5)return lerp(p,_WireCamera.xyz,.001);
-                return p-_WireForward.xyz*max(_WireForward.w,dot(p-_WireCamera.xyz,_WireForward.xyz))*.001;
+                if(_WireCamera.w<.5)return lerp(p,_WireCamera.xyz,.00001);
+                return p-_WireForward.xyz*max(_WireForward.w,dot(p-_WireCamera.xyz,_WireForward.xyz))*.00001;
             }
             float Cross2(float2 a,float2 b){return a.x*b.y-a.y*b.x;}
             float FaceDepth(float4 a,float4 b,float4 c,float2 pixel,float fallback)
             {
-                float3 pa=a.xyz/a.w,pb=b.xyz/b.w;
-                // Homogeneous form also works when the adjacent face vertex is on
-                // or behind the camera plane. Dividing by c.w would flip its side.
-                float3 towardsC=c.xyz-c.w*pa;
-                // Only the side covered by this face can occlude the expanded stroke.
-                if(Cross2(pb.xy-pa.xy,towardsC.xy)*Cross2(pb.xy-pa.xy,pixel-pa.xy)<0)return fallback;
-                float3 plane=cross(pb-pa,towardsC);
-                if(abs(plane.z)<1e-10)return fallback;
+                // Correct only pixels covered by the real incident render triangle.
+                // An extended plane can pull a hidden edge through unrelated geometry.
+                if(min(min(a.w,b.w),c.w)<=1e-6)return fallback;
+                float3 pa=a.xyz/a.w,pb=b.xyz/b.w,pc=c.xyz/c.w;
+                float area=Cross2(pb.xy-pa.xy,pc.xy-pa.xy);
+                if(abs(area)<1e-12)return fallback;
+                float sign=area>0?1:-1,tolerance=abs(area)*1e-6;
+                if(Cross2(pb.xy-pa.xy,pixel-pa.xy)*sign < -tolerance ||
+                   Cross2(pc.xy-pb.xy,pixel-pb.xy)*sign < -tolerance ||
+                   Cross2(pa.xy-pc.xy,pixel-pc.xy)*sign < -tolerance)return fallback;
+                float3 plane=cross(pb-pa,pc-pa);
                 float depth=pa.z-dot(plane.xy,pixel-pa.xy)/plane.z;
                 #if defined(UNITY_REVERSED_Z)
                     return depth>=0&&depth<=1?max(fallback,depth):fallback;
@@ -47,7 +60,7 @@ Shader "Hidden/MashBox/ModelerWireBatch"
             }
             Output Vert(uint vertex:SV_VertexID,uint edge:SV_InstanceID)
             {
-                Output output;
+                Output output=(Output)0;
                 float3 a=mul(_WireObjectToWorld,float4(_WirePositions[_WireEdges[edge*2]],1)).xyz;
                 float3 b=mul(_WireObjectToWorld,float4(_WirePositions[_WireEdges[edge*2+1]],1)).xyz;
                 int first=_WireAdjacent[edge*2],second=_WireAdjacent[edge*2+1];
@@ -72,22 +85,33 @@ Shader "Hidden/MashBox/ModelerWireBatch"
                 // depth fixed makes an oblique line sink into its own face near a cap.
                 float depthSlope=(cb.z/cb.w-ca.z/ca.w)/segmentLength;
                 clip.z+=depthSlope*(end?radius:-radius)*clip.w;
-                if(_WireXRay<.5)
-                {
-                    float depth=clip.z/clip.w;
-                    if(first>0)depth=FaceDepth(ca,cb,UnityWorldToClipPos(c),clip.xy/clip.w,depth);
-                    if(second!=0)depth=FaceDepth(ca,cb,UnityWorldToClipPos(d),clip.xy/clip.w,depth);
-                    clip.z=depth*clip.w;
-                }
+                output.edgeA=ca;output.edgeB=cb;
+                output.faceC=UnityWorldToClipPos(c);output.faceD=UnityWorldToClipPos(d);
+                output.adjacent=float2(first>0,second!=0);
+                output.ndc=clip.xyz/clip.w;
                 output.position=clip;output.pixel=float2(along,side*radius);output.segmentLength=segmentLength;
                 return output;
             }
-            float4 Frag(Output input):SV_Target
+            Fragment Frag(Output input)
             {
                 float cap=max(max(-input.pixel.x,input.pixel.x-input.segmentLength),0);
                 float distance=length(float2(cap,input.pixel.y));
                 float coverage=saturate(_WireWidth*.5+.5-distance)*input.valid;
-                return float4(_WireColor.rgb,_WireColor.a*coverage);
+                clip(coverage-1e-5);
+                float depth=input.ndc.z;
+                if(_WireXRay<.5)
+                {
+                    if(input.adjacent.x>.5)depth=FaceDepth(input.edgeA,input.edgeB,input.faceC,input.ndc.xy,depth);
+                    if(input.adjacent.y>.5)depth=FaceDepth(input.edgeA,input.edgeB,input.faceD,input.ndc.xy,depth);
+                }
+                Fragment output;output.color=float4(_WireColor.rgb,_WireColor.a*coverage);
+                // SV_Depth is device depth even on GL, whose clip-space near value is -1.
+                #if defined(SHADER_API_GLCORE) || defined(SHADER_API_GLES) || defined(SHADER_API_GLES3)
+                    output.depth=depth*.5+.5;
+                #else
+                    output.depth=depth;
+                #endif
+                return output;
             }
             ENDHLSL
         }

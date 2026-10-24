@@ -162,7 +162,7 @@ namespace MashBoxSDK.AnimationStudio
             internal readonly Color[] Text = new Color[40];
             internal readonly Texture2D[] Background = new Texture2D[40];
             internal readonly Texture2D[][] Scaled = new Texture2D[40][];
-            internal readonly RectOffset[] Borders = new RectOffset[5];
+            internal readonly RectOffset[] Borders = Enumerable.Range(0, 5).Select(_ => new RectOffset()).ToArray();
         }
         private static readonly List<FieldSnapshot> savedFields = new List<FieldSnapshot>();
         private static void ApplyImplicitFields(int level, Resources resources)
@@ -171,20 +171,31 @@ namespace MashBoxSDK.AnimationStudio
                 implicitFields = new[] { EditorStyles.numberField, EditorStyles.textField, EditorStyles.objectField, EditorStyles.popup, EditorStyles.helpBox };
             if (savedFields.Count <= level) savedFields.Add(new FieldSnapshot());
             var saved = savedFields[level];
+            // Unity can alias implicit styles. Capture every original before any
+            // mutation, otherwise a later alias snapshots our themed state.
             for (int field = 0; field < implicitFields.Length; field++)
             {
-                string key = "implicit:" + implicitFieldNames[field];
-                if (!resources.Styles.TryGetValue(key, out var themed))
-                    resources.Styles[key] = themed = Themed(implicitFields[field], implicitFieldNames[field], resources);
-                var target = States(implicitFields[field]); var source = States(themed);
-                saved.Borders[field] = implicitFields[field].border;
-                implicitFields[field].border = themed.border;
+                var border = implicitFields[field].border; var copy = saved.Borders[field];
+                // RectOffset from a GUIStyle is a live native wrapper, not a value.
+                copy.left = border.left; copy.right = border.right; copy.top = border.top; copy.bottom = border.bottom;
+                var target = States(implicitFields[field]);
                 for (int state = 0; state < target.Length; state++)
                 {
                     int index = field * 8 + state;
                     saved.Text[index] = target[state].textColor;
                     saved.Background[index] = target[state].background;
                     saved.Scaled[index] = target[state].scaledBackgrounds;
+                }
+            }
+            for (int field = 0; field < implicitFields.Length; field++)
+            {
+                string key = "implicit:" + implicitFieldNames[field];
+                if (!resources.Styles.TryGetValue(key, out var themed))
+                    resources.Styles[key] = themed = Themed(implicitFields[field], implicitFieldNames[field], resources);
+                var target = States(implicitFields[field]); var source = States(themed);
+                implicitFields[field].border = themed.border;
+                for (int state = 0; state < target.Length; state++)
+                {
                     target[state].textColor = source[state].textColor;
                     target[state].background = source[state].background;
                     target[state].scaledBackgrounds = source[state].scaledBackgrounds;
@@ -222,9 +233,11 @@ namespace MashBoxSDK.AnimationStudio
                     implicitStates = new[] { EditorStyles.label, EditorStyles.foldout, EditorStyles.toggle, EditorStyles.boldLabel }.SelectMany(States).ToArray();
                 if (savedText.Count <= level) savedText.Add(new Color[implicitStates.Length]);
                 var text = Current.Text;
-                for (int i = 0; i < implicitStates.Length; i++) { savedText[level][i] = implicitStates[i].textColor; implicitStates[i].textColor = text; }
+                for (int i = 0; i < implicitStates.Length; i++) savedText[level][i] = implicitStates[i].textColor;
                 var resources = GetResources();
-                GUI.skin = Skin(resources); ApplyImplicitFields(level, resources); GUI.color = GUI.contentColor = GUI.backgroundColor = Color.white;
+                GUI.skin = Skin(resources); ApplyImplicitFields(level, resources);
+                for (int i = 0; i < implicitStates.Length; i++) implicitStates[i].textColor = text;
+                GUI.color = GUI.contentColor = GUI.backgroundColor = Color.white;
             }
             public void Dispose()
             {

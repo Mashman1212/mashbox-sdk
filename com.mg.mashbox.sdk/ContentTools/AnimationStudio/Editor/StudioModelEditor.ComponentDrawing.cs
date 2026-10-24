@@ -32,6 +32,7 @@ namespace MashBoxSDK.AnimationStudio
 #endif
         private void ClearComponentDrawing()
         {
+            cachedSelectedStatistics=null; ReleaseVertexMarkers(); InvalidateHandleComponentFrame();
             foreach (var mesh in new[]{componentLines,componentDots,componentHighlight,componentHover}) if(mesh) UnityEngine.Object.DestroyImmediate(mesh);
             componentLines=componentDots=componentHighlight=componentHover=componentSource=null;drawnHover=-1;
             componentPositions=null;drawnComponents.Clear();
@@ -41,6 +42,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DisposeComponentDrawing()
         {
             ClearComponentDrawing();if(componentMaterial)UnityEngine.Object.DestroyImmediate(componentMaterial);
+            if(markerMaterial)UnityEngine.Object.DestroyImmediate(markerMaterial);
         }
         private Mesh OverlayMesh(string name,Vector3[] positions,int[] indices,MeshTopology topology,Vector2[] corners=null,Vector3[] endpoints=null,int[] sourcePoints=null,int[] sourceEnds=null)
         {
@@ -58,16 +60,29 @@ namespace MashBoxSDK.AnimationStudio
             for(int i=componentGeometry.Count-1;i>=0;i--)if(ReferenceEquals(componentGeometry[i].mesh,mesh))componentGeometry.RemoveAt(i);
             UnityEngine.Object.DestroyImmediate(mesh);
         }
-        private void RefreshComponentPositions(int start = 0, IList<Vector3> positions = null)
+        private void RefreshComponentPositions(int start = 0, IList<Vector3> positions = null, int[] changedPoints = null)
         {
+            InvalidateHandleComponentFrame();
             if(componentSource!=ActiveMesh||componentPositions==null)return;
-            if (positions != null && positions.Count == componentPositions.Length)
-                for (int i = start; i < componentPositions.Length; i++) componentPositions[i] = positions[i];
-            else
+            if (positions == null || positions.Count != componentPositions.Length)
             {
                 ActiveMesh.GetVertices(componentPositionBuffer);
                 if(componentPositionBuffer.Count!=componentPositions.Length){ClearComponentDrawing();return;}
-                componentPositionBuffer.CopyTo(componentPositions);
+                positions = componentPositionBuffer;
+            }
+            if (changedPoints != null)
+            {
+                foreach (int point in changedPoints) componentPositions[point] = positions[point];
+                UploadChangedMarkerPoints(changedPoints);
+            }
+            else
+            {
+                int first = -1, last = -1;
+                for (int i = start; i < componentPositions.Length; i++)
+                    if (!componentPositions[i].Equals(positions[i]))
+                    { componentPositions[i] = positions[i]; if (first < 0) first = i; last = i; }
+                if (first < 0) return;
+                UploadMarkerRange(first, last - first + 1);
             }
             foreach(var geometry in componentGeometry)
             {
@@ -111,7 +126,8 @@ namespace MashBoxSDK.AnimationStudio
 #endif
                 }
             }
-            if(mode==ComponentMode.Vertex&&!componentDots)
+            if(mode==ComponentMode.Vertex&&UseGpuVertexMarkers) EnsureVertexMarkers();
+            if(mode==ComponentMode.Vertex&&!UseGpuVertexMarkers&&!componentDots)
             {
                 { var all=new int[componentPositions.Length];for(int i=0;i<all.Length;i++)all[i]=i;componentDots=PointBatch(all);
 #if MASHBOX_STUDIO_TESTS
@@ -123,6 +139,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 DestroyComponentOverlay(componentHighlight);
                 componentHighlight=null;drawnMode=mode;drawnComponents.Clear();drawnComponents.UnionWith(Components);
+                if(mode==ComponentMode.Vertex&&UseGpuVertexMarkers){UpdateVertexMarkerSelection();return;}
                 if(Components.Count==0)return;
                 componentHighlight=ComponentHighlight(Components);
 #if MASHBOX_STUDIO_TESTS
@@ -164,7 +181,7 @@ namespace MashBoxSDK.AnimationStudio
             if(next==drawnHover && mode==hoverMode)return;
             DestroyComponentOverlay(componentHover);
             componentHover=null;drawnHover=next;hoverMode=mode;
-            if(next>=0)componentHover=ComponentHighlight(new[]{next});
+            if(next>=0 && !(mode==ComponentMode.Vertex&&UseGpuVertexMarkers))componentHover=ComponentHighlight(new[]{next});
         }
         private void DrawComponentBatches(SceneView view)
         {
@@ -173,6 +190,7 @@ namespace MashBoxSDK.AnimationStudio
                 ComponentOverlayDrawCalls=0;
 #endif
 EnsureComponentDrawing();EnsureComponentHover();
+                if(mode==ComponentMode.Vertex&&UseGpuVertexMarkers){DrawVertexMarkers(view.camera,Transforms[Active].localToWorldMatrix);return;}
                 if(!componentMaterial)componentMaterial=new Material(Shader.Find("Hidden/MashBox/ModelerComponents")) { hideFlags=HideFlags.HideAndDontSave };
                 componentMaterial.SetVector(OverlayScreen,new Vector4(view.camera.pixelWidth,view.camera.pixelHeight,0,0));
                 componentMaterial.SetFloat(OverlayDepth,(float)(displayXray?CompareFunction.Always:CompareFunction.LessEqual));

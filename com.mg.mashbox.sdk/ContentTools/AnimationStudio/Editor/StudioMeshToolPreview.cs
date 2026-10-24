@@ -169,7 +169,7 @@ namespace MashBoxSDK.AnimationStudio
         { foreach (var target in Targets) target.Publish(); HasChanges = changed; }
         internal void Restore(bool afterUndo = false)
         { foreach (var target in Targets) target.Restore(afterUndo); if (!afterUndo && !documentWasDirty) EditorUtility.ClearDirty(document); }
-        internal void Commit(string label)
+        internal void Commit(string label, Action recordSelection = null)
         {
             if (!HasChanges) return;
             Restore();
@@ -179,7 +179,7 @@ namespace MashBoxSDK.AnimationStudio
             undoObjects.AddRange(Targets.Select(t => (UnityEngine.Object)t.Live));
             Undo.RegisterCompleteObjectUndo(undoObjects.ToArray(), label);
             foreach (var target in Targets) target.Publish();
-            EditorUtility.SetDirty(document); Undo.CollapseUndoOperations(group);
+            EditorUtility.SetDirty(document); recordSelection?.Invoke(); Undo.CollapseUndoOperations(group);
             // Do not let the next unrelated action join this transaction.
             Undo.IncrementCurrentGroup();
         }
