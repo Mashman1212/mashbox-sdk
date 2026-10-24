@@ -7,8 +7,8 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class AnimationStudioWindow : EditorWindow
     {
-        private const string SkeletonPath = "Assets/MashBox/Character/Base Content/Skeleton.fbx";
-        private const string BodyPath = "Assets/MashBox/Character/Base Content/SM_Body_01.fbx";
+        private const string SkeletonPath = "Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx";
+        private const string BodyPath = "Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/SM_Body_01.fbx";
         private static readonly string[] LimbNames = { "Left hand", "Right hand", "Left foot", "Right foot" };
         [SerializeField] private AnimationTake take;
         [SerializeField] private GameObject character;
@@ -142,6 +142,7 @@ namespace MashBoxSDK.AnimationStudio
             if (asset) { window.modelingMode = false; window.LoadTake(asset); }
             else if (window.take && window.rig == null) window.Guard(window.BuildRig);
             else window.OpenViewport();
+            if (!window.viewport) window.OpenViewport();
             window.viewport?.Focus();
 #endif
         }
@@ -178,7 +179,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorApplication.update += Tick;
             Undo.undoRedoPerformed += UndoRedo;
             EditorApplication.playModeStateChanged += PlayModeChanged;
-            EditorApplication.delayCall += Restore;
+            MashBoxStudioViewport.RestoreStudioViews();
 #else
             EditorApplication.delayCall += () => { if (this) Close(); };
 #endif
@@ -206,10 +207,15 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Restore()
         {
-            if (!this || rig != null || EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode) return;
+            if (!this || EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode) return;
             // A hidden controller can survive closing the viewport. Never recreate it on reload or Play.
             if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault(view => view.Studio == this);
             if (!viewport) return;
+            if (rig != null)
+            {
+                if (!viewport.HasStudioBindings) OpenViewport();
+                return;
+            }
             if (take && take.character) { character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>(); }
             if (character)
             {
@@ -227,7 +233,7 @@ namespace MashBoxSDK.AnimationStudio
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.ExitingPlayMode)
             { ReleaseRig(); ReleaseModelEditor(); }
             else if (state == PlayModeStateChange.EnteredEditMode || state == PlayModeStateChange.EnteredPlayMode)
-                EditorApplication.delayCall += Restore;
+                MashBoxStudioViewport.RestoreStudioViews();
         }
         private void ReleaseRig()
         {
@@ -243,11 +249,13 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UndoRedo()
         {
+            if (RestoreUnkeyedPoseUndo()) return;
             sceneDraft = false;
             foreach (var actor in actorPreviews) actor.Draft = false;
-            if (rig != null && take && (body != take.body || !clothing.SequenceEqual(take.clothing ?? Array.Empty<GameObject>()) || !outfitOptions.SequenceEqual(take.outfitOptions ?? Array.Empty<OutfitOptions>())))
+            ReleaseActors();
+            if (rig != null && take && (character != take.character || body != take.body || !clothing.SequenceEqual(take.clothing ?? Array.Empty<GameObject>()) || !outfitOptions.SequenceEqual(take.outfitOptions ?? Array.Empty<OutfitOptions>())))
             {
-                body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>();
+                character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>();
                 Guard(RebuildAppearance);
             }
             if (take) Save();
@@ -282,6 +290,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawWorkspace(bool appearance = true)
         {
+            DrawDefaultCharacter();
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField(appearance ? "CHARACTER WORKSPACE" : EditingClip ? "ANIMATION" : "TAKE", StudioTheme.Styles.boldLabel);
             if(appearance || !take)
@@ -352,6 +361,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void BuildRig()
         {
+            RecoverMissingCharacter();
             ReleaseRig();
             rig = new AuthoringRig(character, body, clothing, outfitOptions);
             if(take) rig.BuildVehicleParts(take.vehicleParts);
@@ -366,6 +376,11 @@ namespace MashBoxSDK.AnimationStudio
             {
                 string reason = rig.SolverStatus; ReleaseRig();
                 throw new InvalidOperationException("This take requires FBIK. " + reason);
+            }
+            if (take && !take.character)
+            {
+                Undo.RecordObject(take, "Restore Studio character reference");
+                take.character = character; Save();
             }
             if (take && take.keys.Count > 0) Seek(frame);
             else pose = rig.Rest.Copy(0);
@@ -412,6 +427,7 @@ namespace MashBoxSDK.AnimationStudio
             UpdateClipSaveState();
             viewport.BindTimeline(DrawViewportTimeline);
             viewport.BindRigControls(DrawViewportRigControls);
+            viewport.BindLimbBlend(DrawViewportLimbBlend);
             viewport.BindInspector(DrawViewportInspector);
             viewport.SetInspectorExpanded(inspectorExpanded);
             BindStudioMode();
@@ -425,9 +441,10 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!ConfirmReplaceClip()) return;
             FlushEdits();
-            string path = EditorUtility.SaveFilePanelInProject("New animation take", "Animation Take", "asset", "Save the editable control rig take.");
-            if (string.IsNullOrEmpty(path)) return;
+            if (rig == null) BuildRig();
             var created = CreateInstance<AnimationTake>();
+            created.name = "Untitled Take";
+            created.hideFlags = HideFlags.HideAndDontSave;
             // A live object reference cannot persist. Prefer the corresponding source asset.
             created.character = EditorUtility.IsPersistent(character) ? character : PrefabUtility.GetCorrespondingObjectFromSource(character);
             if (!created.character)
@@ -439,9 +456,11 @@ namespace MashBoxSDK.AnimationStudio
             created.clothing = (GameObject[])clothing.Clone(); created.outfitOptions = (OutfitOptions[])outfitOptions.Clone();
             created.bonePaths = (string[])rig.Paths.Clone();
             created.SetKey(rig.Capture(), 0);
-            AssetDatabase.CreateAsset(created, AssetDatabase.GenerateUniqueAssetPath(path));
+            ReleaseActors(); activeActor = -1;
             ReleaseClipSession();
-            take = created; frame = 0; Seek(0); Save();
+            clipSession = created; memoryTakeSession = true;
+            take = created; frame = 0; playing = false; rigSelection.Clear(); hiddenAttachments.Clear();
+            Seek(0); Save();
         }
 
         private void DrawTimeline()
@@ -575,6 +594,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawClipTools()
         {
+            DrawSingleFramePose();
             EditorGUILayout.Space(12);
             EditorGUILayout.LabelField("CLIPS & GAMEPLAY", StudioTheme.Styles.boldLabel);
             importClip = (AnimationClip)EditorGUILayout.ObjectField("Source animation", importClip, typeof(AnimationClip), false);
@@ -634,6 +654,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Save()
         {
+            take.SyncSingleFramePose();
             if (clipSession && (take == clipSession || inActorScope)) { MarkClipChanged(); return; }
             if (EditorUtility.IsPersistent(take)) EditorPrefs.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(take));
             if (pendingSave && pendingSave != take) FlushSave();
@@ -661,7 +682,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!sceneDraft || !take || pose == null) return;
             sceneDraft = false;
-            if (!autoKey) { unkeyedPose = true; Repaint(); return; }
+            if (!autoKey) { unkeyedPose = true; RecordUnkeyedPoseUndo(); Repaint(); return; }
+            Undo.IncrementCurrentGroup();
             Undo.RecordObject(take, draftLabel);
             if(!WriteAuthoringKey()) return;
             unkeyedPose = false;
@@ -760,6 +782,7 @@ namespace MashBoxSDK.AnimationStudio
                 int index=IsBike ? Array.IndexOf(rig.Bones,BikeJoint(Mathf.Clamp(control,0,BikeJointNames.Length-1))) : control;
                 if(index<0 || index>=bones.Length) return;
                 bones[index]=mask;
+                if (!IsBike) AddBodyIKChannelMask(bones, index, mask);
                 if(IsBike && control==3 && rotationChannel)
                     for(int pedal=4;pedal<=5;pedal++)
                     { int p=Array.IndexOf(rig.Bones,BikeJoint(pedal)); if(p>=0) bones[p]=2; }
@@ -799,7 +822,11 @@ namespace MashBoxSDK.AnimationStudio
             }
             // HDRP and scene-wide effects must treat this as an asset preview.
             // SceneView resets cameraType during SetupCamera, so set it immediately before rendering.
-            if (view == viewport && view.camera) view.camera.cameraType = CameraType.Preview;
+            if (view == viewport && view.camera)
+            {
+                view.camera.cameraType = CameraType.Preview;
+                StudioPreviewLighting.ConfigureStudioBackground(view);
+            }
             if (view != viewport || rig == null || pose == null || !take) return;
             var evt = Event.current;
             bool frameCommand = evt.commandName == "FrameSelected" &&
@@ -823,7 +850,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int limb = Mathf.Clamp(control, 0, 3);
                 var displayed = DisplayEffector(limb);
-                var effector = displayed.weight > 0 ? displayed : rig.MatchEffector(limb, 0);
+                var effector = displayed;
                 center = rig.Root.transform.TransformPoint(poleMode ? effector.pole : effector.position);
             }
             else center = rig.Bones[Mathf.Clamp(control, 0, rig.Bones.Length - 1)].position;
@@ -839,7 +866,13 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawStudioSceneGUI(SceneView view)
         {
-            if (DrawActorScene(view)) return;
+            if (view == viewport && !drawingActorControls && !inActorScope && Event.current.type == EventType.MouseDown)
+                CaptureUnkeyedPoseUndo();
+            if (DrawActorScene(view))
+            {
+                if (!autoKey && !inActorScope && Event.current.rawType == EventType.MouseUp) RecordUnkeyedPoseUndo();
+                return;
+            }
             if (view != viewport || rig == null || pose == null) return;
             if (showGroundGrid) viewport.DrawGroundGrid();
             if (!take) return;
@@ -851,6 +884,7 @@ namespace MashBoxSDK.AnimationStudio
             if(rigSelection.Count>1 || (rigSelectionExplicit && rigSelection.Count==0)) return;
             if(DrawAttachmentHandle()) { if(released) FinishSceneEdit(); return; }
             if (playing) return;
+            if (DrawBodyIKHandle(released)) return;
             float selectedAlpha = ikMode ? RigAlpha(true, Mathf.Clamp(control,0,3)) : RigAlpha(false, BoneLimb(rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)]));
             if (selectedAlpha <= .001f || (ikMode && poleMode && !showPoles))
             { if (released) FinishSceneEdit(); return; }
@@ -859,9 +893,16 @@ namespace MashBoxSDK.AnimationStudio
             {
                 control = Mathf.Clamp(control, 0, 3);
                 var displayed = DisplayEffector(control);
-                var eff = displayed.weight > 0 ? displayed : rig.MatchEffector(control, 0);
+                var eff = displayed;
                 Transform root = rig.Root.transform;
                 Vector3 target = root.TransformPoint(poleMode ? eff.pole : eff.position);
+                bool locked = rotate && !poleMode ? eff.pinRotation : poleMode ? eff.pinPole : eff.pinPosition;
+                if (locked)
+                {
+                    EditorGUI.EndChangeCheck();
+                    if (released) FinishSceneEdit();
+                    return;
+                }
                 if (poleMode)
                 {
                     Handles.color = Color.yellow;
@@ -956,6 +997,7 @@ namespace MashBoxSDK.AnimationStudio
                     importClip.SampleAnimation(rig.Root, Mathf.Min(importClip.length, (float)f / imported.frameRate));
                     var key = rig.Capture(); key.frame = f; imported.keys.Add(key);
                 }
+                if (AssetDatabase.GetLabels(importClip).Contains(SinglePoseLabel)) imported.SetSingleFramePose(true);
                 bool memoryOnly = string.IsNullOrEmpty(path);
                 if (!memoryOnly)
                 {
@@ -1030,7 +1072,7 @@ namespace MashBoxSDK.AnimationStudio
                     take.outputClip = target;
                     Save();
                 }
-                AssetDatabase.SaveAssetIfDirty(target); FlushSave(); EditorGUIUtility.PingObject(target);
+                SaveSinglePoseLabel(target, take.singleFramePose); AssetDatabase.SaveAssetIfDirty(target); FlushSave(); EditorGUIUtility.PingObject(target);
                 if (EditingClip) { clipSessionDirty = false; UpdateClipSaveState(); }
             }
             catch { if (!EditorUtility.IsPersistent(clip)) DestroyImmediate(clip); throw; }

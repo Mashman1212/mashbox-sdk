@@ -10,6 +10,7 @@ namespace MashBoxSDK.AnimationStudio
         // Reuse the authoring data model without creating a take asset on disk.
         [SerializeField] private AnimationTake clipSession;
         [SerializeField] private bool clipSessionDirty;
+        [SerializeField] private bool memoryTakeSession;
         private bool EditingClip => clipSession && take == clipSession;
 
         private static void OpenClipForEditing(AnimationClip clip) => OpenClip(clip, null);
@@ -30,6 +31,7 @@ namespace MashBoxSDK.AnimationStudio
         internal bool SaveClipSession(bool saveAs = false)
         {
             if (!EditingClip) return false;
+            if (memoryTakeSession && !saveAs) return SaveMemoryTake();
             FlushEdits();
             if (!saveAs && CanOverwriteClip(take.outputClip)) SaveToReferencedClip();
             else
@@ -52,6 +54,40 @@ namespace MashBoxSDK.AnimationStudio
             importClip = null;
         }
 
+        private bool SaveMemoryTake()
+        {
+            if (!EditingClip) return false;
+            FlushEdits();
+            string path = EditorUtility.SaveFilePanelInProject("Save editable take", take.name, "asset", "Save the take, actor tracks, constraints and editable keys.");
+            if (string.IsNullOrEmpty(path)) return false;
+            path = AssetDatabase.GenerateUniqueAssetPath(path);
+            // Persist the same object graph so actor/constraint references and Undo
+            // remain intact; do not release or destroy the in-memory session.
+            take.hideFlags = HideFlags.None;
+            try
+            {
+                AssetDatabase.CreateAsset(take, path);
+                foreach (var actor in take.actors)
+                {
+                    if (!actor || EditorUtility.IsPersistent(actor)) continue;
+                    actor.hideFlags = HideFlags.None;
+                    AssetDatabase.AddObjectToAsset(actor, take);
+                }
+                EditorUtility.SetDirty(take);
+                AssetDatabase.SaveAssetIfDirty(take);
+            }
+            catch
+            {
+                // Keep the session alive if writing fails so it can be recovered.
+                if (!EditorUtility.IsPersistent(take)) take.hideFlags = HideFlags.HideAndDontSave;
+                throw;
+            }
+            clipSession = null; clipSessionDirty = false; memoryTakeSession = false;
+            EditorPrefs.SetString("MashBox.LastTake." + Application.dataPath, path);
+            UpdateClipSaveState(); EditorGUIUtility.PingObject(take);
+            return true;
+        }
+
         private bool ConfirmReplaceClip()
         {
             FlushEdits();
@@ -67,10 +103,14 @@ namespace MashBoxSDK.AnimationStudio
             {
                 foreach (var actor in clipSession.actors)
                     if (actor && !EditorUtility.IsPersistent(actor)) { Undo.ClearUndo(actor); DestroyImmediate(actor); }
-                Undo.ClearUndo(clipSession);
-                DestroyImmediate(clipSession);
+                if (!EditorUtility.IsPersistent(clipSession))
+                {
+                    Undo.ClearUndo(clipSession);
+                    DestroyImmediate(clipSession);
+                }
             }
             clipSession = null;
+            memoryTakeSession = false;
             clipSessionDirty = false;
             UpdateClipSaveState();
         }
@@ -82,10 +122,18 @@ namespace MashBoxSDK.AnimationStudio
             var rect = new Rect(0, 0, 48, 21);
             if (!EditorGUI.DropdownButton(rect, new GUIContent("File"), FocusType.Passive, StudioTheme.Styles.menuDropdown)) return;
             var menu = new StudioMenu();
+            menu.AddItem(new GUIContent("New Take"), false, () => Guard(NewTake));
+            menu.AddSeparator("");
             if (EditingClip)
             {
-                menu.AddItem(new GUIContent("Save animation  Ctrl+S"), false, () => Guard(() => SaveClipSession()));
-                menu.AddItem(new GUIContent("Save animation as…"), false, () => Guard(() => SaveClipSession(true)));
+                menu.AddItem(new GUIContent(memoryTakeSession ? "Save take…\tCtrl+S" : "Save animation\tCtrl+S"), false, () => Guard(() => SaveClipSession()));
+                if (!memoryTakeSession) menu.AddItem(new GUIContent("Save as editable take…"), false, () => Guard(() => SaveMemoryTake()));
+                menu.AddItem(new GUIContent("Save as animation clip…"), false, () => Guard(() => SaveClipSession(true)));
+            }
+            else if (take && rig != null)
+            {
+                menu.AddItem(new GUIContent("Save take"), false, () => Guard(FlushEdits));
+                menu.AddItem(new GUIContent("Save as animation clip…"), false, () => Guard(Bake));
             }
             else menu.AddDisabledItem(new GUIContent("Save animation  Ctrl+S"));
             menu.DropDown(rect);
@@ -94,6 +142,13 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawClipDocument()
         {
             EditorGUILayout.LabelField(take.name, StudioTheme.Styles.boldLabel);
+            if (memoryTakeSession)
+            {
+                EditorGUILayout.HelpBox("Working in memory. Save an editable take or export an animation clip when ready.", MessageType.Info);
+                if (GUILayout.Button("Save take…")) Guard(() => SaveMemoryTake());
+                if (GUILayout.Button("Save as animation clip…")) Guard(() => SaveClipSession(true));
+                return;
+            }
             using (new EditorGUI.DisabledScope(true))
                 EditorGUILayout.ObjectField("Animation clip", take.outputClip, typeof(AnimationClip), false);
             EditorGUILayout.HelpBox(clipSessionDirty ? "Unsaved changes in memory. Save animation writes your keyed edits to the clip." : "Editing in memory. Press S to key a pose, then Ctrl+S to save the animation.", MessageType.Info);
@@ -137,7 +192,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetClipUnsavedChanges(bool dirty)
         {
             hasUnsavedChanges = dirty;
-            saveChangesMessage = "Save changes to the animation clip before closing MashBox Studio?";
+            saveChangesMessage = "Save the animation or take before closing MashBox Studio?";
         }
 
         public override void SaveChanges()

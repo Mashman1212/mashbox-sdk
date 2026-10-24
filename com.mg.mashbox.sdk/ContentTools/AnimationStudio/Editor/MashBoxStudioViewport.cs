@@ -16,17 +16,49 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] internal AnimationStudioWindow Studio;
         [SerializeField] internal bool dockableHost;
         [InitializeOnLoadMethod]
-        private static void RestoreStudioViews()
+        internal static void RestoreStudioViews()
         {
-            EditorApplication.delayCall += () =>
+            // delayCall is a shared, one-shot multicast: another editor's exception
+            // can discard all remaining callbacks. Keep recovery registered until bound.
+            EditorApplication.update -= RestoreStudioViewsWhenReady;
+            EditorApplication.update += RestoreStudioViewsWhenReady;
+        }
+        private static double nextRestoreAttempt;
+        private static readonly System.Collections.Generic.HashSet<int> restoreWarnings = new System.Collections.Generic.HashSet<int>();
+        internal bool HasStudioBindings => timeline != null && rigControls != null && inspector != null &&
+            timeline.onGUIHandler != null && rigControls.onGUIHandler != null && inspector.onGUIHandler != null &&
+            rootVisualElement.Contains(timeline) && rootVisualElement.Contains(rigControls) && rootVisualElement.Contains(inspector);
+
+        private static void RestoreStudioViewsWhenReady()
+        {
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating ||
+                EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode ||
+                EditorApplication.timeSinceStartup < nextRestoreAttempt) return;
+            nextRestoreAttempt = EditorApplication.timeSinceStartup + .5;
+            bool pending = false;
+            foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
             {
-                foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
+                if (!view) continue;
+                try
+                {
 #if MashBoxDev
-                    if (view) AnimationStudioWindow.RestoreExistingViewport(view);
+                    AnimationStudioWindow.RestoreExistingViewport(view);
+                    pending |= !view.HasStudioBindings;
 #else
-                    if (view) view.Close();
+                    view.Close();
 #endif
-            };
+                }
+                catch (System.Exception error)
+                {
+                    pending = true;
+                    if (restoreWarnings.Add(view.GetInstanceID())) Debug.LogException(error);
+                }
+            }
+            if (!pending)
+            {
+                EditorApplication.update -= RestoreStudioViewsWhenReady;
+                restoreWarnings.Clear();
+            }
         }
         private IMGUIContainer timeline;
         private IMGUIContainer inspector;
@@ -35,6 +67,13 @@ namespace MashBoxSDK.AnimationStudio
         private VisualElement studioMenuBackground;
         private IMGUIContainer modelMenuBar, viewportOptions, studioSettings;
         private IMGUIContainer meshStatistics;
+        private IMGUIContainer attachments;
+        internal void BindAttachments(System.Action draw)
+        {
+            BindViewportControl(ref attachments, "mashbox-attachments", draw);
+            attachments.style.width = 146;
+            UpdatePanelLayout();
+        }
         internal void BindStatistics(System.Action draw)
         {
             BindViewportControl(ref meshStatistics, "mashbox-mesh-statistics", draw);
@@ -101,6 +140,7 @@ namespace MashBoxSDK.AnimationStudio
             if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? 8 : 148; inspector.style.height = StyleKeyword.Auto; }
             if (rigControls != null) { rigControls.style.top = ModelingPanelTop; rigControls.style.bottom = modeling ? new StyleLength(8) : new StyleLength(StyleKeyword.Auto); }
             if (timeline != null) timeline.style.display = modeling ? DisplayStyle.None : DisplayStyle.Flex;
+            if (limbBlend != null) limbBlend.style.display = modeling ? DisplayStyle.None : DisplayStyle.Flex;
             BindPanelResizers(modeling);
             ApplyTheme();
         }
@@ -112,7 +152,7 @@ namespace MashBoxSDK.AnimationStudio
             BindViewportControl(ref studioSettings, "mashbox-studio-settings", settings);
             modelMenuBar.style.top = 0; modelMenuBar.style.left = PanelMargin + ModeSelectorWidth + 20; modelMenuBar.style.right = 0; modelMenuBar.style.height = 24;
             viewportOptions.style.width = 202; viewportOptions.style.height = 24;
-            studioSettings.style.width = 24; studioSettings.style.height = 24;
+            studioSettings.style.width = panelsModeling ? 24 : 56; studioSettings.style.height = 24;
             UpdatePanelLayout(); ApplyTheme();
         }
         private void BindViewportControl(ref IMGUIContainer control, string elementName, System.Action draw)
@@ -129,7 +169,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
+            IsOverControl(attachments, point) || IsOverControl(limbBlend, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
         private static bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.layout.Contains(point);
 
@@ -142,7 +182,7 @@ namespace MashBoxSDK.AnimationStudio
                 rigControls.style.top = 8;
                 rigControls.style.left = 8;
                 rigControls.style.width = 260;
-                rigControls.style.backgroundColor = StudioTheme.Current.Panel;
+                rigControls.style.backgroundColor = panelsModeling ? StudioTheme.Current.Panel : Color.clear;
                 rootVisualElement.Add(rigControls);
             }
             rigControls.onGUIHandler = StudioTheme.Wrap(draw);
@@ -170,8 +210,8 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetInspectorExpanded(bool expanded)
         {
             if (inspector == null) return;
-            inspector.style.bottom = expanded ? new StyleLength(148) : new StyleLength(StyleKeyword.Auto);
-            inspector.style.height = expanded ? new StyleLength(StyleKeyword.Auto) : new StyleLength(28);
+            animationSettingsExpanded = expanded;
+            UpdatePanelLayout();
         }
 
         internal void BindTimeline(System.Action draw)
@@ -226,8 +266,8 @@ namespace MashBoxSDK.AnimationStudio
             if (modelMenuBar != null) modelMenuBar.style.backgroundColor = Color.clear;
             if (viewportOptions != null) viewportOptions.style.backgroundColor = Color.clear;
             if (studioSettings != null) studioSettings.style.backgroundColor = Color.clear;
-            if (inspector != null) inspector.style.backgroundColor = palette.Panel;
-            if (rigControls != null) rigControls.style.backgroundColor = palette.Panel;
+            if (inspector != null) inspector.style.backgroundColor = panelsModeling || animationSettingsExpanded ? palette.Panel : Color.clear;
+            if (rigControls != null) rigControls.style.backgroundColor = panelsModeling ? palette.Panel : Color.clear;
             if (modelTools != null)
             {
                 modelTools.style.backgroundColor = palette.ToolRail;

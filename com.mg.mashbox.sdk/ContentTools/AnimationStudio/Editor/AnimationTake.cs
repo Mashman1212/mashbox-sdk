@@ -75,12 +75,35 @@ namespace MashBoxSDK.AnimationStudio
         public Quaternion rotation;
         public Vector3 pole;
         public float weight;
+        public bool pinPosition, pinRotation, pinPole;
+        public Vector3 pinnedPosition, pinnedPole;
+        public Quaternion pinnedRotation;
+        public void CopyPinsFrom(EffectorPose source)
+        {
+            pinPosition = source.pinPosition; pinRotation = source.pinRotation; pinPole = source.pinPole;
+            pinnedPosition = source.pinnedPosition; pinnedRotation = source.pinnedRotation; pinnedPole = source.pinnedPole;
+        }
+        public EffectorPose ResolvePins(Transform root)
+        {
+            var result = this;
+            if (pinPosition) result.position = root.InverseTransformPoint(pinnedPosition);
+            if (pinRotation) result.rotation = Quaternion.Inverse(root.rotation) * pinnedRotation;
+            if (pinPole) result.pole = root.InverseTransformPoint(pinnedPole);
+            return result;
+        }
         public static EffectorPose Blend(EffectorPose a, EffectorPose b, float t) => new EffectorPose
         {
             position = Vector3.Lerp(a.position, b.position, t),
             rotation = Quaternion.Slerp(a.rotation, b.rotation, t),
             pole = Vector3.Lerp(a.pole, b.pole, t),
-            weight = Mathf.Lerp(a.weight, b.weight, t)
+            weight = Mathf.Lerp(a.weight, b.weight, t),
+            // Pins are discrete keyed holds, never halfway enabled or drifting anchors.
+            pinPosition = t < 1 ? a.pinPosition : b.pinPosition,
+            pinRotation = t < 1 ? a.pinRotation : b.pinRotation,
+            pinPole = t < 1 ? a.pinPole : b.pinPole,
+            pinnedPosition = t < 1 ? a.pinnedPosition : b.pinnedPosition,
+            pinnedRotation = t < 1 ? a.pinnedRotation : b.pinnedRotation,
+            pinnedPole = t < 1 ? a.pinnedPole : b.pinnedPole
         };
     }
 
@@ -138,6 +161,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public PoseKey EvaluateBase(float frame)
         {
+            if (singleFramePose) frame = 0;
             if (keys.Count == 0) return null;
             if(keys.Exists(k=>k.selective)) return EvaluateChannels(frame);
             if (frame <= keys[0].frame) return keys[0].Copy(keys[0].frame);
@@ -155,10 +179,12 @@ namespace MashBoxSDK.AnimationStudio
 
         public void SetKey(PoseKey pose, int frame)
         {
+            if (singleFramePose) { frame = 0; keys.Clear(); }
             keys.RemoveAll(k => k.frame == frame);
             var full=pose.Copy(frame); full.selective=false; full.boneChannels=null; full.effectorChannels=null;
             keys.Add(full);
             keys.Sort((a, b) => a.frame.CompareTo(b.frame));
+            SyncSingleFramePose();
         }
         private void ChannelPair(float frame,int index,int bit,bool effector,out PoseKey a,out PoseKey b,out float t)
         {
@@ -196,12 +222,13 @@ namespace MashBoxSDK.AnimationStudio
                     if(bit==1) result.effectors[i].position=e.position;
                     else if(bit==2) result.effectors[i].rotation=e.rotation;
                     else if(bit==4) result.effectors[i].pole=e.pole;
-                    else result.effectors[i].weight=e.weight;
+                    else { result.effectors[i].weight=e.weight; result.effectors[i].CopyPinsFrom(e); }
                 }
             return result;
         }
         public void SetChannelKey(PoseKey source,int frame,int[] bones,int[] effectors)
         {
+            if (singleFramePose) frame = 0;
             var key=keys.Find(k=>k.frame==frame);
             if(key==null)
             {
@@ -223,9 +250,10 @@ namespace MashBoxSDK.AnimationStudio
                 if((mask&1)!=0) key.effectors[i].position=source.effectors[i].position;
                 if((mask&2)!=0) key.effectors[i].rotation=source.effectors[i].rotation;
                 if((mask&4)!=0) key.effectors[i].pole=source.effectors[i].pole;
-                if((mask&8)!=0) key.effectors[i].weight=source.effectors[i].weight;
+                if((mask&8)!=0) { key.effectors[i].weight=source.effectors[i].weight; key.effectors[i].CopyPinsFrom(source.effectors[i]); }
                 if(key.selective) key.effectorChannels[i]|=mask;
             }
+            SyncSingleFramePose();
         }
     }
 }

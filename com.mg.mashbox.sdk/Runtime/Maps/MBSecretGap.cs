@@ -37,13 +37,13 @@ namespace MashBoxSDK.Maps
         private static void CacheStateProperty()
         {
             searched = true;
-            gameLoopServiceType = System.Type.GetType("GameLoopService");
+            gameLoopServiceType = System.Type.GetType("MashBoxBridge.Common.Sys.GameLoopService") ?? System.Type.GetType("GameLoopService");
 
             if (gameLoopServiceType == null)
             {
                 System.Reflection.Assembly[] assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
                 for (int i = 0; i < assemblies.Length && gameLoopServiceType == null; i++)
-                    gameLoopServiceType = assemblies[i].GetType("GameLoopService");
+                    gameLoopServiceType = assemblies[i].GetType("MashBoxBridge.Common.Sys.GameLoopService") ?? assemblies[i].GetType("GameLoopService");
             }
 
             if (gameLoopServiceType == null)

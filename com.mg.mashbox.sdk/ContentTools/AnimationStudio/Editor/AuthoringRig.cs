@@ -131,10 +131,10 @@ namespace MashBoxSDK.AnimationStudio
                     for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
                         for (var bone = Animator.GetBoneTransform((HumanBodyBones)i); bone && bone != Root.transform; bone = bone.parent)
                             DisplayBones.Add(bone);
-                    try { solver = new FinalIKBridge(Animator); SolverStatus = "Final IK • Full Body Biped"; }
+                    try { solver = new FinalIKBridge(Animator); SolverStatus = "Final IK • Independent limbs"; }
                     catch (Exception ex) { SolverStatus = "FK only: " + ex.GetBaseException().Message; }
                 }
-                else SolverStatus = "FK only: select the root with a valid Humanoid Animator for FBIK.";
+                else SolverStatus = "FK only: select the root with a valid Humanoid Animator for limb IK.";
                 if (!Animator) foreach (var bone in Bones) DisplayBones.Add(bone);
                 BuildOutfit(body, clothing, outfitOptions);
                 Rest = Capture();
@@ -210,7 +210,7 @@ namespace MashBoxSDK.AnimationStudio
                 for (int i = 0; i < mapped.Length; i++)
                 {
                     if (!skin.bones[i] || !names.TryGetValue(BoneName(skin.bones[i].name), out var matches) || matches.Length != 1)
-                        throw new InvalidOperationException("Body bone cannot be uniquely matched: " + (skin.bones[i] ? skin.bones[i].name : "missing bone"));
+                        throw new InvalidOperationException("Outfit '" + body.name + "' has a bone that cannot be uniquely matched to the character Skeleton: " + (skin.bones[i] ? skin.bones[i].name : "missing bone") + ". Use an outfit bound to the shared Skeleton, or an explicit bone mapping.");
                     mapped[i] = matches[0];
                 }
                 var go = new GameObject("Preview • " + skin.name);
@@ -258,6 +258,23 @@ namespace MashBoxSDK.AnimationStudio
             };
         }
 
+        // Match from the displayed, solved transforms before changing control methods.
+        // Only this chain is baked into FK; other limbs retain their authored channels.
+        public void MatchLimbBlend(PoseKey pose, int limb, float weight, bool force = false)
+        {
+            weight = Mathf.Clamp01(weight);
+            if (!force && Mathf.Approximately(pose.effectors[limb].weight, weight)) return;
+            foreach (var bone in new[] { Starts[limb], Middles[limb], Ends[limb] })
+            {
+                int index = Array.IndexOf(Bones, bone);
+                if (index < 0) throw new InvalidOperationException("IK limb is not part of this skeleton.");
+                pose.bones[index] = BonePose.Read(bone);
+            }
+            var matched = MatchEffector(limb, weight);
+            matched.CopyPinsFrom(pose.effectors[limb]);
+            pose.effectors[limb] = matched;
+        }
+
         public void Apply(PoseKey pose)
         {
             if (pose == null || pose.bones.Length != Bones.Length || pose.effectors.Length != 4)
@@ -285,74 +302,55 @@ namespace MashBoxSDK.AnimationStudio
     // Reflection keeps the SDK assembly usable without bundling or requiring the paid plugin.
     internal sealed class FinalIKBridge
     {
-        private readonly object solver;
-        private readonly object[] effectors = new object[4];
-        private readonly object[] bends = new object[4];
-        private readonly Transform[] poles = new Transform[4];
         private readonly Transform root;
-        private readonly MethodInfo update;
+        private readonly Transform[] starts = new Transform[4], middles = new Transform[4], ends = new Transform[4];
+        private readonly MethodInfo solve;
         private static Type FindType(string name) => AppDomain.CurrentDomain.GetAssemblies()
             .Select(a => a.GetType(name, false)).FirstOrDefault(t => t != null);
-        private static object Get(object o, string name) => o.GetType().GetField(name)?.GetValue(o)
-            ?? o.GetType().GetProperty(name)?.GetValue(o);
-        private static void Set(object o, string name, object value)
-        {
-            var field = o.GetType().GetField(name);
-            if (field == null) throw new MissingFieldException(o.GetType().Name, name);
-            field.SetValue(o, value);
-        }
 
         public FinalIKBridge(Animator animator)
         {
-            var type = FindType("RootMotion.FinalIK.IKSolverFullBodyBiped");
-            var refType = FindType("RootMotion.BipedReferences");
-            if (type == null || refType == null) throw new InvalidOperationException("Final IK is not installed.");
             root = animator.transform;
-            var refs = Activator.CreateInstance(refType);
-            Set(refs, "root", root);
-            string[] names = { "pelvis", "head", "leftThigh", "leftCalf", "leftFoot", "rightThigh", "rightCalf", "rightFoot", "leftUpperArm", "leftForearm", "leftHand", "rightUpperArm", "rightForearm", "rightHand" };
-            HumanBodyBones[] ids = { HumanBodyBones.Hips, HumanBodyBones.Head, HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand };
-            for (int i = 0; i < names.Length; i++)
-            {
-                var bone = animator.GetBoneTransform(ids[i]);
-                if (!bone) throw new InvalidOperationException("Humanoid is missing " + ids[i]);
-                Set(refs, names[i], bone);
-            }
-            var spine = new[] { HumanBodyBones.Spine, HumanBodyBones.Chest, HumanBodyBones.UpperChest }
-                .Select(animator.GetBoneTransform).Where(t => t).ToArray();
-            if (spine.Length == 0) throw new InvalidOperationException("Humanoid has no spine mapping.");
-            Set(refs, "spine", spine);
-            solver = Activator.CreateInstance(type);
-            type.GetMethod("SetToReferences").Invoke(solver, new[] { refs, (object)spine[0] });
-            type.GetMethod("Initiate").Invoke(solver, new object[] { root });
-            if (!(bool)Get(solver, "initiated")) throw new InvalidOperationException("Final IK could not initialize this skeleton.");
-            update = type.GetMethod("Update", Type.EmptyTypes);
-            string[] sides = { "leftHand", "rightHand", "leftFoot", "rightFoot" };
-            string[] chains = { "leftArmChain", "rightArmChain", "leftLegChain", "rightLegChain" };
+            var type = FindType("RootMotion.FinalIK.IKSolverTrigonometric");
+            if (type == null) throw new InvalidOperationException("Final IK is not installed.");
+            solve = type.GetMethod("Solve", BindingFlags.Public | BindingFlags.Static, null,
+                new[] { typeof(Transform), typeof(Transform), typeof(Transform), typeof(Vector3), typeof(Vector3), typeof(float) }, null);
+            if (solve == null) throw new MissingMethodException(type.FullName, "Solve");
+            HumanBodyBones[] first = { HumanBodyBones.LeftUpperArm, HumanBodyBones.RightUpperArm, HumanBodyBones.LeftUpperLeg, HumanBodyBones.RightUpperLeg };
+            HumanBodyBones[] middle = { HumanBodyBones.LeftLowerArm, HumanBodyBones.RightLowerArm, HumanBodyBones.LeftLowerLeg, HumanBodyBones.RightLowerLeg };
+            HumanBodyBones[] last = { HumanBodyBones.LeftHand, HumanBodyBones.RightHand, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot };
             for (int i = 0; i < 4; i++)
             {
-                effectors[i] = Get(solver, sides[i] + "Effector");
-                bends[i] = Get(Get(solver, chains[i]), "bendConstraint");
-                poles[i] = new GameObject("Pole " + i).transform;
-                poles[i].SetParent(root, false);
-                Set(bends[i], "bendGoal", poles[i]);
+                starts[i] = animator.GetBoneTransform(first[i]);
+                middles[i] = animator.GetBoneTransform(middle[i]);
+                ends[i] = animator.GetBoneTransform(last[i]);
+                if (!starts[i] || !middles[i] || !ends[i])
+                    throw new InvalidOperationException("Humanoid is missing the " + first[i] + " chain.");
             }
         }
 
         public void Solve(EffectorPose[] pose)
         {
-            // FK mode must be exact; even zero-weight FBIK can apply mapping constraints.
-            if (pose.All(p => p.weight <= 0)) return;
+            // Authoring a limb must never remap the pelvis, spine or other limbs.
+            // The static solver preserves the authored twist via minimal bone rotations.
             for (int i = 0; i < 4; i++)
             {
-                Set(effectors[i], "position", root.TransformPoint(pose[i].position));
-                Set(effectors[i], "rotation", root.rotation * pose[i].rotation);
-                Set(effectors[i], "positionWeight", pose[i].weight);
-                Set(effectors[i], "rotationWeight", pose[i].weight);
-                poles[i].position = root.TransformPoint(pose[i].pole);
-                Set(bends[i], "weight", pose[i].weight);
+                var effector = pose[i].ResolvePins(root);
+                float weight = effector.pinPosition ? 1 : Mathf.Clamp01(effector.weight);
+                float rotationWeight = effector.pinRotation ? 1 : Mathf.Clamp01(effector.weight);
+                if (weight <= 0 && rotationWeight <= 0) continue;
+                Vector3 target = root.TransformPoint(effector.position);
+                Vector3 axis = target - starts[i].position;
+                Vector3 normal = Vector3.Cross(root.TransformPoint(effector.pole) - starts[i].position, axis);
+                if (normal.sqrMagnitude < 1e-12f)
+                    normal = Vector3.Cross(middles[i].position - starts[i].position, ends[i].position - starts[i].position);
+                if (normal.sqrMagnitude < 1e-12f)
+                    normal = Vector3.Cross(i < 2 ? -root.forward : root.forward, axis);
+                if (normal.sqrMagnitude < 1e-12f) normal = Vector3.Cross(root.up, axis);
+                Quaternion rotation = Quaternion.Slerp(ends[i].rotation, root.rotation * effector.rotation, rotationWeight);
+                solve.Invoke(null, new object[] { starts[i], middles[i], ends[i], target, normal.normalized, weight });
+                ends[i].rotation = rotation;
             }
-            update.Invoke(solver, null);
         }
     }
 }

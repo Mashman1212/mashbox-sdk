@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 
 using System;
 using System.Collections.Generic;
@@ -1592,7 +1592,8 @@ namespace MashBoxSDK.MapTools
 
                 GUILayout.Space(8f);
                 DrawChallengeTypeSection("PhotoSpots", "Photo Spots", cachedPhotoSpots.Count, DrawPhotoSpotsSection);
-                DrawChallengeTypeSection("Races", "Races", cachedRaces.Count(race => race && !race.IsPumpTrack), DrawRacesSection);
+                DrawChallengeTypeSection("Races", "Races", cachedRaces.Count(race => race && !race.IsPumpTrack && !race.GetComponent<MBGunRace>()), DrawRacesSection);
+                DrawChallengeTypeSection("GunRaces", "Gun Races", cachedRaces.Count(race => race && race.GetComponent<MBGunRace>()), () => DrawRaceVariantSection(false, true));
                 DrawChallengeTypeSection("PumpTracks", "Pump Tracks", cachedRaces.Count(race => race && race.IsPumpTrack), () => DrawRaceVariantSection(true));
                 DrawChallengeTypeSection("DualSlaloms", "Dual Slaloms", cachedDualSlaloms.Count, DrawDualSlalomsSection);
                 DrawChallengeTypeSection("FourCross", "4 Cross", cachedFourCrossCourses.Count, DrawFourCrossSection);
@@ -2200,16 +2201,16 @@ namespace MashBoxSDK.MapTools
         }
         private void DrawRacesSection() => DrawRaceVariantSection(false);
 
-        private void DrawRaceVariantSection(bool pumpTrack)
+        private void DrawRaceVariantSection(bool pumpTrack, bool gunRace = false)
         {
-            EditorGUILayout.LabelField(pumpTrack ? "Pump Tracks" : "Races", EditorStyles.boldLabel);
-            if (DrawAddButton(pumpTrack ? "Add Pump Track" : "Add Race",
-                    pumpTrack ? "Race gates and timing; pedaling locks after the first gate." :
+            EditorGUILayout.LabelField(gunRace ? "Gun Races" : pumpTrack ? "Pump Tracks" : "Races", EditorStyles.boldLabel);
+            if (DrawAddButton(gunRace ? "Add Gun Race" : pumpTrack ? "Add Pump Track" : "Add Race",
+                    gunRace ? "Fixed targets, two gates, and a circular finish pad. Supports Solo and Duos." : pumpTrack ? "Race gates and timing; pedaling locks after the first gate." :
                     "Create a new race with editable gate markers.", 32f))
-                CreateRaceChallenge(pumpTrack);
+                CreateRaceChallenge(pumpTrack, gunRace);
 
             EditorGUILayout.HelpBox(
-                pumpTrack ? "Pump Tracks use normal race gates and timing. Pedaling and throttle are cut after the first gate until the attempt ends or resets." :
+                gunRace ? "Gun Races require exactly two gates and a Finish Pad. Add up to 64 barrel target markers in fixed hierarchy order. Assign a barrel prefab and portable Prefab Key to each target. Duos shares targets and the timer; both riders must finish." : pumpTrack ? "Pump Tracks use normal race gates and timing. Pedaling and throttle are cut after the first gate until the attempt ends or resets." :
                 "Races work like authored gate paths. Gates are numbered from hierarchy order, draw with their own color, and can be added or renumbered from here.",
                 MessageType.None);
 
@@ -2233,7 +2234,7 @@ namespace MashBoxSDK.MapTools
                 GUILayout.Space(6f);
             }
 
-            var races = cachedRaces.Where(race => race && race.IsPumpTrack == pumpTrack).ToList();
+            var races = cachedRaces.Where(race => race && race.IsPumpTrack == pumpTrack && (race.GetComponent<MBGunRace>() != null) == gunRace).ToList();
 
             if (races.Count == 0)
             {
@@ -2263,7 +2264,7 @@ namespace MashBoxSDK.MapTools
 
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
-                    if (!DrawChallengeItemFoldout(race.IsPumpTrack ? "Pump Track" : "Race", race, race.RaceName, $"{raceGates.Count:00} gates"))
+                    if (!DrawChallengeItemFoldout(gunRace ? "Gun Race" : race.IsPumpTrack ? "Pump Track" : "Race", race, race.RaceName, $"{raceGates.Count:00} gates"))
                         continue;
 
                     GUI.SetNextControlName($"RaceName_{GetObjectStableId(race)}");
@@ -2289,9 +2290,19 @@ namespace MashBoxSDK.MapTools
                             EditorGUIUtility.PingObject(race.gameObject);
                         }
 
-                        if (GUILayout.Button("Add Gate", GUILayout.Height(26f)))
+                        if (GUILayout.Button(gunRace ? "Add Target" : "Add Gate", GUILayout.Height(26f)))
                         {
-                            CreateRaceGate(race);
+                            if (gunRace)
+                            {
+                                var target = new GameObject("Barrel Target");
+                                Undo.RegisterCreatedObjectUndo(target, "Add Gun Race Target");
+                                target.transform.SetParent(race.transform, false);
+                                target.transform.localPosition = Vector3.forward * 4;
+                                Undo.AddComponent<MBGunRaceTarget>(target);
+                                Selection.activeGameObject = target;
+                                EditorSceneManager.MarkSceneDirty(race.gameObject.scene);
+                            }
+                            else CreateRaceGate(race);
                             GUIUtility.ExitGUI();
                         }
                     }
@@ -2764,16 +2775,24 @@ namespace MashBoxSDK.MapTools
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
         }
 
-        private static void CreateRaceChallenge(bool pumpTrack = false)
+        private static void CreateRaceChallenge(bool pumpTrack = false, bool gunRace = false)
         {
             var raceRoot = FindOrCreateChallengeTypeRoot("Races");
             EnsureRaceGroupComponent(raceRoot);
-            var race = CreateChallengeMarker("Races", pumpTrack ? "New Pump Track" : "New Race");
+            var race = CreateChallengeMarker("Races", gunRace ? "New Gun Race" : pumpTrack ? "New Pump Track" : "New Race");
             var raceComponent = Undo.AddComponent<MBRace>(race);
             raceComponent.IsPumpTrack = pumpTrack;
             raceComponent.RaceName = race.name;
             CreateRaceGate(raceComponent, Vector3.zero, false);
-            CreateRaceGate(raceComponent, new Vector3(0f, 0f, 8f), true);
+            var finish = CreateRaceGate(raceComponent, new Vector3(0f, 0f, 8f), true);
+            if (gunRace)
+            {
+                var definition = Undo.AddComponent<MBGunRace>(race);
+                definition.FinishPad = finish.transform;
+                var target = CreateChildObject(race.transform, "Target 01 - assign prefab");
+                target.transform.localPosition = new Vector3(0, 0, 4);
+                Undo.AddComponent<MBGunRaceTarget>(target);
+            }
 
             Selection.activeGameObject = race;
             EditorGUIUtility.PingObject(race);

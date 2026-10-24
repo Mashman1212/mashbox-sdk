@@ -59,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public PoseKey EvaluateThrough(float frame,int layerCount)
         {
-            var result=EvaluateBase(frame); if(result==null || layers==null) return result;
+            var result=EvaluateBase(frame); if(singleFramePose || result==null || layers==null) return result;
             for(int l=0;l<Mathf.Min(layerCount,layers.Count);l++)
             {
                 if(!LayerEnabled(l)) continue;
@@ -89,7 +89,7 @@ namespace MashBoxSDK.AnimationStudio
                         if(bit==1) current.position=add ? current.position+sample.position*w : Vector3.Lerp(current.position,sample.position,w);
                         else if(bit==2) current.rotation=add ? current.rotation*RotationPower(sample.rotation,w) : Quaternion.Slerp(current.rotation,sample.rotation,w);
                         else if(bit==4) current.pole=add ? current.pole+sample.pole*w : Vector3.Lerp(current.pole,sample.pole,w);
-                        else current.weight=Mathf.Clamp01(add ? current.weight+sample.weight*w : Mathf.Lerp(current.weight,sample.weight,w));
+                        else { current.weight=Mathf.Clamp01(add ? current.weight+sample.weight*w : Mathf.Lerp(current.weight,sample.weight,w)); current.CopyPinsFrom(sample); }
                         result.effectors[i]=current;
                     }
             }
@@ -125,7 +125,7 @@ namespace MashBoxSDK.AnimationStudio
                 if((mask&1)!=0) key.effectors[i].position=(add ? Vector3.zero : baseline.position)+(value.position-baseline.position)/w;
                 if((mask&2)!=0) key.effectors[i].rotation=(add ? Quaternion.identity : baseline.rotation)*RotationPower(Quaternion.Inverse(baseline.rotation)*value.rotation,1/w);
                 if((mask&4)!=0) key.effectors[i].pole=(add ? Vector3.zero : baseline.pole)+(value.pole-baseline.pole)/w;
-                if((mask&8)!=0) key.effectors[i].weight=(add ? 0 : baseline.weight)+(value.weight-baseline.weight)/w;
+                if((mask&8)!=0) { key.effectors[i].weight=(add ? 0 : baseline.weight)+(value.weight-baseline.weight)/w; key.effectors[i].CopyPinsFrom(value); }
                 key.effectorChannels[i]|=mask;
             }
             if(!any) throw new InvalidOperationException("Add this bone or IK control to the selected layer before keying it.");
@@ -160,7 +160,7 @@ namespace MashBoxSDK.AnimationStudio
                             if(bit==1) key.effectors[i].position=wasAdditive ? baseline.position+sample.position : sample.position-baseline.position;
                             else if(bit==2) key.effectors[i].rotation=wasAdditive ? baseline.rotation*sample.rotation : Quaternion.Inverse(baseline.rotation)*sample.rotation;
                             else if(bit==4) key.effectors[i].pole=wasAdditive ? baseline.pole+sample.pole : sample.pole-baseline.pole;
-                            else key.effectors[i].weight=wasAdditive ? baseline.weight+sample.weight : sample.weight-baseline.weight;
+                            else { key.effectors[i].weight=wasAdditive ? baseline.weight+sample.weight : sample.weight-baseline.weight; key.effectors[i].CopyPinsFrom(sample); }
                             key.effectorChannels[i]|=bit;
                         }
                     converted.Add(key);

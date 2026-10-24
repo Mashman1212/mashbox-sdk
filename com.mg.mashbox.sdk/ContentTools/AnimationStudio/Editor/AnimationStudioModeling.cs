@@ -31,6 +31,7 @@ namespace MashBoxSDK.AnimationStudio
         private void BindStudioMode()
         {
             if (!viewport) return;
+            if (!compactSettingsInitialized) { inspectorExpanded = false; compactSettingsInitialized = true; }
             if (!modelingMode) modelEditor?.SuspendLighting();
             if (modelingMode)
             {
@@ -41,9 +42,10 @@ namespace MashBoxSDK.AnimationStudio
                 viewport.BindTimeline(null);
             }
             viewport.BindModes(DrawStudioModes, modelingMode);
+            viewport.BindAttachments(modelingMode ? null : (System.Action)DrawAttachmentRows);
             viewport.BindViewportControls(
                 DrawStudioMenuBar,
-                modelingMode ? (System.Action)DrawModelViewportOptions : null, DrawStudioSettings);
+                modelingMode ? (System.Action)DrawModelViewportOptions : null, modelingMode ? (System.Action)DrawStudioSettings : null);
             viewport.BindModelTools(modelingMode ? (System.Action)(() => modelEditor?.DrawToolStrip()) : null);
             viewport.BindStatistics(modelingMode ? (System.Action)(() => modelEditor?.DrawStatistics()) : null);
             viewport.BindMarkingMenu(modelingMode ? (System.Action)(() => modelEditor?.DrawMarkingMenu()) : null);
@@ -76,7 +78,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawStudioSettings()
         {
             var content = new GUIContent(EditorGUIUtility.IconContent("SettingsIcon").image, "MashBox Studio settings — Appearance and preferences");
-            if (GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
+            if (modelingMode && GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
         }
         private void SwitchStudioMode(bool modeling)
         {

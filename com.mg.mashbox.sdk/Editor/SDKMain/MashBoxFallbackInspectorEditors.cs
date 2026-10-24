@@ -5,7 +5,7 @@ using UnityEngine;
 namespace MashBoxSDK.EditorResources
 {
     [CanEditMultipleObjects]
-    [CustomEditor(typeof(MonoBehaviour), true)]
+    [CustomEditor(typeof(MonoBehaviour), true, isFallback = true)]
     internal class MashBoxMonoBehaviourInspector : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
@@ -40,7 +40,7 @@ namespace MashBoxSDK.EditorResources
     }
 
     [CanEditMultipleObjects]
-    [CustomEditor(typeof(ScriptableObject), true)]
+    [CustomEditor(typeof(ScriptableObject), true, isFallback = true)]
     internal class MashBoxScriptableObjectInspector : UnityEditor.Editor
     {
         public override void OnInspectorGUI()

@@ -16,6 +16,7 @@ namespace MashBoxSDK.AnimationStudio
         private float PanelLayoutWidth => PanelMargin * 2 + DividerWidth * 2 + (panelsModeling ? ModelToolsWidth : 0);
         private float preferredLeft = 260, preferredRight = 350;
         private bool panelsInitialized, panelsModeling;
+        private bool animationSettingsExpanded;
         private IMGUIContainer leftDivider, rightDivider;
         private int resizingSide, resizeControl;
         private float resizeStartX, resizeStartWidth;
@@ -76,16 +77,26 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!panelsInitialized) return;
             var widths = PanelWidths;
-            if (rigControls != null) { rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x; }
-            if (inspector != null) { inspector.style.right = PanelMargin; inspector.style.width = widths.y; }
-            float canvasLeft = HierarchyLeft + widths.x + DividerWidth;
+            if (rigControls != null) { rigControls.style.left = HierarchyLeft; rigControls.style.width = panelsModeling ? widths.x : 398; }
+            if (inspector != null)
+            {
+                inspector.style.right = PanelMargin;
+                inspector.style.width = panelsModeling || animationSettingsExpanded ? widths.y : 206;
+                inspector.style.bottom = panelsModeling ? new StyleLength(8) : new StyleLength(StyleKeyword.Auto);
+                inspector.style.height = panelsModeling ? new StyleLength(StyleKeyword.Auto) : new StyleLength(animationSettingsExpanded ? Mathf.Clamp(position.height - 180, 140, 440) : 38);
+                inspector.style.backgroundColor = panelsModeling || animationSettingsExpanded ? StudioTheme.Current.Panel : Color.clear;
+            }
+            float canvasLeft = HierarchyLeft + (panelsModeling ? widths.x : 398) + DividerWidth;
             float overlayTop = ModelingPanelTop;
+            if (attachments != null) { attachments.style.right = PanelMargin + (animationSettingsExpanded ? widths.y + 12 : 0); attachments.style.top = overlayTop + (animationSettingsExpanded ? 0 : 42); }
             if (modeSelector != null) { modeSelector.style.left = PanelMargin; modeSelector.style.top = 0; }
             float optionsTop = overlayTop;
             if (viewportOptions != null) { viewportOptions.style.left = canvasLeft + 40; viewportOptions.style.top = optionsTop; }
             if (studioSettings != null) { studioSettings.style.left = canvasLeft + 8; studioSettings.style.top = optionsTop; }
             if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop + 32; }
             if (leftDivider == null || rightDivider == null) return;
+            leftDivider.style.display = panelsModeling ? DisplayStyle.Flex : DisplayStyle.None;
+            rightDivider.style.display = panelsModeling ? DisplayStyle.Flex : DisplayStyle.None;
             leftDivider.style.left = HierarchyLeft + widths.x;
             rightDivider.style.right = PanelMargin + widths.y;
             leftDivider.style.top = rightDivider.style.top = ModelingPanelTop;

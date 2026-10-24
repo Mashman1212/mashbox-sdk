@@ -13,6 +13,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             try
             {
+                if(take.singleFramePose) frame=0;
                 if(take.activeLayer>=0 && take.activeLayer<take.layers.Count) take.SetLayerKey(take.activeLayer,pose,frame,boneMask,effectorMask);
                 else
                 {
@@ -71,14 +72,93 @@ namespace MashBoxSDK.AnimationStudio
                 var names=new[]{new GUIContent("Base motion",take.name+" · Base motion")}.Concat(take.layers.Select(l=>new GUIContent(l.name,take.name+" · "+l.name))).ToArray();
                 GUILayout.Label(new GUIContent("Layer", "Key on layer for the selected actor: "+take.name),StudioTheme.Styles.miniLabel,GUILayout.Width(30));
                 float width=Mathf.Clamp((viewport ? viewport.position.width : 900)-640,100,210);
-                int choice=EditorGUILayout.Popup(Mathf.Clamp(take.activeLayer+1,0,names.Length-1),names,GUILayout.Width(width))-1;
-                if(choice!=take.activeLayer) SelectAuthoringLayer(choice);
+                var rect=GUILayoutUtility.GetRect(names[Mathf.Clamp(take.activeLayer+1,0,names.Length-1)],EditorStyles.popup,GUILayout.Width(width),GUILayout.Height(20));
+                if(EditorGUI.DropdownButton(rect,names[Mathf.Clamp(take.activeLayer+1,0,names.Length-1)],FocusType.Passive,EditorStyles.popup))
+                    ShowTimelineLayerMenu(rect);
             };
             if(activeActor>=0 && activeActor<actorPreviews.Count) InActor(actorPreviews[activeActor],draw);
             else draw();
         }
+        private void ShowTimelineLayerMenu(Rect rect)
+        {
+            var target=take;
+            var selected=take.activeLayer>=0 && take.activeLayer<take.layers.Count ? take.layers[take.activeLayer] : null;
+            // Menus run after the temporary actor scope has ended. Restore the
+            // captured actor for every command instead of modifying the primary take.
+            Action<Action> run=action=>Guard(()=>
+            {
+                if(take==target) action();
+                else
+                {
+                    var actor=actorPreviews.FirstOrDefault(a=>a.Take==target);
+                    if(actor!=null) InActor(actor,action);
+                }
+            });
+            var menu=new StudioMenu();
+            menu.AddItem(new GUIContent("Base motion"),take.activeLayer<0,()=>run(()=>SelectAuthoringLayer(-1)));
+            for(int i=0;i<take.layers.Count;i++)
+            {
+                var layer=take.layers[i];
+                menu.AddItem(new GUIContent(layer.name.Replace('/', '∕')),take.activeLayer==i,()=>run(()=>SelectAuthoringLayer(take.layers.IndexOf(layer))));
+            }
+            menu.AddSeparator("");
+            if(!take.singleFramePose)
+            {
+                menu.AddItem(new GUIContent("New layer…"),false,()=>run(()=>CreateTimelineLayer(false)));
+                menu.AddItem(new GUIContent("New layer from selection…"),false,()=>run(()=>CreateTimelineLayer(true)));
+            }
+            else menu.AddDisabledItem(new GUIContent("New layer (disable Single Frame Pose)"));
+            menu.AddItem(new GUIContent("Edit layers…"),false,()=>run(OpenLayerSettings));
+            if(selected!=null && !take.singleFramePose)
+            {
+                menu.AddSeparator("");
+                menu.AddItem(new GUIContent("Add selection to layer"),false,()=>run(()=>ChangeLayerSelection(selected,false)));
+                menu.AddItem(new GUIContent("Remove selection from layer"),false,()=>run(()=>ChangeLayerSelection(selected,true)));
+                menu.AddItem(new GUIContent("Mute layer"),selected.muted,()=>run(()=>
+                { FinishSceneEdit(); Undo.RecordObject(take,"Mute animation layer"); selected.muted=!selected.muted; Save(); RefreshLayers(); }));
+                menu.AddItem(new GUIContent("Solo layer"),selected.solo,()=>run(()=>
+                { FinishSceneEdit(); Undo.RecordObject(take,"Solo animation layer"); selected.solo=!selected.solo; Save(); RefreshLayers(); }));
+            }
+            menu.DropDown(rect);
+        }
+        private void OpenLayerSettings()
+        {
+            activeActor=actorPreviews.FindIndex(a=>a.Take==take);
+            inspectorTab=5; inspectorExpanded=true;
+            viewport?.SetInspectorExpanded(true); viewport?.Repaint();
+        }
+        private void CreateTimelineLayer(bool fromSelection)
+        {
+            FinishSceneEdit(); Undo.RecordObject(take,"Create animation layer");
+            var layer=new StudioAnimationLayer { name="Correction "+(take.layers.Count+1) };
+            if(fromSelection) AddSelectedToLayer(layer);
+            take.layers.Add(layer); take.activeLayer=take.layers.Count-1;
+            Save(); RefreshLayers(); OpenLayerSettings();
+        }
+        private void ChangeLayerSelection(StudioAnimationLayer layer,bool remove)
+        {
+            if(!take.layers.Contains(layer)) return;
+            FinishSceneEdit(); Undo.RecordObject(take,remove ? "Remove layer selection" : "Add layer selection");
+            if(!remove) AddSelectedToLayer(layer);
+            else
+            {
+                var mask=new StudioAnimationLayer(); AddSelectedToLayer(mask);
+                layer.bones.RemoveAll(path=>mask.bones.Contains(path));
+                layer.offsets.RemoveAll(offset=>mask.bones.Contains(offset.path));
+                for(int limb=0;limb<4;limb++)
+                {
+                    layer.effectors[limb]&=~mask.effectors[limb];
+                    // Other FK bones on this limb still need the blend channel.
+                    if(rig.Starts[limb] && layer.bones.Any(path=>
+                    { int index=Array.IndexOf(rig.Paths,path); return index>=0 && (rig.Bones[index]==rig.Starts[limb] || rig.Bones[index].IsChildOf(rig.Starts[limb])); }))
+                        layer.effectors[limb]|=8;
+                }
+            }
+            Save(); RefreshLayers();
+        }
         private void DrawLayers()
         {
+            if(take.singleFramePose) { EditorGUILayout.HelpBox("Single Frame Pose edits the base pose. Disable it under Clip to add motion layers.",MessageType.Info); return; }
             EditorGUILayout.LabelField(take.name+" · ANIMATION LAYERS",StudioTheme.Styles.boldLabel);
             DrawLayerPicker();
             if(GUILayout.Button("Add correction layer + selected control"))
@@ -106,7 +186,9 @@ namespace MashBoxSDK.AnimationStudio
                 { Undo.RecordObject(take,"Reorder animation layer"); int i=take.activeLayer; take.layers.RemoveAt(i); take.layers.Insert(i+1,selected); take.activeLayer++; Save(); RefreshLayers(); }
             }
             if(GUILayout.Button("Add selected bone / IK control to layer"))
-            { Undo.RecordObject(take,"Add layer control"); AddSelectedToLayer(selected); Save(); }
+                ChangeLayerSelection(selected,false);
+            if(GUILayout.Button("Remove selected bone / IK control from layer"))
+                ChangeLayerSelection(selected,true);
             EditorGUILayout.LabelField("Affected bones",StudioTheme.Styles.boldLabel);
             for(int i=0;i<selected.bones.Count;i++)
                 using(new EditorGUILayout.HorizontalScope())

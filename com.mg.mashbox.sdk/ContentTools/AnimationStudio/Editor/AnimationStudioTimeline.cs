@@ -8,6 +8,7 @@ namespace MashBoxSDK.AnimationStudio
     public sealed partial class AnimationStudioWindow
     {
         private int timelineRangeStart=-1, timelineRangeEnd=-1;
+        private static GUIContent TimelineIcon(string name, string tooltip) => new GUIContent(EditorGUIUtility.IconContent(name).image, tooltip);
         private bool timelineRangeDrag;
         private AnimationTake timelineSelectionActor;
         private List<PoseKey> timelineSelectionKeys;
@@ -15,6 +16,28 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private int timelineViewFirst;
         [SerializeField] private int timelineViewLast = -1;
         [SerializeField] private int timelineViewLength;
+
+        private void DrawTimelineFrameRate()
+        {
+            var content = new GUIContent(take.frameRate + " fps", "Timeline frame rate. Keeps key frame numbers; changes playback speed and duration.");
+            var rect = GUILayoutUtility.GetRect(content, StudioTheme.Styles.overlayDropdown, GUILayout.Width(76), GUILayout.Height(20));
+            if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, StudioTheme.Styles.overlayDropdown)) return;
+            var target = take;
+            var menu = new StudioMenu();
+            foreach (int fps in new[] { 12, 15, 24, 25, 30, 48, 50, 60, 90, 120 })
+            {
+                int rate = fps;
+                menu.AddItem(new GUIContent(rate + " fps"), target.frameRate == rate, () => Guard(() =>
+                {
+                    if (!target || take != target || target.frameRate == rate) return;
+                    FlushEdits(); playing = false; StopStudioAudio();
+                    Undo.RecordObject(target, "Change timeline frame rate");
+                    target.frameRate = rate;
+                    Save(); Seek(Mathf.Min(frame, target.lastFrame)); viewport?.Repaint();
+                }));
+            }
+            menu.DropDown(rect);
+        }
 
         private void EnsureTimelineView()
         {
@@ -92,7 +115,7 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUI.BeginChangeCheck();
                 int last = EditorGUILayout.DelayedIntField(timelineViewLast, GUILayout.Width(52));
                 if (EditorGUI.EndChangeCheck()) SetTimelineViewEnd(last);
-                if (GUILayout.Button(new GUIContent("Fit", "Show the whole clip"), GUILayout.Width(35))) SetTimelineView(0, take.lastFrame);
+                if (GUILayout.Button(TimelineIcon("ViewToolZoom", "Fit timeline — show the whole clip"), GUILayout.Width(26))) SetTimelineView(0, take.lastFrame);
                 GUILayout.Space(10);
             }
         }
@@ -135,6 +158,7 @@ namespace MashBoxSDK.AnimationStudio
             Undo.IncrementCurrentGroup(); Undo.SetCurrentGroupName("Delete selected control keys");
             foreach(var target in targets) InSelectedActor(target,()=>
             {
+                if(target.singleFramePose) { message="Single Frame Pose endpoint keys are linked. Edit the pose or disable the mode under Clip to delete keys."; return; }
                 var track=target==actor ? keys : EditingKeys;
                 DeleteControlChannels(track,first,last,sharedFps);
             });
@@ -303,13 +327,16 @@ namespace MashBoxSDK.AnimationStudio
                 if (EditorGUI.EndChangeCheck()) ScrubViewport(next);
                 GUILayout.Label("/ " + take.lastFrame, GUILayout.Width(58));
                 GUILayout.FlexibleSpace();
-                if (GUILayout.Button(new GUIContent("Audio", "Edit audio keys for this actor"), GUILayout.Width(48))) OpenAudioKeys(timelineActor);
-                bool nextMute = GUILayout.Toggle(muteAudio, new GUIContent("Mute", "Mute studio audio playback"), "Button", GUILayout.Width(44));
+                if (GUILayout.Button(TimelineIcon("AudioClip Icon", "Edit audio keys for this actor"), GUILayout.Width(26), GUILayout.Height(20))) OpenAudioKeys(timelineActor);
+                bool nextMute = GUILayout.Toggle(muteAudio, TimelineIcon("AudioSource Icon", muteAudio ? "Audio muted — click to unmute" : "Mute audio playback"), "Button", GUILayout.Width(26), GUILayout.Height(20));
                 if (nextMute != muteAudio) { muteAudio = nextMute; if (muteAudio) StopStudioAudio(); }
                 DrawTimelineLayerPicker();
-                bool nextAuto = GUILayout.Toggle(autoKey, "Auto Key", "Button", GUILayout.Width(70));
+                DrawTimelineFrameRate();
+                var autoIcon = new GUIContent(EditorGUIUtility.IconContent("Animation.Record").image,
+                    autoKey ? "Auto Key ON — pose edits create keys. Click to disable." : "Auto Key OFF — press S to key a pose. Click to enable.");
+                bool nextAuto = GUILayout.Toggle(autoKey, autoIcon, StudioTheme.Styles.overlayButton, GUILayout.Width(26), GUILayout.Height(20));
                 if (nextAuto != autoKey) { FinishSceneEdit(); autoKey = nextAuto; Repaint(); }
-                if (GUILayout.Button("Key [S]", GUILayout.Width(62))) KeyCurrentActor();
+                if (GUILayout.Button(TimelineIcon("Animation.AddKeyframe", "Key current pose [S]"), GUILayout.Width(26), GUILayout.Height(20))) KeyCurrentActor();
                 GUILayout.Space(6);
             }
 
@@ -342,7 +369,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     if(keyFrame<timelineViewFirst || keyFrame>timelineViewLast) continue;
                     float x = TimelineFrameX(ruler,keyFrame);
-                    EditorGUI.DrawRect(new Rect(x - 2, ruler.y + 32, 4, 14), StudioTheme.Current.Accent);
+                    EditorGUI.DrawRect(new Rect(x - 2, ruler.y + 32, 4, 14), timelineActor.singleFramePose ? SinglePoseColor : StudioTheme.Current.Accent);
                 }
                 DrawAudioMarkers(ruler);
                 if(frame>=timelineViewFirst && frame<=timelineViewLast)
@@ -407,6 +434,7 @@ namespace MashBoxSDK.AnimationStudio
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Space(10);
+                if(timelineActor.singleFramePose) GUILayout.Label("Single Frame Pose", new GUIStyle(StudioTheme.Styles.boldLabel) { normal = { textColor = SinglePoseColor } });
                 string layerLabel=timelineActor.activeLayer>=0 && timelineActor.activeLayer<timelineActor.layers.Count ? timelineActor.layers[timelineActor.activeLayer].name : "Base motion";
                 GUILayout.Label($"{(timelineRangeStart>=0 ? "Selected "+Mathf.Min(timelineRangeStart,timelineRangeEnd)+"–"+Mathf.Max(timelineRangeStart,timelineRangeEnd)+" · " : "Shift-drag: select · Right-click: edit · ")}{(float)frame / take.frameRate:0.000}s   ·   {take.frameRate} fps   ·   {keyFrames.Length} selected keys · {layerLabel}", StudioTheme.Styles.miniLabel);
                 GUILayout.FlexibleSpace();

@@ -17,7 +17,8 @@ namespace MashBoxSDK.AnimationStudio
             int end = destination;
             InSelectedActor(actor, () =>
             {
-                var samples = clipboard.Remap(actor, keys, rig.Rest, destination / (float)sharedFps);
+                var samples = clipboard.Remap(actor, keys, rig.Rest, actor.singleFramePose ? 0 : destination / (float)sharedFps);
+                if (actor.singleFramePose && samples.Count > 0) samples = new List<PoseKey> { samples.OrderBy(k => k.frame).First().Copy(0) };
                 if (mirror)
                 {
                     var reflection = new StudioHumanoidMirror(rig);
@@ -42,7 +43,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!wholeTrack && timelineRangeStart < 0) return;
             FlushEdits(); playing = false;
-            var affected = keys.Where(k => wholeTrack || TimelineInRange(actor, k)).ToArray();
+            var affected = keys.Where(k => actor.singleFramePose || wholeTrack || TimelineInRange(actor, k)).ToArray();
             InSelectedActor(actor, () =>
             {
                 var reflection = new StudioHumanoidMirror(rig);

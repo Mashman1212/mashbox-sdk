@@ -175,6 +175,9 @@ namespace MashBoxSDK.Maps
             if (triggeringCollider != null && !CanBePassedBy(triggeringCollider))
                 return false;
 
+            var gunRace = Race ? Race.GetComponent<MBGunRace>() : null;
+            if (gunRace && !gunRace.CanPassGate(this)) return false;
+
             passed = true;
             armed = false;
             if (triggerCollider != null)

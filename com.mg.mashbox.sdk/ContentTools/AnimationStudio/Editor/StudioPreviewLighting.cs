@@ -105,10 +105,11 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!view.camera) return;
             if (!cameraColors.ContainsKey(view)) cameraColors.Add(view,(view.camera.backgroundColor,view.camera.clearFlags));
-            var background = new Color(.35f,.35f,.35f,1);
-            view.camera.clearFlags = CameraClearFlags.SolidColor;
-            view.camera.backgroundColor = background;
-            if (!hdrp || !view.camera || CameraDataType == null || !profile) return;
+            if (!hdrp || CameraDataType == null || !profile)
+            {
+                ConfigureStudioBackground(view);
+                return;
+            }
             if (!cameras.ContainsKey(view))
             {
                 var data = view.camera.GetComponent(CameraDataType) ?? view.camera.gameObject.AddComponent(CameraDataType);
@@ -120,9 +121,24 @@ namespace MashBoxSDK.AnimationStudio
             Set(state.data,"isEditorCameraPreview",studioLights); Set(state.data,"volumeLayerMask",(LayerMask)1);
             // Camera-preview mode bypasses Unity's gray asset-preview background.
             // Set HDRP's own clear color explicitly; Camera.backgroundColor alone is ignored.
-            Set(state.data,"clearColorMode",Enum.Parse(state.clearMode.GetType(),"Color"));
-            Set(state.data,"backgroundColorHDR",background.linear);
+            ConfigureStudioBackground(view);
             view.sceneViewState.showImageEffects = studioLights;
+        }
+        internal static void ConfigureStudioBackground(SceneView view)
+        {
+            if (!view || !view.camera) return;
+            var background = new Color(.35f,.35f,.35f,1);
+            view.sceneViewState.showSkybox = false;
+            view.sceneViewState.showFog = false;
+            view.camera.clearFlags = CameraClearFlags.SolidColor;
+            view.camera.backgroundColor = background;
+            // HDRP owns its clear mode separately from Camera.clearFlags. Apply this
+            // in both Studio modes, after SceneView has set up the preview camera.
+            var data = CameraDataType == null ? null : view.camera.GetComponent(CameraDataType);
+            if (!data) return;
+            var clearMode = Get(data,"clearColorMode");
+            Set(data,"clearColorMode",Enum.Parse(clearMode.GetType(),"Color"));
+            Set(data,"backgroundColorHDR",background.linear);
         }
         private static object Get(object target,string name) => target.GetType().GetField(name,Members)?.GetValue(target) ?? target.GetType().GetProperty(name,Members)?.GetValue(target);
         private static void Set(object target,string name,object value)

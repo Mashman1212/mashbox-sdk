@@ -335,6 +335,9 @@ namespace MashBoxSDK.Maps
             if (!MBGameplayStateGuard.IsGameplayActive)
                 return;
 
+            var gunRace = GetComponent<MBGunRace>();
+            if (gunRace && !gunRace.CanFinish) return;
+
             if (!started)
                 started = true;
 

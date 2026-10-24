@@ -58,7 +58,7 @@ namespace MashBoxSDK.AnimationStudio
         // Build a dependency order before touching a pose. Missing references and cycles never partially solve.
         private static List<StudioConstraint> ConstraintOrder(List<StudioConstraint> constraints, List<ActorPreview> actors)
         {
-            var list=constraints.Where(c=>c.enabled).ToList();
+            var list=constraints.Where(c=>c.enabled && (!c.drivenActor || !c.drivenActor.singleFramePose)).ToList();
             var rigs=actors.ToDictionary(a=>a.Take,a=>a.Rig);
             foreach(var c in list)
             {
@@ -141,7 +141,16 @@ namespace MashBoxSDK.AnimationStudio
             }
             catch(Exception e) { constraintError=e.Message; foreach(var a in ConstraintActors()) a.Rig.Apply(a.Pose); }
         }
-        private EffectorPose DisplayEffector(int index) => constrainedPoses.TryGetValue(take,out var solved) ? solved.effectors[index] : pose.effectors[index];
+        private EffectorPose DisplayEffector(int index)
+        {
+            var source = constrainedPoses.TryGetValue(take,out var solved) ? solved.effectors[index] : pose.effectors[index];
+            if (source.weight <= 0)
+            {
+                var matched = rig.MatchEffector(index, source.weight);
+                matched.CopyPinsFrom(source); source = matched;
+            }
+            return source.ResolvePins(rig.Root.transform);
+        }
         private bool DrawAttachmentHandle()
         {
             if(playing || !constraintSession || constraintPreviewActors==null || (ikMode && poleMode)) return false;
