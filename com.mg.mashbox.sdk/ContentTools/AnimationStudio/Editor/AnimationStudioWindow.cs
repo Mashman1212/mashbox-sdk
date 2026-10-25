@@ -705,8 +705,19 @@ namespace MashBoxSDK.AnimationStudio
             audioPlaybackFrame = playFrame;
             PlayAudioRange(playFrame, playFrame, true);
         }
+        private bool automaticSessionFailed;
         private void Tick()
         {
+            // Bootstrap only on the editor update, never during GUI layout or the
+            // nested BuildRig/OpenViewport calls. NewTake creates an in-memory
+            // document; no asset is written until the user explicitly saves it.
+            if (viewport && !modelingMode && !skinningMode && !take && !automaticSessionFailed &&
+                !EditorApplication.isCompiling && !EditorApplication.isUpdating &&
+                EditorApplication.isPlaying == EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                try { NewTake(); }
+                catch (Exception e) { automaticSessionFailed = true; message = e.GetBaseException().Message; Debug.LogException(e); }
+            }
             if (hadViewport && !viewport) { hadViewport = false; ReleaseRig(); ReleaseModelEditor(); }
             PollMotionJob();
             if (sceneDraft && !viewport) FinishSceneEdit();
