@@ -260,11 +260,27 @@ namespace MashBoxSDK.AnimationStudio
             sceneViewState.showFog = false;
             sceneViewState.showImageEffects = false;
             rotation = Quaternion.Euler(10, 180, 0);
-            foreach (var overlay in overlayCanvas.overlays) overlay.displayed = false;
+            HideSceneOverlays();
             // SceneView's stage handling otherwise culls ordinary preview scenes.
             typeof(SceneView).GetProperty("overrideSceneCullingMask", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
                 ?.SetValue(this, EditorSceneManager.GetSceneCullingMask(scene));
             Repaint();
+        }
+
+        private void HideSceneOverlays()
+        {
+#if UNITY_6000_0_OR_NEWER
+            var overlays = overlayCanvas.overlays;
+#else
+            // Unity 2022.3 keeps this collection internal. Hide individual Unity
+            // overlays without hiding Studio's own UIElements viewport panels.
+            var overlays = typeof(UnityEditor.Overlays.OverlayCanvas)
+                .GetProperty("overlays", System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                ?.GetValue(overlayCanvas) as System.Collections.Generic.IEnumerable<UnityEditor.Overlays.Overlay>;
+#endif
+            if (overlays == null) return;
+            foreach (var overlay in overlays) overlay.displayed = false;
         }
 
         internal void ApplyTheme()

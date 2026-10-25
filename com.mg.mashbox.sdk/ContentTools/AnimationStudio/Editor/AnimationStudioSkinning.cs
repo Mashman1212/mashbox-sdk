@@ -25,7 +25,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 try
                 {
-                    var defaults = AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>(SkinningDefaultsPath);
+                    var defaults = StudioDefaultReferences.LoadSkinning(SkinningDefaultsPath);
                     if (defaults)
                     {
                         if (defaults.body) skinningEditor.Import(defaults.body, true);
@@ -50,6 +50,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OpenSkinningMode()
         {
+            retopologyMode=false; retopologyEditor?.SuspendLighting(); viewport?.SetRetopologyPanels(false);
             FlushEdits(); playing = false;
             if (!modelingMode && !skinningMode && viewport)
             { animationCameraPivot = viewport.pivot; animationCameraRotation = viewport.rotation; animationCameraSize = viewport.size; savedAnimationCamera = true; }
@@ -71,6 +72,26 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindViewportControls(DrawStudioMenuBar,null,DrawStudioSettings);
             viewport.BindModelTools(null); viewport.BindStatistics(null); viewport.BindMarkingMenu(null);
             viewport.BindSkinPreviewTimeline(skinningEditor.DrawPreviewTimeline);
+            viewport.BindSkinPractice(DrawSkinningPracticeMenu);
+        }
+        private void DrawSkinningPracticeMenu()
+        {
+            var rect=new Rect(0,0,104,24);
+            EditorGUI.DrawRect(rect,new Color(.035f,.04f,.04f));
+            if(!EditorGUI.DropdownButton(rect,new GUIContent("Practice","Import sample clothing to practise skinning and sculpting"),FocusType.Passive,StudioTheme.Styles.menuDropdown))return;
+            var menu=new StudioMenu();
+            const string path="Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Practice Hoodie.FBX";
+            var hoodie=AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath("1abaa86ba35c448db6091f08850b9fee"));
+            if(!hoodie)hoodie=AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if(hoodie)
+                menu.AddItem(new GUIContent("Import Practice Hoodie"),false,()=>Guard(()=>
+                {
+                    EnsureSkinningEditor();
+                    skinningEditor.Run(()=>{skinningEditor.Import(hoodie);skinningEditor.Frame(viewport);});
+                    UpdateClipSaveState();viewport?.Repaint();
+                }));
+            else menu.AddDisabledItem(new GUIContent("Practice Hoodie unavailable"));
+            menu.DropDown(rect);
         }
         private bool ConfirmSkinningReplacement()
         {
@@ -88,7 +109,7 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddItem(new GUIContent("Save Default Bust FBX"), false, () => Guard(() => skinningEditor.Run(skinningEditor.SaveDefaultBustFbx)));
             menu.AddItem(new GUIContent("Edit default skinning body…"), false, () =>
             {
-                var defaults = AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>(SkinningDefaultsPath);
+                var defaults = StudioDefaultReferences.LoadSkinning(SkinningDefaultsPath);
                 Selection.activeObject = defaults; EditorGUIUtility.PingObject(defaults);
             });
 #endif
@@ -173,6 +194,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal bool SaveAllStudioDocuments()
         {
+            if(retopologyDocument&&retopologyDocument.dirty)
+            {retopologyDocument.SaveWorkspace();if(retopologyDocument.dirty)return false;}
             skinningEditor?.EndStroke();
             if (skinningDocument && skinningDocument.dirty && !skinningDocument.SaveDocument()) return false;
             if (clipSession && clipSessionDirty && !SaveClipSession()) return false;
@@ -191,6 +214,6 @@ namespace MashBoxSDK.AnimationStudio
     }
     public sealed partial class MashBoxStudioViewport
     {
-        internal bool IsOverSkinningPanels(Vector2 point) => IsOverViewportControls(point) || IsOverControl(rigControls,point) || IsOverControl(skinInfluencesPanel,point) || IsOverControl(skinInfluencesTab,point) || IsOverControl(inspector,point) || IsOverControl(timeline,point) || IsOverControl(skinLeftTab,point) || IsOverControl(skinRightTab,point);
+        internal bool IsOverSkinningPanels(Vector2 point) => IsOverViewportControls(point) || IsOverControl(rigControls,point) || IsOverControl(skinInfluencesPanel,point) || IsOverControl(skinInfluencesTab,point) || IsOverControl(inspector,point) || IsOverControl(timeline,point) || IsOverControl(skinLeftTab,point) || IsOverControl(skinRightTab,point) || IsOverControl(skinPracticeTab,point);
     }
 }

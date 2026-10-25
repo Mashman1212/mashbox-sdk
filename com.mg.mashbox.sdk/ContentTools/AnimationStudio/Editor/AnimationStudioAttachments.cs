@@ -57,7 +57,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawCharacterChoice()
         {
-            if (!defaultCharacter) defaultCharacter = AssetDatabase.LoadAssetAtPath<StudioDefaultCharacter>(DefaultCharacterPath);
+            if (!defaultCharacter) defaultCharacter = StudioDefaultReferences.LoadCharacter(DefaultCharacterPath);
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Space(4);
@@ -73,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (!open) return;
                 var menu = new StudioMenu();
                 menu.AddItem(new GUIContent("None"), !hasAppearance, () => Guard(() => WithCharacterAppearance(() => ToggleDefaultCharacterAppearance(false))));
-                var standard = AssetDatabase.LoadAssetAtPath<StudioDefaultCharacter>(DefaultCharacterPath);
+                var standard = StudioDefaultReferences.LoadCharacter(DefaultCharacterPath);
                 Action<StudioDefaultCharacter> choose = preset => Guard(() => WithCharacterAppearance(() =>
                 {
                     var previous = defaultCharacter; defaultCharacter = preset;
@@ -83,7 +83,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (standard) menu.AddItem(new GUIContent("Default"), applied && defaultCharacter == standard, () => choose(standard));
                 foreach (var guid in AssetDatabase.FindAssets("t:StudioDefaultCharacter"))
                 {
-                    var preset = AssetDatabase.LoadAssetAtPath<StudioDefaultCharacter>(AssetDatabase.GUIDToAssetPath(guid));
+                    var preset = StudioDefaultReferences.LoadCharacter(AssetDatabase.GUIDToAssetPath(guid));
                     if (!preset || preset == standard) continue;
                     menu.AddItem(new GUIContent(preset.name.Replace('/', '∕')), applied && defaultCharacter == preset, () => choose(preset));
                 }

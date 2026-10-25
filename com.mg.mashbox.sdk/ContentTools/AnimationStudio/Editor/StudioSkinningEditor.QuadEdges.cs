@@ -6,8 +6,13 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
+        private static HashSet<ulong> QuadWireDiagonals(Mesh mesh) => StudioQuadWire.Diagonals(mesh);
+    }
+
+    internal static class StudioQuadWire
+    {
         // Recover conservative quad pairs for DISPLAY only. Never modify mesh topology.
-        private static HashSet<ulong> QuadWireDiagonals(Mesh mesh)
+        internal static HashSet<ulong> Diagonals(Mesh mesh)
         {
             var hidden=new HashSet<ulong>();
             var points=mesh.vertices;
@@ -54,6 +59,31 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             return hidden;
+        }
+
+        internal static Vector3[] Lines(Mesh mesh)
+        {
+            var vertices = mesh.vertices;
+            var hidden = Diagonals(mesh);
+            var used = new HashSet<ulong>();
+            var lines = new List<Vector3>();
+            void Edge(int a, int b, bool inferQuads)
+            {
+                ulong key = ((ulong)(uint)Math.Min(a,b) << 32) | (uint)Math.Max(a,b);
+                if (a == b || (inferQuads && hidden.Contains(key)) || !used.Add(key)) return;
+                lines.Add(vertices[a]); lines.Add(vertices[b]);
+            }
+            for (int sub = 0; sub < mesh.subMeshCount; sub++)
+            {
+                var topology = mesh.GetTopology(sub);
+                int size = topology == MeshTopology.Quads ? 4 : topology == MeshTopology.Triangles ? 3 : 0;
+                if (size == 0) continue;
+                var indices = mesh.GetIndices(sub);
+                for (int i = 0; i < indices.Length; i += size)
+                    for (int edge = 0; edge < size; edge++)
+                        Edge(indices[i + edge], indices[i + (edge + 1) % size], size == 3);
+            }
+            return lines.ToArray();
         }
     }
 }

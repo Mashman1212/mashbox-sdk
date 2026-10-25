@@ -65,6 +65,7 @@ namespace MashBoxSDK.AnimationStudio
   }
   private void DuringSceneGUI(SceneView view)
   {
+   if (view == viewport && retopologyMode) { retopologyEditor?.SceneGUI(viewport); return; }
    if (view == viewport && skinningMode) { if (viewport.modelGridVisible) viewport.DrawGroundGrid(); skinningEditor?.SceneGUI(view); return; }
    if (view == viewport && modelingMode) { DrawModelScene(view); return; }
    if(view!=viewport || rig==null || !take || inActorScope || drawingActorControls) { DrawStudioSceneGUI(view); return; }

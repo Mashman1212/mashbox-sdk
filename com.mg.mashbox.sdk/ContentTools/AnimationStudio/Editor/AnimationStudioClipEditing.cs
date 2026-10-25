@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdateClipSaveState()
         {
             if (!viewport) return;
-            viewport.SetClipUnsavedChanges((clipSession && clipSessionDirty) || (skinningDocument && skinningDocument.dirty));
+            viewport.SetClipUnsavedChanges((clipSession && clipSessionDirty) || (skinningDocument && skinningDocument.dirty) || (retopologyDocument && retopologyDocument.dirty));
             viewport.Repaint();
         }
 
@@ -192,7 +192,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetClipUnsavedChanges(bool dirty)
         {
             hasUnsavedChanges = dirty;
-            saveChangesMessage = "Save the animation or take before closing MashBox Studio?";
+            saveChangesMessage = "Save your unsaved Studio work before closing?";
         }
 
         public override void SaveChanges()
@@ -202,6 +202,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public override void DiscardChanges()
         {
+            if (Studio) Studio.DiscardRetopologyChanges();
             if (Studio) Studio.DiscardSkinningChanges();
             if (Studio) Studio.DiscardClipChanges();
             base.DiscardChanges();

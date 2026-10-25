@@ -17,6 +17,9 @@ MonoBehaviour:
   outfit:
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: 9e36e20916f3af64e96f34369f6dfcc7, type: 3}
+    modelReference:
+      guid: 9e36e20916f3af64e96f34369f6dfcc7
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Human_Pants_Punch_WC.fbx
     options:
       role: 0
       doubleSided: 0
@@ -27,6 +30,9 @@ MonoBehaviour:
       scale: 0
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: eba57c6f12888d642a1e4bf2c00153f5, type: 3}
+    modelReference:
+      guid: eba57c6f12888d642a1e4bf2c00153f5
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Dak_Shoes.fbx
     options:
       role: 0
       doubleSided: 1
@@ -37,6 +43,9 @@ MonoBehaviour:
       scale: 0
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: 9e36e20916f3af64e96f34369f6dfcc7, type: 3}
+    modelReference:
+      guid: 9e36e20916f3af64e96f34369f6dfcc7
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Human_Pants_Punch_WC.fbx
     options:
       role: 0
       doubleSided: 1
@@ -47,6 +56,9 @@ MonoBehaviour:
       scale: 0
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: 8fc6a2a65f0065e4ca8fb9c8ed3029fa, type: 3}
+    modelReference:
+      guid: 8fc6a2a65f0065e4ca8fb9c8ed3029fa
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Human_Gloves_Punch_Monkey King.fbx
     options:
       role: 0
       doubleSided: 1
@@ -57,6 +69,9 @@ MonoBehaviour:
       scale: 0
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: 1f9a9e02918587a46ba26524d4215314, type: 3}
+    modelReference:
+      guid: 1f9a9e02918587a46ba26524d4215314
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Matt_Bust.fbx
     options:
       role: 0
       doubleSided: 1
@@ -67,6 +82,9 @@ MonoBehaviour:
       scale: 0
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: a7d297a36f354878bc01f73c30838996, type: 3}
+    modelReference:
+      guid: a7d297a36f354878bc01f73c30838996
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Human_Shirt_Default_Hoodie.fbx
     options:
       role: 0
       doubleSided: 1
@@ -77,6 +95,9 @@ MonoBehaviour:
       scale: 0
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: dcd80209e7506704ca649604181419db, type: 3}
+    modelReference:
+      guid: dcd80209e7506704ca649604181419db
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Matt_Hair.fbx
     options:
       role: 2
       doubleSided: 1
@@ -87,6 +108,9 @@ MonoBehaviour:
       scale: 0
   - enabled: 1
     prefab: {fileID: 919132149155446097, guid: aea5e6c979cc2ec4eb5dcab816f1afc3, type: 3}
+    modelReference:
+      guid: aea5e6c979cc2ec4eb5dcab816f1afc3
+      assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Matt_Hat.fbx
     options:
       role: 2
       doubleSided: 1
@@ -95,3 +119,9 @@ MonoBehaviour:
       position: {x: 0, y: 0, z: 0}
       rotation: {x: 0, y: 0, z: 0}
       scale: 0
+  characterReference:
+    guid: d1831a62440d21f4284dd97109236bbe
+    assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx
+  bodyReference:
+    guid: 8a4c26708d0a11f48a717eedc27f7b24
+    assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/SM_Body_01.fbx

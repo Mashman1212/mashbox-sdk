@@ -161,7 +161,7 @@ namespace MashBoxSDK.AnimationStudio
         private static bool IsDefaultReference(StudioSkinningDocument.Part part)
         {
             if (!part.sourceMesh) return false;
-            var defaults = AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+            var defaults = StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
             if (!defaults) return false;
             foreach (var source in new[] { defaults.body, defaults.bust })
             {
@@ -205,7 +205,7 @@ namespace MashBoxSDK.AnimationStudio
                         var referenceRow = lockedRow;
                         if (Event.current.type == EventType.MouseDown && Event.current.button == 1 && referenceRow.Contains(Event.current.mousePosition))
                         {
-                            var defaults = AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+                            var defaults = StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
                             if (defaults && defaults.bust && defaults.bust.GetComponentsInChildren<SkinnedMeshRenderer>(true).Any(r => r.sharedMesh == part.sourceMesh))
                             {
                                 var menu = new GenericMenu();

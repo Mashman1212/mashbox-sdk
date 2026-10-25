@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         private static void AssignDefaultMeshRole(StudioSkinningDocument.Part part)
         {
-            var defaults=AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+            var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
             if(!defaults || !part.sourceMesh) return;
             bool Contains(GameObject root) => root && (root.GetComponentsInChildren<SkinnedMeshRenderer>(true).Any(r=>r.sharedMesh==part.sourceMesh)
                 || root.GetComponentsInChildren<MeshFilter>(true).Any(r=>r.sharedMesh==part.sourceMesh));

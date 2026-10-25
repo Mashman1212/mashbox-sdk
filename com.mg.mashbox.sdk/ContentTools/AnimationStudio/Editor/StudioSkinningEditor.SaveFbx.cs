@@ -55,7 +55,7 @@ namespace MashBoxSDK.AnimationStudio
 #if MashBoxDev
         internal void SaveDefaultBustFbx()
         {
-            var defaults = AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+            var defaults = StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
             if (!defaults || !defaults.bust) throw new InvalidOperationException("Assign a default bust first.");
             var meshes = new HashSet<Mesh>(defaults.bust.GetComponentsInChildren<SkinnedMeshRenderer>(true).Select(r => r.sharedMesh));
             var parts = Document.parts.Where(p => p.referenceOnly && meshes.Contains(p.sourceMesh)).ToArray();
@@ -65,7 +65,7 @@ namespace MashBoxSDK.AnimationStudio
         private void SaveDefaultBustFbx(StudioSkinningDocument.Part part)
         {
             EndStroke();
-            var defaults = AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+            var defaults = StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
             if (!Document.parts.Contains(part) || !part.referenceOnly || !part.bound || !part.sourceMesh || !defaults || !defaults.bust ||
                 !defaults.bust.GetComponentsInChildren<SkinnedMeshRenderer>(true).Any(r => r.sharedMesh == part.sourceMesh))
                 throw new InvalidOperationException("Select the loaded default bust to save its FBX.");

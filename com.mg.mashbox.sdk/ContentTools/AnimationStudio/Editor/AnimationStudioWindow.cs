@@ -103,7 +103,7 @@ namespace MashBoxSDK.AnimationStudio
                 int previousFrame = window.frame;
                 try
                 {
-                window.modelingMode = false;
+                window.retopologyMode = false; window.modelingMode = false;
                 window.skinningEditor?.EndStroke(); window.skinningMode = false;
                 var model = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(clip));
                 if (window.rig == null || (!clip.isHumanMotion && model))
@@ -142,7 +142,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!window) window = CreateInstance<AnimationStudioWindow>();
             if (!asset && !window.take)
                 asset = AssetDatabase.LoadAssetAtPath<AnimationTake>(EditorPrefs.GetString("MashBox.LastTake." + Application.dataPath,""));
-            if (asset) { window.skinningEditor?.EndStroke(); window.skinningMode = false; window.modelingMode = false; window.LoadTake(asset); }
+            if (asset) { window.retopologyMode=false; window.skinningEditor?.EndStroke(); window.skinningMode = false; window.modelingMode = false; window.LoadTake(asset); }
             else if (window.take && window.rig == null) window.Guard(window.BuildRig);
             else window.OpenViewport();
             if (!window.viewport) window.OpenViewport();
@@ -252,7 +252,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UndoRedo()
         {
-            if (skinningMode) return; // Skinning owns mesh/document Undo and preview rebuilding.
+            if (skinningMode || retopologyMode) return; // Skinning owns mesh/document Undo and preview rebuilding.
             if (RestoreUnkeyedPoseUndo()) return;
             sceneDraft = false;
             foreach (var actor in actorPreviews) actor.Draft = false;
@@ -445,26 +445,44 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!ConfirmReplaceClip()) return;
             FlushEdits();
-            if (rig == null) BuildRig();
+            // A new document starts with the configured human, independently of
+            // the previous take's rig, outfit or character visibility.
+            if (!defaultCharacter) defaultCharacter = StudioDefaultReferences.LoadCharacter(DefaultCharacterPath);
+            if (defaultCharacter) defaultCharacter.ResolveReferences();
+            var source = defaultCharacter && defaultCharacter.character ? defaultCharacter.character : AssetDatabase.LoadAssetAtPath<GameObject>(SkeletonPath);
+            var skin = defaultCharacter && defaultCharacter.body ? defaultCharacter.body : AssetDatabase.LoadAssetAtPath<GameObject>(BodyPath);
+            var pieces = (defaultCharacter ? defaultCharacter.outfit : null) ?? Array.Empty<StudioDefaultCharacter.OutfitPiece>();
+            var enabledPieces = pieces.Where(p => p != null && p.enabled && p.prefab).ToArray();
+            var garments = enabledPieces.Select(p => p.prefab).ToArray();
+            var options = enabledPieces.Select(p => p.options).ToArray();
+            // Validate the replacement before releasing any existing session.
+            var replacement = new AuthoringRig(source, skin, garments, options);
             var created = CreateInstance<AnimationTake>();
             created.name = "Untitled Take";
             created.hideFlags = HideFlags.HideAndDontSave;
-            // A live object reference cannot persist. Prefer the corresponding source asset.
-            created.character = EditorUtility.IsPersistent(character) ? character : PrefabUtility.GetCorrespondingObjectFromSource(character);
-            if (!created.character)
+            try
             {
-                DestroyImmediate(created);
-                throw new InvalidOperationException("Save this character as a prefab first, or select its source skeleton asset. A take needs a persistent character reference.");
+                replacement.SetNeutralShading(false);
+                created.character = source;
+                created.body = skin;
+                created.clothing = garments; created.outfitOptions = options;
+                created.bonePaths = (string[])replacement.Paths.Clone();
+                created.SetKey(replacement.Capture(), 0);
             }
-            created.body = body;
-            created.clothing = (GameObject[])clothing.Clone(); created.outfitOptions = (OutfitOptions[])outfitOptions.Clone();
-            created.bonePaths = (string[])rig.Paths.Clone();
-            created.SetKey(rig.Capture(), 0);
+            catch { replacement.Dispose(); DestroyImmediate(created); throw; }
             ReleaseActors(); activeActor = -1;
             ReleaseClipSession();
+            var previousRig = rig;
+            rig = replacement; character = source; body = skin; clothing = garments; outfitOptions = options;
+            pose = rig.Rest.Copy(0); neutralShading = false;
+            cachedBoneSearch = null; boneIndices = null;
             clipSession = created; memoryTakeSession = true;
             take = created; frame = 0; playing = false; rigSelection.Clear(); hiddenAttachments.Clear();
+            hiddenPreviewMeshes.Clear();
+            if (viewport) viewport.Bind(rig.Scene);
+            previousRig?.Dispose();
             Seek(0); Save();
+            OpenViewport();
         }
 
         private void DrawTimeline()
@@ -711,7 +729,7 @@ namespace MashBoxSDK.AnimationStudio
             // Bootstrap only on the editor update, never during GUI layout or the
             // nested BuildRig/OpenViewport calls. NewTake creates an in-memory
             // document; no asset is written until the user explicitly saves it.
-            if (viewport && !modelingMode && !skinningMode && !take && !automaticSessionFailed &&
+            if (viewport && !modelingMode && !skinningMode && !retopologyMode && !take && !automaticSessionFailed &&
                 !EditorApplication.isCompiling && !EditorApplication.isUpdating &&
                 EditorApplication.isPlaying == EditorApplication.isPlayingOrWillChangePlaymode)
             {
@@ -826,6 +844,8 @@ namespace MashBoxSDK.AnimationStudio
         private void BeforeSceneGUI(SceneView view)
         {
             if (view == viewport && viewport.HandleWindowShortcut()) return;
+            if (view == viewport && retopologyMode)
+            { retopologyEditor?.BeforeRetopologySceneGUI(view); if(view.camera) view.camera.cameraType=CameraType.Preview; StudioPreviewLighting.ConfigureStudioBackground(view); return; }
             if (view == viewport && skinningMode)
             {
                 skinningEditor?.BeforeSkinSceneGUI(view);

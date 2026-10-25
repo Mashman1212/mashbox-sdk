@@ -25,8 +25,14 @@ namespace MashBoxSDK.AnimationStudio
         private const float SkinPanelTabWidth = 148;
         internal float SkinInspectorWidth => inspector != null && inspector.contentRect.width > 0 ? inspector.contentRect.width : PanelWidths.y;
         internal float SkinToolbarLeft => Mathf.Max(ModelCanvasRect.x, HierarchyLeft + 224 + DividerWidth);
-        private IMGUIContainer skinLeftTab, skinRightTab;
-        private Vector2 VisiblePanelWidths => new Vector2(skinPreviewTimeline && skinLeftTucked && skinInfluencesTucked ? 24 : PanelWidths.x, skinPreviewTimeline && skinRightTucked ? 24 : PanelWidths.y);
+        private IMGUIContainer skinLeftTab, skinRightTab, skinPracticeTab;
+        internal void BindSkinPractice(System.Action draw)
+        {
+            BindViewportControl(ref skinPracticeTab,"mashbox-skin-practice",draw);
+            skinPracticeTab.style.width=104;skinPracticeTab.style.height=24;
+            UpdatePanelLayout();
+        }
+        private Vector2 VisiblePanelWidths => new Vector2(FoldablePanels && skinLeftTucked && skinInfluencesTucked ? 24 : PanelWidths.x, FoldablePanels && skinRightTucked ? 24 : PanelWidths.y);
         private IMGUIContainer leftDivider, rightDivider;
         private int resizingSide, resizeControl;
         private float resizeStartX, resizeStartWidth;
@@ -86,14 +92,14 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdatePanelLayout()
         {
             if (!panelsInitialized) return;
-            if (skinPreviewTimeline && !skinFoldDefaultsInitialized)
+            if (FoldablePanels && !skinFoldDefaultsInitialized)
             {
                 skinLeftTucked = skinRightTucked = true;
                 skinFoldDefaultsInitialized = true;
             }
             var widths = VisiblePanelWidths;
-            if (rigControls != null) rigControls.style.display = skinPreviewTimeline && skinLeftTucked ? DisplayStyle.None : DisplayStyle.Flex;
-            if (inspector != null) inspector.style.display = skinPreviewTimeline && skinRightTucked ? DisplayStyle.None : DisplayStyle.Flex;
+            if (rigControls != null) rigControls.style.display = FoldablePanels && skinLeftTucked ? DisplayStyle.None : DisplayStyle.Flex;
+            if (inspector != null) inspector.style.display = FoldablePanels && skinRightTucked ? DisplayStyle.None : DisplayStyle.Flex;
             if (rigControls != null) { rigControls.style.left = HierarchyLeft; rigControls.style.width = panelsModeling ? widths.x : 398; }
             if (inspector != null)
             {
@@ -108,31 +114,31 @@ namespace MashBoxSDK.AnimationStudio
             if (attachments != null) { attachments.style.right = PanelMargin + (animationSettingsExpanded ? widths.y + 12 : 0); attachments.style.top = overlayTop + (animationSettingsExpanded ? 0 : 42); }
             if (modeSelector != null) { modeSelector.style.left = PanelMargin; modeSelector.style.top = 0; }
             float optionsTop = overlayTop;
-            float optionsLeft = skinPreviewTimeline ? SkinToolbarLeft : canvasLeft;
+            float optionsLeft = FoldablePanels ? SkinToolbarLeft : canvasLeft;
             if (viewportOptions != null) { viewportOptions.style.left = optionsLeft + 40; viewportOptions.style.top = optionsTop; }
             if (studioSettings != null) { studioSettings.style.left = optionsLeft + 8; studioSettings.style.top = optionsTop; }
             if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop + 32; }
             if (leftDivider == null || rightDivider == null) return;
-            if (skinPreviewTimeline)
+            if (FoldablePanels)
             {
                 if (rigControls != null) rigControls.style.top = ModelingPanelTop + 28;
                 if (inspector != null) inspector.style.top = ModelingPanelTop + 28;
                 if (rigControls != null) rigControls.style.bottom = PanelMargin;
                 LayoutSkinInfluences(widths);
                 if (inspector != null) inspector.style.bottom = PanelMargin;
-                if (timeline != null)
+                if (timeline != null && skinPreviewTimeline)
                 {
                     timeline.style.left = canvasLeft + 8;
                     timeline.style.right = PanelMargin + widths.y + DividerWidth + 8;
                 }
             }
-            if (!skinPreviewTimeline)
+            if (!FoldablePanels)
             {
                 if (skinInfluencesPanel != null) skinInfluencesPanel.style.display = DisplayStyle.None;
                 if (rigControls != null) rigControls.style.height = new StyleLength(StyleKeyword.Auto);
             }
-            leftDivider.style.display = panelsModeling && !(skinPreviewTimeline && skinLeftTucked && skinInfluencesTucked) ? DisplayStyle.Flex : DisplayStyle.None;
-            rightDivider.style.display = panelsModeling && !(skinPreviewTimeline && skinRightTucked) ? DisplayStyle.Flex : DisplayStyle.None;
+            leftDivider.style.display = panelsModeling && !(FoldablePanels && skinLeftTucked && skinInfluencesTucked) ? DisplayStyle.Flex : DisplayStyle.None;
+            rightDivider.style.display = panelsModeling && !(FoldablePanels && skinRightTucked) ? DisplayStyle.Flex : DisplayStyle.None;
             leftDivider.style.left = HierarchyLeft + widths.x;
             rightDivider.style.right = PanelMargin + widths.y;
             leftDivider.style.top = rightDivider.style.top = ModelingPanelTop;
@@ -141,10 +147,17 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UpdateSkinPanelTabs(Vector2 widths)
         {
-            if (skinPreviewTimeline && skinLeftTab == null)
+            if (FoldablePanels && skinLeftTab == null)
             {
                 skinLeftTab = CreateSkinPanelTab(true);
                 skinRightTab = CreateSkinPanelTab(false);
+            }
+            if(skinPracticeTab!=null)
+            {
+                skinPracticeTab.style.display=skinPreviewTimeline&&!retopologyPanels?DisplayStyle.Flex:DisplayStyle.None;
+                skinPracticeTab.style.top=ModelingPanelTop;
+                skinPracticeTab.style.right=PanelMargin+SkinPanelTabWidth+6;
+                skinPracticeTab.BringToFront();
             }
             if (skinLeftTab == null) return;
             if (skinInfluencesTab != null)
@@ -153,7 +166,7 @@ namespace MashBoxSDK.AnimationStudio
                 skinInfluencesTab.style.left = HierarchyLeft + 112;
                 skinInfluencesTab.BringToFront();
             }
-            skinLeftTab.style.display = skinRightTab.style.display = skinPreviewTimeline ? DisplayStyle.Flex : DisplayStyle.None;
+            skinLeftTab.style.display = skinRightTab.style.display = FoldablePanels ? DisplayStyle.Flex : DisplayStyle.None;
             skinLeftTab.style.left = HierarchyLeft;
             skinRightTab.style.right = PanelMargin;
             skinLeftTab.BringToFront(); skinRightTab.BringToFront();
@@ -194,7 +207,7 @@ namespace MashBoxSDK.AnimationStudio
                 rigControls.style.bottom=both ? new StyleLength(StyleKeyword.Auto) : new StyleLength(PanelMargin);
             }
             if(skinInfluencesPanel == null) return;
-            skinInfluencesPanel.style.display=skinInfluencesTucked ? DisplayStyle.None : DisplayStyle.Flex;
+            skinInfluencesPanel.style.display=skinInfluencesTucked || retopologyPanels ? DisplayStyle.None : DisplayStyle.Flex;
             skinInfluencesPanel.style.left=HierarchyLeft;
             skinInfluencesPanel.style.width=widths.x;
             skinInfluencesPanel.style.top=both ? top+meshHeight+8 : top;
@@ -207,7 +220,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 bool tucked = left ? skinLeftTucked : skinRightTucked;
                 string arrow = left == tucked ? "›" : "‹";
-                string title = left ? "Meshes" : "Brush Settings";
+                string title = left ? "Meshes" : retopologyPanels ? "Topology Tools" : "Brush Settings";
                 var rect = new Rect(0,0,left ? 106 : SkinPanelTabWidth,24);
                 var content = new GUIContent(left ? arrow + "  " + title : title + "  " + arrow,(tucked ? "Show " : "Tuck ") + title);
                 EditorGUI.DrawRect(rect, rect.Contains(Event.current.mousePosition) ? new Color(.10f,.12f,.12f) : new Color(.035f,.04f,.04f));

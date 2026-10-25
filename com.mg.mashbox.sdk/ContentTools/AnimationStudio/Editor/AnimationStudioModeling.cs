@@ -21,7 +21,7 @@ namespace MashBoxSDK.AnimationStudio
             modelEditor.WorkspaceSavedAs = LoadStudioModel;
             if (modelDocument) modelEditor.Load(modelDocument);
         }
-        private void ReleaseModelEditor() { modelEditor?.Dispose(); modelEditor = null; skinningEditor?.Dispose(); skinningEditor = null; }
+        private void ReleaseModelEditor() { retopologyEditor?.Dispose(); retopologyEditor=null; modelEditor?.Dispose(); modelEditor = null; skinningEditor?.Dispose(); skinningEditor = null; }
         private void LoadStudioModel(StudioModelDocument document)
         {
             modelDocument = document; EnsureModelEditor(); modelEditor.Load(document);
@@ -31,6 +31,9 @@ namespace MashBoxSDK.AnimationStudio
         private void BindStudioMode()
         {
             if (!viewport) return;
+            if (retopologyMode) { BindRetopologyMode(); return; }
+            viewport.SetRetopologyPanels(false);
+            retopologyEditor?.SuspendLighting();
             if (skinningMode) { BindSkinningMode(); return; }
             if (!compactSettingsInitialized) { inspectorExpanded = false; compactSettingsInitialized = true; }
             if (!modelingMode) modelEditor?.SuspendLighting();
@@ -55,20 +58,22 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawStudioMenuBar()
         {
+            if (retopologyMode) { retopologyEditor?.DrawMenu(); return; }
             if (skinningMode) { DrawSkinningFileMenu(); DrawSkinningEditMenu(); DrawSkinToolsMenu(); return; }
             if (modelingMode) modelEditor?.DrawMenuBar(viewport, LoadStudioModel);
             else { DrawAnimationFileMenu(); DrawAnimationEditMenu(); }
         }
         private void DrawStudioModes()
         {
-            var content = skinningMode ? new GUIContent(" Skinning", EditorGUIUtility.IconContent("SkinnedMeshRenderer Icon").image, "Switch studio mode") : modelingMode
+            var content = retopologyMode ? new GUIContent(" Retopology", EditorGUIUtility.IconContent("Mesh Icon").image, "Switch studio mode") : skinningMode ? new GUIContent(" Skinning", EditorGUIUtility.IconContent("SkinnedMeshRenderer Icon").image, "Switch studio mode") : modelingMode
                 ? new GUIContent(" Modeling", EditorGUIUtility.IconContent("Mesh Icon").image, "Switch studio mode")
                 : new GUIContent(" Animation", EditorGUIUtility.IconContent("AnimationClip Icon").image, "Switch studio mode");
             var rect = new Rect(0, 0, MashBoxStudioViewport.ModeSelectorWidth, 21);
             if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, StudioTheme.Styles.menuDropdown)) return;
             var menu = new StudioMenu();
-            menu.AddItem(new GUIContent("Animation"), !modelingMode && !skinningMode, () => SwitchStudioMode(false));
-            menu.AddItem(new GUIContent("Modeling"), modelingMode && !skinningMode, () => SwitchStudioMode(true));
+            menu.AddItem(new GUIContent("Animation"), !modelingMode && !skinningMode && !retopologyMode, () => SwitchStudioMode(false));
+            menu.AddItem(new GUIContent("Modeling"), modelingMode && !skinningMode && !retopologyMode, () => SwitchStudioMode(true));
+            menu.AddItem(new GUIContent("Retopology"), retopologyMode, () => Guard(OpenRetopologyMode));
             menu.AddItem(new GUIContent("Skinning"), skinningMode, () => Guard(OpenSkinningMode));
             menu.AddSeparator("");
             menu.AddItem(new GUIContent(viewport.IsStudioMaximized ? "Restore View\tF11" : "Maximize View\tF11"), false, viewport.ToggleMaximized);
@@ -81,11 +86,12 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawStudioSettings()
         {
             var content = new GUIContent(EditorGUIUtility.IconContent("SettingsIcon").image, "MashBox Studio settings — Appearance and preferences");
-            if ((modelingMode || skinningMode) && GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
+            if ((modelingMode || skinningMode || retopologyMode) && GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
         }
         private void SwitchStudioMode(bool modeling)
         {
-            if (modelingMode == modeling && !skinningMode) return;
+            if (modelingMode == modeling && !skinningMode && !retopologyMode) return;
+            retopologyMode=false; retopologyEditor?.SuspendLighting(); viewport.SetRetopologyPanels(false);
             skinningEditor?.EndStroke(); skinningMode = false;
             modelEditor?.CancelMarkingMenu();
             modelEditor?.CloseToolOptions();

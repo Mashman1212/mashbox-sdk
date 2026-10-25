@@ -10,6 +10,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool HasDefaultCharacterAppearance()
         {
             if (!defaultCharacter || OutfitRig == null) return false;
+            defaultCharacter.ResolveReferences();
             var actor = OutfitActor;
             var currentBody = actor ? actor.body : body;
             var currentClothing = actor ? actor.clothing : clothing;
@@ -24,7 +25,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawDefaultCharacterToggle(Rect rect)
         {
-            if (!defaultCharacter) defaultCharacter = AssetDatabase.LoadAssetAtPath<StudioDefaultCharacter>(DefaultCharacterPath);
+            if (!defaultCharacter) defaultCharacter = StudioDefaultReferences.LoadCharacter(DefaultCharacterPath);
             bool active = HasDefaultCharacterAppearance();
             var icon = new GUIContent(EditorGUIUtility.IconContent("Avatar Icon").image,
                 active ? "Hide default character — show the bare rig" : "Show default character on the current rig");

@@ -12,7 +12,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9faa0ffcbc164a5fba77ab5bc1ba8033, type: 3}
   m_Name: Default Skinning Body
   m_EditorClassIdentifier: 
-  body: {fileID: 919132149155446097, guid: 1f9a9e02918587a46ba26524d4215314, type: 3}
-  bust: {fileID: 919132149155446097, guid: 8a4c26708d0a11f48a717eedc27f7b24, type: 3}
+  body: {fileID: 919132149155446097, guid: 8a4c26708d0a11f48a717eedc27f7b24, type: 3}
+  bust: {fileID: 919132149155446097, guid: 1f9a9e02918587a46ba26524d4215314, type: 3}
   pants: {fileID: 919132149155446097, guid: 9e36e20916f3af64e96f34369f6dfcc7, type: 3}
   shirt: {fileID: 919132149155446097, guid: a7d297a36f354878bc01f73c30838996, type: 3}
+  bodyReference:
+    guid: 8a4c26708d0a11f48a717eedc27f7b24
+    assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/SM_Body_01.fbx
+  bustReference:
+    guid: 1f9a9e02918587a46ba26524d4215314
+    assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Matt_Bust.fbx
+  pantsReference:
+    guid: 9e36e20916f3af64e96f34369f6dfcc7
+    assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Human_Pants_Punch_WC.fbx
+  shirtReference:
+    guid: a7d297a36f354878bc01f73c30838996
+    assetPath: Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Human_Shirt_Default_Hoodie.fbx

@@ -122,7 +122,7 @@ namespace MashBoxSDK.AnimationStudio
 #if MashBoxDev
         internal void StitchDefaultBust()
         {
-            var defaults=AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+            var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
             if (!defaults || !defaults.bust) throw new InvalidOperationException("Assign a default bust first.");
             var meshes=new HashSet<Mesh>(defaults.bust.GetComponentsInChildren<SkinnedMeshRenderer>(true).Select(r=>r.sharedMesh));
             var parts=Document.parts.Where(p=>p.referenceOnly && meshes.Contains(p.sourceMesh)).ToArray();
@@ -134,7 +134,7 @@ namespace MashBoxSDK.AnimationStudio
         private void StitchBustParts(StudioSkinningDocument.Part[] busts)
         {
             EndStroke(); FinishPoseGesture();
-            var defaults=AssetDatabase.LoadAssetAtPath<StudioSkinningDefaults>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+            var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
             if(!defaults || !defaults.body) throw new InvalidOperationException("Assign a body in Default Skinning Body first.");
             Func<GameObject,HashSet<Mesh>> meshes = source => new HashSet<Mesh>(source.GetComponentsInChildren<SkinnedMeshRenderer>(true).Select(r=>r.sharedMesh));
             var bodyMeshes=meshes(defaults.body);

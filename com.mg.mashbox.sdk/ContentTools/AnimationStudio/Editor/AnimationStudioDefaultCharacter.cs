@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawDefaultCharacter()
         {
-            if (!defaultCharacter) defaultCharacter = AssetDatabase.LoadAssetAtPath<StudioDefaultCharacter>(DefaultCharacterPath);
+            if (!defaultCharacter) defaultCharacter = StudioDefaultReferences.LoadCharacter(DefaultCharacterPath);
             defaultCharacter = (StudioDefaultCharacter)EditorGUILayout.ObjectField("Default character", defaultCharacter, typeof(StudioDefaultCharacter), false);
             using (new EditorGUI.DisabledScope(!defaultCharacter))
             using (new EditorGUILayout.HorizontalScope())
@@ -28,6 +28,7 @@ namespace MashBoxSDK.AnimationStudio
         private void SetDefaultCharacterAppearance(bool enabled, bool keepCurrentRig)
         {
             if (!defaultCharacter) throw new InvalidOperationException("Assign a default character asset first.");
+            defaultCharacter.ResolveReferences();
             FlushEdits(); FinishActorEdits();
             var source = defaultCharacter.character ? defaultCharacter.character : AssetDatabase.LoadAssetAtPath<GameObject>(SkeletonPath);
             if (keepCurrentRig) source = OutfitActor && OutfitActor.character ? OutfitActor.character : character ? character : source;
