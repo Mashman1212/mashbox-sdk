@@ -54,6 +54,11 @@ namespace MashBoxSDK.AnimationStudio
             if (filtering && !influenceMatches[index]) return;
             var row=GUILayoutUtility.GetRect(0,22,GUILayout.ExpandWidth(true));
             bool selected=index==boneIndex;
+            if (Event.current.type == EventType.Repaint && row.Contains(Event.current.mousePosition) && GUIUtility.hotControl == 0)
+            {
+                influenceHoverCandidate = index;
+                influenceHoverScreenRect = new Rect(GUIUtility.GUIToScreenPoint(row.position), row.size);
+            }
             if (Event.current.type==EventType.Repaint)
             {
                 if (selected) EditorGUI.DrawRect(row,new Color(.23f,.36f,.33f));

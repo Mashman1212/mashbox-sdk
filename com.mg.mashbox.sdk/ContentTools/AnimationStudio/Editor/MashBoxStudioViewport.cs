@@ -43,12 +43,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (!view || view.HasStudioBindings) continue;
                 try
                 {
-#if MashBoxDev
                     AnimationStudioWindow.RestoreExistingViewport(view);
                     pending |= !view.HasStudioBindings;
-#else
-                    view.Close();
-#endif
                 }
                 catch (System.Exception error)
                 {

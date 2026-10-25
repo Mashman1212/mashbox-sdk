@@ -30,6 +30,14 @@ namespace MashBoxSDK.AnimationStudio
         private Mesh pickMesh;
         private Vector2 listScroll, boneScroll, inspectorScroll;
         private int boneIndex;
+        private int hoveredInfluence = -1, influenceHoverCandidate = -1;
+        private Rect influenceHoverScreenRect;
+        private void SetInfluencePreview(int index)
+        {
+            if (hoveredInfluence == index) return;
+            hoveredInfluence = index;
+            UpdateDisplay();
+        }
         private string search = "", error;
         private float radius = .12f, strength = .2f, targetWeight = 1;
         private bool heatmap = true, frontOnly = true, smoothWhileSculpting;
@@ -270,8 +278,15 @@ namespace MashBoxSDK.AnimationStudio
         {
             search = EditorGUILayout.TextField(search, StudioTheme.Styles.toolbarSearchField);
             boneScroll = EditorGUILayout.BeginScrollView(boneScroll);
+            if (Event.current.type == EventType.Repaint) influenceHoverCandidate = -1;
             DrawInfluenceTree();
             EditorGUILayout.EndScrollView();
+            if (Event.current.type == EventType.Repaint)
+            {
+                // Ignore rows clipped above or below the scroll viewport.
+                if (!GUILayoutUtility.GetLastRect().Contains(Event.current.mousePosition)) influenceHoverCandidate = -1;
+                SetInfluencePreview(influenceHoverCandidate);
+            }
         }
         internal void DrawInspector()
         {
@@ -374,9 +389,9 @@ namespace MashBoxSDK.AnimationStudio
             if (referenceShaded) referenceShaded.SetColor("_Color",ReferencePreviewTint);
             for (int i = 0; i < objects.Count; i++)
             {
-                bool checker = showUVChecker && i == Document.selected && !Document.parts[i].referenceOnly;
+                bool checker = hoveredInfluence < 0 && showUVChecker && i == Document.selected && !Document.parts[i].referenceOnly;
                 if(checker) EnsureUVChecker();
-                bool show = !checker && i == Document.selected && !Document.parts[i].referenceOnly && heatmap && Document.parts[i].bound;
+                bool show = !checker && i == Document.selected && !Document.parts[i].referenceOnly && (heatmap || hoveredInfluence >= 0) && Document.parts[i].bound;
                 // Body and bust are one neutral reference surface in every mode.
                 // Only editable clothing participates in selection/context colouring.
                 var previewMaterial = Document.parts[i].referenceOnly ? referenceShaded
@@ -384,7 +399,7 @@ namespace MashBoxSDK.AnimationStudio
                 objects[i].GetComponent<Renderer>().sharedMaterials = Enumerable.Repeat(previewMaterial, displayMeshes[i].subMeshCount).ToArray();
                 if (!show || weights == null) continue;
                 var colors = new Color[weights.Values.Length];
-                for (int v = 0; v < colors.Length; v++) colors[v] = Color.Lerp(new Color(.03f,.08f,.35f), new Color(1,.25f,.03f), weights.Weight(v,boneIndex));
+                for (int v = 0; v < colors.Length; v++) colors[v] = Color.Lerp(new Color(.03f,.08f,.35f), new Color(1,.25f,.03f), weights.Weight(v,hoveredInfluence >= 0 ? hoveredInfluence : boneIndex));
                 displayMeshes[i].colors = colors;
             }
             repaint();
@@ -392,6 +407,11 @@ namespace MashBoxSDK.AnimationStudio
         internal void SceneGUI(SceneView view)
         {
             lastView = view;
+            view.wantsMouseMove = true;
+            if (Event.current.type == EventType.MouseMove) repaint();
+            if (hoveredInfluence >= 0 && (Event.current.type == EventType.MouseLeaveWindow ||
+                !influenceHoverScreenRect.Contains(GUIUtility.GUIToScreenPoint(Event.current.mousePosition))))
+                SetInfluencePreview(-1);
             DrawBrushOverlay(view);
             DrawSelectedMeshWireframe();
             if (adjustingBrush && picker.Raycast(HandleUtility.GUIPointToWorldRay(adjustmentAnchor), out var adjustmentHit, 10000))
@@ -525,7 +545,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (weightTool)
                 {
                     if (Tool == Brush.SmoothWeights || evt.shift) SmoothWeight(v,amount,before);
-                    else weights.Set(v,boneIndex,Mathf.Lerp(weights.Weight(v,boneIndex),evt.control ? 0 : targetWeight,amount),locked);
+                    else weights.Set(v,boneIndex,Mathf.Lerp(weights.Weight(v,hoveredInfluence >= 0 ? hoveredInfluence : boneIndex),evt.control ? 0 : targetWeight,amount),locked);
                     weightsChanged = true;
                 }
                 else

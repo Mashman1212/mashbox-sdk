@@ -131,7 +131,6 @@ namespace MashBoxSDK.AnimationStudio
 
         public static void OpenInStudio(AnimationTake asset)
         {
-#if MashBoxDev
             var window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().FirstOrDefault();
             if (!window) window = CreateInstance<AnimationStudioWindow>();
             if (!asset && !window.take)
@@ -141,12 +140,9 @@ namespace MashBoxSDK.AnimationStudio
             else window.OpenViewport();
             if (!window.viewport) window.OpenViewport();
             window.viewport?.Focus();
-#endif
         }
 
-#if MashBoxDev
         [UnityEditor.Callbacks.OnOpenAsset]
-#endif
         private static bool OpenTakeAsset(int instanceId, int line)
         {
             var asset = EditorUtility.InstanceIDToObject(instanceId) as AnimationTake;
@@ -168,7 +164,6 @@ namespace MashBoxSDK.AnimationStudio
 
         private void OnEnable()
         {
-#if MashBoxDev
             RestoreMotionJob();
             minSize = new Vector2(470, 640);
             SceneView.duringSceneGui += DuringSceneGUI;
@@ -177,9 +172,6 @@ namespace MashBoxSDK.AnimationStudio
             Undo.undoRedoPerformed += UndoRedo;
             EditorApplication.playModeStateChanged += PlayModeChanged;
             MashBoxStudioViewport.RestoreStudioViews();
-#else
-            EditorApplication.delayCall += () => { if (this) Close(); };
-#endif
         }
         private void OnDisable()
         {
