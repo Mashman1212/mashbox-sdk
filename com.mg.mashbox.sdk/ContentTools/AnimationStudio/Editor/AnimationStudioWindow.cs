@@ -50,14 +50,10 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool showPoles = true;
         [SerializeField] private bool showFKControls = true;
 
-#if MashBoxDev
         [MenuItem("MashBox/MashBox Studio", false, 119)]
-#endif
         public static void Open() => OpenInStudio(Selection.activeObject as AnimationTake);
 
-#if MashBoxDev
         [MenuItem("Assets/Open Clip in MashBox Studio",false,2000)]
-#endif
         private static void OpenSelectedClip()
         {
             if (Selection.activeObject is AnimationClip clip) { OpenClipForEditing(clip); return; }
@@ -69,9 +65,7 @@ namespace MashBoxSDK.AnimationStudio
             { var selectedClip = item; menu.AddItem(new GUIContent(item.name),false,() => OpenClipForEditing(selectedClip)); }
             menu.ShowAsContext();
         }
-#if MashBoxDev
         [MenuItem("Assets/Open Clip in MashBox Studio",true)]
-#endif
         private static bool CanOpenSelectedClip()
         {
             if (Selection.activeObject is AnimationClip) return true;

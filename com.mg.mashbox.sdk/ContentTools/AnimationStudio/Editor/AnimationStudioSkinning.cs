@@ -184,6 +184,9 @@ namespace MashBoxSDK.AnimationStudio
                 menu.AddDisabledItem(new GUIContent("Save FBX"));
                 menu.AddDisabledItem(new GUIContent("Save FBX As…"));
             }
+            menu.AddSeparator("");
+            if(skinningEditor.HasEditableMesh)menu.AddItem(new GUIContent("Remove Mesh"),false,()=>skinningEditor.Run(skinningEditor.RemoveSelectedMesh));
+            else menu.AddDisabledItem(new GUIContent("Remove Mesh"));
             if (skinningEditor.CanStitchSelectedBust)
                 menu.AddItem(new GUIContent("Stitch Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBust)));
             else menu.AddDisabledItem(new GUIContent("Stitch Bust"));

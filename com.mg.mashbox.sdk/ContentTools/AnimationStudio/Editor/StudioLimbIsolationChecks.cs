@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
             catch (Exception e) { File.WriteAllText("Temp/StudioLimbIsolation.result", e.ToString()); Debug.LogException(e); }
         }
 
-        [MenuItem("MashBox/Animation/Validate Independent Limb IK")]
+        [MenuItem("MashBox/Dev/Studio Checks/Animation/Validate Independent Limb IK")]
         public static void Run()
         {
             var source = AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx");

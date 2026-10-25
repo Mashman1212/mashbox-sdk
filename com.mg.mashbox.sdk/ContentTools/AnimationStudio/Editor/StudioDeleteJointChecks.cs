@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal static class StudioDeleteJointChecks
     {
-        [MenuItem("MashBox/Animation/Validate skinned joint deletion")]
+        [MenuItem("MashBox/Dev/Studio Checks/Animation/Validate skinned joint deletion")]
         static void Run()
         {
             var doc = ScriptableObject.CreateInstance<StudioModelDocument>();

@@ -242,6 +242,8 @@ namespace MashBoxSDK.AnimationStudio
                         else menu.AddDisabledItem(new GUIContent("Stitch Bust"));
                         menu.AddItem(new GUIContent("Save FBX"), false, () => Run(SaveSelectedFbx));
                         menu.AddItem(new GUIContent("Save FBX As…"), false, () => Run(SaveSelectedFbxAs));
+                        menu.AddSeparator("");
+                        menu.AddItem(new GUIContent("Remove Mesh", "Remove from this workspace only. The source asset is unchanged. Supports Undo."), false, () => Run(() => RemoveMesh(part)));
                         menu.ShowAsContext(); Event.current.Use();
                     }
                     if (GUI.Toggle(row,Document.selected == i,GUIContent.none,"Button") && Document.selected != i)
@@ -250,6 +252,19 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             EditorGUILayout.EndScrollView();
+        }
+        internal void RemoveSelectedMesh() => RemoveMesh(Part);
+        private void RemoveMesh(StudioSkinningDocument.Part part)
+        {
+            if(part==null||part.referenceOnly||IsDefaultReference(part))return;
+            int index=Document.parts.IndexOf(part);if(index<0)return;
+            EndStroke();FinishMeshRename(false);CancelBrushInteraction();
+            Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,"Remove skinning mesh");
+            // Keep the editable mesh alive so Undo can restore all unsaved edits.
+            Document.parts.RemoveAt(index);
+            if(Document.selected==index)Document.selected=-1;
+            else if(Document.selected>index)Document.selected--;
+            Rebuild();Changed();
         }
         internal void DrawInfluences()
         {

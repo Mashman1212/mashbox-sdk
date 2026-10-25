@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             EditorApplication.update+=Tick;
         }
-        [MenuItem("MashBox/Retopology/Validate Tools")]
+        [MenuItem("MashBox/Dev/Studio Checks/Retopology/Validate Tools")]
         private static void Run()
         {
             var messages=new List<string>();var owned=new List<UnityEngine.Object>();
