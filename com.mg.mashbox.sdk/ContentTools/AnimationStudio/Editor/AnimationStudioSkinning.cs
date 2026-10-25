@@ -137,6 +137,11 @@ namespace MashBoxSDK.AnimationStudio
             var rect = new Rect(100,0,90,21);
             if (!EditorGUI.DropdownButton(rect,new GUIContent("Edit Skins"),FocusType.Passive,StudioTheme.Styles.menuDropdown)) return;
             var menu = new StudioMenu();
+            if (skinningEditor.CanSkinSelected) menu.AddItem(new GUIContent("Skin"),false,()=>skinningEditor.Run(skinningEditor.SkinSelected));
+            else menu.AddDisabledItem(new GUIContent("Skin"));
+            if (skinningEditor.CanUnskinSelected) menu.AddItem(new GUIContent("Unskin"),false,()=>skinningEditor.Run(skinningEditor.UnskinSelected));
+            else menu.AddDisabledItem(new GUIContent("Unskin"));
+            menu.AddSeparator("");
             if (skinningEditor.CanMirrorSkin)
             {
                 menu.AddItem(new GUIContent("Mirror Weights Left to Right"),false,()=>skinningEditor.Run(()=>skinningEditor.MirrorSkinWeights(true)));
