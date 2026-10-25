@@ -44,14 +44,24 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 float PathLength(int[] path)
                 {float sum=0;for(int i=1;i<path.Length;i++)sum+=Vector3.Distance(part.vertices[path[i-1]],part.vertices[path[i]]);return sum;}
-                paths=paths.OrderBy(PathLength).ToList();
-                if(paths.Count==0)
+                // Connectivity alone does not identify a seam: on a garment the
+                // same boundary may travel around the back to the other corner.
+                // Keep curved local seams, but do not reuse remote perimeter arcs.
+                bool LocalRoute(int[] path)
                 {
-                    var reached=new HashSet<int>{start};var queue=new Queue<int>();queue.Enqueue(start);
-                    while(queue.Count>0)foreach(int v in neighbors[queue.Dequeue()])if(reached.Add(v))queue.Enqueue(v);
-                    if(reached.Contains(end))throw new InvalidOperationException("The snapped corners share a border, but its route is ambiguous or crosses another patch corner. Choose a shorter border section; no patch was added.");
-                    continue;
+                    float corridor = Mathf.Max(tolerance * 4, length * .5f);
+                    foreach (int vertex in path)
+                    {
+                        var p = part.vertices[vertex];
+                        float t = Mathf.Clamp01(Vector3.Dot(p-from,axis)/(length*length));
+                        if ((p-(from+axis*t)).sqrMagnitude > corridor*corridor) return false;
+                    }
+                    return true;
                 }
+                paths=paths.Where(LocalRoute).OrderBy(PathLength).ToList();
+                // Corners on one connected perimeter can still border an empty gap.
+                // A route through another corner or around the back is not a seam.
+                if(paths.Count==0)continue;
                 if(PathLength(paths[0])>length*4||paths.Count>1&&PathLength(paths[1])<PathLength(paths[0])*1.1f)
                     throw new InvalidOperationException("Two possible border routes between the snapped corners. Choose closer corners to identify the seam; no patch was added.");
                 result[side]=paths[0];

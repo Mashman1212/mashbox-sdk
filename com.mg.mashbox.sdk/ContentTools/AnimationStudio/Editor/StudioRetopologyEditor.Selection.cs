@@ -15,9 +15,9 @@ namespace MashBoxSDK.AnimationStudio
             xraySelection=!xraySelection;
             EditorPrefs.SetBool("MashBox.Retopology.XraySelection",xraySelection);repaint();
         }
-        private bool IsSelectionPointVisible(Vector3 point)
+        private bool IsSelectionPointVisible(Vector3 point, bool allowThroughSelection = true)
         {
-            if(xraySelection)return true;
+            if(allowThroughSelection && xraySelection)return true;
             var ray=HandleUtility.GUIPointToWorldRay(HandleUtility.WorldToGUIPoint(point));
             float distance=Vector3.Dot(point-ray.origin,ray.direction);
             float size=Active.reference?Active.reference.bounds.size.magnitude:1f;

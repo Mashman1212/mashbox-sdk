@@ -459,14 +459,14 @@ namespace MashBoxSDK.AnimationStudio
                         Handles.DrawSolidDisc(center,Vector3.forward,radius+1.5f);
                         Handles.color=color;Handles.DrawSolidDisc(center,Vector3.forward,radius);
                     }
-                    // Screen-sized dots remain readable at any zoom, including through the reference.
+                    // Snap dots use the same shallow depth checks as picking; never reveal far-side targets.
                     if(Active.showOutput)
                         for(int i=0;i<Active.vertices.Count;i++)
                         {
                             var vertex=Active.vertices[i];
                             if(view.camera.WorldToViewportPoint(vertex).z<=0)continue;
                             var screen=HandleUtility.WorldToGUIPoint(vertex);
-                            if(i!=snap&&(screen-mouse).sqrMagnitude<80*80)Dot(screen,2.5f,new Color(.48f,.67f,.82f,.8f));
+                            if(i!=snap&&(screen-mouse).sqrMagnitude<80*80&&IsSelectionPointVisible(vertex,false))Dot(screen,2.5f,new Color(.48f,.67f,.82f,.8f));
                         }
                     foreach(var corner in corners)Dot(HandleUtility.WorldToGUIPoint(corner),4f,new Color(.4f,1f,.8f));
                     if(snap>=0)
@@ -496,7 +496,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if(view.camera.WorldToViewportPoint(Active.vertices[i]).z<=0)continue;
                 float d=(HandleUtility.WorldToGUIPoint(Active.vertices[i])-mouse).sqrMagnitude;
-                if(d<distance&&(activeTool!=RetopoTool.Select||IsSelectionPointVisible(Active.vertices[i]))){best=i;distance=d;}
+                if(d<distance&&IsSelectionPointVisible(Active.vertices[i],activeTool==RetopoTool.Select)){best=i;distance=d;}
             }
             return best;
         }
