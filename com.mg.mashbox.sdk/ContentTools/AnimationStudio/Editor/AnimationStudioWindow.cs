@@ -99,10 +99,12 @@ namespace MashBoxSDK.AnimationStudio
                 var previousOutfit = window.outfitOptions;
                 var previousClip = window.importClip;
                 bool previousMode = window.modelingMode;
+                bool previousSkinningMode = window.skinningMode;
                 int previousFrame = window.frame;
                 try
                 {
                 window.modelingMode = false;
+                window.skinningEditor?.EndStroke(); window.skinningMode = false;
                 var model = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(clip));
                 if (window.rig == null || (!clip.isHumanMotion && model))
                 {
@@ -126,6 +128,7 @@ namespace MashBoxSDK.AnimationStudio
                     window.take = previousTake; window.character = previousCharacter; window.body = previousBody;
                     window.clothing = previousClothing; window.outfitOptions = previousOutfit;
                     window.importClip = previousClip; window.frame = previousFrame; window.modelingMode = previousMode;
+                    window.skinningMode = previousSkinningMode;
                     if (window.character) window.BuildRig(); else window.ReleaseRig();
                     throw;
                 }
@@ -139,7 +142,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!window) window = CreateInstance<AnimationStudioWindow>();
             if (!asset && !window.take)
                 asset = AssetDatabase.LoadAssetAtPath<AnimationTake>(EditorPrefs.GetString("MashBox.LastTake." + Application.dataPath,""));
-            if (asset) { window.modelingMode = false; window.LoadTake(asset); }
+            if (asset) { window.skinningEditor?.EndStroke(); window.skinningMode = false; window.modelingMode = false; window.LoadTake(asset); }
             else if (window.take && window.rig == null) window.Guard(window.BuildRig);
             else window.OpenViewport();
             if (!window.viewport) window.OpenViewport();
@@ -249,6 +252,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UndoRedo()
         {
+            if (skinningMode) return; // Skinning owns mesh/document Undo and preview rebuilding.
             if (RestoreUnkeyedPoseUndo()) return;
             sceneDraft = false;
             foreach (var actor in actorPreviews) actor.Draft = false;
@@ -811,6 +815,13 @@ namespace MashBoxSDK.AnimationStudio
         private void BeforeSceneGUI(SceneView view)
         {
             if (view == viewport && viewport.HandleWindowShortcut()) return;
+            if (view == viewport && skinningMode)
+            {
+                skinningEditor?.BeforeSkinSceneGUI(view);
+                if (view.camera) view.camera.cameraType = CameraType.Preview;
+                StudioPreviewLighting.ConfigureStudioBackground(view);
+                return;
+            }
             if (view == viewport && modelingMode)
             {
                 if (view.camera) view.camera.cameraType = CameraType.Preview;

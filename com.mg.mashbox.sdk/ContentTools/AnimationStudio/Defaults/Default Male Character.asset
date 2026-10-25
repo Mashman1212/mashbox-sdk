@@ -55,3 +55,13 @@ MonoBehaviour:
       position: {x: 0, y: 0, z: 0}
       rotation: {x: 0, y: 0, z: 0}
       scale: 0
+  - enabled: 1
+    prefab: {fileID: 919132149155446097, guid: 2c2038bd4117e96429055b8c1afb3600, type: 3}
+    options:
+      role: 0
+      doubleSided: 1
+      hideBody: 0
+      cutoutDistance: 0
+      position: {x: 0, y: 0, z: 0}
+      rotation: {x: 0, y: 0, z: 0}
+      scale: 0

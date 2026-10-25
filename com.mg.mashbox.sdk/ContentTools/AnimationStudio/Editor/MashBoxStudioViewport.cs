@@ -26,7 +26,8 @@ namespace MashBoxSDK.AnimationStudio
         private static double nextRestoreAttempt;
         private static readonly System.Collections.Generic.HashSet<int> restoreWarnings = new System.Collections.Generic.HashSet<int>();
         internal bool HasStudioBindings => timeline != null && rigControls != null && inspector != null &&
-            timeline.onGUIHandler != null && rigControls.onGUIHandler != null && inspector.onGUIHandler != null &&
+            // Modeling and Skinning deliberately have no timeline callback.
+            (panelsModeling || timeline.onGUIHandler != null) && rigControls.onGUIHandler != null && inspector.onGUIHandler != null &&
             rootVisualElement.Contains(timeline) && rootVisualElement.Contains(rigControls) && rootVisualElement.Contains(inspector);
 
         private static void RestoreStudioViewsWhenReady()
@@ -38,7 +39,8 @@ namespace MashBoxSDK.AnimationStudio
             bool pending = false;
             foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
             {
-                if (!view) continue;
+                // Do not rebuild a healthy window while another view is still recovering.
+                if (!view || view.HasStudioBindings) continue;
                 try
                 {
 #if MashBoxDev
@@ -103,6 +105,7 @@ namespace MashBoxSDK.AnimationStudio
             modelTools.onGUIHandler = StudioTheme.Wrap(draw);
             modelTools.style.display = draw == null ? DisplayStyle.None : DisplayStyle.Flex;
             modelTools.BringToFront();
+            UpdatePanelLayout();
         }
 
         internal void BindMarkingMenu(System.Action draw)
@@ -216,6 +219,7 @@ namespace MashBoxSDK.AnimationStudio
 
         internal void BindTimeline(System.Action draw)
         {
+            skinPreviewTimeline = false;
             minSize = new Vector2(700, 400);
             if (timeline == null)
             {
@@ -230,7 +234,17 @@ namespace MashBoxSDK.AnimationStudio
                 rootVisualElement.Add(timeline);
             }
             timeline.onGUIHandler = StudioTheme.Wrap(draw);
+            timeline.style.left = 0; timeline.style.right = 0; timeline.style.bottom = 0;
+            timeline.style.height = 140;
             timeline.BringToFront();
+        }
+        private bool skinPreviewTimeline;
+        internal bool IsSkinPreviewScene(Scene scene) => skinPreviewTimeline && customScene == scene;
+        internal void BindSkinPreviewTimeline(System.Action draw)
+        {
+            BindTimeline(draw); skinPreviewTimeline = true;
+            timeline.style.height = 36; timeline.style.bottom = 8; timeline.style.display = DisplayStyle.Flex;
+            UpdatePanelLayout();
         }
 
         internal void Bind(Scene scene)

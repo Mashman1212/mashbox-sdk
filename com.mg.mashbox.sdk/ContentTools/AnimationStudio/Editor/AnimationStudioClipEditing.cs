@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdateClipSaveState()
         {
             if (!viewport) return;
-            viewport.SetClipUnsavedChanges(clipSession && clipSessionDirty);
+            viewport.SetClipUnsavedChanges((clipSession && clipSessionDirty) || (skinningDocument && skinningDocument.dirty));
             viewport.Repaint();
         }
 
@@ -197,11 +197,12 @@ namespace MashBoxSDK.AnimationStudio
 
         public override void SaveChanges()
         {
-            if (Studio && !Studio.SaveClipSession()) return;
+            if (Studio && !Studio.SaveAllStudioDocuments()) return;
             base.SaveChanges();
         }
         public override void DiscardChanges()
         {
+            if (Studio) Studio.DiscardSkinningChanges();
             if (Studio) Studio.DiscardClipChanges();
             base.DiscardChanges();
         }

@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9faa0ffcbc164a5fba77ab5bc1ba8033, type: 3}
+  m_Name: Default Skinning Body
+  m_EditorClassIdentifier: 
+  body: {fileID: 919132149155446097, guid: 6ddc777e043cb0140a5384220729078f, type: 3}
+  bust: {fileID: 919132149155446097, guid: 2c2038bd4117e96429055b8c1afb3600, type: 3}
+  pants: {fileID: 919132149155446097, guid: 9e36e20916f3af64e96f34369f6dfcc7, type: 3}

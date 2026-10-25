@@ -21,7 +21,7 @@ namespace MashBoxSDK.AnimationStudio
             modelEditor.WorkspaceSavedAs = LoadStudioModel;
             if (modelDocument) modelEditor.Load(modelDocument);
         }
-        private void ReleaseModelEditor() { modelEditor?.Dispose(); modelEditor = null; }
+        private void ReleaseModelEditor() { modelEditor?.Dispose(); modelEditor = null; skinningEditor?.Dispose(); skinningEditor = null; }
         private void LoadStudioModel(StudioModelDocument document)
         {
             modelDocument = document; EnsureModelEditor(); modelEditor.Load(document);
@@ -31,6 +31,7 @@ namespace MashBoxSDK.AnimationStudio
         private void BindStudioMode()
         {
             if (!viewport) return;
+            if (skinningMode) { BindSkinningMode(); return; }
             if (!compactSettingsInitialized) { inspectorExpanded = false; compactSettingsInitialized = true; }
             if (!modelingMode) modelEditor?.SuspendLighting();
             if (modelingMode)
@@ -54,19 +55,21 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawStudioMenuBar()
         {
+            if (skinningMode) { DrawSkinningFileMenu(); DrawSkinningEditMenu(); return; }
             if (modelingMode) modelEditor?.DrawMenuBar(viewport, LoadStudioModel);
             else { DrawAnimationFileMenu(); DrawAnimationEditMenu(); }
         }
         private void DrawStudioModes()
         {
-            var content = modelingMode
+            var content = skinningMode ? new GUIContent(" Skinning", EditorGUIUtility.IconContent("SkinnedMeshRenderer Icon").image, "Switch studio mode") : modelingMode
                 ? new GUIContent(" Modeling", EditorGUIUtility.IconContent("Mesh Icon").image, "Switch studio mode")
                 : new GUIContent(" Animation", EditorGUIUtility.IconContent("AnimationClip Icon").image, "Switch studio mode");
             var rect = new Rect(0, 0, MashBoxStudioViewport.ModeSelectorWidth, 21);
             if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, StudioTheme.Styles.menuDropdown)) return;
             var menu = new StudioMenu();
-            menu.AddItem(new GUIContent("Animation"), !modelingMode, () => SwitchStudioMode(false));
-            menu.AddItem(new GUIContent("Modeling"), modelingMode, () => SwitchStudioMode(true));
+            menu.AddItem(new GUIContent("Animation"), !modelingMode && !skinningMode, () => SwitchStudioMode(false));
+            menu.AddItem(new GUIContent("Modeling"), modelingMode && !skinningMode, () => SwitchStudioMode(true));
+            menu.AddItem(new GUIContent("Skinning"), skinningMode, () => Guard(OpenSkinningMode));
             menu.AddSeparator("");
             menu.AddItem(new GUIContent(viewport.IsStudioMaximized ? "Restore View\tF11" : "Maximize View\tF11"), false, viewport.ToggleMaximized);
             menu.DropDown(rect);
@@ -78,11 +81,12 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawStudioSettings()
         {
             var content = new GUIContent(EditorGUIUtility.IconContent("SettingsIcon").image, "MashBox Studio settings — Appearance and preferences");
-            if (modelingMode && GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
+            if ((modelingMode || skinningMode) && GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
         }
         private void SwitchStudioMode(bool modeling)
         {
-            if (modelingMode == modeling) return;
+            if (modelingMode == modeling && !skinningMode) return;
+            skinningEditor?.EndStroke(); skinningMode = false;
             modelEditor?.CancelMarkingMenu();
             modelEditor?.CloseToolOptions();
             GUIUtility.hotControl = 0; GUI.FocusControl(null);
