@@ -277,6 +277,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static string ExportTo(string path, GameObject root)
         {
+            StudioFbxDependency.EnsureAvailable();
             var type = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("UnityEditor.Formats.Fbx.Exporter.ModelExporter")).FirstOrDefault(t => t != null);
             var method = type?.GetMethod("ExportObject", new[] { typeof(string), typeof(UnityEngine.Object) });
             if (method == null) throw new InvalidOperationException("Install Unity's FBX Exporter package (com.unity.formats.fbx) to export models.");
@@ -290,6 +291,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Export(bool selectionOnly)
         {
+            if (!StudioFbxDependency.Require()) return;
             if (!Document || (selectionOnly && !CanExportSelection)) return;
             string filename = selectionOnly && Active >= 0 ? Document.nodes[Active].name : Document.name;
             string path = EditorUtility.SaveFilePanel(selectionOnly ? "Export selection as FBX" : "Export workspace as FBX", "", filename, "fbx");
@@ -299,6 +301,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ExportFile(string path, bool selectionOnly)
         {
+            StudioFbxDependency.EnsureAvailable();
             if (!Document || (selectionOnly && !CanExportSelection)) throw new InvalidOperationException("Select an object before exporting.");
             // A separate, temporary hierarchy avoids exporter changes affecting the live editor.
             var scene = EditorSceneManager.NewPreviewScene();

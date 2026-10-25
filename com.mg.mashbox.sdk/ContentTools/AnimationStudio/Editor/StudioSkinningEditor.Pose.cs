@@ -59,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var e = Event.current; var mode = ModeRect(view);
             var toolbar = PoseToolbarRect(view);
-            bool overUI = mode.Contains(e.mousePosition) || toolbar.Contains(e.mousePosition) ||
+            bool overUI = DisplayToolbarRect(view).Contains(e.mousePosition) || mode.Contains(e.mousePosition) || toolbar.Contains(e.mousePosition) ||
                 (view is MashBoxStudioViewport viewport && viewport.IsOverSkinningPanels(e.mousePosition));
             var color = Handles.color;
             try

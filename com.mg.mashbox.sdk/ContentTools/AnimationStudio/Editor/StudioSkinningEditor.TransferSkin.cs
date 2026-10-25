@@ -46,9 +46,10 @@ namespace MashBoxSDK.AnimationStudio
         {
             EndStroke();
             if (Part == null || IsReferencePart) return;
-            if (!previewClip || previewClip.frameRate <= 0 || previewClip.length < 2f / previewClip.frameRate)
-                throw new InvalidOperationException("Skin requires A-pose at frame 2 of the SDK Skinning Test clip.");
-            JumpToPreviewFrame(2);
+            // Freeze the displayed pose without resampling or changing the timeline.
+            // Body transfer and the new bind matrices must use the same pose.
+            PausePreviewAnimation();
+            var bindPoses=bones.Select(b=>b.worldToLocalMatrix).ToArray();
             var surface=CreateBodyWeightSurface();
             var transferred=new StudioSkinWeights(Part.mesh);
             var positions=Part.mesh.vertices;
@@ -66,7 +67,7 @@ namespace MashBoxSDK.AnimationStudio
             Undo.IncrementCurrentGroup();
             Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[]{Document,Part.mesh},"Skin from body and bust");
             transferred.Apply(Part.mesh);
-            Part.mesh.bindposes=bones.Select(b=>b.worldToLocalMatrix).ToArray();
+            Part.mesh.bindposes=bindPoses;
             Part.bound=true; error=null; Rebuild(); Changed();
         }
     }

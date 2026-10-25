@@ -21,37 +21,17 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("This source is in a read-only package. Move the clothing into Assets or a local SDK package before saving it.");
             return Path.GetFullPath(Path.Combine(package.resolvedPath, assetPath.Substring(package.assetPath.Length).TrimStart('/')));
         }
-        private void LinkSelectedFbx()
-        {
-            string file = EditorUtility.OpenFilePanel("Locate the original clothing FBX (one time)", Application.dataPath, "fbx");
-            if (string.IsNullOrEmpty(file)) return;
-            string path = FileUtil.GetProjectRelativePath(file);
-            if (string.IsNullOrEmpty(path))
-                foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
-                {
-                    string root = Path.GetFullPath(package.resolvedPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-                    if (Path.GetFullPath(file).StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                    { path = package.assetPath + "/" + Path.GetFullPath(file).Substring(root.Length).Replace('\\','/'); break; }
-                }
-            var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-            if (!model) throw new InvalidOperationException("Choose the original FBX already imported in this project or the SDK.");
-            var matches = model.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.name == Part.name && r.sharedMesh && r.sharedMesh.vertexCount == Part.mesh.vertexCount).ToArray();
-            if (matches.Length != 1) throw new InvalidOperationException("This FBX does not uniquely match the selected clothing. No file was changed.");
-            Undo.RecordObject(Document, "Link clothing source FBX");
-            Part.sourceMesh = matches[0].sharedMesh;
-            Part.sourceRendererPath = AnimationUtility.CalculateTransformPath(matches[0].transform, model.transform);
-            Part.sourceToWorkspace = model.transform.worldToLocalMatrix * matches[0].transform.localToWorldMatrix;
-            EditorUtility.SetDirty(Document);
-        }
         internal void SaveSelectedFbx()
         {
+            if (!StudioFbxDependency.Require()) return;
             EndStroke();
             if (IsReferencePart) throw new InvalidOperationException("The default body and bust are reference-only. Select clothing to save.");
             if (Part == null || !Part.bound) throw new InvalidOperationException("Select a skinned clothing mesh first.");
-            if (!Part.sourceMesh) LinkSelectedFbx();
-            if (!Part.sourceMesh) return;
+            string sourcePath = AssetDatabase.GetAssetPath(Part.sourceMesh);
+            if (!Part.sourceMesh || !string.Equals(Path.GetExtension(sourcePath), ".fbx", StringComparison.OrdinalIgnoreCase))
+            { SaveSelectedFbxAs(); return; }
             var sourceModel = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(Part.sourceMesh));
-            if (FindOriginalMeshRenderer(sourceModel, Part) is MeshRenderer)
+            if (!FindOriginalMeshRenderer(sourceModel, Part) || FindOriginalMeshRenderer(sourceModel, Part) is MeshRenderer)
             { SaveSelectedFbxAs(); return; }
             SavePartFbx(Part);
         }
@@ -67,6 +47,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SaveDefaultBustFbx(StudioSkinningDocument.Part part)
         {
+            if (!StudioFbxDependency.Require()) return;
             EndStroke();
             var defaults = StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
             if (!Document.parts.Contains(part) || !part.referenceOnly || !part.bound || !part.sourceMesh || !defaults || !defaults.bust ||
@@ -77,37 +58,56 @@ namespace MashBoxSDK.AnimationStudio
 #endif
         internal void SaveSelectedFbxAs()
         {
+            if (!StudioFbxDependency.Require()) return;
             EndStroke();
             if (!CanUnskinSelected) throw new InvalidOperationException("Select a skinned editable mesh first.");
-            if (!Part.sourceMesh) LinkSelectedFbx();
-            if (!Part.sourceMesh) return;
-            string path=EditorUtility.SaveFilePanelInProject("Save FBX As",Part.name,"fbx","Choose a new FBX filename. The original will not be overwritten.");
-            if (string.IsNullOrEmpty(path)) return;
-            if (File.Exists(Path.GetFullPath(path)) || File.Exists(Path.GetFullPath(path)+".meta"))
-                throw new InvalidOperationException("Choose a new filename for Save FBX As. Use Save FBX to update the linked source.");
-            SavePartFbx(Part,path);
+            string sourceAsset=AssetDatabase.GetAssetPath(Part.sourceMesh);
+            string suggested=AssetDatabase.GenerateUniqueAssetPath("Assets/"+Path.GetFileNameWithoutExtension(Part.name)+".fbx");
+            while (true)
+            {
+                string path=EditorUtility.SaveFilePanelInProject("Save FBX As",Path.GetFileNameWithoutExtension(suggested),"fbx","Save a new FBX, or choose the linked source to update it.");
+                if (string.IsNullOrEmpty(path)) return;
+                bool exists=File.Exists(Path.GetFullPath(path))||File.Exists(Path.GetFullPath(path)+".meta");
+                if (!exists) { SavePartFbx(Part,path); return; }
+                bool sameSource=string.Equals(path.Replace('\\','/'),sourceAsset.Replace('\\','/'),StringComparison.OrdinalIgnoreCase);
+                var sourceModel=sameSource?AssetDatabase.LoadAssetAtPath<GameObject>(sourceAsset):null;
+                if(sameSource&&FindOriginalMeshRenderer(sourceModel,Part) is SkinnedMeshRenderer)
+                {
+                    // Use the source-update path so its backup and reference checks remain intact.
+                    SavePartFbx(Part);return;
+                }
+                string copy=AssetDatabase.GenerateUniqueAssetPath(path);
+                int choice=EditorUtility.DisplayDialogComplex("FBX filename already exists",
+                    "This filename is already in use. Save your edited mesh as "+Path.GetFileName(copy)+" instead? The existing file will stay unchanged.",
+                    "Save New Copy","Cancel","Choose Another Name");
+                if(choice==1)return;
+                if(choice==0){SavePartFbx(Part,copy);return;}
+                suggested=copy;
+            }
         }
         private void SavePartFbx(StudioSkinningDocument.Part part, string saveAsPath = null)
         {
+            StudioFbxDependency.EnsureAvailable();
             string assetPath = AssetDatabase.GetAssetPath(part.sourceMesh);
             bool saveAs = !string.IsNullOrEmpty(saveAsPath);
-            if (!string.Equals(Path.GetExtension(assetPath), ".fbx", StringComparison.OrdinalIgnoreCase))
+            if (!saveAs && !string.Equals(Path.GetExtension(assetPath), ".fbx", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The selected mesh did not come from an FBX. Save FBX needs the original clothing model.");
-            string sourcePath = PhysicalFbxPath(assetPath);
+            string sourcePath = saveAs ? null : PhysicalFbxPath(assetPath);
             string destination = saveAs ? Path.GetFullPath(saveAsPath) : sourcePath;
             string importPath = saveAs ? saveAsPath : assetPath;
-            if (AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<AnimationClip>().Any(c => !c.name.StartsWith("__preview__", StringComparison.Ordinal)))
+            if (!saveAs && AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<AnimationClip>().Any(c => !c.name.StartsWith("__preview__", StringComparison.Ordinal)))
                 throw new InvalidOperationException("This FBX contains animation clips. Saving clothing over an animated FBX is not supported; no file was changed.");
-            var source = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
-            var sourceIds = AssetDatabase.LoadAllAssetsAtPath(assetPath).Where(a => a && !a.name.StartsWith("__preview__", StringComparison.Ordinal)).Select(AssetIdentity).ToArray();
-            var sourceRenderer = FindOriginalMeshRenderer(source, part);
-            if (!sourceRenderer)
+            var source = saveAs ? null : AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            var sourceIds = (saveAs ? Array.Empty<Object>() : AssetDatabase.LoadAllAssetsAtPath(assetPath)).Where(a => a && !a.name.StartsWith("__preview__", StringComparison.Ordinal)).Select(AssetIdentity).ToArray();
+            var sourceRenderer = saveAs ? null : FindOriginalMeshRenderer(source, part);
+            if (!saveAs && !sourceRenderer)
                 throw new InvalidOperationException("The original clothing renderer changed. No file was changed; import its current version before saving.");
-            string rendererPath = AnimationUtility.CalculateTransformPath(sourceRenderer.transform, source.transform);
+            string rendererPath = saveAs ? "Clothing" : AnimationUtility.CalculateTransformPath(sourceRenderer.transform, source.transform);
             if (sourceRenderer is MeshRenderer && !saveAs)
                 throw new InvalidOperationException("Use Save FBX As to save this newly skinned mesh as a new model.");
-            string originalName = part.sourceMesh.name;
-            AssetDatabase.TryGetGUIDAndLocalFileIdentifier(part.sourceMesh, out string originalGuid, out long originalId);
+            string originalName = saveAs ? part.mesh.name : part.sourceMesh.name;
+            string originalGuid = null; long originalId = 0;
+            if (!saveAs) AssetDatabase.TryGetGUIDAndLocalFileIdentifier(part.sourceMesh, out originalGuid, out originalId);
             string work = Path.GetFullPath("Library/MashBox/SkinningFbx/" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(work);
             string staged = Path.Combine(work, Path.GetFileName(destination));
@@ -121,7 +121,19 @@ namespace MashBoxSDK.AnimationStudio
             bool replaced = false;
             try
             {
-                root = Object.Instantiate(source); root.name = source.name;
+                // A new file is built entirely from the edited workspace and SDK rig.
+                // Source lookup is only needed when preserving an existing FBX in place.
+                if (saveAs)
+                {
+                    root = new GameObject(Path.GetFileNameWithoutExtension(saveAsPath));
+                    var clothing = new GameObject(rendererPath);
+                    clothing.transform.SetParent(root.transform, false);
+                    var renderer = clothing.AddComponent<SkinnedMeshRenderer>();
+                    renderer.sharedMaterials = part.materials;
+                    renderer.bones = Array.Empty<Transform>();
+                    renderer.rootBone = root.transform;
+                }
+                else { root = Object.Instantiate(source); root.name = source.name; }
                 SceneManager.MoveGameObjectToScene(root, scene);
                 // The FBX exporter also reads meshes other than the edited one.
                 // Make detached CPU-readable copies without changing import settings.
@@ -170,7 +182,7 @@ namespace MashBoxSDK.AnimationStudio
                 var skin = new StudioSkinWeights(edited);
                 var exportBones = ResolveExportBones(root,target,skin,exportPose);
                 var targetBones = new List<Transform>(target.bones);
-                var bindposes = new List<Matrix4x4>(part.sourceMesh.bindposes);
+                var bindposes = new List<Matrix4x4>(saveAs ? Array.Empty<Matrix4x4>() : part.sourceMesh.bindposes);
                 var mapping = Enumerable.Repeat(-1, bones.Length).ToArray();
                 foreach (int b in skin.Values.SelectMany(v => v).Select(w => w.boneIndex).Distinct())
                 {
@@ -190,14 +202,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (saveAs)
                 {
                     File.Copy(staged,destination,false); replaced=true;
-                    // Preserve import settings and material remaps, but give the
-                    // new model its own GUID so existing references stay intact.
-                    if (File.Exists(sourcePath+".meta"))
-                    {
-                        string meta=File.ReadAllText(sourcePath+".meta");
-                        meta=System.Text.RegularExpressions.Regex.Replace(meta,@"(?m)^guid: [a-fA-F0-9]+", "guid: "+Guid.NewGuid().ToString("N"));
-                        File.WriteAllText(destination+".meta",meta);
-                    }
+
                 }
                 else
                 {
@@ -207,6 +212,12 @@ namespace MashBoxSDK.AnimationStudio
                     File.Replace(swap, destination, null); replaced = true;
                 }
                 AssetDatabase.ImportAsset(importPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                if (saveAs && AssetImporter.GetAtPath(importPath) is ModelImporter newImporter)
+                {
+                    // Keep the exported root on future imports/exports so paths stay stable.
+                    newImporter.preserveHierarchy = true;
+                    newImporter.SaveAndReimport();
+                }
                 PreserveExportedMeshData(importPath);
                 var savedModel = AssetDatabase.LoadAssetAtPath<GameObject>(importPath);
                 var savedIds = new HashSet<string>(AssetDatabase.LoadAllAssetsAtPath(importPath).Where(a => a).Select(AssetIdentity));
@@ -302,7 +313,7 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("The SDK SkeletonAvatar is unavailable or invalid. Reimport the SDK Skeleton before saving clothing.");
             // These are authored data now. Recalculating normals or limiting the
             // influences would silently discard sculpt/stitch/weight edits.
-            bool changed = importer.animationType != ModelImporterAnimationType.Human ||
+            bool changed = importer.importAnimation || importer.animationType != ModelImporterAnimationType.Human ||
                 importer.avatarSetup != ModelImporterAvatarSetup.CopyFromOther || importer.sourceAvatar != avatar ||
                 importer.importNormals != ModelImporterNormals.Import ||
                 importer.importBlendShapeNormals != ModelImporterNormals.Import ||
@@ -310,6 +321,7 @@ namespace MashBoxSDK.AnimationStudio
                 importer.maxBonesPerVertex != 255 || importer.minBoneWeight != .001f ||
                 importer.meshCompression != ModelImporterMeshCompression.Off;
             if (!changed) return;
+            importer.importAnimation = false;
             importer.animationType = ModelImporterAnimationType.Human;
             importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
             importer.sourceAvatar = avatar;
@@ -420,8 +432,9 @@ namespace MashBoxSDK.AnimationStudio
             // Unity adds a file-named wrapper when importing multiple FBX roots.
             // Exporting that wrapper duplicates the mesh name and causes the
             // exporter to suffix the actual node (_1), breaking its local ID.
-            bool fileWrapper = !root.GetComponent<Renderer>() && root.transform.childCount > 1 &&
-                root.transform.Cast<Transform>().Any(t => t.name == root.name && t.GetComponent<Renderer>());
+            bool fileWrapper = !root.GetComponent<Renderer>() && (
+                (root.transform.childCount > 1 && root.transform.Cast<Transform>().Any(t => t.name == root.name && t.GetComponent<Renderer>())) ||
+                (root.transform.childCount == 1 && root.transform.GetChild(0).name == root.name));
             var method = optionsType == null ? null : type.GetMethod(fileWrapper ? "ExportObjects" : "ExportObject", BindingFlags.Public | BindingFlags.Static, null,
                 new[] { typeof(string), fileWrapper ? typeof(Object[]) : typeof(Object), optionsType }, null);
             if (method == null) throw new InvalidOperationException("Install Unity's FBX Exporter package to save clothing as FBX.");

@@ -404,6 +404,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             repaint();
         }
+        private float brushCursorDepth;
         internal void SceneGUI(SceneView view)
         {
             lastView = view;
@@ -414,12 +415,13 @@ namespace MashBoxSDK.AnimationStudio
                 SetInfluencePreview(-1);
             DrawBrushOverlay(view);
             DrawSelectedMeshWireframe();
-            if (adjustingBrush && picker.Raycast(HandleUtility.GUIPointToWorldRay(adjustmentAnchor), out var adjustmentHit, 10000))
+            if (adjustingBrush)
             {
-                Handles.color = new Color(1,.7f,.2f,.85f);
-                Handles.DrawWireDisc(adjustmentHit.point, adjustmentHit.normal, radius);
-                Handles.color = new Color(1,.7f,.2f,.2f * strength);
-                Handles.DrawSolidDisc(adjustmentHit.point, adjustmentHit.normal, radius);
+                bool valid=Part!=null&&Part.visible&&!IsReferencePart&&
+                    ((Tool!=Brush.Paint&&Tool!=Brush.SmoothWeights)||Part.bound);
+                RaycastHit adjustmentHit=default;
+                valid=valid&&picker.Raycast(HandleUtility.GUIPointToWorldRay(adjustmentAnchor),out adjustmentHit,10000);
+                StudioBrushCursor.Draw(view,adjustmentAnchor,radius,valid,adjustmentHit.point,adjustmentHit.normal,new Color(1,.7f,.2f,.85f),ref brushCursorDepth);
             }
             if (brushMenuOpen || adjustingBrush) return;
             var evt = Event.current;
@@ -446,13 +448,18 @@ namespace MashBoxSDK.AnimationStudio
                 DrawManualPose(view);
                 return;
             }
+            if(Tool!=Brush.Select && (Part==null||!Part.visible||IsReferencePart||((Tool==Brush.Paint||Tool==Brush.SmoothWeights)&&!Part.bound)))
+            {
+                StudioBrushCursor.Draw(view,evt.mousePosition,radius,false,default,default,Color.white,ref brushCursorDepth);
+                return;
+            }
             if (Part == null || !Part.visible || IsReferencePart) return;
             if (cachedPart != Document.selected) Run(RefreshSurface);
             if (Tool == Brush.Select) return;
             if ((Tool == Brush.Paint || Tool == Brush.SmoothWeights) && !Part.bound) return;
             int id = GUIUtility.GetControlID("MashBoxSkinBrush".GetHashCode(), FocusType.Passive);
             var viewport = view as MashBoxStudioViewport;
-            bool overUI = ModeRect(view).Contains(evt.mousePosition) || OverSymmetry(view,evt.mousePosition) || (viewport && viewport.IsOverSkinningPanels(evt.mousePosition));
+            bool overUI = DisplayToolbarRect(view).Contains(evt.mousePosition) || ModeRect(view).Contains(evt.mousePosition) || OverSymmetry(view,evt.mousePosition) || (viewport && viewport.IsOverSkinningPanels(evt.mousePosition));
             if (evt.type == EventType.Layout && !evt.alt && !overUI) HandleUtility.AddDefaultControl(id);
             var ray = HandleUtility.GUIPointToWorldRay(evt.mousePosition);
             bool hit = picker.Raycast(ray, out var info, 10000);
@@ -463,9 +470,9 @@ namespace MashBoxSDK.AnimationStudio
                 if (fitBodySurface != null && fitBodySurface.Raycast(ray, out var bodyHit) && (!hit || bodyHit.distance < info.distance))
                 { info = bodyHit; hit = true; }
             }
+            if(!overUI)StudioBrushCursor.Draw(view,evt.mousePosition,radius,hit,info.point,info.normal,new Color(1,.7f,.2f,.85f),ref brushCursorDepth);
             if (hit && !overUI)
             {
-                Handles.color = new Color(1,.7f,.2f,.85f); Handles.DrawWireDisc(info.point,info.normal,radius);
                 DrawMirroredBrush(info.point,info.normal);
                 if (evt.type == EventType.MouseMove) view.Repaint();
             }

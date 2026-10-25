@@ -103,6 +103,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Export(bool obj,bool skin=false)
         {
+            if (!obj && !StudioFbxDependency.Require()) return;
             if(Active==null||Active.faces.Count==0)return;
             string path=EditorUtility.SaveFilePanel("Export Retopology Mesh",Application.dataPath,Active.name+"_Low",obj?"obj":"fbx");if(string.IsNullOrEmpty(path))return;
             if(obj)

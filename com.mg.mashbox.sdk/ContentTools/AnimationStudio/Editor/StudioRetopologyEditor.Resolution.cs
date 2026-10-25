@@ -70,7 +70,7 @@ namespace MashBoxSDK.AnimationStudio
                     try{
                         Handles.zTest=UnityEngine.Rendering.CompareFunction.LessEqual;Handles.color=new Color(1,.7f,.2f,.3f);
                         foreach(int index in resolutionFaces)if(index<Active.faces.Count){var ids=Active.faces[index].vertices;for(int i=1;i+1<ids.Length;i++)Handles.DrawAAConvexPolygon(Active.vertices[ids[0]],Active.vertices[ids[i]],Active.vertices[ids[i+1]]);}
-                        Handles.BeginGUI();try{bool reduce=resolutionStroke?resolutionReduce:evt.control||evt.command;Handles.color=reduce?new Color(1,.65f,.25f):new Color(.5f,1,.87f);Handles.DrawWireDisc(evt.mousePosition,Vector3.forward,resolutionRadius);GUI.Label(new Rect(evt.mousePosition.x+15,evt.mousePosition.y+15,160,20),reduce?"Resolution -":"Resolution +",EditorStyles.whiteMiniLabel);}finally{Handles.EndGUI();}
+                        Handles.BeginGUI();try{bool reduce=resolutionStroke?resolutionReduce:evt.control||evt.command;Handles.color=!Active.showOutput||PickFace(evt.mousePosition)<0?StudioBrushCursor.Inactive:reduce?new Color(1,.65f,.25f):new Color(.5f,1,.87f);Handles.DrawWireDisc(evt.mousePosition,Vector3.forward,resolutionRadius);GUI.Label(new Rect(evt.mousePosition.x+15,evt.mousePosition.y+15,160,20),reduce?"Resolution -":"Resolution +",EditorStyles.whiteMiniLabel);}finally{Handles.EndGUI();}
                     }finally{Handles.color=color;Handles.zTest=depth;}
                 }
             }

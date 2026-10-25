@@ -23,7 +23,13 @@ namespace MashBoxSDK.AnimationStudio
         {
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-32);
             float left = view is MashBoxStudioViewport skinView ? skinView.SkinToolbarLeft : canvas.x;
-            return new Rect(left + 44, canvas.y, 226, 32);
+            return new Rect(left + 44, canvas.y, 108, 32);
+        }
+        private static Rect DisplayToolbarRect(SceneView view)
+        {
+            var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-88);
+            // Align with the playback bar, leaving a small vertical gap above it.
+            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, canvas.yMax - 28), 70, 32);
         }
         private void ChooseBrush(Brush brush)
         {
@@ -74,7 +80,7 @@ namespace MashBoxSDK.AnimationStudio
             var e = Event.current;
             if ((Tool == Brush.Pose || Tool == Brush.Object) && e.type == EventType.MouseDown && e.button == 0 && !e.alt &&
                 view is MashBoxStudioViewport poseView && poseView.ModelCanvasRect.Contains(e.mousePosition) &&
-                !poseView.IsOverSkinningPanels(e.mousePosition) && !ModeRect(view).Contains(e.mousePosition) && !PoseToolbarRect(view).Contains(e.mousePosition))
+                !poseView.IsOverSkinningPanels(e.mousePosition) && !ModeRect(view).Contains(e.mousePosition) && !DisplayToolbarRect(view).Contains(e.mousePosition) && !PoseToolbarRect(view).Contains(e.mousePosition))
             { GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false; }
             // Buttons can retain keyboard focus too; only an actual text edit or
             // active mouse gesture should prevent the viewport tool shortcuts.
@@ -148,7 +154,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (e.type != EventType.MouseDown || e.alt || GUIUtility.hotControl != 0 || stroke) return;
             if ((Tool == Brush.Pose || Tool == Brush.Object)) return;
-            if (ModeRect(view).Contains(e.mousePosition)) return;
+            if (ModeRect(view).Contains(e.mousePosition) || DisplayToolbarRect(view).Contains(e.mousePosition)) return;
             if (OverSymmetry(view,e.mousePosition)) return;
             if (view is MashBoxStudioViewport viewport && (!viewport.ModelCanvasRect.Contains(e.mousePosition) || viewport.IsOverSkinningPanels(e.mousePosition))) return;
             if (e.button != 1 && !(e.button == 2 && e.control)) return;
@@ -201,10 +207,10 @@ namespace MashBoxSDK.AnimationStudio
                 var rect = ModeRect(view);
                 DrawModeIcon(new Rect(rect.x, rect.y, 32, 32), false);
                 DrawModeIcon(new Rect(rect.x + 38, rect.y, 32, 32), true);
-                DrawPoseModeIcon(new Rect(rect.x + 76, rect.y, 32, 32));
-                DrawObjectModeIcon(new Rect(rect.x + 114, rect.y, 32, 32));
-                DrawUVCheckerButton(new Rect(rect.x + 156, rect.y, 32, 32));
-                DrawWireframeButton(new Rect(rect.x + 194, rect.y, 32, 32));
+                DrawObjectModeIcon(new Rect(rect.x + 76, rect.y, 32, 32));
+                var display = DisplayToolbarRect(view);
+                DrawUVCheckerButton(new Rect(display.x, display.y, 32, 32));
+                DrawWireframeButton(new Rect(display.x + 38, display.y, 32, 32));
                 if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object)
                 {
                     var labelRect = new Rect(rect.xMax + 12, rect.y + 6, 160, 20);

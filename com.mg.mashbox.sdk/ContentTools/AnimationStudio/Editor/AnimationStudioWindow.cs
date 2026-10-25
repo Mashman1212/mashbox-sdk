@@ -53,6 +53,67 @@ namespace MashBoxSDK.AnimationStudio
         [MenuItem("MashBox/MashBox Studio", false, 119)]
         public static void Open() => OpenInStudio(Selection.activeObject as AnimationTake);
 
+        [MenuItem("Assets/Retopologize in MashBox Studio", false, 2001)]
+        private static void RetopologizeSelectedMesh() => OpenSelectedMeshInStudio(false);
+
+        [MenuItem("Assets/Skin in MashBox Studio", false, 2002)]
+        private static void SkinSelectedMesh() => OpenSelectedMeshInStudio(true);
+
+        [MenuItem("Assets/Retopologize in MashBox Studio", true)]
+        [MenuItem("Assets/Skin in MashBox Studio", true)]
+        private static bool CanOpenSelectedMesh()
+        {
+            var asset = Selection.activeObject;
+            if (!asset || !EditorUtility.IsPersistent(asset)) return false;
+            if (asset is Mesh) return true;
+            var model = asset as GameObject;
+            return model && (model.GetComponentsInChildren<SkinnedMeshRenderer>(true).Any(r => r.sharedMesh) ||
+                model.GetComponentsInChildren<MeshFilter>(true).Any(f => f.sharedMesh));
+        }
+
+        private static void OpenSelectedMeshInStudio(bool skin)
+        {
+            if (!CanOpenSelectedMesh()) return;
+            var asset = Selection.activeObject;
+            var window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().FirstOrDefault();
+            if (!window) window = CreateInstance<AnimationStudioWindow>();
+            window.Guard(() =>
+            {
+                GameObject temporary = null;
+                try
+                {
+                    var source = asset as GameObject;
+                    if (asset is Mesh mesh)
+                    {
+                        // Use the source model when available to retain skeleton and import provenance.
+                        source = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(mesh));
+                        if (!source)
+                        {
+                            temporary = new GameObject(mesh.name) { hideFlags = HideFlags.HideAndDontSave };
+                            temporary.AddComponent<MeshFilter>().sharedMesh = mesh;
+                            temporary.AddComponent<MeshRenderer>();
+                            source = temporary;
+                        }
+                    }
+                    if (!window.viewport) window.OpenViewport();
+                    if (skin)
+                    {
+                        window.OpenSkinningMode();
+                        window.skinningEditor.Import(source);
+                        window.skinningEditor.Frame(window.viewport);
+                    }
+                    else
+                    {
+                        window.OpenRetopologyMode();
+                        window.retopologyEditor.Import(source);
+                    }
+                    window.viewport?.Focus();
+                    window.viewport?.Repaint();
+                }
+                finally { if (temporary) DestroyImmediate(temporary); }
+            });
+        }
+
         [MenuItem("Assets/Open Clip in MashBox Studio",false,2000)]
         private static void OpenSelectedClip()
         {

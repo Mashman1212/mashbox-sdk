@@ -72,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(evt.type==EventType.Repaint)
                 {
                     var color=Handles.color;Handles.BeginGUI();
-                    try{Handles.color=new Color(.5f,1,.87f);Handles.DrawWireDisc(evt.mousePosition,Vector3.forward,relaxRadius);GUI.Label(new Rect(evt.mousePosition.x+16,evt.mousePosition.y+16,160,20),$"Relax  {relaxStrength:P0}",EditorStyles.whiteMiniLabel);}
+                    try{Handles.color=Active.showOutput&&PickFace(evt.mousePosition)>=0?new Color(.5f,1,.87f):StudioBrushCursor.Inactive;Handles.DrawWireDisc(evt.mousePosition,Vector3.forward,relaxRadius);GUI.Label(new Rect(evt.mousePosition.x+16,evt.mousePosition.y+16,160,20),$"Relax  {relaxStrength:P0}",EditorStyles.whiteMiniLabel);}
                     finally{Handles.EndGUI();Handles.color=color;}
                 }
             }

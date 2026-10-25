@@ -64,8 +64,8 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawSelectionMode()
         {
             if(IconButton(8,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Vertices,"Select vertices. Click or drag a box; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Vertices);
-            if(IconButton(9,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Edges,"Select edges. Double-click a boundary edge for its loop; Shift adds another loop. Bridge connects matching borders."))SetSelectionMode(SelectionMode.Edges);
-            if(IconButton(10,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Faces,"Select faces. Click or drag a box, then Delete removes selected faces."))SetSelectionMode(SelectionMode.Faces);
+            if(IconButton(9,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Edges,"Select edges. Double-click selects the connected hull; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Edges);
+            if(IconButton(10,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Faces,"Select faces. Double-click selects the connected hull; Shift adds, Ctrl removes. Delete removes selected faces."))SetSelectionMode(SelectionMode.Faces);
             GUILayout.Space(6);
         }
         private void SelectAllComponents()
@@ -76,19 +76,79 @@ namespace MashBoxSDK.AnimationStudio
             if(selectionMode==SelectionMode.Vertices)for(int i=0;i<Active.vertices.Count;i++)selected.Add(i);
             else SyncComponentVertices();
         }
+        private HashSet<int> ConnectedHullFaces(int seed)
+        {
+            var found=new HashSet<int>();
+            if(Active==null||seed<0||seed>=Active.faces.Count)return found;
+            var edges=StudioRetopologyOperations.Edges(Active);
+            var pending=new Queue<int>();found.Add(seed);pending.Enqueue(seed);
+            while(pending.Count>0)
+            {
+                var ids=Active.faces[pending.Dequeue()].vertices;
+                for(int i=0;i<ids.Length;i++)
+                    foreach(int neighbor in edges[StudioRetopologyOperations.Edge(ids[i],ids[(i+1)%ids.Length])])
+                        if(found.Add(neighbor))pending.Enqueue(neighbor);
+            }
+            return found;
+        }
+        private bool PointInMarquee(Vector3 point, Rect rect)
+        {
+            return view.camera.WorldToViewportPoint(point).z>0 &&
+                rect.Contains(HandleUtility.WorldToGUIPoint(point)) && IsSelectionPointVisible(point);
+        }
+        private bool EdgeOverlapsMarquee(Vector3 a,Vector3 b,Rect rect)
+        {
+            if(PointInMarquee(a,rect)||PointInMarquee(b,rect))return true;
+            float za=view.camera.WorldToViewportPoint(a).z,zb=view.camera.WorldToViewportPoint(b).z;
+            if(za<=0||zb<=0)return false;
+            Vector2 start=HandleUtility.WorldToGUIPoint(a),delta=HandleUtility.WorldToGUIPoint(b)-start;
+            float lo=0,hi=1;
+            bool Clip(float p,float q)
+            {
+                if(Mathf.Abs(p)<1e-7f)return q>=0;
+                float t=q/p;
+                if(p<0){if(t>hi)return false;lo=Mathf.Max(lo,t);}
+                else {if(t<lo)return false;hi=Mathf.Min(hi,t);}
+                return true;
+            }
+            if(!Clip(-delta.x,start.x-rect.xMin)||!Clip(delta.x,rect.xMax-start.x)||
+                !Clip(-delta.y,start.y-rect.yMin)||!Clip(delta.y,rect.yMax-start.y))return false;
+            // Test the portion inside the box, not the full edge's midpoint.
+            for(int i=0;i<3;i++)
+            {
+                float t=Mathf.Lerp(lo,hi,(i+1)*.25f);
+                if(!view.camera.orthographic)t=(t/zb)/((1-t)/za+t/zb);
+                if(IsSelectionPointVisible(Vector3.Lerp(a,b,t)))return true;
+            }
+            return false;
+        }
+        private bool FaceOverlapsMarquee(int face,Rect rect)
+        {
+            var ids=Active.faces[face].vertices;
+            for(int i=0;i<ids.Length;i++)
+                if(EdgeOverlapsMarquee(Active.vertices[ids[i]],Active.vertices[ids[(i+1)%ids.Length]],rect))return true;
+            // A non-planar quad's average can lie behind its own triangles.
+            for(int i=1;i+1<ids.Length;i++)
+                if(PointInMarquee((Active.vertices[ids[0]]+Active.vertices[ids[i]]+Active.vertices[ids[i+1]])/3,rect))return true;
+            return false;
+        }
         private void FinishComponentSelection()
         {
             bool click=(selectionEnd-selectionStart).sqrMagnitude<16;
             var rect=VertexSelectionRect(selectionStart,selectionEnd);
-            bool InBox(Vector3 p)=>view.camera.WorldToViewportPoint(p).z>0&&rect.Contains(HandleUtility.WorldToGUIPoint(p))&&IsSelectionPointVisible(p);
+
             if(selectionMode==SelectionMode.Faces)
             {
                 var hits=new HashSet<int>();
-                if(click){int face=PickFace(selectionEnd);if(face>=0)hits.Add(face);}
+                if(click){int face=PickFace(selectionEnd);if(face>=0){if(selectionClicks>=2)hits.UnionWith(ConnectedHullFaces(face));else hits.Add(face);}}
                 else for(int i=0;i<Active.faces.Count;i++)
                 {
-                    var center=Vector3.zero;foreach(int v in Active.faces[i].vertices)center+=Active.vertices[v];
-                    if(InBox(center/Active.faces[i].vertices.Length))hits.Add(i);
+                    if(FaceOverlapsMarquee(i,rect))hits.Add(i);
+                }
+                if(!click)
+                {
+                    int enclosed=PickFace(rect.center);
+                    if(enclosed>=0)hits.Add(enclosed);
                 }
                 if(!selectionAdd&&!selectionSubtract)selectedFaces.Clear();
                 if(selectionSubtract)selectedFaces.ExceptWith(hits);else selectedFaces.UnionWith(hits);
@@ -102,14 +162,17 @@ namespace MashBoxSDK.AnimationStudio
                     if(edge.Item1>=0)
                     {
                         hits.Add(edge);
-                        if(selectionClicks==2&&edges[edge].Count==1)
+                        if(selectionClicks>=2)
                         {
-                            var loop=StudioRetopologyLoops.Boundaries(Active).FirstOrDefault(l=>Enumerable.Range(0,l.Length).Any(i=>StudioRetopologyOperations.Edge(l[i],l[(i+1)%l.Length])==edge));
-                            if(loop!=null)for(int i=0;i<loop.Length;i++)hits.Add(StudioRetopologyOperations.Edge(loop[i],loop[(i+1)%loop.Length]));
+                            foreach(int face in ConnectedHullFaces(edges[edge][0]))
+                            {
+                                var ids=Active.faces[face].vertices;
+                                for(int i=0;i<ids.Length;i++)hits.Add(StudioRetopologyOperations.Edge(ids[i],ids[(i+1)%ids.Length]));
+                            }
                         }
                     }
                 }
-                else foreach(var edge in edges.Keys)if(InBox((Active.vertices[edge.Item1]+Active.vertices[edge.Item2])*.5f))hits.Add(edge);
+                else foreach(var edge in edges.Keys)if(EdgeOverlapsMarquee(Active.vertices[edge.Item1],Active.vertices[edge.Item2],rect))hits.Add(edge);
                 if(!selectionAdd&&!selectionSubtract)selectedEdges.Clear();
                 if(selectionSubtract)selectedEdges.ExceptWith(hits);else selectedEdges.UnionWith(hits);
             }

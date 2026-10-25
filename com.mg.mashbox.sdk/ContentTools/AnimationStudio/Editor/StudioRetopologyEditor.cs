@@ -275,7 +275,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(nextContinuous!=continuousPatch)ToggleContinuousPatch();
                 if(continuousPatch)GUILayout.Label(patchContinuation==null?"Place four corners to begin. Next patches need only two.":"Gold edge is shared. Place two new corners to continue. Escape ends the chain.",StudioTheme.Styles.wordWrappedMiniLabel);
             }
-            DrawTubeSettings();DrawResolutionSettings();DrawRelaxBrushSettings();
+            DrawStripSettings();DrawTubeSettings();DrawResolutionSettings();DrawRelaxBrushSettings();
             using(new EditorGUI.DisabledScope(Active.faces.Count==0))
             {
                 if(GUILayout.Button(new GUIContent("Bridge selected borders","Edges mode: Shift-click matching boundary chains, or double-click a boundary edge and Shift-double-click another loop. Patch divisions controls rows across the gap.")))Run(BridgeLoops);
@@ -388,6 +388,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            EndStripStroke();
             EndBrushAdjustment();EndRelaxBrush();CancelResolution();CancelVertexSelection(); CancelContextWheel(); Undo.undoRedoPerformed-=OnUndo;lighting?.Dispose();
             referenceWireLines.Clear();
             foreach(var m in display)if(m)Object.DestroyImmediate(m);
