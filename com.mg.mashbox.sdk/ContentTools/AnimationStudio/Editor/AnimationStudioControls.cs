@@ -90,6 +90,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!this) return;
             DrawCompactRigToolbar();
+            DrawAnimationMeshes();
         }
         private void DrawSelectedLimbBlend(bool presets = false)
         {

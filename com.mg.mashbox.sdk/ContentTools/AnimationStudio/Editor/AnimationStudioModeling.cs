@@ -55,7 +55,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawStudioMenuBar()
         {
-            if (skinningMode) { DrawSkinningFileMenu(); DrawSkinningEditMenu(); return; }
+            if (skinningMode) { DrawSkinningFileMenu(); DrawSkinningEditMenu(); DrawSkinToolsMenu(); return; }
             if (modelingMode) modelEditor?.DrawMenuBar(viewport, LoadStudioModel);
             else { DrawAnimationFileMenu(); DrawAnimationEditMenu(); }
         }

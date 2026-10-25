@@ -72,12 +72,27 @@ namespace MashBoxSDK.AnimationStudio
             SavePartFbx(part);
         }
 #endif
-        private void SavePartFbx(StudioSkinningDocument.Part part)
+        internal void SaveSelectedFbxAs()
+        {
+            EndStroke();
+            if (!CanUnskinSelected) throw new InvalidOperationException("Select a skinned editable mesh first.");
+            if (!Part.sourceMesh) LinkSelectedFbx();
+            if (!Part.sourceMesh) return;
+            string path=EditorUtility.SaveFilePanelInProject("Save FBX As",Part.name,"fbx","Choose a new FBX filename. The original will not be overwritten.");
+            if (string.IsNullOrEmpty(path)) return;
+            if (File.Exists(Path.GetFullPath(path)) || File.Exists(Path.GetFullPath(path)+".meta"))
+                throw new InvalidOperationException("Choose a new filename for Save FBX As. Use Save FBX to update the linked source.");
+            SavePartFbx(Part,path);
+        }
+        private void SavePartFbx(StudioSkinningDocument.Part part, string saveAsPath = null)
         {
             string assetPath = AssetDatabase.GetAssetPath(part.sourceMesh);
+            bool saveAs = !string.IsNullOrEmpty(saveAsPath);
             if (!string.Equals(Path.GetExtension(assetPath), ".fbx", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The selected mesh did not come from an FBX. Save FBX needs the original clothing model.");
-            string destination = PhysicalFbxPath(assetPath);
+            string sourcePath = PhysicalFbxPath(assetPath);
+            string destination = saveAs ? Path.GetFullPath(saveAsPath) : sourcePath;
+            string importPath = saveAs ? saveAsPath : assetPath;
             if (AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<AnimationClip>().Any(c => !c.name.StartsWith("__preview__", StringComparison.Ordinal)))
                 throw new InvalidOperationException("This FBX contains animation clips. Saving clothing over an animated FBX is not supported; no file was changed.");
             var source = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
@@ -93,6 +108,7 @@ namespace MashBoxSDK.AnimationStudio
             string backup = Path.Combine(work, "Original.fbx");
             string metaBackup = Path.Combine(work, "Original.fbx.meta");
             string swap = destination + ".studio-" + Guid.NewGuid().ToString("N") + ".tmp";
+            var exportPose = CaptureExportTPose();
             var scene = EditorSceneManager.NewPreviewScene();
             GameObject root = null; Mesh edited = null;
             var readableCopies = new List<Mesh>();
@@ -115,44 +131,74 @@ namespace MashBoxSDK.AnimationStudio
                         var copy = StudioSkinningDocument.CreateEditableCopy(filter.sharedMesh);
                         copy.name = filter.sharedMesh.name; readableCopies.Add(copy); filter.sharedMesh = copy;
                     }
+                PoseExportSkeleton(root,exportPose);
                 var target = FindSourceRenderer(root, part.sourceRendererPath);
+                // Other meshes in the source file also need consistent bind matrices
+                // when their shared skeleton changes pose.
+                foreach(var other in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    if(other==target || !other.sharedMesh) continue;
+                    var oldBind=other.sharedMesh.bindposes;
+                    if(oldBind.Length!=other.bones.Length) throw new InvalidOperationException("A source mesh has an invalid bone/bind-pose mapping.");
+                    var matrices=other.bones.Select((b,i)=>other.transform.worldToLocalMatrix*b.localToWorldMatrix*oldBind[i]).ToArray();
+                    BakeExportGeometry(other.sharedMesh,matrices);
+                    other.sharedMesh.bindposes=other.bones.Select(b=>b.worldToLocalMatrix*other.transform.localToWorldMatrix).ToArray();
+                }
                 edited = Object.Instantiate(part.mesh); edited.name = originalName; edited.hideFlags = HideFlags.None;
-                StudioSkinningDocument.TransformGeometry(edited, part.sourceToWorkspace.inverse);
+                BakePartForTPose(edited,exportPose);
+                var exportMeshToWorkspace = root.transform.worldToLocalMatrix * target.transform.localToWorldMatrix;
+                StudioSkinningDocument.TransformGeometry(edited, exportMeshToWorkspace.inverse);
                 var skin = new StudioSkinWeights(edited);
-                var all = root.GetComponentsInChildren<Transform>(true);
+                var exportBones = ResolveExportBones(root,target,skin,exportPose);
                 var targetBones = new List<Transform>(target.bones);
                 var bindposes = new List<Matrix4x4>(part.sourceMesh.bindposes);
                 var mapping = Enumerable.Repeat(-1, bones.Length).ToArray();
-                foreach (int b in skin.Values.SelectMany(v => v).Where(w => w.weight > 0).Select(w => w.boneIndex).Distinct())
+                foreach (int b in skin.Values.SelectMany(v => v).Select(w => w.boneIndex).Distinct())
                 {
-                    var matches = all.Where(t => StudioSkinningDocument.BoneName(t.name) == StudioSkinningDocument.BoneName(bones[b].name)).ToArray();
-                    if (matches.Length != 1) throw new InvalidOperationException("The source FBX has no unique bone for " + bones[b].name + ". No file was changed.");
-                    int index = targetBones.IndexOf(matches[0]);
-                    if (index < 0) { index = targetBones.Count; targetBones.Add(matches[0]); bindposes.Add(Matrix4x4.identity); }
+                    var exportBone = exportBones[b];
+                    int index = targetBones.IndexOf(exportBone);
+                    if (index < 0) { index = targetBones.Count; targetBones.Add(exportBone); bindposes.Add(Matrix4x4.identity); }
                     while (bindposes.Count <= index) bindposes.Add(Matrix4x4.identity);
-                    var sourceRest = root.transform.worldToLocalMatrix * matches[0].localToWorldMatrix;
-                    bindposes[index] = part.referenceOnly ? part.mesh.bindposes[b] * part.sourceToWorkspace
-                        : sourceRest.inverse * rest[b] * part.mesh.bindposes[b] * part.sourceToWorkspace;
+                    bindposes[index] = exportBone.worldToLocalMatrix * target.transform.localToWorldMatrix;
                     mapping[b] = index;
                 }
+                for(int i=0;i<targetBones.Count;i++)
+                    bindposes[i]=targetBones[i].worldToLocalMatrix*target.transform.localToWorldMatrix;
                 skin.Remap(mapping); skin.Apply(edited); edited.bindposes = bindposes.ToArray();
                 target.sharedMesh = edited; target.bones = targetBones.ToArray();
                 ExportClothingFbx(staged, root);
                 if (!File.Exists(staged) || new FileInfo(staged).Length == 0) throw new IOException("FBX export produced no data.");
-                File.Copy(destination, backup);
-                if (File.Exists(destination + ".meta")) File.Copy(destination + ".meta", metaBackup);
-                File.Copy(staged, swap);
-                File.Replace(swap, destination, null); replaced = true;
-                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-                var savedModel = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
-                var savedIds = new HashSet<string>(AssetDatabase.LoadAllAssetsAtPath(assetPath).Where(a => a).Select(AssetIdentity));
+                if (saveAs)
+                {
+                    File.Copy(staged,destination,false); replaced=true;
+                    // Preserve import settings and material remaps, but give the
+                    // new model its own GUID so existing references stay intact.
+                    if (File.Exists(sourcePath+".meta"))
+                    {
+                        string meta=File.ReadAllText(sourcePath+".meta");
+                        meta=System.Text.RegularExpressions.Regex.Replace(meta,@"(?m)^guid: [a-fA-F0-9]+", "guid: "+Guid.NewGuid().ToString("N"));
+                        File.WriteAllText(destination+".meta",meta);
+                    }
+                }
+                else
+                {
+                    File.Copy(destination, backup);
+                    if (File.Exists(destination + ".meta")) File.Copy(destination + ".meta", metaBackup);
+                    File.Copy(staged, swap);
+                    File.Replace(swap, destination, null); replaced = true;
+                }
+                AssetDatabase.ImportAsset(importPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                PreserveExportedMeshData(importPath);
+                var savedModel = AssetDatabase.LoadAssetAtPath<GameObject>(importPath);
+                var savedIds = new HashSet<string>(AssetDatabase.LoadAllAssetsAtPath(importPath).Where(a => a).Select(AssetIdentity));
                 var missingIds = sourceIds.Where(identity => !savedIds.Contains(identity)).ToArray();
-                if (missingIds.Length > 0)
+                if (!saveAs && missingIds.Length > 0)
                     throw new InvalidOperationException("The FBX round trip would change existing model/subasset references: " + string.Join("; ",missingIds.Take(8)));
-                var savedRenderer = FindSourceRenderer(savedModel, part.sourceRendererPath);
-                if (!savedRenderer || !savedRenderer.sharedMesh) throw new InvalidOperationException("The exported clothing could not be reimported.");
+                var savedRenderer = FindExportedRenderer(savedModel,part.sourceRendererPath,target.name,edited.name);
+                if (!savedRenderer || !savedRenderer.sharedMesh) throw new InvalidOperationException("The exported FBX has no matching skinned clothing renderer. Imported renderers: " +
+                    (savedModel ? string.Join(", ",savedModel.GetComponentsInChildren<Renderer>(true).Select(r=>AnimationUtility.CalculateTransformPath(r.transform,savedModel.transform)+" ("+r.GetType().Name+")")) : "model import failed"));
                 AssetDatabase.TryGetGUIDAndLocalFileIdentifier(savedRenderer.sharedMesh, out string guid, out long id);
-                if (guid != originalGuid || id != originalId) throw new InvalidOperationException("The FBX round trip would change the clothing mesh reference.");
+                if (!saveAs && (guid != originalGuid || id != originalId)) throw new InvalidOperationException("The FBX round trip would change the clothing mesh reference.");
                 // Inspect a detached readable copy; keep the source import settings intact.
                 var check = StudioSkinningDocument.CreateEditableCopy(savedRenderer.sharedMesh);
                 try
@@ -162,19 +208,36 @@ namespace MashBoxSDK.AnimationStudio
                     if (check.bounds.size != edited.bounds.size && (check.bounds.size-edited.bounds.size).magnitude > .001f)
                         throw new InvalidOperationException("The FBX round trip changed the clothing scale.");
                     if (!new StudioSkinWeights(check).HasWeights) throw new InvalidOperationException("The FBX round trip lost skin weights.");
-                    if (!TriangleSignatures(check, savedRenderer.bones).SequenceEqual(TriangleSignatures(edited, target.bones)))
-                        throw new InvalidOperationException($"The FBX round trip changed triangle geometry, normals, UVs, blend shapes or skin influences (vertices {edited.vertexCount} to {check.vertexCount}).");
+                    ValidateExportRestPose(check,savedRenderer);
+                    try { ValidateExportTriangles(edited,target.bones,check,savedRenderer.bones); }
+                    catch
+                    {
+                        if(File.Exists(destination+".meta")) File.Copy(destination+".meta",Path.Combine(work,"Imported.fbx.meta"),true);
+                        WriteExportDiagnostics(Path.Combine(work,"expected.txt"),edited,target.bones);
+                        WriteExportDiagnostics(Path.Combine(work,"imported.txt"),check,savedRenderer.bones);
+                        throw;
+                    }
                 }
                 finally { Object.DestroyImmediate(check); }
-                part.sourceMesh = savedRenderer.sharedMesh; EditorUtility.SetDirty(Document);
+                part.sourceMesh = savedRenderer.sharedMesh;
+                part.sourceRendererPath = AnimationUtility.CalculateTransformPath(savedRenderer.transform,savedModel.transform);
+                part.sourceToWorkspace = savedModel.transform.worldToLocalMatrix * savedRenderer.transform.localToWorldMatrix;
+                EditorUtility.SetDirty(Document);
                 EditorGUIUtility.PingObject(savedModel);
                 lastView?.ShowNotification(new GUIContent("Saved " + Path.GetFileName(destination)));
-                Debug.Log("Saved selected clothing to " + assetPath + ". Original FBX backup: " + backup);
+                Debug.Log(saveAs ? "Saved clothing copy to " + importPath + ". Future Save FBX uses this copy; original unchanged." : "Saved selected clothing to " + assetPath + ". Original FBX backup: " + backup);
             }
             catch (Exception e)
             {
                 if (replaced)
                 {
+                    if(saveAs)
+                    {
+                        AssetDatabase.DeleteAsset(importPath);
+                        if(File.Exists(destination)) File.Delete(destination);
+                        if(File.Exists(destination+".meta")) File.Delete(destination+".meta");
+                        throw new InvalidOperationException(e.GetBaseException().Message+" The unsuccessful copy was removed; the original and workspace edits are unchanged.",e);
+                    }
                     File.Copy(backup, swap, true); File.Replace(swap, destination, null);
                     if (File.Exists(metaBackup)) File.Copy(metaBackup, destination + ".meta", true);
                     AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
@@ -196,7 +259,44 @@ namespace MashBoxSDK.AnimationStudio
             AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long id);
             return asset.GetType().FullName + "|" + asset.name + "|" + guid + "|" + id;
         }
-        private static string[] TriangleSignatures(Mesh mesh, Transform[] rig)
+        private static void WriteExportDiagnostics(string path,Mesh mesh,Transform[] rig)
+        {
+            var culture=System.Globalization.CultureInfo.InvariantCulture;
+            var skin=new StudioSkinWeights(mesh); var positions=mesh.vertices;
+            using(var writer=new StreamWriter(path))
+                for(int i=0;i<positions.Length;i++)
+                {
+                    var p=positions[i];
+                    writer.Write(p.x.ToString("R",culture)+","+p.y.ToString("R",culture)+","+p.z.ToString("R",culture));
+                    foreach(var w in skin.Values[i]) writer.Write("|"+ExportBoneSignature(rig[w.boneIndex])+"="+w.weight.ToString("R",culture));
+                    writer.WriteLine();
+                }
+        }
+        private static void PreserveExportedMeshData(string path)
+        {
+            var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            if (!importer) throw new InvalidOperationException("The saved FBX has no model importer.");
+            // These are authored data now. Recalculating normals or limiting the
+            // influences would silently discard sculpt/stitch/weight edits.
+            bool changed = importer.importNormals != ModelImporterNormals.Import ||
+                importer.importBlendShapeNormals != ModelImporterNormals.Import ||
+                importer.skinWeights != ModelImporterSkinWeights.Custom ||
+                importer.maxBonesPerVertex != 255 || importer.minBoneWeight != .001f ||
+                importer.meshCompression != ModelImporterMeshCompression.Off;
+            if (!changed) return;
+            importer.importNormals = ModelImporterNormals.Import;
+            importer.importBlendShapeNormals = ModelImporterNormals.Import;
+            importer.skinWeights = ModelImporterSkinWeights.Custom;
+            importer.maxBonesPerVertex = 255;
+            // Use the importer-supported minimum; the FBX itself retains all weights.
+            // Validation accounts for pruning and renormalization at this cutoff.
+            importer.minBoneWeight = .001f;
+            importer.meshCompression = ModelImporterMeshCompression.Off;
+            EditorUtility.SetDirty(importer);
+            AssetDatabase.WriteImportSettingsIfDirty(path);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+        }
+        private static string[] TriangleSignatures(Mesh mesh, Transform[] rig, string channel = null)
         {
             var points = mesh.vertices; var uv = mesh.uv; var skin = new StudioSkinWeights(mesh);
             var normals = mesh.normals;
@@ -205,12 +305,14 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var p = points[v]; var t = uv.Length == points.Length ? uv[v] : Vector2.zero;
                 string influences = string.Join(",", skin.Values[v].Where(w => w.weight > .0005f).Select(w =>
-                    (w.boneIndex >= 0 && w.boneIndex < rig.Length && rig[w.boneIndex] ? AnimationUtility.CalculateTransformPath(rig[w.boneIndex], rig[w.boneIndex].root) : "missing") + ":" + Mathf.RoundToInt(w.weight * 1000)).OrderBy(s => s, StringComparer.Ordinal));
-                signatures[v] = Mathf.RoundToInt(p.x*10000)+","+Mathf.RoundToInt(p.y*10000)+","+Mathf.RoundToInt(p.z*10000)+"|"+Mathf.RoundToInt(t.x*10000)+","+Mathf.RoundToInt(t.y*10000)+"|"+influences;
-                if(normals.Length == points.Length) signatures[v] += "|N:"+QuantizedVector(normals[v],1000);
+                    (w.boneIndex >= 0 && w.boneIndex < rig.Length && rig[w.boneIndex] ? ExportBoneSignature(rig[w.boneIndex]) : "missing") + ":" + Mathf.RoundToInt(w.weight * 1000)).OrderBy(s => s, StringComparer.Ordinal));
+                signatures[v] = channel == null || channel == "geometry" ? QuantizedVector(p,10000) : "";
+                if(channel == null || channel == "UVs") signatures[v] += "|UV:"+Mathf.RoundToInt(t.x*10000)+","+Mathf.RoundToInt(t.y*10000);
+                if(channel == null || channel == "skin influences") signatures[v] += "|W:"+influences;
+                if((channel == null || channel == "normals") && normals.Length == points.Length) signatures[v] += "|N:"+QuantizedVector(normals[v],1000);
             }
             // Blend shape deltas must follow the same corners after reindexing.
-            for(int shape=0;shape<mesh.blendShapeCount;shape++)
+            for(int shape=0;(channel == null || channel == "blend shapes") && shape<mesh.blendShapeCount;shape++)
                 for(int frame=0;frame<mesh.GetBlendShapeFrameCount(shape);frame++)
                 {
                     var delta=new Vector3[points.Length]; var dn=new Vector3[points.Length]; var dt=new Vector3[points.Length];
@@ -242,6 +344,28 @@ namespace MashBoxSDK.AnimationStudio
             if (!root || path == null) return null;
             var transform = path.Length == 0 ? root.transform : root.transform.Find(path);
             return transform ? transform.GetComponent<SkinnedMeshRenderer>() : null;
+        }
+        private static string ExportBoneSignature(Transform bone)
+        {
+            // FBX filename wrappers are not part of the skeleton's identity.
+            var anchor=bone;
+            while(anchor && StudioSkinningDocument.BoneName(anchor.name)!="Hips") anchor=anchor.parent;
+            return anchor ? anchor.name+"/"+AnimationUtility.CalculateTransformPath(bone,anchor) : bone.name;
+        }
+        private static SkinnedMeshRenderer FindExportedRenderer(GameObject root,string oldPath,string rendererName,string meshName)
+        {
+            if(!root) return null;
+            var exact=FindSourceRenderer(root,oldPath);
+            if(exact && exact.sharedMesh) return exact;
+            var candidates=root.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r=>r.sharedMesh).ToArray();
+            var named=candidates.Where(r=>r.name==rendererName && r.sharedMesh.name==meshName).ToArray();
+            if(named.Length==1) return named[0];
+            named=candidates.Where(r=>r.name==rendererName).ToArray();
+            if(named.Length==1) return named[0];
+            named=candidates.Where(r=>r.sharedMesh.name==meshName).ToArray();
+            if(named.Length==1) return named[0];
+            // Geometry/UV/weight and bind checks below still verify this candidate.
+            return candidates.Length==1 ? candidates[0] : null;
         }
         private static void ExportClothingFbx(string path, GameObject root)
         {

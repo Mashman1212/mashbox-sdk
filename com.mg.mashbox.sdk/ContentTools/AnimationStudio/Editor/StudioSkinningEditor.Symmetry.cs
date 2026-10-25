@@ -5,13 +5,13 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
-        private bool SymmetryActive => sculptMode && Tool != Brush.Pose && Document.sculptSymmetryAxis > 0 && Part != null;
+        private bool SymmetryActive => sculptMode && Tool != Brush.Pose && Tool != Brush.Object && Document.sculptSymmetryAxis > 0 && Part != null;
         private Rect SymmetryRect(SceneView view)
         {
             var mode = ModeRect(view);
             return new Rect(mode.x,mode.yMax+5,204,24);
         }
-        private bool OverSymmetry(SceneView view, Vector2 mouse) => sculptMode && Tool != Brush.Pose && SymmetryRect(view).Contains(mouse);
+        private bool OverSymmetry(SceneView view, Vector2 mouse) => sculptMode && Tool != Brush.Pose && Tool != Brush.Object && SymmetryRect(view).Contains(mouse);
         private void SetSymmetry(int axis, bool local)
         {
             EndStroke(); Undo.RecordObject(Document,"Sculpt symmetry");
@@ -41,7 +41,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawSymmetryToolbar(SceneView view)
         {
-            if(!sculptMode || Tool==Brush.Pose) return;
+            if(!sculptMode || Tool==Brush.Pose || Tool==Brush.Object) return;
             var rect=SymmetryRect(view);
             for(int i=1;i<=3;i++)
             {

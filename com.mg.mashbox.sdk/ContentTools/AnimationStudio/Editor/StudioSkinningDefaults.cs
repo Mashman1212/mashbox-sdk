@@ -11,5 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         public GameObject bust;
         [Tooltip("Optional pants reference loaded hidden in new Skinning workspaces. Toggle visibility in the mesh list to check clothing fit.")]
         public GameObject pants;
+        [Tooltip("Optional shirt reference loaded locked and hidden in new Skinning workspaces. Toggle visibility in the mesh list to check clothing fit.")]
+        public GameObject shirt;
     }
 }

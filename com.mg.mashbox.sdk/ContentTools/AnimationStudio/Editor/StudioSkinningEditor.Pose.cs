@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var rect = PoseToolbarRect(view);
             var spaceRect = new Rect(rect.x,rect.y,92,24);
-            if (EditorGUI.DropdownButton(spaceRect,new GUIContent(poseLocal ? "Local" : "Global", "Joint gizmo coordinate space"),FocusType.Passive,StudioTheme.Styles.menuDropdown))
+            if (EditorGUI.DropdownButton(spaceRect,new GUIContent(poseLocal ? "Local" : "Global", "Gizmo coordinate space"),FocusType.Passive,StudioTheme.Styles.menuDropdown))
             {
                 var menu = new StudioMenu();
                 menu.AddItem(new GUIContent("Local"),poseLocal,()=>SetPoseSpace(true));
@@ -27,7 +27,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SetPoseSpace(bool local)
         {
-            FinishPoseGesture(); poseLocal=local; poseGlobalHandleRotation=Quaternion.identity; repaint();
+            FinishObjectGesture(); FinishPoseGesture(); poseLocal=local; poseGlobalHandleRotation=Quaternion.identity; repaint();
         }
         private int poseUndoGroup = -1;
         private void FinishPoseGesture()

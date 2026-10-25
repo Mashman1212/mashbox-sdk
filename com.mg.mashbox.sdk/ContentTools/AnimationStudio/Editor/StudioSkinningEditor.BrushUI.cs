@@ -7,6 +7,8 @@ namespace MashBoxSDK.AnimationStudio
     {
         private bool sculptMode, brushMenuOpen, adjustingBrush, suppressBrushContext;
         private int interactionControl, brushHover = -1;
+        private bool symmetryWheel;
+        private Vector2 parentWheelOrigin;
         private Vector2 menuOrigin, adjustmentAnchor, adjustmentPointer;
         private enum BrushAdjustmentAxis { Pending, Radius, Strength }
         private BrushAdjustmentAxis adjustmentAxis;
@@ -14,20 +16,21 @@ namespace MashBoxSDK.AnimationStudio
         private float initialRadius, initialStrength;
         private Brush lastSkinBrush = Brush.Paint, lastSculptBrush = Brush.Inflate;
         private static readonly Brush[] SkinBrushes = { Brush.Paint, Brush.SmoothWeights, Brush.Select, Brush.Pose };
-        private static readonly Brush[] SculptBrushes = { Brush.Inflate, Brush.Bulge, Brush.Grab, Brush.SmoothShape, Brush.Select, Brush.Pose };
+        private static readonly Brush[] SculptBrushes = { Brush.Inflate, Brush.Bulge, Brush.Grab, Brush.SmoothShape, Brush.FitBody, Brush.Select, Brush.Pose };
         private Brush[] ModeBrushes => sculptMode ? SculptBrushes : SkinBrushes;
-        private static string BrushLabel(Brush brush) => brush == Brush.SmoothWeights ? "Smooth weights" : brush == Brush.SmoothShape ? "Smooth shape" : brush.ToString();
+        private static string BrushLabel(Brush brush) => brush == Brush.FitBody ? "Fit to Body" : brush == Brush.SmoothWeights ? "Smooth weights" : brush == Brush.SmoothShape ? "Smooth shape" : brush.ToString();
         private static Rect ModeRect(SceneView view)
         {
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-32);
             float left = view is MashBoxStudioViewport skinView ? skinView.SkinToolbarLeft : canvas.x;
-            return new Rect(left + 44, canvas.y, 108, 32);
+            return new Rect(left + 44, canvas.y, 226, 32);
         }
         private void ChooseBrush(Brush brush)
         {
+            FinishObjectGesture();
             FinishPoseGesture();
             EndStroke(); Tool = brush;
-            if (brush == Brush.Pose)
+            if (brush == Brush.Pose || brush == Brush.Object)
             {
                 GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
                 PausePreviewAnimation();
@@ -35,12 +38,12 @@ namespace MashBoxSDK.AnimationStudio
                 if (previewAnimator) previewAnimator.enabled = false;
             }
             if (brush == Brush.Paint || brush == Brush.SmoothWeights) lastSkinBrush = brush;
-            else if (brush != Brush.Select && brush != Brush.Pose) lastSculptBrush = brush;
+            else if (brush != Brush.Select && brush != Brush.Pose && brush != Brush.Object) lastSculptBrush = brush;
             repaint();
         }
         private void SetSculptMode(bool sculpt)
         {
-            if (sculptMode == sculpt && Tool != Brush.Pose) return;
+            if (sculptMode == sculpt && Tool != Brush.Pose && Tool != Brush.Object) return;
             CancelBrushInteraction(); sculptMode = sculpt;
             ChooseBrush(sculpt ? lastSculptBrush : lastSkinBrush);
             heatmap = !sculpt; UpdateDisplay();
@@ -48,28 +51,37 @@ namespace MashBoxSDK.AnimationStudio
         private void CancelBrushInteraction()
         {
             if (GUIUtility.hotControl == interactionControl) GUIUtility.hotControl = 0;
-            brushMenuOpen = adjustingBrush = false; brushHover = -1;
+            brushMenuOpen = adjustingBrush = symmetryWheel = false; brushHover = -1;
             adjustmentAxis = BrushAdjustmentAxis.Pending;
             repaint();
         }
-        private Rect BrushItemRect(int i)
+        private static Rect WheelItemRect(Vector2 origin, int slot)
         {
-            float angle = i * Mathf.PI * 2 / ModeBrushes.Length - Mathf.PI / 2;
-            return new Rect(menuOrigin + new Vector2(Mathf.Cos(angle)*112, Mathf.Sin(angle)*62) - new Vector2(53,13), new Vector2(106,26));
+            // Eight deliberately spaced compass positions rather than a crowded ellipse.
+            var offsets = new[] { new Vector2(0,-94), new Vector2(132,-64), new Vector2(154,0),
+                new Vector2(132,64), new Vector2(0,94), new Vector2(-132,64), new Vector2(-154,0), new Vector2(-132,-64) };
+            return new Rect(origin + offsets[slot] - new Vector2(56,15), new Vector2(112,30));
         }
+        private Rect BrushItemRect(int i) => WheelItemRect(menuOrigin, sculptMode ? (i < 4 ? i : i+1) : i*2);
+        private static Vector2 ClampWheel(Vector2 point, SceneView view) => new Vector2(
+            Mathf.Clamp(point.x, Mathf.Min(218,view.position.width*.5f), Mathf.Max(view.position.width-218,view.position.width*.5f)),
+            Mathf.Clamp(point.y, Mathf.Min(148,view.position.height*.5f), Mathf.Max(view.position.height-120,view.position.height*.5f)));
+        private static readonly string[] SymmetryWheelLabels = { "Off", "World X", "World Y", "World Z", "Local X", "Local Y", "Local Z", "‹ Brushes" };
+        private bool SymmetryWheelSelected(int i) => i == 0 ? Document.sculptSymmetryAxis == 0 :
+            i < 7 && Document.sculptSymmetryAxis == (i-1)%3+1 && Document.sculptSymmetryLocal == (i>=4);
         internal void BeforeSkinSceneGUI(SceneView view)
         {
             var e = Event.current;
-            if (Tool == Brush.Pose && e.type == EventType.MouseDown && e.button == 0 && !e.alt &&
+            if ((Tool == Brush.Pose || Tool == Brush.Object) && e.type == EventType.MouseDown && e.button == 0 && !e.alt &&
                 view is MashBoxStudioViewport poseView && poseView.ModelCanvasRect.Contains(e.mousePosition) &&
                 !poseView.IsOverSkinningPanels(e.mousePosition) && !ModeRect(view).Contains(e.mousePosition) && !PoseToolbarRect(view).Contains(e.mousePosition))
             { GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false; }
             // Buttons can retain keyboard focus too; only an actual text edit or
             // active mouse gesture should prevent the viewport tool shortcuts.
-            if (Tool == Brush.Pose && e.type == EventType.KeyDown && !e.alt && !e.control && !e.command && !e.shift && !EditorGUIUtility.editingTextField && GUIUtility.hotControl == 0)
+            if ((Tool == Brush.Pose || Tool == Brush.Object) && e.type == EventType.KeyDown && !e.alt && !e.control && !e.command && !e.shift && !EditorGUIUtility.editingTextField && GUIUtility.hotControl == 0)
             {
-                if (e.keyCode == KeyCode.W || e.keyCode == KeyCode.E)
-                { FinishPoseGesture(); poseTranslate = e.keyCode == KeyCode.W; e.Use(); repaint(); return; }
+                if (e.keyCode == KeyCode.W || e.keyCode == KeyCode.E || (Tool == Brush.Object && e.keyCode == KeyCode.R))
+                { FinishObjectGesture(); FinishPoseGesture(); objectScale = Tool == Brush.Object && e.keyCode == KeyCode.R; poseTranslate = e.keyCode == KeyCode.W; e.Use(); repaint(); return; }
             }
             int id = GUIUtility.GetControlID("MashBoxSkinBrushMenu".GetHashCode(), FocusType.Passive);
             if (e.type == EventType.ContextClick && suppressBrushContext) { suppressBrushContext = false; e.Use(); return; }
@@ -104,14 +116,28 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     menuDragPointer = e.mousePosition;
                     brushHover = -1;
-                    for (int i=0;i<ModeBrushes.Length;i++) if (BrushItemRect(i).Contains(e.mousePosition)) brushHover=i;
+                    if (!symmetryWheel && sculptMode && WheelItemRect(menuOrigin,4).Contains(e.mousePosition) && e.type != EventType.MouseUp)
+                    {
+                        parentWheelOrigin = menuOrigin;
+                        symmetryWheel = true;
+                        menuOrigin = ClampWheel(e.mousePosition,view);
+                        menuDragAnchor = e.mousePosition;
+                    }
+                    else if (symmetryWheel)
+                    {
+                        for (int i=0;i<8;i++) if (WheelItemRect(menuOrigin,i).Contains(e.mousePosition)) brushHover=i;
+                        if (brushHover == 7 && e.type != EventType.MouseUp)
+                        { symmetryWheel=false; menuOrigin=parentWheelOrigin; menuDragAnchor=menuOrigin; brushHover=-1; }
+                    }
+                    else
+                        for (int i=0;i<ModeBrushes.Length;i++) if (BrushItemRect(i).Contains(e.mousePosition)) brushHover=i;
                     if (e.type == EventType.MouseUp && e.button == 1)
                     {
-                        bool symmetry = sculptMode && SymmetryMenuRect.Contains(e.mousePosition);
-                        var symmetryRect = SymmetryMenuRect;
-                        int selected = brushHover; CancelBrushInteraction();
-                        if (symmetry) ShowSymmetryMenu(symmetryRect);
-                        else if (selected >= 0) ChooseBrush(ModeBrushes[selected]);
+                        int selected = brushHover; bool symmetry = symmetryWheel;
+                        CancelBrushInteraction();
+                        if (symmetry && selected >= 0 && selected < 7)
+                            SetSymmetry(selected == 0 ? 0 : (selected-1)%3+1, selected == 0 ? Document.sculptSymmetryLocal : selected>=4);
+                        else if (!symmetry && selected >= 0) ChooseBrush(ModeBrushes[selected]);
                     }
                     e.Use(); repaint(); return;
                 }
@@ -121,7 +147,7 @@ namespace MashBoxSDK.AnimationStudio
                 return;
             }
             if (e.type != EventType.MouseDown || e.alt || GUIUtility.hotControl != 0 || stroke) return;
-            if (Tool == Brush.Pose) return;
+            if ((Tool == Brush.Pose || Tool == Brush.Object)) return;
             if (ModeRect(view).Contains(e.mousePosition)) return;
             if (OverSymmetry(view,e.mousePosition)) return;
             if (view is MashBoxStudioViewport viewport && (!viewport.ModelCanvasRect.Contains(e.mousePosition) || viewport.IsOverSkinningPanels(e.mousePosition))) return;
@@ -132,7 +158,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 brushMenuOpen = suppressBrushContext = true; brushHover = -1;
                 menuDragAnchor = menuDragPointer = e.mousePosition;
-                menuOrigin = new Vector2(Mathf.Clamp(e.mousePosition.x,170,view.position.width-170), Mathf.Clamp(e.mousePosition.y,110,view.position.height-90));
+                symmetryWheel = false;
+                menuOrigin = ClampWheel(e.mousePosition,view);
             }
             else
             {
@@ -151,27 +178,39 @@ namespace MashBoxSDK.AnimationStudio
                 DrawModeIcon(new Rect(rect.x, rect.y, 32, 32), false);
                 DrawModeIcon(new Rect(rect.x + 38, rect.y, 32, 32), true);
                 DrawPoseModeIcon(new Rect(rect.x + 76, rect.y, 32, 32));
+                DrawObjectModeIcon(new Rect(rect.x + 114, rect.y, 32, 32));
+                DrawUVCheckerButton(new Rect(rect.x + 156, rect.y, 32, 32));
+                DrawWireframeButton(new Rect(rect.x + 194, rect.y, 32, 32));
+                if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object)
+                {
+                    var labelRect = new Rect(rect.xMax + 12, rect.y + 6, 160, 20);
+                    GUI.Label(labelRect, new GUIContent("Sculpt · " + BrushLabel(Tool), "Active sculpt brush — hold right-click to change"),
+                        new GUIStyle(StudioTheme.Styles.miniLabel) { alignment = TextAnchor.MiddleLeft });
+                }
                 DrawSymmetryToolbar(view);
-                if (Tool == Brush.Pose)
+                if ((Tool == Brush.Pose || Tool == Brush.Object))
                 {
                     DrawPoseToolbar(view);
                 }
                 if (brushMenuOpen)
                 {
-                    if(sculptMode)
-                    {
-                        var item=SymmetryMenuRect;
-                        EditorGUI.DrawRect(item,item.Contains(Event.current.mousePosition) ? new Color(.35f,.65f,.6f) : new Color(.08f,.09f,.09f,.98f));
-                        GUI.Label(item,"Symmetry…",new GUIStyle(StudioTheme.Styles.label){alignment=TextAnchor.MiddleCenter});
-                    }
                     DrawBrushDragLine(menuDragAnchor, menuDragPointer);
-                    for (int i=0;i<ModeBrushes.Length;i++)
+                    int count = symmetryWheel ? 8 : ModeBrushes.Length;
+                    for (int i=0;i<count;i++)
                     {
-                        var item = BrushItemRect(i);
-                        EditorGUI.DrawRect(item, i == brushHover ? new Color(.35f,.65f,.6f) : new Color(.08f,.09f,.09f,.98f));
-                        GUI.Label(item, BrushLabel(ModeBrushes[i]), new GUIStyle(StudioTheme.Styles.label) { alignment=TextAnchor.MiddleCenter });
+                        var item = symmetryWheel ? WheelItemRect(menuOrigin,i) : BrushItemRect(i);
+                        EditorGUI.DrawRect(item, i == brushHover ? new Color(.23f,.40f,.36f,.98f) : new Color(.045f,.055f,.055f,.98f));
+                        bool active = symmetryWheel ? SymmetryWheelSelected(i) : ModeBrushes[i] == Tool;
+                        if (active) EditorGUI.DrawRect(new Rect(item.x+8,item.yMax-2,item.width-16,2),new Color(.5f,1,.87f));
+                        GUI.Label(item, symmetryWheel ? SymmetryWheelLabels[i] : BrushLabel(ModeBrushes[i]), new GUIStyle(StudioTheme.Styles.label) { alignment=TextAnchor.MiddleCenter });
                     }
-                    GUI.Label(new Rect(menuOrigin.x-50,menuOrigin.y-12,100,24), sculptMode ? "Sculpt" : "Skin weights", new GUIStyle(StudioTheme.Styles.miniLabel) { alignment=TextAnchor.MiddleCenter });
+                    if (sculptMode && !symmetryWheel)
+                    {
+                        var item=WheelItemRect(menuOrigin,4);
+                        EditorGUI.DrawRect(item,new Color(.045f,.055f,.055f,.98f));
+                        GUI.Label(item,"Symmetry ›",new GUIStyle(StudioTheme.Styles.label){alignment=TextAnchor.MiddleCenter});
+                    }
+                    GUI.Label(new Rect(menuOrigin.x-60,menuOrigin.y-12,120,24), symmetryWheel ? "Symmetry" : sculptMode ? "Sculpt" : "Skin weights", new GUIStyle(StudioTheme.Styles.miniLabel) { alignment=TextAnchor.MiddleCenter });
                 }
                 if (adjustingBrush)
                 {
@@ -188,15 +227,35 @@ namespace MashBoxSDK.AnimationStudio
             if (Event.current.type != EventType.Repaint) return;
             var delta = pointer - anchor;
             if (delta.sqrMagnitude < 1) return;
-            var previous = GUI.matrix;
-            try
+            // Adjustment feedback is screen-space UI, independent of the mirrored
+            // brush and scene transforms. Draw signed endpoints directly.
+            if (Mathf.Abs(delta.y) < .01f)
             {
-                GUIUtility.RotateAroundPivot(Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg, anchor);
-                EditorGUI.DrawRect(new Rect(anchor.x, anchor.y - 2, delta.magnitude, 4), new Color(.08f,.08f,.08f,.9f));
-                EditorGUI.DrawRect(new Rect(anchor.x, anchor.y - 1, delta.magnitude, 2), StudioTheme.Current.Text);
+                float x = Mathf.Min(anchor.x, pointer.x), width = Mathf.Abs(delta.x);
+                EditorGUI.DrawRect(new Rect(x, anchor.y-2, width, 4), new Color(.08f,.08f,.08f,.9f));
+                EditorGUI.DrawRect(new Rect(x, anchor.y-1, width, 2), StudioTheme.Current.Text);
             }
-            finally { GUI.matrix = previous; }
+            else if (Mathf.Abs(delta.x) < .01f)
+            {
+                float y = Mathf.Min(anchor.y, pointer.y), height = Mathf.Abs(delta.y);
+                EditorGUI.DrawRect(new Rect(anchor.x-2, y, 4, height), new Color(.08f,.08f,.08f,.9f));
+                EditorGUI.DrawRect(new Rect(anchor.x-1, y, 2, height), StudioTheme.Current.Text);
+            }
+            else
+            {
+                var previousMatrix = Handles.matrix; var previousColor = Handles.color;
+                try
+                {
+                    Handles.matrix = Matrix4x4.identity;
+                    Handles.color = new Color(.08f,.08f,.08f,.9f);
+                    Handles.DrawAAPolyLine(4, (Vector3)anchor, (Vector3)pointer);
+                    Handles.color = StudioTheme.Current.Text;
+                    Handles.DrawAAPolyLine(2, (Vector3)anchor, (Vector3)pointer);
+                }
+                finally { Handles.matrix = previousMatrix; Handles.color = previousColor; }
+            }
             EditorGUI.DrawRect(new Rect(anchor.x - 2, anchor.y - 2, 4, 4), StudioTheme.Current.Text);
+            EditorGUI.DrawRect(new Rect(pointer.x - 2, pointer.y - 2, 4, 4), StudioTheme.Current.Text);
         }
         private static bool DrawSkinModeButton(Rect rect, bool active, string tooltip)
         {
@@ -210,7 +269,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawModeIcon(Rect rect, bool sculpt)
         {
-            bool active = Tool != Brush.Pose && sculptMode == sculpt;
+            bool active = Tool != Brush.Pose && Tool != Brush.Object && sculptMode == sculpt;
             if (DrawSkinModeButton(rect, active, sculpt ? "Sculpt — shape the mesh" : "Skin Weight Paint — edit bone influences"))
                 SetSculptMode(sculpt);
             if (Event.current.type != EventType.Repaint) return;

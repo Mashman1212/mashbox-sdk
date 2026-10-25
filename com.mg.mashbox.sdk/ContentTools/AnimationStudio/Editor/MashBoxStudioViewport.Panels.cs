@@ -23,6 +23,7 @@ namespace MashBoxSDK.AnimationStudio
         private IMGUIContainer skinInfluencesPanel, skinInfluencesTab;
         [SerializeField] private bool skinFoldDefaultsInitialized;
         private const float SkinPanelTabWidth = 148;
+        internal float SkinInspectorWidth => inspector != null && inspector.contentRect.width > 0 ? inspector.contentRect.width : PanelWidths.y;
         internal float SkinToolbarLeft => Mathf.Max(ModelCanvasRect.x, HierarchyLeft + 224 + DividerWidth);
         private IMGUIContainer skinLeftTab, skinRightTab;
         private Vector2 VisiblePanelWidths => new Vector2(skinPreviewTimeline && skinLeftTucked && skinInfluencesTucked ? 24 : PanelWidths.x, skinPreviewTimeline && skinRightTucked ? 24 : PanelWidths.y);

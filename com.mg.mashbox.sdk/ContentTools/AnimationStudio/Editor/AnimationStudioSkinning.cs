@@ -32,6 +32,8 @@ namespace MashBoxSDK.AnimationStudio
                         if (defaults.bust && defaults.bust != defaults.body) skinningEditor.Import(defaults.bust, true);
                         if (defaults.pants && defaults.pants != defaults.body && defaults.pants != defaults.bust)
                             skinningEditor.Import(defaults.pants, true, false);
+                        if (defaults.shirt && defaults.shirt != defaults.body && defaults.shirt != defaults.bust && defaults.shirt != defaults.pants)
+                            skinningEditor.Import(defaults.shirt, true, false);
                     }
                     // Default setup is the starting document, not a user edit.
                     skinningDocument.dirty = false; Undo.ClearUndo(skinningDocument);
@@ -91,6 +93,7 @@ namespace MashBoxSDK.AnimationStudio
             });
 #endif
             menu.AddItem(new GUIContent("Save FBX"), false, () => Guard(() => skinningEditor.SaveSelectedFbx()));
+            menu.AddItem(new GUIContent("Save FBX As…"), false, () => Guard(() => skinningEditor.SaveSelectedFbxAs()));
             menu.AddItem(new GUIContent("New skinning workspace"),false,()=>Guard(()=>
             {
                 if (!ConfirmSkinningReplacement()) return;
@@ -108,6 +111,22 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddItem(new GUIContent("Save workspace…\tCtrl+S"),false,()=>Guard(()=> { skinningEditor.EndStroke(); skinningDocument.SaveDocument(); UpdateClipSaveState(); }));
             menu.DropDown(rect);
         }
+        private void DrawSkinToolsMenu()
+        {
+            var rect = new Rect(100,0,90,21);
+            if (!EditorGUI.DropdownButton(rect,new GUIContent("Edit Skins"),FocusType.Passive,StudioTheme.Styles.menuDropdown)) return;
+            var menu = new StudioMenu();
+            if (skinningEditor.CanRepairArmpits)
+                menu.AddItem(new GUIContent("Reduce Armpit Tenting", "Reduce arm influence on torso-side clothing vertices; supports Undo."),false,()=>skinningEditor.Run(skinningEditor.ReduceArmpitTenting));
+            else menu.AddDisabledItem(new GUIContent("Reduce Armpit Tenting"));
+            if (skinningEditor.CanRepairArmpits)
+                menu.AddItem(new GUIContent("Reduce Armpit Tenting — Strong", "Stronger chest retention with a wider underarm transition. Supports Undo."),false,()=>skinningEditor.Run(skinningEditor.ReduceArmpitTentingStrong));
+            else menu.AddDisabledItem(new GUIContent("Reduce Armpit Tenting — Strong"));
+            if (skinningEditor.CanRepairArmpits)
+                menu.AddItem(new GUIContent("Smooth Armpit Weights", "Gently smooth the corrected transition, with bounded arm/chest weight changes. Supports Undo."),false,()=>skinningEditor.Run(skinningEditor.SmoothArmpitWeights));
+            else menu.AddDisabledItem(new GUIContent("Smooth Armpit Weights"));
+            menu.DropDown(rect);
+        }
         private void DrawSkinningEditMenu()
         {
             var rect = new Rect(48,0,48,21);
@@ -123,6 +142,7 @@ namespace MashBoxSDK.AnimationStudio
                 menu.AddItem(new GUIContent("Mark as Clothing"),!skinningEditor.SelectedIsBust && !skinningEditor.SelectedIsBody,()=>skinningEditor.Run(()=>skinningEditor.SetSelectedMeshRole(false)));
                 menu.AddItem(new GUIContent("Mark as Body"),skinningEditor.SelectedIsBody,()=>skinningEditor.Run(skinningEditor.MarkSelectedBody));
                 menu.AddItem(new GUIContent("Save FBX"),false,()=>skinningEditor.Run(skinningEditor.SaveSelectedFbx));
+                menu.AddItem(new GUIContent("Save FBX As…"),false,()=>skinningEditor.Run(skinningEditor.SaveSelectedFbxAs));
             }
             else
             {
@@ -130,6 +150,7 @@ namespace MashBoxSDK.AnimationStudio
                 menu.AddDisabledItem(new GUIContent("Mark as Clothing"));
                 menu.AddDisabledItem(new GUIContent("Mark as Body"));
                 menu.AddDisabledItem(new GUIContent("Save FBX"));
+                menu.AddDisabledItem(new GUIContent("Save FBX As…"));
             }
             if (skinningEditor.CanStitchSelectedBust)
                 menu.AddItem(new GUIContent("Stitch Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBust)));

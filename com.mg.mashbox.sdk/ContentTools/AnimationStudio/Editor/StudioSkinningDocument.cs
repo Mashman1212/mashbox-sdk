@@ -16,7 +16,9 @@ namespace MashBoxSDK.AnimationStudio
             public Material[] materials;
             public bool bound, visible = true;
             public bool referenceOnly;
+            public string defaultReferenceLabel;
             public MeshRole role;
+            public Quaternion objectRotation = Quaternion.identity;
             public Mesh sourceMesh;
             public string sourceRendererPath;
             public Matrix4x4 sourceToWorkspace = Matrix4x4.identity;
@@ -26,6 +28,7 @@ namespace MashBoxSDK.AnimationStudio
         public bool dirty;
         public int sculptSymmetryAxis; // 0 off; 1 X; 2 Y; 3 Z
         public bool sculptSymmetryLocal;
+        public bool grabVolume = true;
         public int selected;
         public string[] bonePaths;
 
