@@ -9,7 +9,10 @@ namespace MashBoxSDK.AnimationStudio
     {
         private static GameObject ResolveSdkSkeleton()
         {
-            const string guid = "a4486624e11917747b51b875ff806652";
+            // Prefer the shipped asset over an older skeleton still present in a project.
+            var sdkSkeleton = AssetDatabase.LoadAssetAtPath<GameObject>(SkeletonPath);
+            if (sdkSkeleton) return sdkSkeleton;
+            const string guid = "d1831a62440d21f4284dd97109236bbe";
             var path = AssetDatabase.GUIDToAssetPath(guid);
             return AssetDatabase.LoadAssetAtPath<GameObject>(string.IsNullOrEmpty(path) ? SkeletonPath : path);
         }

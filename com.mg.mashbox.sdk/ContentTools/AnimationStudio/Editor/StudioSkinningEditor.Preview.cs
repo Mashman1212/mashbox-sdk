@@ -16,14 +16,26 @@ namespace MashBoxSDK.AnimationStudio
         private Vector3[] previewRestPositions, previewRestScales;
         private bool previewPlaying;
         private float previewTime;
-        private double previewLastTick;
+        private double previewLastTick, nextClipLookup;
         private void InitializePreviewAnimation()
         {
             previewRestPositions = bones.Select(b => b.localPosition).ToArray();
             previewRestScales = bones.Select(b => b.localScale).ToArray();
-            previewClip = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(Document.skeleton))
-                .OfType<AnimationClip>().FirstOrDefault(c => string.Equals(c.name,"Skinning Test",StringComparison.OrdinalIgnoreCase));
+            ResolvePreviewClip();
             EditorApplication.update += TickPreviewAnimation;
+        }
+        private void ResolvePreviewClip()
+        {
+            nextClipLookup = EditorApplication.timeSinceStartup + 1;
+            string source = AssetDatabase.GetAssetPath(Document.skeleton);
+            const string sdkPath = "Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx";
+            foreach (string path in new[] { source, sdkPath }.Distinct())
+            {
+                if (string.IsNullOrEmpty(path)) continue;
+                previewClip = AssetDatabase.LoadAllAssetsAtPath(path).OfType<AnimationClip>()
+                    .FirstOrDefault(c => string.Equals(c.name.Trim(), "Skinning Test", StringComparison.OrdinalIgnoreCase));
+                if (previewClip) { repaint(); return; }
+            }
         }
         private void EnsurePreviewGraph()
         {
@@ -70,6 +82,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void TickPreviewAnimation()
         {
+            if (!previewClip && EditorApplication.timeSinceStartup >= nextClipLookup &&
+                !EditorApplication.isCompiling && !EditorApplication.isUpdating) ResolvePreviewClip();
             if (!previewPlaying || !previewClip) return;
             if (!(lastView is MashBoxStudioViewport view) || !view || !view.IsSkinPreviewScene(Scene)) { previewPlaying = false; return; }
             double now = EditorApplication.timeSinceStartup;
