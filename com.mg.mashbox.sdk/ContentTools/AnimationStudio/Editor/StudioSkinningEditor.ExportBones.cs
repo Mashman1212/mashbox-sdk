@@ -40,6 +40,9 @@ namespace MashBoxSDK.AnimationStudio
                 all.Add(created); resolved[index]=created; return created;
             }
             foreach(int index in skin.Values.SelectMany(v=>v).Select(w=>w.boneIndex).Distinct()) Resolve(index);
+            // A copied humanoid avatar needs the complete deform rig even when
+            // this garment only has weights on a few limbs.
+            for (int i = 0; i < bones.Length; i++) if (deformBones[i]) Resolve(i);
             return resolved;
         }
     }

@@ -76,8 +76,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawSkinningPracticeMenu()
         {
-            var rect=new Rect(0,0,104,24);
-            EditorGUI.DrawRect(rect,new Color(.035f,.04f,.04f));
+            var rect=new Rect(0,0,104,21);
             if(!EditorGUI.DropdownButton(rect,new GUIContent("Practice","Import sample clothing to practise skinning and sculpting"),FocusType.Passive,StudioTheme.Styles.menuDropdown))return;
             var menu=new StudioMenu();
             const string path="Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Practice Hoodie.FBX";
@@ -122,7 +121,7 @@ namespace MashBoxSDK.AnimationStudio
             }));
             menu.AddItem(new GUIContent("Open workspace…"),false,()=>Guard(()=>
             {
-                string path = EditorUtility.OpenFilePanel("Open skinning workspace",Application.dataPath,"asset");
+                string path = EditorUtility.OpenFilePanel("Open skinning workspace",System.IO.Path.GetFullPath(StudioSkinningDocument.EnsureWorkspaceFolder()),"asset");
                 if (string.IsNullOrEmpty(path)) return;
                 var document = AssetDatabase.LoadAssetAtPath<StudioSkinningDocument>(FileUtil.GetProjectRelativePath(path));
                 if (!document) throw new System.InvalidOperationException("Choose a saved Skinning workspace asset.");

@@ -32,12 +32,23 @@ namespace MashBoxSDK.AnimationStudio
         public int selected;
         public string[] bonePaths;
 
+        internal static string EnsureWorkspaceFolder()
+        {
+            const string path = "Assets/Workspaces";
+            if (!AssetDatabase.IsValidFolder(path))
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.Combine(Application.dataPath, "Workspaces"));
+                AssetDatabase.Refresh();
+            }
+            return path;
+        }
+
         internal bool SaveDocument()
         {
             string path = AssetDatabase.GetAssetPath(this);
             if (string.IsNullOrEmpty(path))
             {
-                path = EditorUtility.SaveFilePanelInProject("Save skinning workspace", "Skinning Workspace", "asset", "Save editable geometry and skin weights.");
+                path = EditorUtility.SaveFilePanelInProject("Save skinning workspace", "Skinning Workspace", "asset", "Save editable geometry and skin weights inside Assets.", EnsureWorkspaceFolder());
                 if (string.IsNullOrEmpty(path)) return false;
                 path = AssetDatabase.GenerateUniqueAssetPath(path);
                 hideFlags = HideFlags.None; AssetDatabase.CreateAsset(this, path);

@@ -50,6 +50,9 @@ namespace MashBoxSDK.AnimationStudio
             if (Part == null || !Part.bound) throw new InvalidOperationException("Select a skinned clothing mesh first.");
             if (!Part.sourceMesh) LinkSelectedFbx();
             if (!Part.sourceMesh) return;
+            var sourceModel = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(Part.sourceMesh));
+            if (FindOriginalMeshRenderer(sourceModel, Part) is MeshRenderer)
+            { SaveSelectedFbxAs(); return; }
             SavePartFbx(Part);
         }
 #if MashBoxDev
@@ -97,9 +100,12 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("This FBX contains animation clips. Saving clothing over an animated FBX is not supported; no file was changed.");
             var source = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
             var sourceIds = AssetDatabase.LoadAllAssetsAtPath(assetPath).Where(a => a && !a.name.StartsWith("__preview__", StringComparison.Ordinal)).Select(AssetIdentity).ToArray();
-            var sourceRenderer = FindSourceRenderer(source, part.sourceRendererPath);
-            if (!sourceRenderer || sourceRenderer.sharedMesh != part.sourceMesh)
+            var sourceRenderer = FindOriginalMeshRenderer(source, part);
+            if (!sourceRenderer)
                 throw new InvalidOperationException("The original clothing renderer changed. No file was changed; import its current version before saving.");
+            string rendererPath = AnimationUtility.CalculateTransformPath(sourceRenderer.transform, source.transform);
+            if (sourceRenderer is MeshRenderer && !saveAs)
+                throw new InvalidOperationException("Use Save FBX As to save this newly skinned mesh as a new model.");
             string originalName = part.sourceMesh.name;
             AssetDatabase.TryGetGUIDAndLocalFileIdentifier(part.sourceMesh, out string originalGuid, out long originalId);
             string work = Path.GetFullPath("Library/MashBox/SkinningFbx/" + Guid.NewGuid().ToString("N"));
@@ -132,7 +138,20 @@ namespace MashBoxSDK.AnimationStudio
                         copy.name = filter.sharedMesh.name; readableCopies.Add(copy); filter.sharedMesh = copy;
                     }
                 PoseExportSkeleton(root,exportPose);
-                var target = FindSourceRenderer(root, part.sourceRendererPath);
+                var targetTransform = rendererPath.Length == 0 ? root.transform : root.transform.Find(rendererPath);
+                var target = targetTransform.GetComponent<SkinnedMeshRenderer>();
+                if (!target)
+                {
+                    // Convert only the isolated export clone, never the imported asset.
+                    var staticRenderer = targetTransform.GetComponent<MeshRenderer>();
+                    var materials = staticRenderer.sharedMaterials;
+                    Object.DestroyImmediate(staticRenderer);
+                    var filter = targetTransform.GetComponent<MeshFilter>();
+                    if (filter) Object.DestroyImmediate(filter);
+                    target = targetTransform.gameObject.AddComponent<SkinnedMeshRenderer>();
+                    target.sharedMaterials = materials;
+                    target.bones = Array.Empty<Transform>();
+                }
                 // Other meshes in the source file also need consistent bind matrices
                 // when their shared skeleton changes pose.
                 foreach(var other in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -194,7 +213,7 @@ namespace MashBoxSDK.AnimationStudio
                 var missingIds = sourceIds.Where(identity => !savedIds.Contains(identity)).ToArray();
                 if (!saveAs && missingIds.Length > 0)
                     throw new InvalidOperationException("The FBX round trip would change existing model/subasset references: " + string.Join("; ",missingIds.Take(8)));
-                var savedRenderer = FindExportedRenderer(savedModel,part.sourceRendererPath,target.name,edited.name);
+                var savedRenderer = FindExportedRenderer(savedModel,rendererPath,target.name,edited.name);
                 if (!savedRenderer || !savedRenderer.sharedMesh) throw new InvalidOperationException("The exported FBX has no matching skinned clothing renderer. Imported renderers: " +
                     (savedModel ? string.Join(", ",savedModel.GetComponentsInChildren<Renderer>(true).Select(r=>AnimationUtility.CalculateTransformPath(r.transform,savedModel.transform)+" ("+r.GetType().Name+")")) : "model import failed"));
                 AssetDatabase.TryGetGUIDAndLocalFileIdentifier(savedRenderer.sharedMesh, out string guid, out long id);
@@ -276,14 +295,24 @@ namespace MashBoxSDK.AnimationStudio
         {
             var importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (!importer) throw new InvalidOperationException("The saved FBX has no model importer.");
+            const string skeletonPath = "Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx";
+            var avatar = AssetDatabase.LoadAllAssetsAtPath(skeletonPath).OfType<Avatar>()
+                .FirstOrDefault(a => a.name == "SkeletonAvatar");
+            if (!avatar || !avatar.isValid || !avatar.isHuman)
+                throw new InvalidOperationException("The SDK SkeletonAvatar is unavailable or invalid. Reimport the SDK Skeleton before saving clothing.");
             // These are authored data now. Recalculating normals or limiting the
             // influences would silently discard sculpt/stitch/weight edits.
-            bool changed = importer.importNormals != ModelImporterNormals.Import ||
+            bool changed = importer.animationType != ModelImporterAnimationType.Human ||
+                importer.avatarSetup != ModelImporterAvatarSetup.CopyFromOther || importer.sourceAvatar != avatar ||
+                importer.importNormals != ModelImporterNormals.Import ||
                 importer.importBlendShapeNormals != ModelImporterNormals.Import ||
                 importer.skinWeights != ModelImporterSkinWeights.Custom ||
                 importer.maxBonesPerVertex != 255 || importer.minBoneWeight != .001f ||
                 importer.meshCompression != ModelImporterMeshCompression.Off;
             if (!changed) return;
+            importer.animationType = ModelImporterAnimationType.Human;
+            importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
+            importer.sourceAvatar = avatar;
             importer.importNormals = ModelImporterNormals.Import;
             importer.importBlendShapeNormals = ModelImporterNormals.Import;
             importer.skinWeights = ModelImporterSkinWeights.Custom;
@@ -339,6 +368,23 @@ namespace MashBoxSDK.AnimationStudio
             triangles.Sort(StringComparer.Ordinal); return triangles.ToArray();
         }
         private static string QuantizedVector(Vector3 value,float scale) => Mathf.RoundToInt(value.x*scale)+","+Mathf.RoundToInt(value.y*scale)+","+Mathf.RoundToInt(value.z*scale);
+        private static Renderer FindOriginalMeshRenderer(GameObject root, StudioSkinningDocument.Part part)
+        {
+            if (!root || !part.sourceMesh) return null;
+            Mesh MeshOf(Renderer renderer) => renderer is SkinnedMeshRenderer skinned
+                ? skinned.sharedMesh : renderer.GetComponent<MeshFilter>()?.sharedMesh;
+            if (part.sourceRendererPath != null)
+            {
+                var node = part.sourceRendererPath.Length == 0 ? root.transform : root.transform.Find(part.sourceRendererPath);
+                var exact = node ? node.GetComponent<Renderer>() : null;
+                if (exact && MeshOf(exact) == part.sourceMesh) return exact;
+            }
+            // Older workspaces did not store paths for static imports. Recover only
+            // an unambiguous match to the original mesh, never by vertex count/name.
+            var matches = root.GetComponentsInChildren<Renderer>(true)
+                .Where(r => (r is SkinnedMeshRenderer || r is MeshRenderer) && MeshOf(r) == part.sourceMesh).ToArray();
+            return matches.Length == 1 ? matches[0] : null;
+        }
         private static SkinnedMeshRenderer FindSourceRenderer(GameObject root, string path)
         {
             if (!root || path == null) return null;

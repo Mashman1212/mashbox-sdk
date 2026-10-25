@@ -29,7 +29,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void BindSkinPractice(System.Action draw)
         {
             BindViewportControl(ref skinPracticeTab,"mashbox-skin-practice",draw);
-            skinPracticeTab.style.width=104;skinPracticeTab.style.height=24;
+            skinPracticeTab.style.width=104;skinPracticeTab.style.height=21;
             UpdatePanelLayout();
         }
         private Vector2 VisiblePanelWidths => new Vector2(FoldablePanels && skinLeftTucked && skinInfluencesTucked ? 24 : PanelWidths.x, FoldablePanels && skinRightTucked ? 24 : PanelWidths.y);
@@ -155,8 +155,8 @@ namespace MashBoxSDK.AnimationStudio
             if(skinPracticeTab!=null)
             {
                 skinPracticeTab.style.display=skinPreviewTimeline&&!retopologyPanels?DisplayStyle.Flex:DisplayStyle.None;
-                skinPracticeTab.style.top=ModelingPanelTop;
-                skinPracticeTab.style.right=PanelMargin+SkinPanelTabWidth+6;
+                skinPracticeTab.style.top=0;
+                skinPracticeTab.style.right=PanelMargin;
                 skinPracticeTab.BringToFront();
             }
             if (skinLeftTab == null) return;

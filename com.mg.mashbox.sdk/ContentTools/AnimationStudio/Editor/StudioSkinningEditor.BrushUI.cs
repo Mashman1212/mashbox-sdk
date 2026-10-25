@@ -169,6 +169,30 @@ namespace MashBoxSDK.AnimationStudio
             }
             e.Use(); repaint();
         }
+        private void DrawSkinMeshStatistics(Rect toolbar)
+        {
+            if (Part == null || !Part.mesh) return;
+            var mesh = Part.mesh;
+            long faces = 0, triangles = 0;
+            for (int i = 0; i < mesh.subMeshCount; i++)
+            {
+                long indices = mesh.GetIndexCount(i);
+                switch (mesh.GetTopology(i))
+                {
+                    case MeshTopology.Triangles: faces += indices / 3; triangles += indices / 3; break;
+                    case MeshTopology.Quads: faces += indices / 4; triangles += indices / 2; break;
+                }
+            }
+            if (lastView && toolbar.y + 100 > lastView.position.height) return;
+            var style = StudioTheme.Styles.miniLabel;
+            float y = toolbar.yMax + 38;
+            GUI.Label(new Rect(toolbar.x, y, 80, 18), "Vertices", style);
+            GUI.Label(new Rect(toolbar.x + 84, y, 80, 18), "Faces", style);
+            GUI.Label(new Rect(toolbar.x + 168, y, 80, 18), "Triangles", style);
+            GUI.Label(new Rect(toolbar.x, y + 18, 80, 18), mesh.vertexCount.ToString("N0"), style);
+            GUI.Label(new Rect(toolbar.x + 84, y + 18, 80, 18), faces.ToString("N0"), style);
+            GUI.Label(new Rect(toolbar.x + 168, y + 18, 80, 18), triangles.ToString("N0"), style);
+        }
         private void DrawBrushOverlay(SceneView view)
         {
             Handles.BeginGUI();
@@ -187,6 +211,7 @@ namespace MashBoxSDK.AnimationStudio
                     GUI.Label(labelRect, new GUIContent("Sculpt · " + BrushLabel(Tool), "Active sculpt brush — hold right-click to change"),
                         new GUIStyle(StudioTheme.Styles.miniLabel) { alignment = TextAnchor.MiddleLeft });
                 }
+                DrawSkinMeshStatistics(rect);
                 DrawSymmetryToolbar(view);
                 if ((Tool == Brush.Pose || Tool == Brush.Object))
                 {

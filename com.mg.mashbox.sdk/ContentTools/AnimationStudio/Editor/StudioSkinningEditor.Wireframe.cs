@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
-        private bool showSelectedWireframe;
+        private bool showSelectedWireframe = true;
         private Mesh wireSource, wireBaked;
         private int[] wireEdges;
         private Vector3[] wireLines;
