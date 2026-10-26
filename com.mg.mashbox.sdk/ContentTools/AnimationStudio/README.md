@@ -1,5 +1,8 @@
 # MashBox Studio
 
+Modeling face selection and hover use the retopology preview palette: amber selected fill at 28% opacity and cyan hover at 40%. Hovering a selected face retains amber. Face fills render before the existing polygon wire outlines, so editable boundaries remain visible. X-ray changes occlusion, not these fill opacities. Vertex and edge styling is unchanged.
+
+
 **MashBox â†’ MashBox Studio** opens a shared viewport with **Animation** and **Modeling** icon tabs. Animation takes and modeling documents stay independent when switching modes.
 
 ## Modelling controls
@@ -31,7 +34,7 @@ The first import or primitive creates a saved `Untitled Workspace.workspace` in 
 
 Select objects in the hierarchy or viewport. **Hold right-click** in the modeling canvas, drag toward a choice, and release to apply it. The marking menu places **Edge** above, **Vertex** left, **Object Mode** right, and **Face** below. Drag onto a branch marked **â€º** to open its submenu without releasing: **UV â†’ UV Sets â†’ UV 0â€“7**, **Transform**, **Pivot**, or **Selection**. Hovering toward a branch also opens it after a short delay. Drag onto **Back** to return; release in the center or press **Escape** to cancel. **Shift + right-click** opens Transform directly; **Ctrl/Command + right-click** opens Selection. Alt + mouse camera navigation stays available.
 
-**1 / 2 / 3 / 4** also choose Object / Vertex / Edge / Face. **W / E / R** choose Move / Rotate / Scale; **F** frames the selection. Drag empty space for a marquee, **Shift** adds and **Ctrl/Command** subtracts. **Through selection** includes hidden components. **Keep seams together** moves coincident vertices across UV and normal splits together. Face and edge modes expose the imported triangle topology. Component deformation recalculates normals and tangents; it does not add or remove topology.
+**1 / 2 / 3 / 4** also choose Object / Vertex / Edge / Face. **W / E / R** choose Move / Rotate / Scale; **F** frames the selection. Drag empty space for a marquee, **Shift** adds and **Ctrl/Command** subtracts. **Through selection** includes hidden components. **Keep seams together** moves coincident vertices across UV and normal splits together. Face and edge modes follow the preserved triangle, quad and n-gon modeling boundaries. Component deformation recalculates normals and tangents; it does not add or remove topology.
 
 In Object mode, **D** toggles pivot editing. Move the pivot handle and press **D** again to lock it; geometry and children stay in world space. **Center pivot** uses the selected hierarchy's world bounds. **Freeze transforms** bakes the local transform into the mesh and compensates children. **Ctrl/Command+Z** undoes edits; **Escape** cancels an active handle drag. Skin-bone origins cannot be repivoted/frozen. Skinned component edits require the bind pose; object and UV edits are still available when posed. Freeze rejects transforms that would introduce shear into children.
 
@@ -582,7 +585,7 @@ Subdivided bevels and width (2026-10-26): eligible rounded strips now share the 
 
 Vertex and edge hover/click/paint picking uses an 18-screen-point radius (formerly 12), without enlarging rendered dots or lines. Nearest-component ranking and visibility tests remain in effect. The paint bounds index shares the same tolerance; face ray picking and marquee bounds are unchanged.
 
-Object, Vertex, Edge and Face selection modes can be chosen before selecting an object, including in an empty workspace or with an anchor/noneditable target selected. Toolbar, shortcuts and marking menus share this behavior. Hierarchy selection preserves the chosen mode. With no active mesh, a component-mode click first acquires the mesh through the existing object picker, then picks its component. Geometry operations still enforce editable-mesh/bind-pose restrictions; this does not enable unsupported geometry editing. Marquee component selection remains scoped to the active mesh.
+Object, Vertex, Edge and Face modes can be chosen before selecting an object, including in empty workspaces and on protected targets. A viewport mode command immediately acquires the mesh under the starting cursor, even when choosing the current mode again. No Shift is required to retain other acquired meshes. Each mesh retains its component mode and selected IDs; clicks replace selection within their target, while marquee, Select All, Invert, Deselect, statistics and Frame cover the acquired cohort. Shared Move/Rotate/Scale and Delete edit components across meshes. Bevel, Extrude, Merge and Soften keep captured per-target previews and grouped Undo; a failed target rolls back the preview cohort. Shift-handle extrusion also supports compatible targets together. Merge stays within each mesh. Existing geometry/bind-pose/blend-shape restrictions remain. UV editing, cutting, paint strokes and other object-specific workflows still use their active target. GPU marker/overlay and handle-frame caches are retained per mesh, with no idle redraw loop.
 
 
 Toolbar defaults (2026-10-26): all Studio toolbars are on when no toolbar preferences have been saved, including when Unity restores a hidden native layout. Existing saved toolbar visibility, docking and disabled-canvas choices are preserved. Defaults apply after toolbar discovery through the existing registry; no profile reset is required.

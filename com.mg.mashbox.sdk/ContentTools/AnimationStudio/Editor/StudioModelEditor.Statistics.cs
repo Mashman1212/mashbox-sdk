@@ -58,7 +58,7 @@ namespace MashBoxSDK.AnimationStudio
             if (mode != ComponentMode.Object && Active >= 0 && ActiveMesh && Transforms[Active].gameObject.activeInHierarchy)
             {
                 var renderer = Transforms[Active].GetComponent<Renderer>();
-                if (renderer && renderer.enabled) selected = CountSelectedComponents();
+                if (renderer && renderer.enabled) selected = CountAllSelectedComponents();
             }
             return (scene, selected);
         }
@@ -67,7 +67,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool selectedStatisticsWeld;
         private int selectedStatisticsVersion;
         private long[] cachedSelectedStatistics;
-        private readonly HashSet<int> selectedStatisticsComponents = new HashSet<int>();
+        private HashSet<int> selectedStatisticsComponents = new HashSet<int>();
         private long[] CountSelectedComponents()
         {
             var mesh=ActiveMesh;

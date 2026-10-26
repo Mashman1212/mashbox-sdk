@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private ComponentMode handleFrameMode;
         private bool handleFrameWeld;
         private Matrix4x4 handleFrameMatrix;
-        private readonly HashSet<int> handleFrameSelection = new HashSet<int>();
+        private HashSet<int> handleFrameSelection = new HashSet<int>();
         private HashSet<int> handleFrameVertices;
         private IList<Vector3> handleFramePositions;
         private Vector3 handleFrameCenter;

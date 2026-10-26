@@ -6,19 +6,26 @@ using UnityEditor;
 
 namespace MashBoxSDK.AnimationStudio
 {
+    internal static class StudioFaceSelectionStyle
+    {
+        internal static readonly Color Selected = new Color(1f,.72f,.18f,1f);
+        internal static readonly Color Hover = new Color(.55f,1f,.95f,1f);
+        internal const float SelectedOpacity=.28f, HoverOpacity=.4f;
+        internal static Color Fill(Color tint,float opacity) { tint.a=opacity;return tint; }
+    }
     internal sealed partial class StudioModelEditor
     {
         private Mesh componentSource, componentLines, componentDots, componentHighlight, componentHover;
         private Vector3[] componentPositions;
-        private readonly List<Vector3> componentPositionBuffer = new List<Vector3>();
+        private List<Vector3> componentPositionBuffer = new List<Vector3>();
         private sealed class OverlayGeometry
         {
             internal Mesh mesh;
             internal Vector3[] positions, endpoints;
             internal int[] points, ends;
         }
-        private readonly List<OverlayGeometry> componentGeometry = new List<OverlayGeometry>();
-        private readonly HashSet<int> drawnComponents = new HashSet<int>();
+        private List<OverlayGeometry> componentGeometry = new List<OverlayGeometry>();
+        private HashSet<int> drawnComponents = new HashSet<int>();
         private int hoveredComponent = -1, drawnHover = -1;
         private ComponentMode hoverMode;
         private ComponentMode drawnMode;
@@ -42,7 +49,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DisposeComponentDrawing()
         {
-            ClearComponentDrawing();if(componentMaterial)UnityEngine.Object.DestroyImmediate(componentMaterial);
+            ClearAllComponentDrawCaches();if(componentMaterial)UnityEngine.Object.DestroyImmediate(componentMaterial);
             if(markerMaterial)UnityEngine.Object.DestroyImmediate(markerMaterial);
         }
         private Mesh OverlayMesh(string name,Vector3[] positions,int[] indices,MeshTopology topology,Vector2[] corners=null,Vector3[] endpoints=null,int[] sourcePoints=null,int[] sourceEnds=null)
@@ -178,7 +185,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void EnsureComponentHover()
         {
-            int next = PaintHoverVisible ? hoveredComponent : Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
+            int next = mode==ComponentMode.Face || PaintHoverVisible ? hoveredComponent : Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
             if(next==drawnHover && mode==hoverMode)return;
             DestroyComponentOverlay(componentHover);
             componentHover=null;drawnHover=next;hoverMode=mode;
@@ -206,6 +213,13 @@ EnsureComponentDrawing();EnsureComponentHover();
 #endif
 }
                 }
+                if(mode==ComponentMode.Face)
+                {
+                    Draw(componentHighlight,StudioFaceSelectionStyle.Fill(StudioFaceSelectionStyle.Selected,StudioFaceSelectionStyle.SelectedOpacity),0,0);
+                    var tint=Components.Contains(drawnHover)?StudioFaceSelectionStyle.Selected:StudioFaceSelectionStyle.Hover;
+                    Draw(componentHover,StudioFaceSelectionStyle.Fill(tint,StudioFaceSelectionStyle.HoverOpacity),0,0);
+                    return;
+                }
                 if(mode==ComponentMode.Vertex)Draw(componentDots,new Color(.35f,.9f,.9f,1),1,4);
                 if(mode==ComponentMode.Edge)
                 {
@@ -218,7 +232,7 @@ EnsureComponentDrawing();EnsureComponentHover();
                     if(!PaintHoverVisible)Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?10:5);
                     Draw(componentHighlight,new Color(1,.65f,.15f,displayXray ? 1 : .9f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?5:4);
                     if(PaintHoverVisible)Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?10:5);
-                    if(mode==ComponentMode.Face && drawnHover>=0)DrawHoveredFaceBorder(drawnHover,7);
+
                 }
             }
         }
@@ -232,7 +246,7 @@ EnsureComponentDrawing();EnsureComponentHover();
             {
                 Handles.zTest=displayXray?CompareFunction.Always:CompareFunction.LessEqual;
                 Handles.lighting=false;
-                using(new Handles.DrawingScope(new Color(1,.95f,.5f,1),Matrix4x4.identity))
+                using(new Handles.DrawingScope(Components.Contains(index)?StudioFaceSelectionStyle.Selected:StudioFaceSelectionStyle.Hover,Matrix4x4.identity))
                     for(int i=0;i<vertices.Count;i++)
                         DrawNativeEdge(Transforms[Active].TransformPoint(componentPositions[vertices[i]]),
                             Transforms[Active].TransformPoint(componentPositions[vertices[(i+1)%vertices.Count]]),width);

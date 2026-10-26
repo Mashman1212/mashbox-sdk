@@ -61,10 +61,10 @@ namespace MashBoxSDK.AnimationStudio
             else if (Is(StudioShortcut.Pivot)) { if (CanAdjustPivot) pivot = !pivot; }
             else if (Is(StudioShortcut.Frame)) Frame(view);
             else if (Is(StudioShortcut.SelectAll)) { if (Document) ExecuteMarkingAction(MarkingAction.SelectAll,view); }
-            else if (Is(StudioShortcut.Object)) { SetComponentMode(ComponentMode.Object); }
-            else if (Is(StudioShortcut.Vertex)) { SetComponentMode(ComponentMode.Vertex); }
-            else if (Is(StudioShortcut.Edge)) { SetComponentMode(ComponentMode.Edge); }
-            else if (Is(StudioShortcut.Face)) { SetComponentMode(ComponentMode.Face); }
+            else if (Is(StudioShortcut.Object)) { SetComponentMode(ComponentMode.Object,view); }
+            else if (Is(StudioShortcut.Vertex)) { SetComponentMode(ComponentMode.Vertex,view); }
+            else if (Is(StudioShortcut.Edge)) { SetComponentMode(ComponentMode.Edge,view); }
+            else if (Is(StudioShortcut.Face)) { SetComponentMode(ComponentMode.Face,view); }
             else return false;
             evt.Use(); repaint(); return true;
         }

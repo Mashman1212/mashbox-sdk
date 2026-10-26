@@ -248,7 +248,7 @@ namespace MashBoxSDK.AnimationStudio
                 for (int i = 0; i < Transforms.Length; i++) if (!objects.Remove(i)) objects.Add(i);
                 Active = -1; foreach (int i in objects) { Active = i; break; }
             }
-            else for (int i = 0; i < ComponentCount(); i++) if (!Components.Remove(i)) Components.Add(i);
+            else foreach(int node in ComponentTargetNodes()) using(new ComponentTargetScope(this,node)) for (int i = 0; i < ComponentCount(); i++) if (!Components.Remove(i)) Components.Add(i);
             RecordSelectionChange(before);
             repaint();
         }

@@ -166,6 +166,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (view is MashBoxStudioViewport overlayView && overlayView.IsOverViewportControls(evt.mousePosition)) return;
                 var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(276, 68, Mathf.Max(0, view.position.width - 674), Mathf.Max(0, view.position.height - 76));
                 if (!canvas.Contains(evt.mousePosition)) return;
+                markingModeTarget = axes ? -1 : MeshAtModePointer(view,evt.mousePosition);
                 markingView = view; markingButton = evt.button; markingControl = id; GUIUtility.hotControl = id;
                 GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
                 markingOpen = true; suppressModelContext = true; markingParents.Clear();
@@ -187,7 +188,7 @@ namespace MashBoxSDK.AnimationStudio
                     var action = markingHover >= 0 ? MarkingItems[(int)markingLevel][markingHover] : MarkingAction.None;
                     bool execute = markingHover >= 0 && markingEnabled[markingHover] && !IsMarkingBranch(action);
                     CancelMarkingMenu(); evt.Use();
-                    if (execute) Run(() => ExecuteMarkingAction(action, view));
+                    if (execute) { int target=markingModeTarget;Run(() => ExecuteModeTargetAction(action, view,target)); }
                 }
                 else
                 {
@@ -312,10 +313,10 @@ namespace MashBoxSDK.AnimationStudio
             var before = action == MarkingAction.Clear || action == MarkingAction.SelectAll ? CaptureSelection() : null;
             switch (action)
             {
-                case MarkingAction.Object: SetComponentMode(ComponentMode.Object); break;
-                case MarkingAction.Vertex: SetComponentMode(ComponentMode.Vertex); break;
-                case MarkingAction.Edge: SetComponentMode(ComponentMode.Edge); break;
-                case MarkingAction.Face: SetComponentMode(ComponentMode.Face); break;
+                case MarkingAction.Object: SetComponentMode(ComponentMode.Object,view); break;
+                case MarkingAction.Vertex: SetComponentMode(ComponentMode.Vertex,view); break;
+                case MarkingAction.Edge: SetComponentMode(ComponentMode.Edge,view); break;
+                case MarkingAction.Face: SetComponentMode(ComponentMode.Face,view); break;
                 case MarkingAction.Move: ActivateTool(Tool.Move); break;
                 case MarkingAction.Rotate: ActivateTool(Tool.Rotate); break;
                 case MarkingAction.Scale: ActivateTool(Tool.Scale); break;
@@ -329,31 +330,16 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.OpenUV: StudioUVEditor.Open(this); break;
                 case MarkingAction.Frame: Frame(view); break;
                 case MarkingAction.Through: xray = !xray; SaveDisplayConfiguration(); break;
-                case MarkingAction.Clear: Components.Clear(); if (mode == ComponentMode.Object) { objects.Clear(); Active = -1; } break;
+                case MarkingAction.Clear: ClearAllComponentSelections(); if (mode == ComponentMode.Object) { objects.Clear(); Active = -1; } break;
                 case MarkingAction.SelectAll:
                     if (mode == ComponentMode.Object) { for (int i = 0; i < Transforms.Length; i++) objects.Add(i); if (Active < 0 && Transforms.Length > 0) Active = 0; }
-                    else { for (int i = 0; i < ComponentCount(); i++) Components.Add(i); }
+                    else { foreach(int node in ComponentTargetNodes()) using(new ComponentTargetScope(this,node)) for (int i = 0; i < ComponentCount(); i++) Components.Add(i); }
                     break;
                 default: if (action >= MarkingAction.UV0 && action <= MarkingAction.UV7) StudioUVEditor.Open(this, action - MarkingAction.UV0); break;
             }
             RecordSelectionChange(before);
             repaint(); toolOptions?.Repaint();
         }
-        private void SetComponentMode(ComponentMode next)
-        {
-            FinishSelectionPaint();
-            if (next == ComponentMode.Object)
-            {
-                try { FinishLiveTool(); }
-                catch (System.InvalidOperationException) { CancelLiveTool(); }
-                CloseLiveToolPanes();
-            }
-            else FinishLiveTool();
-            if (mode == next) return;
-            var before = CaptureSelection();
-            mode = next; pivot = false; Components.Clear();
-            RecordSelectionChange(before);
-            repaint();
-        }
+        private void SetComponentMode(ComponentMode next, SceneView view = null) => ChangeComponentMode(next,view);
     }
 }
