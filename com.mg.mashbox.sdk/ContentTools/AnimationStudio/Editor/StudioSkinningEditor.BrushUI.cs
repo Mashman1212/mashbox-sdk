@@ -31,8 +31,20 @@ namespace MashBoxSDK.AnimationStudio
             // Align with the playback bar, leaving a small vertical gap above it.
             return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, canvas.yMax - 28), 70, 32);
         }
+        private bool RequirePaintableSkin()
+        {
+            var part = Part;
+            if (part != null && part.mesh && part.bound && !part.referenceOnly) return true;
+            string message = part == null ? "Select a skinned mesh to paint weights."
+                : part.referenceOnly ? "Default reference meshes are locked. Select your own skinned mesh."
+                : "Skin this mesh first: Edit Skins > Skin. Then you can paint weights.";
+            if (lastView) lastView.ShowNotification(new GUIContent(message));
+            repaint();
+            return false;
+        }
         private void ChooseBrush(Brush brush)
         {
+            if ((brush == Brush.Paint || brush == Brush.SmoothWeights) && !RequirePaintableSkin()) return;
             FinishObjectGesture();
             FinishPoseGesture();
             EndStroke(); Tool = brush;
@@ -49,6 +61,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SetSculptMode(bool sculpt)
         {
+            if (!sculpt && !RequirePaintableSkin()) return;
             if (sculptMode == sculpt && Tool != Brush.Pose && Tool != Brush.Object) return;
             CancelBrushInteraction(); sculptMode = sculpt;
             ChooseBrush(sculpt ? lastSculptBrush : lastSkinBrush);

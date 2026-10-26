@@ -22,11 +22,25 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type == EventType.DragPerform)
             {
                 DragAndDrop.AcceptDrag();
+                int firstImported = Document.parts.Count;
                 foreach (var model in models) Run(() => Import(model));
                 foreach (var path in paths)
                 {
                     if (models.Any(m => !string.IsNullOrEmpty(AssetDatabase.GetAssetPath(m)) && string.Equals(Path.GetFullPath(AssetDatabase.GetAssetPath(m)),Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase))) continue;
                     Run(() => ImportDesktopModel(path));
+                }
+                int importedSelection = Document.parts.FindIndex(firstImported, part => !part.referenceOnly);
+                if (importedSelection >= 0)
+                {
+                    CancelBrushInteraction();
+                    ChooseBrush(Brush.Object);
+                    Document.selected = importedSelection;
+                    cachedPart = -1;
+                    objectScale = false;
+                    poseTranslate = true;
+                    poseGlobalHandleRotation = Quaternion.identity;
+                    RefreshSurface();
+                    repaint();
                 }
             }
             evt.Use();
