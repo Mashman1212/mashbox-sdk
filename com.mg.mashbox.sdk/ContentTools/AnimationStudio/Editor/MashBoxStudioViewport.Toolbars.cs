@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool restoringStoredToolbars, restoredStoredToolbars;
         private void SaveStoredToolbars()
         {
-            if (restoringStoredToolbars || !restoredStoredToolbars || studioToolbarOverlays.Count == 0) return;
+            if (restoringStoredToolbars || !restoredStoredToolbars || studioToolbarOverlays.Count == 0 || modeHiddenToolbars.Count > 0) return;
             var saved = new StoredToolbars { enabled = overlayCanvas.overlaysEnabled };
             foreach (var overlay in studioToolbarOverlays)
             {
@@ -268,8 +268,30 @@ namespace MashBoxSDK.AnimationStudio
                 }, commandKey: "Toolbars/" + item.id, shortcutEligible: false);
             }
         }
+        // Mode changes temporarily hide modeler overlays without changing the saved layout.
+        private readonly Dictionary<Overlay, bool> modeHiddenToolbars = new Dictionary<Overlay, bool>();
+        private void SyncStudioToolbarVisibility()
+        {
+            bool modeling = Studio && Studio.IsModelingMode;
+            if (!modeling && modeHiddenToolbars.Count == 0) SaveStoredToolbars();
+            foreach (var overlay in studioToolbarOverlays)
+            {
+                if (overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) continue;
+                if (!modeling)
+                {
+                    if (!modeHiddenToolbars.ContainsKey(overlay)) modeHiddenToolbars.Add(overlay, overlay.displayed);
+                    overlay.displayed = false;
+                }
+                else if (modeHiddenToolbars.TryGetValue(overlay, out bool displayed))
+                {
+                    overlay.displayed = displayed;
+                    modeHiddenToolbars.Remove(overlay);
+                }
+            }
+        }
         internal void SyncStudioToolbarState(bool force = false)
         {
+            SyncStudioToolbarVisibility();
             var editor = Studio?.ToolbarModelEditor;
             int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |

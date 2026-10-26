@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System;
 using System.Linq;
 using System.Net.Http;
@@ -33,7 +33,7 @@ namespace MashBoxSDK.SDKMain
             public int protocol;
             public string fileName, container, game, unityVersion, sdkVersion, region, statusToken;
         }
-        [Serializable] private sealed class UploadResponse { public string jobId, uploadUrl, message; public bool trackingSupported; }
+        [Serializable] private sealed class UploadResponse { public string jobId, uploadUrl, message; public bool trackingSupported, privateDev; }
         private static string NewStatusToken()
         {
             var bytes = new byte[32];
@@ -78,6 +78,24 @@ namespace MashBoxSDK.SDKMain
                 throw new InvalidOperationException("One or more selected platforms are unavailable. Check publisher status in MashBox Setup and select available platforms.");
             return selected ?? containers;
         }
+        public static async Task<(string jobId, string uploadUrl)> RequestPrivateDevUploadAsync(string fileName, Route route)
+        {
+            var request = new UploadRequest { protocol = route.protocol, game = route.game, unityVersion = route.unityVersion,
+                sdkVersion = route.sdkVersion, region = route.region, container = "private-dev", statusToken = route.statusToken,
+                fileName = route.submissionId + "_" + fileName };
+            using var content = new StringContent(JsonUtility.ToJson(request), Encoding.UTF8, "application/json");
+            using var response = await Http.PostAsync(BaseUrl + "request-private-dev-upload", content);
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException("Private dev uploads are unavailable. Contact the developer before trying again.");
+            var result = JsonUtility.FromJson<UploadResponse>(await response.Content.ReadAsStringAsync());
+            if (result == null || !result.privateDev || string.IsNullOrEmpty(result.jobId) ||
+                !Uri.TryCreate(result.uploadUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+                !uri.Host.EndsWith(".blob.core.windows.net", StringComparison.OrdinalIgnoreCase) ||
+                !uri.AbsolutePath.StartsWith("/private-dev/", StringComparison.Ordinal))
+                throw new InvalidOperationException("Server did not confirm a private dev destination. Upload stopped.");
+            return (result.jobId, result.uploadUrl);
+        }
+
         public static async Task<(string jobId, string uploadUrl)> RequestUploadAsync(string fileName, string container, Route route)
         {
             // Route was captured before asynchronous export/upload; never re-read EditorPrefs during retries.

@@ -57,7 +57,6 @@ namespace MashBoxSDK.AnimationStudio
                 fadeRigControls = fadeRigControls,
                 hideInactiveControls = hideInactiveControls,
                 rigDiagram = rigDiagram,
-                rigToolbarExpanded = rigToolbarExpanded,
                 localHandleSpace = localHandleSpace,
                 generationMode = generationMode,
                 motionPrompt = motionPrompt,
@@ -104,7 +103,6 @@ namespace MashBoxSDK.AnimationStudio
                 fadeRigControls = value.fadeRigControls;
                 hideInactiveControls = value.hideInactiveControls;
                 rigDiagram = value.rigDiagram;
-                rigToolbarExpanded = value.rigToolbarExpanded;
                 localHandleSpace = value.localHandleSpace;
                 generationMode = value.generationMode;
                 motionPrompt = value.motionPrompt;

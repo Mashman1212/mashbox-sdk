@@ -1592,7 +1592,8 @@ namespace MashBoxSDK.MapTools
 
                 GUILayout.Space(8f);
                 DrawChallengeTypeSection("PhotoSpots", "Photo Spots", cachedPhotoSpots.Count, DrawPhotoSpotsSection);
-                DrawChallengeTypeSection("Races", "Races", cachedRaces.Count(race => race && !race.IsPumpTrack), DrawRacesSection);
+                DrawChallengeTypeSection("Races", "Races", cachedRaces.Count(race => race && !race.IsPumpTrack && !race.GetComponent<MBGunRace>()), DrawRacesSection);
+                DrawChallengeTypeSection("GunRaces", "Gun Races", cachedRaces.Count(race => race && race.GetComponent<MBGunRace>()), () => DrawRaceVariantSection(false, true));
                 DrawChallengeTypeSection("PumpTracks", "Pump Tracks", cachedRaces.Count(race => race && race.IsPumpTrack), () => DrawRaceVariantSection(true));
                 DrawChallengeTypeSection("DualSlaloms", "Dual Slaloms", cachedDualSlaloms.Count, DrawDualSlalomsSection);
                 DrawChallengeTypeSection("FourCross", "4 Cross", cachedFourCrossCourses.Count, DrawFourCrossSection);
@@ -2200,16 +2201,16 @@ namespace MashBoxSDK.MapTools
         }
         private void DrawRacesSection() => DrawRaceVariantSection(false);
 
-        private void DrawRaceVariantSection(bool pumpTrack)
+        private void DrawRaceVariantSection(bool pumpTrack, bool gunRace = false)
         {
-            EditorGUILayout.LabelField(pumpTrack ? "Pump Tracks" : "Races", EditorStyles.boldLabel);
-            if (DrawAddButton(pumpTrack ? "Add Pump Track" : "Add Race",
-                    pumpTrack ? "Race gates and timing; pedaling locks after the first gate." :
+            EditorGUILayout.LabelField(gunRace ? "Gun Races" : pumpTrack ? "Pump Tracks" : "Races", EditorStyles.boldLabel);
+            if (DrawAddButton(gunRace ? "Add Gun Race" : pumpTrack ? "Add Pump Track" : "Add Race",
+                    gunRace ? "Fixed targets, two gates, and a circular finish pad. Supports Solo and Duos." : pumpTrack ? "Race gates and timing; pedaling locks after the first gate." :
                     "Create a new race with editable gate markers.", 32f))
-                CreateRaceChallenge(pumpTrack);
+                CreateRaceChallenge(pumpTrack, gunRace);
 
             EditorGUILayout.HelpBox(
-                pumpTrack ? "Pump Tracks use normal race gates and timing. Pedaling and throttle are cut after the first gate until the attempt ends or resets." :
+                gunRace ? "Gun Races require exactly two gates and a Finish Pad. Add up to 64 barrel target markers in fixed hierarchy order. Assign a barrel prefab and portable Prefab Key to each target. Duos shares targets and the timer; both riders must finish." : pumpTrack ? "Pump Tracks use normal race gates and timing. Pedaling and throttle are cut after the first gate until the attempt ends or resets." :
                 "Races work like authored gate paths. Gates are numbered from hierarchy order, draw with their own color, and can be added or renumbered from here.",
                 MessageType.None);
 
@@ -2233,7 +2234,7 @@ namespace MashBoxSDK.MapTools
                 GUILayout.Space(6f);
             }
 
-            var races = cachedRaces.Where(race => race && race.IsPumpTrack == pumpTrack).ToList();
+            var races = cachedRaces.Where(race => race && race.IsPumpTrack == pumpTrack && (race.GetComponent<MBGunRace>() != null) == gunRace).ToList();
 
             if (races.Count == 0)
             {
@@ -2263,7 +2264,7 @@ namespace MashBoxSDK.MapTools
 
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
-                    if (!DrawChallengeItemFoldout(race.IsPumpTrack ? "Pump Track" : "Race", race, race.RaceName, $"{raceGates.Count:00} gates"))
+                    if (!DrawChallengeItemFoldout(gunRace ? "Gun Race" : race.IsPumpTrack ? "Pump Track" : "Race", race, race.RaceName, $"{raceGates.Count:00} gates"))
                         continue;
 
                     GUI.SetNextControlName($"RaceName_{GetObjectStableId(race)}");
@@ -2289,9 +2290,19 @@ namespace MashBoxSDK.MapTools
                             EditorGUIUtility.PingObject(race.gameObject);
                         }
 
-                        if (GUILayout.Button("Add Gate", GUILayout.Height(26f)))
+                        if (GUILayout.Button(gunRace ? "Add Target" : "Add Gate", GUILayout.Height(26f)))
                         {
-                            CreateRaceGate(race);
+                            if (gunRace)
+                            {
+                                var target = new GameObject("Barrel Target");
+                                Undo.RegisterCreatedObjectUndo(target, "Add Gun Race Target");
+                                target.transform.SetParent(race.transform, false);
+                                target.transform.localPosition = Vector3.forward * 4;
+                                Undo.AddComponent<MBGunRaceTarget>(target);
+                                Selection.activeGameObject = target;
+                                EditorSceneManager.MarkSceneDirty(race.gameObject.scene);
+                            }
+                            else CreateRaceGate(race);
                             GUIUtility.ExitGUI();
                         }
                     }
@@ -2764,16 +2775,24 @@ namespace MashBoxSDK.MapTools
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
         }
 
-        private static void CreateRaceChallenge(bool pumpTrack = false)
+        private static void CreateRaceChallenge(bool pumpTrack = false, bool gunRace = false)
         {
             var raceRoot = FindOrCreateChallengeTypeRoot("Races");
             EnsureRaceGroupComponent(raceRoot);
-            var race = CreateChallengeMarker("Races", pumpTrack ? "New Pump Track" : "New Race");
+            var race = CreateChallengeMarker("Races", gunRace ? "New Gun Race" : pumpTrack ? "New Pump Track" : "New Race");
             var raceComponent = Undo.AddComponent<MBRace>(race);
             raceComponent.IsPumpTrack = pumpTrack;
             raceComponent.RaceName = race.name;
             CreateRaceGate(raceComponent, Vector3.zero, false);
-            CreateRaceGate(raceComponent, new Vector3(0f, 0f, 8f), true);
+            var finish = CreateRaceGate(raceComponent, new Vector3(0f, 0f, 8f), true);
+            if (gunRace)
+            {
+                var definition = Undo.AddComponent<MBGunRace>(race);
+                definition.FinishPad = finish.transform;
+                var target = CreateChildObject(race.transform, "Target 01 - assign prefab");
+                target.transform.localPosition = new Vector3(0, 0, 4);
+                Undo.AddComponent<MBGunRaceTarget>(target);
+            }
 
             Selection.activeGameObject = race;
             EditorGUIUtility.PingObject(race);
@@ -4080,6 +4099,23 @@ namespace MashBoxSDK.MapTools
                 }
             }
 
+            // Diagnostics stay accessible without a mod.io account, Mod ID, or game install.
+            // Custom Folder still needs an explicit compatible game for private storage routing.
+            var devGames = GameRegistry.Games
+                .Where(game => GameTargetUnityVersionValidator.IsValidForPublishing(game.DisplayName, out _))
+                .Select(game => game.DisplayName).ToArray();
+            if (!devGames.Contains(privateDevTargetGame))
+                privateDevTargetGame = devGames.Contains(currentGame) ? currentGame : devGames.FirstOrDefault();
+            using (new EditorGUILayout.HorizontalScope())
+            using (new EditorGUI.DisabledScope(isMapPublishInProgress || selected == null || selected.Scene == null || devGames.Length == 0))
+            {
+                if (devGames.Length > 0)
+                    privateDevTargetGame = devGames[EditorGUILayout.Popup("Dev Inspection Game",
+                        Mathf.Max(0, Array.IndexOf(devGames, privateDevTargetGame)), devGames)];
+                if (GUILayout.Button("Save Private Publish to Dev", GUILayout.Height(26f)))
+                    SavePrivatePublishToDevAsync(selected, privateDevTargetGame);
+            }
+
             if (isMapPublishInProgress)
             {
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
@@ -4911,7 +4947,44 @@ namespace MashBoxSDK.MapTools
                     }
 
                     PublishMapToModioAsync(pack, currentGame, selectedPlatforms);
-                });
+                },
+                () => SavePrivatePublishToDevAsync(pack, currentGame));
+        }
+
+        [SerializeField] private string privateDevTargetGame;
+
+        private async void SavePrivatePublishToDevAsync(MapContentPackDefinition pack, string currentGame)
+        {
+            if (isMapPublishInProgress || pack == null || pack.Scene == null) return;
+            if (!EditorUtility.DisplayDialog("Save Private Publish to Dev?",
+                "Are you sure you want to send this map privately to a developer?\n\n" +
+                "Only use this if you are having publishing issues and a developer is available to inspect them. " +
+                $"Contact the developer before sending. This uploads your map and its assets for {currentGame} inspection; it does not publish to mod.io. " +
+                "The submission is kept until a developer removes it.", "Save Private Publish to Dev", "Cancel")) return;
+            try
+            {
+                activeMapPublishCts = new CancellationTokenSource();
+                SetActiveMapPublishStatus("Exporting private dev package...", "Private Dev", 0.1f);
+                var route = PublisherService.CreateRoute(currentGame, DetermineUploadRegion());
+                var packagePath = BuildUnityPackageForMapPack(pack, privateDev: true);
+                EnsurePackageSizeWithinLimit(packagePath, MaxMapPublishPackageBytes, "private dev map");
+                var fileName = Path.GetFileName(packagePath);
+                var grant = await PublisherService.RequestPrivateDevUploadAsync(fileName, route);
+                var progress = new Progress<float>(value => SetActiveMapPublishStatus("Uploading for developer inspection...", "Private Dev", value));
+                await UploadFileToSasAsync(packagePath, grant.uploadUrl, progress, activeMapPublishCts.Token);
+                EditorUtility.DisplayDialog("Private Dev Submission Saved",
+                    "Your map was saved privately for developer inspection. Share this reference with the developer:\n\n" + grant.jobId +
+                    "\n\nIt will not be automatically cooked or published to mod.io.", "OK");
+            }
+            catch (OperationCanceledException) { EditorUtility.DisplayDialog("Upload Cancelled", "The private dev upload was cancelled.", "OK"); }
+            catch (Exception ex) { EditorUtility.DisplayDialog("Private Dev Upload Failed", ex.Message, "OK"); }
+            finally
+            {
+                activeMapPublishCts?.Dispose();
+                activeMapPublishCts = null;
+                EditorUtility.ClearProgressBar();
+                ClearActiveMapPublishStatus();
+            }
         }
 
         private async void PublishMapToModioAsync(
@@ -5411,10 +5484,15 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        private static string BuildUnityPackageForMapPack(MapContentPackDefinition pack)
+        private static string BuildUnityPackageForMapPack(MapContentPackDefinition pack, bool privateDev = false)
         {
             if (pack == null)
                 throw new ArgumentNullException(nameof(pack));
+
+            // Enforce at the package boundary as well, including diagnostic uploads.
+            var invalidLocations = MapContentPackValidator.ValidateExportAssetLocations(pack);
+            if (invalidLocations.Count > 0)
+                throw new InvalidOperationException(string.Join("\n\n", invalidLocations.Select(issue => issue.Message)));
 
             // Protect the loaded source scene for the entire export, including deletion of the
             // temporary copied scene. Bakery can process that deletion during AssetDatabase.Refresh
@@ -5427,6 +5505,13 @@ namespace MashBoxSDK.MapTools
             try
             {
                 exportContext = CreateMapPackageExportContext(pack);
+                if (privateDev)
+                {
+                    // Diagnostic imports must never carry a creator's mod.io bearer token.
+                    exportContext.Pack.modioUserToken = string.Empty;
+                    EditorUtility.SetDirty(exportContext.Pack);
+                    AssetDatabase.SaveAssets();
+                }
                 var export = CollectExportPaths(exportContext);
                 if (export.Count == 0)
                     throw new Exception("No assets were found to export for this map pack.");
@@ -6875,17 +6960,20 @@ namespace MashBoxSDK.MapTools
         private readonly List<bool> selected = new List<bool>();
         private Action<IReadOnlyList<MashBoxMapToolsWindow.PublishPlatformOption>> onConfirm;
         private string gameName = string.Empty;
+        private Action onPrivateDev;
 
         public static void Show(
             EditorWindow parent,
             string currentGame,
             IEnumerable<MashBoxMapToolsWindow.PublishPlatformOption> platformOptions,
-            Action<IReadOnlyList<MashBoxMapToolsWindow.PublishPlatformOption>> onConfirm)
+            Action<IReadOnlyList<MashBoxMapToolsWindow.PublishPlatformOption>> onConfirm,
+            Action onPrivateDev = null)
         {
             var window = CreateInstance<PublishPlatformSelectionPopup>();
             window.titleContent = new GUIContent("Publish Platforms");
             window.gameName = currentGame ?? string.Empty;
             window.onConfirm = onConfirm;
+            window.onPrivateDev = onPrivateDev;
 
             foreach (var option in platformOptions)
             {
@@ -6909,6 +6997,12 @@ namespace MashBoxSDK.MapTools
                 selected[i] = EditorGUILayout.ToggleLeft(options[i].DisplayName, selected[i]);
 
             GUILayout.FlexibleSpace();
+            if (onPrivateDev != null && GUILayout.Button("Save Private Publish to Dev"))
+            {
+                onPrivateDev.Invoke();
+                Close();
+                return;
+            }
 
             using (new EditorGUILayout.HorizontalScope())
             {

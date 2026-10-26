@@ -9,6 +9,9 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class AnimationStudioWindow
     {
+        // Project integrations can offer cosmetic attachments without introducing
+        // gameplay dependencies into Studio. The animator belongs to the preview scene.
+        public static event Action<AnimationTake, Animator> ActorInspectorGUI;
         private const string BikePath = "Assets/MashBox/BMX Physics Development/Bike Skeleton.fbx";
         [SerializeField] private int activeActor = -1;
         [SerializeField] private bool showAllActorControls = true;
@@ -24,6 +27,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawActorPickers(SceneView view, int actorIndex)
         {
+            if (actorIndex >= 0 && IsAttachmentHidden(actorPreviews[actorIndex].Take)) return;
             pickerActorSelected = activeActor == actorIndex;
             var before = Event.current.type;
             Action draw = () => { if(!DrawBikeScene(view)) DrawRigPickers(view); };
@@ -62,7 +66,7 @@ namespace MashBoxSDK.AnimationStudio
             if (inActorScope || rig == null || !take) return;
             take.actors = take.actors ?? new List<AnimationTake>();
             if (actorPreviews.Count == take.actors.Count && actorPreviews.Select(a=>a.Take).SequenceEqual(take.actors))
-            { activeActor=Mathf.Clamp(activeActor,-1,actorPreviews.Count-1); return; }
+            { activeActor=Mathf.Clamp(activeActor,-1,actorPreviews.Count-1); ApplyAttachmentVisibility(); return; }
             ReleaseActors();
             try
             {
@@ -80,6 +84,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             catch { ReleaseActors(); throw; }
             activeActor = Mathf.Clamp(activeActor,-1,actorPreviews.Count-1);
+            ApplyAttachmentVisibility();
         }
         private void SampleActors(float atFrame)
         {
@@ -129,6 +134,9 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             int chosen=EditorGUILayout.Popup("Edit actor",activeActor+1,names)-1;
             if(EditorGUI.EndChangeCheck()) { FinishSceneEdit(); FinishActorEdits(); activeActor=chosen; viewport?.Repaint(); }
+            var attachmentActor = activeActor >= 0 ? actorPreviews[activeActor].Take : take;
+            var attachmentRig = activeActor >= 0 ? actorPreviews[activeActor].Rig : rig;
+            ActorInspectorGUI?.Invoke(attachmentActor, attachmentRig.Animator);
             actorSource=(GameObject)EditorGUILayout.ObjectField("Actor / vehicle source",actorSource,typeof(GameObject),false);
             using(new EditorGUILayout.HorizontalScope())
             {
@@ -262,6 +270,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             foreach(var actor in actorPreviews)
             {
+                if (IsAttachmentHidden(actor.Take)) continue;
                 if(activeActor>=0 && actor==actorPreviews[activeActor]) continue;
                 Handles.color=new Color(.8f,.65f,.3f,.7f);
                 foreach(var bone in actor.Rig.DisplayBones) if(bone.parent && actor.Rig.DisplayBones.Contains(bone.parent)) Handles.DrawLine(bone.parent.position,bone.position);

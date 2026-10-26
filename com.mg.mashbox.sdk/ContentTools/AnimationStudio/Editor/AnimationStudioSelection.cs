@@ -12,6 +12,7 @@ namespace MashBoxSDK.AnimationStudio
   {
    if(rig==null || index<0 || index>=rig.Bones.Length) return false;
    var bone=rig.Bones[index];
+   if (BodyIKKind(index) >= 0) return true;
    return bone==rig.Root.transform || (rig.Animator && rig.Animator.avatar && rig.Animator.avatar.isHuman &&
     bone==rig.Animator.GetBoneTransform(HumanBodyBones.Hips));
   }
@@ -64,6 +65,8 @@ namespace MashBoxSDK.AnimationStudio
   }
   private void DuringSceneGUI(SceneView view)
   {
+   if (view == viewport && retopologyMode) { retopologyEditor?.SceneGUI(viewport); return; }
+   if (view == viewport && skinningMode) { if (viewport.modelGridVisible) viewport.DrawGroundGrid(); skinningEditor?.SceneGUI(view); return; }
    if (view == viewport && modelingMode) { DrawModelScene(view); return; }
    if(view!=viewport || rig==null || !take || inActorScope || drawingActorControls) { DrawStudioSceneGUI(view); return; }
    rigSelection.RemoveAll(s=>!s.Actor || (s.Actor!=take && !take.actors.Contains(s.Actor)));
@@ -123,7 +126,7 @@ namespace MashBoxSDK.AnimationStudio
     var entry=new SelectedTransform { Item=item };
     if(item.IK)
     {
-     var e=DisplayEffector(item.Index); if(e.weight<=0) e=rig.MatchEffector(item.Index,0);
+     var e=DisplayEffector(item.Index);
      entry.Position=rig.Root.transform.TransformPoint(item.Pole ? e.pole : e.position);
      entry.Rotation=rig.Root.transform.rotation*e.rotation; entry.Depth=1000;
     }
@@ -162,7 +165,7 @@ namespace MashBoxSDK.AnimationStudio
     if(item.IK)
     {
      if(groupRotate && item.Pole) return;
-     var e=DisplayEffector(item.Index); if(e.weight<=0) e=rig.MatchEffector(item.Index,0);
+     var e=DisplayEffector(item.Index);
      if(groupRotate) e.rotation=Quaternion.Inverse(rig.Root.transform.rotation)*turn*entry.Rotation;
      else if(item.Pole) e.pole=rig.Root.transform.InverseTransformPoint(entry.Position+moved-pivot);
      else e.position=rig.Root.transform.InverseTransformPoint(entry.Position+moved-pivot);
@@ -182,9 +185,14 @@ namespace MashBoxSDK.AnimationStudio
     }
     else
     {
-     PrepareFKEdit(item.Index); var bone=rig.Bones[item.Index];
-     if(groupRotate) bone.rotation=turn*entry.Rotation; else bone.position=entry.Position+moved-pivot;
-     pose.bones[item.Index]=BonePose.Read(bone);
+     int bodyKind=BodyIKKind(item.Index);
+     if(bodyKind>=0) rig.PoseBodyControl(pose,bodyKind,entry.Position+moved-pivot,turn*entry.Rotation,groupRotate);
+     else
+     {
+      PrepareFKEdit(item.Index); var bone=rig.Bones[item.Index];
+      if(groupRotate) bone.rotation=turn*entry.Rotation; else bone.position=entry.Position+moved-pivot;
+      pose.bones[item.Index]=BonePose.Read(bone);
+     }
     }
     PreviewSceneEdit(groupRotate ? "Rotate selected rig controls" : "Move selected rig controls");
    });
@@ -200,6 +208,7 @@ namespace MashBoxSDK.AnimationStudio
      int index=IsBike ? Array.IndexOf(rig.Bones,BikeJoint(item.Index)) : item.Index;
      if(index<0 || index>=bones.Length) continue;
      bones[index]|=mask;
+     if(!IsBike) AddBodyIKChannelMask(bones,index,mask);
      if(IsBike && item.Index==3 && mask==2) foreach(int pedal in new[]{4,5})
      { int p=Array.IndexOf(rig.Bones,BikeJoint(pedal)); if(p>=0) bones[p]|=mask; }
     }

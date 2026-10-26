@@ -16,9 +16,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var take = (AnimationTake)target;
             EditorGUILayout.LabelField("ANIMATION TAKE",EditorStyles.boldLabel);
-#if MashBoxDev
             if (GUILayout.Button("Open in MashBox Studio",GUILayout.Height(32))) AnimationStudioWindow.OpenInStudio(take);
-#endif
             EditorGUILayout.LabelField("Duration", ((float)take.lastFrame/Mathf.Max(1,take.frameRate)).ToString("0.##")+" seconds");
             EditorGUILayout.LabelField("Timing",take.frameRate+" fps · "+(take.lastFrame+1)+" frames");
             EditorGUILayout.LabelField("Pose keys",take.keys.Count.ToString());

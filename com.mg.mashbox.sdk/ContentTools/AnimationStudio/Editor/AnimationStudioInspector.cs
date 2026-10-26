@@ -5,7 +5,8 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class AnimationStudioWindow
     {
-        [SerializeField] private bool inspectorExpanded = true;
+        [SerializeField] private bool inspectorExpanded;
+        [SerializeField] private bool compactSettingsInitialized;
         [SerializeField] private bool displayOptions;
         [SerializeField] private int inspectorTab;
         private Vector2 inspectorScroll;
@@ -49,7 +50,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     using (new GUILayout.HorizontalScope())
                     {
-                        bool expanded = EditorGUILayout.Foldout(inspectorExpanded, "ANIMATION INSPECTOR", true);
+                        bool expanded = GUILayout.Toggle(inspectorExpanded, new GUIContent("Animation settings " + (inspectorExpanded ? "▴" : "▾"), EditorGUIUtility.IconContent("SettingsIcon").image, "Expand animation settings"), StudioTheme.Styles.overlayButton, GUILayout.Height(24));
                         if (expanded != inspectorExpanded)
                         { inspectorExpanded = expanded; viewport.SetInspectorExpanded(expanded); }
                     }
@@ -84,6 +85,7 @@ namespace MashBoxSDK.AnimationStudio
                         { if(activeActor>=0) InActor(actorPreviews[activeActor],DrawLayers); else DrawLayers(); }
                         else if(tab=="Outfit")
                         {
+                            DrawDefaultCharacter();
                             if(!OutfitRig.Animator) DrawVehicleOutfit();
                             else if(activeActor<0)
                             {

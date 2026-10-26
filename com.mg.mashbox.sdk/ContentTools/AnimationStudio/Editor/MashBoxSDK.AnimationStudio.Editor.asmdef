@@ -5,7 +5,7 @@
     "Editor"
   ],
   "defineConstraints": [
-    "UNITY_6000_0_OR_NEWER"
+    "UNITY_2022_3_OR_NEWER"
   ],
   "autoReferenced": true,
   "references": [

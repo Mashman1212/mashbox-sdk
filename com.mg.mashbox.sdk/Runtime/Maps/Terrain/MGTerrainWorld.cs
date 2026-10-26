@@ -10,8 +10,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
     [AddComponentMenu("MashBox/Maps/MG Terrain World")]
     public sealed partial class MGTerrainWorld : MonoBehaviour
     {
-        [SerializeField, Min(1), Tooltip("Total visible density-detail instances across all chunks. Placed trees are separate.")]
-        int m_VisibleDetailBudget = 50000;
         [SerializeField, Min(1)] int m_DetailCellsBuiltPerFrame = 8;
         [SerializeField, Min(1)] int m_DetailMeshUploadsPerFrame = 2;
         [SerializeField, Min(1)] int m_MaxPendingDetailBuilds = 8;
@@ -101,7 +99,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public IReadOnlyList<MGTerrain> Chunks => m_Chunks;
         public float DetailDistance => m_DetailDistance > 0f ? m_DetailDistance : float.PositiveInfinity;
         internal int CacheAllowance => Mathf.Max(1, m_CachedDetailCells / Mathf.Max(1, m_RenderChunks.Count));
-        public int VisibleDetailBudget => Mathf.Max(1, m_VisibleDetailBudget);
+        // Compatibility for integrations querying the old cap. World populations
+        // are controlled by distance/density LOD and culling, never a count quota.
+        public int VisibleDetailBudget => int.MaxValue;
         public long LastSubmittedDetailInstances { get; private set; }
 
         // Runtime-only: existing authored maps keep their settings and enabled state.
@@ -157,24 +157,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             chunk.ApplyWorldQuality(m_Quality);
         }
         internal void Unregister(MGTerrain chunk) => m_Chunks.Remove(chunk);
-        internal float NearDetailScale { get; private set; } = 1f;
-        internal float DistantDetailScale { get; private set; } = 1f;
-
-        void UpdateDetailScales(long near, long distant)
-        {
-            NearDetailScale = DistantDetailScale = 1f;
-            int budget = VisibleDetailBudget;
-            if (near + distant <= budget) return;
-            long farAllocation = Math.Min(distant, Mathf.RoundToInt(budget
-                * Mathf.Clamp01(m_Quality.m_DistantDetailBudgetReserve)));
-            long nearAllocation = Math.Min(near, budget - farAllocation);
-            long extra = budget - nearAllocation - farAllocation;
-            long extraNear = Math.Min(near - nearAllocation, extra);
-            nearAllocation += extraNear;
-            farAllocation += Math.Min(distant - farAllocation, extra - extraNear);
-            NearDetailScale = nearAllocation / (float)Math.Max(1L, near);
-            DistantDetailScale = farAllocation / (float)Math.Max(1L, distant);
-        }
 
         readonly struct CellBuildRequest
         {
@@ -270,19 +252,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 // are world-wide: no per-tile/per-layer build cap changes their priority.
                 foreach (var tile in m_CellBuildTiles)
                     tile.PrepareWorldCamera(camera, DetailDistance + Mathf.Max(0f, m_UnloadMargin));
-                long nearDemand = 0, distantDemand = 0;
-                foreach (var chunk in m_RenderChunks)
-                    chunk.AccumulateWorldDetailDemand(ref nearDemand, ref distantDemand);
-                UpdateDetailScales(nearDemand, distantDemand);
-                int remaining = VisibleDetailBudget;
-                double nearRemainder = 0, distantRemainder = 0;
                 LastSubmittedDetailInstances = 0;
                 foreach (var chunk in m_RenderChunks)
                 {
-                    int allocated = chunk.AllocateWorldDetailCells(NearDetailScale, DistantDetailScale, remaining,
-                        ref nearRemainder, ref distantRemainder);
-                    remaining -= allocated;
-                    chunk.SubmitWorldDetails(camera, allocated);
+                    chunk.SubmitWorldDetails(camera, int.MaxValue);
                     LastSubmittedDetailInstances += chunk.WorldSubmittedDetails;
                 }
             }
@@ -293,15 +266,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_CellBuildTiles.Clear();
                 m_Rendering = false;
             }
-        }
-
-        internal static int AllocateCellShare(int population, float scale, int remainingBudget, ref double remainder)
-        {
-            if (population <= 0 || remainingBudget <= 0) return 0;
-            double share = population * (double)Mathf.Clamp01(scale) + remainder;
-            int allocated = (int)Math.Min(population, Math.Min(remainingBudget, Math.Floor(share)));
-            remainder = share - Math.Floor(share);
-            return allocated;
         }
 
         // Integer remainder is carried forward; allocations never exceed the world budget.

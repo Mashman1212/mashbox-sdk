@@ -11,7 +11,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, Tooltip("Experimental: spread visibility scans across frames. Retains extra instances around the camera, increasing render and shadow work. Leave disabled unless full-frame profiling shows a benefit.")]
         bool m_AmortizeResidentVisibility = false;
         // Full residency builds the population before rendering and retains it.
-        // World visible-instance budgets still apply; streaming build budgets do not.
+        // World populations are uncapped; streaming build budgets do not apply to preloading.
         // A tile's legacy residency flag must not silently bypass the world's scheduler.
         // Captures keep their separate unbudgeted path; standalone terrains retain their setting.
         bool KeepAllDetailCellsResident => Application.isPlaying && m_KeepAllDetailCellsResident

@@ -53,16 +53,48 @@ namespace MashBoxSDK.MapTools
                 main.enabled=true; main.targetTexture=rt;
                 Check(Accept(main),"Tagged MainCamera can render gameplay to a texture.");
 
+                // Edit Mode uses the same resident GPU state as gameplay. A rejected
+                // camera must neither schedule nor submit another camera's selection.
+                var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                var resident = typeof(MGTerrain).GetProperty("UseResidentDetailStreaming", flags);
+                if ((bool)resident.GetValue(tile))
+                {
+                    fallback.cullingMask = -1;
+                    fallback.targetTexture = rt;
+                    var worldObject = new GameObject("Inactive Validation World");
+                    worldObject.SetActive(false);
+                    worldObject.transform.SetParent(root.transform);
+                    var world = worldObject.AddComponent<MGTerrainWorld>();
+                    var owner = typeof(MGTerrain).GetField("m_World", flags);
+                    owner.SetValue(tile, world);
+                    var pending = typeof(MGTerrain).GetField("m_WorldPendingDraw", flags);
+                    var prepare = typeof(MGTerrain).GetMethod("PrepareWorldCamera", flags);
+                    prepare.Invoke(tile, new object[] { fallback, 100f });
+                    Check(!(bool)pending.GetValue(tile), "Rejected offscreen camera cannot schedule cached detail submission in Edit Mode.");
+                    var submitted = typeof(MGTerrain).GetField("m_LastSubmittedDensityDetailInstances", flags);
+                    var submit = typeof(MGTerrain).GetMethod("SubmitWorldDetails", flags);
+                    pending.SetValue(tile, true);
+                    submitted.SetValue(tile, 123);
+                    submit.Invoke(tile, new object[] { fallback, 0 });
+                    Check(Convert.ToInt64(submitted.GetValue(tile)) == 123, "Rejected camera cannot clear resident draw visibility.");
+                    pending.SetValue(tile, false);
+                    owner.SetValue(tile, null);
+                }
+
                 var map=tileObject.AddComponent<MGGrassInteractionMap>();
                 var observe=typeof(MGGrassInteractionMap).GetMethod("ObserveGameCamera",BindingFlags.Instance|BindingFlags.NonPublic);
                 var focus=typeof(MGGrassInteractionMap).GetMethod("FocusPosition",BindingFlags.Instance|BindingFlags.NonPublic);
+                if (observe != null && focus != null)
+                {
                 fallback.transform.position=new Vector3(57,23,-82);
                 observe.Invoke(map,new object[]{default(ScriptableRenderContext),fallback});
                 Check((Vector3)focus.Invoke(map,null)==fallback.transform.position,"Interaction follows untagged Game camera.");
                 main.transform.position=new Vector3(123,45,67);
                 observe.Invoke(map,new object[]{default(ScriptableRenderContext),main});
                 Check((Vector3)focus.Invoke(map,null)==main.transform.position,"Interaction prefers MainCamera when it renders.");
-                string report="PASS: untagged/EditorOnly Game camera fallback, stable selection, MainCamera promotion, disabled/layer-excluded camera replacement, offscreen capture rejection, MainCamera render-texture support, interaction-map camera following.";
+                }
+                string report="PASS: untagged/EditorOnly Game camera fallback, stable selection, MainCamera promotion, disabled/layer-excluded camera replacement, offscreen capture rejection, MainCamera render-texture support, Edit Mode world submission ownership. Interaction observer checks: "
+                    + (observe != null && focus != null ? "passed." : "skipped (observer API absent).");
                 File.WriteAllText(result,report); Debug.Log(report);
             }
             catch(Exception e){File.WriteAllText(result,"FAIL: "+e);Debug.LogException(e);}

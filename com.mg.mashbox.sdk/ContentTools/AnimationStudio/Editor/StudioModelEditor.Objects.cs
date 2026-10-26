@@ -45,6 +45,14 @@ namespace MashBoxSDK.AnimationStudio
         internal void DeleteSelectedObjects()
         {
             if (!CanDeleteObjects) return;
+            var removed = Document.WithDescendants(objects);
+            var affected = Document.nodes.Where((n, i) => !removed.Contains(i) && n.skinned &&
+                (removed.Contains(n.rootBone) || n.bones.Any(removed.Contains))).Select(n => n.name).ToArray();
+            if (affected.Length > 0 && !EditorUtility.DisplayDialog("Delete joints used by skinning?",
+                "These joints are used by " + affected.Length + " remaining skinned mesh(es):\n" +
+                string.Join("\n", affected.Take(8)) + (affected.Length > 8 ? "\n…" : "") +
+                "\n\nThe selected joints and their children will be deleted. Their skin influences will move to the nearest surviving parent, preserving the current shape. Future deformation will follow that parent.\n\nYou can Undo this change.",
+                "Delete and Reassign", "Cancel")) return;
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
             Document.DeleteObjects(objects);
             Undo.CollapseUndoOperations(group);

@@ -79,11 +79,18 @@ namespace MashBoxSDK.AnimationStudio
         internal void ReloadToolDefaults() => modelEditor?.ReloadStoredToolDefaults();
         internal MashBoxStudioViewport ActiveViewport => viewport;
         internal void RestoreStoredMode() => SwitchStudioMode(StudioPreferenceStore.GetString("Studio.Mode", "Animation") == "Modeling");
-        internal bool IsModelingMode => modelingMode;
-        internal StudioModelEditor ToolbarModelEditor => modelingMode ? modelEditor : null;
+        internal bool IsModelingMode => modelingMode && !skinningMode && !retopologyMode;
+        internal StudioModelEditor ToolbarModelEditor => IsModelingMode ? modelEditor : null;
         private void BindStudioMode()
         {
             if (!viewport) return;
+            // Keep navigation available even if the selected preview mode cannot initialize.
+            viewport.BindModes(DrawStudioModes, modelingMode || skinningMode || retopologyMode);
+            if (retopologyMode) { BindRetopologyMode(); return; }
+            viewport.SetRetopologyPanels(false);
+            retopologyEditor?.SuspendLighting();
+            if (skinningMode) { BindSkinningMode(); return; }
+            if (!compactSettingsInitialized) { inspectorExpanded = false; compactSettingsInitialized = true; }
             if (!modelingMode) modelEditor?.SuspendLighting();
             if (modelingMode)
             {
@@ -96,6 +103,7 @@ namespace MashBoxSDK.AnimationStudio
             StudioPreferenceStore.SetString("Studio.Mode", modelingMode ? "Modeling" : "Animation");
             if (modelingMode) modelEditor.BindModelCommands(viewport, LoadStudioModel);
             viewport.BindModes(DrawStudioModes, modelingMode);
+            viewport.BindAttachments(modelingMode ? null : (System.Action)DrawAttachmentRows);
             viewport.BindViewportControls(
                 DrawStudioMenuBar, null, null);
             viewport.BindWorkspaceStatistics();
@@ -113,26 +121,37 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawStudioMenuBar()
         {
+            if (retopologyMode) { retopologyEditor?.DrawMenu(); return; }
+            if (skinningMode) { DrawSkinningFileMenu(); DrawSkinningEditMenu(); DrawSkinToolsMenu(); return; }
             if (modelingMode) modelEditor?.DrawMenuBar(viewport, LoadStudioModel);
             else { DrawAnimationFileMenu(); DrawAnimationEditMenu(); }
         }
         private void DrawStudioModes()
         {
-            var content = modelingMode
+            var content = retopologyMode ? new GUIContent(" Retopology", EditorGUIUtility.IconContent("Mesh Icon").image, "Switch studio mode") : skinningMode ? new GUIContent(" Skinning", EditorGUIUtility.IconContent("SkinnedMeshRenderer Icon").image, "Switch studio mode") : modelingMode
                 ? new GUIContent(" Modeling", EditorGUIUtility.IconContent("Mesh Icon").image, "Switch studio mode")
                 : new GUIContent(" Animation", EditorGUIUtility.IconContent("AnimationClip Icon").image, "Switch studio mode");
             var rect = new Rect(0, 0, MashBoxStudioViewport.ModeSelectorWidth, 21);
             if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, StudioTheme.Styles.menuDropdown)) return;
             var menu = new StudioMenu();
-            menu.AddItem(new GUIContent("Animation"), !modelingMode, () => SwitchStudioMode(false));
-            menu.AddItem(new GUIContent("Modeling"), modelingMode, () => SwitchStudioMode(true));
+            menu.AddItem(new GUIContent("Animation"), !modelingMode && !skinningMode && !retopologyMode, () => SwitchStudioMode(false));
+            menu.AddItem(new GUIContent("Modeling"), modelingMode && !skinningMode && !retopologyMode, () => SwitchStudioMode(true));
+            menu.AddItem(new GUIContent("Retopology"), retopologyMode, () => Guard(OpenRetopologyMode));
+            menu.AddItem(new GUIContent("Skinning"), skinningMode, () => Guard(OpenSkinningMode));
             menu.AddSeparator("");
             menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel(viewport.IsStudioMaximized ? "Restore View" : "Maximize View",StudioShortcut.Maximize)), false, viewport.ToggleMaximized);
             menu.DropDown(rect);
         }
+        private void DrawStudioSettings()
+        {
+            var content = new GUIContent(EditorGUIUtility.IconContent("SettingsIcon").image, "MashBox Studio settings — Appearance and preferences");
+            if ((modelingMode || skinningMode || retopologyMode) && GUI.Button(new Rect(0, 0, 24, 24), content, StudioTheme.Styles.overlayButton)) StudioSettingsWindow.Open();
+        }
         private void SwitchStudioMode(bool modeling)
         {
-            if (modelingMode == modeling) return;
+            if (modelingMode == modeling && !skinningMode && !retopologyMode) return;
+            retopologyMode=false; retopologyEditor?.SuspendLighting(); viewport.SetRetopologyPanels(false);
+            skinningEditor?.EndStroke(); skinningMode = false;
             modelEditor?.CancelMarkingMenu();
             modelEditor?.CloseToolOptions();
             GUIUtility.hotControl = 0; GUI.FocusControl(null);

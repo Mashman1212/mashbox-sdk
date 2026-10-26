@@ -14,6 +14,7 @@ namespace MashBoxSDK.AnimationStudio
         // Apply at every binding, including callbacks rebound after BindModelInput.
         private Action WrapStudioGUI(Action draw, bool menu = false)
         {
+            if (draw == null) return null;
             var themed = StudioTheme.Wrap(draw);
             return () => {
                 var evt = Event.current;

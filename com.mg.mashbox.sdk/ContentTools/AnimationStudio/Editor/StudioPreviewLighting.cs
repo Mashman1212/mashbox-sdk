@@ -178,6 +178,22 @@ namespace MashBoxSDK.AnimationStudio
             Set(mask,"mask",bits); Set(data,framesName,frames); Set(data,maskName,mask);
             Set(data,"customRenderingSettings",true);
         }
+        internal static void ConfigureStudioBackground(SceneView view)
+        {
+            if (!view || !view.camera) return;
+            var background = new Color(.35f,.35f,.35f,1);
+            view.sceneViewState.showSkybox = false;
+            view.sceneViewState.showFog = false;
+            view.camera.clearFlags = CameraClearFlags.SolidColor;
+            view.camera.backgroundColor = background;
+            // HDRP owns its clear mode separately from Camera.clearFlags. Apply this
+            // in both Studio modes, after SceneView has set up the preview camera.
+            var data = CameraDataType == null ? null : view.camera.GetComponent(CameraDataType);
+            if (!data) return;
+            var clearMode = Get(data,"clearColorMode");
+            Set(data,"clearColorMode",Enum.Parse(clearMode.GetType(),"Color"));
+            Set(data,"backgroundColorHDR",background.linear);
+        }
         private static object Get(object target,string name) => target.GetType().GetField(name,Members)?.GetValue(target) ?? target.GetType().GetProperty(name,Members)?.GetValue(target);
         private static void Set(object target,string name,object value)
         {

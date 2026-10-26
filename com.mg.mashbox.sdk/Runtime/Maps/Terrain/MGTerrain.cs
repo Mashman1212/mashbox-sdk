@@ -1116,8 +1116,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
             bounds = default;
             if (layer == null || (uint)layer.PrototypeIndex >= m_Prototypes.Count) return false;
             var prototype = m_Prototypes[layer.PrototypeIndex];
-            if (prototype == null || prototype.Kind != InstanceKind.Tree) return false;
-            bounds = GetDenseDetailRenderParts(prototype).treeBounds;
+            // Tall foliage can be painted as Detail, including shape-array trees.
+            // Culling still needs its full mesh bounds, independent of LOD policy.
+            if (prototype == null) return false;
+            var parts = GetDenseDetailRenderParts(prototype);
+            if (parts.parts.Count == 0) return false;
+            bounds = parts.treeBounds;
             float painted = layer.SizeMap != null ? 4f : 1f;
             float width = Mathf.Max(Mathf.Abs(layer.MinWidth), Mathf.Abs(layer.MaxWidth)) * painted;
             float height = Mathf.Max(Mathf.Abs(layer.MinHeight), Mathf.Abs(layer.MaxHeight)) * painted;

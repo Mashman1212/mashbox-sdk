@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
         private AuthoringRig OutfitRig => activeActor>=0 && activeActor<actorPreviews.Count ? actorPreviews[activeActor].Rig : rig;
         private void SaveOutfitActor()
         {
+            if (EditingClip) { EditorUtility.SetDirty(OutfitActor); MarkClipChanged(); return; }
             if(pendingSave && pendingSave!=OutfitActor) FlushSave();
             EditorUtility.SetDirty(OutfitActor); pendingSave=OutfitActor; saveAfter=EditorApplication.timeSinceStartup+1;
         }
