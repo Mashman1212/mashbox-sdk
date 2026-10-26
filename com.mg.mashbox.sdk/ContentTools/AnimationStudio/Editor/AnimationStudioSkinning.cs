@@ -166,16 +166,16 @@ namespace MashBoxSDK.AnimationStudio
             else menu.AddDisabledItem(new GUIContent("Unskin"));
             menu.AddSeparator("");
             if (skinningEditor.CanStitchSelectedBust)
-                menu.AddItem(new GUIContent("Stitch Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBust)));
-            else menu.AddDisabledItem(new GUIContent("Stitch Bust"));
+                menu.AddItem(new GUIContent("Stitch to Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBust)));
+            else menu.AddDisabledItem(new GUIContent("Stitch to Body"));
             if (skinningEditor.CanStitchSelectedBody)
-                menu.AddItem(new GUIContent("Stitch Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBody)));
-            else menu.AddDisabledItem(new GUIContent("Stitch Body"));
+                menu.AddItem(new GUIContent("Stitch to Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBody)));
+            else menu.AddDisabledItem(new GUIContent("Stitch to Bust"));
             if (skinningEditor.CanMatchDefaultBody)
                 menu.AddItem(new GUIContent("Match Default Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.MatchDefaultBody)));
             else menu.AddDisabledItem(new GUIContent("Match Default Body"));
 #if MashBoxDev
-            menu.AddItem(new GUIContent("Stitch Default Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchDefaultBust)));
+            menu.AddItem(new GUIContent("Stitch Default Bust to Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchDefaultBust)));
 #endif
             menu.AddSeparator("");
             if (skinningEditor.CanMirrorSkin)

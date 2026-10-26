@@ -295,7 +295,7 @@ namespace MashBoxSDK.AnimationStudio
             // Prefer the user's visible bust; hidden alternatives must not silently
             // become seam donors. With no visible user bust, use Default Bust.
             var busts=Document.parts.Where(p=>!p.referenceOnly && p.visible && p.bound && p.mesh && p.role==StudioSkinningDocument.MeshRole.Bust).ToArray();
-            if(busts.Length>1) throw new InvalidOperationException("Leave only the bust you want to stitch to visible, then run Stitch Body again.");
+            if(busts.Length>1) throw new InvalidOperationException("Leave only the bust you want to stitch to visible, then run Stitch to Bust again.");
             if(busts.Length==0)
             {
                 var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
@@ -304,7 +304,7 @@ namespace MashBoxSDK.AnimationStudio
                 busts=Document.parts.Where(p=>p.referenceOnly && p.bound && p.mesh && meshes.Contains(p.sourceMesh)).ToArray();
             }
             if(busts.Length==0) throw new InvalidOperationException("Load Default Bust or show a skinned mesh marked as Bust first.");
-            StitchPartsToReference(bodies,busts,"Stitch Body");
+            StitchPartsToReference(bodies,busts,"Stitch to Bust");
         }
 
 #if MashBoxDev
@@ -346,7 +346,7 @@ namespace MashBoxSDK.AnimationStudio
             var bodyMeshes=meshes(defaults.body);
             var bodies=Document.parts.Where(p=>p.referenceOnly && bodyMeshes.Contains(p.sourceMesh)).ToArray();
             if(bodies.Length==0) throw new InvalidOperationException("Load the default body into this workspace first.");
-            StitchPartsToReference(busts,bodies,"Stitch Bust");
+            StitchPartsToReference(busts,bodies,"Stitch to Body");
         }
 
         private void StitchPartsToReference(StudioSkinningDocument.Part[] busts,StudioSkinningDocument.Part[] bodies,string action)
@@ -362,7 +362,7 @@ namespace MashBoxSDK.AnimationStudio
             var surfaces=bodies.Select(p=>new StitchSurface(p,stitchPose)).ToArray();
             var bounds=new Bounds(surfaces[0].points[0],Vector3.zero);
             foreach(var s in surfaces) foreach(var p in s.points) bounds.Encapsulate(p);
-            if(action=="Stitch Body")
+            if(action=="Stitch to Bust")
                 foreach(var part in busts) foreach(var point in new StitchSurface(part,stitchPose).points) bounds.Encapsulate(point);
             // Restrict snapping to nearby open edges (about 1.5 cm on a human).
             float tolerance=bounds.size.magnitude*.008f;
@@ -406,7 +406,7 @@ namespace MashBoxSDK.AnimationStudio
                         if(found)
                         {
                             targets[v]=Tuple.Create(point,normal);
-                            if(action=="Stitch Body")
+                            if(action=="Stitch to Bust")
                             {
                                 // A different-density body seam also needs the
                                 // bust edge's weights, not just its A-pose position.

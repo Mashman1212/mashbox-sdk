@@ -303,9 +303,9 @@ namespace MashBoxSDK.AnimationStudio
                             var menu = new GenericMenu();
                             menu.AddItem(new GUIContent("Enable Weight Painting"),enabled,()=>Run(()=>ToggleReferencePainting(part)));
                             if(part.role == StudioSkinningDocument.MeshRole.Bust)
-                                menu.AddItem(new GUIContent("Stitch Bust"),false,()=>Run(()=>StitchBustParts(new[]{part})));
+                                menu.AddItem(new GUIContent("Stitch to Body"),false,()=>Run(()=>StitchBustParts(new[]{part})));
                             if(part.role == StudioSkinningDocument.MeshRole.Body)
-                                menu.AddItem(new GUIContent("Stitch Body"),false,()=>Run(()=>StitchBodyParts(new[]{part})));
+                                menu.AddItem(new GUIContent("Stitch to Bust"),false,()=>Run(()=>StitchBodyParts(new[]{part})));
                             menu.AddItem(new GUIContent("Save FBX"),false,()=>Run(()=>SaveReferenceFbx(part,false)));
                             menu.AddItem(new GUIContent("Save FBX As…"),false,()=>Run(()=>SaveReferenceFbx(part,true)));
                             menu.ShowAsContext(); Event.current.Use();
@@ -339,10 +339,10 @@ namespace MashBoxSDK.AnimationStudio
                             () => Run(() => SetMeshRole(part, StudioSkinningDocument.MeshRole.Clothing)));
                         menu.AddItem(new GUIContent("Mark as Body"), part.role == StudioSkinningDocument.MeshRole.Body,
                             () => Run(() => SetMeshRole(part, StudioSkinningDocument.MeshRole.Body)));
-                        if (CanStitchSelectedBust) menu.AddItem(new GUIContent("Stitch Bust"), false, () => Run(StitchBust));
-                        else menu.AddDisabledItem(new GUIContent("Stitch Bust"));
-                        if (CanStitchSelectedBody) menu.AddItem(new GUIContent("Stitch Body"), false, () => Run(StitchBody));
-                        else menu.AddDisabledItem(new GUIContent("Stitch Body"));
+                        if (CanStitchSelectedBust) menu.AddItem(new GUIContent("Stitch to Body"), false, () => Run(StitchBust));
+                        else menu.AddDisabledItem(new GUIContent("Stitch to Body"));
+                        if (CanStitchSelectedBody) menu.AddItem(new GUIContent("Stitch to Bust"), false, () => Run(StitchBody));
+                        else menu.AddDisabledItem(new GUIContent("Stitch to Bust"));
                         if (CanMatchDefaultBody) menu.AddItem(new GUIContent("Match Default Body"), false, () => Run(MatchDefaultBody));
                         else menu.AddDisabledItem(new GUIContent("Match Default Body"));
                         menu.AddItem(new GUIContent("Send to Retopology"), false, () => Run(SendSelectedToRetopology));
