@@ -22,6 +22,7 @@ namespace MashBoxSDK.AnimationStudio
             bool Is(StudioShortcut action) => StudioShortcuts.Pressed(action,evt);
             if (Is(StudioShortcut.Cancel))
             {
+                if (targetWeldActive) { if (targetWeldSource >= 0) ResetTargetWeldGesture(); else StopTargetWeld(); evt.Use(); repaint(); return true; }
                 if (cutTool != CutTool.None)
                 {
                     if (pendingCuts.Count > 0 || cutStart.HasValue || cutDragging) ResetCutGesture(); else StopCutTool();
@@ -70,7 +71,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ReleaseShortcutHolds()
         {
-            FinishSelectionPaint();
+            ResetTargetWeldGesture(); FinishSelectionPaint();
             if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
             EndPivotSnap(); ClearGridSnap();
         }

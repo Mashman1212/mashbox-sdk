@@ -124,6 +124,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void BeforeModelSceneGUI(SceneView view)
         {
             view.wantsMouseEnterLeaveWindow = true;
+            if (HandleLoopCountWheel(view, Event.current)) return;
             if (BeforeSelectionPaintInput(view)) return;
             if (CancelMarqueeOutside(view)) return;
             // Some native handles consume MouseUp before our normal scene callback.

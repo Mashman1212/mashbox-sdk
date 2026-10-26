@@ -20,10 +20,11 @@ namespace MashBoxSDK.AnimationStudio
         private Vector2 toolOptionsScroll;
         internal string ToolOptionsTitle => CameraOptionsVisible ? "Camera Settings"
             : LightingOptionsVisible ? "Viewport Lighting"
+            : targetWeldActive ? "Target Weld"
             : cutTool == CutTool.EdgeLoop ? "Insert Edge Loop"
             : cutTool != CutTool.None ? "Multi-Cut"
             : tool == Tool.None ? "Selection Tool" : tool + " Tool";
-        internal int ToolbarTransformState => cutTool != CutTool.None ? 0 : tool == Tool.None ? 1 : tool == Tool.Move ? 2 : tool == Tool.Rotate ? 3 : tool == Tool.Scale ? 4 : 0;
+        internal int ToolbarTransformState => targetWeldActive || cutTool != CutTool.None ? 0 : tool == Tool.None ? 1 : tool == Tool.Move ? 2 : tool == Tool.Rotate ? 3 : tool == Tool.Scale ? 4 : 0;
         internal ComponentMode ToolbarComponentMode => mode;
         internal bool CanSetToolbarComponentMode(ComponentMode value) => value >= ComponentMode.Object && value <= ComponentMode.Face;
         internal void SetToolbarComponentMode(ComponentMode value)
@@ -31,12 +32,12 @@ namespace MashBoxSDK.AnimationStudio
             if (!CanSetToolbarComponentMode(value)) return;
             StopCutTool(); SetComponentMode(value); repaint(); toolOptions?.Repaint();
         }
-        internal bool ToolbarToolSelected(Tool value) => cutTool == CutTool.None && tool == value;
+        internal bool ToolbarToolSelected(Tool value) => !targetWeldActive && cutTool == CutTool.None && tool == value;
         internal void ActivateTool(Tool next)
         {
             FinishSelectionPaint();
             FinishLiveTool();
-            StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; repaint(); toolOptions?.Repaint();
+            StopTargetWeld(); StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; repaint(); toolOptions?.Repaint();
         }
         internal void OpenToolOptions()
         {
@@ -58,10 +59,12 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (CameraOptionsVisible) { DrawViewportCameraOptions(); return; }
             if (LightingOptionsVisible) { DrawViewportLightingOptions(); return; }
+            if (targetWeldActive) { EditorGUILayout.HelpBox("Drag a vertex onto another vertex on the same mesh. The destination stays fixed. Release to weld; Escape cancels the drag, then exits the tool.", MessageType.Info); return; }
             if (cutTool != CutTool.None)
             {
+                if (cutTool == CutTool.EdgeLoop) DrawLoopCountOptions();
                 EditorGUILayout.HelpBox(cutTool == CutTool.EdgeLoop
-                    ? "Click-drag an edge to position the loop; release to apply. Shift snaps in 10% steps. Loops follow quad strips and stop at triangles, boundaries or non-manifold edges."
+                    ? "Drag to position the loops; release to apply. Ctrl/Cmd + wheel changes the loop count. Middle-click places evenly spaced centered loops. Shift snaps in 10% steps. Blue lines are an unapplied preview. Loops follow quad strips and stop at triangles, boundaries or non-manifold edges."
                     : "Click edges or vertices to build cuts across adjacent faces. "+StudioShortcuts.Label(StudioShortcut.CommitCut)+" or "+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+" applies the path. "+StudioShortcuts.Label(StudioShortcut.RemoveCut)+" removes the last segment. Ctrl/Cmd inserts edge loops; Shift snaps in 10% steps.", MessageType.Info);
                 GUILayout.Label(StudioShortcuts.Label(StudioShortcut.Cancel)+" cancels a pending cut; press again to exit, or choose a transform tool.", StudioTheme.Styles.wordWrappedMiniLabel);
                 return;

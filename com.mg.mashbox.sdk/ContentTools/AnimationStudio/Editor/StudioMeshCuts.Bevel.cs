@@ -107,6 +107,8 @@ namespace MashBoxSDK.AnimationStudio
             internal readonly List<BevelPolygon> Polygons = new List<BevelPolygon>();
 
             internal readonly HashSet<int> JunctionAnchors = new HashSet<int>();
+            internal readonly Dictionary<(int,int),Vector3> JunctionFlow = new Dictionary<(int,int),Vector3>();
+            internal readonly Dictionary<int,Vector3> JunctionFlowVertices = new Dictionary<int,Vector3>();
 
             internal readonly Dictionary<int, Vector3> NormalHints = new Dictionary<int, Vector3>();
 
@@ -427,13 +429,21 @@ namespace MashBoxSDK.AnimationStudio
             if (estimate > 8000000) throw new InvalidOperationException("This bevel would generate too much geometry. Reduce the selection or subdivisions.");
 
             var plan = PrepareBevelWavefront(targets, affected);
+            bool vertexPatch=false;
+            foreach(int vertex in affected)
+            {
+                int degree=0;foreach(var edge in incident[vertex])if(targets.Contains(BevelKey(edge.A,edge.B)))degree++;
+                if(degree>=3){vertexPatch=true;break;}
+            }
             var clip=PrepareFlatClip(plan,mesh);
             float width=clip!=null?Mathf.Min(options.Width,clip.Limit):Mathf.Min(options.Width,plan.Limit);
             bevelUseClipping=false;
             if(clip!=null)
             {
                 EvaluateFlatClip(clip,width);
-                bevelUseClipping=options.Subdivisions==0||PrepareClipProfileLayout(clip);
+                // A strip-only clip layout cannot represent a multi-way vertex patch.
+                // Use the shared vertex-fan builder at every subdivision count.
+                bevelUseClipping=options.Subdivisions==0?!vertexPatch:PrepareClipProfileLayout(clip);
             }
             if(!bevelUseClipping)
             {
@@ -480,7 +490,7 @@ namespace MashBoxSDK.AnimationStudio
             var plan = PrepareBevelWavefront(targets, affected);
             var originals = plan.Originals;
             var draft = reusableBevelDraft ?? (reusableBevelDraft = new BevelDraft());
-            draft.Reset(plan); draft.Width = width; draft.Originals = originals; draft.Precision = epsilon * 2; draft.Plan = plan;
+            draft.Reset(plan); draft.JunctionFlow.Clear(); draft.JunctionFlowVertices.Clear(); draft.Width = width; draft.Originals = originals; draft.Precision = epsilon * 2; draft.Plan = plan;
             var distances = plan.Distances;
             var cuts = new Dictionary<(int vertex, int other), int>();
             var boundaryCuts = new Dictionary<(int,int), List<int>>();
@@ -793,6 +803,19 @@ namespace MashBoxSDK.AnimationStudio
 
                 }
 
+                // Carry the adjoining strip directions into the vertex mesh so its
+                // first interior row continues the incoming edge flow.
+                for(int k=1;k<steps;k++)
+                {
+                    var direction=BevelUnit(draft.Positions[b[k]]-draft.Positions[a[k]]);
+                    draft.JunctionFlowVertices[a[k]]=-direction;draft.JunctionFlowVertices[b[k]]=direction;
+                }
+                for(int k=0;k<steps;k++)
+                {
+                    var along=BevelUnit((draft.Positions[b[k]]-draft.Positions[a[k]])+(draft.Positions[b[k+1]]-draft.Positions[a[k+1]]));
+                    draft.JunctionFlow[BevelKey(a[k],a[k+1])]=-along;
+                    draft.JunctionFlow[BevelKey(b[k],b[k+1])]=along;
+                }
                 for (int k = 0; k < steps; k++)
 
                 {
@@ -1131,6 +1154,32 @@ namespace MashBoxSDK.AnimationStudio
 
             int Arc(int side, int index) => ring[(anchors[(side + anchors.Count) % anchors.Count] + index) % ring.Count];
 
+            Vector3 Flow(int side,int sample)
+            {
+                return draft.JunctionFlowVertices.TryGetValue(Arc(side,sample),out var direction)?direction:Vector3.zero;
+            }
+            Vector3 FlowPoint(int side,int u,int v,Vector3 fallback)
+            {
+                bool bottom=v==1,left=u==1;if(!bottom&&!left)return fallback;
+                var a=draft.Positions[Arc(side,u)];var b=draft.Positions[Arc(side-1,steps-v)];
+                var da=Flow(side,u);var db=Flow(side-1,steps-v);
+                if(bottom&&left)
+                {
+                    // Intersect the two incident strip rulings. Nonintersecting or
+                    // parallel constraints retain the existing surface construction.
+                    double dot=Vector3.Dot(da,db),denom=1-dot*dot;
+                    if(denom<1e-8)return fallback;
+                    var delta=b-a;double ad=Vector3.Dot(delta,da),bd=Vector3.Dot(delta,db);
+                    double ta=(ad-dot*bd)/denom,tb=(dot*ad-bd)/denom;
+                    var pa=a+da*(float)ta;var pb=b+db*(float)tb;
+                    if(ta<=epsilon||tb<=epsilon||(pa-pb).sqrMagnitude>epsilon*epsilon*64)return fallback;
+                    return (pa+pb)*.5f;
+                }
+                var origin=bottom?a:b;var direction=bottom?da:db;
+                if(direction.sqrMagnitude<.5f)return fallback;
+                float distance=Vector3.Dot(fallback-origin,direction);
+                return distance>epsilon?origin+direction*distance:fallback;
+            }
             var faces = new List<List<int>>();
 
             void Face(params int[] points)
@@ -1229,6 +1278,14 @@ namespace MashBoxSDK.AnimationStudio
 
                 bool odd = (steps & 1) != 0;
 
+                var commonCenter=center;
+                if(half==1&&!odd)
+                {
+                    var candidates=new Vector3[anchors.Count];bool compatible=true;
+                    for(int side=0;side<anchors.Count;side++)candidates[side]=FlowPoint(side,1,1,center);
+                    for(int side=1;side<candidates.Length;side++)compatible&=(candidates[side]-candidates[0]).sqrMagnitude<=epsilon*epsilon*64;
+                    if(compatible)commonCenter=candidates[0];
+                }
                 var inner = new int[anchors.Count];
 
                 var rightRays = new int[anchors.Count][];
@@ -1241,6 +1298,7 @@ namespace MashBoxSDK.AnimationStudio
 
                     var p = odd ? Radial(center, positions[side], 1f / steps) : center;
 
+                    if(half==1)p=odd?FlowPoint(side,1,1,p):commonCenter;
                     inner[side] = draft.AddPoint(p, owner);
 
                 }
@@ -1291,6 +1349,7 @@ namespace MashBoxSDK.AnimationStudio
 
                         }
 
+                        p=half==1&&!odd?commonCenter:FlowPoint(side,u,v,p);
                         grid[u, v] = draft.AddPoint(p, owner);
 
                     }

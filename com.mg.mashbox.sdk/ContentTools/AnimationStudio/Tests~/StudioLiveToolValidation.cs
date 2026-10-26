@@ -97,8 +97,8 @@ public static class StudioLiveToolValidation
             stage="soften preview";editor.SetToolbarComponentMode(StudioModelEditor.ComponentMode.Object);Call(editor,"OpenSoftenTool");Flush(editor);pane=(ToolChannelPane)Get(editor,"softenToolPane");
             int softCount=node.mesh.vertexCount;ToolChannelPane.SetFloatDefault("Soften Edges","Angle",180);Call(editor,"QueueLiveTool",Get(editor,"liveTool"));Flush(editor);
             Check(node.normalGroups.Length==node.mesh.vertexCount,"Smoothing updates editable normal groups");pane.Close();Check(Shape(node.mesh)==extruded,"Soften close restores geometry");
-            stage="merge preview";Mode(editor,StudioModelEditor.ComponentMode.Vertex,0,1,2,3);Set(editor,"mergeDistance",.001f);Call(editor,"MergeSelectedVertices");Flush(editor);pane=(ToolChannelPane)Get(editor,"mergeToolWindow");
-            Check(pane,"Multi-vertex merge uses live pane");if(pane){Set(editor,"mergeDistance",.2f);Call(editor,"QueueLiveTool",Get(editor,"liveTool"));Flush(editor);pane.Close();Check(Shape(node.mesh)==extruded,"Merge close restores source");}
+            stage="merge to center";Mode(editor,StudioModelEditor.ComponentMode.Vertex,0,1,2,3);Call(editor,"MergeToCenter");
+            Check(Get(editor,"livePreview")==null,"Center merge completes immediately");Check(editor.Components.Count>0,"Center merge retains its result selection");editor.PerformWorkspaceHistory(false);node=document.nodes[0];Check(Shape(node.mesh)==extruded,"Center merge Undo restores source");
             stage="extrusion UV dimensions";
             foreach(int dimension in new[]{3,4})
             {

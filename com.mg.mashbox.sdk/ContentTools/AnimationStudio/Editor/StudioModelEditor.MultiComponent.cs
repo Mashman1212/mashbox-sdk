@@ -119,6 +119,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ChangeComponentMode(ComponentMode next,SceneView view)
         {
+            StopTargetWeld();
             FinishSelectionPaint();
             if(next==ComponentMode.Object){try{FinishLiveTool();}catch(InvalidOperationException){CancelLiveTool();}CloseLiveToolPanes();}
             else FinishLiveTool();

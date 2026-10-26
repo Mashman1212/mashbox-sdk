@@ -21,7 +21,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void ActivateCutTool(CutTool next)
         {
             if (!CanCutMesh) { error = "Select an editable static mesh to use the cut tools."; repaint(); return; }
-            CancelMarkingMenu(); ResetCutGesture(); CameraOptionsVisible = false; LightingOptionsVisible = false; cutTool = next; tool = Tool.None; pivot = false;
+            StopTargetWeld(); CancelMarkingMenu(); ResetCutGesture(); CameraOptionsVisible = false; LightingOptionsVisible = false; cutTool = next; tool = Tool.None; pivot = false;
             mode = ComponentMode.Edge; Components.Clear(); cutTopology = new StudioMeshCuts(Document.nodes[Active]); cutMesh = ActiveMesh;
             error = null; repaint(); toolOptions?.Repaint();
         }
@@ -57,6 +57,7 @@ namespace MashBoxSDK.AnimationStudio
             { ResetCutGesture(); cutTopology = new StudioMeshCuts(Document.nodes[Active]); cutMesh = ActiveMesh; }
             cutControl = GUIUtility.GetControlID("MashBoxStudioCutTool".GetHashCode(), FocusType.Passive);
             if (HandleModelKeyboard(view)) return true;
+            if (HandleLoopCountWheel(view, evt)) return true;
             if (evt.alt) return true;
             if (evt.type == EventType.Layout || evt.type == EventType.MouseMove) HandleUtility.AddDefaultControl(cutControl);
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,0,view.position.width,view.position.height);
@@ -70,11 +71,19 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     var seed = loopSeed.Value; seed.T = EdgeFraction(view, evt.mousePosition, seed.A, seed.B);
                     if(evt.shift)seed.T=Mathf.Round(seed.T*10)/10;seed.T=Mathf.Clamp(seed.T,.001f,.999f);
-                    cutPreview = cutTopology.Loop(seed);
+                    loopSeed = seed;
+                    cutPreview = BuildLoopCuts(seed);
                 }
-                else if (cutHover.HasValue && loop) cutPreview = cutTopology.Loop(cutHover.Value);
+                else if (cutHover.HasValue && loop) cutPreview = BuildLoopCuts(cutHover.Value);
                 else if (cutStart.HasValue && cutHover.HasValue && cutTopology.TryCut(cutStart.Value,cutHover.Value,out var cut)) cutPreview.Add(cut);
                 if(evt.type!=EventType.Repaint)repaint();
+            }
+            if (overCanvas && evt.type == EventType.MouseDown && evt.button == 2 && loop &&
+                (GUIUtility.hotControl == 0 || GUIUtility.hotControl == cutControl))
+            {
+                var seed = loopSeed ?? cutHover;
+                if (seed.HasValue) { var cuts = BuildLoopCuts(seed.Value, true); if (cuts.Count > 0) Run(() => CommitCuts(cuts)); }
+                evt.Use(); repaint(); return true;
             }
             if (overCanvas && evt.type == EventType.MouseDown && evt.button == 0 && GUIUtility.hotControl == 0)
             {
@@ -115,7 +124,7 @@ namespace MashBoxSDK.AnimationStudio
                     { nearest=distance;face=f; }
             }
             if(face<0)return null;
-            var vertices=cutTopology.Faces[face].Vertices;float best=14;StudioMeshCuts.Point? result=null;
+            var vertices=cutTopology.Faces[face].Vertices;float best=loop?float.PositiveInfinity:14;StudioMeshCuts.Point? result=null;
             for(int e=0;e<vertices.Count;e++)
             {
                 int a=vertices[e],b=vertices[(e+1)%vertices.Count];float t=EdgeFraction(view,mouse,a,b);
@@ -137,13 +146,13 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var transform=Transforms[Active];
                 Handles.zTest=displayXray ? UnityEngine.Rendering.CompareFunction.Always : UnityEngine.Rendering.CompareFunction.LessEqual;
-                foreach(var cut in pendingCuts) { Handles.color=new Color(1,.65f,.1f);Handles.DrawAAPolyLine(3,transform.TransformPoint(cutTopology.Position(cut.A)),transform.TransformPoint(cutTopology.Position(cut.B))); }
-                foreach(var cut in cutPreview) { Handles.color=Color.yellow;Handles.DrawAAPolyLine(3,transform.TransformPoint(cutTopology.Position(cut.A)),transform.TransformPoint(cutTopology.Position(cut.B))); }
+                foreach(var cut in pendingCuts) { Handles.color=CutPreviewColor;Handles.DrawAAPolyLine(3,transform.TransformPoint(cutTopology.Position(cut.A)),transform.TransformPoint(cutTopology.Position(cut.B))); }
+                foreach(var cut in cutPreview) { Handles.color=CutPreviewColor;Handles.DrawAAPolyLine(3,transform.TransformPoint(cutTopology.Position(cut.A)),transform.TransformPoint(cutTopology.Position(cut.B))); }
                 foreach(var point in new[]{cutStart,cutHover})if(point.HasValue)
-                { var world=transform.TransformPoint(cutTopology.Position(point.Value));Handles.color=Color.yellow;Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*.035f,EventType.Repaint); }
+                { var world=transform.TransformPoint(cutTopology.Position(point.Value));Handles.color=CutHoverColor;Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*.035f,EventType.Repaint); }
                 Handles.BeginGUI();
                 var rect=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(0,0,view.position.width,view.position.height);
-                GUI.Label(new Rect(rect.x+8,rect.y+38,rect.width-16,40),cutTool==CutTool.EdgeLoop?"Insert Edge Loop · drag an edge · Shift: snap · "+StudioShortcuts.Label(StudioShortcut.Cancel)+": exit":"Multi-Cut · "+StudioShortcuts.Label(StudioShortcut.CommitCut)+"/"+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+": apply · Ctrl: loop · "+StudioShortcuts.Label(StudioShortcut.Cancel)+": cancel",StudioTheme.Styles.wordWrappedMiniLabel);
+                GUI.Label(new Rect(rect.x+8,rect.y+38,rect.width-16,40),cutTool==CutTool.EdgeLoop?"Insert Edge Loop · "+edgeLoopCount+(edgeLoopCount == 1 ? " loop" : " loops")+" · Ctrl/Cmd+wheel: count · Middle click: centered · Shift: snap · "+StudioShortcuts.Label(StudioShortcut.Cancel)+": exit":"Multi-Cut · "+StudioShortcuts.Label(StudioShortcut.CommitCut)+"/"+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+": apply · Ctrl: loop · "+StudioShortcuts.Label(StudioShortcut.Cancel)+": cancel",StudioTheme.Styles.wordWrappedMiniLabel);
                 Handles.EndGUI();
             }
             finally { Handles.color=previous;Handles.zTest=depth; }

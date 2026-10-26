@@ -7,20 +7,33 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed class StudioControlsPreferences : EditorWindow
     {
+        private static readonly string[] Pages={"General","Viewport","UV Editor","Appearance","Shortcuts","Profiles"};
+        private static readonly string[] Descriptions={
+            "Window layout, editing history and modelling handles.",
+            "Image quality, grid appearance and viewport performance.",
+            "Display settings for UV editing.",
+            "Choose a Studio theme or adjust your custom colors.",
+            "Find commands and customize their keyboard or mouse bindings.",
+            "Load and export settings and hotkeys independently."};
+        [SerializeField] private int page;
         private string search = "";
         private Vector2 scroll;
         private string feedback;
         private readonly System.Collections.Generic.Dictionary<string, bool> expandedGroups = new System.Collections.Generic.Dictionary<string, bool>();
         private void OnEnable()
         {
+            titleContent=new GUIContent("Modelling Studio Preferences");
+            minSize=new Vector2(780,560);
             wantsMouseMove = true;
             wantsMouseEnterLeaveWindow = true;
         }
         internal static void Open()
         {
             StudioModelCommands.RefreshActiveCatalog();
-            var window = GetWindow<StudioControlsPreferences>(true,"MashBox Studio Preferences",true);
-            window.minSize = new Vector2(600,540);
+            var window = GetWindow<StudioControlsPreferences>(true,"Modelling Studio Preferences",true);
+            window.minSize = new Vector2(780,560);
+            if(window.position.width<780||window.position.height<560)
+                window.position=new Rect(window.position.x,window.position.y,960,680);
             var owner = focusedWindow as MashBoxStudioViewport ?? SceneView.lastActiveSceneView as MashBoxStudioViewport ??
                 Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
             StudioWindowOwnership.ShowUtility(window, owner);
@@ -41,12 +54,62 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DrawControls()
         {
-            using var scrollView = new EditorGUILayout.ScrollViewScope(scroll);
-            scroll = scrollView.scrollPosition;
-            StudioSettingsWindow.DrawGeneralSettings();
-            GUILayout.Space(8);
-            EditorGUILayout.LabelField("Modeling Commands and Shortcuts", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("Bindings apply to Studio modelling and its UV editor. Unity's shortcut profile is unchanged. Click a binding to record a replacement, + to add an alternative, or × to remove it. Changes save to the active hotkey file shown above. Studio remembers the last loaded file. Load and export hotkeys independently from settings with the buttons above.", MessageType.None);
+            page=Mathf.Clamp(page,0,Pages.Length-1);
+            // A single backing for the category strip; individual idle rows stay clear.
+            EditorGUI.DrawRect(new Rect(0,0,170,position.height),
+                Color.Lerp(StudioTheme.Current.Panel,Color.white,.04f));
+            using(new EditorGUILayout.VerticalScope())
+            {
+                GUILayout.Space(8);
+                using(new EditorGUILayout.HorizontalScope())
+                {
+                    using(new EditorGUILayout.VerticalScope(GUILayout.Width(164)))
+                    {
+                        GUILayout.Space(4);
+                        for(int i=0;i<Pages.Length;i++)
+                        {
+                            var rect=GUILayoutUtility.GetRect(164,29,GUILayout.ExpandWidth(true));
+                            bool hover=rect.Contains(Event.current.mousePosition);
+                            if(page==i||hover)EditorGUI.DrawRect(rect,page==i?StudioTheme.Current.Selection:StudioTheme.Current.Hover);
+                            if(GUI.Button(rect,GUIContent.none,GUIStyle.none)&&page!=i)
+                            {page=i;scroll=Vector2.zero;GUI.FocusControl(null);}
+                            GUI.Label(new Rect(rect.x+12,rect.y,rect.width-20,rect.height),Pages[i],StudioTheme.Styles.label);
+                        }
+                        GUILayout.FlexibleSpace();
+                    }
+                    GUILayout.Space(12);
+                    using(new EditorGUILayout.VerticalScope())
+                    {
+                        GUILayout.Label(Pages[page],EditorStyles.boldLabel);
+                        GUILayout.Label(Descriptions[page],EditorStyles.wordWrappedMiniLabel);
+                        GUILayout.Space(12);
+                        using(var content=new EditorGUILayout.ScrollViewScope(scroll))
+                        {
+                            scroll=content.scrollPosition;
+                            float oldLabelWidth=EditorGUIUtility.labelWidth;
+                            try
+                            {
+                                EditorGUIUtility.labelWidth=Mathf.Clamp(position.width*.29f,180,260);
+                                if(page==4)DrawShortcuts();else StudioSettingsWindow.DrawPreferencePage(page);
+                            }
+                            finally{EditorGUIUtility.labelWidth=oldLabelWidth;}
+                        }
+                    }
+                    GUILayout.Space(12);
+                }
+                GUILayout.Space(8);
+                using(new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
+                {
+                    GUILayout.Label("Changes save automatically",EditorStyles.miniLabel);
+                    GUILayout.FlexibleSpace();
+                    if(GUILayout.Button("Close",EditorStyles.toolbarButton,GUILayout.Width(70)))Close();
+                }
+            }
+        }
+        private void DrawShortcuts()
+        {
+            EditorGUILayout.LabelField("Command bindings", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Bindings apply to Studio modelling and its UV editor. Unity's shortcut profile is unchanged. Click a binding to record a replacement, + to add an alternative, or × to remove it. Changes save to your active hotkey file. Use Profiles to load or export hotkeys independently from settings.", MessageType.None);
             search = EditorGUILayout.TextField("Find a control",search);
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -92,7 +155,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             GUILayout.Space(12);
             EditorGUILayout.HelpBox("Hold bindings release even if you release Ctrl/Shift/Alt first. Text fields keep normal typing and text-editing shortcuts. Selection modifiers (Shift adds, Ctrl/Cmd subtracts), cut precision modifiers and the mouse wheel retain their existing behavior.",MessageType.None);
-            // ScrollViewScope also balances the layout when a binding edit exits GUI.
+            // The parent scroll scope remains balanced when a binding edit exits GUI.
         }
         private void Record(StudioShortcuts.Definition definition, int index)
         {

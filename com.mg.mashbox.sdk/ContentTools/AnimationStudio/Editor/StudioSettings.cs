@@ -137,33 +137,72 @@ namespace MashBoxSDK.AnimationStudio
             }
             EditorGUILayout.EndScrollView();
         }
-        internal static void DrawGeneralSettings()
+        internal static void DrawGeneralSettings()=>DrawPreferencePage(0);
+        private static GUIStyle preferenceSectionStyle;
+        private static void PreferenceSection(string title,Action draw)
         {
-            StudioPreferenceStore.DrawTransferButtons();
-            DrawWindowMode();
-            DrawToolbarIconSize();
-            EditorGUI.BeginChangeCheck();
-            int undoLimit = EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions", "Maximum Studio modeling actions kept across Undo and Redo. Default 50; minimum 1. Lower values can reduce retained memory. A complete drag or tool operation counts as one action."), StudioSettings.Current.undoLimit);
-            if (EditorGUI.EndChangeCheck()) { StudioSettings.Current.undoLimit = Math.Max(1, undoLimit); StudioSettings.Save(); }
-            GUILayout.Space(8);
-            GUILayout.Label("Viewport", StudioTheme.Styles.boldLabel);
-            DrawViewportAntialiasing();
-            DrawViewportVSync();
-            DrawViewportCache();
-            DrawIncrementalGarbageCollection();
-            var settings = StudioSettings.Current;
-            EditorGUI.BeginChangeCheck();
-            settings.hideObjectWireframe = !EditorGUILayout.Toggle("Object wireframe", !settings.hideObjectWireframe);
-            settings.handleSize = EditorGUILayout.Slider(new GUIContent("Handle size", "Resize modeling handles and anchor gizmos with + and − in the viewport."), settings.handleSize, .25f, 3);
-            settings.gridSpacing = EditorGUILayout.FloatField(new GUIContent("Grid spacing", "Distance between minor grid lines, in world units."), settings.gridSpacing);
-            settings.gridOpacity = EditorGUILayout.Slider("Grid opacity", settings.gridOpacity, 0, 1);
-            GUILayout.Space(12);
-            GUILayout.Label("UV Editor", StudioTheme.Styles.boldLabel);
-            settings.uvPointSize = EditorGUILayout.Slider("UV point size", settings.uvPointSize, 2, 8);
-            if (EditorGUI.EndChangeCheck()) StudioSettings.Save();
-            GUILayout.Space(12);
-            GUILayout.Label("Settings are saved in this project’s MashBoxStudio/Preferences folder. The incremental GC toggle changes this Unity project's Player setting.", StudioTheme.Styles.wordWrappedMiniLabel);
-            if (GUILayout.Button("Restore MashBox Studio Defaults")) StudioSettings.Reset();
+            GUILayout.Label(title,EditorStyles.boldLabel);
+            if(preferenceSectionStyle==null)preferenceSectionStyle=new GUIStyle(EditorStyles.helpBox)
+            {
+                // Native dropdown/button art extends 2px below its layout rect.
+                // Leave 8px clear after that artwork and the 2px group outline.
+                padding=new RectOffset(8,8,8,12),margin=new RectOffset(0,0,0,0)
+            };
+            using(new EditorGUILayout.VerticalScope(preferenceSectionStyle))draw();
+            if(Event.current.type==EventType.Repaint)
+            {
+                GUI.DrawTexture(GUILayoutUtility.GetLastRect(),Texture2D.whiteTexture,
+                    ScaleMode.StretchToFill,true,0,StudioTheme.Current.Border,2,4);
+            }
+            GUILayout.Space(14);
+        }
+        internal static void DrawPreferencePage(int page)
+        {
+            var settings=StudioSettings.Current;
+            switch(page)
+            {
+                case 0:
+                    PreferenceSection("Window and toolbars",()=>{DrawWindowMode();DrawToolbarIconSize();});
+                    PreferenceSection("Editing",()=>{
+                        EditorGUI.BeginChangeCheck();
+                        int undoLimit=EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions","Studio actions retained across Undo and Redo. One complete drag or tool operation counts as one action."),settings.undoLimit);
+                        settings.handleSize=EditorGUILayout.Slider(new GUIContent("Handle size","Resize modelling handles and anchor gizmos."),settings.handleSize,.25f,3);
+                        if(EditorGUI.EndChangeCheck()){settings.undoLimit=Math.Max(1,undoLimit);StudioSettings.Save();}
+                    });
+                    break;
+                case 1:
+                    PreferenceSection("Image quality",()=>{DrawViewportAntialiasing();DrawViewportVSync();});
+                    PreferenceSection("Grid",()=>{
+                        EditorGUI.BeginChangeCheck();
+                        settings.gridSpacing=EditorGUILayout.FloatField(new GUIContent("Grid spacing","Distance between minor grid lines, in world units."),settings.gridSpacing);
+                        settings.gridOpacity=EditorGUILayout.Slider("Grid opacity",settings.gridOpacity,0,1);
+                        if(EditorGUI.EndChangeCheck())StudioSettings.Save();
+                    });
+                    PreferenceSection("Performance",()=>{DrawViewportCache();GUILayout.Space(8);DrawIncrementalGarbageCollection();});
+                    break;
+                case 2:
+                    PreferenceSection("UV display",()=>{
+                        EditorGUI.BeginChangeCheck();settings.uvPointSize=EditorGUILayout.Slider("UV point size",settings.uvPointSize,2,8);
+                        if(EditorGUI.EndChangeCheck())StudioSettings.Save();
+                    });
+                    break;
+                case 3:
+                    PreferenceSection("Color theme",()=>{
+                        EditorGUILayout.LabelField("Current theme",StudioTheme.Current.Name);
+                        GUILayout.Label("Themes apply to Studio and its tool windows. The custom theme derives the remaining colors from your primary and secondary choices.",EditorStyles.wordWrappedMiniLabel);
+                        GUILayout.Space(8);
+                        if(GUILayout.Button("Open Themes…",GUILayout.Width(150)))StudioSettingsWindow.Open();
+                    });
+                    break;
+                case 5:
+                    PreferenceSection("Settings and hotkey files",StudioPreferenceStore.DrawTransferButtons);
+                    PreferenceSection("Reset settings",()=>{
+                        GUILayout.Label("Restore Studio settings, including the theme and custom colors. Your hotkey bindings are kept.",EditorStyles.wordWrappedMiniLabel);
+                        GUILayout.Space(8);
+                        if(GUILayout.Button("Restore Default Settings",GUILayout.Width(190)))StudioSettings.Reset();
+                    });
+                    break;
+            }
         }
         private void DrawPalette(StudioTheme.Palette palette)
         {

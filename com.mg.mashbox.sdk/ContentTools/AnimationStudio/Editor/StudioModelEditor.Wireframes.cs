@@ -8,7 +8,8 @@ namespace MashBoxSDK.AnimationStudio
     {
         private sealed class SelectionWireframe
         {
-            internal int[] indices;
+            internal int[] indices, canonical;
+            internal Dictionary<(int,int),int> edgeLookup;
             internal Vector3[] lines;
             internal int[] orderedIndices, stripEnds;
             internal Vector3[] worldVertices, strokePoints;
@@ -62,6 +63,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ClearSelectionWireframes()
         {
             ClearAllComponentDrawCaches();
+            ReleaseComponentWireSubsets();
             foreach(var wire in selectionWireframes.Values) { if(wire.baked) UnityEngine.Object.DestroyImmediate(wire.baked); ReleaseWireBatch(wire); }
             selectionWireframes.Clear();
         }
@@ -241,8 +243,9 @@ namespace MashBoxSDK.AnimationStudio
             float distance=Mathf.Max(outlineNearClip,Vector3.Dot(point-outlineCameraPosition,outlineCameraForward));
             return point-outlineCameraForward*(distance*fraction);
         }
-        private void DrawNativeComponentEdges(IEnumerable<int> selected,Color color,float width)
+        private void DrawComponentEdges(IEnumerable<int> selected,Color color,float width)
         {
+            if(DrawComponentWireSubset(selected,color,width))return;
             var depth=Handles.zTest;bool lighting=Handles.lighting;
             try
             {
@@ -322,6 +325,7 @@ namespace MashBoxSDK.AnimationStudio
                     else if (topology == MeshTopology.Lines) for (int i = 0; i + 1 < list.Length; i += 2) Edge(list[i], list[i + 1]);
                     else if (topology == MeshTopology.LineStrip) for (int i = 0; i + 1 < list.Length; i++) Edge(list[i], list[i + 1]);
                 }
+                wire.canonical=canonical;wire.edgeLookup=edges;
                 wire.indices = indices.ToArray(); wire.lines = new Vector3[indices.Count];
                 wire.adjacent=adjacent.ToArray();
                 BuildWireframeStrokes(wire,canonical);

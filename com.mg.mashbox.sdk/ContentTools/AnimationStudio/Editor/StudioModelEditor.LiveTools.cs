@@ -11,7 +11,8 @@ namespace MashBoxSDK.AnimationStudio
         internal void ReloadStoredToolDefaults()
         {
             CancelLiveTool(); LoadDisplayConfiguration();
-            mergeDistance = ToolChannelPane.GetFloatDefault("Merge Vertices", "Distance", .001f);
+            edgeLoopCount = Mathf.Clamp(Mathf.RoundToInt(StudioPreferenceStore.GetFloat("Model.EdgeLoopCount", 1)), 1, MaximumEdgeLoops);
+
             extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .01f);
             extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         }
@@ -39,7 +40,6 @@ namespace MashBoxSDK.AnimationStudio
         private void RepaintLiveToolPanes()
         {
             if (bevelToolPane) bevelToolPane.Repaint();
-            if (mergeToolWindow) mergeToolWindow.Repaint();
             if (softenToolPane) softenToolPane.Repaint();
             if (extrudeToolPane) extrudeToolPane.Repaint();
         }
@@ -59,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (kind == LiveTool.Bevel) return new Vector4(ToolChannelPane.GetFloatDefault(BevelTool, "Width", .1f),
                 ToolChannelPane.GetFloatDefault(BevelTool, "Subdivisions", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Tension", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Junction", 0));
-            if (kind == LiveTool.Merge) return new Vector4(mergeDistance, 0, 0, 0);
+            if (kind == LiveTool.Merge) return Vector4.zero;
             if (kind == LiveTool.Soften) return new Vector4(ToolChannelPane.GetFloatDefault(SoftenTool, "Angle", 45), 0, 0, 0);
             return new Vector4(extrusionDistance, extrudeFacesTogether ? 1 : 0, 0, 0);
         }
@@ -86,10 +86,10 @@ namespace MashBoxSDK.AnimationStudio
             if (HasLiveTool(kind)) return;
             FinishLiveTool();
             if (!CanRunLiveTool(kind)) throw new InvalidOperationException("Select editable mesh components for this tool.");
-            FinishChannelEdit(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
+            FinishChannelEdit(); StopTargetWeld(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
             liveMode = mode; liveSelection = Components.OrderBy(i => i).ToArray();
             liveWorld = Active >= 0 ? Transforms[Active].localToWorldMatrix : Matrix4x4.identity;
-            liveMergePair = kind == LiveTool.Merge && MergeSelectionCount() == 2;
+            liveMergePair = kind == LiveTool.Merge;
             liveEdges = mode == ComponentMode.Edge ? liveSelection.Select(i => Edges()[i]).ToArray() : null;
             liveFaces = mode == ComponentMode.Face ? liveSelection : null;
             livePoints = new HashSet<Vector3>(); liveEdgePoints = new HashSet<(Vector3, Vector3)>();
@@ -302,7 +302,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!dispatchingComponentTool && CommitComponentLiveTools(closePane)) return;
             if (livePreview == null) return;
             if (!liveValid) throw new InvalidOperationException("Correct the tool values or close its pane to cancel the preview.");
-            string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Merge ? "Merge vertices" : liveTool == LiveTool.Soften ? "Soften edges" : "Extrude mesh components";
+            string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Merge ? "Merge vertices to center" : liveTool == LiveTool.Soften ? "Soften edges" : "Extrude mesh components";
             var finishedTool = liveTool;
             var selectionBefore = CaptureSelection();
             selectionBefore = dispatchingComponentTool ? componentLiveBefore : SourceLiveSelection(selectionBefore);

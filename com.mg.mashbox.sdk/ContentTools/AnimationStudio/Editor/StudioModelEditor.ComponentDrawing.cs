@@ -223,9 +223,9 @@ EnsureComponentDrawing();EnsureComponentHover();
                 if(mode==ComponentMode.Vertex)Draw(componentDots,new Color(.35f,.9f,.9f,1),1,4);
                 if(mode==ComponentMode.Edge)
                 {
-                    if(!PaintHoverVisible && drawnHover>=0)DrawNativeComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
-                    DrawNativeComponentEdges(Components,new Color(1,.65f,.15f,1),3);
-                    if(PaintHoverVisible && drawnHover>=0)DrawNativeComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
+                    if(!PaintHoverVisible && drawnHover>=0)DrawComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
+                    DrawComponentEdges(Components,new Color(1,.65f,.15f,1),3);
+                    if(PaintHoverVisible && drawnHover>=0)DrawComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
                 }
                 else
                 {
