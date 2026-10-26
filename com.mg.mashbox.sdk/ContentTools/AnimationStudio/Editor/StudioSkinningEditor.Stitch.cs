@@ -128,6 +128,7 @@ namespace MashBoxSDK.AnimationStudio
             float tolerance=bounds.size.magnitude*.01f;
             var index=new StudioSkinSpatialIndex(target.points,tolerance);
             var nearby=new List<int>(); var mapping=new Dictionary<int,int>(); var used=new HashSet<int>();
+            bool exact=true;
             foreach(int vertex in source.groups.Distinct().OrderBy(v=>v))
             {
                 index.Query(source.points[vertex],tolerance,nearby);
@@ -139,8 +140,25 @@ namespace MashBoxSDK.AnimationStudio
                     {best=distance;closest=candidate;}
                 }
                 if(closest<0 || !used.Add(target.groups[closest]))
-                    throw new InvalidOperationException("Body vertices do not match uniquely within "+(tolerance*1000).ToString("0")+" mm. Align a body with compatible vertex layout to Default Body and try again. No mesh was changed.");
+                {exact=false;break;}
                 mapping.Add(vertex,closest);
+            }
+            FitBodySurface surface=null;
+            if(!exact)
+            {
+                var triangles=reference.mesh.triangles;var faces=new List<FitBodyTriangle>();
+                for(int i=0;i<triangles.Length;i+=3)
+                {
+                    int a=triangles[i],b=triangles[i+1],c=triangles[i+2];
+                    if(Vector3.Cross(target.points[b]-target.points[a],target.points[c]-target.points[a]).sqrMagnitude<1e-16f)continue;
+                    var face=new FitBodyTriangle {a=target.points[a],b=target.points[b],c=target.points[c],
+                        na=target.normals[a],nb=target.normals[b],nc=target.normals[c],
+                        wa=target.weights.Values[a],wb=target.weights.Values[b],wc=target.weights.Values[c],
+                        bounds=new Bounds(target.points[a],Vector3.zero)};
+                    face.bounds.Encapsulate(face.b);face.bounds.Encapsulate(face.c);faces.Add(face);
+                }
+                if(faces.Count==0)throw new InvalidOperationException("Default Body has no valid surface to match.");
+                surface=new FitBodySurface(faces.ToArray());
             }
             var working=UnityEngine.Object.Instantiate(part.mesh);
             try
@@ -150,12 +168,35 @@ namespace MashBoxSDK.AnimationStudio
                 var points=working.vertices; var normals=working.normals;
                 var referencePoints=reference.mesh.vertices; var referenceNormals=reference.mesh.normals;
                 var matchedWeights=new StudioSkinWeights(working);
+                var targetBinds=working.bindposes;
+                var targetSkin=pose.Select((m,i)=>m*targetBinds[i]).ToArray();
+                int matched=0,unmatched=0;
                 for(int v=0;v<points.Length;v++)
                 {
-                    int donor=mapping[source.groups[v]];
-                    points[v]=referencePoints[donor]; normals[v]=referenceNormals[donor];
-                    matchedWeights.Values[v]=new List<BoneWeight1>(target.weights.Values[donor]);
+                    if(exact)
+                    {
+                        int donor=mapping[source.groups[v]];
+                        points[v]=referencePoints[donor]; normals[v]=referenceNormals[donor];
+                        matchedWeights.Values[v]=new List<BoneWeight1>(target.weights.Values[donor]);
+                    }
+                    else
+                    {
+                        if(!surface.Closest(source.points[v],bounds.size.magnitude*.025f,out var point,out var normal))
+                        {unmatched++;continue;}
+                        // Project to the triangle surface, not its nearest corner:
+                        // different mesh densities must not collapse onto one vertex.
+                        var influences=surface.InterpolatedWeights(point).OrderByDescending(w=>w.weight).ThenBy(w=>w.boneIndex).Take(4).ToList();
+                        float sum=influences.Sum(w=>w.weight);
+                        for(int k=0;k<influences.Count;k++){var w=influences[k];w.weight/=sum;influences[k]=w;}
+                        matchedWeights.Values[v]=influences;
+                        var matrix=matchedWeights.PreviewSkinMatrix(v,targetSkin);
+                        if(Mathf.Abs(matrix.determinant)<1e-8f)throw new InvalidOperationException("Cannot match a singular skin transform. No mesh was changed.");
+                        points[v]=matrix.inverse.MultiplyPoint3x4(point);
+                        normals[v]=matrix.transpose.MultiplyVector(normal).normalized;
+                    }
+                    matched++;
                 }
+                if(matched==0)throw new InvalidOperationException("No vertices are near Default Body. Align the body to the reference and try again. No mesh was changed.");
                 working.vertices=points; working.normals=normals;
                 matchedWeights.Apply(working); working.RecalculateTangents(); working.RecalculateBounds();
                 Undo.IncrementCurrentGroup(); int group=Undo.GetCurrentGroup();
@@ -167,7 +208,8 @@ namespace MashBoxSDK.AnimationStudio
                 part.stitchedVertices=null; part.stitchedWeights=null; part.stitchedVertexCount=0;
                 EditorUtility.SetDirty(part.mesh); Undo.CollapseUndoOperations(group);
                 Rebuild(); Changed(); JumpToPreviewFrame(2);
-                string message="Matched "+points.Length+" vertices and skin weights to Default Body.";
+                string message="Matched "+matched+" vertices and skin weights to Default Body"+(exact?" (vertex match).":" (surface match).")+
+                    (unmatched>0?" "+unmatched+" vertices outside range were left in place.":"");
                 Debug.Log("[MashBox Skinning] "+message+" Workspace copy only.");
                 if(lastView) lastView.ShowNotification(new GUIContent(message));
             }
