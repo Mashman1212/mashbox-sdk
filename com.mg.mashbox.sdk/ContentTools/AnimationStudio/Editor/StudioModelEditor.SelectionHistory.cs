@@ -12,6 +12,7 @@ namespace MashBoxSDK.AnimationStudio
         public int documentId, meshId;
         public int active = -1, mode;
         public int[] components = Array.Empty<int>(), objects = Array.Empty<int>();
+        public StudioComponentSelectionRecord[] targets;
         internal static StudioSelectionUndoState Find(StudioModelDocument document, bool create)
         {
             if (!document) return null;
@@ -40,6 +41,7 @@ namespace MashBoxSDK.AnimationStudio
             internal int active;
             internal ComponentMode mode;
             internal int[] components, objects;
+            internal StudioComponentSelectionRecord[] targets;
         }
         private int selectionTransactionDepth, selectionBaselineVersion;
         private void EstablishSelectionBaseline()
@@ -50,15 +52,15 @@ namespace MashBoxSDK.AnimationStudio
         }
         private SelectionSnapshot CaptureSelection() => new SelectionSnapshot {
             document = Document, mesh = ActiveMesh, active = Active, mode = mode,
-            components = Components.ToArray(), objects = objects.ToArray()
+            components = Components.ToArray(), objects = objects.ToArray(), targets = CaptureComponentTargets()
         };
         private bool SelectionMatches(SelectionSnapshot value) => value.document == Document &&
             value.active == Active && value.mode == mode && value.mesh == ActiveMesh &&
-            Components.SetEquals(value.components) && objects.SetEquals(value.objects);
+            Components.SetEquals(value.components) && objects.SetEquals(value.objects) && ComponentTargetsMatch(value.targets);
         private static void WriteSelection(StudioSelectionUndoState state, SelectionSnapshot value)
         {
             state.documentId = value.document.GetInstanceID(); state.meshId = value.mesh ? value.mesh.GetInstanceID() : 0; state.active = value.active;
-            state.mode = (int)value.mode; state.components = value.components; state.objects = value.objects;
+            state.mode = (int)value.mode; state.components = value.components; state.objects = value.objects; state.targets=value.targets;
         }
         private void RecordSelectionChange(SelectionSnapshot before, bool separate = true, string label = "Select model components")
         {
@@ -88,8 +90,9 @@ namespace MashBoxSDK.AnimationStudio
         {
             var state = StudioSelectionUndoState.Find(Document, false);
             if (!state) return;
-            objects.Clear();
+            ResetComponentTargets(); objects.Clear();
             foreach (int i in state.objects) if (i >= 0 && i < Transforms.Length) objects.Add(i);
+            RestoreComponentTargets(state.targets);
             Active = state.active >= 0 && state.active < Transforms.Length ? state.active : -1;
             mode = (ComponentMode)state.mode;
             Components.Clear();

@@ -11,8 +11,8 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal bool CanDeleteSelection => mode == ComponentMode.Object ? CanDeleteObjects
-            : Document && ActiveMesh && CanEditComponents() && Components.Count > 0;
-        internal void DeleteSelection()
+            : CanDeleteComponentTargets();
+        private void DeleteActiveComponents()
         {
             if (!CanDeleteSelection) return;
             if (mode == ComponentMode.Object) { DeleteSelectedObjects(); return; }
@@ -36,7 +36,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (shared.normalGroups != null && shared.normalGroups.Length == topology.Positions.Length)
                         shared.normalGroups = used.Select(v => shared.normalGroups[v]).ToArray();
                 EditorUtility.SetDirty(ActiveMesh);
-                MeshTopologyChanged();
+                Components.Clear();
             }
             catch { if (group >= 0) Undo.RevertAllDownToGroup(group); throw; }
             finally { if (group >= 0) Undo.CollapseUndoOperations(group); }

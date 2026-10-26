@@ -16,9 +16,9 @@ namespace MashBoxSDK.AnimationStudio
         internal StudioModelDocument Document { get; private set; }
         internal Scene Scene { get; private set; }
         internal Transform[] Transforms { get; private set; } = Array.Empty<Transform>();
-        internal int Active { get; private set; } = -1;
+        internal int Active { get => activeComponentNode; private set => BindComponentTarget(value); }
         internal Mesh ActiveMesh => Document && Active >= 0 && Active < Document.nodes.Count ? Document.nodes[Active].mesh : null;
-        internal readonly HashSet<int> Components = new HashSet<int>();
+        internal HashSet<int> Components = new HashSet<int>();
         private readonly HashSet<int> objects = new HashSet<int>();
         private ComponentMode mode;
         private Tool tool = Tool.Move;
@@ -76,7 +76,7 @@ namespace MashBoxSDK.AnimationStudio
             if (componentPivot) componentPivot.custom = false;
             ClearGridSnap();
             CancelMarkingMenu();
-            StopCutTool(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild(); RestoreSelectionHistory();
+            StopCutTool(); ResetComponentTargets(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild(); RestoreSelectionHistory();
             WorkspaceSaveStateChanged?.Invoke();
         }
         private void Rebuild()
@@ -106,6 +106,7 @@ namespace MashBoxSDK.AnimationStudio
             ApplyDisplayMaterials();
             if (Active >= Transforms.Length) Active = -1;
             objects.RemoveWhere(i => i < 0 || i >= Transforms.Length);
+            ReconcileComponentTargets();
             Components.RemoveWhere(i => i < 0 || i >= ComponentCount());
             CaptureUndoMeshVersions();
             repaint();
@@ -521,7 +522,7 @@ namespace MashBoxSDK.AnimationStudio
                 hierarchyRows = null;
             if (componentPivot) componentPivot.custom = false;
             StopCutTool();
-            if (!add && !remove) objects.Clear();
+            if (!add && !remove) { objects.Clear(); ClearAllComponentSelections(); }
             if (remove) objects.Remove(index); else objects.Add(index);
             Active = objects.Contains(index) ? index : objects.Count > 0 ? objects.Last() : -1;
             Components.Clear(); RecordSelectionChange(before); repaint();
@@ -555,18 +556,7 @@ namespace MashBoxSDK.AnimationStudio
                     for (int i = 1; i < selected.Length; i++) bounds.Encapsulate(BoundsFor(selected[i]));
                 }
             }
-            else if (ActiveMesh && Components.Count > 0)
-            {
-                // Edges and faces resolve to their selected vertices in the current mode.
-                var vertices = ActiveMesh.vertices; var indices = SelectedVertices();
-                if (indices.Count > 0)
-                {
-                    bounds = new Bounds(Transforms[Active].TransformPoint(vertices[indices.First()]), Vector3.zero);
-                    foreach (int i in indices) bounds.Encapsulate(Transforms[Active].TransformPoint(vertices[i]));
-                    // Keep point/flat selections frameable without shifting their center.
-                    bounds.size = Vector3.Max(bounds.size, Vector3.one * .05f);
-                }
-            }
+            else if (TrySelectedComponentBounds(out var componentBounds)) bounds=componentBounds;
             view.Frame(bounds, true);
             // Account for the hierarchy and inspector covering the sides of the SceneView.
             float canvasWidth = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect.width : view.position.width - 680;
@@ -627,16 +617,16 @@ namespace MashBoxSDK.AnimationStudio
             // Clear before drawing if a tool can consume the event or return early.
             // Preserve the last target between pointer events so movement within it
             // does not request another scene render.
-            if (evt.type == EventType.Repaint) hoveredComponent = -1;
+            if (evt.type == EventType.Repaint) ResetComponentHover();
             DrawSnapStatus(view);
             if (evt.type == EventType.Used) return;
             if (evt.type == EventType.Repaint) DrawBlackBackfaces();
-            DrawSceneWireframes(view.camera);
+            if(mode!=ComponentMode.Face) DrawSceneWireframes(view.camera);
 #if MASHBOX_STUDIO_TESTS
             ProfileScene("scene.wireframes");
 #endif
             if (SelectionPaintSceneGUI(view) || SelectionPaintInputHeld(view)) { CancelMarqueeForSelectionPaint(); UpdateSelectionPaintHover(view); DrawComponents(view); return; }
-            if (!evt.isKey && HandlePivotSnap(view)) return;
+            if (!evt.isKey && HandlePivotSnap(view)) { if(mode==ComponentMode.Face)DrawSceneWireframes(view.camera);return; }
             // Unmodified middle mouse belongs to Studio tools, never SceneView pan.
             // Consume unused events here, after snapping has had first refusal and
             // before Unity's native camera navigation runs.
@@ -660,7 +650,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 return;
             }
-            if (CutToolSceneGUI(view)) return;
+            if (CutToolSceneGUI(view)) { if(mode==ComponentMode.Face)DrawSceneWireframes(view.camera);return; }
             if (mode != ComponentMode.Object && !CanEditComponents()) Components.Clear();
             if ((evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) && evt.commandName == "FrameSelected") { if (evt.type == EventType.ExecuteCommand) Frame(view); evt.Use(); }
             HandleModelKeyboard(view);
@@ -732,6 +722,7 @@ namespace MashBoxSDK.AnimationStudio
             var movePointer = Event.current.mousePosition;
             if (!Document || Active < 0 || marquee || (tool == Tool.None && !pivot)) return;
             if (mode != ComponentMode.Object && !CanEditComponents()) return;
+            if (!pivot && DrawMultiComponentHandle()) return;
             var t = Transforms[Active];
             if (moveDrag != null && (tool != Tool.Move || pivot || moveDrag.control != GUIUtility.hotControl || moveDrag.mesh != ActiveMesh || moveDrag.node != Active || moveDrag.mode != mode)) moveDrag = null;
             bool capturedMove = moveDrag != null;
@@ -914,25 +905,13 @@ namespace MashBoxSDK.AnimationStudio
             }
             return true;
         }
-        private void DrawComponents(SceneView view)
-        {
-            if (Event.current.type != EventType.Repaint || !Document) return;
-            var old = Handles.color; var depth = Handles.zTest;
-            Handles.zTest = displayXray ? UnityEngine.Rendering.CompareFunction.Always : UnityEngine.Rendering.CompareFunction.LessEqual;
-            try
-            {
-                if (mode == ComponentMode.Object || Active < 0 || !ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy) return;
-                DrawComponentBatches(view);
-            }
-            finally { Handles.color = old; Handles.zTest = depth; }
-        }
         private void Pick(SceneView view, Rect rect, bool click)
         {
             var before = CaptureSelection();
             PickCore(view, rect, click);
             RecordSelectionChange(before);
         }
-        private void PickCore(SceneView view, Rect rect, bool click)
+        private void PickSingleComponentTarget(SceneView view, Rect rect, bool click)
         {
             if (!Document) return;
             ResetCutGesture();
@@ -1059,7 +1038,7 @@ namespace MashBoxSDK.AnimationStudio
             bool pointerChanged = evt.type == EventType.MouseMove || evt.type == EventType.MouseLeaveWindow ||
                 evt.type == EventType.KeyDown || evt.type == EventType.KeyUp;
             if (evt.type != EventType.Repaint && !pointerChanged) return;
-            int previous = Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
+            int previous = mode!=ComponentMode.Face && Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
             hoveredComponent = -1;
             if (evt.type != EventType.MouseLeaveWindow && mode != ComponentMode.Object && CanEditComponents() && !pivot && !pivotSnapHeld &&
                 !marquee && !evt.alt && GUIUtility.hotControl == 0 && HandleUtility.nearestControl == selectionId &&
@@ -1069,7 +1048,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (canvas.Contains(evt.mousePosition) && !(view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition)))
                     hoveredComponent = FindComponentAt(view, evt.mousePosition);
             }
-            int next = Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
+            int next = mode!=ComponentMode.Face && Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
             if (pointerChanged && previous != next)
             {
                 if (view is MashBoxStudioViewport studioView) studioView.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);

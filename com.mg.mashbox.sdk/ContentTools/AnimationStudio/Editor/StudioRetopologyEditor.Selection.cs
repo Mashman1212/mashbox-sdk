@@ -249,8 +249,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(activeTool!=RetopoTool.Select||!Active.showOutput)return;
             var depth=Handles.zTest;var color=Handles.color;
-            var selectedColor=new Color(1f,.72f,.18f,1f);
-            var hoverColor=new Color(.55f,1f,.95f,1f);
+            var selectedColor=StudioFaceSelectionStyle.Selected;
+            var hoverColor=StudioFaceSelectionStyle.Hover;
             void Vertex(int index,Color tint,float size)
             {
                 if(index<0||index>=Active.vertices.Count)return;
@@ -281,7 +281,7 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.zTest=workingXray?UnityEngine.Rendering.CompareFunction.Always:UnityEngine.Rendering.CompareFunction.LessEqual;
                 if(selectionMode==SelectionMode.Vertices)foreach(int i in selected)Vertex(i,selectedColor,.045f);
                 else if(selectionMode==SelectionMode.Edges)foreach(var edge in selectedEdges)Edge(edge,selectedColor,3.5f);
-                else foreach(int face in selectedFaces)Face(face,selectedColor,.28f);
+                else foreach(int face in selectedFaces)Face(face,selectedColor,StudioFaceSelectionStyle.SelectedOpacity);
                 if(!allowHover)return;
                 var mouse=Event.current.mousePosition;
                 if(selectionMode==SelectionMode.Vertices)
@@ -297,7 +297,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 else
                 {
-                    int face=PickFace(mouse);if(face>=0)Face(face,selectedFaces.Contains(face)?selectedColor:hoverColor,.4f);
+                    int face=PickFace(mouse);if(face>=0)Face(face,selectedFaces.Contains(face)?selectedColor:hoverColor,StudioFaceSelectionStyle.HoverOpacity);
                 }
             }
             finally{Handles.color=color;Handles.zTest=depth;}

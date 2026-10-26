@@ -40,18 +40,22 @@ Shader "Hidden/MashBox/ModelerWireBatch"
             float Cross2(float2 a,float2 b){return a.x*b.y-a.y*b.x;}
             float FaceDepth(float4 a,float4 b,float4 c,float2 pixel,float fallback)
             {
-                // Correct only pixels covered by the real incident render triangle.
-                // An extended plane can pull a hidden edge through unrelated geometry.
-                if(min(min(a.w,b.w),c.w)<=1e-6)return fallback;
-                float3 pa=a.xyz/a.w,pb=b.xyz/b.w,pc=c.xyz/c.w;
-                float area=Cross2(pb.xy-pa.xy,pc.xy-pa.xy);
-                if(abs(area)<1e-12)return fallback;
-                float sign=area>0?1:-1,tolerance=abs(area)*1e-6;
-                if(Cross2(pb.xy-pa.xy,pixel-pa.xy)*sign < -tolerance ||
-                   Cross2(pc.xy-pb.xy,pixel-pb.xy)*sign < -tolerance ||
-                   Cross2(pa.xy-pc.xy,pixel-pc.xy)*sign < -tolerance)return fallback;
-                float3 plane=cross(pb-pa,pc-pa);
-                float depth=pa.z-dot(plane.xy,pixel-pa.xy)/plane.z;
+                // Homogeneous barycentrics keep the real triangle coverage valid
+                // when a supporting vertex crosses the eye or near plane. Dividing
+                // each vertex by w first discards visible clipped crease support.
+                float3 bary=float3(
+                    Cross2(b.xy-b.w*pixel,c.xy-c.w*pixel),
+                    Cross2(c.xy-c.w*pixel,a.xy-a.w*pixel),
+                    Cross2(a.xy-a.w*pixel,b.xy-b.w*pixel));
+                float sum=bary.x+bary.y+bary.z;
+                float scale=max(max(abs(bary.x),abs(bary.y)),abs(bary.z));
+                if(scale<1e-12 || abs(sum)<scale*1e-7)return fallback;
+                float sign=sum>0?1:-1;
+                if(min(min(bary.x,bary.y),bary.z)*sign < -scale*1e-6 && sign>0)return fallback;
+                if(max(max(bary.x,bary.y),bary.z)*sign < -scale*1e-6 && sign<0)return fallback;
+                float w=dot(bary,float3(a.w,b.w,c.w));
+                if(w/sum<=1e-6)return fallback;
+                float depth=dot(bary,float3(a.z,b.z,c.z))/w;
                 #if defined(UNITY_REVERSED_Z)
                     return depth>=0&&depth<=1?max(fallback,depth):fallback;
                 #else
@@ -67,6 +71,7 @@ Shader "Hidden/MashBox/ModelerWireBatch"
                 float3 c=first>0?mul(_WireObjectToWorld,float4(_WirePositions[first-1],1)).xyz:a;
                 float3 d=second!=0?mul(_WireObjectToWorld,float4(_WirePositions[abs(second)-1],1)).xyz:a;
                 a=Bias(a);b=Bias(b);c=Bias(c);d=Bias(d);
+                output.edgeA=UnityWorldToClipPos(a);output.edgeB=UnityWorldToClipPos(b);
                 float da=dot(a-_WireCamera.xyz,_WireForward.xyz),db=dot(b-_WireCamera.xyz,_WireForward.xyz);
                 output.valid=(max(da,db)>=_WireForward.w);
                 if(output.valid<.5){output.position=float4(2,2,0,1);output.pixel=0;output.segmentLength=0;return output;}
@@ -85,7 +90,6 @@ Shader "Hidden/MashBox/ModelerWireBatch"
                 // depth fixed makes an oblique line sink into its own face near a cap.
                 float depthSlope=(cb.z/cb.w-ca.z/ca.w)/segmentLength;
                 clip.z+=depthSlope*(end?radius:-radius)*clip.w;
-                output.edgeA=ca;output.edgeB=cb;
                 output.faceC=UnityWorldToClipPos(c);output.faceD=UnityWorldToClipPos(d);
                 output.adjacent=float2(first>0,second!=0);
                 output.ndc=clip.xyz/clip.w;

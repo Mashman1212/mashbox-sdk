@@ -31,11 +31,11 @@ namespace MashBoxSDK.AnimationStudio
         private StudioMeshCuts.ExtrusionResult liveExtrusion;
         private Vector3[] liveExtrusionDirections, liveExtrusionPositions;
         private bool liveExtrusionTogether;
-        private readonly List<Vector2> liveExtrusionUV = new List<Vector2>();
+        private List<Vector2> liveExtrusionUV = new List<Vector2>();
         private int[] liveWallTips;
         private int liveUVDimension;
-        private readonly List<Vector3> liveExtrusionUV3 = new List<Vector3>();
-        private readonly List<Vector4> liveExtrusionUV4 = new List<Vector4>();
+        private List<Vector3> liveExtrusionUV3 = new List<Vector3>();
+        private List<Vector4> liveExtrusionUV4 = new List<Vector4>();
         private void RepaintLiveToolPanes()
         {
             if (bevelToolPane) bevelToolPane.Repaint();
@@ -109,6 +109,7 @@ namespace MashBoxSDK.AnimationStudio
 #endif
         private void EvaluateLiveTool(LiveTool kind)
         {
+            if (!dispatchingComponentTool && EvaluateComponentLiveTools(kind)) return;
             StartLiveTool(kind);
             var parameters = LiveParameters(kind);
             if (liveEvaluated && liveValid && parameters.Equals(liveParameters)) return;
@@ -212,6 +213,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private StudioMeshToolPreview.Target ActiveBevelPublication()
         {
+            var cohort = ComponentBevelPublication(); if (cohort != null) return cohort;
             if (livePreview==null || liveTool!=LiveTool.Bevel) return null;
             foreach (var target in livePreview.Targets)
                 if (target.Live==ActiveMesh && target.PublishedPositions!=null && target.PublishedPositions.Count==target.Live.vertexCount) return target;
@@ -245,6 +247,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void RefreshLiveMeshes(bool markDirty = true)
         {
+            RefreshOtherComponentCaches(livePreview);
             bool structureChanged = livePreview.Targets.Any(t => t.StructureChanged);
             if (structureChanged)
             {
@@ -296,12 +299,13 @@ namespace MashBoxSDK.AnimationStudio
                 var kind = queuedTool; RemoveQueuedPreview();
                 EvaluateLiveTool(kind);
             }
+            if (!dispatchingComponentTool && CommitComponentLiveTools(closePane)) return;
             if (livePreview == null) return;
             if (!liveValid) throw new InvalidOperationException("Correct the tool values or close its pane to cancel the preview.");
             string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Merge ? "Merge vertices" : liveTool == LiveTool.Soften ? "Soften edges" : "Extrude mesh components";
             var finishedTool = liveTool;
             var selectionBefore = CaptureSelection();
-            selectionBefore.mode = liveMode; selectionBefore.components = (int[])liveSelection.Clone();
+            selectionBefore = dispatchingComponentTool ? componentLiveBefore : SourceLiveSelection(selectionBefore);
             bool changed = livePreview.HasChanges;
             if (changed)
             {
@@ -333,6 +337,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void CancelLiveTool(bool afterUndo = false)
         {
+            if (!dispatchingComponentTool && CancelComponentLiveTools(afterUndo)) return;
             RemoveQueuedPreview(); if (livePreview == null) return;
             var transaction = livePreview;
             try
