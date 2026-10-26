@@ -21,11 +21,11 @@ namespace MashBoxSDK.AnimationStudio
             retopologyEditor.OpenWorkspace=document=>Guard(()=>ReplaceRetopology(document));
             retopologyEditor.SkinOutput=asset=>Guard(()=>
             {
-                EnsureSkinningEditor();skinningEditor.Import(asset);OpenSkinningMode();
+                EnsureSkinningEditor();EnsureSkinningDefaultReferences();skinningEditor.Import(asset);OpenSkinningMode();
             });
             retopologyEditor.SendToSkinner=part=>Guard(()=>
             {
-                EnsureSkinningEditor();skinningEditor.ImportRetopology(part);OpenSkinningMode();
+                EnsureSkinningEditor();EnsureSkinningDefaultReferences();skinningEditor.ImportRetopology(part);OpenSkinningMode();
             });
             retopologyEditor.EditInModeling=(mesh,name)=>
             {

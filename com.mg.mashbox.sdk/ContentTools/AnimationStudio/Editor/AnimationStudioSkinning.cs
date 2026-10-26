@@ -31,16 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 try
                 {
-                    var defaults = StudioDefaultReferences.LoadSkinning(SkinningDefaultsPath);
-                    if (defaults)
-                    {
-                        if (defaults.body) skinningEditor.Import(defaults.body, true);
-                        if (defaults.bust && defaults.bust != defaults.body) skinningEditor.Import(defaults.bust, true);
-                        if (defaults.pants && defaults.pants != defaults.body && defaults.pants != defaults.bust)
-                            skinningEditor.Import(defaults.pants, true, false);
-                        if (defaults.shirt && defaults.shirt != defaults.body && defaults.shirt != defaults.bust && defaults.shirt != defaults.pants)
-                            skinningEditor.Import(defaults.shirt, true, false);
-                    }
+                    EnsureSkinningDefaultReferences();
                     // Default setup is the starting document, not a user edit.
                     skinningDocument.dirty = false; Undo.ClearUndo(skinningDocument);
                     UpdateClipSaveState();
@@ -53,6 +44,28 @@ namespace MashBoxSDK.AnimationStudio
                     throw;
                 }
             }
+        }
+        private void EnsureSkinningDefaultReferences()
+        {
+            var defaults = StudioDefaultReferences.LoadSkinning(SkinningDefaultsPath);
+            if (!defaults) return;
+            var sources = new System.Collections.Generic.HashSet<GameObject>();
+            void Add(GameObject source, bool visible)
+            {
+                if (!source || !sources.Add(source)) return;
+                var meshes = new System.Collections.Generic.HashSet<Mesh>();
+                foreach (var renderer in source.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    if (renderer.sharedMesh) meshes.Add(renderer.sharedMesh);
+                foreach (var filter in source.GetComponentsInChildren<MeshFilter>(true))
+                    if (filter.sharedMesh) meshes.Add(filter.sharedMesh);
+                // Keep existing references, visibility choices and authored meshes intact.
+                if (skinningDocument.parts.Exists(part => part.referenceOnly && part.sourceMesh && meshes.Contains(part.sourceMesh))) return;
+                skinningEditor.Import(source, true, visible);
+            }
+            Add(defaults.body, true);
+            Add(defaults.bust, true);
+            Add(defaults.pants, false);
+            Add(defaults.shirt, false);
         }
         private void OpenSkinningMode()
         {

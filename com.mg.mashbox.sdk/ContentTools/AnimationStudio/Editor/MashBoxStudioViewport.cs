@@ -405,11 +405,13 @@ namespace MashBoxSDK.AnimationStudio
             timeline.BringToFront();
         }
         private bool skinPreviewTimeline;
+        private const float SkinPreviewBarHeight = 36, SkinPreviewBarInset = 8;
+        internal float SkinPreviewBarTop => StudioContentHeight - SkinPreviewBarInset - SkinPreviewBarHeight;
         internal bool IsSkinPreviewScene(Scene scene) => skinPreviewTimeline && customScene == scene;
         internal void BindSkinPreviewTimeline(System.Action draw)
         {
             BindTimeline(draw); skinPreviewTimeline = true;
-            timeline.style.height = 36; timeline.style.bottom = 8; timeline.style.display = DisplayStyle.Flex;
+            timeline.style.height = SkinPreviewBarHeight; timeline.style.bottom = SkinPreviewBarInset; timeline.style.display = DisplayStyle.Flex;
             UpdatePanelLayout();
         }
 

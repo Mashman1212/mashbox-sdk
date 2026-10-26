@@ -14,7 +14,7 @@ namespace MashBoxSDK.AnimationStudio
         private BrushAdjustmentAxis adjustmentAxis;
         private Vector2 menuDragAnchor, menuDragPointer;
         private float initialRadius, initialStrength;
-        private Brush lastSkinBrush = Brush.Paint, lastSculptBrush = Brush.Inflate;
+        private Brush lastSkinBrush = Brush.Paint, lastSculptBrush = Brush.Grab;
         private static readonly Brush[] SkinBrushes = { Brush.Paint, Brush.SmoothWeights, Brush.Select, Brush.Pose };
         private static readonly Brush[] SculptBrushes = { Brush.Inflate, Brush.Bulge, Brush.Grab, Brush.SmoothShape, Brush.FitBody, Brush.Select, Brush.Pose };
         private Brush[] ModeBrushes => sculptMode ? SculptBrushes : SkinBrushes;
@@ -28,8 +28,10 @@ namespace MashBoxSDK.AnimationStudio
         private static Rect DisplayToolbarRect(SceneView view)
         {
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-88);
-            // Align with the playback bar, leaving a small vertical gap above it.
-            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, canvas.yMax - 28), 108, 32);
+            // The canvas extends behind the posing bar. Anchor above the bar itself
+            // so all three 32px buttons remain visible and their hit areas match.
+            float bottom = view is MashBoxStudioViewport skinView ? skinView.SkinPreviewBarTop : canvas.yMax;
+            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, bottom - 8 - 32), 108, 32);
         }
         private bool RequirePaintableSkin()
         {

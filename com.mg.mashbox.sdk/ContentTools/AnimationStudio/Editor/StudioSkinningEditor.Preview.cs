@@ -14,11 +14,14 @@ namespace MashBoxSDK.AnimationStudio
         private PlayableGraph previewGraph;
         private AnimationClipPlayable previewPlayable;
         private Vector3[] previewRestPositions, previewRestScales;
+        private int previewHips = -1;
+        private Vector3 previewHipsOffset;
         private bool previewPlaying;
         private float previewTime;
         private double previewLastTick, nextClipLookup;
         private void InitializePreviewAnimation()
         {
+            previewHips = Array.FindIndex(bones, b => StudioSkinningDocument.BoneName(b.name) == "Hips");
             previewRestPositions = bones.Select(b => b.localPosition).ToArray();
             previewRestScales = bones.Select(b => b.localScale).ToArray();
             ResolvePreviewClip();
@@ -50,6 +53,15 @@ namespace MashBoxSDK.AnimationStudio
             previewPlayable.SetApplyFootIK(false); previewPlayable.SetApplyPlayableIK(false);
             AnimationPlayableOutput.Create(previewGraph,"Skinning test",previewAnimator).SetSourcePlayable(previewPlayable);
             previewGraph.Play();
+            // Anchor the test animation to the authored rest position while retaining
+            // its animated displacement. Recompute for each graph, never accumulate.
+            previewHipsOffset = Vector3.zero;
+            if (previewHips >= 0)
+            {
+                previewPlayable.SetTime(0);
+                previewGraph.Evaluate(0);
+                previewHipsOffset = previewRestPositions[previewHips] - bones[previewHips].localPosition;
+            }
         }
         private void SamplePreviewAnimation(float time, bool refresh)
         {
@@ -58,6 +70,7 @@ namespace MashBoxSDK.AnimationStudio
             previewTime = Mathf.Clamp(time,0,previewClip.length);
             previewPlayable.SetTime(previewTime);
             previewGraph.Evaluate(0);
+            if (previewHips >= 0) bones[previewHips].localPosition += previewHipsOffset;
             cachedPart = -1;
             if (refresh) RefreshSurface();
             repaint();

@@ -79,6 +79,18 @@ namespace MashBoxSDK.AnimationStudio
                 if (document.bonePaths != null && document.bonePaths.Length > 0 && !document.bonePaths.SequenceEqual(paths))
                     throw new InvalidOperationException("The SDK skeleton hierarchy changed. This workspace has been preserved; restore its original skeleton before editing.");
                 document.bonePaths = paths;
+                // Humanoid import can centre the FBX hips on Z=0 even though the
+                // avatar retains the authored bind-pose offset. Establish that anchor
+                // before caching rest matrices or importing any skin references.
+                var avatar = document.skeleton.GetComponent<Animator>()?.avatar;
+                if (avatar && avatar.isValid && avatar.isHuman)
+                {
+                    var description = avatar.humanDescription;
+                    var mapping = description.human.FirstOrDefault(b => b.humanName == "Hips");
+                    var anchors = bones.Where(b => b.name == mapping.boneName).ToArray();
+                    var authored = description.skeleton.Where(b => b.name == mapping.boneName).ToArray();
+                    if (anchors.Length == 1 && authored.Length == 1) anchors[0].localPosition = authored[0].position;
+                }
                 rest = bones.Select(b => b.localToWorldMatrix).ToArray(); restRotations = bones.Select(b => b.localRotation).ToArray();
                 locked = new bool[bones.Length];
                 // SDK animation targets are siblings of Hips, not skin influences.
@@ -139,7 +151,22 @@ namespace MashBoxSDK.AnimationStudio
                 Document.parts[i].referenceOnly = referenceOnly || IsDefaultReference(Document.parts[i]);
                 Document.parts[i].visible = visible;
             }
-            Rebuild(); Changed();
+            Rebuild();
+            if (Document.selected >= first) ChooseImportedMeshTool();
+            Changed();
+        }
+        private void ChooseImportedMeshTool()
+        {
+            if (Part == null || Part.referenceOnly) return;
+            CancelBrushInteraction();
+            if (Part.bound)
+            {
+                sculptMode = false;
+                heatmap = true;
+                ChooseBrush(Brush.Paint);
+                UpdateDisplay();
+            }
+            else ChooseBrush(Brush.Object);
         }
         private bool IsReferencePart => Part != null && Part.referenceOnly;
         private void AlignReferenceBindPose(StudioSkinningDocument.Part part)
