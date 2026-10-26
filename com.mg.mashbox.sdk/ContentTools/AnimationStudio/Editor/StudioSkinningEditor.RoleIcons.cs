@@ -6,6 +6,16 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
+        private static void AssignImportedMeshRole(StudioSkinningDocument.Part part)
+        {
+            if (part.referenceOnly) return;
+            bool Contains(string token) =>
+                (!string.IsNullOrEmpty(part.name) && part.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0) ||
+                (part.sourceMesh && part.sourceMesh.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0);
+            // Run only at import so later manual role changes remain authoritative.
+            if (Contains("Bust_")) part.role = StudioSkinningDocument.MeshRole.Bust;
+            else if (Contains("_Body")) part.role = StudioSkinningDocument.MeshRole.Body;
+        }
         private static void AssignDefaultMeshRole(StudioSkinningDocument.Part part)
         {
             var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");

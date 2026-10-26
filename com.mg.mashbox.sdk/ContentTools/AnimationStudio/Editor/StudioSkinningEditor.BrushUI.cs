@@ -31,7 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             // The canvas extends behind the posing bar. Anchor above the bar itself
             // so all three 32px buttons remain visible and their hit areas match.
             float bottom = view is MashBoxStudioViewport skinView ? skinView.SkinPreviewBarTop : canvas.yMax;
-            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, bottom - 8 - 32), 108, 32);
+            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, bottom - 8 - 32), 222, 32);
         }
         private bool RequirePaintableSkin()
         {
@@ -227,6 +227,7 @@ namespace MashBoxSDK.AnimationStudio
                 DrawUVCheckerButton(new Rect(display.x, display.y, 32, 32));
                 DrawTexturedButton(new Rect(display.x + 38, display.y, 32, 32));
                 DrawWireframeButton(new Rect(display.x + 76, display.y, 32, 32));
+                DrawSameShadingButton(new Rect(display.x + 114, display.y, 108, 32));
                 if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object)
                 {
                     var labelRect = new Rect(rect.xMax + 12, rect.y + 6, 160, 20);

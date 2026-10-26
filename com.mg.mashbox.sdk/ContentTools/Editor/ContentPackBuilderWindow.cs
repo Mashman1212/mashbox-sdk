@@ -632,8 +632,17 @@ namespace MashBoxSDK.ContentTools.Editor
             // 1) Header (fixed, layout-managed)
             DrawHeaderBanner();
             
-            // 2) Middle = one scroll, sized by remaining window height
-           // float bodyH = Mathf.Max(0f, position.height - FOOTER_H - _headerMeasuredH);
+            Header();
+            EditorGUILayout.LabelField("Active Target:", _buildLocation, EditorStyles.miniLabel);
+            if (_packs != null && _packs.Count > 0)
+            {
+                DrawBatchPackToolbar();
+                GUILayout.Space(4);
+                DrawPackGroupToolbar();
+                GUILayout.Space(4);
+            }
+
+            // Keep the target and pack controls above the scrollable content.
 
             using (var sv = new EditorGUILayout.ScrollViewScope(_mainScroll))
             {
@@ -641,7 +650,6 @@ namespace MashBoxSDK.ContentTools.Editor
 
                 using (new EditorGUILayout.VerticalScope())
                 {
-                    Header();
                     GUILayout.Space(6);
                     
                     // Validation Rules auto-expands (no inner scroll)
@@ -667,8 +675,6 @@ namespace MashBoxSDK.ContentTools.Editor
                         }
                     }
 #endif
-                    
-                    EditorGUILayout.LabelField("Active Target:", _buildLocation, EditorStyles.miniLabel);
                     
                     // Ensure DrawPacksList() has no inner ScrollViewScope
                     DrawPacksList();
@@ -1127,10 +1133,6 @@ namespace MashBoxSDK.ContentTools.Editor
             if (_selectedPack == null || !_packs.Contains(_selectedPack))
                 _selectedPack = _packs.FirstOrDefault();
 
-            DrawBatchPackToolbar();
-            GUILayout.Space(4);
-            DrawPackGroupToolbar();
-            GUILayout.Space(4);
             DrawPackGroups();
             GUILayout.Space(8);
             DrawSelectedPackPanel(_selectedPack);
@@ -1146,34 +1148,51 @@ namespace MashBoxSDK.ContentTools.Editor
             bool canPublish = hasSelection &&
                               ModIoAuth.IsAuthorizedForCurrentGame() &&
                               !string.Equals(currentGame, "Custom Folder", StringComparison.OrdinalIgnoreCase);
+            bool compact = EditorGUIUtility.currentViewWidth < 850f;
 
-            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
-                EditorGUILayout.LabelField($"Selected: {selectedCount}", EditorStyles.boldLabel, GUILayout.Width(90));
-
-                using (new EditorGUI.DisabledScope(_packs.Count == 0))
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Select All", GUILayout.Width(85)))
-                        SelectAllBatchPacks();
+                    EditorGUILayout.LabelField($"Selected: {selectedCount}", EditorStyles.boldLabel, GUILayout.Width(90));
+
+                    using (new EditorGUI.DisabledScope(_packs.Count == 0))
+                    {
+                        if (GUILayout.Button("Select All", GUILayout.Width(85)))
+                            SelectAllBatchPacks();
+                    }
+
+                    using (new EditorGUI.DisabledScope(!hasSelection))
+                    {
+                        if (GUILayout.Button("Clear", GUILayout.Width(65)))
+                            ClearBatchPackSelection();
+                    }
+
+                    GUILayout.FlexibleSpace();
+                    if (!compact)
+                        DrawBatchActions();
                 }
 
-                using (new EditorGUI.DisabledScope(!hasSelection))
+                if (compact)
                 {
-                    if (GUILayout.Button("Clear", GUILayout.Width(65)))
-                        ClearBatchPackSelection();
+                    using (new EditorGUILayout.HorizontalScope())
+                        DrawBatchActions();
                 }
+            }
 
-                GUILayout.FlexibleSpace();
-
+            void DrawBatchActions()
+            {
                 using (new EditorGUI.DisabledScope(!hasSelection || !hasBuildTarget))
                 {
-                    if (GUILayout.Button($"Build Selected To {currentGame} ({selectedCount})", GUILayout.Width(230)))
+                    if (GUILayout.Button($"Build Selected To {currentGame} ({selectedCount})",
+                            compact ? GUILayout.MinWidth(0) : GUILayout.Width(230)))
                         BuildBatchSelectedPacks(selectedPacks);
                 }
 
                 using (new EditorGUI.DisabledScope(!canPublish))
                 {
-                    if (GUILayout.Button($"Publish Selected To {currentGame} Mod.io ({selectedCount})", GUILayout.Width(285)))
+                    if (GUILayout.Button($"Publish Selected To {currentGame} Mod.io ({selectedCount})",
+                            compact ? GUILayout.MinWidth(0) : GUILayout.Width(285)))
                         PublishBatchSelectedPacksAsync(selectedPacks, currentGame);
                 }
             }

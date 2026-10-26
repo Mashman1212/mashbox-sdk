@@ -113,6 +113,7 @@ namespace MashBoxSDK.AnimationStudio
                     mesh.bindposes=binds;
                 }
                 var part=new StudioSkinningDocument.Part { name=source.name+" Low",mesh=mesh,materials=source.materials, bound=bound };
+                AssignImportedMeshRole(part);
                 Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,"Send retopology to Skinner");
                 if(EditorUtility.IsPersistent(Document)){mesh.hideFlags=HideFlags.None;AssetDatabase.AddObjectToAsset(mesh,Document);}
                 Document.parts.Add(part);Document.selected=Document.parts.Count-1;added=true;

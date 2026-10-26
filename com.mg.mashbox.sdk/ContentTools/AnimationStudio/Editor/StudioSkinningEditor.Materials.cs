@@ -7,6 +7,13 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioSkinningEditor
     {
         private bool showTextured;
+        private bool sameShading;
+        private void DrawSameShadingButton(Rect rect)
+        {
+            bool next = GUI.Toggle(rect, sameShading, new GUIContent("Same Shading",
+                "Show every mesh with the same neutral body shading for lighting and surface comparisons. Turn off to restore material, checker and weight displays. Preview only."), StudioTheme.Styles.miniButton);
+            if (next != sameShading) { EndStroke(); sameShading = next; UpdateDisplay(); }
+        }
         private readonly StudioMeshMaterialPreview materialPreview=new StudioMeshMaterialPreview();
         private readonly Dictionary<PartData,bool> materialFoldouts=new Dictionary<PartData,bool>();
         private void SetMaterial(PartData part,int slot,Material material)

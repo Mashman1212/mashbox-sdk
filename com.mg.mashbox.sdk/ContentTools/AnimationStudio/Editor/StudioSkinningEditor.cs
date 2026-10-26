@@ -150,6 +150,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Document.parts[i].referenceOnly = referenceOnly || IsDefaultReference(Document.parts[i]);
                 Document.parts[i].visible = visible;
+                AssignImportedMeshRole(Document.parts[i]);
             }
             Rebuild();
             if (Document.selected >= first) ChooseImportedMeshTool();
@@ -425,6 +426,11 @@ namespace MashBoxSDK.AnimationStudio
             if (referenceShaded) referenceShaded.SetColor("_Color",ReferencePreviewTint);
             for (int i = 0; i < objects.Count; i++)
             {
+                if (sameShading)
+                {
+                    objects[i].GetComponent<Renderer>().sharedMaterials = Enumerable.Repeat(referenceShaded, displayMeshes[i].subMeshCount).ToArray();
+                    continue;
+                }
                 bool checker = hoveredInfluence < 0 && showUVChecker && i == Document.selected && !Document.parts[i].referenceOnly;
                 if(checker) EnsureUVChecker();
                 bool textured = hoveredInfluence < 0 && showTextured && i == Document.selected && !Document.parts[i].referenceOnly;
