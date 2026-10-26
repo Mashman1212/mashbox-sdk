@@ -16,6 +16,7 @@ namespace MashBoxSDK.AnimationStudio
             public Material[] materials;
             public bool bound, visible = true;
             public bool referenceOnly;
+            public bool preserveStitchedBindPose;
             public string defaultReferenceLabel;
             public MeshRole role;
             public Quaternion objectRotation = Quaternion.identity;

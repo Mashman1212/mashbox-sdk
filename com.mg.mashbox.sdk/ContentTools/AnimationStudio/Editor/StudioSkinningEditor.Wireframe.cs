@@ -11,6 +11,9 @@ namespace MashBoxSDK.AnimationStudio
         private Mesh wireSource, wireBaked;
         private int[] wireEdges;
         private Vector3[] wireLines;
+        private bool wirePoseDirty=true;
+        private GameObject wireObject;
+        private Matrix4x4[] wireBonePose;
         private readonly List<Vector3> wireVertices=new List<Vector3>();
         private void DrawWireframeButton(Rect rect)
         {
@@ -49,16 +52,34 @@ namespace MashBoxSDK.AnimationStudio
                 var triangles=wireSource.triangles;
                 for(int i=0;i<triangles.Length;i+=3) { Edge(triangles[i],triangles[i+1]);Edge(triangles[i+1],triangles[i+2]);Edge(triangles[i+2],triangles[i]); }
                 wireEdges=list.ToArray();wireLines=new Vector3[wireEdges.Length];
+                wirePoseDirty=true;
             }
             var go=objects[Document.selected];
-            var skin=go.GetComponent<SkinnedMeshRenderer>();
-            if(skin)
+            if(wireObject!=go){wireObject=go;wirePoseDirty=true;}
+            // Manual posing also changes bones. Comparing this small rig avoids
+            // re-baking every vertex while still catching external pose changes.
+            if(Part.bound)
             {
-                if(!wireBaked) wireBaked=new Mesh { name="Skinning wireframe pose",hideFlags=HideFlags.HideAndDontSave };
-                skin.BakeMesh(wireBaked);wireBaked.GetVertices(wireVertices);
+                if(wireBonePose==null || wireBonePose.Length!=bones.Length)
+                { wireBonePose=new Matrix4x4[bones.Length];wirePoseDirty=true; }
+                for(int i=0;i<bones.Length;i++)
+                {
+                    var pose=bones[i].localToWorldMatrix;
+                    if(!wireBonePose[i].Equals(pose)){wireBonePose[i]=pose;wirePoseDirty=true;}
+                }
             }
-            else displayMeshes[Document.selected].GetVertices(wireVertices);
-            for(int i=0;i<wireEdges.Length;i++) wireLines[i]=wireVertices[wireEdges[i]];
+            if(wirePoseDirty)
+            {
+                var skin=go.GetComponent<SkinnedMeshRenderer>();
+                if(skin)
+                {
+                    if(!wireBaked) wireBaked=new Mesh { name="Skinning wireframe pose",hideFlags=HideFlags.HideAndDontSave };
+                    skin.BakeMesh(wireBaked);wireBaked.GetVertices(wireVertices);
+                }
+                else displayMeshes[Document.selected].GetVertices(wireVertices);
+                for(int i=0;i<wireEdges.Length;i++) wireLines[i]=wireVertices[wireEdges[i]];
+                wirePoseDirty=false;
+                }
             var oldZ=Handles.zTest;
             try
             {
@@ -72,6 +93,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(wireBaked) Object.DestroyImmediate(wireBaked);
             wireSource=null;wireEdges=null;wireLines=null;wireVertices.Clear();
+            wireObject=null;wirePoseDirty=true;
+            wireBonePose=null;
         }
     }
 }

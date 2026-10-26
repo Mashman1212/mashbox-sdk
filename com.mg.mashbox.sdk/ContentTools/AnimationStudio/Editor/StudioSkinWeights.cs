@@ -51,6 +51,18 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (value > 1e-8f) list.Add(new BoneWeight1 { boneIndex = bone, weight = value });
         }
+        internal void LimitToFour()
+        {
+            for (int i = 0; i < Values.Length; i++)
+            {
+                var kept = Values[i].Where(w => w.weight > 0)
+                    .OrderByDescending(w => w.weight).ThenBy(w => w.boneIndex).Take(4).ToList();
+                float sum = kept.Sum(w => w.weight);
+                for (int k = 0; k < kept.Count; k++)
+                { var w = kept[k]; w.weight /= sum; kept[k] = w; }
+                Values[i] = kept;
+            }
+        }
         internal void Apply(Mesh mesh)
         {
             var counts = new NativeArray<byte>(Values.Length, Allocator.Temp);

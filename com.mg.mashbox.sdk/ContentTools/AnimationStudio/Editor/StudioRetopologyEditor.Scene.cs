@@ -92,9 +92,9 @@ namespace MashBoxSDK.AnimationStudio
         private bool suppressContext;
         private static readonly Vector2[] WheelOffsets={new Vector2(0,-94),new Vector2(132,-64),new Vector2(154,0),new Vector2(132,64),new Vector2(0,94),new Vector2(-132,64),new Vector2(-154,0),new Vector2(-132,-64)};
         private static readonly string[][] WheelLabels={
-            new[]{"Draw Quad","Quad Patch","Topology ›","Display ›","Symmetry X","Surface Snap","Select >","Tube"},
-            new[]{"Project","Relax","Bridge Loops","Delete Selected","‹ Back","","Target Weld","Edge Bridge"},
-            new[]{"Reference Wire","Working Wire","Reference","Working Mesh","‹ Back","X-ray Display","X-ray Selection",""},
+            new[]{"Draw Quad","Quad Patch","Topology â€º","Display â€º","Symmetry X","Surface Snap","Select >","Tube"},
+            new[]{"Project","Relax","Bridge Loops","Delete Selected","â€¹ Back","","Target Weld","Edge Bridge"},
+            new[]{"Reference Wire","Working Wire","Reference","Working Mesh","â€¹ Back","X-ray Display","X-ray Selection",""},
             new[]{"Draw Quad","Quad Patch","Tube","Resolution","< Back","Continuous Patch","Relax Brush","Quad Strip"},
             new[]{"Vertices","Edges","Faces","","< Back","","",""}};
         private static readonly string[] SelectionWheelLabels={"Vertices","Edges","Faces","Topology >","Display >","Draw >","Delete Selected","Frame Mesh"};
@@ -416,18 +416,7 @@ namespace MashBoxSDK.AnimationStudio
             if(evt.type==EventType.Repaint)DrawWorkingXray();
             if((wire||(activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Edges))&&Active.showOutput&&evt.type==EventType.Repaint)
             {
-                var old=Handles.color;var oldDepth=Handles.zTest;
-                try
-                {
-                    foreach(var f in Active.faces)
-                    {
-                        var points=new Vector3[f.vertices.Length+1];for(int i=0;i<f.vertices.Length;i++)points[i]=Active.vertices[f.vertices[i]];points[points.Length-1]=points[0];
-                        Handles.zTest=UnityEngine.Rendering.CompareFunction.LessEqual;
-                        Handles.color=new Color(.35f,1,.8f,.85f);
-                        Handles.DrawAAPolyLine(1.4f,points);
-                    }
-                }
-                finally {Handles.color=old;Handles.zTest=oldDepth;}
+                DrawTopologyWorkingWire();
             }
             // The constructed tube is persistent scene feedback, not a hover cursor.
             // Paint it before UI input guards so sliders and text fields cannot hide it.
@@ -642,6 +631,7 @@ namespace MashBoxSDK.AnimationStudio
             if(tutorialMoved)RecordTutorialAction("transform");
             rotation=turn;scale=resized;Document.dirty=true;EditorUtility.SetDirty(Document);
             if(Active.faces.Any(f=>f.cornerUV!=null)){Rebuild();return;}
+            ClearTopologyDrawing();
             var mesh=display[Document.selected];xrayLines[Document.selected].SetVertices(Active.vertices);mesh.SetVertices(Active.vertices);mesh.RecalculateNormals();mesh.RecalculateBounds();repaint();
         }
         private static float SafeRatio(float a,float b)=>Mathf.Abs(b)<1e-5f?1:a/b;

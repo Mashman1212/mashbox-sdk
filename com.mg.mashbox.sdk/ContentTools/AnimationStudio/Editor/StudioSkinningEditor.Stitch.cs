@@ -131,6 +131,24 @@ namespace MashBoxSDK.AnimationStudio
         }
 #endif
 
+        private static void RebaseStitchMesh(Mesh mesh, Matrix4x4[] binds, Matrix4x4[] pose)
+        {
+            var weights = new StudioSkinWeights(mesh);
+            weights.LimitToFour(); weights.Apply(mesh);
+            var previous = mesh.bindposes;
+            var oldSkin = pose.Select((m,i) => m * previous[i]).ToArray();
+            var newSkin = pose.Select((m,i) => m * binds[i]).ToArray();
+            var transforms = new Matrix4x4[mesh.vertexCount];
+            for (int i=0;i<transforms.Length;i++)
+            {
+                var target = weights.SkinMatrix(i,newSkin);
+                if (Mathf.Abs(target.determinant)<1e-8f)
+                    throw new InvalidOperationException("Cannot stitch a singular skin transform.");
+                transforms[i] = target.inverse * weights.SkinMatrix(i,oldSkin);
+            }
+            TransformExportVertices(mesh,transforms);
+            mesh.bindposes = binds;
+        }
         private void StitchBustParts(StudioSkinningDocument.Part[] busts)
         {
             EndStroke(); FinishPoseGesture();
@@ -154,81 +172,92 @@ namespace MashBoxSDK.AnimationStudio
             float tolerance=bounds.size.magnitude*.008f;
             var changes=new List<Action>(); int matched=0, unmatched=0;
             var checks = new List<Tuple<StudioSkinningDocument.Part,int,StudioSkinningDocument.Part,int>>();
-            foreach(var bust in busts)
+            var temporaryMeshes = new List<Mesh>();
+            try
             {
-                var source=new StitchSurface(bust,stitchPose);
-                var positions=bust.mesh.vertices; var normals=bust.mesh.normals;
-                var targets=new Dictionary<int,Tuple<Vector3,Vector3>>();
-                var corners = new Dictionary<int,Tuple<StitchSurface,int>>();
-                MatchStitchCorners(source,surfaces,tolerance,targets,corners);
-                var bustBinds = bust.mesh.bindposes;
-                var bustSkin = stitchPose.Select((m,i) => i < bustBinds.Length ? m * bustBinds[i] : Matrix4x4.identity).ToArray();
-                foreach(int v in source.boundary)
+                foreach(var bust in busts)
                 {
-                    if (targets.ContainsKey(v)) continue;
-                    float best=tolerance*tolerance; Vector3 point=default, normal=default; bool found=false;
-                    foreach(var body in surfaces) foreach(var edge in body.edges)
+                    var working = UnityEngine.Object.Instantiate(bust.mesh);
+                    working.name = bust.mesh.name;
+                    temporaryMeshes.Add(working);
+                    // Share the body's bone-local coordinates, not just a position
+                    // in the current animation frame. Keep edits transactional.
+                    RebaseStitchMesh(working,bodies[0].mesh.bindposes,stitchPose);
+                    var source=new StitchSurface(new StudioSkinningDocument.Part { mesh=working, bound=true },stitchPose);
+                    var positions=working.vertices; var normals=working.normals;
+                    var targets=new Dictionary<int,Tuple<Vector3,Vector3>>();
+                    var corners = new Dictionary<int,Tuple<StitchSurface,int>>();
+                    MatchStitchCorners(source,surfaces,tolerance,targets,corners);
+                    var bustBinds = working.bindposes;
+                    var bustSkin = stitchPose.Select((m,i) => i < bustBinds.Length ? m * bustBinds[i] : Matrix4x4.identity).ToArray();
+                    foreach(int v in source.boundary)
                     {
-                        Vector3 a=body.points[edge.x], delta=body.points[edge.y]-a;
-                        float t=delta.sqrMagnitude>1e-12f ? Mathf.Clamp01(Vector3.Dot(source.points[v]-a,delta)/delta.sqrMagnitude) : 0;
-                        Vector3 candidate=a+t*delta;
-                        float distance=(candidate-source.points[v]).sqrMagnitude;
-                        if(distance>best) continue;
-                        var n=Vector3.Lerp(body.normals[edge.x],body.normals[edge.y],t).normalized;
-                        // Authored seam normals can disagree sharply: fixing that
-                        // disagreement is part of stitching, not a reason to skip it.
-                        best=distance; point=candidate; normal=n; found=true;
+                        if (targets.ContainsKey(v)) continue;
+                        float best=tolerance*tolerance; Vector3 point=default, normal=default; bool found=false;
+                        foreach(var body in surfaces) foreach(var edge in body.edges)
+                        {
+                            Vector3 a=body.points[edge.x], delta=body.points[edge.y]-a;
+                            float t=delta.sqrMagnitude>1e-12f ? Mathf.Clamp01(Vector3.Dot(source.points[v]-a,delta)/delta.sqrMagnitude) : 0;
+                            Vector3 candidate=a+t*delta;
+                            float distance=(candidate-source.points[v]).sqrMagnitude;
+                            if(distance>best) continue;
+                            var n=Vector3.Lerp(body.normals[edge.x],body.normals[edge.y],t).normalized;
+                            // Authored seam normals can disagree sharply: fixing that
+                            // disagreement is part of stitching, not a reason to skip it.
+                            best=distance; point=candidate; normal=n; found=true;
+                        }
+                        if(found) targets[v]=Tuple.Create(point,normal);
+                        else unmatched++;
                     }
-                    if(found) targets[v]=Tuple.Create(point,normal);
-                    else unmatched++;
-                }
-                if(targets.Count==0) continue;
-                for(int i=0;i<positions.Length;i++) if(targets.TryGetValue(source.groups[i],out var target))
-                {
-                    // Matching positions in one pose is insufficient when both sides
-                    // use different skin weights. Only exact matched seam corners
-                    // inherit the body's influences, including their UV-split peers.
-                    if (corners.TryGetValue(source.groups[i],out var corner))
+                    if(targets.Count==0) continue;
+                    for(int i=0;i<positions.Length;i++) if(targets.TryGetValue(source.groups[i],out var target))
                     {
-                        source.weights.Values[i] = new List<BoneWeight1>(corner.Item1.weights.Values[corner.Item2]);
-                        checks.Add(Tuple.Create(bust,i,corner.Item1.part,corner.Item2));
+                        // Matching positions in one pose is insufficient when both sides
+                        // use different skin weights. Only exact matched seam corners
+                        // inherit the body's influences, including their UV-split peers.
+                        if (corners.TryGetValue(source.groups[i],out var corner))
+                        {
+                            source.weights.Values[i] = new List<BoneWeight1>(corner.Item1.weights.Values[corner.Item2]);
+                            checks.Add(Tuple.Create(bust,i,corner.Item1.part,corner.Item2));
+                        }
+                        var matrix = source.weights.SkinMatrix(i,bustSkin);
+                        if (Mathf.Abs(matrix.determinant)<1e-8f)
+                            throw new InvalidOperationException("Cannot stitch a singular seam skin transform. No geometry was changed.");
+                        positions[i]=matrix.inverse.MultiplyPoint3x4(target.Item1);
+                        normals[i]=matrix.transpose.MultiplyVector(target.Item2).normalized;
+                        matched++;
                     }
-                    var matrix = source.weights.SkinMatrix(i,bustSkin);
-                    if (Mathf.Abs(matrix.determinant)<1e-8f)
-                        throw new InvalidOperationException("Cannot stitch a singular seam skin transform. No geometry was changed.");
-                    positions[i]=matrix.inverse.MultiplyPoint3x4(target.Item1);
-                    normals[i]=matrix.transpose.MultiplyVector(target.Item2).normalized;
-                    matched++;
+                    changes.Add(()=> { Undo.RegisterCompleteObjectUndo(bust.mesh,"Stitch Bust"); working.vertices=positions; working.normals=normals; source.weights.Apply(working); working.RecalculateTangents(); working.RecalculateBounds(); EditorUtility.CopySerialized(working,bust.mesh); bust.preserveStitchedBindPose=true; EditorUtility.SetDirty(bust.mesh); });
                 }
-                changes.Add(()=> { Undo.RegisterCompleteObjectUndo(bust.mesh,"Stitch Bust"); bust.mesh.vertices=positions; bust.mesh.normals=normals; source.weights.Apply(bust.mesh); bust.mesh.RecalculateTangents(); bust.mesh.RecalculateBounds(); EditorUtility.SetDirty(bust.mesh); });
-            }
-            if(changes.Count==0) throw new InvalidOperationException("No nearby compatible open body/bust edges found. Stitch Bust leaves distant or overlapping surfaces unchanged.");
-            Undo.IncrementCurrentGroup(); int group=Undo.GetCurrentGroup(); Undo.SetCurrentGroupName("Stitch Bust");
-            Undo.RegisterCompleteObjectUndo(Document,"Stitch Bust");
-            foreach(var apply in changes) apply();
-            Undo.CollapseUndoOperations(group); Rebuild(); Changed();
-            // Re-sample exactly as the A-pose button does and measure Unity's
-            // rendered skin result, not only our CPU transform calculation.
-            JumpToPreviewFrame(2);
-            float maxGap = 0;
-            var baked = new Dictionary<StudioSkinningDocument.Part,Vector3[]>();
-            foreach (var part in checks.SelectMany(c => new[] {c.Item1,c.Item3}).Distinct())
-            {
-                var mesh = new Mesh();
-                try
+                if(changes.Count==0) throw new InvalidOperationException("No nearby compatible open body/bust edges found. Stitch Bust leaves distant or overlapping surfaces unchanged.");
+                Undo.IncrementCurrentGroup(); int group=Undo.GetCurrentGroup(); Undo.SetCurrentGroupName("Stitch Bust");
+                Undo.RegisterCompleteObjectUndo(Document,"Stitch Bust");
+                foreach(var apply in changes) apply();
+                Undo.CollapseUndoOperations(group); Rebuild(); Changed();
+                // Re-sample exactly as the A-pose button does and measure Unity's
+                // rendered skin result, not only our CPU transform calculation.
+                JumpToPreviewFrame(2);
+                float maxGap = 0;
+                var baked = new Dictionary<StudioSkinningDocument.Part,Vector3[]>();
+                foreach (var part in checks.SelectMany(c => new[] {c.Item1,c.Item3}).Distinct())
                 {
-                    objects[Document.parts.IndexOf(part)].GetComponent<SkinnedMeshRenderer>().BakeMesh(mesh);
-                    baked[part] = mesh.vertices;
+                    var mesh = new Mesh();
+                    try
+                    {
+                        objects[Document.parts.IndexOf(part)].GetComponent<SkinnedMeshRenderer>().BakeMesh(mesh);
+                        baked[part] = mesh.vertices;
+                    }
+                    finally { UnityEngine.Object.DestroyImmediate(mesh); }
                 }
-                finally { UnityEngine.Object.DestroyImmediate(mesh); }
-            }
-            foreach (var check in checks)
-                maxGap = Mathf.Max(maxGap,Vector3.Distance(baked[check.Item1][check.Item2],baked[check.Item3][check.Item4]));
-            string result = "A-pose: stitched "+matched+" vertices";
-            if (checks.Count > 0) result += "; measured seam gap " + (maxGap*1000).ToString("0.000") + " mm";
-            if (unmatched > 0) result += "; "+unmatched+" boundary vertices outside stitch range";
-            Debug.Log("[MashBox Skinning] " + result + ". Workspace copy only.");
-            if(lastView) lastView.ShowNotification(new GUIContent(result));
+                foreach (var check in checks)
+                    maxGap = Mathf.Max(maxGap,Vector3.Distance(baked[check.Item1][check.Item2],baked[check.Item3][check.Item4]));
+                string result = "A-pose: stitched "+matched+" vertices";
+                if (checks.Count > 0) result += "; measured seam gap " + (maxGap*1000).ToString("0.000") + " mm";
+                if (unmatched > 0) result += "; "+unmatched+" boundary vertices outside stitch range";
+                Debug.Log("[MashBox Skinning] " + result + ". Workspace copy only.");
+                if(lastView) lastView.ShowNotification(new GUIContent(result));
+                }
+            finally { foreach(var mesh in temporaryMeshes) UnityEngine.Object.DestroyImmediate(mesh); }
         }
     }
 }

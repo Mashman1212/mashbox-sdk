@@ -365,6 +365,7 @@ namespace MashBoxSDK.AnimationStudio
         private void AutoBind() => BindWithJointCleanup();
         private void RefreshSurface()
         {
+            wirePoseDirty = true;
             if (!stroke) fitBodySurface = null;
             if (Part == null || Part.referenceOnly)
             {
@@ -423,6 +424,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UpdateDisplay()
         {
+            wirePoseDirty = true;
             if (referenceShaded) referenceShaded.SetColor("_Color",ReferencePreviewTint);
             for (int i = 0; i < objects.Count; i++)
             {
@@ -642,7 +644,7 @@ namespace MashBoxSDK.AnimationStudio
                     }
                 }
             }
-            if (geometryChanged) { Part.mesh.vertices = vertices; displayMeshes[Document.selected].vertices = vertices; }
+            if (geometryChanged) { wirePoseDirty = true; Part.mesh.vertices = vertices; displayMeshes[Document.selected].vertices = vertices; }
             // Weight edits preview in the current pose immediately; recalculating
             // normals and collision cooking are deferred until stroke release.
             if (weightsChanged) { weights.Apply(Part.mesh); weights.Apply(displayMeshes[Document.selected]); }
@@ -704,8 +706,9 @@ namespace MashBoxSDK.AnimationStudio
                 foreach (var part in Document.parts.Where(p => p.bound))
                 {
                     var mesh = Object.Instantiate(part.mesh); mesh.hideFlags = HideFlags.None; owned.Add(mesh);
-                    BakePartForTPose(mesh,exportPose);
-                    mesh.bindposes=rigBones.Select(b=>b.worldToLocalMatrix*root.transform.localToWorldMatrix).ToArray();
+                    BakePartForTPose(mesh,part.preserveStitchedBindPose ? CapturePartExportPose(part) : exportPose);
+                    if (!part.preserveStitchedBindPose)
+                        mesh.bindposes=rigBones.Select(b=>b.worldToLocalMatrix*root.transform.localToWorldMatrix).ToArray();
                     if (owned.Count == 1) AssetDatabase.CreateAsset(mesh,meshPath); else AssetDatabase.AddObjectToAsset(mesh,meshPath);
                     var go = new GameObject(part.name); go.transform.SetParent(root.transform,false);
                     var skin = go.AddComponent<SkinnedMeshRenderer>(); skin.sharedMesh = mesh; skin.bones = rigBones; skin.rootBone = root.transform;

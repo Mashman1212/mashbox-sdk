@@ -72,6 +72,7 @@ namespace MashBoxSDK.AnimationStudio
             previewGraph.Evaluate(0);
             if (previewHips >= 0) bones[previewHips].localPosition += previewHipsOffset;
             cachedPart = -1;
+            wirePoseDirty = true;
             if (refresh) RefreshSurface();
             repaint();
         }
