@@ -79,9 +79,10 @@ namespace MashBoxSDK.AnimationStudio
                     });
                     break; }
                 case "Create": {
-                    AddVehiclePartMenu(menu, view, loaded);
                     foreach (var type in new[] { PrimitiveType.Cube, PrimitiveType.Sphere, PrimitiveType.Plane, PrimitiveType.Quad, PrimitiveType.Cylinder })
                     { var primitive = type; menu.AddItem(new GUIContent("Polygon Primitives/" + type), false, () => Run(() => CreatePrimitive(primitive, view, loaded))); }
+                    menu.AddSeparator("");
+                    AddVehiclePartMenu(menu, view, loaded);
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent("Create Foliage Morph Set…"), false, () => { var recipe = ScriptableObject.CreateInstance<StudioFoliageMorphSet>(); ProjectWindowUtil.CreateAsset(recipe, "Foliage Morph Set.asset"); }, shortcutEligible: false);
                     menu.AddSeparator("");

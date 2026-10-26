@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly Handles.CapFunction MoveArrowCap = Handles.ArrowHandleCap;
         private static readonly Handles.CapFunction MoveRectangleCap = Handles.RectangleHandleCap;
         private static readonly Handles.CapFunction PivotTriangleCap = DrawPivotTriangleCap;
-        private static readonly Vector3[] PivotTrianglePoints = new Vector3[4];
+        private static readonly Vector3[] PivotTrianglePoints = new Vector3[3];
         private readonly int[] moveHandleIds = new int[7];
         private int moveDragControl;
         private MoveAxes moveDragAxes = MoveAxes.Free;
@@ -68,7 +68,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 int free = moveHandleIds[6] = GUIUtility.GetControlID(0x4d5320, FocusType.Passive);
                 Handles.color = Color.yellow;
-                var freePosition = Handles.FreeMoveHandle(free, center, size * .075f, Vector3.zero, pivot ? PivotTriangleCap : MoveRectangleCap);
+                var freePosition = Handles.FreeMoveHandle(free, center, size * (pivot ? .1125f : .075f), Vector3.zero, pivot ? PivotTriangleCap : MoveRectangleCap);
                 TrackMoveControl(free, MoveAxes.Free, center, orientation);
                 if (GUIUtility.hotControl == free) result = freePosition;
             }
@@ -79,12 +79,12 @@ namespace MashBoxSDK.AnimationStudio
             if (type == EventType.Layout || type == EventType.MouseMove)
                 HandleUtility.AddControl(control, HandleUtility.DistanceToRectangle(position, rotation, size));
             if (type != EventType.Repaint) return;
-            // Keep the native center control's picking footprint; only its glyph changes.
+            // Keep the native center control's rectangular picking shape at the requested size.
             PivotTrianglePoints[0] = position + rotation * (Vector3.up * size);
             PivotTrianglePoints[1] = position + rotation * (new Vector3(-.8660254f, -.5f, 0) * size);
             PivotTrianglePoints[2] = position + rotation * (new Vector3(.8660254f, -.5f, 0) * size);
-            PivotTrianglePoints[3] = PivotTrianglePoints[0];
-            Handles.DrawAAPolyLine(1.5f, PivotTrianglePoints);
+
+            Handles.DrawAAConvexPolygon(PivotTrianglePoints);
         }
 
         internal static Vector3 ConstrainMove(Vector3 origin, Vector3 target, Quaternion orientation, MoveAxes axes)
