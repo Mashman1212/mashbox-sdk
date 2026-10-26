@@ -76,7 +76,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindModes(DrawStudioModes,true);
             viewport.BindAttachments(null);
             viewport.BindViewportControls(DrawStudioMenuBar,null,DrawStudioSettings);
-            viewport.BindModelTools(null); viewport.BindStatistics(null); viewport.BindMarkingMenu(null);
+            viewport.BindModelToolOptions(null); viewport.BindStatistics(null); viewport.BindMarkingMenu(null);
             viewport.BindSkinPreviewTimeline(skinningEditor.DrawPreviewTimeline);
             viewport.BindSkinPractice(skinningEditor.DrawSkinTutorialMenu);
             viewport.SetSkinTutorialGuide(skinningEditor.HasTutorial);

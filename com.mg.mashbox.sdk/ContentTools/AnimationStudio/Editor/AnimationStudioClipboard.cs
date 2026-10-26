@@ -104,8 +104,10 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawAnimationEditMenu()
         {
-            var rect = new Rect(48, 0, 48, 21);
-            if (!EditorGUI.DropdownButton(rect, new GUIContent("Edit"), FocusType.Passive, StudioTheme.Styles.menuDropdown)) return;
+            var content = new GUIContent("Edit");
+            var rect = new Rect(StudioTheme.Styles.menuBarButton.CalcSize(new GUIContent("File")).x+4, 0,
+                StudioTheme.Styles.menuBarButton.CalcSize(content).x+4, 21);
+            if (!StudioMenu.MenuBarButton(viewport,rect,content)) return;
             var menu = new StudioMenu();
             if (take && rig != null)
             {
@@ -120,7 +122,7 @@ namespace MashBoxSDK.AnimationStudio
                 });
             }
             else menu.AddDisabledItem(new GUIContent("Open an animation to edit keys"));
-            menu.DropDown(rect);
+            menu.DropDown(rect,viewport,"Edit");
         }
     }
 }

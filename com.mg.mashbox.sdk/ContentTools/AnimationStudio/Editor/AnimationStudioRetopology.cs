@@ -73,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.Bind(retopologyEditor.Scene);
             viewport.BindSkinPreviewTimeline(null);viewport.BindTimeline(null);viewport.BindLimbBlend(null);
             viewport.BindRigControls(retopologyEditor.DrawMeshes);viewport.BindInspector(retopologyEditor.DrawTools);
-            viewport.BindAttachments(null);viewport.BindModelTools(null);viewport.BindMarkingMenu(retopologyEditor.DrawContextWheel);
+            viewport.BindAttachments(null);viewport.BindModelToolOptions(null);viewport.BindMarkingMenu(retopologyEditor.DrawContextWheel);
             viewport.BindModes(DrawStudioModes,true);
             viewport.BindViewportControls(DrawStudioMenuBar,retopologyEditor.DrawToolbar,DrawStudioSettings);
             viewport.BindStatistics(retopologyEditor.DrawStatistics);

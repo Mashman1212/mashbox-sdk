@@ -1,0 +1,3 @@
+Vendored from https://github.com/Briganti-Games/Straight-Skeleton-Generator at commit 2d26dc6fe1ff1f08f12305625ab54fd46e12d1ea, MIT license (LICENSE.md).
+Only wavefront geometry dependencies are included, editor-only; no sample renderer or runtime package registration.
+Local modifications: namespace isolation, per-boundary speeds including stationary boundaries, weighted moving-line intersection, stationary-corner collapse handling, weighted reflex collision timing. Studio uses the initial wavefront/event interval for collision clamping; it does not advance through arbitrary collapse/split events. Do not claim this integration implements post-collision topology merging.

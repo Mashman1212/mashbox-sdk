@@ -38,7 +38,7 @@ namespace MashBoxSDK.AnimationStudio
                 catch (Exception ex)
                 {
                     string error = ex.GetBaseException().Message;
-                    if (audioErrors.Add(error)) Debug.LogWarning("Animation Studio audio: " + error);
+                    if (audioErrors.Add(error)) message = "Audio: " + error;
                     viewport?.ShowNotification(new GUIContent("Audio: " + error));
                 }
         }

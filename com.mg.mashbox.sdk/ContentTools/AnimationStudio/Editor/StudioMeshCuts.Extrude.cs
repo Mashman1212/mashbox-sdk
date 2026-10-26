@@ -12,12 +12,15 @@ namespace MashBoxSDK.AnimationStudio
         {
             internal int[] Faces;
             internal (int a, int b)[] Edges;
+            internal int[] MovingVertices;
+            internal Vector3[] SourceVertices;
         }
 
         // Work in temporary lists and validate before touching the owned mesh.
         // Render-vertex splits retain their attributes; coincident seams share displacement.
         internal ExtrusionResult Extrude(StudioModelDocument.Node node, int[] selectedFaces,
-            (int a, int b)[] selectedEdges, float distance, bool together, bool keepSeams)
+            (int a, int b)[] selectedEdges, float distance, bool together, bool keepSeams,
+            Func<Vector3, Vector3> transform = null)
         {
             var mesh = node.mesh;
             if (node.skinned || node.blendShape != null || mesh.blendShapeCount > 0 || mesh.boneWeights.Length > 0)
@@ -91,6 +94,7 @@ namespace MashBoxSDK.AnimationStudio
                     directions[key] = sum + faceNormals[f];
                 }
             var positions = Positions.ToList(); var colors = mesh.colors.ToList();
+            var sources = Positions.ToList(); var moving = new HashSet<int>();
             var uvs = new List<Vector4>[8]; var dimensions = new int[8];
             for (int c = 0; c < 8; c++)
             {
@@ -102,6 +106,7 @@ namespace MashBoxSDK.AnimationStudio
             int Copy(int source, Vector3 position, Vector2? wallUV = null)
             {
                 int id = positions.Count; positions.Add(position);
+                sources.Add(Positions[source]);
                 if (colors.Count > 0) colors.Add(colors[source]);
                 for (int c = 0; c < 8; c++) if (uvs[c].Count > 0)
                 {
@@ -118,7 +123,9 @@ namespace MashBoxSDK.AnimationStudio
                 if (top.TryGetValue(key, out int existing)) return existing;
                 var normal = directions[(Group(f), Canonical(v))].normalized;
                 if (normal.sqrMagnitude < .5f) throw new InvalidOperationException("The selected normals cancel out. Extrude the faces individually.");
-                return top[key] = Copy(v, Positions[v] + normal * distance);
+                int id = Copy(v, Positions[v] + normal * distance);
+                moving.Add(id);
+                return top[key] = id;
             }
             var result = Faces.Select((f, index) => new Face { Submesh = f.Submesh,
                 Vertices = faceMode && selected.Contains(index) ? f.Vertices.Select(v => Top(index, v)).ToList() : new List<int>(f.Vertices) }).ToList();
@@ -134,6 +141,7 @@ namespace MashBoxSDK.AnimationStudio
                     Copy(a, Positions[a], new Vector2(0, 0)), Copy(b, Positions[b], new Vector2(length, 0)),
                     Copy(b, positions[tb], new Vector2(length, Mathf.Abs(distance))), Copy(a, positions[ta], new Vector2(0, Mathf.Abs(distance))) };
                 result.Add(new Face { Submesh = Faces[edge.face].Submesh, Vertices = wall });
+                moving.Add(wall[2]); moving.Add(wall[3]);
                 if (!faceMode) rim.Add((wall[3], wall[2]));
             }
             // Remove unreferenced old interior vertices and temporary edge tips.
@@ -142,7 +150,31 @@ namespace MashBoxSDK.AnimationStudio
             var compact = used.Select(i => positions[i]).ToList();
             foreach (var f in result) f.Vertices = f.Vertices.Select(i => remap[i]).ToList();
             var indices = Enumerable.Range(0, mesh.subMeshCount).Select(_ => new List<int>()).ToArray();
-            foreach (var f in result) Triangulate(f.Vertices, compact, indices[f.Submesh]);
+            // Extrusion changes connectivity only at the new walls. Retain authored
+            // render diagonals on original faces and remap selected caps onto their
+            // copied vertices. Retriangulating unrelated imported faces can reject
+            // valid small/warped quads and change their piecewise surface.
+            var sourceTriangles = BevelSourceTriangles(mesh);
+            for (int f = 0; f < Faces.Count; f++)
+            {
+                var triangles = sourceTriangles[f];
+                if (triangles.Count != (Faces[f].Vertices.Count - 2) * 3)
+                    throw new InvalidOperationException("An extrusion source face has no matching render triangulation.");
+                bool cap = faceMode && selected.Contains(f);
+                foreach (int vertex in triangles)
+                    indices[Faces[f].Submesh].Add(remap[cap ? top[(Group(f), vertex)] : vertex]);
+            }
+            for (int f = Faces.Count; f < result.Count; f++)
+                Triangulate(result[f].Vertices, compact, indices[result[f].Submesh]);
+            // Build connectivity from a valid normal extrusion, then place only its
+            // new tips/caps using the handle's world/object-space transformation.
+            if (transform != null) foreach (int id in used.Where(moving.Contains))
+            {
+                var point = transform(sources[id]);
+                if (float.IsNaN(point.sqrMagnitude) || float.IsInfinity(point.sqrMagnitude))
+                    throw new InvalidOperationException("The extrusion would create invalid vertex positions.");
+                compact[remap[id]] = point;
+            }
             mesh.Clear(); mesh.indexFormat = compact.Count > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16;
             mesh.SetVertices(compact);
             if (colors.Count > 0) mesh.SetColors(used.Select(i => colors[i]).ToList());
@@ -158,7 +190,9 @@ namespace MashBoxSDK.AnimationStudio
             mesh.RecalculateNormals(); mesh.RecalculateTangents(); mesh.RecalculateBounds(); mesh.UploadMeshData(false);
             node.cutPolygons = result.SelectMany(f => new[] { f.Submesh, f.Vertices.Count }.Concat(f.Vertices)).ToArray();
             node.cutTriangles = mesh.triangles;
-            return new ExtrusionResult { Faces = selected.OrderBy(f => f).ToArray(), Edges = rim.Select(e => (remap[e.a], remap[e.b])).ToArray() };
+            return new ExtrusionResult { Faces = selected.OrderBy(f => f).ToArray(), Edges = rim.Select(e => (remap[e.a], remap[e.b])).ToArray(),
+                MovingVertices = used.Where(moving.Contains).Select(i => remap[i]).ToArray(),
+                SourceVertices = used.Select(i => sources[i]).ToArray() };
         }
     }
 }

@@ -62,7 +62,9 @@ namespace MashBoxSDK.AnimationStudio
             instances.RemoveAll(v => !(bool)v.Instance.GetType().GetMethod("isValid").Invoke(v.Instance, null));
         }
 
-        private static void Stop(object instance)
+        internal Action<string> ReportError;
+
+        private void Stop(object instance)
         {
             try
             {
@@ -70,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                 var mode = Enum.Parse(stop.GetParameters()[1].ParameterType, "IMMEDIATE");
                 stop.Invoke(null, new[] { instance, mode });
             }
-            catch (Exception ex) { Debug.LogWarning("Could not stop studio audio: " + ex.GetBaseException().Message); }
+            catch (Exception ex) { ReportError?.Invoke("Could not stop studio audio: " + ex.GetBaseException().Message); }
         }
 
         internal void StopLoops()

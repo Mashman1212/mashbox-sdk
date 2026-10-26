@@ -8,13 +8,22 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal const string LeftWidthKey = "MashBox.Studio.HierarchyWidth";
         internal const string RightWidthKey = "MashBox.Studio.ChannelsWidth";
-        private const float MinLeft = 180, MinRight = 220, MaxPanel = 600, MinCanvas = 320, DividerWidth = 8;
-        private const float PanelMargin = 8, ModelToolsWidth = 40;
-        private const float ModelingPanelTop = 32;
+        internal const string ToolOptionsHeightKey = "MashBox.Studio.ToolOptionsHeight";
+        private float preferredToolHeight = 220;
+        private IMGUIContainer toolOptionsDivider;
+        private int toolResizeControl;
+        private bool resizingTools;
+        private float toolResizeStartY, toolResizeStartHeight, toolResizeOriginalHeight;
+        internal float ToolOptionsHeight => Mathf.Clamp(
+            float.IsNaN(preferredToolHeight) || float.IsInfinity(preferredToolHeight) ? 220 : preferredToolHeight,
+            80, Mathf.Max(80, StudioContentHeight - ModelingPanelTop - PanelMargin - ToolDividerHeight - 120));
+        private const float MinLeft = 180, MinRight = 220, MaxPanel = 600, MinCanvas = 320, DividerWidth = 8, ToolDividerHeight = 10;
+        private const float PanelMargin = 4;
+        private const float PanelCornerRadius = 8;
+        private const float ModelingPanelTop = 4;
         internal const float ModeSelectorWidth = 128;
-        private float VisibleToolRailWidth => panelsModeling && modelTools != null && modelTools.onGUIHandler != null ? ModelToolsWidth : 0;
-        private float HierarchyLeft => PanelMargin + VisibleToolRailWidth;
-        private float PanelLayoutWidth => PanelMargin * 2 + DividerWidth * 2 + VisibleToolRailWidth;
+        private float HierarchyLeft => PanelMargin;
+        private float PanelLayoutWidth => PanelMargin * 2 + DividerWidth * 2;
         private float preferredLeft = 260, preferredRight = 350;
         private bool panelsInitialized, panelsModeling;
         private bool animationSettingsExpanded;
@@ -42,10 +51,10 @@ namespace MashBoxSDK.AnimationStudio
         {
             get
             {
-                var widths = VisiblePanelWidths;
+                var widths = PanelWidths;
                 float left = HierarchyLeft + widths.x + DividerWidth;
-                float right = position.width - PanelMargin - widths.y - DividerWidth;
-                return new Rect(left, ModelingPanelTop, Mathf.Max(0, right - left), Mathf.Max(0, position.height - ModelingPanelTop - (skinPreviewTimeline ? 56 : PanelMargin)));
+                float right = StudioContentWidth - PanelMargin - widths.y - DividerWidth;
+                return new Rect(left, ModelingPanelTop, Mathf.Max(0, right - left), Mathf.Max(0, StudioContentHeight - ModelingPanelTop - PanelMargin));
             }
         }
         internal Vector2 PanelWidths
@@ -53,7 +62,7 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 float left = ValidWidth(preferredLeft, 260, MinLeft), right = ValidWidth(preferredRight, 350, MinRight);
-                float budget = Mathf.Max(MinLeft + MinRight, position.width - PanelLayoutWidth - MinCanvas);
+                float budget = Mathf.Max(MinLeft + MinRight, StudioContentWidth - PanelLayoutWidth - MinCanvas);
                 if (left + right > budget)
                 {
                     float extra = left + right - MinLeft - MinRight;
@@ -71,8 +80,9 @@ namespace MashBoxSDK.AnimationStudio
             if (!panelsInitialized)
             {
                 // Keep existing layouts when upgrading from the former preference keys.
-                preferredLeft = ValidWidth(EditorPrefs.GetFloat(LeftWidthKey, EditorPrefs.GetFloat("MashBox.MGStudio.HierarchyWidth", 260)), 260, MinLeft);
-                preferredRight = ValidWidth(EditorPrefs.GetFloat(RightWidthKey, EditorPrefs.GetFloat("MashBox.MGStudio.ChannelsWidth", 350)), 350, MinRight);
+                preferredLeft = ValidWidth(StudioPreferenceStore.GetFloat(LeftWidthKey, StudioPreferenceStore.GetFloat("MashBox.MGStudio.HierarchyWidth", 260)), 260, MinLeft);
+                preferredRight = ValidWidth(StudioPreferenceStore.GetFloat(RightWidthKey, StudioPreferenceStore.GetFloat("MashBox.MGStudio.ChannelsWidth", 350)), 350, MinRight);
+                preferredToolHeight = StudioPreferenceStore.GetFloat(ToolOptionsHeightKey, 220);
                 panelsInitialized = true;
                 rootVisualElement.RegisterCallback<GeometryChangedEvent>(_ => UpdatePanelLayout());
             }
@@ -80,44 +90,80 @@ namespace MashBoxSDK.AnimationStudio
             {
                 leftDivider = CreatePanelDivider(1, "mashbox-hierarchy-divider");
                 rightDivider = CreatePanelDivider(2, "mashbox-channels-divider");
+                toolOptionsDivider = new IMGUIContainer(WrapStudioGUI(DrawToolOptionsDivider)) { name = "mashbox-tool-options-divider", tooltip = "drag to resize" };
+                toolOptionsDivider.style.position = Position.Absolute;
+                toolOptionsDivider.style.height = ToolDividerHeight;
+                rootVisualElement.Add(toolOptionsDivider);
             }
             UpdatePanelLayout(); leftDivider.BringToFront(); rightDivider.BringToFront();
+            viewportCameraButton?.BringToFront(); viewportLightingButton?.BringToFront();
         }
         private IMGUIContainer CreatePanelDivider(int side, string elementName)
         {
-            var divider = new IMGUIContainer(() => DrawPanelDivider(side)) { name = elementName, tooltip = "Drag to resize panel" };
+            var divider = new IMGUIContainer(WrapStudioGUI(() => DrawPanelDivider(side))) { name = elementName, tooltip = "Drag to resize panel" };
             divider.style.position = Position.Absolute; divider.style.width = DividerWidth;
             rootVisualElement.Add(divider); return divider;
         }
         private void UpdatePanelLayout()
         {
             if (!panelsInitialized) return;
-            if (FoldablePanels && !skinFoldDefaultsInitialized)
+            var widths = PanelWidths;
+            bool showTools = panelsModeling && modelToolOptions != null && modelToolOptions.onGUIHandler != null && !StudioSettings.Current.hideToolOptions;
+            bool showChannels = panelsModeling && inspector != null && inspector.onGUIHandler != null && inspector.style.display.value != DisplayStyle.None;
+            bool bottomDocked = HasBottomDockedToolbar;
+            float rightRadius = panelsModeling && !HasRightDockedToolbar && !bottomDocked ? PanelCornerRadius : 0;
+            if (rigControls != null)
             {
-                skinLeftTucked = skinRightTucked = true;
-                skinFoldDefaultsInitialized = true;
+                rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x;
+                if (panelsModeling) rigControls.style.bottom = PanelMargin;
+                float leftRadius = panelsModeling && !HasLeftDockedToolbar ? PanelCornerRadius : 0;
+                rigControls.style.borderTopLeftRadius = leftRadius;
+                rigControls.style.borderBottomLeftRadius = bottomDocked ? 0 : leftRadius;
+                rigControls.style.overflow = panelsModeling ? Overflow.Hidden : Overflow.Visible;
             }
-            var widths = VisiblePanelWidths;
-            if (rigControls != null) rigControls.style.display = FoldablePanels && skinLeftTucked ? DisplayStyle.None : DisplayStyle.Flex;
-            if (inspector != null) inspector.style.display = FoldablePanels && skinRightTucked ? DisplayStyle.None : DisplayStyle.Flex;
-            if (rigControls != null) { rigControls.style.left = HierarchyLeft; rigControls.style.width = panelsModeling ? widths.x : 398; }
+            LayoutStatusMessages();
+            if (orientationAxes != null)
+            {
+                orientationAxes.style.left = HierarchyLeft + widths.x + 8;
+                orientationAxes.style.bottom = 0;
+                orientationAxes.style.width = 64; orientationAxes.style.height = 64;
+                orientationAxes.style.display = panelsModeling && !StudioSettings.Current.hideOrientationAxes ? DisplayStyle.Flex : DisplayStyle.None;
+            }
             if (inspector != null)
             {
-                inspector.style.right = PanelMargin;
-                inspector.style.width = panelsModeling || animationSettingsExpanded ? widths.y : 206;
-                inspector.style.bottom = panelsModeling ? new StyleLength(8) : new StyleLength(StyleKeyword.Auto);
-                inspector.style.height = panelsModeling ? new StyleLength(StyleKeyword.Auto) : new StyleLength(animationSettingsExpanded ? Mathf.Clamp(position.height - 180, 140, 440) : 38);
-                inspector.style.backgroundColor = panelsModeling || animationSettingsExpanded ? StudioTheme.Current.Panel : Color.clear;
+                inspector.style.right = PanelMargin; inspector.style.width = widths.y;
+                inspector.style.top = showTools ? ModelingPanelTop + ToolOptionsHeight + ToolDividerHeight : ModelingPanelTop;
+                // Only the outer right corners of the visible panel stack are rounded.
+                inspector.style.borderTopRightRadius = 0;
+                inspector.style.borderBottomRightRadius = rightRadius;
+                inspector.style.overflow = panelsModeling ? Overflow.Hidden : Overflow.Visible;
             }
-            float canvasLeft = HierarchyLeft + (panelsModeling ? widths.x : 398) + DividerWidth;
+            if (modelToolOptions != null)
+            {
+                modelToolOptions.style.right = PanelMargin; modelToolOptions.style.width = widths.y;
+                modelToolOptions.style.top = ModelingPanelTop; modelToolOptions.style.height = ToolOptionsHeight;
+                modelToolOptions.style.display = showTools ? DisplayStyle.Flex : DisplayStyle.None;
+                modelToolOptions.style.borderTopRightRadius = 0;
+                modelToolOptions.style.borderBottomRightRadius = !showChannels ? rightRadius : 0;
+                modelToolOptions.style.overflow = Overflow.Hidden;
+            }
+            if (toolOptionsDivider != null)
+            {
+                toolOptionsDivider.style.right = PanelMargin; toolOptionsDivider.style.width = widths.y;
+                toolOptionsDivider.style.top = ModelingPanelTop + ToolOptionsHeight;
+                toolOptionsDivider.style.display = showTools ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            float canvasLeft = HierarchyLeft + widths.x + DividerWidth;
             float overlayTop = ModelingPanelTop;
             if (attachments != null) { attachments.style.right = PanelMargin + (animationSettingsExpanded ? widths.y + 12 : 0); attachments.style.top = overlayTop + (animationSettingsExpanded ? 0 : 42); }
             if (modeSelector != null) { modeSelector.style.left = PanelMargin; modeSelector.style.top = 0; }
             float optionsTop = overlayTop;
-            float optionsLeft = FoldablePanels ? SkinToolbarLeft : canvasLeft;
-            if (viewportOptions != null) { viewportOptions.style.left = optionsLeft + 40; viewportOptions.style.top = optionsTop; }
-            if (studioSettings != null) { studioSettings.style.left = optionsLeft + 8; studioSettings.style.top = optionsTop; }
-            if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop + (retopologyPanels ? 62 : 32); }
+            float overlayLeft = HierarchyLeft + widths.x + ModelingPanelTop;
+            if (viewportOptions != null) { viewportOptions.style.left = overlayLeft + 32; viewportOptions.style.top = optionsTop; }
+            if (studioSettings != null) { studioSettings.style.left = overlayLeft; studioSettings.style.top = optionsTop; }
+            LayoutCameraSettingsButton(overlayLeft, optionsTop);
+            if (meshStatistics != null) { meshStatistics.style.left = overlayLeft; meshStatistics.style.top = optionsTop + 32; }
+            LayoutWorkspaceStatistics(widths.y);
             if (leftDivider == null || rightDivider == null) return;
             if (FoldablePanels)
             {
@@ -142,34 +188,7 @@ namespace MashBoxSDK.AnimationStudio
             leftDivider.style.left = HierarchyLeft + widths.x;
             rightDivider.style.right = PanelMargin + widths.y;
             leftDivider.style.top = rightDivider.style.top = ModelingPanelTop;
-            leftDivider.style.bottom = rightDivider.style.bottom = panelsModeling ? 8 : 148;
-            UpdateSkinPanelTabs(widths);
-        }
-        private void UpdateSkinPanelTabs(Vector2 widths)
-        {
-            if (FoldablePanels && skinLeftTab == null)
-            {
-                skinLeftTab = CreateSkinPanelTab(true);
-                skinRightTab = CreateSkinPanelTab(false);
-            }
-            if(skinPracticeTab!=null)
-            {
-                skinPracticeTab.style.display=skinPreviewTimeline||retopologyPanels?DisplayStyle.Flex:DisplayStyle.None;
-                skinPracticeTab.style.top=0;
-                skinPracticeTab.style.right=PanelMargin;
-                skinPracticeTab.BringToFront();
-            }
-            if (skinLeftTab == null) return;
-            if (skinInfluencesTab != null)
-            {
-                skinInfluencesTab.style.display = skinPreviewTimeline ? DisplayStyle.Flex : DisplayStyle.None;
-                skinInfluencesTab.style.left = HierarchyLeft + 112;
-                skinInfluencesTab.BringToFront();
-            }
-            skinLeftTab.style.display = skinRightTab.style.display = FoldablePanels ? DisplayStyle.Flex : DisplayStyle.None;
-            skinLeftTab.style.left = HierarchyLeft;
-            skinRightTab.style.right = PanelMargin;
-            skinLeftTab.BringToFront(); skinRightTab.BringToFront();
+            leftDivider.style.bottom = rightDivider.style.bottom = panelsModeling ? PanelMargin : 148;
         }
         internal void BindSkinInfluences(System.Action draw)
         {
@@ -214,29 +233,6 @@ namespace MashBoxSDK.AnimationStudio
             skinInfluencesPanel.style.bottom=PanelMargin;
             skinInfluencesPanel.style.backgroundColor=StudioTheme.Current.Panel;
         }
-        private IMGUIContainer CreateSkinPanelTab(bool left)
-        {
-            var tab = new IMGUIContainer(StudioTheme.Wrap(() =>
-            {
-                bool tucked = left ? skinLeftTucked : skinRightTucked;
-                string arrow = left == tucked ? "›" : "‹";
-                string title = left ? "Meshes" : retopologyPanels ? (retopologyTutorialGuide ? "Tutorial Guide" : "Topology Tools") : (skinTutorialGuide?"Tutorial Guide":"Brush Settings");
-                var rect = new Rect(0,0,left ? 106 : SkinPanelTabWidth,24);
-                var content = new GUIContent(left ? arrow + "  " + title : title + "  " + arrow,(tucked ? "Show " : "Tuck ") + title);
-                EditorGUI.DrawRect(rect, rect.Contains(Event.current.mousePosition) ? new Color(.10f,.12f,.12f) : new Color(.035f,.04f,.04f));
-                if (!tucked) EditorGUI.DrawRect(new Rect(5,22,rect.width-10,2),new Color(.5f,1,.87f));
-                GUI.Label(rect,content,new GUIStyle(StudioTheme.Styles.label) { alignment = TextAnchor.MiddleCenter });
-                if (GUI.Button(rect,new GUIContent("",content.tooltip),GUIStyle.none))
-                {
-                    if (left) skinLeftTucked = !skinLeftTucked; else skinRightTucked = !skinRightTucked;
-                    UpdatePanelLayout(); Repaint();
-                }
-            }));
-            tab.style.position = Position.Absolute;
-            tab.style.top = ModelingPanelTop; tab.style.width = left ? 106 : SkinPanelTabWidth; tab.style.height = 24;
-            tab.style.backgroundColor = new Color(.04f,.045f,.045f);
-            rootVisualElement.Add(tab); return tab;
-        }
         private void DrawPanelDivider(int side)
         {
             var divider = side == 1 ? leftDivider : rightDivider;
@@ -265,7 +261,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 SavePanelWidths(); resizingSide = 0; GUIUtility.hotControl = 0; evt.Use(); Repaint();
             }
-            else if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
+            else if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt))
             {
                 preferredLeft = resizeOriginalWidths.x; preferredRight = resizeOriginalWidths.y;
                 resizingSide = 0; GUIUtility.hotControl = 0; UpdatePanelLayout(); evt.Use(); Repaint();
@@ -274,14 +270,61 @@ namespace MashBoxSDK.AnimationStudio
         internal void ResizePanel(int side, float requestedWidth)
         {
             var widths = PanelWidths;
-            float budget = Mathf.Max(MinLeft + MinRight, position.width - PanelLayoutWidth - MinCanvas);
+            float budget = Mathf.Max(MinLeft + MinRight, StudioContentWidth - PanelLayoutWidth - MinCanvas);
             if (side == 1) { preferredRight = widths.y; preferredLeft = Mathf.Clamp(ValidWidth(requestedWidth, 260, MinLeft), MinLeft, Mathf.Min(MaxPanel, budget - widths.y)); }
             else { preferredLeft = widths.x; preferredRight = Mathf.Clamp(ValidWidth(requestedWidth, 350, MinRight), MinRight, Mathf.Min(MaxPanel, budget - widths.x)); }
             UpdatePanelLayout(); Repaint();
         }
         internal void SavePanelWidths()
         {
-            EditorPrefs.SetFloat(LeftWidthKey, preferredLeft); EditorPrefs.SetFloat(RightWidthKey, preferredRight);
+            StudioPreferenceStore.SetFloat(LeftWidthKey, preferredLeft); StudioPreferenceStore.SetFloat(RightWidthKey, preferredRight);
+        }
+        internal void ResizeToolOptions(float height)
+        {
+            preferredToolHeight = height;
+            preferredToolHeight = ToolOptionsHeight;
+            UpdatePanelLayout(); Repaint();
+        }
+        private void DrawToolOptionsDivider()
+        {
+            var rect = new Rect(0, 0, PanelWidths.y, ToolDividerHeight);
+            var grip = rect;
+            EditorGUIUtility.AddCursorRect(rect, MouseCursor.ResizeVertical);
+            var evt = Event.current;
+            int id = GUIUtility.GetControlID("MashBoxStudio.ToolOptionsDivider".GetHashCode(), FocusType.Passive);
+            if (evt.type == EventType.Repaint)
+            {
+                var palette = StudioTheme.Current;
+                bool highlighted = resizingTools || rect.Contains(evt.mousePosition);
+                EditorGUI.DrawRect(grip, highlighted ? palette.Hover : palette.Button);
+                var handleColor = highlighted ? palette.Text : palette.Muted;
+                for (int column = 0; column < 5; column++)
+                    EditorGUI.DrawRect(new Rect(Mathf.Floor(grip.center.x) - 8 + column * 4, grip.center.y - 3, 1, 6), handleColor);
+            }
+            if (evt.type == EventType.MouseDown && evt.button == 0 && rect.Contains(evt.mousePosition) && GUIUtility.hotControl == 0)
+            {
+                resizingTools = true; toolResizeControl = id; GUIUtility.hotControl = id; GUIUtility.keyboardControl = 0;
+                toolResizeStartY = GUIUtility.GUIToScreenPoint(evt.mousePosition).y;
+                toolResizeStartHeight = ToolOptionsHeight; toolResizeOriginalHeight = preferredToolHeight;
+                evt.Use();
+            }
+            if (!resizingTools) return;
+            if (GUIUtility.hotControl != toolResizeControl) { resizingTools = false; return; }
+            if (evt.type == EventType.MouseDrag)
+            {
+                ResizeToolOptions(toolResizeStartHeight + GUIUtility.GUIToScreenPoint(evt.mousePosition).y - toolResizeStartY);
+                evt.Use();
+            }
+            else if (evt.type == EventType.MouseUp && evt.button == 0)
+            {
+                StudioPreferenceStore.SetFloat(ToolOptionsHeightKey, preferredToolHeight);
+                resizingTools = false; GUIUtility.hotControl = 0; evt.Use(); Repaint();
+            }
+            else if (StudioShortcuts.Pressed(StudioShortcut.Cancel, evt))
+            {
+                preferredToolHeight = toolResizeOriginalHeight;
+                resizingTools = false; GUIUtility.hotControl = 0; UpdatePanelLayout(); evt.Use(); Repaint();
+            }
         }
     }
 }

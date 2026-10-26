@@ -36,6 +36,23 @@ public static class StudioComponentOrientationValidation
             using(var editor=new StudioModelEditor(()=>{}))
             {
                 editor.Load(doc);
+                editor.Transforms[0].rotation=Quaternion.Euler(12,35,8);
+                editor.SetToolbarLocalAxes(true);
+                foreach(var selectionMode in new[]{StudioModelEditor.ComponentMode.Vertex,StudioModelEditor.ComponentMode.Edge,StudioModelEditor.ComponentMode.Face})
+                {
+                    Mode(editor,selectionMode,0);
+                    Check(Quaternion.Angle(editor.PivotOrientation,editor.Transforms[0].rotation)<.01f,"Object orientation follows object in "+selectionMode);
+                    editor.ExecuteMarkingAction(StudioModelEditor.MarkingAction.ComponentAxes,null);
+                    Check(editor.ToolbarComponentAxes&&editor.ToolbarOrientationLabel=="Component","Marking menu activates Component orientation");
+                    editor.ExecuteMarkingAction(StudioModelEditor.MarkingAction.ObjectAxes,null);
+                    Check(!editor.ToolbarComponentAxes&&editor.ToolbarLocalAxes&&editor.ToolbarOrientationLabel=="Object","Marking menu restores Object orientation");
+                }
+                editor.ExecuteMarkingAction(StudioModelEditor.MarkingAction.WorldAxes,null);
+                Check(!editor.ToolbarLocalAxes&&editor.ToolbarOrientationLabel=="World","World remains independent");
+                editor.SetToolbarComponentAxes();
+                Check(StudioPreferenceStore.GetFloat("Model.ComponentAxes",0)==1,"Component orientation saved through preference store");
+                using(var reloaded=new StudioModelEditor(()=>{}))
+                    Check(reloaded.ToolbarComponentAxes,"Component orientation reloads");
                 Mode(editor,StudioModelEditor.ComponentMode.Face,0);
                 Check(Vector3.Dot(editor.PivotOrientation*Vector3.right,Normal(editor))>.9999f,"Face gizmo follows the face normal instead of the object axes");
                 Mode(editor,StudioModelEditor.ComponentMode.Vertex,0,1,2);
@@ -54,6 +71,10 @@ public static class StudioComponentOrientationValidation
                 var custom=Quaternion.Euler(17,63,29);
                 editor.ApplyPivotTarget(new StudioModelEditor.PivotTarget{orientation=custom},StudioModelEditor.PivotAction.Orient);
                 Check(Quaternion.Angle(editor.PivotOrientation,custom)<.01f,"Explicit component pivot orientation overrides automatic alignment");
+                editor.SetToolbarLocalAxes(true);
+                Check(Quaternion.Angle(editor.PivotOrientation,editor.Transforms[0].rotation)<.01f,"Object orientation ignores custom component frame");
+                editor.SetToolbarComponentAxes();
+                Check(Quaternion.Angle(editor.PivotOrientation,custom)<.01f,"Component orientation retains custom frame across axis changes");
                 Mode(editor,StudioModelEditor.ComponentMode.Object);
                 Check(Quaternion.Angle(editor.PivotOrientation,editor.Transforms[0].rotation)<.01f,"Object mode retains object-local axes");
                 Mode(editor,StudioModelEditor.ComponentMode.Face,0);
@@ -63,6 +84,6 @@ public static class StudioComponentOrientationValidation
             UnityEngine.Object.DestroyImmediate(doc);UnityEngine.Object.DestroyImmediate(mesh);
         }
         catch(Exception e){results.Add("FAIL: "+e);code=1;}
-        File.WriteAllLines("component-orientation-result.txt",results);EditorApplication.Exit(code);
+        File.WriteAllLines(Path.GetFullPath(Path.Combine(Application.dataPath,"../../component-orientation-result.txt")),results);EditorApplication.Exit(code);
     }
 }

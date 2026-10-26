@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -25,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly string[] Channels = Enumerable.Range(0, 8).Select(i => "UV " + i).ToArray();
         internal static void Open(StudioModelEditor editor, int selectedChannel = -1)
         {
-            var window = GetWindow<StudioUVEditor>("UV Editor"); window.owner = editor; window.minSize = new Vector2(780, 500); window.Show();
+            var window = GetWindow<StudioUVEditor>("UV Editor"); window.owner = editor; window.minSize = new Vector2(780, 500); StudioWindowOwnership.Show(window, editor.ToolChannelPaneOwner);
             if (selectedChannel >= 0) { window.channel = Mathf.Clamp(selectedChannel, 0, 7); window.CancelInteraction(); window.selection.Clear(); window.pinned.Clear(); window.Repaint(); }
             window.Repaint();
         }
@@ -49,6 +50,12 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawThemedGUI()
         {
             owner?.HandleSaveShortcut();
+            if (Event.current.type == EventType.KeyDown && !EditorGUIUtility.editingTextField && GUIUtility.hotControl == 0)
+            {
+                if (StudioShortcuts.Pressed(StudioShortcut.Undo,Event.current)) { Undo.PerformUndo(); Event.current.Use(); }
+                else if (StudioShortcuts.Pressed(StudioShortcut.Redo,Event.current)) { Undo.PerformRedo(); Event.current.Use(); }
+                else if (StudioShortcuts.Pressed(StudioShortcut.Preferences,Event.current)) { StudioControlsPreferences.Open(); Event.current.Use(); }
+            }
             if(owner != null && owner.HasBlendShape) { EditorGUILayout.HelpBox("Bake Current Pose before editing blend shape UVs.",MessageType.Info);return; }
             var selectedMesh = owner != null && owner.Document ? owner.ActiveMesh : null;
             if (mesh != selectedMesh)
@@ -66,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button("Frame All", StudioTheme.Styles.toolbarButton)) FrameUVs(uv, false);
                 if (GUILayout.Button("0–1", StudioTheme.Styles.toolbarButton, GUILayout.Width(34))) { zoom = 1; pan = Vector2.zero; }
-                if (GUILayout.Button("Settings", StudioTheme.Styles.toolbarButton, GUILayout.Width(64))) StudioSettingsWindow.Open();
+                if (GUILayout.Button("Settings", StudioTheme.Styles.toolbarButton, GUILayout.Width(64))) StudioControlsPreferences.Open();
             }
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -111,20 +118,21 @@ namespace MashBoxSDK.AnimationStudio
         {
             var e = Event.current; int id = GUIUtility.GetControlID("StudioUVCanvas".GetHashCode(), FocusType.Passive);
             canvasControl = id;
-            if (e.type == EventType.KeyDown && !EditorGUIUtility.editingTextField && !e.control && !e.command)
+            if (e.type == EventType.KeyDown && !EditorGUIUtility.editingTextField)
             {
-                if (e.keyCode == KeyCode.Q) tool = 0; else if (e.keyCode == KeyCode.W) tool = 1; else if (e.keyCode == KeyCode.E) tool = 2; else if (e.keyCode == KeyCode.R) tool = 3;
-                else if (e.keyCode == KeyCode.F) FrameUVs(uv, selection.Count > 0); else if (e.keyCode == KeyCode.A) FrameUVs(uv, false);
-                else if (e.keyCode == KeyCode.Escape && (dragging || selecting))
+                if (StudioShortcuts.Pressed(StudioShortcut.Select,e)) tool = 0; else if (StudioShortcuts.Pressed(StudioShortcut.Move,e)) tool = 1; else if (StudioShortcuts.Pressed(StudioShortcut.Rotate,e)) tool = 2; else if (StudioShortcuts.Pressed(StudioShortcut.Scale,e)) tool = 3;
+                else if (StudioShortcuts.Pressed(StudioShortcut.SelectAll,e)) { for (int i=0;i<uv.Count;i++) selection.Add(i); }
+                else if (StudioShortcuts.Pressed(StudioShortcut.Frame,e)) FrameUVs(uv, selection.Count > 0); else if (StudioShortcuts.Pressed(StudioShortcut.FrameAllUV,e)) FrameUVs(uv, false);
+                else if (StudioShortcuts.Pressed(StudioShortcut.Cancel,e) && (dragging || selecting))
                 { if (dragging && undoGroup >= 0) Undo.RevertAllDownToGroup(undoGroup); dragging = selecting = false; GUIUtility.hotControl = 0; undoGroup = -1; }
-                else return;
+                else { e.Use(); return; }
                 e.Use(); Repaint();
             }
             if (canvas.Contains(e.mousePosition) && e.type == EventType.ScrollWheel)
             {
                 var anchor = ToUV(e.mousePosition); zoom = Mathf.Clamp(zoom * Mathf.Exp(-e.delta.y * .08f), .01f, 30); pan += e.mousePosition - ToScreen(anchor); e.Use(); Repaint();
             }
-            if (canvas.Contains(e.mousePosition) && e.type == EventType.MouseDown && e.button == 2)
+            if (canvas.Contains(e.mousePosition) && e.type == EventType.MouseDown && StudioShortcuts.Matches(StudioShortcut.Pan,e))
             { panning = true; GUIUtility.hotControl = id; e.Use(); }
             if (panning && e.type == EventType.MouseDrag) { pan += e.delta; e.Use(); Repaint(); }
             if (canvas.Contains(e.mousePosition) && e.type == EventType.MouseDown && e.button == 0)

@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using UnityEditor;
 using UnityEngine;
 
@@ -24,8 +25,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             if (evt == null || EditorGUIUtility.editingTextField) return false;
-            bool key = evt.type == EventType.KeyDown && evt.keyCode == KeyCode.D &&
-                (evt.control || evt.command) && !evt.alt && !evt.shift;
+            bool key = StudioShortcuts.Pressed(StudioShortcut.Duplicate,evt);
             bool command = (evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) && evt.commandName == "Duplicate";
             if (!key && !command) return false;
             if (evt.type != EventType.ValidateCommand && GUIUtility.hotControl == 0 && cutTool == CutTool.None)

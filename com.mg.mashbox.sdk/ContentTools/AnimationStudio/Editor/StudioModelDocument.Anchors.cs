@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Linq;
 using UnityEditor;
@@ -7,12 +8,12 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class StudioModelDocument
     {
-        internal int AddAnchor(string type, int parent)
+        internal int AddAnchor(string type, int parent, Vector3? position = null)
         {
             if (parent < -1 || parent >= nodes.Count) throw new ArgumentOutOfRangeException(nameof(parent));
             ValidateAnchorType(type,parent,-1);
             Undo.RegisterCompleteObjectUndo(this,"Create anchor point");
-            nodes.Add(new Node { name=type, anchorType=type, parent=parent });
+            nodes.Add(new Node { name=type, anchorType=type, parent=parent, position=position ?? Vector3.zero });
             EditorUtility.SetDirty(this);
             return nodes.Count-1;
         }

@@ -11,10 +11,14 @@ namespace MashBoxSDK.AnimationStudio
         public StudioModelDocument SaveAs(string path)
         {
             path = path.Replace('\\','/');
-            if (!path.StartsWith("Assets/",StringComparison.Ordinal) || Path.GetExtension(path) != ".asset" ||
+            bool external = string.Equals(Path.GetExtension(path), "." + WorkspaceExtension, StringComparison.OrdinalIgnoreCase);
+            if (external) path = ValidateWorkspacePath(path);
+            else if (!path.StartsWith("Assets/",StringComparison.Ordinal) || Path.GetExtension(path) != ".asset" ||
                 !AssetDatabase.IsValidFolder(Path.GetDirectoryName(path).Replace('\\','/')))
                 throw new ArgumentException("Save the workspace as an .asset inside this project's Assets folder.");
-            if (File.Exists(path) || AssetDatabase.LoadMainAssetAtPath(path))
+            // The native SaveFilePanel confirms replacement for workspace files.
+            // SaveWorkspaceFile then atomically replaces the confirmed destination.
+            if (!external && (File.Exists(path) || AssetDatabase.LoadMainAssetAtPath(path)))
                 throw new InvalidOperationException("A file already exists at that path. Choose a new workspace name.");
             var copy = Instantiate(this);
             copy.name = Path.GetFileNameWithoutExtension(path);
@@ -32,7 +36,9 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     node.mesh = mesh;
                 }
-                AssetDatabase.CreateAsset(copy,path);
+                copy.workspaceFile = null;
+                if (external) copy.SetWorkspacePath(path);
+                else AssetDatabase.CreateAsset(copy,path);
                 copy.Save();
                 return copy;
             }

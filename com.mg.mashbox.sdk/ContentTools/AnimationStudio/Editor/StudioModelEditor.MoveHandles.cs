@@ -6,6 +6,10 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         [System.Flags] internal enum MoveAxes { X = 1, Y = 2, Z = 4, XY = 3, XZ = 5, YZ = 6, Free = 7 }
+        // Older Unity C# compilers recreate method-group delegates on every draw.
+        // Keep native handle callbacks stable across Layout, drag and Repaint.
+        private static readonly Handles.CapFunction MoveArrowCap = Handles.ArrowHandleCap;
+        private static readonly Handles.CapFunction MoveRectangleCap = Handles.RectangleHandleCap;
         private readonly int[] moveHandleIds = new int[7];
         private int moveDragControl;
         private MoveAxes moveDragAxes = MoveAxes.Free;
@@ -25,10 +29,16 @@ namespace MashBoxSDK.AnimationStudio
             moveDragOrigin = Handles.matrix.MultiplyPoint3x4(origin);
             moveDragOrientation = orientation;
         }
-        private Vector3 DrawMoveHandle(Vector3 center, Quaternion orientation)
+#if MASHBOX_STUDIO_TESTS
+        internal static System.Action<Vector3,float> MoveHandleProbe;
+#endif
+        private Vector3 DrawMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
             if (GUIUtility.hotControl == 0) moveDragControl = 0;
-            float size = HandleUtility.GetHandleSize(center);
+            float size = HandleUtility.GetHandleSize(center) * sizeMultiplier;
+#if MASHBOX_STUDIO_TESTS
+            MoveHandleProbe?.Invoke(center,size);
+#endif
             var result = center;
             using (new Handles.DrawingScope())
             {
@@ -37,7 +47,7 @@ namespace MashBoxSDK.AnimationStudio
                     int id = moveHandleIds[axis] = GUIUtility.GetControlID(0x4d5300 + axis, FocusType.Passive);
                     Handles.color = axis == 0 ? Handles.xAxisColor : axis == 1 ? Handles.yAxisColor : Handles.zAxisColor;
                     var direction = orientation * (axis == 0 ? Vector3.right : axis == 1 ? Vector3.up : Vector3.forward);
-                    var next = Handles.Slider(id, center, direction, size, Handles.ArrowHandleCap, 0);
+                    var next = Handles.Slider(id, center, direction, size, MoveArrowCap, 0);
                     TrackMoveControl(id, (MoveAxes)(1 << axis), center, orientation);
                     if (GUIUtility.hotControl == id) result = next;
                 }
@@ -50,13 +60,13 @@ namespace MashBoxSDK.AnimationStudio
                     var offset = (first + second) * size * .23f;
                     int id = moveHandleIds[3 + plane] = GUIUtility.GetControlID(0x4d5310 + plane, FocusType.Passive);
                     Handles.color = plane == 0 ? Handles.zAxisColor : plane == 1 ? Handles.yAxisColor : Handles.xAxisColor;
-                    var next = Handles.Slider2D(id, center + offset, normal, first, second, size * .065f, Handles.RectangleHandleCap, Vector2.zero);
+                    var next = Handles.Slider2D(id, center + offset, normal, first, second, size * .065f, MoveRectangleCap, Vector2.zero);
                     TrackMoveControl(id, (MoveAxes)((1 << a) | (1 << b)), center, orientation);
                     if (GUIUtility.hotControl == id) result = next - offset;
                 }
                 int free = moveHandleIds[6] = GUIUtility.GetControlID(0x4d5320, FocusType.Passive);
                 Handles.color = Color.yellow;
-                var freePosition = Handles.FreeMoveHandle(free, center, size * .075f, Vector3.zero, Handles.RectangleHandleCap);
+                var freePosition = Handles.FreeMoveHandle(free, center, size * .075f, Vector3.zero, MoveRectangleCap);
                 TrackMoveControl(free, MoveAxes.Free, center, orientation);
                 if (GUIUtility.hotControl == free) result = freePosition;
             }
@@ -75,6 +85,16 @@ namespace MashBoxSDK.AnimationStudio
             for (int axis = 0; axis < 3; axis++) if (((int)axes & (1 << axis)) != 0) point[axis] = Mathf.Round(point[axis] / spacing) * spacing;
             return ConstrainMove(origin, orientation * point, orientation, axes);
         }
+        internal static bool TrySnapFreeMoveToGrid(Ray ray, float spacing, out Vector3 target)
+        {
+            target = default;
+            if (spacing <= 0 || float.IsNaN(spacing) || float.IsInfinity(spacing) ||
+                !new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float distance)) return false;
+            var point = ray.GetPoint(distance);
+            target = new Vector3(Mathf.Round(point.x / spacing) * spacing, 0,
+                Mathf.Round(point.z / spacing) * spacing);
+            return true;
+        }
         private bool TryMoveSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)
         {
             var point = PivotCameraPoint(view, mouse);
@@ -89,7 +109,7 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 if (!pivotSnapHeld && !gridSnapHeld) return null;
-                string label = pivotSnapHeld ? "Vertex Snap · V" : "Grid Snap · X";
+                string label = pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
                 if (pivotSnapHeld && gridSnapHeld) label += " (overrides grid)";
                 if (moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
                     label += moveDragAxes == MoveAxes.Free ? " · Free" : " · " + moveDragAxes + (((int)moveDragAxes & ((int)moveDragAxes - 1)) == 0 ? " axis" : " plane");

@@ -100,7 +100,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private double motionPollAfter;
         private static string MotionToolDefault => Path.GetFullPath(Path.Combine(Application.dataPath, "../Tools/MotionGeneration"));
-        private static string MotionToolPath => EditorPrefs.GetString("MashBox.MotionToolPath", MotionToolDefault);
+        private static string MotionToolPath => StudioPreferenceStore.GetString("MashBox.MotionToolPath", MotionToolDefault);
         private bool MotionRunning => motionPid != 0;
 
         private void RestoreMotionJob()
@@ -183,7 +183,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (GUILayout.Button("Locate motion tools…"))
                     {
                         string folder = EditorUtility.OpenFolderPanel("Select MotionGeneration folder", MotionToolPath, "");
-                        if (!string.IsNullOrEmpty(folder)) EditorPrefs.SetString("MashBox.MotionToolPath", folder);
+                        if (!string.IsNullOrEmpty(folder)) StudioPreferenceStore.SetString("MashBox.MotionToolPath", folder);
                     }
             }
         }

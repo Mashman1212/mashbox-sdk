@@ -1,0 +1,29 @@
+using Unity.Mathematics;
+
+namespace MashBoxSDK.AnimationStudio.ThirdParty.StraightSkeleton
+{
+	public struct EdgeEvent
+	{
+		public int queueId;
+
+		public EventType eventType;
+		public float eventTime;
+		public float2 eventPos;
+		public float2 dir;
+        public float speed;
+
+
+		public void Reset()
+		{
+			// we never go back to being in the wavefront after being deleted from it
+			if (eventType != EventType.NotInWavefront) eventType = EventType.None;
+			eventTime = float.MaxValue;
+		}
+
+		public override string ToString()
+		{
+			if (eventType == EventType.NotInWavefront) return "";
+			return $"{eventType} event at time {eventTime} and pos {eventPos}";
+		}
+	}
+}

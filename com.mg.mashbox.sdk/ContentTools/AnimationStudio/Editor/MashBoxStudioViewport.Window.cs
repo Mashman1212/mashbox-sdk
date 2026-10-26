@@ -6,6 +6,35 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class MashBoxStudioViewport
     {
+        private bool storedConfigurationInitialized;
+        internal void InitializeStoredConfiguration()
+        {
+            if (storedConfigurationInitialized) return;
+            storedConfigurationInitialized = true;
+            modelGridVisible = StudioPreferenceStore.GetFloat("Studio.GridVisible", modelGridVisible ? 1 : 0) >= .5f;
+            rootVisualElement.RegisterCallback<UnityEngine.UIElements.GeometryChangedEvent>(_ => SaveStoredConfiguration());
+            rootVisualElement.RegisterCallback<UnityEngine.UIElements.FocusOutEvent>(_ => SaveStoredConfiguration());
+        }
+        internal void SaveStoredConfiguration()
+        {
+            if (!storedConfigurationInitialized || (Studio && !ReferenceEquals(Studio.ActiveViewport, this))) return;
+            // Docked tab bounds are controlled by Unity's workspace; preserve the last floating bounds.
+            if (!docked && !IsStudioMaximized) StudioPreferenceStore.SetBounds("Studio.Bounds", position);
+            if (Studio) StudioPreferenceStore.SetString("Studio.Mode", Studio.IsModelingMode ? "Modeling" : "Animation");
+            StudioPreferenceStore.SetFloat("Studio.GridVisible", modelGridVisible ? 1 : 0);
+            Studio?.SaveAnimationConfiguration();
+            SaveStoredToolbars();
+        }
+        internal void RestoreStoredConfiguration()
+        {
+            Studio?.RestoreStoredMode();
+            preferredLeft = ValidWidth(StudioPreferenceStore.GetFloat(LeftWidthKey, 260), 260, MinLeft);
+            preferredRight = ValidWidth(StudioPreferenceStore.GetFloat(RightWidthKey, 350), 350, MinRight);
+            preferredToolHeight = StudioPreferenceStore.GetFloat(ToolOptionsHeightKey, 220);
+            if (!docked && !IsStudioMaximized) position = StudioPreferenceStore.GetBounds("Studio.Bounds", position);
+            modelGridVisible = StudioPreferenceStore.GetFloat("Studio.GridVisible", 1) >= .5f;
+            RestoreStoredToolbars(); UpdatePanelLayout();
+        }
         private const BindingFlags WindowMembers = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         private static readonly FieldInfo HostField = typeof(EditorWindow).GetField("m_Parent", WindowMembers);
         private object FloatingContainer
@@ -43,8 +72,7 @@ namespace MashBoxSDK.AnimationStudio
         internal bool HandleWindowShortcut()
         {
             var evt = Event.current;
-            if (evt.type != EventType.KeyDown || evt.keyCode != KeyCode.F11 ||
-                evt.alt || evt.control || evt.command || evt.shift || GUIUtility.hotControl != 0) return false;
+            if (!StudioShortcuts.Pressed(StudioShortcut.Maximize,evt) || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0) return false;
             evt.Use();
             // Rebuild the dock layout outside the current SceneView IMGUI pass.
             EditorApplication.delayCall += () => { if (this) ToggleMaximized(); };

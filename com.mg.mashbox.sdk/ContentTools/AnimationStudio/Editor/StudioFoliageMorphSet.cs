@@ -44,7 +44,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUILayout.HelpBox("Builds editable shared-topology shapes from triangle meshes with separate wood and foliage submeshes. Source meshes and scenes are untouched. Rebuilding replaces the generated workspace meshes; save a workspace copy to keep manual edits.", MessageType.Info);
             if (GUILayout.Button("Build Shared Topology in Studio"))
                 try { StudioFoliageMorphBuilder.Build(recipe); AnimationStudioWindow.OpenModelDocument(recipe.document); }
-                catch (Exception ex) { Debug.LogException(ex); EditorUtility.DisplayDialog("Foliage Morph Set",ex.Message,"OK"); }
+                catch (Exception ex) { EditorUtility.DisplayDialog("Foliage Morph Set",ex.Message,"OK"); }
             if (recipe.document && GUILayout.Button("Open Editable Shapes in Studio")) AnimationStudioWindow.OpenModelDocument(recipe.document);
         }
     }

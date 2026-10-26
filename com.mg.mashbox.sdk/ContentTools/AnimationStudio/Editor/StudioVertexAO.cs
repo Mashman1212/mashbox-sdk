@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -123,7 +124,7 @@ namespace MashBoxSDK.AnimationStudio
         Material material;string message;
         internal static void Open(StudioModelEditor editor)
         {
-            var w=GetWindow<StudioVertexAOWindow>(true,"Shape Vertex AO");w.editor=editor;w.minSize=new Vector2(420,560);w.Show();
+            var w=GetWindow<StudioVertexAOWindow>(true,"Shape Vertex AO");w.editor=editor;w.minSize=new Vector2(420,560);StudioWindowOwnership.ShowUtility(w,editor.ToolChannelPaneOwner);
         }
         void OnGUI()
         {
@@ -150,7 +151,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(!string.IsNullOrEmpty(message))EditorGUILayout.HelpBox(message,MessageType.Info);
             }
         }
-        void Run(Action action){try{action();}catch(OperationCanceledException){message="Bake cancelled; mesh colors unchanged.";}catch(Exception e){message=e.Message;Debug.LogException(e);}}
+        void Run(Action action){try{action();}catch(OperationCanceledException){message="Bake cancelled; mesh colors unchanged.";}catch(Exception e){message=e.Message;}}
     }
     internal sealed partial class StudioModelEditor
     {

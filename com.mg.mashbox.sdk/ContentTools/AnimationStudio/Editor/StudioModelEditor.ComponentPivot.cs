@@ -1,3 +1,4 @@
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -33,12 +34,18 @@ namespace MashBoxSDK.AnimationStudio
         private bool CanAdjustPivot => Document && Active >= 0 && !Document.IsBone(Active) &&
             (mode == ComponentMode.Object || (ActiveMesh && CanEditComponents() && SelectedVertices().Count > 0));
 
-        private Vector3 ComponentSelectionCenter()
+        private readonly System.Collections.Generic.HashSet<Vector3> componentCenterPoints = new System.Collections.Generic.HashSet<Vector3>();
+        private Vector3 ComponentSelectionCenter() => ComponentSelectionCenter(ComponentPositions(), SelectedVertices());
+        private Vector3 ComponentSelectionCenter(System.Collections.Generic.IList<Vector3> vertices, System.Collections.Generic.HashSet<int> indices)
         {
-            var vertices = ActiveMesh.vertices;
-            var indices = SelectedVertices();
-            return indices.Count == 0 ? Transforms[Active].position :
-                indices.Aggregate(Vector3.zero, (sum, i) => sum + Transforms[Active].TransformPoint(vertices[i])) / indices.Count;
+            // UV and hard-normal splits are render vertices, not extra geometric
+            // points. Their multiplicity must not move the selection's center.
+            componentCenterPoints.Clear();
+            var sum = Vector3.zero;
+            foreach (int i in indices)
+                if (componentCenterPoints.Add(vertices[i])) sum += vertices[i];
+            return componentCenterPoints.Count == 0 ? Transforms[Active].position :
+                Transforms[Active].TransformPoint(sum / componentCenterPoints.Count);
         }
         internal Vector3 EditingPivotPosition => mode == ComponentMode.Object ? Transforms[Active].position :
             HasComponentPivot ? componentPivot.position : ComponentSelectionCenter();
