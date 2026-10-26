@@ -149,6 +149,11 @@ namespace MashBoxSDK.AnimationStudio
                 StudioChromeRoot.Add(modeSelector);
                 BindStudioHoverRedraw(modeSelector);
             }
+            if (skinPracticeTab != null)
+            {
+                StudioChromeRoot.Add(skinPracticeTab);
+                BindStudioHoverRedraw(skinPracticeTab);
+            }
             if (MenuInputBlocked) KeepMenuShieldOnTop();
         }
         private bool HasLeftDockedToolbar => HasDockedToolbar("overlay-toolbar__left");
@@ -316,6 +321,7 @@ namespace MashBoxSDK.AnimationStudio
             studioToolbarOverlays.Clear();
             if (modelMenuBar != null) UnbindStudioHoverRedraw(modelMenuBar);
             if (modeSelector != null) UnbindStudioHoverRedraw(modeSelector);
+            if (skinPracticeTab != null) UnbindStudioHoverRedraw(skinPracticeTab);
             studioOverlayRoot = null;
         }
     }

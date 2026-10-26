@@ -201,7 +201,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (button == null) return;
             button.style.left = left; button.style.top = top;
-            button.style.display = panelsModeling ? DisplayStyle.Flex : DisplayStyle.None;
+            button.style.display = Studio && Studio.IsModelingMode ? DisplayStyle.Flex : DisplayStyle.None;
         }
         private bool DrawViewportOverlayButton(IMGUIContainer element, GUIContent hint, string iconName)
         {

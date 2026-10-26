@@ -39,6 +39,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             BindViewportControl(ref skinPracticeTab,"mashbox-skin-practice",draw);
             skinPracticeTab.style.width=104;skinPracticeTab.style.height=21;
+            // Tutorial belongs to the menu row, above the viewport toolbar area.
+            PlaceStudioMenuAboveToolbars();
             UpdatePanelLayout();
         }
         private Vector2 VisiblePanelWidths => new Vector2(FoldablePanels && skinLeftTucked && skinInfluencesTucked ? 24 : PanelWidths.x, FoldablePanels && skinRightTucked ? 24 : PanelWidths.y);
