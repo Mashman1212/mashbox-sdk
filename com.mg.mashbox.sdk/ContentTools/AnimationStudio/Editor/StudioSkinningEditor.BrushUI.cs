@@ -93,6 +93,13 @@ namespace MashBoxSDK.AnimationStudio
         internal void BeforeSkinSceneGUI(SceneView view)
         {
             var e = Event.current;
+            // Claim material drops before native SceneView drag handling, also
+            // while the skinning preview animation is playing.
+            if (StudioMeshMaterialPreview.IsMaterialDrag)
+            {
+                DropMaterialOnViewport(e,view);
+                if(e.type==EventType.Used)return;
+            }
             if ((Tool == Brush.Pose || Tool == Brush.Object) && e.type == EventType.MouseDown && e.button == 0 && !e.alt &&
                 view is MashBoxStudioViewport poseView && poseView.ModelCanvasRect.Contains(e.mousePosition) &&
                 !poseView.IsOverSkinningPanels(e.mousePosition) && !ModeRect(view).Contains(e.mousePosition) && !DisplayToolbarRect(view).Contains(e.mousePosition) && !PoseToolbarRect(view).Contains(e.mousePosition))

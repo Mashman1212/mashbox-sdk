@@ -5,35 +5,15 @@ using UnityEngine;
 
 namespace MashBoxSDK.AnimationStudio
 {
-    // Preview copies isolate source material assets and work in HDRP and built-in projects.
+    // Render assigned materials through the active render pipeline. This helper
+    // never edits or owns source materials; diagnostic views supply their own materials.
     internal sealed class StudioMeshMaterialPreview : IDisposable
     {
-        private readonly Dictionary<Material,Material> cache=new Dictionary<Material,Material>();
         internal Material[] Materials(Material[] sources,int count,Material fallback)
         {
             var result=new Material[Mathf.Max(1,count)];
-            for(int i=0;i<result.Length;i++)result[i]=sources!=null&&i<sources.Length&&sources[i]?Preview(sources[i],fallback):fallback;
+            for(int i=0;i<result.Length;i++)result[i]=sources!=null&&i<sources.Length&&sources[i]?sources[i]:fallback;
             return result;
-        }
-        private Material Preview(Material source,Material fallback)
-        {
-            if(!cache.TryGetValue(source,out var preview))
-            {preview=new Material(fallback){name=source.name+" (Studio preview)",hideFlags=HideFlags.HideAndDontSave};cache.Add(source,preview);}
-            string texture=null;
-            foreach(var p in new[]{"_BaseColorMap","_BaseMap","_MainTex"})if(source.HasProperty(p)&&source.GetTexture(p)){texture=p;break;}
-            preview.SetTexture("_MainTex",texture!=null?source.GetTexture(texture):null);
-            preview.SetTextureScale("_MainTex",texture!=null?source.GetTextureScale(texture):Vector2.one);
-            preview.SetTextureOffset("_MainTex",texture!=null?source.GetTextureOffset(texture):Vector2.zero);
-            preview.SetColor("_Color",source.HasProperty("_BaseColor")?source.GetColor("_BaseColor"):source.HasProperty("_Color")?source.GetColor("_Color"):Color.white);
-            float Value(string p,float value)=>source.HasProperty(p)?source.GetFloat(p):value;
-            bool cutout=source.IsKeywordEnabled("_ALPHATEST_ON")||Value("_AlphaCutoffEnable",0)>.5f||Value("_AlphaClip",0)>.5f||source.GetTag("RenderType",false)=="TransparentCutout";
-            preview.SetFloat("_Cutoff",cutout?Value("_AlphaCutoff",Value("_Cutoff",.5f)):0);
-            preview.SetFloat("_UseNormal",0);preview.SetTexture("_NormalTex",null);
-            foreach(var p in new[]{"_NormalMap","_BumpMap"})if(source.HasProperty(p)&&source.GetTexture(p))
-            {preview.SetTexture("_NormalTex",source.GetTexture(p));preview.SetFloat("_UseNormal",1);break;}
-            preview.SetFloat("_NormalStrength",Value("_NormalScale",Value("_BumpScale",1)));
-            preview.SetFloat("_UseArray",0);preview.SetFloat("_VertexAOStrength",0);
-            return preview;
         }
         internal static Material[] Assign(Material[] materials,int count,int slot,Material value)
         {
@@ -94,6 +74,6 @@ namespace MashBoxSDK.AnimationStudio
             Handles.DrawAAPolyLine(1.4f,P(-7,5),P(-2,-1),P(2,3),P(5,0),P(8,5));
             Handles.DrawSolidDisc(P(4,-3),Vector3.forward,1.7f);Handles.color=old;
         }
-        public void Dispose(){foreach(var m in cache.Values)if(m)UnityEngine.Object.DestroyImmediate(m);cache.Clear();}
+        public void Dispose() { } // Source materials belong to the project, not this preview.
     }
 }

@@ -105,6 +105,74 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool CanStitchSelectedBust => Part != null && !Part.referenceOnly && Part.bound && Part.role == StudioSkinningDocument.MeshRole.Bust;
+        internal bool CanMatchDefaultBody => HasEditableMesh && Part.bound && Part.role == StudioSkinningDocument.MeshRole.Body;
+
+        internal void MatchDefaultBody()
+        {
+            if (!CanMatchDefaultBody) throw new InvalidOperationException("Select a skinned mesh marked as Body first.");
+            EndStroke(); FinishPoseGesture();
+            var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+            if(!defaults || !defaults.body) throw new InvalidOperationException("Assign a default body first.");
+            var defaultMeshes=new HashSet<Mesh>(defaults.body.GetComponentsInChildren<SkinnedMeshRenderer>(true).Select(r=>r.sharedMesh));
+            var references=Document.parts.Where(p=>p.referenceOnly && defaultMeshes.Contains(p.sourceMesh)).ToArray();
+            if(references.Length!=1) throw new InvalidOperationException("Match Default Body requires one loaded default body mesh.");
+            if(!previewClip || previewClip.frameRate<=0 || previewClip.length<2f/previewClip.frameRate)
+                throw new InvalidOperationException("Match Default Body requires the SDK Skinning Test A-pose.");
+            var part=Part; var reference=references[0];
+            JumpToPreviewFrame(2);
+            var pose=bones.Select(b=>b.localToWorldMatrix).ToArray();
+            var source=new StitchSurface(part,pose);
+            var target=new StitchSurface(reference,pose);
+            var bounds=new Bounds(target.points[0],Vector3.zero);
+            foreach(var point in target.points) bounds.Encapsulate(point);
+            float tolerance=bounds.size.magnitude*.01f;
+            var index=new StudioSkinSpatialIndex(target.points,tolerance);
+            var nearby=new List<int>(); var mapping=new Dictionary<int,int>(); var used=new HashSet<int>();
+            foreach(int vertex in source.groups.Distinct().OrderBy(v=>v))
+            {
+                index.Query(source.points[vertex],tolerance,nearby);
+                int closest=-1; float best=tolerance*tolerance;
+                foreach(int candidate in nearby)
+                {
+                    float distance=(source.points[vertex]-target.points[candidate]).sqrMagnitude;
+                    if(distance<best || (distance==best && (closest<0 || candidate<closest)))
+                    {best=distance;closest=candidate;}
+                }
+                if(closest<0 || !used.Add(target.groups[closest]))
+                    throw new InvalidOperationException("Body vertices do not match uniquely within "+(tolerance*1000).ToString("0")+" mm. Align a body with compatible vertex layout to Default Body and try again. No mesh was changed.");
+                mapping.Add(vertex,closest);
+            }
+            var working=UnityEngine.Object.Instantiate(part.mesh);
+            try
+            {
+                // Move blend-shape data into the reference bind space as well.
+                RebaseStitchMesh(working,reference.mesh.bindposes,pose);
+                var points=working.vertices; var normals=working.normals;
+                var referencePoints=reference.mesh.vertices; var referenceNormals=reference.mesh.normals;
+                var matchedWeights=new StudioSkinWeights(working);
+                for(int v=0;v<points.Length;v++)
+                {
+                    int donor=mapping[source.groups[v]];
+                    points[v]=referencePoints[donor]; normals[v]=referenceNormals[donor];
+                    matchedWeights.Values[v]=new List<BoneWeight1>(target.weights.Values[donor]);
+                }
+                working.vertices=points; working.normals=normals;
+                matchedWeights.Apply(working); working.RecalculateTangents(); working.RecalculateBounds();
+                Undo.IncrementCurrentGroup(); int group=Undo.GetCurrentGroup();
+                Undo.SetCurrentGroupName("Match Default Body");
+                Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[]{Document,part.mesh},"Match Default Body");
+                EditorUtility.CopySerialized(working,part.mesh);
+                part.preserveStitchedBindPose=true;
+                // Matching a whole body does not freeze it as a bust seam.
+                part.stitchedVertices=null; part.stitchedWeights=null; part.stitchedVertexCount=0;
+                EditorUtility.SetDirty(part.mesh); Undo.CollapseUndoOperations(group);
+                Rebuild(); Changed(); JumpToPreviewFrame(2);
+                string message="Matched "+points.Length+" vertices and skin weights to Default Body.";
+                Debug.Log("[MashBox Skinning] "+message+" Workspace copy only.");
+                if(lastView) lastView.ShowNotification(new GUIContent(message));
+            }
+            finally { UnityEngine.Object.DestroyImmediate(working); }
+        }
 
         private void SetMeshRole(StudioSkinningDocument.Part part, StudioSkinningDocument.MeshRole role)
         {

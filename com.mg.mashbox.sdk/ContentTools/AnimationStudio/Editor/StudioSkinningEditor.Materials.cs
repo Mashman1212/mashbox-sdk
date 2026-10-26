@@ -38,9 +38,9 @@ namespace MashBoxSDK.AnimationStudio
         private void SetMaterial(PartData part,int slot,Material material)
         {
             if(part==null||part.referenceOnly||IsDefaultReference(part))return;
-            EndStroke();Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,"Assign skinning material");
+            EndStroke();PausePreviewAnimation();Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,"Assign skinning material");
             part.materials=StudioMeshMaterialPreview.Assign(part.materials,part.mesh.subMeshCount,slot,material);
-            Document.selected=Document.parts.IndexOf(part);showTextured=true;showUVChecker=false;RefreshSurface();Changed();
+            Document.selected=Document.parts.IndexOf(part);sameShading=false;showTextured=true;showUVChecker=false;RefreshSurface();Changed();
         }
         private void DrawMaterialSlots(PartData part)
         {
@@ -57,8 +57,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DropMaterialOnViewport(Event evt,SceneView view)
         {
-            if(!StudioMeshMaterialPreview.IsMaterialDrag||ModeRect(view).Contains(evt.mousePosition)||DisplayToolbarRect(view).Contains(evt.mousePosition)||
-                (view is MashBoxStudioViewport viewport&&viewport.IsOverSkinningPanels(evt.mousePosition)))return;
+            if(!StudioMeshMaterialPreview.IsMaterialDrag||ModeRect(view).Contains(evt.mousePosition)||DisplayToolbarRect(view).Contains(evt.mousePosition)||PoseToolbarRect(view).Contains(evt.mousePosition)||
+                (view is MashBoxStudioViewport viewport&&(!viewport.ModelCanvasRect.Contains(evt.mousePosition)||viewport.IsOverSkinningPanels(evt.mousePosition))))return;
             var ray=HandleUtility.GUIPointToWorldRay(evt.mousePosition);float nearest=float.PositiveInfinity;int hit=-1,slot=-1;
             Mesh baked=null;
             try
@@ -72,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             finally{if(baked)Object.DestroyImmediate(baked);}
-            if(hit<0)return;
+            if(hit<0){DragAndDrop.visualMode=DragAndDropVisualMode.Rejected;evt.Use();return;}
             var part=Document.parts[hit];
             if(part.referenceOnly){DragAndDrop.visualMode=DragAndDropVisualMode.Rejected;evt.Use();return;}
             StudioMeshMaterialPreview.Drop(m=>SetMaterial(part,slot,m));

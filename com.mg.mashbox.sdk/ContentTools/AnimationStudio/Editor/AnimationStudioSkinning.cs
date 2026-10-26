@@ -168,6 +168,9 @@ namespace MashBoxSDK.AnimationStudio
             if (skinningEditor.CanStitchSelectedBust)
                 menu.AddItem(new GUIContent("Stitch Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBust)));
             else menu.AddDisabledItem(new GUIContent("Stitch Bust"));
+            if (skinningEditor.CanMatchDefaultBody)
+                menu.AddItem(new GUIContent("Match Default Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.MatchDefaultBody)));
+            else menu.AddDisabledItem(new GUIContent("Match Default Body"));
 #if MashBoxDev
             menu.AddItem(new GUIContent("Stitch Default Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchDefaultBust)));
 #endif
