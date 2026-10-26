@@ -82,19 +82,32 @@ namespace MashBoxSDK.AnimationStudio
                 for(int i=0;i<ai.Length;i+=3)
                 {
                     var cell=Cell(a.positions[ai[i]]); bool found=false; string detail="no triangle at the expected position";
+                    float closestCandidate = float.PositiveInfinity;
                     for(int dx=-1;dx<=1 && !found;dx++) for(int dy=-1;dy<=1 && !found;dy++) for(int dz=-1;dz<=1 && !found;dz++)
                     {
                         if(!cells.TryGetValue(cell+new Vector3Int(dx,dy,dz),out var list)) continue;
                         foreach(int corner in list)
                         {
                             int triangle=corner/3; if(used[triangle]) continue;
+                            float candidateDistance = 0;
+                            for (int k=0;k<3;k++)
+                                candidateDistance = Mathf.Max(candidateDistance,
+                                    Vector3.Distance(a.positions[ai[i+k]],b.positions[bi[triangle*3+(corner%3+k)%3]]));
                             string error=null;
                             for(int k=0;k<3;k++)
                             {
                                 error=Difference(ai[i+k],bi[triangle*3+(corner%3+k)%3]);
                                 if(error!=null) break;
                             }
-                            if(error!=null) { detail=error; continue; }
+                            if(error!=null)
+                            {
+                                // Keep the reason from the closest triangle, rather
+                                // than replacing a real normal/UV/weight mismatch
+                                // with the distance to a later unrelated neighbour.
+                                if (candidateDistance < closestCandidate)
+                                { closestCandidate=candidateDistance; detail=error; }
+                                continue;
+                            }
                             used[triangle]=true; found=true; break;
                         }
                     }
