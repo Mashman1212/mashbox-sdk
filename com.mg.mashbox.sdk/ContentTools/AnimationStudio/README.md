@@ -589,3 +589,5 @@ Toolbar defaults (2026-10-26): all Studio toolbars are on when no toolbar prefer
 
 
 Pivot edit uses a triangular center handle to distinguish it from the ordinary Move tool's square center. Existing center dragging, snapping, sizing and axis/plane controls are retained.
+
+Hierarchy dragging uses Unity-style placement: drop on a row to make the selected roots children; drop on its top/bottom insertion guide to reorder siblings; move left at a gap to outdent to an ancestor level. The guide indentation shows the target level. Dropping into the blank area moves items to the root. Left and middle mouse drags work, and Escape cancels. Moves preserve world placement, move selected subtrees once, reject cycles/unsafe transforms, and form one Undo/Redo action. Sibling order is saved in the workspace without reindexing nodes or mesh/bone references; old workspaces retain their stored order.
