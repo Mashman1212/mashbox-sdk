@@ -52,7 +52,7 @@ namespace MashBoxSDK.AnimationStudio
                 S("size","Resize the brush","Hold Ctrl + middle mouse and drag horizontally to adjust width. The brush circle remains visible away from the mesh. Use short strokes near bends.","event:brushRadius"),
                 S("finish","Join without overlaps","Bring a strip into an existing open border. Inspect the join from two angles. Avoid steering across occupied faces; use Edge Bridge or Target Weld for a precise finish.")),
             new Lesson("tube","06 / Sleeve and leg tubes","Build","Build continuous rings around a limb instead of patching every side.","tube",
-                S("points","Place the tube ends","Choose Tube and click two points along the length of the practice sleeve, near its two ends. Use the same limb.","tubePreview","Tube"),
+                S("points","Place the tube ends","Choose Tube and click two points along the length of the practice sleeve, near its two ends. The tool automatically fits end rings just inside the openings. Use the same limb.","tubePreview","Tube"),
                 S("preview","Check sides and rows","Use the Sides and Rows sliders below the top tool buttons. Orbit to inspect the preview. More rings help bends; keep the ends open.","event:tubeSettings","Tube"),
                 S("create","Create the tube","Move over the viewport and press Enter, or click Create Tube beside the top sliders. Escape cancels the preview.","event:Create quad tube","Tube"),
                 S("review","Check the whole circumference","Orbit around the back. Confirm the rings follow the reference without jumping to another limb. Bridge open ends to other patches later.")),

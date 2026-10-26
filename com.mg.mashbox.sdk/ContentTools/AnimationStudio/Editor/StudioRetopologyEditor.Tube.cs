@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(activeTool!=RetopoTool.Tube)return;
             GUILayout.Space(6);GUILayout.Label("TUBE",StudioTheme.Styles.boldLabel);
-            GUILayout.Label(corners.Count<2?"Click start and end along the same arm or leg. Keep points inside openings; use shorter sections for bends.":"Preview only. Enter creates the tube; Escape cancels. Open ends can be bridged to matching borders.",StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label(corners.Count<2?"Click near each end of the same sleeve or limb. End rings automatically fit just inside openings; use shorter sections for bends.":"Preview only. Enter creates the tube; Escape cancels. Open ends can be bridged to matching borders.",StudioTheme.Styles.wordWrappedMiniLabel);
             using(new EditorGUI.DisabledScope(tubePreview==null||corners.Count!=2))
                 if(GUILayout.Button("Create tube  [Enter]"))Run(CreateTube);
         }
