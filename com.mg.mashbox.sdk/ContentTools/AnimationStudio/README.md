@@ -588,6 +588,8 @@ Object, Vertex, Edge and Face selection modes can be chosen before selecting an 
 Toolbar defaults (2026-10-26): all Studio toolbars are on when no toolbar preferences have been saved, including when Unity restores a hidden native layout. Existing saved toolbar visibility, docking and disabled-canvas choices are preserved. Defaults apply after toolbar discovery through the existing registry; no profile reset is required.
 
 
-Pivot edit uses a triangular center handle to distinguish it from the ordinary Move tool's square center. Existing center dragging, snapping, sizing and axis/plane controls are retained.
+Pivot edit uses a solid triangular center handle at 1.5 times its original size to distinguish it from the ordinary Move tool's square center. Existing center dragging, snapping, sizing and axis/plane controls are retained.
 
 Hierarchy dragging uses Unity-style placement: drop on a row to make the selected roots children; drop on its top/bottom insertion guide to reorder siblings; move left at a gap to outdent to an ancestor level. The guide indentation shows the target level. Dropping into the blank area moves items to the root. Left and middle mouse drags work, and Escape cancels. Moves preserve world placement, move selected subtrees once, reject cycles/unsafe transforms, and form one Undo/Redo action. Sibling order is saved in the workspace without reindexing nodes or mesh/bone references; old workspaces retain their stored order.
+
+Create menu order: Polygon Primitives appears first, followed by the Vehicle Part submenu in its own section with separators above and below. The existing separated foliage section and empty-transform/anchor actions follow.
