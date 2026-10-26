@@ -107,7 +107,7 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdatePanelLayout()
         {
             if (!panelsInitialized) return;
-            var widths = PanelWidths;
+            var widths = FoldablePanels ? VisiblePanelWidths : PanelWidths;
             bool showTools = panelsModeling && modelToolOptions != null && modelToolOptions.onGUIHandler != null && !StudioSettings.Current.hideToolOptions;
             bool showChannels = panelsModeling && inspector != null && inspector.onGUIHandler != null && inspector.style.display.value != DisplayStyle.None;
             bool bottomDocked = HasBottomDockedToolbar;
@@ -189,6 +189,21 @@ namespace MashBoxSDK.AnimationStudio
             rightDivider.style.right = PanelMargin + widths.y;
             leftDivider.style.top = rightDivider.style.top = ModelingPanelTop;
             leftDivider.style.bottom = rightDivider.style.bottom = panelsModeling ? PanelMargin : 148;
+            if (rigControls != null)
+            {
+                rigControls.style.display = FoldablePanels && skinLeftTucked ? DisplayStyle.None : DisplayStyle.Flex;
+                rigControls.style.width = panelsModeling ? widths.x : 398;
+                rigControls.style.backgroundColor = panelsModeling ? StudioTheme.Current.Panel : Color.clear;
+            }
+            if (inspector != null)
+            {
+                inspector.style.display = FoldablePanels && skinRightTucked ? DisplayStyle.None : DisplayStyle.Flex;
+                inspector.style.width = panelsModeling || animationSettingsExpanded ? widths.y : 206;
+                inspector.style.bottom = panelsModeling ? new StyleLength(PanelMargin) : new StyleLength(StyleKeyword.Auto);
+                inspector.style.height = panelsModeling ? new StyleLength(StyleKeyword.Auto) : new StyleLength(animationSettingsExpanded ? Mathf.Clamp(StudioContentHeight - 180, 140, 440) : 38);
+                inspector.style.backgroundColor = panelsModeling || animationSettingsExpanded ? StudioTheme.Current.Panel : Color.clear;
+            }
+            UpdateSkinPanelTabs(widths);
         }
         internal void BindSkinInfluences(System.Action draw)
         {
@@ -232,6 +247,55 @@ namespace MashBoxSDK.AnimationStudio
             skinInfluencesPanel.style.top=both ? top+meshHeight+8 : top;
             skinInfluencesPanel.style.bottom=PanelMargin;
             skinInfluencesPanel.style.backgroundColor=StudioTheme.Current.Panel;
+        }
+        private void UpdateSkinPanelTabs(Vector2 widths)
+        {
+            if (FoldablePanels && skinLeftTab == null)
+            {
+                skinLeftTab = CreateSkinPanelTab(true);
+                skinRightTab = CreateSkinPanelTab(false);
+            }
+            if(skinPracticeTab!=null)
+            {
+                skinPracticeTab.style.display=skinPreviewTimeline||retopologyPanels?DisplayStyle.Flex:DisplayStyle.None;
+                skinPracticeTab.style.top=0;
+                skinPracticeTab.style.right=PanelMargin;
+                skinPracticeTab.BringToFront();
+            }
+            if (skinLeftTab == null) return;
+            if (skinInfluencesTab != null)
+            {
+                skinInfluencesTab.style.display = skinPreviewTimeline ? DisplayStyle.Flex : DisplayStyle.None;
+                skinInfluencesTab.style.left = HierarchyLeft + 112;
+                skinInfluencesTab.BringToFront();
+            }
+            skinLeftTab.style.display = skinRightTab.style.display = FoldablePanels ? DisplayStyle.Flex : DisplayStyle.None;
+            skinLeftTab.style.left = HierarchyLeft;
+            skinRightTab.style.right = PanelMargin;
+            skinLeftTab.BringToFront(); skinRightTab.BringToFront();
+        }
+        private IMGUIContainer CreateSkinPanelTab(bool left)
+        {
+            var tab = new IMGUIContainer(StudioTheme.Wrap(() =>
+            {
+                bool tucked = left ? skinLeftTucked : skinRightTucked;
+                string arrow = left == tucked ? "›" : "‹";
+                string title = left ? "Meshes" : retopologyPanels ? (retopologyTutorialGuide ? "Tutorial Guide" : "Topology Tools") : (skinTutorialGuide?"Tutorial Guide":"Brush Settings");
+                var rect = new Rect(0,0,left ? 106 : SkinPanelTabWidth,24);
+                var content = new GUIContent(left ? arrow + "  " + title : title + "  " + arrow,(tucked ? "Show " : "Tuck ") + title);
+                EditorGUI.DrawRect(rect, rect.Contains(Event.current.mousePosition) ? new Color(.10f,.12f,.12f) : new Color(.035f,.04f,.04f));
+                if (!tucked) EditorGUI.DrawRect(new Rect(5,22,rect.width-10,2),new Color(.5f,1,.87f));
+                GUI.Label(rect,content,new GUIStyle(StudioTheme.Styles.label) { alignment = TextAnchor.MiddleCenter });
+                if (GUI.Button(rect,new GUIContent("",content.tooltip),GUIStyle.none))
+                {
+                    if (left) skinLeftTucked = !skinLeftTucked; else skinRightTucked = !skinRightTucked;
+                    UpdatePanelLayout(); Repaint();
+                }
+            }));
+            tab.style.position = Position.Absolute;
+            tab.style.top = ModelingPanelTop; tab.style.width = left ? 106 : SkinPanelTabWidth; tab.style.height = 24;
+            tab.style.backgroundColor = new Color(.04f,.045f,.045f);
+            rootVisualElement.Add(tab); return tab;
         }
         private void DrawPanelDivider(int side)
         {

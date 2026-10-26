@@ -79,11 +79,13 @@ namespace MashBoxSDK.AnimationStudio
         internal void ReloadToolDefaults() => modelEditor?.ReloadStoredToolDefaults();
         internal MashBoxStudioViewport ActiveViewport => viewport;
         internal void RestoreStoredMode() => SwitchStudioMode(StudioPreferenceStore.GetString("Studio.Mode", "Animation") == "Modeling");
-        internal bool IsModelingMode => modelingMode;
-        internal StudioModelEditor ToolbarModelEditor => modelingMode ? modelEditor : null;
+        internal bool IsModelingMode => modelingMode && !skinningMode && !retopologyMode;
+        internal StudioModelEditor ToolbarModelEditor => IsModelingMode ? modelEditor : null;
         private void BindStudioMode()
         {
             if (!viewport) return;
+            // Keep navigation available even if the selected preview mode cannot initialize.
+            viewport.BindModes(DrawStudioModes, modelingMode || skinningMode || retopologyMode);
             if (retopologyMode) { BindRetopologyMode(); return; }
             viewport.SetRetopologyPanels(false);
             retopologyEditor?.SuspendLighting();

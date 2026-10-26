@@ -85,7 +85,7 @@ namespace MashBoxSDK.AnimationStudio
                 var hips = bones.FirstOrDefault(b => StudioSkinningDocument.BoneName(b.name) == "Hips");
                 deformBones = bones.Select(b => hips ? b == hips || b.IsChildOf(hips) : b != skeleton.transform).ToArray();
                 boneIndex = Array.FindIndex(deformBones, b => b); if (boneIndex < 0) boneIndex = 0;
-                shaded = new Material(Shader.Find("Hidden/MashBox/AnimationStudioPreview")) { hideFlags = HideFlags.HideAndDontSave };
+                shaded = new Material(Shader.Find("MashBox/Studio/Preview")) { hideFlags = HideFlags.HideAndDontSave };
                 shaded.SetColor("_Color", new Color(.7f,.74f,.78f)); shaded.SetFloat("_Cull", 0);
                 referenceShaded = new Material(shaded) { name = "Default reference preview", hideFlags = HideFlags.HideAndDontSave };
                 referenceShaded.SetColor("_Color", ReferencePreviewTint);

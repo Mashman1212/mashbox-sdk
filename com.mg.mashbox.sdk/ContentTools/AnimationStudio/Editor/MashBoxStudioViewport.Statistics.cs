@@ -27,7 +27,7 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdateWorkspaceStatisticsState()
         {
             if (workspaceStats == null) return;
-            bool visible = panelsModeling && !StudioSettings.Current.hideViewportFps;
+            bool visible = Studio && Studio.IsModelingMode && !StudioSettings.Current.hideViewportFps;
             workspaceStats.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
             if (!visible) StopWorkspaceStatistics();
         }
@@ -54,7 +54,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void RecordWorkspaceFrame(double now)
         {
-            if (!panelsModeling || StudioSettings.Current.hideViewportFps) return;
+            if (!Studio || !Studio.IsModelingMode || StudioSettings.Current.hideViewportFps) return;
             if (workspaceLastFrame < 0 || now < workspaceLastFrame || now - workspaceLastFrame > 1)
             // Sample only naturally requested viewport frames. Idle retains the
             // last reading and starts a fresh sample when interaction resumes.

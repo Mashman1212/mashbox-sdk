@@ -36,6 +36,13 @@ namespace MashBoxSDK.AnimationStudio
                 throw;
             }
             finally { Undo.CollapseUndoOperations(group); }
+
+            // Enter painting only after binding and cleanup have succeeded.
+            CancelBrushInteraction();
+            sculptMode = false;
+            ChooseBrush(Brush.Paint);
+            heatmap = true;
+            UpdateDisplay();
         }
 
         internal void FixCrotchWeights() => RepairCrotch(false);

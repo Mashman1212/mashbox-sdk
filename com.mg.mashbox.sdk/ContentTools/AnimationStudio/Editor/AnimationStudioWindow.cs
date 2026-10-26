@@ -200,6 +200,13 @@ namespace MashBoxSDK.AnimationStudio
             else if (window.take && window.rig == null) window.Guard(window.BuildRig);
             else window.OpenViewport();
             if (!window.viewport) window.OpenViewport();
+            // Opening Studio starts with no vehicle preview, including a restored last take.
+            // Keep its actors intact so the user can explicitly choose one from the dropdown.
+            window.Guard(() =>
+            {
+                window.EnsureActors();
+                window.SelectQuickVehicle(null);
+            });
             window.viewport?.Focus();
         }
 

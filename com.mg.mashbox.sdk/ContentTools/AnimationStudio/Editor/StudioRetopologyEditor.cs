@@ -46,7 +46,7 @@ namespace MashBoxSDK.AnimationStudio
         internal StudioRetopologyEditor(StudioRetopologyDocument document,Action repaint)
         {
             Document=document;this.repaint=repaint;Scene=EditorSceneManager.NewPreviewScene();
-            referenceMaterial=new Material(Shader.Find("Hidden/MashBox/AnimationStudioPreview")) { hideFlags=HideFlags.HideAndDontSave };
+            referenceMaterial=new Material(Shader.Find("MashBox/Studio/Preview")) { hideFlags=HideFlags.HideAndDontSave };
             referenceMaterial.SetColor("_Color",new Color(.36f,.39f,.43f));referenceMaterial.SetFloat("_Cull",0);
             outputMaterial=new Material(referenceMaterial);outputMaterial.SetColor("_Color",new Color(.56f,.74f,.70f));
             lighting=new StudioPreviewLighting(Scene);lighting.Apply(new StudioLightingSettings());

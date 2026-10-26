@@ -25,7 +25,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static double nextRestoreAttempt;
         private static readonly System.Collections.Generic.HashSet<int> restoreWarnings = new System.Collections.Generic.HashSet<int>();
-        internal bool HasStudioBindings => timeline != null && rigControls != null && inspector != null &&
+        internal bool HasStudioBindings => modeSelector != null && modeSelector.onGUIHandler != null &&
+            modelMenuBar != null && modelMenuBar.onGUIHandler != null &&
+            timeline != null && rigControls != null && inspector != null &&
             // Modeling and Skinning deliberately have no timeline callback.
             (panelsModeling || timeline.onGUIHandler != null) && rigControls.onGUIHandler != null && inspector.onGUIHandler != null &&
             rootVisualElement.Contains(timeline) && rootVisualElement.Contains(rigControls) && rootVisualElement.Contains(inspector);
@@ -303,6 +305,7 @@ namespace MashBoxSDK.AnimationStudio
                 rootVisualElement.Add(modeSelector);
             }
             modeSelector.onGUIHandler = WrapStudioGUI(draw, true); modeSelector.BringToFront();
+            if (!Studio || !Studio.IsModelingMode) { BindModelInput(null, null, null); BindStatusBar(false); }
             if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? PanelMargin : 148; inspector.style.height = StyleKeyword.Auto; }
             if (rigControls != null) { rigControls.style.top = ModelingPanelTop; rigControls.style.bottom = modeling ? new StyleLength(PanelMargin) : new StyleLength(StyleKeyword.Auto); }
             if (timeline != null) timeline.style.display = modeling ? DisplayStyle.None : DisplayStyle.Flex;
@@ -397,6 +400,8 @@ namespace MashBoxSDK.AnimationStudio
                 rootVisualElement.Add(timeline);
             }
             timeline.onGUIHandler = WrapStudioGUI(draw);
+            timeline.style.left = 0; timeline.style.right = 0; timeline.style.bottom = 0;
+            timeline.style.height = 140;
             timeline.BringToFront();
         }
         private bool skinPreviewTimeline;
