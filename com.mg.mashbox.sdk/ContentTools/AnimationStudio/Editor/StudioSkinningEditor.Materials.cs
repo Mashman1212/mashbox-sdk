@@ -10,9 +10,28 @@ namespace MashBoxSDK.AnimationStudio
         private bool sameShading;
         private void DrawSameShadingButton(Rect rect)
         {
-            bool next = GUI.Toggle(rect, sameShading, new GUIContent("Same Shading",
-                "Show every mesh with the same neutral body shading for lighting and surface comparisons. Turn off to restore material, checker and weight displays. Preview only."), StudioTheme.Styles.miniButton);
-            if (next != sameShading) { EndStroke(); sameShading = next; UpdateDisplay(); }
+            if(DrawSkinModeButton(rect,false,"Same Shading — show every mesh with the same neutral body shading. Turn off to restore material, checker and weight displays. Preview only."))
+            { EndStroke(); sameShading=!sameShading; UpdateDisplay(); }
+            if(Event.current.type!=EventType.Repaint)return;
+            var previous=Handles.color;var matrix=Handles.matrix;
+            try
+            {
+                Handles.matrix=Matrix4x4.identity;
+                var tint=sameShading?new Color(.5f,1,.87f):new Color(.75f,.81f,.81f);
+                // Two identically shaded spheres and an equals sign.
+                foreach(float x in new[]{-8f,8f})
+                {
+                    var center=new Vector3(rect.center.x+x,rect.center.y,0);
+                    Handles.color=new Color(tint.r,tint.g,tint.b,.35f);
+                    Handles.DrawSolidArc(center,Vector3.forward,Vector3.up,180,5);
+                    Handles.color=tint;Handles.DrawWireDisc(center,Vector3.forward,5);
+                }
+                Handles.color=tint;
+                for(int y=-2;y<=2;y+=4)
+                    Handles.DrawAAPolyLine(1.4f,new Vector3(rect.center.x-2,rect.center.y+y),new Vector3(rect.center.x+2,rect.center.y+y));
+                if(sameShading)EditorGUI.DrawRect(new Rect(rect.x+5,rect.yMax-3,rect.width-10,2),new Color(.5f,1,.87f));
+            }
+            finally {Handles.color=previous;Handles.matrix=matrix;}
         }
         private readonly StudioMeshMaterialPreview materialPreview=new StudioMeshMaterialPreview();
         private readonly Dictionary<PartData,bool> materialFoldouts=new Dictionary<PartData,bool>();

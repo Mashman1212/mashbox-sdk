@@ -31,7 +31,7 @@ namespace MashBoxSDK.AnimationStudio
                 var weld = new Dictionary<Vector3Int,int>();
                 for (int i=0;i<points.Length;i++)
                 {
-                    var m = part.bound ? weights.SkinMatrix(i,skin) : Matrix4x4.identity;
+                    var m = part.bound ? weights.PreviewSkinMatrix(i,skin) : Matrix4x4.identity;
                     if (Mathf.Abs(m.determinant)<1e-8f) throw new InvalidOperationException("Cannot stitch a singular skin transform.");
                     matrices[i]=m; points[i]=m.MultiplyPoint3x4(points[i]);
                     normals[i]=m.inverse.transpose.MultiplyVector(normals[i]).normalized;
@@ -141,10 +141,10 @@ namespace MashBoxSDK.AnimationStudio
             var transforms = new Matrix4x4[mesh.vertexCount];
             for (int i=0;i<transforms.Length;i++)
             {
-                var target = weights.SkinMatrix(i,newSkin);
+                var target = weights.PreviewSkinMatrix(i,newSkin);
                 if (Mathf.Abs(target.determinant)<1e-8f)
                     throw new InvalidOperationException("Cannot stitch a singular skin transform.");
-                transforms[i] = target.inverse * weights.SkinMatrix(i,oldSkin);
+                transforms[i] = target.inverse * weights.PreviewSkinMatrix(i,oldSkin);
             }
             TransformExportVertices(mesh,transforms);
             mesh.bindposes = binds;
@@ -210,6 +210,7 @@ namespace MashBoxSDK.AnimationStudio
                         else unmatched++;
                     }
                     if(targets.Count==0) continue;
+                    var stitchedVertices = new List<int>();
                     for(int i=0;i<positions.Length;i++) if(targets.TryGetValue(source.groups[i],out var target))
                     {
                         // Matching positions in one pose is insufficient when both sides
@@ -220,14 +221,15 @@ namespace MashBoxSDK.AnimationStudio
                             source.weights.Values[i] = new List<BoneWeight1>(corner.Item1.weights.Values[corner.Item2]);
                             checks.Add(Tuple.Create(bust,i,corner.Item1.part,corner.Item2));
                         }
-                        var matrix = source.weights.SkinMatrix(i,bustSkin);
+                        var matrix = source.weights.PreviewSkinMatrix(i,bustSkin);
                         if (Mathf.Abs(matrix.determinant)<1e-8f)
                             throw new InvalidOperationException("Cannot stitch a singular seam skin transform. No geometry was changed.");
                         positions[i]=matrix.inverse.MultiplyPoint3x4(target.Item1);
                         normals[i]=matrix.transpose.MultiplyVector(target.Item2).normalized;
+                        stitchedVertices.Add(i);
                         matched++;
                     }
-                    changes.Add(()=> { Undo.RegisterCompleteObjectUndo(bust.mesh,"Stitch Bust"); working.vertices=positions; working.normals=normals; source.weights.Apply(working); working.RecalculateTangents(); working.RecalculateBounds(); EditorUtility.CopySerialized(working,bust.mesh); bust.preserveStitchedBindPose=true; EditorUtility.SetDirty(bust.mesh); });
+                    changes.Add(()=> { Undo.RegisterCompleteObjectUndo(bust.mesh,"Stitch Bust"); working.vertices=positions; working.normals=normals; source.weights.Apply(working); working.RecalculateTangents(); working.RecalculateBounds(); EditorUtility.CopySerialized(working,bust.mesh); bust.preserveStitchedBindPose=true; bust.stitchedVertices=stitchedVertices.ToArray(); bust.stitchedVertexCount=positions.Length; bust.CaptureStitchWeights(); EditorUtility.SetDirty(bust.mesh); });
                 }
                 if(changes.Count==0) throw new InvalidOperationException("No nearby compatible open body/bust edges found. Stitch Bust leaves distant or overlapping surfaces unchanged.");
                 Undo.IncrementCurrentGroup(); int group=Undo.GetCurrentGroup(); Undo.SetCurrentGroupName("Stitch Bust");

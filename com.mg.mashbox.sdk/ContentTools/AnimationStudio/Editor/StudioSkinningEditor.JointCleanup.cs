@@ -78,7 +78,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(binds.Length!=bones.Length) throw new InvalidOperationException("Skin bone mapping does not match the SDK skeleton.");
                 var matrices=bones.Select((b,i)=>b.localToWorldMatrix*binds[i]).ToArray();
                 var points=Part.mesh.vertices;
-                for(int i=0;i<points.Length;i++) points[i]=skin.SkinMatrix(i,matrices).MultiplyPoint3x4(points[i]);
+                for(int i=0;i<points.Length;i++) points[i]=skin.PreviewSkinMatrix(i,matrices).MultiplyPoint3x4(points[i]);
                 var center=(bones[left].position+bones[right].position)*.5f;
                 var across=(bones[right].position-bones[left].position).normalized;
                 var up=(center-(bones[lk].position+bones[rk].position)*.5f).normalized;

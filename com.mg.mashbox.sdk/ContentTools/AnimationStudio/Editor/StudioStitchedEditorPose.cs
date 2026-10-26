@@ -11,6 +11,11 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed class StudioStitchedEditorPose : AssetPostprocessor
     {
         private const string Prefix="MashBoxStitchedEditorPose:";
+        internal static bool HasPreservedBinding(Mesh mesh)
+        {
+            var importer=AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(mesh)) as ModelImporter;
+            return importer && (importer.userData??"").Split('\n').Any(line=>line.StartsWith(Prefix,StringComparison.Ordinal));
+        }
         [Serializable] private sealed class Pose { public Bone[] bones; }
         [Serializable] private sealed class Bone
         {

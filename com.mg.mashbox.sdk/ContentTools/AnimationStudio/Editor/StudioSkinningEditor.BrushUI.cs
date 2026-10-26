@@ -29,14 +29,14 @@ namespace MashBoxSDK.AnimationStudio
         {
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-88);
             // The canvas extends behind the posing bar. Anchor above the bar itself
-            // so all three 32px buttons remain visible and their hit areas match.
+            // so all four 32px buttons remain visible and their hit areas match.
             float bottom = view is MashBoxStudioViewport skinView ? skinView.SkinPreviewBarTop : canvas.yMax;
-            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, bottom - 8 - 32), 222, 32);
+            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, bottom - 8 - 32), 146, 32);
         }
         private bool RequirePaintableSkin()
         {
             var part = Part;
-            if (part != null && part.mesh && part.bound && !part.referenceOnly) return true;
+            if (part != null && part.mesh && part.bound && CanPaintPart(part)) return true;
             string message = part == null ? "Select a skinned mesh to paint weights."
                 : part.referenceOnly ? "Default reference meshes are locked. Select your own skinned mesh."
                 : "Skin this mesh first: Edit Skins > Skin. Then you can paint weights.";
@@ -216,6 +216,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawBrushOverlay(SceneView view)
         {
+            skinToolbarTooltip=null;
+            if(Event.current.type==EventType.MouseLeaveWindow)repaint();
             Handles.BeginGUI();
             using (StudioTheme.Scope())
             {
@@ -227,7 +229,7 @@ namespace MashBoxSDK.AnimationStudio
                 DrawUVCheckerButton(new Rect(display.x, display.y, 32, 32));
                 DrawTexturedButton(new Rect(display.x + 38, display.y, 32, 32));
                 DrawWireframeButton(new Rect(display.x + 76, display.y, 32, 32));
-                DrawSameShadingButton(new Rect(display.x + 114, display.y, 108, 32));
+                DrawSameShadingButton(new Rect(display.x + 114, display.y, 32, 32));
                 if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object)
                 {
                     var labelRect = new Rect(rect.xMax + 12, rect.y + 6, 160, 20);
@@ -267,6 +269,7 @@ namespace MashBoxSDK.AnimationStudio
                         adjustmentAxis == BrushAdjustmentAxis.Strength ? $"Strength {strength:P0}" : "Drag sideways: radius · up/down: strength";
                     GUI.Box(new Rect(Mathf.Clamp(adjustmentAnchor.x+18,0,view.position.width-270),Mathf.Clamp(adjustmentAnchor.y+18,40,view.position.height-36),260,28), adjustmentText);
                 }
+                if(!brushMenuOpen && !adjustingBrush)DrawSkinToolbarTooltip(view);
             }
             Handles.EndGUI();
         }
@@ -305,8 +308,31 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.DrawRect(new Rect(anchor.x - 2, anchor.y - 2, 4, 4), StudioTheme.Current.Text);
             EditorGUI.DrawRect(new Rect(pointer.x - 2, pointer.y - 2, 4, 4), StudioTheme.Current.Text);
         }
-        private static bool DrawSkinModeButton(Rect rect, bool active, string tooltip)
+        private string skinToolbarTooltip;
+        private Rect skinToolbarTooltipAnchor;
+        private GUIStyle skinToolbarTooltipStyle;
+        private void DrawSkinToolbarTooltip(SceneView view)
         {
+            if(Event.current.type!=EventType.Repaint || string.IsNullOrEmpty(skinToolbarTooltip) ||
+                EditorWindow.mouseOverWindow!=view || GUIUtility.hotControl!=0)return;
+            var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(0,32,view.position.width,view.position.height-32);
+            if(skinToolbarTooltipStyle==null)
+                skinToolbarTooltipStyle=new GUIStyle(EditorStyles.label){wordWrap=true,padding=new RectOffset(8,8,6,6)};
+            skinToolbarTooltipStyle.normal.textColor=new Color(.92f,.94f,.94f);
+            float width=Mathf.Min(340,Mathf.Max(40,canvas.width-8));
+            var content=new GUIContent(skinToolbarTooltip);
+            float height=skinToolbarTooltipStyle.CalcHeight(content,width);
+            float x=Mathf.Clamp(skinToolbarTooltipAnchor.x,canvas.x+4,Mathf.Max(canvas.x+4,canvas.xMax-width-4));
+            float y=skinToolbarTooltipAnchor.y-height-6;
+            if(y<canvas.y+4)y=skinToolbarTooltipAnchor.yMax+6;
+            var box=new Rect(x,Mathf.Clamp(y,canvas.y+4,Mathf.Max(canvas.y+4,canvas.yMax-height-4)),width,height);
+            EditorGUI.DrawRect(box,new Color(.035f,.045f,.045f,.98f));
+            GUI.Label(box,content,skinToolbarTooltipStyle);
+        }
+        private bool DrawSkinModeButton(Rect rect, bool active, string tooltip)
+        {
+            if(rect.Contains(Event.current.mousePosition))
+            { skinToolbarTooltip=tooltip;skinToolbarTooltipAnchor=rect; }
             bool clicked = GUI.Button(rect, new GUIContent("",tooltip), GUIStyle.none);
             if (Event.current.type == EventType.Repaint)
             {

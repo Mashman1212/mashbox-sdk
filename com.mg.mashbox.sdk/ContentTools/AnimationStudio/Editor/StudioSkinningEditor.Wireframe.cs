@@ -35,7 +35,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawSelectedMeshWireframe()
         {
-            if(!showSelectedWireframe || Event.current.type!=EventType.Repaint || Part==null || !Part.visible || Part.referenceOnly || !Part.mesh) return;
+            if(!showSelectedWireframe || Event.current.type!=EventType.Repaint || Part==null || !Part.visible || !CanPaintPart(Part) || !Part.mesh) return;
             if(Document.selected<0 || Document.selected>=objects.Count) return;
             if(wireSource!=Part.mesh)
             {

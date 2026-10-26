@@ -9,12 +9,14 @@ namespace MashBoxSDK.AnimationStudio
         private static void AssignImportedMeshRole(StudioSkinningDocument.Part part)
         {
             if (part.referenceOnly) return;
-            bool Contains(string token) =>
-                (!string.IsNullOrEmpty(part.name) && part.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0) ||
-                (part.sourceMesh && part.sourceMesh.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0);
+            bool Matches(string name,string role) => !string.IsNullOrEmpty(name) &&
+                (name.Equals(role,System.StringComparison.OrdinalIgnoreCase) ||
+                 name.IndexOf("_"+role,System.StringComparison.OrdinalIgnoreCase)>=0 ||
+                 name.IndexOf(role+"_",System.StringComparison.OrdinalIgnoreCase)>=0);
+            bool Contains(string role) => Matches(part.name,role) || (part.sourceMesh && Matches(part.sourceMesh.name,role));
             // Run only at import so later manual role changes remain authoritative.
-            if (Contains("Bust_")) part.role = StudioSkinningDocument.MeshRole.Bust;
-            else if (Contains("_Body")) part.role = StudioSkinningDocument.MeshRole.Body;
+            if (Contains("Bust")) part.role = StudioSkinningDocument.MeshRole.Bust;
+            else if (Contains("Body")) part.role = StudioSkinningDocument.MeshRole.Body;
         }
         private static void AssignDefaultMeshRole(StudioSkinningDocument.Part part)
         {
@@ -32,10 +34,19 @@ namespace MashBoxSDK.AnimationStudio
             if(part.referenceOnly)
                 EditorGUI.DrawRect(row,new Color(.12f,.13f,.14f,1));
             var icon=new Rect(row.x+4,row.center.y-8,16,16);
-            GUI.Label(new Rect(row.x+26,row.y,Mathf.Max(0,row.width-70),row.height),
+            GUI.Label(new Rect(row.x+26,row.y,Mathf.Max(0,row.width-(part.HasStitchWeightLock ? 92 : 70)),row.height),
                 new GUIContent(part.referenceOnly ? (!string.IsNullOrEmpty(part.defaultReferenceLabel) ? part.defaultReferenceLabel : part.role == StudioSkinningDocument.MeshRole.Body ? "Default Body" : part.role == StudioSkinningDocument.MeshRole.Bust ? "Default Bust" : "Default Pants") : part.name,
                     part.role + (part.referenceOnly ? " — locked default reference: " + part.name : "")),StudioTheme.Styles.label);
             if(part.referenceOnly) GUI.Label(new Rect(row.xMax-20,row.center.y-8,16,16),new GUIContent(EditorGUIUtility.IconContent("LockIcon-On").image,"Locked default reference"));
+            if (part.HasStitchWeightLock)
+            {
+                var stitchRect = new Rect(row.xMax-64,row.center.y-8,16,16);
+                var previousColor = GUI.color;
+                GUI.color = new Color(.5f,1,.87f);
+                GUI.Label(stitchRect,new GUIContent(EditorGUIUtility.IconContent("LockIcon-On").image,
+                    "Stitch weight lock — " + part.stitchedVertices.Length + " seam vertices protected from painting and smoothing. The rest of the bust remains paintable."));
+                GUI.color = previousColor;
+            }
             var skinStatus = new Rect(row.xMax-42,row.center.y-8,16,16);
             StudioSkinStatusIcon.Draw(skinStatus,part.bound,part.bound ? "Skinned — bound to the SDK skeleton" : "Unskinned — right-click and choose Skin to bind");
             GUI.Label(icon,new GUIContent("",part.role.ToString()));

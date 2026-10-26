@@ -89,6 +89,33 @@ namespace MashBoxSDK.AnimationStudio
             { var m = matrices[w.boneIndex]; for (int i = 0; i < 16; i++) result[i] += m[i] * w.weight; }
             return result;
         }
+        internal Matrix4x4 PreviewSkinMatrix(int vertex, Matrix4x4[] matrices)
+        {
+            // Match export's strongest-four ordering without allocating or
+            // throwing away influences in the editable document.
+            Span<BoneWeight1> kept = stackalloc BoneWeight1[4];
+            int count=0;
+            foreach(var weight in Values[vertex])
+            {
+                if(weight.weight<=0)continue;
+                int index=0;
+                while(index<count && (kept[index].weight>weight.weight ||
+                    (kept[index].weight==weight.weight && kept[index].boneIndex<weight.boneIndex)))index++;
+                if(index>=4)continue;
+                int last=Math.Min(count,3);
+                for(int i=last;i>index;i--)kept[i]=kept[i-1];
+                kept[index]=weight;count=Math.Min(4,count+1);
+            }
+            if(count==0)return Matrix4x4.identity;
+            float sum=0;for(int i=0;i<count;i++)sum+=kept[i].weight;
+            var result=new Matrix4x4();
+            for(int i=0;i<count;i++)
+            {
+                var matrix=matrices[kept[i].boneIndex];float weight=kept[i].weight/sum;
+                for(int k=0;k<16;k++)result[k]+=matrix[k]*weight;
+            }
+            return result;
+        }
     }
 
     // Brush queries touch only nearby cells. The index is built once per stroke;

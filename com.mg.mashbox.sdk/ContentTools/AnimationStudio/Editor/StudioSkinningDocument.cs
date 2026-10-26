@@ -9,6 +9,12 @@ namespace MashBoxSDK.AnimationStudio
     public sealed class StudioSkinningDocument : ScriptableObject
     {
         public enum MeshRole { Clothing, Bust, Body }
+        [Serializable] public sealed class StitchWeights
+        {
+            public int vertex;
+            public int[] bones;
+            public float[] weights;
+        }
         [Serializable] public sealed class Part
         {
             public string name;
@@ -17,6 +23,30 @@ namespace MashBoxSDK.AnimationStudio
             public bool bound, visible = true;
             public bool referenceOnly;
             public bool preserveStitchedBindPose;
+            // Actual stitched seam indices, including UV-split duplicates. Serialized
+            // with the workspace and Undo; bind-pose provenance alone is not a stitch.
+            public int[] stitchedVertices;
+            public int stitchedVertexCount;
+            public StitchWeights[] stitchedWeights;
+            public bool HasStitchWeightLock => bound && mesh && stitchedVertexCount == mesh.vertexCount && stitchedVertices != null && stitchedVertices.Length > 0;
+            public bool IsStitchVertex(int vertex) => HasStitchWeightLock && Array.BinarySearch(stitchedVertices,vertex) >= 0;
+            internal void CaptureStitchWeights()
+            {
+                var skin = new StudioSkinWeights(mesh);
+                stitchedWeights = stitchedVertices.Select(v => new StitchWeights {
+                    vertex=v, bones=skin.Values[v].Select(w=>w.boneIndex).ToArray(),
+                    weights=skin.Values[v].Select(w=>w.weight).ToArray() }).ToArray();
+            }
+            internal void RestoreStitchWeights(StudioSkinWeights skin)
+            {
+                if (!HasStitchWeightLock || stitchedWeights == null) return;
+                foreach(var seam in stitchedWeights)
+                {
+                    var values=skin.Values[seam.vertex]; values.Clear();
+                    for(int i=0;i<seam.bones.Length;i++)
+                        values.Add(new BoneWeight1 {boneIndex=seam.bones[i],weight=seam.weights[i]});
+                }
+            }
             public string defaultReferenceLabel;
             public MeshRole role;
             public Quaternion objectRotation = Quaternion.identity;
@@ -133,6 +163,15 @@ namespace MashBoxSDK.AnimationStudio
                                 if (weight.weight > 0 && (weight.boneIndex >= map.Length || map[weight.boneIndex] < 0)) compatible = false;
                         if (compatible)
                         {
+                            var importer=AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(original)) as ModelImporter;
+                            var workspaceAvatar=skeleton?skeleton.GetComponent<Animator>()?.avatar:null;
+                            // Copy From Other explicitly identifies the same rig.
+                            // Its displayed pose must not be baked into the binding,
+                            // regardless of whether it is a locked reference or a copy.
+                            bool sharedAvatar=workspaceAvatar && importer &&
+                                importer.animationType==ModelImporterAnimationType.Human &&
+                                importer.avatarSetup==ModelImporterAvatarSetup.CopyFromOther && importer.sourceAvatar==workspaceAvatar;
+                            bool preservedBinding=sharedAvatar || StudioStitchedEditorPose.HasPreservedBinding(original);
                             // Preserve each influence and imported bind transform. A
                             // corrected bind matrix compensates different source rest axes.
                             var binds = rest.Select(r => r.inverse).ToArray();
@@ -140,9 +179,13 @@ namespace MashBoxSDK.AnimationStudio
                             for (int b = 0; b < map.Length; b++) if (map[b] >= 0 && b < oldBind.Length && sourceBones[b])
                             {
                                 var sourceRest = source.transform.worldToLocalMatrix * sourceBones[b].localToWorldMatrix;
-                                binds[map[b]] = rest[map[b]].inverse * sourceRest * oldBind[b] * matrix.inverse;
+                                // Our exported display pose is not its bind pose.
+                                // Reapplying source-pose compensation breaks the stitched seam.
+                                binds[map[b]] = preservedBinding ? oldBind[b] * matrix.inverse
+                                    : rest[map[b]].inverse * sourceRest * oldBind[b] * matrix.inverse;
                             }
                             imported.Remap(map); imported.Apply(copy); copy.bindposes = binds; part.bound = true;
+                            part.preserveStitchedBindPose=preservedBinding;
                         }
                     }
                 }

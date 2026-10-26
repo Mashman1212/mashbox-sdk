@@ -37,6 +37,15 @@ namespace MashBoxSDK.AnimationStudio
             SavePartFbx(Part);
         }
 #if MashBoxDev
+        private void SaveReferenceFbx(StudioSkinningDocument.Part part, bool saveAs)
+        {
+            if (!Document.parts.Contains(part) || !part.referenceOnly || !part.bound)
+                throw new InvalidOperationException("Select a skinned default part to export.");
+            if (!StudioFbxDependency.Require()) return;
+            EndStroke();
+            if(saveAs) SavePartFbxAs(part);
+            else SavePartFbx(part);
+        }
         internal void SaveDefaultBustFbx()
         {
             var defaults = StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
@@ -62,27 +71,31 @@ namespace MashBoxSDK.AnimationStudio
             if (!StudioFbxDependency.Require()) return;
             EndStroke();
             if (!CanUnskinSelected) throw new InvalidOperationException("Select a skinned editable mesh first.");
-            string sourceAsset=AssetDatabase.GetAssetPath(Part.sourceMesh);
-            string suggested=AssetDatabase.GenerateUniqueAssetPath("Assets/"+Path.GetFileNameWithoutExtension(Part.name)+".fbx");
+            SavePartFbxAs(Part);
+        }
+        private void SavePartFbxAs(StudioSkinningDocument.Part part)
+        {
+            string sourceAsset=AssetDatabase.GetAssetPath(part.sourceMesh);
+            string suggested=AssetDatabase.GenerateUniqueAssetPath("Assets/"+Path.GetFileNameWithoutExtension(part.name)+".fbx");
             while (true)
             {
                 string path=EditorUtility.SaveFilePanelInProject("Save FBX As",Path.GetFileNameWithoutExtension(suggested),"fbx","Save a new FBX, or choose the linked source to update it.");
                 if (string.IsNullOrEmpty(path)) return;
                 bool exists=File.Exists(Path.GetFullPath(path))||File.Exists(Path.GetFullPath(path)+".meta");
-                if (!exists) { SavePartFbx(Part,path); return; }
+                if (!exists) { SavePartFbx(part,path); return; }
                 bool sameSource=string.Equals(path.Replace('\\','/'),sourceAsset.Replace('\\','/'),StringComparison.OrdinalIgnoreCase);
                 var sourceModel=sameSource?AssetDatabase.LoadAssetAtPath<GameObject>(sourceAsset):null;
-                if(!HasTutorial&&sameSource&&FindOriginalMeshRenderer(sourceModel,Part) is SkinnedMeshRenderer)
+                if(!HasTutorial&&sameSource&&FindOriginalMeshRenderer(sourceModel,part) is SkinnedMeshRenderer)
                 {
                     // Use the source-update path so its backup and reference checks remain intact.
-                    SavePartFbx(Part);return;
+                    SavePartFbx(part);return;
                 }
                 string copy=AssetDatabase.GenerateUniqueAssetPath(path);
                 int choice=EditorUtility.DisplayDialogComplex("FBX filename already exists",
                     "This filename is already in use. Save your edited mesh as "+Path.GetFileName(copy)+" instead? The existing file will stay unchanged.",
                     "Save New Copy","Cancel","Choose Another Name");
                 if(choice==1)return;
-                if(choice==0){SavePartFbx(Part,copy);return;}
+                if(choice==0){SavePartFbx(part,copy);return;}
                 suggested=copy;
             }
         }

@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -19,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawObjectModeIcon(Rect rect)
         {
-            if (DrawSkinModeButton(rect, Tool == Brush.Object, "Object — position clothing before skinning (W: move, E: rotate, R: scale)"))
+            if (DrawSkinModeButton(rect, Tool == Brush.Object, "Object — W: move (also skinned meshes); E: rotate and R: scale unskinned meshes"))
             { CancelBrushInteraction(); ChooseBrush(Brush.Object); }
             if (Event.current.type != EventType.Repaint) return;
             var color = Handles.color;
@@ -37,13 +38,16 @@ namespace MashBoxSDK.AnimationStudio
         {
             var part = Part;
             if (part == null || part.referenceOnly || !part.visible || !part.mesh) return;
-            if (part.bound)
+            if (part.bound && (!poseTranslate || objectScale))
             {
-                Handles.Label(part.mesh.bounds.center, "Unskin this mesh to position it, then Skin to bind it again.");
+                Handles.Label(part.mesh.bounds.center, "Press W to move this skinned mesh. Unskin before rotating or scaling.");
                 return;
             }
             var e = Event.current;
+            if(part.bound && cachedPart!=Document.selected)RefreshSurface();
             var pivot = part.mesh.bounds.center;
+            if(part.bound && deformed.Length>0)
+            { var bounds=new Bounds(deformed[0],Vector3.zero);foreach(var point in deformed)bounds.Encapsulate(point);pivot=bounds.center; }
             var rotation = part.objectRotation;
             if (rotation == new Quaternion(0,0,0,0)) rotation = Quaternion.identity;
             EditorGUI.BeginChangeCheck();
@@ -78,12 +82,26 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 // Bake into editable geometry: preview rebuilds, binding and FBX export
                 // all use this same mesh. Source transforms remain export provenance.
-                StudioSkinningDocument.TransformGeometry(part.mesh, delta);
+                if(part.bound) TranslateBoundMesh(part.mesh,position-pivot);
+                else StudioSkinningDocument.TransformGeometry(part.mesh, delta);
                 part.objectRotation = nextRotation;
                 Rebuild(); Changed(); RecordSkinTutorialAction("transform");
             }
             if (e.rawType == EventType.MouseUp || e.type == EventType.Ignore)
             { FinishObjectGesture(); poseGlobalHandleRotation = Quaternion.identity; }
+        }
+        private void TranslateBoundMesh(Mesh mesh,Vector3 offset)
+        {
+            var skin=new StudioSkinWeights(mesh);var binds=mesh.bindposes;
+            var matrices=bones.Select((bone,i)=>bone.localToWorldMatrix*binds[i]).ToArray();
+            var transforms=new Matrix4x4[mesh.vertexCount];
+            for(int i=0;i<transforms.Length;i++)
+            {
+                var posed=skin.PreviewSkinMatrix(i,matrices);
+                if(Mathf.Abs(posed.determinant)<1e-8f)throw new System.InvalidOperationException("Reset the pose before moving this mesh.");
+                transforms[i]=posed.inverse*Matrix4x4.Translate(offset)*posed;
+            }
+            TransformExportVertices(mesh,transforms);mesh.RecalculateBounds();
         }
     }
 }
