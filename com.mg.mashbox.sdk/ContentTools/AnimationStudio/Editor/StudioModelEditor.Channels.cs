@@ -9,6 +9,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private static readonly GUIContent ChannelHeaderContent = new GUIContent("CHANNELS");
+        private static readonly GUIContent ChannelVisibilityContent = new GUIContent("", "Show or hide this object");
         private static readonly GUILayoutOption[] ChannelHeaderLayout = { GUILayout.ExpandWidth(true) };
         private void DrawChannelHeader()
         {
@@ -21,6 +22,23 @@ namespace MashBoxSDK.AnimationStudio
                 StudioSettings.Current.channelDragSensitivity = next;
                 StudioSettings.Save();
             }
+        }
+        private bool transformChannelsExpanded = true;
+        private static readonly GUIContent TransformChannelHeader = new GUIContent("Transform", EditorGUIUtility.IconContent("Transform Icon").image);
+        private bool DrawTransformChannelHeader()
+        {
+            GUILayout.Space(4);
+            var rect=EditorGUILayout.GetControlRect(false,20);
+            var background = new Rect(rect.x-4,rect.y,rect.width+8,rect.height);
+            EditorGUI.DrawRect(background,Color.Lerp(StudioTheme.Current.Panel,StudioTheme.Current.Button,.5f));
+            bool expanded=EditorGUI.Foldout(rect,transformChannelsExpanded,TransformChannelHeader,true,StudioTheme.Styles.transformHeader);
+            if (expanded != transformChannelsExpanded)
+            {
+                transformChannelsExpanded=expanded;
+                StudioPreferenceStore.SetFloat("Model.TransformChannelsExpanded",expanded ? 1 : 0);
+                repaint();
+            }
+            return transformChannelsExpanded;
         }
         private int channelUndoGroup = -1, channelUndoControl, channelUndoNode;
         private bool channelUndoText, resetChannelFocus;

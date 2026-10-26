@@ -109,7 +109,7 @@ public static class StudioChannelAxesValidation
             var value = (Vector3)typeof(StudioModelEditor).GetMethod("DrawObjectChannels", Flags).Invoke(editor, new object[] { label, before });
             if (Event.current.type == EventType.Repaint)
             {
-                var row = GUILayoutUtility.GetLastRect(); float title = Mathf.Clamp(row.width * .25f,60,82); float width = (row.width-title-8)/3;
+                var row = GUILayoutUtility.GetLastRect(); float title = Mathf.Clamp(row.width * .4f,100,150); float width = (row.width-title-8)/3;
                 labelPoint = new Vector2(row.x+title+axis*(width+4)+5,row.center.y);
             }
             if (EditorGUI.EndChangeCheck())

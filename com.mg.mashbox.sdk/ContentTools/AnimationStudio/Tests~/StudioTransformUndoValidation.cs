@@ -116,7 +116,7 @@ public static class StudioTransformUndoValidation
         typeof(StudioModelEditor).GetField("displayXray",Flags).SetValue(editor,false);
         var cover=GameObject.CreatePrimitive(PrimitiveType.Quad);
         UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(cover,editor.Scene);
-        var coverMaterial=new Material(Shader.Find("Hidden/MashBox/AnimationStudioPreview"));
+        var coverMaterial=new Material(Shader.Find("MashBox/Studio/Preview"));
         try
         {
             cover.transform.position=bounds.center+(view.camera.transform.position-bounds.center)*.25f;

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 using System.Collections.Generic;
 
@@ -216,7 +217,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 if (v.Count < 3) throw new InvalidOperationException("Bevel found a polygon with fewer than three corners.");
 
-                Vector3 normal = Vector3.zero, origin = Positions[v[0]];
+                var normalD = new ClipVector(0,0,0); var originD = new ClipVector(Positions[v[0]]);
 
                 for (int i = 0; i < v.Count; i++)
 
@@ -226,7 +227,7 @@ namespace MashBoxSDK.AnimationStudio
 
                     if (a == b) throw new InvalidOperationException("Remove zero-length polygon edges before beveling.");
 
-                    normal += Vector3.Cross(Positions[v[i]] - origin, Positions[v[(i + 1) % v.Count]] - origin);
+                    normalD = normalD + (new ClipVector(Positions[v[i]])-originD).Cross(new ClipVector(Positions[v[(i + 1) % v.Count]])-originD);
 
                     var key = BevelKey(a, b);
 
@@ -246,11 +247,11 @@ namespace MashBoxSDK.AnimationStudio
 
                 }
 
-                if (normal.sqrMagnitude < epsilon * epsilon * epsilon * epsilon)
+                if (normalD.Squared < epsilon * epsilon * epsilon * epsilon)
 
                     throw new InvalidOperationException("Remove degenerate polygons before beveling.");
 
-                normals[f] = BevelUnit(normal);
+                normals[f] = (normalD*(1/Math.Sqrt(normalD.Squared))).Float;
 
             }
 
@@ -352,7 +353,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 throw new InvalidOperationException("Bevel requires an editable static mesh. Bake skinning and blend shapes first.");
 
-            if (!BevelFinite(options.Width) || options.Width < 0 || options.Width > 1 ||
+            if (!BevelFinite(options.Width) || options.Width < 0 ||
 
                 !BevelFinite(options.Tension) || options.Tension < -1 || options.Tension > 1 ||
 
@@ -426,8 +427,21 @@ namespace MashBoxSDK.AnimationStudio
             if (estimate > 8000000) throw new InvalidOperationException("This bevel would generate too much geometry. Reduce the selection or subdivisions.");
 
             var plan = PrepareBevelWavefront(targets, affected);
-            float width = Mathf.Min(options.Width, plan.Limit);
-            if (width <= epsilon) throw new InvalidOperationException("No room remains for a nondegenerate bevel before the first skeleton collision.");
+            var clip=PrepareFlatClip(plan,mesh);
+            float width=clip!=null?Mathf.Min(options.Width,clip.Limit):Mathf.Min(options.Width,plan.Limit);
+            bevelUseClipping=false;
+            if(clip!=null)
+            {
+                EvaluateFlatClip(clip,width);
+                bevelUseClipping=options.Subdivisions==0||PrepareClipProfileLayout(clip);
+            }
+            if(!bevelUseClipping)
+            {
+                if(options.Subdivisions==0)PrepareFlatBevelTerminations(plan);
+                width=Mathf.Min(options.Width,plan.Limit,options.Subdivisions==0?plan.FlatTerminalLimit:float.PositiveInfinity);
+            }
+            if(width<=epsilon)throw new InvalidOperationException("No room remains for a nondegenerate bevel at this selection.");
+            if(bevelUseClipping&&!FlatClipChanged(clip))return null;
             // One analytic wavefront evaluation, followed by atomic validation.
             // Never change the requested shape through repeated half-width retries.
 #if MASHBOX_STUDIO_TESTS
@@ -484,7 +498,7 @@ namespace MashBoxSDK.AnimationStudio
             // A shared edge may carry several distinct face-plane intersections.
             // Keep their identities, then split its retained spans consistently.
             // Choosing max/min travel for both incident faces would skew one rail.
-            foreach (int f in plan.SelectedFaces)
+            if (!bevelUseClipping) foreach (int f in plan.SelectedFaces)
             {
                 var v = Faces[f].Vertices;
                 for (int c = 0; c < v.Count; c++)
@@ -501,10 +515,12 @@ namespace MashBoxSDK.AnimationStudio
             int Cut(int vertex, int other)
             {
                 if (cuts.TryGetValue((vertex, other), out int id)) return id;
-                id = draft.AddPoint(originals[vertex] + BevelUnit(originals[other] - originals[vertex]) * (distances[vertex] * width), vertex);
+                var velocity = options.Subdivisions == 0 && plan.FlatTerminalCuts.TryGetValue((vertex,other),out var planeCut)
+                    ? planeCut : BevelUnit(originals[other] - originals[vertex]) * distances[vertex];
+                id = draft.AddPoint(originals[vertex] + velocity * width, vertex);
                 BoundaryCut(vertex, other, id);return id;
             }
-            foreach (int vertex in affected) foreach (var edge in incident[vertex])
+            if (!bevelUseClipping) foreach (int vertex in affected) foreach (var edge in incident[vertex])
             {
                 if (targets.Contains(BevelKey(edge.A,edge.B))) continue;
                 Cut(vertex, edge.A == vertex ? edge.B : edge.A);
@@ -522,13 +538,13 @@ namespace MashBoxSDK.AnimationStudio
 
                 var v = Faces[face].Vertices;
 
-                for (int i = 0; i < v.Count; i++) if ((Positions[v[i]] - position).sqrMagnitude <= epsilon * epsilon)
+                for (int i = 0; i < v.Count; i++) if (Positions[v[i]].Equals(position))
 
                     return new BevelSample { A = v[i], B = v[i], C = v[i], Weights = Vector3.right };
 
                 if (!sourceTriangles.TryGetValue(face, out var triangles))
 
-                { triangles = BevelTriangulate(v, Positions, epsilon); sourceTriangles.Add(face, triangles); }
+                { triangles = BevelSourceTriangles(node.mesh)[face]; sourceTriangles.Add(face, triangles); }
 
                 double best = double.PositiveInfinity; BevelSample sample = default;
 
@@ -540,11 +556,11 @@ namespace MashBoxSDK.AnimationStudio
 
                     var ab = Positions[b] - Positions[a]; var ac = Positions[c] - Positions[a]; var p = position - Positions[a];
 
-                    double aa = Vector3.Dot(ab, ab), bb = Vector3.Dot(ab, ac), cc = Vector3.Dot(ac, ac), ap = Vector3.Dot(p, ab), cp = Vector3.Dot(p, ac);
+                    double aa = ClipDot(ab, ab), bb = ClipDot(ab, ac), cc = ClipDot(ac, ac), ap = ClipDot(p, ab), cp = ClipDot(p, ac);
 
                     double determinant = aa * cc - bb * bb;
 
-                    if (determinant <= epsilon * epsilon * epsilon * epsilon) continue;
+                    if (determinant <= 0) continue;
 
                     float y = (float)((cc * ap - bb * cp) / determinant), z = (float)((aa * cp - bb * ap) / determinant), x = 1 - y - z;
 
@@ -599,6 +615,34 @@ namespace MashBoxSDK.AnimationStudio
 
             }
 
+            if (bevelUseClipping)
+            {
+                var solved=bevelFlatClip;EvaluateFlatClip(solved,width);var points=new int[solved.Points.Count];
+                for(int i=0;i<points.Length;i++)
+                {
+                    if(i<solved.OriginalIds.Count)points[i]=solved.OriginalIds[i];
+                    else{points[i]=draft.Positions.Count;draft.Positions.Add(solved.FloatPoints[i]);draft.Owners.Add(-1);}
+                }
+                if(options.Subdivisions>0)
+                {
+                    EmitClipProfiles(draft,solved,points,options,(geometry,source,material,normals,isSource)=>{buildingSourceFaces=isSource;AddFace(geometry,source,material,normals);});
+                    ValidateFlatClipDraft(draft);return draft;
+                }
+                foreach(var polygon in solved.Output)
+                {
+                    var geometry=new List<int>();foreach(int id in polygon.Points)geometry.Add(points[id]);
+                    buildingSourceFaces=polygon.Plane<0;List<Vector3> normalsOut=null;
+                    if(polygon.Plane>=0){normalsOut=new List<Vector3>();foreach(int id in geometry)normalsOut.Add(solved.Planes[polygon.Plane].CapNormal);}
+                    AddFace(geometry,polygon.Source,polygon.Material,normalsOut);
+                    if(polygon.Plane>=0)
+                    {
+                        var edge=solved.Planes[polygon.Plane].Edge;var tangent=BevelUnit(originals[edge.Item2]-originals[edge.Item1]);float length=-1;(int,int) selectedEdge=default;
+                        for(int i=0;i<geometry.Count;i++){int a=geometry[i],b=geometry[(i+1)%geometry.Count];float along=Mathf.Abs(Vector3.Dot(draft.Positions[b]-draft.Positions[a],tangent));if(along>length){length=along;selectedEdge=BevelKey(a,b);}}
+                        draft.Selection.Add(selectedEdge);
+                    }
+                }
+                ValidateFlatClipDraft(draft);return draft;
+            }
             foreach (int f in plan.AffectedFaces)
             {
                 var face=Faces[f]; var v=face.Vertices;
@@ -934,7 +978,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 if (geometric.sqrMagnitude < .5f) throw new BevelOverlap("A corner patch has no stable surface normal.");
 
-                if (AbsorbPlanarBevelEnd(draft, ring, geometric, cornerPolygons[vertex], addFace, epsilon)) continue;
+                if (AbsorbPlanarBevelEnd(draft, ring, geometric, cornerPolygons[vertex], addFace, epsilon, options.Subdivisions == 0 && draft.Plan.FlatTerminalOwners.Contains(vertex))) continue;
 
                 if (normal.sqrMagnitude < 1e-10f) normal = geometric; normal.Normalize();
 
@@ -954,7 +998,7 @@ namespace MashBoxSDK.AnimationStudio
 
                     Vector3 hint = draft.NormalHints.TryGetValue(point, out var h) ? h.normalized : normal;
 
-                    normals.Add(options.Tension == 0 ? geometric : Vector3.Lerp(geometric, hint, Mathf.Abs(options.Tension)).normalized);
+                    normals.Add(options.Subdivisions == 0 || options.Tension == 0 ? geometric : Vector3.Lerp(geometric, hint, Mathf.Abs(options.Tension)).normalized);
 
                 }
 
@@ -978,7 +1022,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private bool AbsorbPlanarBevelEnd(BevelDraft draft, List<int> ring, Vector3 normal, IEnumerable<int> candidates,
 
-            Action<List<int>, int, int, List<Vector3>> addFace, double epsilon)
+            Action<List<int>, int, int, List<Vector3>> addFace, double epsilon, bool allowFlatStrip = false)
 
         {
 
@@ -986,11 +1030,11 @@ namespace MashBoxSDK.AnimationStudio
 
             {
 
-                // Only absorb a newly generated cap into an original inset face.
+                // A terminal flat strip owns its planar fan continuation; retained source
 
-                // Never dissolve unrelated source faces or the curved bevel strips.
+                // faces retain the existing supporting-plane rule. Curved strips are excluded.
 
-                if (!draft.Polygons[index].SourceSurface) continue;
+                if (!draft.Polygons[index].SourceSurface && !allowFlatStrip) continue;
 
                 var polygon = draft.Polygons[index];
 
@@ -1009,8 +1053,8 @@ namespace MashBoxSDK.AnimationStudio
                 // error, so testing a distant face corner against it rejects truly
                 // coplanar ends and retains an artificial divider.
                 int receivingSource = draft.Vertices[polygon.Vertices[0]].SourceFace;
-                var planeNormal = bevelNormals[receivingSource];
-                var planeOrigin = Positions[Faces[receivingSource].Vertices[0]];
+                var planeNormal = polygon.SourceSurface ? bevelNormals[receivingSource] : BevelPolygonNormal(geometry,draft.Positions);
+                var planeOrigin = polygon.SourceSurface ? Positions[Faces[receivingSource].Vertices[0]] : draft.Positions[geometry[0]];
                 bool coplanar = true;
                 foreach (int point in geometry)
                     if (Math.Abs(Vector3.Dot(draft.Positions[point]-planeOrigin,planeNormal))>epsilon*4)
@@ -1042,7 +1086,9 @@ namespace MashBoxSDK.AnimationStudio
 
                         // remain continuous across the former artificial divider.
 
-                        addFace(merged, source, polygon.Material, null);
+                        var flatNormals = polygon.SourceSurface ? null : new List<Vector3>(merged.Count);
+                        if (flatNormals != null) foreach (int point in merged) flatNormals.Add(planeNormal);
+                        addFace(merged, source, polygon.Material, flatNormals);
 
                         draft.Polygons[draft.Polygons.Count-1].SourceSurface=polygon.SourceSurface;
                         draft.Polygons[index] = draft.Polygons[draft.Polygons.Count - 1];
@@ -1440,15 +1486,10 @@ namespace MashBoxSDK.AnimationStudio
 
 
         private static Vector3 BevelPolygonNormal(IList<int> polygon, IList<Vector3> positions)
-
         {
-
-            Vector3 normal = Vector3.zero, origin = positions[polygon[0]];
-
-            for (int i = 0; i < polygon.Count; i++) normal += Vector3.Cross(positions[polygon[i]] - origin, positions[polygon[(i + 1) % polygon.Count]] - origin);
-
-            return BevelUnit(normal);
-
+            var origin=new ClipVector(positions[polygon[0]]);var normal=new ClipVector(0,0,0);
+            for(int i=0;i<polygon.Count;i++)normal=normal+(new ClipVector(positions[polygon[i]])-origin).Cross(new ClipVector(positions[polygon[(i+1)%polygon.Count]])-origin);
+            return normal.Squared>0?(normal*(1/Math.Sqrt(normal.Squared))).Float:Vector3.zero;
         }
 
         private static Vector2 BevelProject(Vector3 p, int axis) => axis == 0 ? new Vector2(p.y, p.z) : axis == 1 ? new Vector2(p.z, p.x) : new Vector2(p.x, p.y);
@@ -1553,6 +1594,15 @@ namespace MashBoxSDK.AnimationStudio
 
             double sign = axis == 0 ? normal.x : axis == 1 ? normal.y : normal.z; sign = sign >= 0 ? 1 : -1;
 
+            bool weakProjection = polygon.Count > 3 && normal.sqrMagnitude > .5f;
+            if(weakProjection)
+            {
+                var origin=positions[polygon[0]];double coordinate=0;
+                foreach(int id in polygon){var p=positions[id];coordinate=Math.Max(coordinate,Math.Max(Math.Abs(p.x),Math.Max(Math.Abs(p.y),Math.Abs(p.z))));}
+                double bound=Math.Max(epsilon*4,coordinate*4.76837158203125e-7);
+                foreach(int id in polygon)if(Math.Abs(ClipDot(positions[id]-origin,normal))>bound){weakProjection=false;break;}
+            }
+
             var remaining = new List<int>(polygon); var triangles = new List<int>((polygon.Count - 2) * 3);
 
             while (remaining.Count > 3)
@@ -1580,6 +1630,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (point == a || point == b || point == c) continue;
 
                         var p = BevelProject(positions[point], axis);
+                        if (weakProjection && (p.Equals(pa) || p.Equals(pb) || p.Equals(pc))) continue;
 
                         if (BevelOrientation(pa, pb, p) * sign >= 0 && BevelOrientation(pb, pc, p) * sign >= 0 && BevelOrientation(pc, pa, p) * sign >= 0) { occupied = true; break; }
 
@@ -1601,7 +1652,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 if (BevelOrientation(BevelProject(positions[remaining[0]], axis), BevelProject(positions[remaining[1]], axis), BevelProject(positions[remaining[2]], axis)) == 0)
 
-                    throw new BevelOverlap("The bevel created a zero-area triangle.");
+                { if (weakProjection && triangles.Count > 0) return triangles; throw new BevelOverlap("The bevel created a zero-area triangle."); }
 
                 triangles.AddRange(remaining);
 

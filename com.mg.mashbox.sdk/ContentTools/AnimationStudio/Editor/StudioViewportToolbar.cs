@@ -284,7 +284,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public StudioToolbarOrientation()
         {
-            name = "studio-toolbar-orientation"; tooltip = "Local or World transform axes";
+            name = "studio-toolbar-orientation"; tooltip = "World, Object or Component transform axes";
             icon = StudioToolbarIcons.Get("ToolHandleLocal");
             clicked += OpenMenu;
             RegisterCallback<AttachToPanelEvent>(_ => Bind());
@@ -300,14 +300,15 @@ namespace MashBoxSDK.AnimationStudio
         {
             var editor = view ? view.Studio?.ToolbarModelEditor : null;
             SetEnabled(editor != null);
-            text = editor == null || editor.ToolbarLocalAxes ? "Local" : "World";
+            text = editor?.ToolbarOrientationLabel ?? "World";
         }
         private void OpenMenu()
         {
             var editor = view ? view.Studio?.ToolbarModelEditor : null;
             if (editor == null) return;
             var menu = new GenericMenu();
-            menu.AddItem(new GUIContent("Local"), editor.ToolbarLocalAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarLocalAxes(true));
+            menu.AddItem(new GUIContent("Object"), editor.ToolbarLocalAxes && !editor.ToolbarComponentAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarLocalAxes(true));
+            menu.AddItem(new GUIContent("Component"), editor.ToolbarComponentAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarComponentAxes());
             menu.AddItem(new GUIContent("World"), !editor.ToolbarLocalAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarLocalAxes(false));
             menu.DropDown(worldBound);
         }

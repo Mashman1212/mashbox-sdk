@@ -264,7 +264,7 @@ namespace MashBoxSDK.AnimationStudio
             int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.Wireframe ? 16 : 0) |
-                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0);
+                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0) | (editor.ToolbarComponentAxes ? 262144 : 0);
             // Track selection identity without reading skin bind-pose arrays on
             // every dirty redraw. Controls validate component editing on refresh.
             var mesh = editor?.ActiveMesh;

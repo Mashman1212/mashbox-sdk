@@ -32,6 +32,7 @@ namespace MashBoxSDK.AnimationStudio
 #endif
         private void ClearComponentDrawing()
         {
+            paintPickIndex = null;
             cachedSelectedStatistics=null; ReleaseVertexMarkers(); InvalidateHandleComponentFrame();
             foreach (var mesh in new[]{componentLines,componentDots,componentHighlight,componentHover}) if(mesh) UnityEngine.Object.DestroyImmediate(mesh);
             componentLines=componentDots=componentHighlight=componentHover=componentSource=null;drawnHover=-1;
@@ -62,7 +63,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void RefreshComponentPositions(int start = 0, IList<Vector3> positions = null, int[] changedPoints = null)
         {
-            InvalidateHandleComponentFrame();
+            paintPickIndex = null; InvalidateHandleComponentFrame();
             if(componentSource!=ActiveMesh||componentPositions==null)return;
             if (positions == null || positions.Count != componentPositions.Length)
             {
@@ -177,7 +178,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void EnsureComponentHover()
         {
-            int next = Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
+            int next = PaintHoverVisible ? hoveredComponent : Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
             if(next==drawnHover && mode==hoverMode)return;
             DestroyComponentOverlay(componentHover);
             componentHover=null;drawnHover=next;hoverMode=mode;
@@ -208,13 +209,15 @@ EnsureComponentDrawing();EnsureComponentHover();
                 if(mode==ComponentMode.Vertex)Draw(componentDots,new Color(.35f,.9f,.9f,1),1,4);
                 if(mode==ComponentMode.Edge)
                 {
-                    if(drawnHover>=0)DrawNativeComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
+                    if(!PaintHoverVisible && drawnHover>=0)DrawNativeComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
                     DrawNativeComponentEdges(Components,new Color(1,.65f,.15f,1),3);
+                    if(PaintHoverVisible && drawnHover>=0)DrawNativeComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
                 }
                 else
                 {
-                    Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?10:5);
+                    if(!PaintHoverVisible)Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?10:5);
                     Draw(componentHighlight,new Color(1,.65f,.15f,displayXray ? 1 : .9f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?5:4);
+                    if(PaintHoverVisible)Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?10:5);
                     if(mode==ComponentMode.Face && drawnHover>=0)DrawHoveredFaceBorder(drawnHover,7);
                 }
             }

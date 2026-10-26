@@ -38,7 +38,7 @@ namespace MashBoxSDK.AnimationStudio
                         Check(attached.GetComponentInChildren<Renderer>().sharedMaterial.GetFloat("_Cull") == 0, "Hat is double sided in both shading modes");
                         Check(clipped.sharedMaterial.GetFloat("_Cull") == 2, "Other pieces retain backface culling");
                     }
-                    var shader = Shader.Find("Hidden/MashBox/AnimationStudioPreview");
+                    var shader = Shader.Find("MashBox/Studio/Preview");
                     Check(shader && !ShaderUtil.ShaderHasError(shader), "Preview shader imports without errors");
                     var pose = rig.Capture();
                     int headIndex = Array.IndexOf(rig.Bones, head);

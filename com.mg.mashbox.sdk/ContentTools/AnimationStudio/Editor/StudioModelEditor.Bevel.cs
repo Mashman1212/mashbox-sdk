@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private const string BevelTool = "Bevel Edges";
 
-        private static readonly GUIContent BevelWidthContent = new GUIContent("Width offset", "Normalized propagation distance relative to the shortest connected edge. 0 does nothing; 1 approaches the available local width. Overlap is clamped before applying.");
+        private static readonly GUIContent BevelWidthContent = new GUIContent("Width offset", "Offset in mesh-local model units. 0 does nothing. Width is not normalized to nearby edge lengths or limited to 1; clipping updates affected topology as supporting surfaces meet.");
 
         private static readonly GUIContent BevelSubdivisionsContent = new GUIContent("Subdivisions", "Internal profile loops. 0 creates one chamfer strip; each additional subdivision adds a loop. Maximum 32.");
 
@@ -62,7 +62,7 @@ namespace MashBoxSDK.AnimationStudio
 
             EditorGUIUtility.labelWidth = 145;
 
-            ToolChannelPane.FloatParameter(BevelTool, "Width", BevelWidthContent, .1f, 0, 1);
+            ToolChannelPane.FloatParameter(BevelTool, "Width", BevelWidthContent, .1f, 0);
 
             ToolChannelPane.IntParameter(BevelTool, "Subdivisions", BevelSubdivisionsContent, 1, 0, 32);
 

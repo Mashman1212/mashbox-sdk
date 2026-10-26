@@ -26,6 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             get
             {
+                if (!componentAxes) return ObjectPivotOrientation;
                 if (HasComponentPivot) return componentPivot.orientation;
                 if (mode != ComponentMode.Object && ActiveMesh && Components.Count > 0)
                     return ComponentOrientation();

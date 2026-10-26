@@ -81,20 +81,21 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawOrientationPopup(bool labelled)
         {
-            var content = new GUIContent(local ? "Local" : "World", "Transform handle orientation");
+            var content = new GUIContent(ToolbarOrientationLabel, "Transform handle orientation");
             var style = labelled ? StudioTheme.Styles.popup : StudioTheme.Styles.overlayDropdown;
             Rect rect = labelled ? EditorGUILayout.GetControlRect() : GUILayoutUtility.GetRect(content, style, GUILayout.Width(82));
             if (labelled) rect = EditorGUI.PrefixLabel(rect, new GUIContent("Orientation"));
             if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, style)) return;
             var menu = new StudioMenu();
-            menu.AddItem(new GUIContent("Local"), local, () => { SetToolbarLocalAxes(true); });
+            menu.AddItem(new GUIContent("Object"), local && !componentAxes, () => { SetToolbarLocalAxes(true); });
+            menu.AddItem(new GUIContent("Component"), ToolbarComponentAxes, () => { SetToolbarComponentAxes(); });
             menu.AddItem(new GUIContent("World"), !local, () => { SetToolbarLocalAxes(false); });
             menu.DropDown(rect);
         }
         private static Vector3 DrawChannels(string label, Vector3 value)
         {
             var row = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
-            float titleWidth = Mathf.Clamp(row.width * .25f, 60, 82);
+            float titleWidth = Mathf.Clamp(row.width * .4f, 100, 150);
             EditorGUI.LabelField(new Rect(row.x, row.y, titleWidth, row.height), label);
             float axisWidth = (row.width - titleWidth - 8) / 3;
             float previousLabelWidth = EditorGUIUtility.labelWidth;

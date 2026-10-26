@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             None, Object, Vertex, Edge, Face, TransformMenu, PivotMenu, SelectionMenu, UVMenu, UVSetsMenu,
             Move, Rotate, Scale, Axes, EditPivot, CenterPivot, Freeze, SelectAll, Clear, Frame, Through,
-            OpenUV, UV0, UV1, UV2, UV3, UV4, UV5, UV6, UV7, ObjectAxes, WorldAxes
+            OpenUV, UV0, UV1, UV2, UV3, UV4, UV5, UV6, UV7, ObjectAxes, WorldAxes, ComponentAxes
         }
         // Clockwise, starting north. Empty sectors do not perform an action.
         private static readonly MarkingAction[][] MarkingItems =
@@ -30,7 +30,7 @@ namespace MashBoxSDK.AnimationStudio
                 MarkingAction.None, MarkingAction.None, MarkingAction.None, MarkingAction.None },
             new[] { MarkingAction.UV0, MarkingAction.UV1, MarkingAction.UV2, MarkingAction.UV3,
                 MarkingAction.UV4, MarkingAction.UV5, MarkingAction.UV6, MarkingAction.UV7 },
-            new[] { MarkingAction.None, MarkingAction.None, MarkingAction.WorldAxes, MarkingAction.None,
+            new[] { MarkingAction.ComponentAxes, MarkingAction.None, MarkingAction.WorldAxes, MarkingAction.None,
                 MarkingAction.None, MarkingAction.None, MarkingAction.ObjectAxes, MarkingAction.None }
         };
         private static readonly Vector2[] MarkingOffsets =
@@ -71,7 +71,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool MarkingActionEnabled(MarkingAction action)
         {
             if (action == MarkingAction.None) return false;
-            if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes) return true;
+            if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes || action == MarkingAction.ComponentAxes) return true;
             if (action == MarkingAction.Object || action == MarkingAction.TransformMenu || action == MarkingAction.SelectionMenu ||
                 action == MarkingAction.Move || action == MarkingAction.Rotate || action == MarkingAction.Scale || action == MarkingAction.Axes || action == MarkingAction.Through) return true;
             if (action == MarkingAction.Vertex || action == MarkingAction.Edge || action == MarkingAction.Face)
@@ -90,6 +90,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 case MarkingAction.Object: return "Object Mode";
                 case MarkingAction.ObjectAxes: return "Object";
+                case MarkingAction.ComponentAxes: return "Component";
                 case MarkingAction.WorldAxes: return "World";
                 case MarkingAction.TransformMenu: return "Transform ›";
                 case MarkingAction.PivotMenu: return "Pivot ›";
@@ -101,7 +102,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.Freeze: return "Freeze Transforms";
                 case MarkingAction.SelectAll: return "Select All";
                 case MarkingAction.Clear: return "Deselect";
-                case MarkingAction.Axes: return local ? "World Axes" : "Local Axes";
+                case MarkingAction.Axes: return local ? "World Axes" : "Object Axes";
                 case MarkingAction.Through: return xray ? "Visible Only" : "Through Selection";
                 case MarkingAction.OpenUV: return "UV Editor";
                 default: return action >= MarkingAction.UV0 && action <= MarkingAction.UV7 ? "UV " + (action - MarkingAction.UV0) : action.ToString();
@@ -115,7 +116,8 @@ namespace MashBoxSDK.AnimationStudio
             (action == MarkingAction.Move && tool == Tool.Move) ||
             (action == MarkingAction.Rotate && tool == Tool.Rotate) ||
             (action == MarkingAction.Scale && tool == Tool.Scale) ||
-            (action == MarkingAction.ObjectAxes && local) || (action == MarkingAction.WorldAxes && !local);
+            (action == MarkingAction.ObjectAxes && local && !componentAxes) ||
+            (action == MarkingAction.ComponentAxes && ToolbarComponentAxes) || (action == MarkingAction.WorldAxes && !local);
 
         // Called before SceneView gets RMB, so its fly camera and native context menu
         // cannot claim the gesture. Alt navigation and existing handle drags pass through.
@@ -270,7 +272,7 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUI.DrawRect(new Rect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2), palette.Header);
                 EditorGUI.DrawRect(rect, markingHover == i && enabled ? palette.Hover : palette.Button);
                 markingLabel.normal.textColor = enabled ? palette.Text : palette.Muted;
-                if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes)
+                if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes || action == MarkingAction.ComponentAxes)
                 {
                     GUI.Toggle(new Rect(rect.x+6,rect.center.y-8,16,16),MarkingIsCurrent(action),GUIContent.none,EditorStyles.toggle);
                     GUI.Label(new Rect(rect.x+22,rect.y,rect.width-24,rect.height),MarkingText(action),markingLabel);
@@ -319,6 +321,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.Scale: ActivateTool(Tool.Scale); break;
                 case MarkingAction.Axes: SetToolbarLocalAxes(!local); break;
                 case MarkingAction.ObjectAxes: SetToolbarLocalAxes(true); break;
+                case MarkingAction.ComponentAxes: SetToolbarComponentAxes(); break;
                 case MarkingAction.WorldAxes: SetToolbarLocalAxes(false); break;
                 case MarkingAction.EditPivot: pivot = !pivot; break;
                 case MarkingAction.CenterPivot: CenterEditingPivot(); break;

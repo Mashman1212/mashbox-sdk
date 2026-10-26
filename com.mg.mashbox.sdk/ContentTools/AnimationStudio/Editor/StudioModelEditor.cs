@@ -214,6 +214,7 @@ namespace MashBoxSDK.AnimationStudio
             ClearSelectionWireframes();
             CloseToolOptions();
             DisposeComponentDrawing();
+            ReleaseGizmoAntialias();
             if(wireBatchMaterial)UnityEngine.Object.DestroyImmediate(wireBatchMaterial);
             if(componentEdgeStroke)UnityEngine.Object.DestroyImmediate(componentEdgeStroke);
             CancelMarkingMenu();
@@ -353,7 +354,7 @@ namespace MashBoxSDK.AnimationStudio
         internal string StatusText => string.IsNullOrEmpty(error) ? "Ready" : error;
         internal void DrawInspector()
         {
-            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel)) DrawChannelContent();
+            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelPanel)) DrawChannelContent();
         }
         private void DrawChannelContent()
         {
@@ -361,32 +362,51 @@ namespace MashBoxSDK.AnimationStudio
             FinishInactiveChannelEdit();
             pendingChannelScrub = null;
             EditorGUIUtility.labelWidth = 115;
-            DrawChannelHeader();
+            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelInset)) DrawChannelHeader();
+            GUILayout.Space(6);
             inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll);
             if (Document && Active >= 0)
             {
                 var n = Document.nodes[Active];
-                using (new EditorGUI.DisabledScope(!string.IsNullOrEmpty(n.anchorType)))
+                bool visible, visibilityChanged;
+                using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelInset))
                 {
-                    GUI.SetNextControlName("StudioObjectName" + Active);
-                    EditorGUI.BeginChangeCheck();
-                    string nextName = EditorGUILayout.DelayedTextField(n.name);
-                    if (EditorGUI.EndChangeCheck()) Run(() => RenameObject(Active, nextName));
+                    var nameRow = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
+                    visible = EditorGUI.Toggle(new Rect(nameRow.x, nameRow.y, 16, nameRow.height), ChannelVisibilityContent, n.active);
+                    visibilityChanged = visible != n.active;
+                    nameRow.xMin += 20;
+                    using (new EditorGUI.DisabledScope(!string.IsNullOrEmpty(n.anchorType)))
+                    {
+                        GUI.SetNextControlName("StudioObjectName" + Active);
+                        EditorGUI.BeginChangeCheck();
+                        string nextName = EditorGUI.DelayedTextField(nameRow, n.name);
+                        if (EditorGUI.EndChangeCheck()) Run(() => RenameObject(Active, nextName));
+                    }
+                    DrawAnchorChannels();
                 }
-                DrawAnchorChannels();
-                EditorGUI.BeginChangeCheck();
-                var p = DrawObjectChannels("Position", n.position);
-                using (new EditorGUI.DisabledScope(true)) DrawChannels("World Position", Transforms[Active].position);
-                EditorGUILayout.Space(4);
-                Vector3 r, s;
-                using (new EditorGUI.DisabledScope(pivot))
-                { r = DrawObjectChannels("Rotation", n.RotationChannels); EditorGUILayout.Space(4); s = DrawObjectChannels("Scale", n.scale); }
-                bool visible = EditorGUILayout.Toggle("Visibility", n.active);
-                if (EditorGUI.EndChangeCheck()) Run(() => SetObjectChannels(p, r, s, visible));
+                if (DrawTransformChannelHeader())
+                {
+                    GUILayout.Space(4);
+                    using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelTransformInset))
+                    {
+                    EditorGUI.BeginChangeCheck();
+                    var p = DrawObjectChannels("Position", n.position);
+                    using (new EditorGUI.DisabledScope(true)) DrawChannels("World Position", Transforms[Active].position);
+                    Vector3 r, s;
+                    using (new EditorGUI.DisabledScope(pivot))
+                    { r = DrawObjectChannels("Rotation", n.RotationChannels); s = DrawObjectChannels("Scale", n.scale); }
+                    bool transformChanged = EditorGUI.EndChangeCheck();
+                    if (visibilityChanged || transformChanged) Run(() => SetObjectChannels(p, r, s, visible));
+                    }
+                }
+                else if (visibilityChanged) Run(() => SetObjectChannels(n.position,n.RotationChannels,n.scale,visible));
             }
             else GUILayout.Label("No selection", StudioTheme.Styles.miniLabel);
-            DrawMaterialChannels();
-            DrawBlendShapeChannels();
+            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelInset))
+            {
+                DrawMaterialChannels();
+                DrawBlendShapeChannels();
+            }
             FinishInactiveChannelEdit();
 
             EditorGUILayout.EndScrollView();
@@ -610,7 +630,7 @@ namespace MashBoxSDK.AnimationStudio
 #if MASHBOX_STUDIO_TESTS
             ProfileScene("scene.wireframes");
 #endif
-            if (SelectionPaintSceneGUI(view) || SelectionPaintInputHeld(view)) { CancelMarqueeForSelectionPaint(); DrawComponents(view); return; }
+            if (SelectionPaintSceneGUI(view) || SelectionPaintInputHeld(view)) { CancelMarqueeForSelectionPaint(); UpdateSelectionPaintHover(view); DrawComponents(view); return; }
             if (!evt.isKey && HandlePivotSnap(view)) return;
             // Unmodified middle mouse belongs to Studio tools, never SceneView pan.
             // Consume unused events here, after snapping has had first refusal and
@@ -763,6 +783,7 @@ namespace MashBoxSDK.AnimationStudio
                     finally { rotationEvent.modifiers = modifiers; }
                 }
                 else scale = Handles.ScaleHandle(Vector3.one, handleCenter, orientation, HandleUtility.GetHandleSize(handleCenter) * handleSize);
+                AntialiasTransformGizmo(handleCenter, HandleUtility.GetHandleSize(handleCenter) * handleSize * 1.35f);
             }
             bool handleChanged = EditorGUI.EndChangeCheck();
             if (rotatingWorldObjects)
@@ -994,19 +1015,25 @@ namespace MashBoxSDK.AnimationStudio
             return FindComponentAt(view, pointer, ActiveMesh.vertices, ref occluders);
         }
         private int FindComponentAt(SceneView view, Vector2 pointer, Vector3[] vertices, ref OcclusionMesh[] occluders)
+            => FindComponentAt(view, pointer, vertices, ref occluders, null);
+        private int FindComponentAt(SceneView view, Vector2 pointer, Vector3[] vertices, ref OcclusionMesh[] occluders, List<int> candidates)
+            => FindComponentAt(view,pointer,vertices,ref occluders,candidates,null);
+        private int FindComponentAt(SceneView view, Vector2 pointer, Vector3[] vertices, ref OcclusionMesh[] occluders, List<int> candidates, Ray? paintRay)
         {
+            Vector2 Project(Vector3 world) => paintRay.HasValue ? PaintWorldToGUI(view.camera,world) : HandleUtility.WorldToGUIPoint(world);
             var edges = Edges(); var t = Transforms[Active];
             int best = -1; float bestDistance = mode == ComponentMode.Face ? float.PositiveInfinity : 12;
-            int count = ComponentCount(); var ray = HandleUtility.GUIPointToWorldRay(pointer);
-            for (int i = 0; i < count; i++)
+            int count = ComponentCount(); var ray = paintRay ?? HandleUtility.GUIPointToWorldRay(pointer);
+            for (int candidate = 0; candidate < (candidates == null ? count : candidates.Count); candidate++)
             {
+                int i = candidates == null ? candidate : candidates[candidate];
                 Vector3 world = mode == ComponentMode.Vertex ? t.TransformPoint(vertices[i]) : mode == ComponentMode.Edge ? t.TransformPoint((vertices[edges[i].a] + vertices[edges[i].b]) * .5f) : t.TransformPoint(FaceCenter(Faces()[i], vertices));
                 if (view.camera.WorldToViewportPoint(world).z <= 0) continue;
-                float distance = Vector2.Distance(pointer, HandleUtility.WorldToGUIPoint(world));
-                if (mode == ComponentMode.Edge) distance = HandleUtility.DistancePointLine(pointer, HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].a])), HandleUtility.WorldToGUIPoint(t.TransformPoint(vertices[edges[i].b])));
+                float distance = Vector2.Distance(pointer, Project(world));
+                if (mode == ComponentMode.Edge) distance = HandleUtility.DistancePointLine(pointer, Project(t.TransformPoint(vertices[edges[i].a])), Project(t.TransformPoint(vertices[edges[i].b])));
                 if (mode == ComponentMode.Face && !RayFace(ray, cachedFaceTriangles[i], vertices, t, out distance)) continue;
                 // Reject distant/non-improving candidates before any scene ray tests.
-                if (distance >= bestDistance || (!xray && Occluded(view, world, ref occluders))) continue;
+                if (distance >= bestDistance || (!xray && (paintRay.HasValue ? PaintOccluded(view,world,ref occluders) : Occluded(view, world, ref occluders)))) continue;
                 bestDistance = distance; best = i;
             }
             return best;

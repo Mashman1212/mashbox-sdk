@@ -124,7 +124,7 @@ public static class StudioChannelWrapValidation
             var node=document.nodes[0];EditorGUI.BeginChangeCheck();
             string label=rotation?"Rotation":"Scale";
             var value=(Vector3)typeof(StudioModelEditor).GetMethod("DrawChannels",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{label,rotation?node.RotationChannels:node.scale});
-            if(Event.current.type==EventType.Repaint){var row=GUILayoutUtility.GetLastRect();float title=Mathf.Clamp(row.width*.25f,60,82);float width=(row.width-title-8)/3;labelPoint=new Vector2(row.x+title+axis*(width+4)+5,row.center.y);}
+            if(Event.current.type==EventType.Repaint){var row=GUILayoutUtility.GetLastRect();float title=Mathf.Clamp(row.width*.4f,100,150);float width=(row.width-title-8)/3;labelPoint=new Vector2(row.x+title+axis*(width+4)+5,row.center.y);}
             if(EditorGUI.EndChangeCheck())editor.SetObjectChannels(node.position,rotation?value:node.RotationChannels,rotation?node.scale:value,node.active);
             typeof(StudioModelEditor).GetMethod("FinishInactiveChannelEdit",Flags).Invoke(editor,null);
         }

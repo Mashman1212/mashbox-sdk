@@ -21,7 +21,7 @@ public static class StudioXRayValidation
         var doc = ScriptableObject.CreateInstance<StudioModelDocument>();
         var mesh = StudioModelDocument.BuildPrimitive(PrimitiveType.Cube);
         var quad = StudioModelDocument.BuildPrimitive(PrimitiveType.Quad);
-        var shader = Shader.Find("Hidden/MashBox/AnimationStudioPreview");
+        var shader = Shader.Find("MashBox/Studio/Preview");
         var source = new Material(shader);
         source.SetColor("_Color", new Color(.7f,.5f,.3f,1));
         doc.nodes.Add(new StudioModelDocument.Node {name="Cube", mesh=mesh, materials=new[]{source}});

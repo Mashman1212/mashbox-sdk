@@ -38,7 +38,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
                 var template = pipeline ? pipeline.defaultMaterial : null;
-                var previewShader = Shader.Find("Hidden/MashBox/AnimationStudioPreview");
+                var previewShader = Shader.Find("MashBox/Studio/Preview");
                 neutralMaterial = previewShader && previewShader.isSupported ? new Material(previewShader)
                     : template ? new Material(template) : new Material(Shader.Find("Standard"));
                 neutralMaterial.hideFlags = HideFlags.HideAndDontSave;

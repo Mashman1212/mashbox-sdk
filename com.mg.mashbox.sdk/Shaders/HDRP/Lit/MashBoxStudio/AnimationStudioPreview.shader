@@ -1,4 +1,4 @@
-Shader "Hidden/MashBox/AnimationStudioPreview"
+Shader "MashBox/Studio/Preview"
 {
     Properties
     {

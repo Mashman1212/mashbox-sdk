@@ -16,6 +16,8 @@ namespace MashBoxSDK.AnimationStudio
         private Func<bool> studioInputActive;
         private Func<bool> studioKeyboard;
         private Action releaseStudioHolds;
+        internal Vector2 CanvasInputOrigin { get; private set; }
+        internal Vector2? CanvasMousePosition { get; private set; }
         private bool navigating;
         private StudioShortcut navigation;
         private int navigationControl, navigationButton;
@@ -41,6 +43,12 @@ namespace MashBoxSDK.AnimationStudio
                 if(!canvas)BindStudioHoverRedraw(container);
                 handler.wrapped = () => {
                     var inputEvent = Event.current;
+                    if (canvas)
+                    {
+                        // Capture before SceneView changes its GUI clip/matrix for callbacks.
+                        CanvasInputOrigin = rootVisualElement.WorldToLocal(container.LocalToWorld(Vector2.zero));
+                        if (inputEvent.isMouse) CanvasMousePosition = inputEvent.mousePosition;
+                    }
                     bool menuBlocked = container != modelMenuBar && container != modeSelector && MenuInputBlocked;
                     Vector2 mousePosition = inputEvent.mousePosition;
                     if (menuBlocked)

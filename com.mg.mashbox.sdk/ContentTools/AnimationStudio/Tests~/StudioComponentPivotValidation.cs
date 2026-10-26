@@ -50,6 +50,7 @@ public static class StudioComponentPivotValidation
             editor = (StudioModelEditor)typeof(AnimationStudioWindow).GetField("modelEditor", Flags).GetValue(controller);
             editor.SelectObject(0);
             originalHandleSize = StudioSettings.Current.handleSize;
+            editor.SetToolbarComponentAxes();
             ValidateActions();
             view = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First();
             view.position = new Rect(100, 100, 1400, 850);

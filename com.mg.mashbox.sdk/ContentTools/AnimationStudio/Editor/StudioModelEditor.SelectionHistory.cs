@@ -79,7 +79,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             componentFrameValid = false;
             if (componentPivot) componentPivot.custom = false;
-            ClearComponentDrawing();
+            cachedSelectedStatistics = null; InvalidateHandleComponentFrame();
+            drawnMode = hoverMode = (ComponentMode)(-1);
             pivotTargetCache.Clear(); pivotHover = null;
             repaint(); toolOptions?.Repaint();
         }
@@ -105,7 +106,7 @@ namespace MashBoxSDK.AnimationStudio
         private SceneView selectionPaintView;
         private KeyCode selectionPaintKey;
         private Vector3[] selectionPaintVertices;
-        private Vector2 selectionPaintPointer, selectionPaintPrevious, selectionPaintScreenPointer;
+        private Vector2 selectionPaintPointer, selectionPaintPrevious, selectionPaintCanvasPointer;
         private bool selectionPaintErase, selectionPaintPending, selectionPaintHasPrevious;
         private bool selectionPaintArmed, selectionPaintArmErase, selectionPaintFinishPending;
         private SceneView selectionPaintArmView;
@@ -125,6 +126,22 @@ namespace MashBoxSDK.AnimationStudio
         private bool SelectionPaintInputHeld(SceneView view) =>
             (GUIUtility.hotControl == 0 || GUIUtility.hotControl == selectionPaintControl || GUIUtility.hotControl == marqueeControl) &&
             (selectionPaintArmed || selectionPaintBefore != null || (view is MashBoxStudioViewport studio && studio.SelectionPaintHoldActive));
+        private static Vector2 PaintInputPosition(SceneView view) =>
+            view is MashBoxStudioViewport studio && studio.CanvasMousePosition.HasValue
+                ? studio.CanvasMousePosition.Value : Event.current.mousePosition;
+        private bool PaintHoverVisible => selectionPaintArmed || selectionPaintBefore != null;
+        private void UpdateSelectionPaintHover(SceneView view)
+        {
+            var evt = Event.current;
+            if ((evt.type != EventType.Repaint && evt.type != EventType.MouseMove) || !PaintHoverVisible || !ActiveMesh) return;
+            int previous = hoveredComponent;
+            hoveredComponent = FindSelectionPaintComponent(view, PaintInputPosition(view));
+            if (evt.type == EventType.MouseMove && previous != hoveredComponent)
+            {
+                if (view is MashBoxStudioViewport studio) studio.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);
+                else view.Repaint();
+            }
+        }
         private bool BeginSelectionPaint(SceneView view, KeyCode key, bool erase)
         {
             if (selectionPaintBefore != null) return true;
@@ -135,8 +152,8 @@ namespace MashBoxSDK.AnimationStudio
             selectionPaintVertices = ActiveMesh.vertices;
             selectionPaintErase = erase; selectionPaintHasPrevious = false; selectionPaintPending = true;
             selectionPaintPointer = Event.current != null ? Event.current.mousePosition : Vector2.zero;
-            selectionPaintScreenPointer = GUIUtility.GUIToScreenPoint(selectionPaintPointer);
-            selectionPaintPath.Clear(); selectionPaintPath.Add(selectionPaintScreenPointer);
+            selectionPaintCanvasPointer = PaintInputPosition(view);
+            selectionPaintPath.Clear(); selectionPaintPath.Add(selectionPaintCanvasPointer);
             hoveredComponent = -1; repaint(); return true;
         }
         private void FinishSelectionPaint(bool cancel = false) => EndSelectionPaintStroke(cancel, false);
@@ -203,7 +220,9 @@ namespace MashBoxSDK.AnimationStudio
             var evt = Event.current;
             bool pointer = evt.rawType == EventType.MouseMove || evt.rawType == EventType.MouseDrag || evt.rawType == EventType.MouseDown || evt.rawType == EventType.MouseUp;
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
-            var canvasPointer = GUIUtility.GUIToScreenPoint(evt.mousePosition) - view.position.position;
+            var canvasPointer = view is MashBoxStudioViewport viewport
+                ? PaintInputPosition(view) + viewport.CanvasInputOrigin
+                : evt.mousePosition;
             if (evt.rawType == EventType.MouseLeaveWindow || (pointer && (!canvas.Contains(canvasPointer) || (view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(canvasPointer)))))
                 FinishSelectionPaint();
         }
@@ -236,13 +255,13 @@ namespace MashBoxSDK.AnimationStudio
             if (GUIUtility.hotControl != selectionPaintControl) { FinishSelectionPaint(); evt.Use(); return true; }
             if (selectionPaintArmKey == KeyCode.Tab) selectionPaintArmErase = evt.control || evt.command;
             selectionPaintErase = selectionPaintArmErase;
-            // BeforeSceneGUI and DuringSceneGUI have different GUI clip origins.
-            // Carry a screen point across phases, then convert in the picking pass.
-            selectionPaintScreenPointer = GUIUtility.GUIToScreenPoint(evt.mousePosition);
-            if (selectionPaintPath.Count == 0 || (selectionPaintPath[selectionPaintPath.Count-1]-selectionPaintScreenPointer).sqrMagnitude > .01f)
+            // Keep camera-canvas coordinates captured before SceneView changes GUI clips.
+            // Projection and ray construction use the camera directly, not GUIClip.
+            selectionPaintCanvasPointer = PaintInputPosition(view);
+            if (selectionPaintPath.Count == 0 || (selectionPaintPath[selectionPaintPath.Count-1]-selectionPaintCanvasPointer).sqrMagnitude > .01f)
             {
-                if (selectionPaintPath.Count < 16) selectionPaintPath.Add(selectionPaintScreenPointer);
-                else selectionPaintPath[15] = selectionPaintScreenPointer;
+                if (selectionPaintPath.Count < 16) selectionPaintPath.Add(selectionPaintCanvasPointer);
+                else selectionPaintPath[15] = selectionPaintCanvasPointer;
             }
             selectionPaintPending = true;
             if (up) selectionPaintFinishPending = true;
@@ -256,18 +275,18 @@ namespace MashBoxSDK.AnimationStudio
             if (selectionPaintPending && Event.current.type == EventType.Repaint)
             {
                 selectionPaintPending = false;
-                if (selectionPaintPath.Count == 0) selectionPaintPath.Add(selectionPaintScreenPointer);
+                if (selectionPaintPath.Count == 0) selectionPaintPath.Add(selectionPaintCanvasPointer);
                 OcclusionMesh[] occluders = null; bool changed = false; int budget = 32;
                 for (int p = 0; p < selectionPaintPath.Count; p++)
                 {
-                    selectionPaintPointer = GUIUtility.ScreenToGUIPoint(selectionPaintPath[p]);
+                    selectionPaintPointer = selectionPaintPath[p];
                     var from = selectionPaintHasPrevious ? selectionPaintPrevious : selectionPaintPointer;
                     // Keep click/drag endpoints even when several events arrive before a frame.
                     // Bound interpolation work while preserving each queued pointer target.
                     int available = Mathf.Min(8, budget - (selectionPaintPath.Count-p-1));
                     int samples = Mathf.Clamp(Mathf.CeilToInt(Vector2.Distance(from, selectionPaintPointer) / 6f), 1, available);
                     for (int i = 1; i <= samples; i++)
-                        changed |= ApplySelectionPaintHit(FindComponentAt(view, Vector2.Lerp(from, selectionPaintPointer, i / (float)samples), selectionPaintVertices, ref occluders));
+                        changed |= ApplySelectionPaintHit(FindSelectionPaintComponent(view, Vector2.Lerp(from, selectionPaintPointer, i / (float)samples), ref occluders));
                     budget -= samples; selectionPaintPrevious = selectionPaintPointer; selectionPaintHasPrevious = true;
                 }
                 selectionPaintPath.Clear();

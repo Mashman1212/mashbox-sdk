@@ -93,6 +93,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(resource.Skin)UnityEngine.Object.DestroyImmediate(resource.Skin);
             foreach(var texture in resource.Textures.Values)if(texture)UnityEngine.Object.DestroyImmediate(texture);
+            foreach(var texture in resource.FieldTextures.Values)if(texture)UnityEngine.Object.DestroyImmediate(texture);
             foreach(var texture in resource.DropdownTextures.Values)if(texture)UnityEngine.Object.DestroyImmediate(texture);
         }
     }

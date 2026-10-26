@@ -77,6 +77,23 @@ namespace MashBoxSDK.AnimationStudio
             internal readonly Dictionary<string, GUIStyle> Styles = new Dictionary<string, GUIStyle>();
             internal readonly Dictionary<Color, Texture2D> Textures = new Dictionary<Color, Texture2D>();
             internal readonly Dictionary<Color, Texture2D> DropdownTextures = new Dictionary<Color, Texture2D>();
+            internal readonly Dictionary<Color, Texture2D> FieldTextures = new Dictionary<Color, Texture2D>();
+            internal Texture2D FieldTexture(Color fill)
+            {
+                if (FieldTextures.TryGetValue(fill, out var texture)) return texture;
+                const int size = 10;
+                texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { hideFlags=HideFlags.HideAndDontSave, name="Studio rounded field", filterMode=FilterMode.Bilinear, wrapMode=TextureWrapMode.Clamp };
+                var pixels = new Color[size * size];
+                var edge = Color.Lerp(fill, Color.black, .22f);
+                for (int y=0; y<size; y++) for (int x=0; x<size; x++)
+                {
+                    float qx=Mathf.Abs(x+.5f-size*.5f)-(size*.5f-3), qy=Mathf.Abs(y+.5f-size*.5f)-(size*.5f-3);
+                    float distance=Mathf.Sqrt(Mathf.Max(qx,0)*Mathf.Max(qx,0)+Mathf.Max(qy,0)*Mathf.Max(qy,0))+Mathf.Min(Mathf.Max(qx,qy),0)-3;
+                    var color=Color.Lerp(edge,fill,Mathf.Clamp01(-.5f-distance));
+                    color.a *= Mathf.Clamp01(.5f-distance); pixels[y*size+x]=color;
+                }
+                texture.SetPixels(pixels); texture.Apply(); FieldTextures.Add(fill,texture); return texture;
+            }
             internal Texture2D Texture(Color color)
             {
                 if (Textures.TryGetValue(color, out var texture)) return texture;
@@ -116,20 +133,51 @@ namespace MashBoxSDK.AnimationStudio
             bool panel = name == "box" || name == "window" || name == "helpBox" || name == "toolbar";
             if (button || field || panel)
             {
-                var normal = resource.Texture(button ? palette.Button : field ? palette.Header : palette.Panel);
-                var hover = resource.Texture(button ? palette.Hover : field ? palette.Header : palette.Panel);
-                var selected = resource.Texture(palette.Selection);
+                var normal = field ? resource.FieldTexture(palette.Header) : resource.Texture(button ? palette.Button : palette.Panel);
+                var hover = field ? resource.FieldTexture(palette.Header) : resource.Texture(button ? palette.Hover : palette.Panel);
+                var selected = field ? resource.FieldTexture(palette.Selection) : resource.Texture(palette.Selection);
                 style.normal.background = normal; style.hover.background = hover; style.active.background = selected; style.focused.background = hover;
                 style.onNormal.background = selected; style.onHover.background = selected; style.onActive.background = selected; style.onFocused.background = selected;
                 foreach (var state in States(style)) state.scaledBackgrounds = Array.Empty<Texture2D>();
                 // Solid color textures have no nine-slice border like Unity's built-in art.
-                style.border = new RectOffset();
+                style.border = field ? new RectOffset(3,3,3,3) : new RectOffset();
                 if (name == "popup" || name == "toolbarDropDown")
                 {
                     style.normal.background = resource.Dropdown(palette.Button); style.hover.background = resource.Dropdown(palette.Hover);
                     style.active.background = style.focused.background = resource.Dropdown(palette.Selection);
                     style.onNormal.background = style.onHover.background = style.onActive.background = style.onFocused.background = resource.Dropdown(palette.Selection);
                     style.border = new RectOffset(2, 14, 2, 2);
+                }
+            }
+            if (name.IndexOf("scrollbar", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (name.IndexOf("button", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    // Scroller subtracts these fixed dimensions from the usable track.
+                    // An empty zero-size style removes both the end block and its hit area.
+                    style = new GUIStyle { name = "StudioScrollbarEnd" };
+                    foreach (var state in States(style))
+                    {
+                        state.background = resource.Texture(Color.clear);
+                        state.scaledBackgrounds = Array.Empty<Texture2D>();
+                    }
+                }
+                else
+                {
+                    bool thumb = name.IndexOf("thumb", StringComparison.OrdinalIgnoreCase) >= 0;
+                    style.padding = new RectOffset();
+                    style.border = new RectOffset();
+                    style.overflow = new RectOffset();
+                    foreach (var state in States(style))
+                    {
+                        state.background = resource.Texture(thumb ? palette.Border : palette.Header);
+                        state.scaledBackgrounds = Array.Empty<Texture2D>();
+                    }
+                    if (thumb)
+                    {
+                        style.hover.background = resource.Texture(palette.Muted);
+                        style.active.background = resource.Texture(palette.Accent);
+                    }
                 }
             }
             if (HoverSuppressed)
@@ -355,6 +403,16 @@ namespace MashBoxSDK.AnimationStudio
                     resources.Styles.Add("modelPanel", style); return style;
                 }
             }
+            private static GUIStyle ChannelLayout(string key,int left,int right,int top,int bottom)
+            {
+                var resources=GetResources();
+                if (!resources.Styles.TryGetValue(key,out var style))
+                    resources.Styles[key]=style=new GUIStyle(GUIStyle.none) { padding=new RectOffset(left,right,top,bottom), margin=new RectOffset() };
+                return style;
+            }
+            internal static GUIStyle channelPanel => ChannelLayout("channelPanel",0,0,8,8);
+            internal static GUIStyle channelInset => ChannelLayout("channelInset",8,8,0,0);
+            internal static GUIStyle channelTransformInset => ChannelLayout("channelTransformInset",16,8,0,0);
             internal static GUIStyle hierarchyInset
             {
                 get
@@ -392,6 +450,16 @@ namespace MashBoxSDK.AnimationStudio
             }
             internal static GUIStyle overlayDropdown => Overlay(true);
             internal static GUIStyle label => Get("label");
+            internal static GUIStyle transformHeader
+            {
+                get
+                {
+                    var resources=GetResources();
+                    if (!resources.Styles.TryGetValue("transformHeader",out var style))
+                        resources.Styles["transformHeader"]=style=new GUIStyle(Get("foldout")) { fontStyle=FontStyle.Bold };
+                    return style;
+                }
+            }
             internal static GUIStyle boldLabel => Get("boldLabel");
             internal static GUIStyle miniLabel => Get("miniLabel");
             internal static GUIStyle centeredGreyMiniLabel => Get("centeredGreyMiniLabel");

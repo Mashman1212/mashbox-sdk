@@ -87,7 +87,7 @@ public static class StudioChannelLiveValidation
             typeof(StudioModelEditor).GetMethod("HandleChannelHistory",Instance).Invoke(editor,null);
             var node=document.nodes[0];EditorGUI.BeginChangeCheck();
             var value=(Vector3)typeof(StudioModelEditor).GetMethod("DrawChannels",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{"Position",node.position});
-            if(Event.current.type==EventType.Repaint){var row=GUILayoutUtility.GetLastRect();labelPoint=new Vector2(row.x+Mathf.Clamp(row.width*.25f,60,82)+5,row.center.y);}
+            if(Event.current.type==EventType.Repaint){var row=GUILayoutUtility.GetLastRect();labelPoint=new Vector2(row.x+Mathf.Clamp(row.width*.4f,100,150)+5,row.center.y);}
             bool changed=EditorGUI.EndChangeCheck();
             if(eventType==EventType.MouseDown||eventType==EventType.MouseDrag||eventType==EventType.MouseUp)Debug.Log($"CHANNEL_EVENT {eventType} pointer={pointer} label={labelPoint} value={value} changed={changed} hot={GUIUtility.hotControl}");
             if(changed)editor.SetObjectChannels(value,node.rotation.eulerAngles,node.scale,node.active);

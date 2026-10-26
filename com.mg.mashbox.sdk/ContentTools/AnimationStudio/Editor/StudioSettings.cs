@@ -154,7 +154,7 @@ namespace MashBoxSDK.AnimationStudio
             var settings = StudioSettings.Current;
             EditorGUI.BeginChangeCheck();
             settings.hideObjectWireframe = !EditorGUILayout.Toggle("Object wireframe", !settings.hideObjectWireframe);
-            settings.handleSize = EditorGUILayout.Slider(new GUIContent("Handle size", "Resize modeling handles with + and − in the viewport."), settings.handleSize, .25f, 3);
+            settings.handleSize = EditorGUILayout.Slider(new GUIContent("Handle size", "Resize modeling handles and anchor gizmos with + and − in the viewport."), settings.handleSize, .25f, 3);
             settings.gridSpacing = EditorGUILayout.FloatField(new GUIContent("Grid spacing", "Distance between minor grid lines, in world units."), settings.gridSpacing);
             settings.gridOpacity = EditorGUILayout.Slider("Grid opacity", settings.gridOpacity, 0, 1);
             GUILayout.Space(12);

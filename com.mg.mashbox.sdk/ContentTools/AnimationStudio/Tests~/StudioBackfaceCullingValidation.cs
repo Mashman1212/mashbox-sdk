@@ -44,7 +44,7 @@ public static class StudioBackfaceCullingValidation
         {
             doc = ScriptableObject.CreateInstance<StudioModelDocument>();
             mesh = StudioModelDocument.BuildPrimitive(PrimitiveType.Quad, out var polygons);
-            source = new Material(Shader.Find("Hidden/MashBox/AnimationStudioPreview"));
+            source = new Material(Shader.Find("MashBox/Studio/Preview"));
             source.SetFloat("_Cull", 0); source.SetFloat("_Unlit", 1); source.SetColor("_Color", Color.white);
             doc.nodes.Add(new StudioModelDocument.Node { name = "Culling test", mesh = mesh, cutPolygons = polygons, cutTriangles = mesh.triangles, materials = new[] { source } });
             editor = new StudioModelEditor(() => { }); editor.Load(doc);

@@ -135,6 +135,19 @@ namespace MashBoxSDK.AnimationStudio
                 (hierarchyDragControl != 0 || DragAndDrop.GetGenericData(HierarchyDragKey) is HierarchyDragPayload))
             { CancelHierarchyDrag(); evt.Use(); repaint(); }
         }
+        private static readonly GUIContent HierarchyIconGap = new GUIContent("  ");
+        private readonly GUIContent hierarchyRowText = new GUIContent();
+        private void DrawHierarchyRowContent(Rect row, GUIContent content, GUIStyle style)
+        {
+            if (!content.image) { style.Draw(row, content, false, false, false, false); return; }
+            const float iconSize = 16f;
+            float gap = Mathf.Max(0, style.CalcSize(HierarchyIconGap).x - style.padding.horizontal);
+            var iconRect = new Rect(row.x + style.padding.left, row.center.y - iconSize * .5f, iconSize, iconSize);
+            GUI.DrawTexture(iconRect, content.image, ScaleMode.ScaleToFit, true);
+            row.xMin = Mathf.Min(row.xMax, iconRect.xMax + gap - style.padding.left);
+            hierarchyRowText.text = content.text;
+            style.Draw(row, hierarchyRowText, false, false, false, false);
+        }
         private void DrawHierarchyDragRow(Rect row, GUIContent content, GUIStyle style, int index)
         {
             if (DrawHierarchyRename(row, index)) return;
@@ -146,7 +159,7 @@ namespace MashBoxSDK.AnimationStudio
                 bool pressed = !StudioTheme.HoverSuppressed && GUIUtility.hotControl == id;
                 if (objects.Contains(index) || pressed) EditorGUI.DrawRect(row, StudioTheme.Current.Selection);
                 else if (hovered) EditorGUI.DrawRect(row, StudioTheme.Current.Hover);
-                style.Draw(row, content, false, false, false, false);
+                DrawHierarchyRowContent(row, content, style);
             }
             HandleHierarchyDrop(row, index);
             if (evt.type == EventType.MouseDown && row.Contains(evt.mousePosition) && (evt.button == 0 || evt.button == 2))

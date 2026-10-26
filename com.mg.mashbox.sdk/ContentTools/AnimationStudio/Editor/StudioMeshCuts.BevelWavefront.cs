@@ -19,6 +19,9 @@ namespace MashBoxSDK.AnimationStudio
             internal readonly List<int> SelectedFaces = new List<int>(), AffectedFaces = new List<int>(), StaticFaces = new List<int>();
             internal Vector3[][] Velocities;
             internal float Limit = float.PositiveInfinity;
+            internal Dictionary<(int,int),Vector3> FlatTerminalCuts;
+            internal HashSet<int> FlatTerminalOwners;
+            internal float FlatTerminalLimit = float.PositiveInfinity;
         }
         private sealed class BevelEventListener : IEventTimeChangeListener
         {
@@ -92,9 +95,7 @@ namespace MashBoxSDK.AnimationStudio
             for(int i=0;i<Positions.Length;i++)plan.Originals[welded[i]]=Positions[i];
             foreach(int vertex in affected)
             {
-                float length=float.PositiveInfinity;
-                foreach(var edge in bevelIncident[vertex])length=Mathf.Min(length,Vector3.Distance(plan.Originals[edge.A],plan.Originals[edge.B]));
-                plan.Distances.Add(vertex,length*.45f);
+                plan.Distances.Add(vertex,1);
             }
             var visited=new HashSet<int>();var region=new List<int>();
             foreach(int seed in affected)

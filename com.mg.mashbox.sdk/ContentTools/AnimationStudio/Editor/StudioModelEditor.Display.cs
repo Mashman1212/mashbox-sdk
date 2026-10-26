@@ -13,6 +13,7 @@ namespace MashBoxSDK.AnimationStudio
             StudioPreferenceStore.SetFloat("Model.ThroughSelection", xray ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.PreventNegativeScale", preventNegativeScale ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.LocalAxes", local ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.ComponentAxes", componentAxes ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.Lighting", displayLighting ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.Textures", displayTextures ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.XRay", displayXray ? 1 : 0);
@@ -21,9 +22,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void LoadDisplayConfiguration()
         {
+            transformChannelsExpanded = StudioPreferenceStore.GetFloat("Model.TransformChannelsExpanded", 1) >= .5f;
             xray = StudioPreferenceStore.GetFloat("Model.ThroughSelection", 1) >= .5f;
             preventNegativeScale = StudioPreferenceStore.GetFloat("Model.PreventNegativeScale", 1) >= .5f;
             local = StudioPreferenceStore.GetFloat("Model.LocalAxes", 0) >= .5f;
+            componentAxes = local && StudioPreferenceStore.GetFloat("Model.ComponentAxes", 0) >= .5f;
             displayLighting = StudioPreferenceStore.GetFloat("Model.Lighting", 1) >= .5f;
             displayTextures = StudioPreferenceStore.GetFloat("Model.Textures", 1) >= .5f;
             displayXray = StudioPreferenceStore.GetFloat("Model.XRay", 0) >= .5f;
@@ -136,13 +139,21 @@ namespace MashBoxSDK.AnimationStudio
         private readonly Dictionary<(Material source, int slice), Material> previewMaterials = new Dictionary<(Material source, int slice), Material>();
         private Material neutralLit, neutralPreview;
 
+        private bool componentAxes;
+        internal bool ToolbarComponentAxes => local && componentAxes;
+        internal string ToolbarOrientationLabel => !local ? "World" : componentAxes ? "Component" : "Object";
         internal bool ToolbarLocalAxes => local;
         internal bool ToolbarLighting => displayLighting;
         internal bool ToolbarTextures => displayTextures;
         internal void SetToolbarLocalAxes(bool value)
         {
-            if (local == value) return;
-            local = value; SaveDisplayConfiguration(); repaint(); toolOptions?.Repaint();
+            if (local == value && !componentAxes) return;
+            local = value; componentAxes = false; SaveDisplayConfiguration(); repaint(); toolOptions?.Repaint();
+        }
+        internal void SetToolbarComponentAxes()
+        {
+            if (ToolbarComponentAxes) return;
+            local = true; componentAxes = true; SaveDisplayConfiguration(); repaint(); toolOptions?.Repaint();
         }
         internal void SetDisplayMode(bool lighting, bool textures)
         {
@@ -181,10 +192,21 @@ namespace MashBoxSDK.AnimationStudio
                 if (!neutralLit)
                 {
                     var pipeline = GraphicsSettings.currentRenderPipeline;
-                    var template = pipeline ? pipeline.defaultMaterial : AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat");
-                    neutralLit = new Material(template) { name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
-                    foreach(var property in new[] {"_BaseColor","_Color"}) if(neutralLit.HasProperty(property)) neutralLit.SetColor(property,new Color(.65f,.65f,.65f));
-                    foreach(var property in new[] {"_Smoothness","_Glossiness","_Metallic"}) if(neutralLit.HasProperty(property)) neutralLit.SetFloat(property,0);
+                    bool hdrp = pipeline && pipeline.GetType().Name.IndexOf("HDRenderPipeline", StringComparison.Ordinal) >= 0;
+                    var template = hdrp ? AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath("410de6c3c565a5b459045246f998f390")) : null;
+                    if (template)
+                        neutralLit = new Material(template) { parent=template, name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
+                    else
+                    {
+                        var shader = hdrp ? AssetDatabase.LoadAssetAtPath<Shader>(AssetDatabase.GUIDToAssetPath("409bba92b9fbb904cbfd7cf58b9531a6")) : null;
+                        if (shader)
+                            neutralLit = new Material(shader) { name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
+                        else
+                            neutralLit = new Material(pipeline ? pipeline.defaultMaterial : AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat")) { name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
+                        foreach(var property in new[] {"_BaseColor","_Color"}) if(neutralLit.HasProperty(property)) neutralLit.SetColor(property,new Color(.65f,.65f,.65f));
+                        foreach(var property in new[] {"_Smoothness","_Glossiness","_Metallic"}) if(neutralLit.HasProperty(property)) neutralLit.SetFloat(property,0);
+                        foreach(var property in new[] {"_MetallicRemap","_SmoothnessRemap"}) if(neutralLit.HasProperty(property)) neutralLit.SetVector(property,Vector4.zero);
+                    }
                     ConfigureDisplayCulling(neutralLit);
                 }
                 return neutralLit;
@@ -200,7 +222,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         private Material NewPreviewMaterial(Material source, int slice = 0)
         {
-            var material = new Material(Shader.Find("Hidden/MashBox/AnimationStudioPreview")) { name=displayLighting ? "Studio Camera Light" : "Studio Unlit", hideFlags=HideFlags.HideAndDontSave };
+            var template = displayXray ? AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath("0d08d9ca74c59e940a654b9ca078d478")) : null;
+            var material = template ? new Material(template) { parent=template } : new Material(Shader.Find("MashBox/Studio/Preview"));
+            material.name = displayLighting ? "Studio Camera Light" : "Studio Unlit";
+            material.hideFlags = HideFlags.HideAndDontSave;
             material.SetFloat("_Unlit",displayLighting ? 0 : 1);
             material.SetFloat("_CameraLighting",1);
             Color color = new Color(.65f,.65f,.65f);
@@ -218,19 +243,24 @@ namespace MashBoxSDK.AnimationStudio
                 if(source.HasProperty("_Cull")) material.SetFloat("_Cull",source.GetFloat("_Cull"));
                 else if(source.HasProperty("_CullMode")) material.SetFloat("_Cull",source.GetFloat("_CullMode"));
             }
-            material.SetColor("_Color",color);
+            // X-ray tint stays inherited from its parent; source texture/array and
+            // viewport lighting/culling are the per-preview overrides.
+            if (!template) material.SetColor("_Color",color);
             ConfigureTexturePreview(material,source,slice);
             if (wireframeOnly && !displayXray) material.SetFloat("_ColorMask", 0);
             if (displayXray)
             {
                 material.name = "Studio X-ray";
-                material.SetFloat("_Opacity", .22f);
-                material.SetFloat("_ZWrite", 0);
-                material.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
-                material.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
-                material.SetFloat("_Cull", (float)CullMode.Off);
-                material.SetOverrideTag("RenderType", "Transparent");
-                material.renderQueue = (int)RenderQueue.Transparent;
+                if (!template)
+                {
+                    material.SetFloat("_Opacity", .22f);
+                    material.SetFloat("_ZWrite", 0);
+                    material.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+                    material.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                    material.SetFloat("_Cull", (float)CullMode.Off);
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    material.renderQueue = (int)RenderQueue.Transparent;
+                }
             }
             ConfigureDisplayCulling(material);
             return material;

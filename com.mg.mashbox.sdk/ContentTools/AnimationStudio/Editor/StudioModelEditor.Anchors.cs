@@ -7,19 +7,47 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        private const float AnchorGizmoBaseScale = 2.5f;
+        private const float AnchorStrokeWidth = 2f, AnchorArmLength = 1.6f;
+        private static readonly Vector2[] anchorUnitRing = BuildAnchorUnitRing();
+        private readonly Vector3[] anchorRingPoints = new Vector3[65];
+        private readonly Vector3[] anchorArmPoints = new Vector3[2];
+        private static Vector2[] BuildAnchorUnitRing()
+        {
+            var points = new Vector2[65];
+            for (int i = 0; i < 64; i++)
+            {
+                float angle = i * (Mathf.PI * 2 / 64);
+                points[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+            }
+            points[64] = points[0];
+            return points;
+        }
+        private void DrawAnchorArm(Vector3 center, Vector3 direction, float length, bool positiveOnly = false)
+        {
+            anchorArmPoints[0] = positiveOnly ? center : center - direction * length;
+            anchorArmPoints[1] = center + direction * length;
+            Handles.DrawAAPolyLine(AnchorStrokeWidth, anchorArmPoints);
+        }
         private static Texture2D anchorIcon;
         private static Texture2D AnchorIcon
         {
             get
             {
                 if (anchorIcon) return anchorIcon;
-                anchorIcon = new Texture2D(20,20,TextureFormat.RGBA32,false) { name="MashBox Studio Anchor", hideFlags=HideFlags.HideAndDontSave };
-                var pixels = new Color[400];
-                for(int y=0;y<20;y++) for(int x=0;x<20;x++)
+                // Rasterize at the hierarchy's display size. Pixel-aligned arms retain
+                // full opacity instead of being faded twice by coverage and downsampling.
+                anchorIcon = new Texture2D(16,16,TextureFormat.RGBA32,false) { name="MashBox Studio Anchor", hideFlags=HideFlags.HideAndDontSave };
+                var pixels = new Color[256];
+                for(int y=0;y<16;y++) for(int x=0;x<16;x++)
                 {
-                    float dx=x-9.5f, dy=y-9.5f, radius=Mathf.Sqrt(dx*dx+dy*dy);
-                    bool ring=Mathf.Abs(radius-5)<1, cross=(Mathf.Abs(dx)<1 && Mathf.Abs(dy)<9)||(Mathf.Abs(dy)<1 && Mathf.Abs(dx)<9);
-                    pixels[y*20+x]=ring||cross ? new Color(.35f,.85f,.9f) : Color.clear;
+                    float dx=x-8f, dy=y-8f, radius=Mathf.Sqrt(dx*dx+dy*dy);
+                    float ring = Mathf.Clamp01(1f - Mathf.Abs(radius - 4.5f));
+                    float horizontal = Mathf.Abs(dx) <= 7f ? Mathf.Clamp01(1f - Mathf.Abs(dy)) : 0f;
+                    float vertical = Mathf.Abs(dy) <= 7f ? Mathf.Clamp01(1f - Mathf.Abs(dx)) : 0f;
+                    var color = dx < 0 && horizontal > 0 ? new Color(.18f,.38f,.8f) : new Color(.82f,.56f,.3f);
+                    color.a = Mathf.Max(ring, Mathf.Max(horizontal, vertical));
+                    pixels[y*16+x] = color;
                 }
                 anchorIcon.SetPixels(pixels); anchorIcon.Apply(); return anchorIcon;
             }
@@ -71,19 +99,30 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     var t=Transforms[i];
                     if(string.IsNullOrEmpty(Document.nodes[i].anchorType) || !t.gameObject.activeInHierarchy || view.camera.WorldToViewportPoint(t.position).z<=0) continue;
-                    float size=HandleUtility.GetHandleSize(t.position)*.07f;
-                    Handles.color=objects.Contains(i) ? StudioTheme.Current.Accent : new Color(.35f,.85f,.9f);
-                    Handles.DrawWireDisc(t.position,view.camera.transform.forward,size*.7f);
-                    Handles.DrawLine(t.position-t.right*size,t.position+t.right*size);
-                    Handles.DrawLine(t.position-t.up*size,t.position+t.up*size);
-                    Handles.DrawLine(t.position-t.forward*size,t.position+t.forward*size);
+                    float size=HandleUtility.GetHandleSize(t.position)*.07f*AnchorGizmoBaseScale*StudioSettings.Current.handleSize;
+                    var markerColor = objects.Contains(i) ? new Color(1f,.8f,.4f) : new Color(1f,.62f,.22f);
+                    markerColor.r *= .85f; markerColor.g *= .85f; markerColor.b *= .85f;
+                    Handles.color = markerColor;
+                    var right = view.camera.transform.right * (size * .7f);
+                    var up = view.camera.transform.up * (size * .7f);
+                    for (int p = 0; p < anchorRingPoints.Length; p++)
+                        anchorRingPoints[p] = t.position + right * anchorUnitRing[p].x + up * anchorUnitRing[p].y;
+                    Handles.DrawAAPolyLine(AnchorStrokeWidth, anchorRingPoints);
+                    float arm = size * AnchorArmLength;
+                    DrawAnchorArm(t.position, t.right, arm);
+                    DrawAnchorArm(t.position, t.up, arm);
+                    DrawAnchorArm(t.position, -t.forward, arm, true);
+                    var forwardColor = Handles.zAxisColor;
+                    forwardColor.r *= .85f; forwardColor.g *= .85f; forwardColor.b *= .85f;
+                    Handles.color = forwardColor;
+                    DrawAnchorArm(t.position, t.forward, arm, true);
                 }
             }
             finally { Handles.color=old; Handles.zTest=depth; }
         }
         private int PickAnchors(SceneView view,Rect rect,bool click)
         {
-            int hit=-1; float best=12;
+            int hit=-1; float best=12*AnchorGizmoBaseScale*StudioSettings.Current.handleSize;
             for(int i=0;i<Transforms.Length;i++)
             {
                 var t=Transforms[i];
