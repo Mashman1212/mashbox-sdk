@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioRetopologyEditor
     {
-        private enum RetopoTool { Select, Quad, Patch, Tube, Resolution, RelaxBrush, Strip }
+        private enum RetopoTool { Select, Quad, Patch, Tube, Resolution, RelaxBrush, Strip, TargetWeld }
         private RetopoTool activeTool;
         private Tool transformTool=Tool.Move;
         private readonly List<Vector3> corners=new List<Vector3>();
@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         private int[] patchContinuation,mirroredPatchContinuation;
         private StudioRetopologyDocument.Part patchOwner;
         private void ClearPatchCorners()
-        {if(!stripStroke)ResetStrip();corners.Clear();patchContinuation=null;mirroredPatchContinuation=null;patchOwner=null;}
+        {weldSource=-1;if(!stripStroke)ResetStrip();corners.Clear();patchContinuation=null;mirroredPatchContinuation=null;patchOwner=null;}
         private void ToggleContinuousPatch()
         {continuousPatch=!continuousPatch;EditorPrefs.SetBool("MashBox.Retopology.ContinuousPatch",continuousPatch);ClearPatchCorners();repaint();}
         private int dragUndo=-1;
@@ -92,7 +92,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly Vector2[] WheelOffsets={new Vector2(0,-94),new Vector2(132,-64),new Vector2(154,0),new Vector2(132,64),new Vector2(0,94),new Vector2(-132,64),new Vector2(-154,0),new Vector2(-132,-64)};
         private static readonly string[][] WheelLabels={
             new[]{"Draw Quad","Quad Patch","Topology ›","Display ›","Symmetry X","Surface Snap","Select >","Tube"},
-            new[]{"Project","Relax","Bridge Loops","Delete Selected","‹ Back","Pants / Crotch","",""},
+            new[]{"Project","Relax","Bridge Loops","Delete Selected","‹ Back","Pants / Crotch","Target Weld",""},
             new[]{"Reference Wire","Working Wire","Reference","Working Mesh","‹ Back","X-ray Display","X-ray Selection",""},
             new[]{"Draw Quad","Quad Patch","Tube","Resolution","< Back","Continuous Patch","Relax Brush","Quad Strip"},
             new[]{"Vertices","Edges","Faces","","< Back","","",""}};
@@ -106,7 +106,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static Rect WheelRect(Vector2 center,int slot)=>new Rect(center+WheelOffsets[slot]-new Vector2(56,15),new Vector2(112,30));
         private bool WheelEnabled(int slot)=>!string.IsNullOrEmpty(CurrentWheelLabels[slot]) &&
-            (contextPage!=1 || slot==4 || (Active.faces.Count>0 && (slot<2 || selected.Count>0)));
+            (contextPage!=1 || slot==4 || slot==6 || (Active.faces.Count>0 && (slot<2 || selected.Count>0)));
         private void PositionWheel(SceneView canvas,Vector2 mouse)
         {
             var point=new Vector2(Mathf.Clamp(mouse.x,Mathf.Min(218,canvas.position.width/2),Mathf.Max(canvas.position.width-218,canvas.position.width/2)),
@@ -171,7 +171,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if(item==7)StartTube();
             }
             else if(page==1)
-            {if(item==0)Project();else if(item==1)Relax();else if(item==2)BridgeLoops();else if(item==3)DeleteComponents();else if(item==5)BridgePants();}
+            {if(item==0)Project();else if(item==1)Relax();else if(item==2)BridgeLoops();else if(item==3)DeleteComponents();else if(item==5)BridgePants();else if(item==6)StartTargetWeld();}
             else
             {
                 if(item==0){referenceWire=!referenceWire;EditorPrefs.SetBool("MashBox.Retopology.ReferenceWire",referenceWire);}
@@ -218,6 +218,7 @@ namespace MashBoxSDK.AnimationStudio
                 DrawSelectionMode();
                 if(IconButton(12,xraySelection,"X-ray Selection: select through the mesh. Off selects visible components only; independent of X-ray display."))ToggleXraySelection();
                 GUILayout.Space(6);
+                if(IconButton(15,activeTool==RetopoTool.TargetWeld,"Target Weld: click the source vertex, then its destination. Escape cancels."))StartTargetWeld();
                 ToolButton(RetopoTool.Quad,"Draw quad: click four corners. For a triangle, place three points then click the first point or press Enter. Snapped vertices are welded.");
                 ToolButton(RetopoTool.Patch,"Draw patch: four corners generate a projected quad grid.");
                 ToolButton(RetopoTool.Strip,"Quad Strip: drag connected quads on the reference. Resume near the yellow end; Escape starts a new strip. [ / ] adjusts width.");
@@ -230,7 +231,7 @@ namespace MashBoxSDK.AnimationStudio
                 {referenceWire=!referenceWire;EditorPrefs.SetBool("MashBox.Retopology.ReferenceWire",referenceWire);repaint();}
                 if(IconButton(6,workingXray,"Shallow X-ray: reveal nearby patches through the reference. Adjust X-ray depth in Topology Tools to hide distant faces."))ToggleWorkingXray();
                 if(IconButton(4,Document.symmetry,"Mirror drawing about local X=0"))Document.symmetry=!Document.symmetry;
-                GUILayout.Space(6);GUILayout.Label(activeTool==RetopoTool.Select?"":activeTool==RetopoTool.Quad?"Draw Quad":activeTool==RetopoTool.Strip?"Quad Strip":activeTool==RetopoTool.Tube?"Tube":activeTool==RetopoTool.Resolution?"Resolution":activeTool==RetopoTool.RelaxBrush?"Relax":continuousPatch?"Patch +":"Quad Patch",StudioTheme.Styles.miniLabel,GUILayout.Height(24));
+                GUILayout.Space(6);GUILayout.Label(activeTool==RetopoTool.Select?"":activeTool==RetopoTool.TargetWeld?(weldSource<0?"Weld: source":"Weld: target"):activeTool==RetopoTool.Quad?"Draw Quad":activeTool==RetopoTool.Strip?"Quad Strip":activeTool==RetopoTool.Tube?"Tube":activeTool==RetopoTool.Resolution?"Resolution":activeTool==RetopoTool.RelaxBrush?"Relax":continuousPatch?"Patch +":"Quad Patch",StudioTheme.Styles.miniLabel,GUILayout.Height(24));
             }
         }
         private void ToolButton(RetopoTool value,string tooltip)
@@ -250,6 +251,8 @@ namespace MashBoxSDK.AnimationStudio
                 Vector3 P(float x,float y)=>new Vector3(rect.center.x+x,rect.center.y+y,0);
                 if(icon==0)
                 {Handles.DrawAAPolyLine(1.6f,P(-7,-8),P(-7,7),P(-3,3),P(1,9),P(4,7),P(0,1),P(6,1),P(-7,-8));}
+                else if(icon==15)
+                {Handles.DrawSolidDisc(P(-7,0),Vector3.forward,2);Handles.DrawWireDisc(P(7,0),Vector3.forward,3);Handles.DrawAAPolyLine(1.5f,P(-3,0),P(3,0),P(0,-3));Handles.DrawAAPolyLine(1.5f,P(3,0),P(0,3));}
                 else if(icon==14)
                 {
                     Handles.DrawAAPolyLine(1.5f,P(-9,6),P(-3,3),P(1,-3),P(6,-8));
@@ -397,6 +400,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 finally {Handles.color=old;Handles.zTest=oldDepth;}
             }
+            if(HandleTargetWeld(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleStrip(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleRelaxBrush(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleResolution(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;

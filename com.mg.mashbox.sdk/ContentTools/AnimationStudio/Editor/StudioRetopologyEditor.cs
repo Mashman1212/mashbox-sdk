@@ -165,6 +165,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int index=i;var p=Document.parts[i];var row=GUILayoutUtility.GetRect(50,24,GUILayout.ExpandWidth(true));
                 EditorGUI.DrawRect(row,Document.selected==i?new Color(.18f,.31f,.29f):new Color(.12f,.13f,.14f));
+                HandleMeshRowContext(row,p);
                 if(GUI.Button(row,new GUIContent("  "+p.name,"Select this mesh"),new GUIStyle(StudioTheme.Styles.label){clipping=TextClipping.Clip}))
                 {Document.selected=i;ClearComponents();ClearPatchCorners();repaint();}
                 using(new GUILayout.HorizontalScope())
@@ -193,6 +194,29 @@ namespace MashBoxSDK.AnimationStudio
             }
             EditorGUILayout.EndScrollView();
         }
+        private void HandleMeshRowContext(Rect row,Part part)
+        {
+            var evt=Event.current;
+            if(!row.Contains(evt.mousePosition))return;
+            if(evt.type==EventType.ContextClick||
+                (evt.button==1&&(evt.type==EventType.MouseDown||evt.type==EventType.MouseUp)))
+            {
+                if(evt.type==EventType.MouseDown)ShowWorkingMeshMenu(part,new Rect(evt.mousePosition,Vector2.zero));
+                evt.Use();
+            }
+        }
+        private void RemoveMesh()
+        {
+            if(Active==null)return;
+            EndStripStroke();EndBrushAdjustment();EndRelaxBrush();CancelResolution();CancelVertexSelection();
+            CancelContextWheel();ClearComponents();ClearPatchCorners();dragUndo=-1;
+            Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,"Remove retopology mesh");
+            Document.parts.RemoveAt(Document.selected);
+            Document.selected=Mathf.Min(Document.selected,Document.parts.Count-1);
+            Document.dirty=true;EditorUtility.SetDirty(Document);
+            // Keep reference Mesh objects alive for Undo; Rebuild disposes the viewport copies.
+            Rebuild();status="Mesh removed from workspace. Undo restores it. Source asset unchanged.";
+        }
         private void ShowWorkingMeshMenu(Part part,Rect anchor)
         {
             void OnPart(Action action)
@@ -215,16 +239,17 @@ namespace MashBoxSDK.AnimationStudio
             Item("Export OBJ (quads)...",()=>Export(true),part.faces.Count>0);
             Item("Continue in Modeling",()=>Send(EditInModeling),part.faces.Count>0&&EditInModeling!=null);
             menu.AddSeparator("");
-            Item("Delete Working Mesh",DeleteWorkingMesh,hasMesh);
+            Item("Clear Working Mesh",ClearWorkingMesh,hasMesh);
+            Item("Remove Mesh",RemoveMesh);
             menu.DropDown(anchor);
         }
-        private void DeleteWorkingMesh()
+        private void ClearWorkingMesh()
         {
             CancelResolution();CancelVertexSelection();
-            Change("Delete working mesh",()=>
+            Change("Clear working mesh",()=>
             {
                 Active.vertices.Clear();Active.faces.Clear();Active.uv.Clear();Active.needsUV=false;
-                status="Working mesh deleted. Reference retained. Undo restores the working mesh.";
+                status="Working mesh cleared. Reference retained. Undo restores the working mesh.";
             });
         }
         internal void DrawTools()

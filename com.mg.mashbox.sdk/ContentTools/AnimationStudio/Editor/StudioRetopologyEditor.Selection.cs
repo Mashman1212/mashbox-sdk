@@ -64,7 +64,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawSelectionMode()
         {
             if(IconButton(8,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Vertices,"Select vertices. Click or drag a box; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Vertices);
-            if(IconButton(9,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Edges,"Select edges. Double-click selects the connected hull; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Edges);
+            if(IconButton(9,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Edges,"Select edges. Double-click selects an edge loop or border; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Edges);
             if(IconButton(10,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Faces,"Select faces. Double-click selects the connected hull; Shift adds, Ctrl removes. Delete removes selected faces."))SetSelectionMode(SelectionMode.Faces);
             GUILayout.Space(6);
         }
@@ -164,11 +164,7 @@ namespace MashBoxSDK.AnimationStudio
                         hits.Add(edge);
                         if(selectionClicks>=2)
                         {
-                            foreach(int face in ConnectedHullFaces(edges[edge][0]))
-                            {
-                                var ids=Active.faces[face].vertices;
-                                for(int i=0;i<ids.Length;i++)hits.Add(StudioRetopologyOperations.Edge(ids[i],ids[(i+1)%ids.Length]));
-                            }
+                            hits.UnionWith(ConnectedEdgeLoop(Active,edge));
                         }
                     }
                 }
@@ -177,6 +173,56 @@ namespace MashBoxSDK.AnimationStudio
                 if(selectionSubtract)selectedEdges.ExceptWith(hits);else selectedEdges.UnionWith(hits);
             }
             SyncComponentVertices();
+        }
+        private static HashSet<(int,int)> ConnectedEdgeLoop(StudioRetopologyDocument.Part part,(int,int) seed)
+        {
+            var result=new HashSet<(int,int)>();
+            if(part==null)return result;
+            seed=StudioRetopologyOperations.Edge(seed.Item1,seed.Item2);
+            var edges=StudioRetopologyOperations.Edges(part);
+            if(!edges.TryGetValue(seed,out var seedFaces))return result;
+            result.Add(seed);
+            if(seedFaces.Count<1||seedFaces.Count>2)return result;
+            bool border=seedFaces.Count==1;
+            var incident=new Dictionary<int,List<(int,int)>>();
+            foreach(var edge in edges.Keys)
+                foreach(int vertex in new[]{edge.Item1,edge.Item2})
+                {
+                    if(!incident.TryGetValue(vertex,out var list))incident[vertex]=list=new List<(int,int)>();
+                    list.Add(edge);
+                }
+            void Walk(int vertex)
+            {
+                var previous=seed;
+                while(incident.TryGetValue(vertex,out var around))
+                {
+                    if(around.Any(e=>edges[e].Count>2))return;
+                    (int,int) next;
+                    if(border)
+                    {
+                        var boundary=around.Where(e=>edges[e].Count==1).ToArray();
+                        if(boundary.Length!=2)return; // Stop at branching borders.
+                        next=boundary[0]==previous?boundary[1]:boundary[0];
+                    }
+                    else
+                    {
+                        // At a regular quad vertex, the loop continues along the
+                        // edge sharing neither incident face with the incoming edge.
+                        // Crossing to the opposite edge of a face would select a ring.
+                        if(around.Count!=4||around.Any(e=>edges[e].Count!=2))return;
+                        var faces=around.SelectMany(e=>edges[e]).Distinct().ToArray();
+                        if(faces.Length!=4||faces.Any(f=>part.faces[f].vertices.Length!=4))return;
+                        var candidates=around.Where(e=>e!=previous&&!edges[e].Intersect(edges[previous]).Any()).ToArray();
+                        if(candidates.Length!=1)return;
+                        next=candidates[0];
+                    }
+                    if(!result.Add(next))return;
+                    vertex=next.Item1==vertex?next.Item2:next.Item1;
+                    previous=next;
+                }
+            }
+            Walk(seed.Item1);Walk(seed.Item2);
+            return result;
         }
         private (int,int) PickEdge(Vector2 mouse,IEnumerable<(int,int)> edges)
         {

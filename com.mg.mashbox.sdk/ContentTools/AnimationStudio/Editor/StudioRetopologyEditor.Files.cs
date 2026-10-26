@@ -35,7 +35,9 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("Undo\tCtrl+Z"),false,Undo.PerformUndo);menu.AddItem(new GUIContent("Redo\tCtrl+Y"),false,Undo.PerformRedo);
                     menu.AddSeparator("");Command(menu,"Delete Selected Components",DeleteComponents);
                     Command(menu,"Reverse Winding",()=>Change("Reverse winding",()=>{foreach(var f in Active.faces)Array.Reverse(f.vertices);}));
-                    Command(menu,"Delete Working Mesh",DeleteWorkingMesh);
+                    Command(menu,"Clear Working Mesh",ClearWorkingMesh);
+                    if(Active!=null)menu.AddItem(new GUIContent("Remove Mesh"),false,()=>Run(RemoveMesh));
+                    else menu.AddDisabledItem(new GUIContent("Remove Mesh"));
                     Command(menu,"Continue in Modeling",()=>Send(EditInModeling));
                     Command(menu,"Export FBX and Continue in Skinning...",()=>Export(false,true));
                 });
@@ -48,6 +50,7 @@ namespace MashBoxSDK.AnimationStudio
                     Command(menu,"Reduce Working Mesh (LOD)",()=>Generate(false));Command(menu,"Pair Triangles into Quads",()=>Change("Pair quads",()=>StudioRetopologyOperations.PairQuads(Active)));
                     if(Active!=null)menu.AddItem(new GUIContent("Relax Brush"),activeTool==RetopoTool.RelaxBrush,StartRelaxBrush);else menu.AddDisabledItem(new GUIContent("Relax Brush"));
                     Command(menu,"Project to Reference",Project);Command(menu,"Relax on Surface",Relax);
+                    Command(menu,"Target Weld",StartTargetWeld);
                     Command(menu,"Bridge Selected Borders",BridgeLoops);
                     Command(menu,"Bridge Pants / Crotch",BridgePants);
                     Command(menu,"Subdivide and Project",()=>Change("Subdivide topology",()=>StudioRetopologyOperations.Subdivide(Active,Document.project?Surface:null,Document.offset)));
