@@ -255,7 +255,7 @@ namespace MashBoxSDK.AnimationStudio
                     newImporter.preserveHierarchy = true;
                     newImporter.SaveAndReimport();
                 }
-                PreserveExportedMeshData(importPath);
+                PreserveExportedMeshData(importPath,part.preserveStitchedBindPose);
                 var savedModel = AssetDatabase.LoadAssetAtPath<GameObject>(importPath);
                 var savedIds = new HashSet<string>(AssetDatabase.LoadAllAssetsAtPath(importPath).Where(a => a).Select(AssetIdentity));
                 var missingIds = sourceIds.Where(identity => !savedIds.Contains(identity)).ToArray();
@@ -275,7 +275,8 @@ namespace MashBoxSDK.AnimationStudio
                     if (check.bounds.size != edited.bounds.size && (check.bounds.size-edited.bounds.size).magnitude > .001f)
                         throw new InvalidOperationException("The FBX round trip changed the clothing scale.");
                     if (!new StudioSkinWeights(check).HasWeights) throw new InvalidOperationException("The FBX round trip lost skin weights.");
-                    ValidateExportRestPose(check,savedRenderer);
+                    if(part.preserveStitchedBindPose) ValidateStitchedBindMatrices(edited,target.bones,check,savedRenderer.bones);
+                    else ValidateExportRestPose(check,savedRenderer);
                     try { ValidateExportTriangles(edited,target.bones,check,savedRenderer.bones); }
                     catch
                     {
@@ -339,10 +340,30 @@ namespace MashBoxSDK.AnimationStudio
                     writer.WriteLine();
                 }
         }
-        private static void PreserveExportedMeshData(string path)
+        private static void ValidateStitchedBindMatrices(Mesh expected,Transform[] expectedBones,Mesh actual,Transform[] actualBones)
+        {
+            var binds=expected.bindposes;var imported=actual.bindposes;
+            for(int i=0;i<actualBones.Length;i++)
+            {
+                int index=Array.FindIndex(expectedBones,b=>b && b.name==actualBones[i].name);
+                if(index<0 || i>=imported.Length || index>=binds.Length)
+                    throw new InvalidOperationException("The FBX changed a stitched skin bone.");
+                for(int k=0;k<16;k++)if(Mathf.Abs(imported[i][k]-binds[index][k])>.0001f)
+                    throw new InvalidOperationException("The FBX changed the stitched body's bind matrices.");
+            }
+        }
+        private static void PreserveExportedMeshData(string path,bool stitched=false)
         {
             var importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (!importer) throw new InvalidOperationException("The saved FBX has no model importer.");
+            GameObject displayBody=null;
+            if(stitched)
+            {
+                var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+                displayBody=defaults?defaults.body:null;
+                if(!displayBody)throw new InvalidOperationException("The default stitch body is unavailable. Restore it before export.");
+            }
+            bool poseChanged=StudioStitchedEditorPose.Configure(importer,displayBody);
             const string skeletonPath = "Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx";
             var avatar = AssetDatabase.LoadAllAssetsAtPath(skeletonPath).OfType<Avatar>()
                 .FirstOrDefault(a => a.name == "SkeletonAvatar");
@@ -350,7 +371,7 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("The SDK SkeletonAvatar is unavailable or invalid. Reimport the SDK Skeleton before saving clothing.");
             // These are authored data now. Recalculating normals or limiting the
             // influences would silently discard sculpt/stitch/weight edits.
-            bool changed = importer.importAnimation || importer.animationType != ModelImporterAnimationType.Human ||
+            bool changed = poseChanged || importer.importAnimation || importer.animationType != ModelImporterAnimationType.Human ||
                 importer.avatarSetup != ModelImporterAvatarSetup.CopyFromOther || importer.sourceAvatar != avatar ||
                 importer.importNormals != ModelImporterNormals.Import ||
                 importer.importBlendShapeNormals != ModelImporterNormals.Import ||
