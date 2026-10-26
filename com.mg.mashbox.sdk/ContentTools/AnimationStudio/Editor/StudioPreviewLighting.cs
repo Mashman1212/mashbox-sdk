@@ -22,6 +22,10 @@ namespace MashBoxSDK.AnimationStudio
         private readonly Material groundMaterial;
         private readonly ScriptableObject profile;
         private readonly Object exposure;
+        private readonly Object indirectLighting;
+        private Cubemap materialEnvironment;
+        private ReflectionProbe materialProbe;
+        private bool materialPreview;
         private readonly List<Object> volumeComponents = new List<Object>();
         private readonly bool hdrp;
         private bool studioLights;
@@ -65,6 +69,7 @@ namespace MashBoxSDK.AnimationStudio
                     Parameter(AddVolumeComponent(Type.GetType("UnityEngine.Rendering.HighDefinition.VisualEnvironment, Unity.RenderPipelines.HighDefinition.Runtime")),"skyType",0);
                     Parameter(AddVolumeComponent(Type.GetType("UnityEngine.Rendering.HighDefinition.Fog, Unity.RenderPipelines.HighDefinition.Runtime")),"enabled",false);
                     var indirect = AddVolumeComponent(Type.GetType("UnityEngine.Rendering.HighDefinition.IndirectLightingController, Unity.RenderPipelines.HighDefinition.Runtime"));
+                    indirectLighting=indirect;
                     Parameter(indirect,"indirectDiffuseLightingMultiplier",0f);
                     Parameter(indirect,"reflectionLightingMultiplier",0f);
                     Set(volume,"isGlobal",true); Set(volume,"priority",10000f); Set(volume,"sharedProfile",profile);
@@ -104,6 +109,69 @@ namespace MashBoxSDK.AnimationStudio
             if (groundMaterial.HasProperty("_Color")) groundMaterial.SetColor("_Color",s.groundColor);
             if (groundMaterial.HasProperty("_Smoothness")) groundMaterial.SetFloat("_Smoothness",0);
             if (groundMaterial.HasProperty("_Glossiness")) groundMaterial.SetFloat("_Glossiness",0);
+        }
+        internal void ApplyMaterialPreview()
+        {
+            Apply(new StudioLightingSettings {
+                studioLights=true, keyIntensity=1.3f, fillIntensity=.6f,
+                keyColor=Color.white, fillColor=Color.white,
+                elevation=35, azimuth=150, shadows=false, ground=false
+            });
+            materialPreview=true;
+            configuredCameras.Clear();
+            // Both lights illuminate the front/side of the object. A back-facing
+            // fill left ordinary cloth unnecessarily dark in the material view.
+            // The SDK character faces +Z. Directional lights point along their
+            // rays, so their forward direction must point back toward -Z.
+            Fill.transform.rotation=Quaternion.Euler(15,240,0);
+            // Native HDRP materials need exposure appropriate to this 130/60-lux
+            // rig. EV 0 was intended for self-lit preview shaders and clips lit
+            // albedo to white. Keep exposure fixed, independent of game volumes.
+            if(exposure) Parameter(exposure,"fixedExposure",6f);
+            if(indirectLighting) Parameter(indirectLighting,"reflectionLightingMultiplier",1f);
+            EnsureMaterialEnvironment();
+        }
+        private void EnsureMaterialEnvironment()
+        {
+            if(materialEnvironment)return;
+            // A neutral, constant environment gives metallic/reflective areas a
+            // stable studio response instead of reflecting pure black. It lives
+            // only in this preview scene; project sky/probe assets are untouched.
+            materialEnvironment=new Cubemap(16,TextureFormat.RGBAHalf,true) {
+                name="Studio neutral material environment",hideFlags=HideFlags.HideAndDontSave
+            };
+            float value=hdrp?16f:.35f;
+            var pixels=new Color[16*16];
+            for(int i=0;i<pixels.Length;i++)pixels[i]=new Color(value,value,value,1);
+            for(int face=0;face<6;face++)materialEnvironment.SetPixels(pixels,(CubemapFace)face);
+            materialEnvironment.Apply(true,false);
+            var go=new GameObject("Studio material reflection") {hideFlags=HideFlags.HideAndDontSave};
+            SceneManager.MoveGameObjectToScene(go,root.scene);go.transform.SetParent(root.transform,false);
+            var probe=go.AddComponent<ReflectionProbe>();
+            materialProbe=probe;
+            probe.mode=ReflectionProbeMode.Custom;probe.customBakedTexture=materialEnvironment;
+            probe.size=Vector3.one*1000;probe.blendDistance=0;probe.intensity=1;probe.boxProjection=false;
+            var type=hdrp?Type.GetType("UnityEngine.Rendering.HighDefinition.HDAdditionalReflectionData, Unity.RenderPipelines.HighDefinition.Runtime"):null;
+            if(type!=null)
+            {
+                var data=go.GetComponent(type)??go.AddComponent(type);
+                var mode=Enum.Parse(Get(data,"mode").GetType(),"Custom");
+                Set(data,"mode",mode);
+                type.GetMethod("SetTexture",Members).Invoke(data,new object[]{mode,materialEnvironment});
+                Set(Get(data,"influenceVolume"),"boxSize",Vector3.one*1000);
+                type.GetMethod("PrepareCulling",Members)?.Invoke(data,null);
+            }
+        }
+        internal void SetMaterialPreviewExposure(float stops)
+        {
+            stops=Mathf.Clamp(stops,-4,4);
+            if(hdrp && exposure) Parameter(exposure,"fixedExposure",6f-stops);
+            else
+            {
+                float gain=Mathf.Pow(2,stops);
+                Key.intensity=1.3f*gain;Fill.intensity=.6f*gain;
+                if(materialProbe)materialProbe.intensity=gain;
+            }
         }
         internal void ConfigureCamera(SceneView view)
         {
@@ -167,6 +235,15 @@ namespace MashBoxSDK.AnimationStudio
             Override("Postprocess",postprocessing);
             Override("Antialiasing",!StudioSettings.Current.disableViewportAntialiasing);
             Override("ExposureControl",studioLights);
+            if(materialPreview)
+            {
+                // Material inspection must not inherit gameplay occlusion,
+                // shadow histories, probes or custom passes from project quality.
+                foreach(string effect in new[]{"ShadowMaps","ContactShadows","ScreenSpaceShadows","SSAO","SSGI","SSR","TransparentSSR","PlanarProbe","RayTracing","AdaptiveProbeVolume","VolumetricClouds","AtmosphericScattering","Volumetrics","CustomPass","MotionVectors","ObjectMotionVectors","Decals","LightLayers"})
+                    Override(effect,false);
+                Override("ReflectionProbe",true);
+                Override("DirectSpecularLighting",true);
+            }
             foreach (string effect in new[] {"MotionBlur","DepthOfField","Bloom","PaniniProjection","LensFlareScreenSpace","LensFlareDataDriven","LensDistortion","ChromaticAberration","Vignette","ColorGrading","Tonemapping","FilmGrain","Dithering","CustomPostProcess"})
                 Override(effect,false);
             // Neutral modelling materials shade themselves. They do not sample HDRP
@@ -240,6 +317,7 @@ namespace MashBoxSDK.AnimationStudio
             RestoreCameras();
             if (root) Object.DestroyImmediate(root);
             if (groundMaterial) Object.DestroyImmediate(groundMaterial);
+            if (materialEnvironment) Object.DestroyImmediate(materialEnvironment);
             foreach (var component in volumeComponents) if (component) Object.DestroyImmediate(component);
             if (profile) Object.DestroyImmediate(profile);
         }

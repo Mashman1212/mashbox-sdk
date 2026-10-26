@@ -6,6 +6,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioSkinningEditor
     {
         private bool sculptMode, brushMenuOpen, adjustingBrush, suppressBrushContext;
+        private float materialExposure;
         private int interactionControl, brushHover = -1;
         private bool symmetryWheel;
         private Vector2 parentWheelOrigin;
@@ -25,13 +26,16 @@ namespace MashBoxSDK.AnimationStudio
             float left = view is MashBoxStudioViewport skinView ? skinView.SkinToolbarLeft : canvas.x;
             return new Rect(left + 44, canvas.y, 108, 32);
         }
-        private static Rect DisplayToolbarRect(SceneView view)
+        private bool ShowMaterialExposure => showTextured && !sameShading;
+        private Rect DisplayToolbarRect(SceneView view)
         {
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-88);
             // The canvas extends behind the posing bar. Anchor above the bar itself
             // so all four 32px buttons remain visible and their hit areas match.
             float bottom = view is MashBoxStudioViewport skinView ? skinView.SkinPreviewBarTop : canvas.yMax;
-            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, bottom - 8 - 32), 146, 32);
+            float width=ShowMaterialExposure ? Mathf.Min(410,Mathf.Max(146,canvas.width-16)) : 146;
+            float height=ShowMaterialExposure && width<350?66:32;
+            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, bottom - 8 - height), width, height);
         }
         private bool RequirePaintableSkin()
         {
@@ -237,6 +241,7 @@ namespace MashBoxSDK.AnimationStudio
                 DrawTexturedButton(new Rect(display.x + 38, display.y, 32, 32));
                 DrawWireframeButton(new Rect(display.x + 76, display.y, 32, 32));
                 DrawSameShadingButton(new Rect(display.x + 114, display.y, 32, 32));
+                if(ShowMaterialExposure) DrawMaterialExposure(DisplayToolbarRect(view));
                 if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object)
                 {
                     var labelRect = new Rect(rect.xMax + 12, rect.y + 6, 160, 20);
@@ -279,6 +284,28 @@ namespace MashBoxSDK.AnimationStudio
                 if(!brushMenuOpen && !adjustingBrush)DrawSkinToolbarTooltip(view);
             }
             Handles.EndGUI();
+        }
+        private void DrawMaterialExposure(Rect toolbar)
+        {
+            var area=toolbar.height>32 ? new Rect(toolbar.x,toolbar.y+34,toolbar.width,30)
+                : new Rect(toolbar.x+154,toolbar.y,toolbar.width-154,32);
+            const string tooltip="Preview exposure in stops. 0 is neutral; +1 doubles brightness. Material assets are unchanged.";
+            if(area.Contains(Event.current.mousePosition)){skinToolbarTooltip=tooltip;skinToolbarTooltipAnchor=area;}
+            EditorGUI.DrawRect(area,new Color(.035f,.04f,.04f));
+            float oldLabel=EditorGUIUtility.labelWidth,oldField=EditorGUIUtility.fieldWidth;
+            float next;
+            try
+            {
+                EditorGUIUtility.labelWidth=60;EditorGUIUtility.fieldWidth=36;
+                next=EditorGUI.Slider(new Rect(area.x+5,area.y+6,area.width-36,20),new GUIContent("Exposure",tooltip),materialExposure,-4,4);
+            }
+            finally {EditorGUIUtility.labelWidth=oldLabel;EditorGUIUtility.fieldWidth=oldField;}
+            if(GUI.Button(new Rect(area.xMax-26,area.y+5,24,22),new GUIContent("↺","Reset preview exposure to 0")))next=0;
+            if(!Mathf.Approximately(next,materialExposure))
+            {
+                materialExposure=next;materialLighting?.SetMaterialPreviewExposure(next);
+                StudioPreferenceStore.SetFloat("Skinning.MaterialExposure",next);repaint();
+            }
         }
         private static void DrawBrushDragLine(Vector2 anchor, Vector2 pointer)
         {

@@ -917,13 +917,15 @@ namespace MashBoxSDK.AnimationStudio
 
         private void BeforeSceneGUI(SceneView view)
         {
+            if(view==viewport && !skinningMode) skinningEditor?.SuspendLighting();
             if (view == viewport && viewport.HandleWindowShortcut()) return;
             if (view == viewport && retopologyMode)
-            { retopologyEditor?.BeforeRetopologySceneGUI(view); if(view.camera) view.camera.cameraType=CameraType.Preview; StudioPreviewLighting.ConfigureStudioBackground(view); return; }
+            { retopologyEditor?.BeforeRetopologySceneGUI(view); if(view.camera) view.camera.cameraType=CameraType.Preview; retopologyEditor?.ConfigureLightingCamera(view); StudioPreviewLighting.ConfigureStudioBackground(view); return; }
             if (view == viewport && skinningMode)
             {
                 skinningEditor?.BeforeSkinSceneGUI(view);
                 if (view.camera) view.camera.cameraType = CameraType.Preview;
+                skinningEditor?.ConfigureLightingCamera(view);
                 StudioPreviewLighting.ConfigureStudioBackground(view);
                 return;
             }

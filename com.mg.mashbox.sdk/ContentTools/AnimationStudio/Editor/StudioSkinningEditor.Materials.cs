@@ -49,7 +49,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawTexturedButton(Rect rect)
         {
-            if(DrawSkinModeButton(rect,false,"Textured preview — use the selected mesh's material slots"))
+            if(DrawSkinModeButton(rect,false,"Textured preview — show assigned materials on all user meshes"))
             {showTextured=!showTextured;if(showTextured)showUVChecker=false;UpdateDisplay();}
             if(Event.current.type!=EventType.Repaint)return;
             StudioMeshMaterialPreview.DrawTextureIcon(rect,showTextured?new Color(.5f,1,.87f):new Color(.75f,.81f,.81f));

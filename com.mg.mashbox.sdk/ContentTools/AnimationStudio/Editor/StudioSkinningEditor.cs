@@ -25,6 +25,9 @@ namespace MashBoxSDK.AnimationStudio
         private readonly List<GameObject> objects = new List<GameObject>();
         private readonly List<Mesh> displayMeshes = new List<Mesh>();
         private Material shaded, heat, sculptContext, referenceShaded;
+        private StudioPreviewLighting materialLighting;
+        internal void ConfigureLightingCamera(SceneView view) => materialLighting?.ConfigureCamera(view);
+        internal void SuspendLighting() => materialLighting?.RestoreCameras();
         private static readonly Color ReferencePreviewTint = new Color(.42f,.44f,.46f,1);
         private MeshCollider picker;
         private Mesh pickMesh;
@@ -104,6 +107,10 @@ namespace MashBoxSDK.AnimationStudio
                 sculptContext = new Material(shaded) { name = "Sculpt context preview", hideFlags = HideFlags.HideAndDontSave };
                 sculptContext.SetColor("_Color", new Color(.48f,.31f,.53f));
                 heat = new Material(Shader.Find("Hidden/MashBox/SkinWeightPreview")) { hideFlags = HideFlags.HideAndDontSave };
+                materialLighting = new StudioPreviewLighting(Scene);
+                materialLighting.ApplyMaterialPreview();
+                materialExposure=Mathf.Clamp(StudioPreferenceStore.GetFloat("Skinning.MaterialExposure",0),-4,4);
+                materialLighting.SetMaterialPreviewExposure(materialExposure);
                 var pickObject = new GameObject("Brush surface") { hideFlags = HideFlags.HideAndDontSave };
                 SceneManager.MoveGameObjectToScene(pickObject, Scene); picker = pickObject.AddComponent<MeshCollider>();
                 pickMesh = new Mesh { name = "Skin brush surface", hideFlags = HideFlags.HideAndDontSave };
@@ -487,7 +494,8 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 bool checker = hoveredInfluence < 0 && showUVChecker && i == Document.selected && !Document.parts[i].referenceOnly;
                 if(checker) EnsureUVChecker();
-                bool textured = hoveredInfluence < 0 && showTextured && i == Document.selected && !Document.parts[i].referenceOnly;
+                bool textured = showTextured && !Document.parts[i].referenceOnly && !checker &&
+                    (i != Document.selected || hoveredInfluence < 0);
                 bool show = !checker && !textured && i == Document.selected && CanPaintPart(Document.parts[i]) && (heatmap || hoveredInfluence >= 0) && Document.parts[i].bound;
                 // Body and bust are one neutral reference surface in every mode.
                 // Only editable clothing participates in selection/context colouring.
@@ -775,6 +783,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            materialLighting?.Dispose(); materialLighting=null;
             DisposeUVChecker();materialPreview.Dispose();
             DisposeWireframe();
             FinishObjectGesture();

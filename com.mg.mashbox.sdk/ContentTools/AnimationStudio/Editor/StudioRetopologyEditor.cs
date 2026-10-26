@@ -49,10 +49,11 @@ namespace MashBoxSDK.AnimationStudio
             referenceMaterial=new Material(Shader.Find("MashBox/Studio/Preview")) { hideFlags=HideFlags.HideAndDontSave };
             referenceMaterial.SetColor("_Color",new Color(.36f,.39f,.43f));referenceMaterial.SetFloat("_Cull",0);
             outputMaterial=new Material(referenceMaterial);outputMaterial.SetColor("_Color",new Color(.56f,.74f,.70f));
-            lighting=new StudioPreviewLighting(Scene);lighting.Apply(new StudioLightingSettings());
+            lighting=new StudioPreviewLighting(Scene);lighting.ApplyMaterialPreview();
             Undo.undoRedoPerformed+=OnUndo; Rebuild();CaptureTutorialSettings();
         }
         internal void SuspendLighting()=>lighting?.RestoreCameras();
+        internal void ConfigureLightingCamera(SceneView view)=>lighting?.ConfigureCamera(view);
         private void OnUndo()
         {
             // Visibility is a viewport preference, independent of geometry Undo.
