@@ -102,7 +102,7 @@ namespace MashBoxSDK.AnimationStudio
                 
                     break; }
                 case "Modify": {
-                    menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));
+                    menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), !targetWeldActive && cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));
                     AddAction(menu, "Move", MarkingAction.Move, view); AddAction(menu, "Rotate", MarkingAction.Rotate, view); AddAction(menu, "Scale", MarkingAction.Scale, view);
                     menu.AddSeparator("");
                     AddAction(menu, pivot ? "Lock Pivot" : "Edit Pivot", MarkingAction.EditPivot, view);
@@ -112,7 +112,9 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Tools": {
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected, finishPreview: false);
                     AddCommand(menu, "Bevel…", CanBevelEdges, OpenBevelTool, finishPreview: false);
-                    AddCommand(menu, "Merge Vertices", CanMergeVertices, () => Run(MergeSelectedVertices));
+                    AddCommand(menu, "Merge to Center", CanMergeVertices, MergeToCenter, commandKey: "Merge Vertices");
+                    if (CanStartTargetWeld) menu.AddItem(new GUIContent("Target Weld"), targetWeldActive, () => Run(ActivateTargetWeld));
+                    else menu.AddDisabledItem(new GUIContent("Target Weld"));
                     menu.AddSeparator("");
                     if (CanCutMesh)
                     {
@@ -172,9 +174,9 @@ namespace MashBoxSDK.AnimationStudio
             if(!StudioMenu.MenuBarButton(view,rect,entry.content))return;
             CancelMarkingMenu();var menu=new StudioMenu(title);PopulateModelMenu(title,menu,view,loaded);menu.DropDown(rect,view,title);
         }
-        private void AddCommand(StudioMenu menu, string label, bool enabled, Action action, bool shortcutEligible = true, bool finishPreview = true)
+        private void AddCommand(StudioMenu menu, string label, bool enabled, Action action, bool shortcutEligible = true, bool finishPreview = true, string commandKey = null)
         {
-            if (enabled) menu.AddItem(new GUIContent(label), false, () => Run(action, finishPreview), shortcutEligible: shortcutEligible); else menu.AddDisabledItem(new GUIContent(label), shortcutEligible: shortcutEligible);
+            if (enabled) menu.AddItem(new GUIContent(label), false, () => Run(action, finishPreview), commandKey: commandKey, shortcutEligible: shortcutEligible); else menu.AddDisabledItem(new GUIContent(label), commandKey: commandKey, shortcutEligible: shortcutEligible);
         }
         private void AddAction(StudioMenu menu, string label, MarkingAction action, SceneView view)
         {

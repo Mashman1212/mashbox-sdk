@@ -119,7 +119,7 @@ namespace MashBoxSDK.AnimationStudio
                 rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x;
                 if (panelsModeling) rigControls.style.bottom = PanelMargin;
                 float leftRadius = panelsModeling && !HasLeftDockedToolbar ? PanelCornerRadius : 0;
-                rigControls.style.borderTopLeftRadius = leftRadius;
+                rigControls.style.borderTopLeftRadius = 0;
                 rigControls.style.borderBottomLeftRadius = bottomDocked ? 0 : leftRadius;
                 rigControls.style.overflow = panelsModeling ? Overflow.Hidden : Overflow.Visible;
             }

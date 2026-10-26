@@ -168,7 +168,7 @@ namespace MashBoxSDK.AnimationStudio
             float dpi = EditorGUIUtility.pixelsPerPoint;
             return new Vector2(screen.x / dpi, (view.camera.pixelHeight - screen.y) / dpi);
         }
-        internal bool TryPivotSnapVertex(Camera camera, Vector2 mouse, float pixelsPerPoint, out Vector3 target, System.Predicate<int> includeNode = null, System.Func<int, int, bool> includeVertex = null)
+        internal bool TryPivotSnapVertex(Camera camera, Vector2 mouse, float pixelsPerPoint, out Vector3 target, System.Predicate<int> includeNode = null, System.Func<int, int, bool> includeVertex = null, System.Action<int, int> snapped = null)
         {
             target = default;
             if (!camera || !Document) return false;
@@ -191,7 +191,7 @@ namespace MashBoxSDK.AnimationStudio
                     var gui = new Vector2(screen.x / pixelsPerPoint, (camera.pixelHeight - screen.y) / pixelsPerPoint);
                     float distance = (gui - mouse).sqrMagnitude;
                     if (distance > bestDistance || (Mathf.Abs(distance - bestDistance) < .01f && screen.z >= bestDepth)) continue;
-                    bestDistance = distance; bestDepth = screen.z; target = world; found = true;
+                    bestDistance = distance; bestDepth = screen.z; target = world; found = true; snapped?.Invoke(n, i);
                 }
             }
             return found;

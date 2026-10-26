@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal sealed class MergeResult { internal int Removed; internal int[] Selection; }
         internal MergeResult MergeVertices(StudioModelDocument.Node node, IEnumerable<int> selection, bool mergeAll,
-            float distance, Matrix4x4 world, Action beforeWrite = null)
+            float distance, Matrix4x4 world, Action beforeWrite = null, int target = -1)
         {
             if (float.IsNaN(distance) || float.IsInfinity(distance) || distance < 0)
                 throw new InvalidOperationException("Merge distance must be finite and nonnegative.");
@@ -24,6 +24,8 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (selected.Count < 2) return null;
             var points = selected.OrderBy(p => p.Value).Select(p => p.Key).ToArray();
+            if (target >= 0 && (!mergeAll || target >= Positions.Length || !selected.ContainsKey(Positions[target])))
+                throw new InvalidOperationException("The weld destination must belong to the selected vertices.");
             var parents = Enumerable.Range(0, points.Length).ToArray();
             int Root(int i) { while (parents[i] != i) { parents[i] = parents[parents[i]]; i = parents[i]; } return i; }
             void Join(int a, int b) { a = Root(a); b = Root(b); if (a != b) parents[Math.Max(a, b)] = Math.Min(a, b); }
@@ -58,10 +60,12 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             var centers = new Vector3[points.Length]; var counts = new int[points.Length];
-            for (int i = 0; i < points.Length; i++) { int root = Root(i); centers[root] += points[i]; counts[root]++; }
+            var sumX = new double[points.Length]; var sumY = new double[points.Length]; var sumZ = new double[points.Length];
+            for (int i = 0; i < points.Length; i++) { int root = Root(i); sumX[root] += points[i].x; sumY[root] += points[i].y; sumZ[root] += points[i].z; counts[root]++; }
             int removed = points.Length - counts.Count(c => c > 0);
             if (removed == 0) return null;
-            for (int i = 0; i < centers.Length; i++) if (counts[i] > 0) centers[i] /= counts[i];
+            for (int i = 0; i < centers.Length; i++) if (counts[i] > 0) centers[i] = new Vector3((float)(sumX[i] / counts[i]), (float)(sumY[i] / counts[i]), (float)(sumZ[i] / counts[i]));
+            if (target >= 0) centers[Root(selected[Positions[target]])] = Positions[target];
             var positions = (Vector3[])Positions.Clone(); var geometric = (int[])welded.Clone();
             var cluster = Enumerable.Repeat(-1, Positions.Length).ToArray();
             for (int i = 0; i < positions.Length; i++)
@@ -122,7 +126,16 @@ namespace MashBoxSDK.AnimationStudio
                 if (area.sqrMagnitude < 1e-20f) continue;
                 faces.Add(new Face { Submesh = face.Submesh, Vertices = polygon });
             }
-            var used = faces.SelectMany(f => f.Vertices).Distinct().OrderBy(i => i).ToArray();
+            var retained = new HashSet<int>(faces.SelectMany(f => f.Vertices));
+            // A fully collapsed mesh still leaves its welded point. Preserve
+            // unrelated loose vertices without inventing render triangles.
+            var originalFaceVertices = new HashSet<int>(Faces.SelectMany(f => f.Vertices));
+            for (int i = 0; i < positions.Length; i++) if (!originalFaceVertices.Contains(i) && cluster[i] < 0) retained.Add(i);
+            var retainedClusters = new HashSet<int>(retained.Where(i => cluster[i] >= 0).Select(i => cluster[i]));
+            for (int i = 0; i < positions.Length; i++)
+                if (cluster[i] >= 0 && retainedClusters.Add(cluster[i]))
+                    retained.Add(target >= 0 && cluster[target] == cluster[i] ? render[target] : render[i]);
+            var used = retained.OrderBy(i => i).ToArray();
             var remap = new int[Positions.Length]; for (int i = 0; i < used.Length; i++) remap[used[i]] = i;
             var compact = used.Select(i => positions[i]).ToList();
             foreach (var face in faces) face.Vertices = face.Vertices.Select(i => remap[i]).ToList();
@@ -140,7 +153,7 @@ namespace MashBoxSDK.AnimationStudio
             mesh.subMeshCount = triangles.Length;
             for (int i = 0; i < triangles.Length; i++) mesh.SetTriangles(triangles[i], i);
             mesh.RecalculateNormals(); if (uvs[0].Count > 0) mesh.RecalculateTangents(); mesh.RecalculateBounds(); mesh.UploadMeshData(false);
-            node.cutPolygons = faces.SelectMany(f => new[] { f.Submesh, f.Vertices.Count }.Concat(f.Vertices)).ToArray(); node.cutTriangles = mesh.triangles;
+            node.cutPolygons = faces.SelectMany(f => new[] { f.Submesh, f.Vertices.Count }.Concat(f.Vertices)).ToArray(); node.cutTriangles = mesh.triangles; node.normalGroups = null;
             return new MergeResult { Removed = removed, Selection = used.Select((v, i) => (v, i)).Where(p => selected.ContainsKey(Positions[p.v])).Select(p => p.i).ToArray() };
         }
     }

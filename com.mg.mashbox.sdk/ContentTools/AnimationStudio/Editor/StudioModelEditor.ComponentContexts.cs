@@ -8,6 +8,7 @@ namespace MashBoxSDK.AnimationStudio
         // buffers and face/edge indices rather than rebuilding them on every repaint.
         private sealed class ComponentDrawCache
         {
+            internal ComponentWireSubset selectedWireSubset=new ComponentWireSubset(),hoverWireSubset=new ComponentWireSubset();
             internal Mesh componentSource;
             internal Mesh componentLines;
             internal Mesh componentDots;
@@ -53,6 +54,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SaveComponentDrawCache(ComponentDrawCache cache)
         {
+            cache.selectedWireSubset=selectedWireSubset;cache.hoverWireSubset=hoverWireSubset;
             cache.componentSource = componentSource;
             cache.componentLines = componentLines;
             cache.componentDots = componentDots;
@@ -98,6 +100,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void LoadComponentDrawCache(ComponentDrawCache cache)
         {
+            selectedWireSubset=cache.selectedWireSubset;hoverWireSubset=cache.hoverWireSubset;
             componentSource = cache.componentSource;
             componentLines = cache.componentLines;
             componentDots = cache.componentDots;
@@ -143,6 +146,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static void ReleaseComponentDrawCache(ComponentDrawCache cache)
         {
+            cache.selectedWireSubset.Dispose();cache.hoverWireSubset.Dispose();
             cache.markerPositions?.Dispose();cache.markerSelection?.Dispose();
             foreach(var geometry in cache.componentGeometry)if(geometry.mesh)Object.DestroyImmediate(geometry.mesh);
         }

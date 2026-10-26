@@ -90,7 +90,9 @@ namespace MashBoxSDK.AnimationStudio
         {
             var state = StudioSelectionUndoState.Find(Document, false);
             if (!state) return;
-            ResetComponentTargets(); objects.Clear();
+            // History restores selected IDs/modes, not ownership of GPU buffers
+            // and topology caches. Mesh changes invalidate their affected caches.
+            ClearAllComponentSelections(); objects.Clear();
             foreach (int i in state.objects) if (i >= 0 && i < Transforms.Length) objects.Add(i);
             RestoreComponentTargets(state.targets);
             Active = state.active >= 0 && state.active < Transforms.Length ? state.active : -1;
@@ -207,6 +209,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (evt.type == EventType.KeyDown && evt.keyCode != heldKey) FinishSelectionPaint();
                 else if (evt.keyCode == heldKey) { evt.Use(); return true; }
             }
+            if (targetWeldActive) return false;
             bool erase = StudioShortcuts.Pressed(StudioShortcut.UnpaintSelection, evt);
             if (!erase && !StudioShortcuts.Pressed(StudioShortcut.PaintSelection, evt)) return false;
             if (!view || evt.alt || !pointerInCanvas) return false;

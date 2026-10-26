@@ -232,6 +232,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!navigating && evt.isMouse && evt.button == 2 && !evt.alt) return;
             bool canvas = ModelCanvasRect.Contains(evt.mousePosition) && !IsOverViewportControls(evt.mousePosition);
             if (!canvas) return;
+            if (Studio?.ToolbarModelEditor?.WantsLoopCountWheel(evt) == true) return;
             if (evt.type == EventType.ScrollWheel && GUIUtility.hotControl == 0)
             { ApplyStudioNavigation(StudioShortcut.Dolly,new Vector2(0,evt.delta.y*8)); evt.Use(); MarkDirty(DirtyState.Camera); return; }
             if (evt.type == EventType.MouseDown && GUIUtility.hotControl == 0)

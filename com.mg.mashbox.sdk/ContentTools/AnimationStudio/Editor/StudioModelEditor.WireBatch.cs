@@ -12,14 +12,14 @@ namespace MashBoxSDK.AnimationStudio
             WireColor=Shader.PropertyToID("_WireColor"), WireWidth=Shader.PropertyToID("_WireWidth"),
             WireCamera=Shader.PropertyToID("_WireCamera"), WireForward=Shader.PropertyToID("_WireForward"),
             WireDepth=Shader.PropertyToID("_ZTest"), WireXRay=Shader.PropertyToID("_WireXRay"),
-            WireAdjacent=Shader.PropertyToID("_WireAdjacent");
+            WireAdjacent=Shader.PropertyToID("_WireAdjacent"),WireSubset=Shader.PropertyToID("_WireSubset"),WireUseSubset=Shader.PropertyToID("_WireUseSubset");
         private static void ReleaseWireBatch(SelectionWireframe wire)
         {
             wire.positionBuffer?.Dispose(); wire.edgeBuffer?.Dispose();
             wire.adjacentBuffer?.Dispose();wire.adjacentBuffer=null;
             wire.positionBuffer=wire.edgeBuffer=null;
         }
-        private bool DrawWireBatch(SelectionWireframe wire,Matrix4x4 matrix,Color color,float width,Camera camera)
+        private bool DrawWireBatch(SelectionWireframe wire,Matrix4x4 matrix,Color color,float width,Camera camera,GraphicsBuffer subset=null,int subsetCount=0)
         {
             if(!camera || SystemInfo.graphicsShaderLevel<45 || wire.vertices.Count==0 || wire.indices.Length==0)return false;
             if(!wireBatchMaterial)
@@ -39,6 +39,8 @@ namespace MashBoxSDK.AnimationStudio
             if(wire.batchPositionsDirty){int start=wire.vertexUpdateStart;wire.positionBuffer.SetData(wire.vertices,start,start,wire.vertices.Count-start);wire.batchPositionsDirty=false;WireBatchUploads++;}
             wireBatchMaterial.SetBuffer(WirePositions,wire.positionBuffer);wireBatchMaterial.SetBuffer(WireEdges,wire.edgeBuffer);
             wireBatchMaterial.SetBuffer(WireAdjacent,wire.adjacentBuffer);
+            wireBatchMaterial.SetInt(WireUseSubset,subset!=null?1:0);
+            wireBatchMaterial.SetBuffer(WireSubset,subset??wire.edgeBuffer);
             wireBatchMaterial.SetMatrix(WireMatrix,matrix);
             wireBatchMaterial.SetVector(WireViewport,new Vector4(camera.pixelWidth,camera.pixelHeight,0,0));
             wireBatchMaterial.SetVector(WireCamera,new Vector4(outlineCameraPosition.x,outlineCameraPosition.y,outlineCameraPosition.z,outlineOrthographic?1:0));
@@ -50,7 +52,7 @@ namespace MashBoxSDK.AnimationStudio
             wireBatchMaterial.SetFloat(WireDepth,(float)(displayXray?CompareFunction.Always:CompareFunction.LessEqual));
             wireBatchMaterial.SetFloat(WireXRay,displayXray?1:0);
             if(!wireBatchMaterial.SetPass(0))return false;
-            Graphics.DrawProceduralNow(MeshTopology.Triangles,6,wire.indices.Length/2);
+            Graphics.DrawProceduralNow(MeshTopology.Triangles,6,subset!=null?subsetCount:wire.indices.Length/2);
             return true;
         }
     }

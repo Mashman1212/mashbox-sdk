@@ -15,7 +15,8 @@ Shader "Hidden/MashBox/ModelerWireBatch"
             #pragma fragment Frag
             #include "UnityCG.cginc"
             StructuredBuffer<float3> _WirePositions;
-            StructuredBuffer<uint> _WireEdges;
+            StructuredBuffer<uint> _WireEdges,_WireSubset;
+            int _WireUseSubset;
             StructuredBuffer<int> _WireAdjacent;
             float4x4 _WireObjectToWorld;
             float4 _WireViewport,_WireColor,_WireCamera,_WireForward;
@@ -50,9 +51,8 @@ Shader "Hidden/MashBox/ModelerWireBatch"
                 float sum=bary.x+bary.y+bary.z;
                 float scale=max(max(abs(bary.x),abs(bary.y)),abs(bary.z));
                 if(scale<1e-12 || abs(sum)<scale*1e-7)return fallback;
-                float sign=sum>0?1:-1;
-                if(min(min(bary.x,bary.y),bary.z)*sign < -scale*1e-6 && sign>0)return fallback;
-                if(max(max(bary.x,bary.y),bary.z)*sign < -scale*1e-6 && sign<0)return fallback;
+                bary*=sum>0?1:-1;sum=abs(sum);
+                if(min(min(bary.x,bary.y),bary.z) < -scale*1e-6)return fallback;
                 float w=dot(bary,float3(a.w,b.w,c.w));
                 if(w/sum<=1e-6)return fallback;
                 float depth=dot(bary,float3(a.z,b.z,c.z))/w;
@@ -64,6 +64,7 @@ Shader "Hidden/MashBox/ModelerWireBatch"
             }
             Output Vert(uint vertex:SV_VertexID,uint edge:SV_InstanceID)
             {
+                if(_WireUseSubset!=0)edge=_WireSubset[edge];
                 Output output=(Output)0;
                 float3 a=mul(_WireObjectToWorld,float4(_WirePositions[_WireEdges[edge*2]],1)).xyz;
                 float3 b=mul(_WireObjectToWorld,float4(_WirePositions[_WireEdges[edge*2+1]],1)).xyz;
@@ -115,6 +116,16 @@ Shader "Hidden/MashBox/ModelerWireBatch"
                 #else
                     output.depth=depth;
                 #endif
+                // One 24-bit depth unit covers raster-depth quantization even
+                // when orthographic far ranges make the view-ray bias sub-unit.
+                if(_WireXRay<.5)
+                {
+                    #if defined(UNITY_REVERSED_Z)
+                        output.depth=saturate(output.depth+1.0/16777216.0);
+                    #else
+                        output.depth=saturate(output.depth-1.0/16777216.0);
+                    #endif
+                }
                 return output;
             }
             ENDHLSL
