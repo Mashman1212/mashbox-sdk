@@ -18,6 +18,7 @@ namespace MashBoxSDK.AnimationStudio
             public string anchorType;
             public string sourcePath;
             public int parent = -1;
+            public int siblingOrder = -1;
             public Vector3 position, scale = Vector3.one;
             // Parent-space placement of the frozen channel origin. Zero for existing assets.
             public Vector3 positionOffset;
@@ -135,7 +136,7 @@ namespace MashBoxSDK.AnimationStudio
                         node.mesh = StudioWorkspaceText.ReadableSnapshot(mesh); node.mesh.name = mesh.name + " Editable";
                         // Fail before saving if an importer cannot supply CPU geometry.
                         var vertices = node.mesh.vertices;
-                        CaptureMeshTopology(node);
+                        CaptureMeshTopology(node, autoQuad: true);
                     }
                     if (skin)
                     {
@@ -185,6 +186,7 @@ namespace MashBoxSDK.AnimationStudio
                 skin.rootBone = node.rootBone >= 0 ? result[node.rootBone] : null;
                 skin.localBounds = node.mesh.bounds; skin.updateWhenOffscreen = true;
             }
+            ApplyHierarchyOrder(result);
             return result;
         }
         public void ApplyTransform(int index, Transform target)

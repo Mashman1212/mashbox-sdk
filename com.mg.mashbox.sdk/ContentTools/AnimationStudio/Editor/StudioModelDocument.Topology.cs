@@ -7,10 +7,10 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class StudioModelDocument
     {
-        // Capture face types before producing the render index buffer. A native
-        // triangle is a real modeling face; do not guess that two triangles were
-        // originally one quad. Existing workspaces retain their saved polygons.
-        internal static void CaptureMeshTopology(Node node)
+        // Preserve native face types before producing the render buffer. Fresh
+        // triangle-only imports may explicitly auto-quad suitable pairs; existing
+        // workspaces and mixed native topology keep their saved face boundaries.
+        internal static void CaptureMeshTopology(Node node, bool autoQuad = false)
         {
             var mesh = node.mesh;
             if (!mesh) return;
@@ -21,6 +21,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (topology != MeshTopology.Triangles && topology != MeshTopology.Quads) return;
                 hasQuads |= topology == MeshTopology.Quads;
             }
+            var positions=autoQuad&&!hasQuads?mesh.vertices:null;
             var polygons = new List<int>();
             var render = new int[mesh.subMeshCount][];
             for (int s = 0; s < mesh.subMeshCount; s++)
@@ -29,11 +30,12 @@ namespace MashBoxSDK.AnimationStudio
                 int size = quad ? 4 : 3;
                 var indices = mesh.GetIndices(s, true);
                 if (indices.Length % size != 0) throw new InvalidOperationException("The imported polygon index buffer is incomplete.");
+                var pairs=autoQuad&&!hasQuads?ImportQuadPairs(indices,positions):null;
                 var triangles = new List<int>(quad ? indices.Length / 4 * 6 : indices.Length);
                 for (int i = 0; i < indices.Length; i += size)
                 {
-                    polygons.Add(s); polygons.Add(size);
-                    for (int j = 0; j < size; j++) polygons.Add(indices[i + j]);
+                    if(pairs!=null&&pairs.TryGetValue(i/3,out var corners)){if(corners.Length>0){polygons.Add(s);polygons.Add(4);polygons.AddRange(corners);}}
+                    else{polygons.Add(s);polygons.Add(size);for(int j=0;j<size;j++)polygons.Add(indices[i+j]);}
                     triangles.Add(indices[i]); triangles.Add(indices[i + 1]); triangles.Add(indices[i + 2]);
                     if (quad) { triangles.Add(indices[i]); triangles.Add(indices[i + 2]); triangles.Add(indices[i + 3]); }
                 }

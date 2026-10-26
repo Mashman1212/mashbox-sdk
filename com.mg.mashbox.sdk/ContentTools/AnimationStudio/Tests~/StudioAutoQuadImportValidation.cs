@@ -1,0 +1,44 @@
+using System;using System.IO;using System.Linq;using System.Reflection;using System.Collections.Generic;using UnityEditor;using UnityEngine;using MashBoxSDK.AnimationStudio;using Object=UnityEngine.Object;
+public static class StudioAutoQuadImportValidation
+{
+ const BindingFlags F=BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public;
+ static int checks;static StudioModelEditor editor;static StudioModelDocument doc;static MashBoxStudioViewport view;static Material material;
+ static void Check(bool pass,string message){if(!pass)throw new Exception(message);checks++;}
+ static Mesh Square(float scale=1){var mesh=new Mesh();mesh.vertices=new[]{new Vector3(-.5f,-.5f,0)*scale,new Vector3(.5f,-.5f,0)*scale,new Vector3(.5f,.5f,0)*scale,new Vector3(-.5f,.5f,0)*scale};mesh.triangles=new[]{0,1,2,0,2,3};mesh.uv=new[]{Vector2.zero,Vector2.right,Vector2.one,Vector2.up};mesh.colors=new[]{Color.red,Color.green,Color.blue,Color.white};mesh.RecalculateNormals();return mesh;}
+ static int Quads(StudioModelDocument.Node n)=>n.mesh?new StudioMeshCuts(n).Faces.Count(f=>f.Vertices.Count==4):0;
+ static StudioModelDocument.Node Capture(Mesh mesh,bool auto=true){var n=new StudioModelDocument.Node{mesh=Object.Instantiate(mesh)};StudioModelDocument.CaptureMeshTopology(n,auto);return n;}
+ static void Matrix()
+ {
+  foreach(float scale in new[]{.0001f,1,10000}){var mesh=Square(scale);var n=Capture(mesh);try{Check(Quads(n)==1,"Square did not auto-quad");Check(n.mesh.triangles.SequenceEqual(mesh.triangles),"Render indices changed");Check(n.mesh.vertices.SequenceEqual(mesh.vertices)&&n.mesh.uv.SequenceEqual(mesh.uv)&&n.mesh.colors.SequenceEqual(mesh.colors),"Vertex attributes changed");Check(new StudioMeshCuts(n).Faces.Single().Vertices.Count==4,"Editable quad missing");}finally{Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(mesh);}}
+  var square=Square();try{
+   var original=Capture(square,false);Check(new StudioMeshCuts(original).Faces.Count==2,"Opt-out changed native triangles");Object.DestroyImmediate(original.mesh);
+   var seams=Object.Instantiate(square);seams.subMeshCount=2;seams.SetTriangles(new[]{0,1,2},0);seams.SetTriangles(new[]{0,2,3},1);var n=Capture(seams);Check(Quads(n)==0,"Material boundary merged");Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(seams);
+   var folded=Object.Instantiate(square);var p=folded.vertices;p[3].z=1;folded.vertices=p;n=Capture(folded);Check(Quads(n)==0,"Sharp fold merged");Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(folded);
+   var concave=Object.Instantiate(square);p=concave.vertices;p[2]=new Vector3(-.3f,-.3f,0);concave.vertices=p;n=Capture(concave);Check(Quads(n)==0,"Concave boundary merged");Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(concave);
+   var split=new Mesh();split.vertices=new[]{square.vertices[0],square.vertices[1],square.vertices[2],square.vertices[0],square.vertices[2],square.vertices[3]};split.triangles=new[]{0,1,2,3,4,5};n=Capture(split);Check(Quads(n)==0,"Separate vertex seam welded");Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(split);
+   var nonmanifold=Object.Instantiate(square);nonmanifold.vertices=square.vertices.Concat(new[]{Vector3.forward}).ToArray();nonmanifold.triangles=new[]{0,1,2,0,2,3,2,0,4};n=Capture(nonmanifold);Check(Quads(n)==0,"Nonmanifold edge merged");Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(nonmanifold);
+   var reversed=Object.Instantiate(square);reversed.triangles=new[]{0,1,2,0,3,2};n=Capture(reversed);Check(Quads(n)==0,"Inconsistent winding merged");Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(reversed);
+   var mixed=Object.Instantiate(square);mixed.subMeshCount=2;mixed.SetIndices(new[]{0,1,2,3},MeshTopology.Quads,0);mixed.SetIndices(new[]{0,1,2,0,2,3},MeshTopology.Triangles,1);n=Capture(mixed);Check(Quads(n)==1&&new StudioMeshCuts(n).Faces.Count==3,"Native mixed face types rewritten");Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(mixed);
+  }finally{Object.DestroyImmediate(square);}
+  var go=new GameObject("Scene cube drop");var cube=StudioModelDocument.BuildPrimitive(PrimitiveType.Cube,out var unused);go.AddComponent<MeshFilter>().sharedMesh=cube;go.AddComponent<MeshRenderer>();go.transform.position=new Vector3(3,2,1);
+  var workspace=ScriptableObject.CreateInstance<StudioModelDocument>();AssetDatabase.CreateAsset(workspace,"Assets/AutoQuadDrop.asset");
+  using(var drop=new StudioModelEditor(()=>{})){drop.Load(workspace);drop.ImportDroppedSource(go,null);Check(Quads(drop.Document.nodes[0])==6,"Scene drop did not auto-quad the cube");Check(drop.Document.nodes[0].position==go.transform.localPosition,"Scene transform lost");Check(cube.triangles.Length==36&&cube.GetTopology(0)==MeshTopology.Triangles,"Scene source modified");}
+  Object.DestroyImmediate(go);Object.DestroyImmediate(cube);
+  // A real FBX scene instance, with Unity's default triangulating import setting.
+  string path="Assets/AutoQuadFrame.fbx";if(AssetDatabase.LoadMainAssetAtPath(path))AssetDatabase.DeleteAsset(path);if(!AssetDatabase.CopyAsset("Assets/FrameProbe.fbx",path))throw new Exception("Missing FrameProbe FBX");
+  var importer=(ModelImporter)AssetImporter.GetAtPath(path);importer.keepQuads=false;importer.SaveAndReimport();string settings=EditorJsonUtility.ToJson(importer);
+  var asset=AssetDatabase.LoadAssetAtPath<GameObject>(path);var instance=Object.Instantiate(asset);var source=instance.GetComponentsInChildren<MeshFilter>().Where(f=>f.sharedMesh).Select(f=>f.sharedMesh).Distinct().ToDictionary(m=>m,m=>m.triangles);
+  try{var frame=StudioModelDocument.Import(instance,"Assets/AutoQuadFrameDocument.asset");Check(frame.nodes.Sum(Quads)>0,"Real FBX did not auto-quad");Check(EditorJsonUtility.ToJson(AssetImporter.GetAtPath(path))==settings,"Source FBX importer changed");foreach(var pair in source)Check(pair.Key.triangles.SequenceEqual(pair.Value),"FBX source render indices changed");}finally{Object.DestroyImmediate(instance);}
+ }
+ public static void Run(){EditorApplication.delayCall+=Start;}
+ static void Start()
+ {
+  try{Matrix();var mesh=Square();var go=new GameObject("Auto quad rendered drop");go.AddComponent<MeshFilter>().sharedMesh=mesh;go.AddComponent<MeshRenderer>();doc=StudioModelDocument.Import(go,"Assets/AutoQuadRender.asset");Object.DestroyImmediate(go);Object.DestroyImmediate(mesh);editor=new StudioModelEditor(()=>{});editor.Load(doc);editor.SelectObject(0);editor.SetToolbarComponentMode(StudioModelEditor.ComponentMode.Edge);view=ScriptableObject.CreateInstance<MashBoxStudioViewport>();view.Bind(editor.Scene);view.position=new Rect(100,100,600,500);view.Show();view.LookAtDirect(Vector3.zero,Quaternion.identity,1.3f);material=new Material(Shader.Find("MashBox/Studio/Preview"));material.SetFloat("_Cull",0);material.SetFloat("_CameraLighting",1);SceneView.duringSceneGui+=Draw;view.Repaint();}catch(Exception e){Finish(e.ToString());}
+ }
+ static void Draw(SceneView scene)
+ {
+  if(scene!=view||Event.current.type!=EventType.Repaint)return;SceneView.duringSceneGui-=Draw;string result;var rt=new RenderTexture(400,400,24);rt.Create();var old=RenderTexture.active;var target=view.camera.targetTexture;var rect=view.camera.pixelRect;GL.PushMatrix();
+  try{view.camera.targetTexture=rt;view.camera.pixelRect=new Rect(0,0,400,400);Handles.SetCamera(new Rect(0,0,400,400),view.camera);RenderTexture.active=rt;GL.Clear(true,true,Color.black);GL.LoadProjectionMatrix(view.camera.projectionMatrix);GL.modelview=view.camera.worldToCameraMatrix;material.SetPass(0);Graphics.DrawMeshNow(editor.Transforms[0].GetComponent<MeshFilter>().sharedMesh,editor.Transforms[0].localToWorldMatrix);typeof(StudioModelEditor).GetMethod("DrawVisibleObjectWireframes",F).Invoke(editor,new object[]{view.camera});var t=new Texture2D(400,400,TextureFormat.RGBA32,false);t.ReadPixels(new Rect(0,0,400,400),0,0);t.Apply();var pixels=t.GetPixels32();bool Cyan(Color32 c)=>c.g>c.r*1.4&&c.g>c.b*.9&&c.g>70;Check(pixels.Count(Cyan)>40,"No rendered quad boundary");Check(!Enumerable.Range(190,20).Any(y=>Enumerable.Range(190,20).Any(x=>Cyan(pixels[y*400+x]))),"Render diagonal still visible at center");File.WriteAllBytes(Path.GetFullPath(Path.Combine(Application.dataPath,"../../auto-quad-import.png")),t.EncodeToPNG());Object.DestroyImmediate(t);result="PASS "+checks+" import topology/source integrity and native rendered quad-boundary checks";}catch(Exception e){result=e.ToString();}finally{GL.PopMatrix();view.camera.targetTexture=target;view.camera.pixelRect=rect;RenderTexture.active=old;Object.DestroyImmediate(rt);}Finish(result);
+ }
+ static void Finish(string result){SceneView.duringSceneGui-=Draw;File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"../../auto-quad-import-result.txt")),result);EditorApplication.delayCall+=()=>{if(view)view.Close();editor?.Dispose();if(material)Object.DestroyImmediate(material);EditorApplication.Exit(result.StartsWith("PASS")?0:1);};}
+}

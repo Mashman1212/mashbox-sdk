@@ -25,7 +25,7 @@ namespace MashBoxSDK.AnimationStudio
             : tool == Tool.None ? "Selection Tool" : tool + " Tool";
         internal int ToolbarTransformState => cutTool != CutTool.None ? 0 : tool == Tool.None ? 1 : tool == Tool.Move ? 2 : tool == Tool.Rotate ? 3 : tool == Tool.Scale ? 4 : 0;
         internal ComponentMode ToolbarComponentMode => mode;
-        internal bool CanSetToolbarComponentMode(ComponentMode value) => value == ComponentMode.Object || CanEditComponents();
+        internal bool CanSetToolbarComponentMode(ComponentMode value) => value >= ComponentMode.Object && value <= ComponentMode.Face;
         internal void SetToolbarComponentMode(ComponentMode value)
         {
             if (!CanSetToolbarComponentMode(value)) return;

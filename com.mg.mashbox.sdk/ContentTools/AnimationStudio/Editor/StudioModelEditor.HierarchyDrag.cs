@@ -108,7 +108,7 @@ namespace MashBoxSDK.AnimationStudio
             finally { evt.modifiers = modifiers; }
             FinishChannelEdit();
             if (componentPivot) componentPivot.custom = false;
-            StopCutTool(); mode = ComponentMode.Object; Components.Clear();
+            StopCutTool(); Components.Clear();
             objects.Clear(); objects.UnionWith(selection);
             Active = objects.Contains(index) ? index : objects.Count > 0 ? objects.Last() : -1;
             hierarchySelectionDocument = Document;
@@ -171,7 +171,6 @@ namespace MashBoxSDK.AnimationStudio
                     focusHierarchyRename = true;
                     evt.Use(); repaint(); return;
                 }
-                mode = ComponentMode.Object;
                 hierarchyClickModifiers = evt.modifiers;
                 hierarchyDragControl = id; hierarchyDragButton = evt.button;
                 hierarchyDragStart = GUIUtility.GUIToScreenPoint(evt.mousePosition);
@@ -184,7 +183,7 @@ namespace MashBoxSDK.AnimationStudio
                     SelectHierarchyRow(index, true);
                     DragAndDrop.PrepareStartDrag();
                     DragAndDrop.objectReferences = Array.Empty<UnityEngine.Object>(); DragAndDrop.paths = Array.Empty<string>();
-                    var selection = objects.ToArray();
+                    var selection = Document.OrderedHierarchy().Where(objects.Contains).ToArray();
                     DragAndDrop.SetGenericData(HierarchyDragKey, new HierarchyDragPayload { owner = this, document = Document,
                         selection = selection, nodes = selection.Select(i => Document.nodes[i]).ToArray() });
                     GUIUtility.hotControl = 0; hierarchyDragControl = 0;
@@ -204,18 +203,73 @@ namespace MashBoxSDK.AnimationStudio
             if (!(DragAndDrop.GetGenericData(HierarchyDragKey) is HierarchyDragPayload payload)) return;
             HandleActiveHierarchyDrop(rect,parent,payload);
         }
-        private void HandleActiveHierarchyDrop(Rect rect,int parent,HierarchyDragPayload payload)
+        internal struct HierarchyDropPlacement
+        {
+            internal int Parent, Before;
+            internal bool Insert;
+            internal Vector2 Line;
+        }
+        internal HierarchyDropPlacement ResolveHierarchyDrop(Rect row,int index,Vector2 pointer)
+        {
+            if(index<0)return new HierarchyDropPlacement { Parent=-1,Before=-1 };
+            HierarchyRows();
+            int depth=hierarchyDepths[index];float rootX=row.x-MinHierarchyIndent(depth);
+            bool before=pointer.y<row.y+Mathf.Min(5,row.height*.25f);
+            bool after=pointer.y>row.yMax-Mathf.Min(5,row.height*.25f);
+            bool left=pointer.x<row.x-3;
+            if(!before&&!after&&!left)return new HierarchyDropPlacement { Parent=index,Before=-1 };
+            if(left&&!before&&!after)after=pointer.y>=row.center.y;
+            if(!before&&!after)before=true;
+            bool expandedChildren=hierarchyParents.Contains(index)&&(!collapsedHierarchy.Contains(Document.nodes[index])||!string.IsNullOrEmpty(search));
+            int wanted=left ? Mathf.Max(0,depth-Mathf.CeilToInt((row.x-pointer.x)/12))
+                : depth+(after&&expandedChildren&&pointer.x>=row.x+12?1:0);
+            int parent, sibling;
+            if(after&&wanted>depth)
+            {
+                parent=index;var children=Document.OrderedChildren(index);sibling=children.Length==0?-1:children[0];
+            }
+            else
+            {
+                int reference=index;
+                while(hierarchyDepths[reference]>wanted&&Document.nodes[reference].parent>=0)reference=Document.nodes[reference].parent;
+                parent=Document.nodes[reference].parent;
+                if(before && reference==index)sibling=reference;
+                else
+                {
+                    var siblings=Document.OrderedChildren(parent);int at=Array.IndexOf(siblings,reference);
+                    sibling=at+1<siblings.Length?siblings[at+1]:-1;
+                }
+            }
+            int targetDepth=parent<0?0:hierarchyDepths[parent]+1;
+            return new HierarchyDropPlacement { Parent=parent,Before=sibling,Insert=true,
+                Line=new Vector2(rootX+MinHierarchyIndent(targetDepth),before?row.y:row.yMax) };
+        }
+        private static float MinHierarchyIndent(int depth)=>Mathf.Min(depth*12,96);
+        private void HandleActiveHierarchyDrop(Rect rect,int index,HierarchyDragPayload payload)
         {
             var evt = Event.current;
-            if (!rect.Contains(evt.mousePosition)) return;
+            var hitRect=rect;
+            if(index>=0) { HierarchyRows();hitRect.xMin-=14+MinHierarchyIndent(hierarchyDepths[index]); }
+            if(index>=0) { hitRect.yMin-=2;hitRect.yMax+=2; }
+            if (!hitRect.Contains(evt.mousePosition)) return;
+            var placement=ResolveHierarchyDrop(rect,index,evt.mousePosition);
             string reason = "Drop into the source workspace.";
             bool valid = payload.owner == this && payload.document == Document && Document &&
-                payload.selection.Select((i, n) => i >= 0 && i < Document.nodes.Count && ReferenceEquals(Document.nodes[i], payload.nodes[n])).All(same => same) &&
-                Document.CanReparent(payload.selection, parent, Transforms, out reason);
+                payload.selection.Length==payload.nodes.Length && payload.selection.Select((i,n)=>i>=0&&i<Document.nodes.Count&&ReferenceEquals(Document.nodes[i],payload.nodes[n])).All(same=>same) &&
+                Document.CanPlaceHierarchy(payload.selection,placement.Parent,placement.Before,Transforms,out reason);
             if (evt.type == EventType.Repaint)
             {
-                EditorGUI.DrawRect(rect, valid ? new Color(.25f,.7f,1,.22f) : new Color(1,.25f,.2f,.15f));
-                if (parent < 0) GUI.Label(rect, valid ? "Drop to move to root" : reason, StudioTheme.Styles.miniLabel);
+                var color=valid?StudioTheme.Current.Accent:new Color(1,.25f,.2f);
+                if(placement.Insert)
+                {
+                    EditorGUI.DrawRect(new Rect(placement.Line.x,placement.Line.y-1,Mathf.Max(1,rect.xMax-placement.Line.x),2),color);
+                    EditorGUI.DrawRect(new Rect(placement.Line.x,placement.Line.y-3,2,6),color);
+                }
+                else
+                {
+                    EditorGUI.DrawRect(rect,StudioTheme.Alpha(color,.22f));
+                    if(index<0)GUI.Label(rect,valid?"Drop to move to root":reason,StudioTheme.Styles.miniLabel);
+                }
             }
             if (evt.type != EventType.DragUpdated && evt.type != EventType.DragPerform) return;
             DragAndDrop.visualMode = valid ? DragAndDropVisualMode.Move : DragAndDropVisualMode.Rejected;
@@ -224,20 +278,20 @@ namespace MashBoxSDK.AnimationStudio
                 if (valid)
                 {
                     DragAndDrop.AcceptDrag();
-                    Run(() => ReparentHierarchy(payload.selection, parent));
+                    Run(() => PlaceHierarchy(payload.selection,placement.Parent,placement.Before));
                 }
-                else { error = reason; repaint(); }
+                else if(reason!="Already in this position.") { error = reason; repaint(); }
                 CancelHierarchyDrag();
             }
             evt.Use();
         }
-        internal void ReparentHierarchy(int[] selection, int parent)
+        internal void PlaceHierarchy(int[] selection,int parent,int beforeSibling)
         {
-            Document.ReparentObjects(selection, parent, Transforms);
-            CancelMarkingMenu(); EndPivotSnap(); StopCutTool(); pivot = false; mode = ComponentMode.Object; Components.Clear();
-            if (parent >= 0)
-                for (int p = parent; p >= 0; p = Document.nodes[p].parent) collapsedHierarchy.Remove(Document.nodes[p]);
-            Rebuild(); Changed();
+            Document.PlaceHierarchy(selection,parent,beforeSibling,Transforms);
+            CancelMarkingMenu();EndPivotSnap();StopCutTool();pivot=false;Components.Clear();
+            if(parent>=0)for(int p=parent;p>=0;p=Document.nodes[p].parent)collapsedHierarchy.Remove(Document.nodes[p]);
+            hierarchyRows=null;Changed(false);
         }
+        internal void ReparentHierarchy(int[] selection, int parent) => PlaceHierarchy(selection,parent,-1);
     }
 }
