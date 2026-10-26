@@ -80,7 +80,7 @@ namespace MashBoxSDK.AnimationStudio
                 // all use this same mesh. Source transforms remain export provenance.
                 StudioSkinningDocument.TransformGeometry(part.mesh, delta);
                 part.objectRotation = nextRotation;
-                Rebuild(); Changed();
+                Rebuild(); Changed(); RecordSkinTutorialAction("transform");
             }
             if (e.rawType == EventType.MouseUp || e.type == EventType.Ignore)
             { FinishObjectGesture(); poseGlobalHandleRotation = Quaternion.identity; }

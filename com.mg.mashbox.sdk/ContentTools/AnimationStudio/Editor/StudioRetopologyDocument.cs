@@ -13,6 +13,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             public int[] vertices;
             public int material;
+            public Vector2[] cornerUV;
             public Face(int[] vertices, int material = 0) { this.vertices=vertices; this.material=material; }
         }
         [Serializable] public sealed class Part
@@ -53,8 +54,40 @@ namespace MashBoxSDK.AnimationStudio
                     for(int i=1;i<face.vertices.Length-1;i++) { indices.Add(face.vertices[0]); indices.Add(face.vertices[i]); indices.Add(face.vertices[i+1]); }
                 mesh.SetTriangles(indices,sub,false);
             }
-            mesh.RecalculateNormals(); if(part.uv.Count==part.vertices.Count) mesh.RecalculateTangents(); mesh.RecalculateBounds();
+            mesh.RecalculateNormals(); ApplyCornerUVs(part,mesh); if(mesh.uv.Length==mesh.vertexCount) mesh.RecalculateTangents(); mesh.RecalculateBounds();
             return mesh;
+        }
+        // Split only the render/export vertices at UV seams; editable topology stays welded.
+        private static void ApplyCornerUVs(Part part,Mesh mesh)
+        {
+            if(!part.faces.Any(f=>f.cornerUV!=null&&f.cornerUV.Length==f.vertices.Length))return;
+            var positions=new List<Vector3>(part.vertices);var normals=mesh.normals.ToList();
+            var uv=part.vertices.Select((v,i)=>i<part.uv.Count?part.uv[i]:Vector2.zero).ToList();
+            var used=new bool[part.vertices.Count];var lookup=new Dictionary<(int,Vector2),int>();
+            var indices=new List<int>[mesh.subMeshCount];for(int i=0;i<indices.Length;i++)indices[i]=new List<int>();
+            foreach(var face in part.faces)
+            {
+                var faceIndices=new int[face.vertices.Length];
+                for(int c=0;c<face.vertices.Length;c++)
+                {
+                    int v=face.vertices[c];var value=FaceUV(part,face,c);var key=(v,value);
+                    if(!lookup.TryGetValue(key,out int id))
+                    {
+                        if(!used[v]){id=v;used[v]=true;uv[v]=value;}
+                        else {id=positions.Count;positions.Add(part.vertices[v]);normals.Add(normals[v]);uv.Add(value);}
+                        lookup.Add(key,id);
+                    }
+                    faceIndices[c]=id;
+                }
+                for(int c=1;c<faceIndices.Length-1;c++){indices[face.material].Add(faceIndices[0]);indices[face.material].Add(faceIndices[c]);indices[face.material].Add(faceIndices[c+1]);}
+            }
+            mesh.SetVertices(positions);mesh.SetNormals(normals);mesh.SetUVs(0,uv);
+            for(int i=0;i<indices.Length;i++)mesh.SetTriangles(indices[i],i,false);
+        }
+        internal static Vector2 FaceUV(Part part,Face face,int corner)
+        {
+            if(face.cornerUV!=null&&face.cornerUV.Length==face.vertices.Length)return face.cornerUV[corner];
+            int v=face.vertices[corner];return v<part.uv.Count?part.uv[v]:Vector2.zero;
         }
         internal static void CopyReference(Part part)
         {

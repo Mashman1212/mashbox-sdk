@@ -82,6 +82,7 @@ namespace MashBoxSDK.AnimationStudio
                 output.Apply(Part.mesh); Rebuild(); Changed();
             }
             error=null;
+            RecordSkinTutorialAction("mirror");
             lastView?.ShowNotification(new GUIContent($"Mirrored {changed:N0} vertices {(leftToRight ? "left to right" : "right to left")} in A-pose"));
         }
     }

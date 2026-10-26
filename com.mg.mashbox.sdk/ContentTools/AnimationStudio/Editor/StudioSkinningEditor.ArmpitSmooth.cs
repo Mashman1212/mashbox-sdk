@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
-        private void SmoothArmpitTransition(StudioSkinWeights skin,Vector3[] posed,float[] region,Vector3 center,Vector3 up,Vector3 across,float width,float height,bool[] arm,int chest)
+        private void SmoothArmpitTransition(StudioSkinWeights skin,Vector3[] posed,float[] region,Vector3 center,Vector3 up,Vector3 across,float width,float height,bool[] arm,int chest,bool automatic = false)
         {
             var original=skin.Values.Select(v=>v.ToArray()).ToArray();
             var changed=new HashSet<int>();
@@ -65,7 +65,8 @@ namespace MashBoxSDK.AnimationStudio
                 skin.Apply(Part.mesh); Rebuild(); Changed();
             }
             error=null;
-            lastView?.ShowNotification(new GUIContent(changed.Count>0 ? $"Smoothed armpit weights on {changed.Count:N0} vertices" : "No armpit weight transition needed smoothing"));
+            if(!automatic)RecordSkinTutorialAction("armpitSmooth");
+            if(!automatic) lastView?.ShowNotification(new GUIContent(changed.Count>0 ? $"Smoothed armpit weights on {changed.Count:N0} vertices" : "No armpit weight transition needed smoothing"));
         }
     }
 }

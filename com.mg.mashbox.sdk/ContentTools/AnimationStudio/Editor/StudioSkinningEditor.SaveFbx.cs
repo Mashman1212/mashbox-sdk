@@ -23,6 +23,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SaveSelectedFbx()
         {
+            if(HasTutorial){SaveSelectedFbxAs();return;}
             if (!StudioFbxDependency.Require()) return;
             EndStroke();
             if (IsReferencePart) throw new InvalidOperationException("The default body and bust are reference-only. Select clothing to save.");
@@ -71,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (!exists) { SavePartFbx(Part,path); return; }
                 bool sameSource=string.Equals(path.Replace('\\','/'),sourceAsset.Replace('\\','/'),StringComparison.OrdinalIgnoreCase);
                 var sourceModel=sameSource?AssetDatabase.LoadAssetAtPath<GameObject>(sourceAsset):null;
-                if(sameSource&&FindOriginalMeshRenderer(sourceModel,Part) is SkinnedMeshRenderer)
+                if(!HasTutorial&&sameSource&&FindOriginalMeshRenderer(sourceModel,Part) is SkinnedMeshRenderer)
                 {
                     // Use the source-update path so its backup and reference checks remain intact.
                     SavePartFbx(Part);return;
@@ -87,6 +88,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SavePartFbx(StudioSkinningDocument.Part part, string saveAsPath = null)
         {
+            if(HasTutorial && string.IsNullOrEmpty(saveAsPath))
+                throw new InvalidOperationException("Practice keeps source assets unchanged. Select the editable garment and use Save FBX As.");
             StudioFbxDependency.EnsureAvailable();
             string assetPath = AssetDatabase.GetAssetPath(part.sourceMesh);
             bool saveAs = !string.IsNullOrEmpty(saveAsPath);

@@ -106,7 +106,7 @@ namespace MashBoxSDK.AnimationStudio
                 var output=Create(p.name+" Low",mesh,outputMaterial);outputs.Add(output);output.SetActive(p.showOutput);
                 if(mesh.vertexCount>0&&mesh.triangles.Length>0)output.AddComponent<MeshCollider>().sharedMesh=mesh;
             }
-            repaint();
+            ApplyCheckerDisplay();repaint();
         }
         private GameObject Create(string name,Mesh mesh,Material material)
         {
@@ -120,11 +120,14 @@ namespace MashBoxSDK.AnimationStudio
             // cannot safely restore a transient reference Mesh.
             var part=Active;
             var vertices=new List<Vector3>(part.vertices);var uv=new List<Vector2>(part.uv);
-            var faces=part.faces.Select(f=>new StudioRetopologyDocument.Face((int[])f.vertices.Clone(),f.material)).ToList();
+            var faces=part.faces.Select(f=>new StudioRetopologyDocument.Face((int[])f.vertices.Clone(),f.material){cornerUV=f.cornerUV==null?null:(Vector2[])f.cornerUV.Clone()}).ToList();
             var reference=part.reference;var materials=part.materials;bool needsUV=part.needsUV,dirty=Document.dirty;
             int revision=part.Revision;
             Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,label);
-            try { action();Active.Revision++;Document.dirty=true;EditorUtility.SetDirty(Document);ClearComponents();ClearPatchCorners();Rebuild();
+            try { action();
+                bool topologyChanged=vertices.Count!=part.vertices.Count||faces.Count!=part.faces.Count||faces.Where((f,i)=>i<part.faces.Count&&!f.vertices.SequenceEqual(part.faces[i].vertices)).Any();
+                if(topologyChanged&&faces.Any(f=>f.cornerUV!=null)){foreach(var face in part.faces)face.cornerUV=null;part.needsUV=true;}
+                Active.Revision++;Document.dirty=true;EditorUtility.SetDirty(Document);ClearComponents();ClearPatchCorners();Rebuild();
                 if(CurrentLesson!=null && (vertices.Count!=part.vertices.Count || faces.Count!=part.faces.Count || !vertices.SequenceEqual(part.vertices)
                     || faces.Where((f,i)=>i<part.faces.Count&&!f.vertices.SequenceEqual(part.faces[i].vertices)).Any()))
                     RecordTutorialAction(label);
@@ -173,16 +176,20 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int index=i;var p=Document.parts[i];var row=GUILayoutUtility.GetRect(50,24,GUILayout.ExpandWidth(true));
                 EditorGUI.DrawRect(row,Document.selected==i?new Color(.18f,.31f,.29f):new Color(.12f,.13f,.14f));
+                if(row.Contains(Event.current.mousePosition)&&StudioMeshMaterialPreview.IsMaterialDrag)StudioMeshMaterialPreview.Drop(m=>SetMaterial(p,0,m));
                 HandleMeshRowContext(row,p);
                 if(GUI.Button(row,new GUIContent("  "+p.name,"Select this mesh"),new GUIStyle(StudioTheme.Styles.label){clipping=TextClipping.Clip}))
-                {Document.selected=i;ClearComponents();ClearPatchCorners();repaint();}
+                {Document.selected=i;ClearComponents();ClearPatchCorners();ApplyCheckerDisplay();repaint();}
                 using(new GUILayout.HorizontalScope())
                 {
                     GUILayout.Space(12);bool visible=GUILayout.Toggle(p.showReference,"Reference",GUILayout.Width(100));
                     GUILayout.Label(EditorGUIUtility.IconContent("LockIcon-On"),GUILayout.Width(16),GUILayout.Height(16));
                     if(visible!=p.showReference){p.showReference=visible;if(p.reference)visibility[p.reference]=(p.showReference,p.showOutput);references[index].SetActive(visible);repaint();}
                 }
+                var referenceRow=GUILayoutUtility.GetLastRect();
+                if(referenceRow.Contains(Event.current.mousePosition)&&StudioMeshMaterialPreview.IsMaterialDrag)StudioMeshMaterialPreview.Drop(m=>SetMaterial(p,0,m));
                 var workingRow=GUILayoutUtility.GetRect(50,22,GUILayout.ExpandWidth(true));
+                if(workingRow.Contains(Event.current.mousePosition)&&StudioMeshMaterialPreview.IsMaterialDrag)StudioMeshMaterialPreview.Drop(m=>SetMaterial(p,0,m));
                 // IMGUI toggles can consume RMB MouseDown before ContextClick.
                 // Claim the complete right-button gesture before drawing the toggle.
                 var rowEvent=Event.current;
@@ -198,6 +205,7 @@ namespace MashBoxSDK.AnimationStudio
                 bool outputVisible=GUI.Toggle(toggleRect,p.showOutput,new GUIContent("Working mesh","Right-click for mesh actions"));
                 if(outputVisible!=p.showOutput&&Event.current.button==0){p.showOutput=outputVisible;if(p.reference)visibility[p.reference]=(p.showReference,p.showOutput);outputs[index].SetActive(outputVisible);repaint();}
                 GUI.Label(new Rect(toggleRect.xMax,workingRow.y,Mathf.Max(0,workingRow.xMax-toggleRect.xMax),workingRow.height),p.faces.Count.ToString("N0"),StudioTheme.Styles.miniLabel);
+                DrawMaterialSlots(p);
                 GUILayout.Space(6);
             }
             EditorGUILayout.EndScrollView();
@@ -231,7 +239,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int index=Document.parts.IndexOf(part);if(index<0)return;
                 if(Document.selected!=index){CancelResolution();CancelVertexSelection();ClearComponents();ClearPatchCorners();}
-                Document.selected=index;Run(action);
+                Document.selected=index;ApplyCheckerDisplay();Run(action);
             }
             var menu=new StudioMenu();bool hasMesh=part.vertices.Count>0;
             void Item(string title,Action action,bool enabled=true)
@@ -295,7 +303,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if(!audits.TryGetValue(Active,out var audit)){audit=StudioRetopologyOperations.Audit(Active);audits[Active]=audit;}
             GUILayout.Space(8);GUILayout.Label(audit,StudioTheme.Styles.wordWrappedMiniLabel);
-            if(Active.needsUV)EditorGUILayout.HelpBox("New topology needs UV review / unwrap before texturing. Use Modeling's UV tools.",MessageType.Info);
+            if(Active.needsUV)EditorGUILayout.HelpBox("UVs need review. Use UV > Transfer UVs from Reference, or unwrap in Modeling.",MessageType.Info);
             if(!string.IsNullOrEmpty(status))GUILayout.Label(status,StudioTheme.Styles.wordWrappedMiniLabel);
             if(!string.IsNullOrEmpty(error))EditorGUILayout.HelpBox(error,MessageType.Error);
             EditorGUILayout.EndScrollView();
@@ -393,6 +401,7 @@ namespace MashBoxSDK.AnimationStudio
             referenceWireLines.Clear();
             foreach(var m in display)if(m)Object.DestroyImmediate(m);
             foreach(var lines in xrayLines)if(lines)Object.DestroyImmediate(lines);
+            DisposeUVDisplay();materialPreview.Dispose();
             if(workingXrayMaterial)Object.DestroyImmediate(workingXrayMaterial);
             if(referenceMaterial)Object.DestroyImmediate(referenceMaterial);if(outputMaterial)Object.DestroyImmediate(outputMaterial);
             if(Scene.IsValid())EditorSceneManager.ClosePreviewScene(Scene);

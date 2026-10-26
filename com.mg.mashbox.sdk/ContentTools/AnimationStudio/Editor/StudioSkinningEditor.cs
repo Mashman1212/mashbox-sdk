@@ -36,6 +36,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (hoveredInfluence == index) return;
             hoveredInfluence = index;
+            if(index>=0 && HasEditableMesh && Part.bound)RecordSkinTutorialAction("hover");
             UpdateDisplay();
         }
         private string search = "", error;
@@ -201,10 +202,17 @@ namespace MashBoxSDK.AnimationStudio
                     EditorGUI.DrawRect(separator,new Color(.28f,.30f,.31f,1));
                     GUILayout.Space(6);
                 }
+                DrawMeshListRow(part,i);
+                DrawMaterialSlots(part);
+            }
+            EditorGUILayout.EndScrollView();
+        }
+        private void DrawMeshListRow(StudioSkinningDocument.Part part,int i)
+        {
                 using (new GUILayout.HorizontalScope())
                 {
                     bool next = GUILayout.Toggle(part.visible, GUIContent.none, GUILayout.Width(18));
-                    if (next != part.visible) { EndStroke(); Undo.RecordObject(Document,"Show skinning mesh"); part.visible = next; objects[i].SetActive(next); Changed(); }
+                    if (next != part.visible) { EndStroke(); Undo.RecordObject(Document,"Show skinning mesh"); part.visible = next; objects[i].SetActive(next); Changed(); RecordSkinTutorialAction("visibility"); }
                     if (part.referenceOnly)
                     {
                         var lockedRow = GUILayoutUtility.GetRect(new GUIContent(part.name), GUI.skin.button, GUILayout.ExpandWidth(true));
@@ -223,12 +231,13 @@ namespace MashBoxSDK.AnimationStudio
                             }
                         }
 #endif
-                        continue;
+                        return;
                     }
                     // Reserve the row and process RMB before the toggle can
                     // consume it. Ordinary selection remains a left-click action.
                     var row = GUILayoutUtility.GetRect(new GUIContent(part.name), GUI.skin.button, GUILayout.ExpandWidth(true));
-                    if (DrawMeshRename(row,part,i)) continue;
+                    if(row.Contains(Event.current.mousePosition)&&StudioMeshMaterialPreview.IsMaterialDrag)StudioMeshMaterialPreview.Drop(m=>SetMaterial(part,0,m));
+                    if (DrawMeshRename(row,part,i)) return;
                     if (((Event.current.type == EventType.MouseDown && Event.current.button == 1) || Event.current.type == EventType.ContextClick) && row.Contains(Event.current.mousePosition))
                     {
                         EndStroke(); Document.selected = i; RefreshSurface();
@@ -259,8 +268,6 @@ namespace MashBoxSDK.AnimationStudio
                     { EndStroke(); Document.selected = i; RefreshSurface(); }
                     DrawMeshRoleRow(row,part);
                 }
-            }
-            EditorGUILayout.EndScrollView();
         }
         internal void RemoveSelectedMesh() => RemoveMesh(Part);
         private void RemoveMesh(StudioSkinningDocument.Part part)
@@ -289,12 +296,13 @@ namespace MashBoxSDK.AnimationStudio
                 SetInfluencePreview(influenceHoverCandidate);
             }
         }
-        internal void DrawInspector()
+        internal void DrawInspector() => DrawInspector(true);
+        private void DrawInspector(bool scroll)
         {
             float width = Mathf.Max(160, (lastView is MashBoxStudioViewport panelView ? panelView.SkinInspectorWidth : 300) - 22);
             float oldLabelWidth = EditorGUIUtility.labelWidth, oldFieldWidth = EditorGUIUtility.fieldWidth;
             EditorGUIUtility.labelWidth = Mathf.Min(126, width * .46f); EditorGUIUtility.fieldWidth = 42;
-            inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll, GUILayout.MinWidth(0));
+            if(scroll)inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll, GUILayout.MinWidth(0));
             EditorGUILayout.BeginVertical(GUILayout.Width(width), GUILayout.MaxWidth(width));
             GUILayout.Label(sculptMode ? "SCULPT" : "SKIN WEIGHT PAINT", StudioTheme.Styles.boldLabel);
             var choices = ModeBrushes;
@@ -323,10 +331,10 @@ namespace MashBoxSDK.AnimationStudio
             smoothWhileSculpting = EditorGUILayout.Toggle(new GUIContent("Sculpt + smooth weights", "Optionally smooth skin weights under sculpt strokes. Off preserves all skin weights."), smoothWhileSculpting);
             if (!string.IsNullOrEmpty(error)) EditorGUILayout.HelpBox(error, MessageType.Error);
             EditorGUILayout.EndVertical();
-            EditorGUILayout.EndScrollView();
+            if(scroll)EditorGUILayout.EndScrollView();
             EditorGUIUtility.labelWidth = oldLabelWidth; EditorGUIUtility.fieldWidth = oldFieldWidth;
         }
-        private void AutoBind() => TransferBodySkin();
+        private void AutoBind() => BindWithJointCleanup();
         private void RefreshSurface()
         {
             if (!stroke) fitBodySurface = null;
@@ -392,12 +400,13 @@ namespace MashBoxSDK.AnimationStudio
             {
                 bool checker = hoveredInfluence < 0 && showUVChecker && i == Document.selected && !Document.parts[i].referenceOnly;
                 if(checker) EnsureUVChecker();
-                bool show = !checker && i == Document.selected && !Document.parts[i].referenceOnly && (heatmap || hoveredInfluence >= 0) && Document.parts[i].bound;
+                bool textured = hoveredInfluence < 0 && showTextured && i == Document.selected && !Document.parts[i].referenceOnly;
+                bool show = !checker && !textured && i == Document.selected && !Document.parts[i].referenceOnly && (heatmap || hoveredInfluence >= 0) && Document.parts[i].bound;
                 // Body and bust are one neutral reference surface in every mode.
                 // Only editable clothing participates in selection/context colouring.
                 var previewMaterial = Document.parts[i].referenceOnly ? referenceShaded
                     : checker ? uvCheckerMaterial : show ? heat : sculptMode && i != Document.selected ? sculptContext : shaded;
-                objects[i].GetComponent<Renderer>().sharedMaterials = Enumerable.Repeat(previewMaterial, displayMeshes[i].subMeshCount).ToArray();
+                objects[i].GetComponent<Renderer>().sharedMaterials = textured ? materialPreview.Materials(Document.parts[i].materials,displayMeshes[i].subMeshCount,shaded) : Enumerable.Repeat(previewMaterial, displayMeshes[i].subMeshCount).ToArray();
                 if (!show || weights == null) continue;
                 var colors = new Color[weights.Values.Length];
                 for (int v = 0; v < colors.Length; v++) colors[v] = Color.Lerp(new Color(.03f,.08f,.35f), new Color(1,.25f,.03f), weights.Weight(v,hoveredInfluence >= 0 ? hoveredInfluence : boneIndex));
@@ -408,6 +417,7 @@ namespace MashBoxSDK.AnimationStudio
         private float brushCursorDepth;
         internal void SceneGUI(SceneView view)
         {
+            ObserveSkinTutorial(view);
             lastView = view;
             view.wantsMouseMove = true;
             if (Event.current.type == EventType.MouseMove) repaint();
@@ -433,6 +443,8 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (evt.type == EventType.DragUpdated || evt.type == EventType.DragPerform)
             {
+                DropMaterialOnViewport(evt,view);
+                if(evt.type==EventType.Used)return;
                 HandleModelDrop(evt);
                 if (evt.type == EventType.Used) return;
             }
@@ -480,7 +492,7 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type == EventType.MouseDown && evt.button == 0 && !evt.alt && !overUI && hit && GUIUtility.hotControl == 0)
             {
                 if (Tool == Brush.FitBody && !PrepareFitBody()) { evt.Use(); return; }
-                brushControl = id; GUIUtility.hotControl = id; stroke = true; geometryChanged = weightsChanged = false;
+                brushControl = id; GUIUtility.hotControl = id; stroke = true; geometryChanged = weightsChanged = false; tutorialStrokeActions.Clear();
                 Undo.IncrementCurrentGroup(); undoGroup = Undo.GetCurrentGroup(); Undo.RegisterCompleteObjectUndo(new Object[] { Document, Part.mesh }, "Skinning " + Tool);
                 hitPoint = info.point; hitNormal = info.normal; initialPoints = (Vector3[])deformed.Clone(); initialVertices = (Vector3[])vertices.Clone();
                 spatial = new StudioSkinSpatialIndex(initialPoints, radius);
@@ -552,9 +564,12 @@ namespace MashBoxSDK.AnimationStudio
                 float falloff = Mathf.SmoothStep(1,0,distance/radius), amount = strength*falloff;
                 if (weightTool)
                 {
+                    var oldValues=HasTutorial ? weights.Values[v].ToArray() : null;
                     if (Tool == Brush.SmoothWeights || evt.shift) SmoothWeight(v,amount,before);
                     else weights.Set(v,boneIndex,Mathf.Lerp(weights.Weight(v,hoveredInfluence >= 0 ? hoveredInfluence : boneIndex),evt.control ? 0 : targetWeight,amount),locked);
                     weightsChanged = true;
+                    if(HasTutorial && !oldValues.SequenceEqual(weights.Values[v]))
+                        tutorialStrokeActions.Add(Tool==Brush.SmoothWeights||evt.shift?"smoothWeights":"paint");
                 }
                 else
                 {
@@ -570,6 +585,11 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     if(symmetry && (initialPoints[v]-ReflectSymmetry(initialPoints[v],true)).sqrMagnitude<1e-10f)
                         wanted=(wanted+ReflectSymmetry(wanted,true))*.5f;
+                    if(HasTutorial && (wanted-deformed[v]).sqrMagnitude>1e-14f)
+                    {
+                        tutorialStrokeActions.Add("sculpt:"+(evt.shift?Brush.SmoothShape:Tool));
+                        if(SymmetryActive && Document.sculptSymmetryAxis==1)tutorialStrokeActions.Add("symmetricStroke");
+                    }
                     vertices[v] = inverses[v].MultiplyPoint3x4(wanted); deformed[v] = wanted; geometryChanged = true;
                     if (smoothWhileSculpting && Part.bound && Tool != Brush.FitBody)
                     {
@@ -620,6 +640,8 @@ namespace MashBoxSDK.AnimationStudio
                 Part.mesh.RecalculateNormals(); if (Part.mesh.uv.Length == Part.mesh.vertexCount) Part.mesh.RecalculateTangents(); Part.mesh.RecalculateBounds();
             }
             Undo.CollapseUndoOperations(undoGroup); Undo.IncrementCurrentGroup(); Rebuild(); Changed();
+            foreach(var action in tutorialStrokeActions)RecordSkinTutorialAction(action);
+            tutorialStrokeActions.Clear();
         }
         private void Export()
         {
@@ -664,7 +686,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
-            DisposeUVChecker();
+            DisposeUVChecker();materialPreview.Dispose();
             DisposeWireframe();
             FinishObjectGesture();
             FinishPoseGesture();

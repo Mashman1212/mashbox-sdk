@@ -29,7 +29,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-88);
             // Align with the playback bar, leaving a small vertical gap above it.
-            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, canvas.yMax - 28), 70, 32);
+            return new Rect(canvas.x + 8, Mathf.Max(canvas.y + 40, canvas.yMax - 28), 108, 32);
         }
         private bool RequirePaintableSkin()
         {
@@ -223,7 +223,8 @@ namespace MashBoxSDK.AnimationStudio
                 DrawObjectModeIcon(new Rect(rect.x + 76, rect.y, 32, 32));
                 var display = DisplayToolbarRect(view);
                 DrawUVCheckerButton(new Rect(display.x, display.y, 32, 32));
-                DrawWireframeButton(new Rect(display.x + 38, display.y, 32, 32));
+                DrawTexturedButton(new Rect(display.x + 38, display.y, 32, 32));
+                DrawWireframeButton(new Rect(display.x + 76, display.y, 32, 32));
                 if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object)
                 {
                     var labelRect = new Rect(rect.xMax + 12, rect.y + 6, 160, 20);

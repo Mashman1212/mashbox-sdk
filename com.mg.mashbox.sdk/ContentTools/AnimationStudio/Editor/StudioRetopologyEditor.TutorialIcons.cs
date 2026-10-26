@@ -41,6 +41,14 @@ namespace MashBoxSDK.AnimationStudio
                 else return;
                 DrawTutorialControl(icon,active,ToolName(name),()=>{if(!active)ActivateTutorialTool(name);});
             }
+            if(step.check=="event:referenceTexture")
+                DrawTutorialControl(19,referenceTextured,"Reference Textured",()=>ToggleTextured(true),true);
+            if(step.check=="event:workingTexture")
+                DrawTutorialControl(20,workingTextured,"Working Mesh Textured",()=>ToggleTextured(false),true);
+            if(step.check=="event:referenceChecker")
+                DrawTutorialControl(17,referenceChecker,"Reference Checker",()=>ToggleChecker(true),true);
+            if(step.check=="event:workingChecker")
+                DrawTutorialControl(18,workingChecker,"Working Mesh Checker",()=>ToggleChecker(false),true);
             if(step.check=="referenceWire")
                 DrawTutorialControl(5,referenceWire,"Reference Wire",()=>
                 {referenceWire=!referenceWire;EditorPrefs.SetBool("MashBox.Retopology.ReferenceWire",referenceWire);},true);

@@ -21,6 +21,8 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (!skinningDocument.skeleton) throw new System.InvalidOperationException("The SDK Skeleton asset is missing.");
             skinningEditor = new StudioSkinningEditor(skinningDocument, () => { UpdateClipSaveState(); viewport?.Repaint(); });
+            ConfigureSkinTutorials();
+            skinningEditor.RestoreTutorialStartPose();
             skinningEditor.SendToRetopology=(part,names,rest)=>
             {
                 EnsureRetopologyEditor();retopologyEditor.ImportSkinning(part,names,rest);OpenRetopologyMode();
@@ -68,7 +70,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.Bind(skinningEditor.Scene);
             viewport.BindRigControls(() => skinningEditor.DrawHierarchy());
             viewport.BindSkinInfluences(() => skinningEditor.DrawInfluences());
-            viewport.BindInspector(() => skinningEditor.DrawInspector());
+            viewport.BindInspector(() => skinningEditor.DrawSkinInspector());
             viewport.BindTimeline(null); viewport.BindLimbBlend(null);
             // Modeling's resizable panels also suit influences and brush settings.
             viewport.BindModes(DrawStudioModes,true);
@@ -76,7 +78,8 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindViewportControls(DrawStudioMenuBar,null,DrawStudioSettings);
             viewport.BindModelTools(null); viewport.BindStatistics(null); viewport.BindMarkingMenu(null);
             viewport.BindSkinPreviewTimeline(skinningEditor.DrawPreviewTimeline);
-            viewport.BindSkinPractice(DrawSkinningPracticeMenu);
+            viewport.BindSkinPractice(skinningEditor.DrawSkinTutorialMenu);
+            viewport.SetSkinTutorialGuide(skinningEditor.HasTutorial);
         }
         private void DrawSkinningPracticeMenu()
         {
@@ -122,6 +125,7 @@ namespace MashBoxSDK.AnimationStudio
             else menu.AddDisabledItem(new GUIContent("Send to Retopology"));
             menu.AddItem(new GUIContent("New skinning workspace"),false,()=>Guard(()=>
             {
+                if (skinningTutorialSession) ExitSkinningTutorial();
                 if (!ConfirmSkinningReplacement()) return;
                 skinningEditor?.Dispose(); skinningEditor = null; skinningDocument = null; BindSkinningMode();
             }));
@@ -131,6 +135,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (string.IsNullOrEmpty(path)) return;
                 var document = AssetDatabase.LoadAssetAtPath<StudioSkinningDocument>(FileUtil.GetProjectRelativePath(path));
                 if (!document) throw new System.InvalidOperationException("Choose a saved Skinning workspace asset.");
+                if (skinningTutorialSession) ExitSkinningTutorial();
                 if (!ConfirmSkinningReplacement()) return;
                 skinningEditor?.Dispose(); skinningEditor = null; skinningDocument = document; BindSkinningMode(); skinningEditor.Frame(viewport);
             }));
@@ -167,6 +172,17 @@ namespace MashBoxSDK.AnimationStudio
             if (skinningEditor.CanRepairArmpits)
                 menu.AddItem(new GUIContent("Smooth Armpit Weights", "Gently smooth the corrected transition, with bounded arm/chest weight changes. Supports Undo."),false,()=>skinningEditor.Run(skinningEditor.SmoothArmpitWeights));
             else menu.AddDisabledItem(new GUIContent("Smooth Armpit Weights"));
+            menu.AddSeparator("");
+            if (skinningEditor.CanRepairArmpits)
+            {
+                menu.AddItem(new GUIContent("Fix Crotch Weights - Small", "Reduce leg pull at the crotch and smooth the transition. Supports Undo."),false,()=>skinningEditor.Run(skinningEditor.FixCrotchWeights));
+                menu.AddItem(new GUIContent("Fix Crotch Weights - Strong", "Stronger pelvis retention with a smooth transition into each leg. Supports Undo."),false,()=>skinningEditor.Run(skinningEditor.FixCrotchWeightsStrong));
+            }
+            else
+            {
+                menu.AddDisabledItem(new GUIContent("Fix Crotch Weights - Small"));
+                menu.AddDisabledItem(new GUIContent("Fix Crotch Weights - Strong"));
+            }
             menu.DropDown(rect);
         }
         private void DrawSkinningEditMenu()
@@ -207,6 +223,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal bool SaveAllStudioDocuments()
         {
+            if(skinningBeforeTutorial&&skinningBeforeTutorial.dirty&&!skinningBeforeTutorial.SaveDocument())return false;
             if(retopologyBeforeTutorial&&retopologyBeforeTutorial.dirty)
             {retopologyBeforeTutorial.SaveWorkspace();if(retopologyBeforeTutorial.dirty)return false;}
             if(retopologyDocument&&retopologyDocument.dirty)
@@ -218,6 +235,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DiscardSkinningChanges()
         {
+            if(skinningTutorialSession)ExitSkinningTutorial();
             skinningEditor?.Dispose(); skinningEditor = null;
             if (skinningDocument && EditorUtility.IsPersistent(skinningDocument))
             {

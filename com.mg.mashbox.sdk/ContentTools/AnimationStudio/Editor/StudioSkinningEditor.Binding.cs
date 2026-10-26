@@ -26,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
             skin.Apply(Part.mesh);
             Part.mesh.bindposes = Array.Empty<Matrix4x4>();
             Part.bound = false;
-            Rebuild(); Changed();
+            Rebuild(); Changed(); RecordSkinTutorialAction("unbind");
         }
         internal void SetSelectedMeshRole(bool bust)
         {

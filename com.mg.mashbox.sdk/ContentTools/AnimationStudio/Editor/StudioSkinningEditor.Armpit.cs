@@ -11,17 +11,20 @@ namespace MashBoxSDK.AnimationStudio
         internal void ReduceArmpitTenting() => ReduceArmpitTenting(false);
         internal void ReduceArmpitTentingStrong() => ReduceArmpitTenting(true);
         internal void SmoothArmpitWeights() => ReduceArmpitTenting(false,true);
-        private void ReduceArmpitTenting(bool strong, bool smoothOnly = false)
+        private void ReduceArmpitTenting(bool strong, bool smoothOnly = false, bool automatic = false)
         {
             if (!CanRepairArmpits) return;
             EndStroke(); PausePreviewAnimation();
             int Find(string name) => Array.FindIndex(bones,b=>StudioSkinningDocument.BoneName(b.name)==name);
+            if(automatic && (!previewClip || previewClip.frameRate<=0 || previewClip.length<2f/previewClip.frameRate)) return;
             int left=Find("LeftArm"),right=Find("RightArm"),hips=Find("Hips");
+            if(automatic && (left<0 || right<0 || hips<0)) return;
             if(left<0 || right<0 || hips<0 || !previewClip || previewClip.frameRate<=0 || previewClip.length<2f/previewClip.frameRate)
                 throw new InvalidOperationException("Armpit correction requires the SDK human arm/hips joints and A-pose test frame.");
             var chest=bones[left].parent;
             while(chest && !bones[right].IsChildOf(chest)) chest=chest.parent;
             int chestIndex=Array.IndexOf(bones,chest);
+            if(automatic && (chestIndex<0 || chest==bones[hips] || locked[chestIndex])) return;
             if(chestIndex<0 || chest==bones[hips]) throw new InvalidOperationException("Could not identify a shared chest joint.");
             if(locked[chestIndex]) throw new InvalidOperationException("Unlock the chest influence before reducing armpit tenting.");
             var positions=bones.Select(b=>b.localPosition).ToArray();
@@ -49,10 +52,10 @@ namespace MashBoxSDK.AnimationStudio
                 arm[chestIndex]=false;
                 var posed=new Vector3[verts.Length];
                 for(int i=0;i<posed.Length;i++) posed[i]=skin.SkinMatrix(i,matrices).MultiplyPoint3x4(verts[i]);
-                var torsoRegion=BuildArmpitTorsoRegion(posed,verts,shoulderCenter,up,across,halfWidth,torsoHeight);
+                var torsoRegion=BuildArmpitTorsoRegion(posed,verts,shoulderCenter,up,across,halfWidth,torsoHeight,automatic);
                 if(smoothOnly)
                 {
-                    SmoothArmpitTransition(skin,posed,torsoRegion,shoulderCenter,up,across,halfWidth,torsoHeight,arm,chestIndex);
+                    SmoothArmpitTransition(skin,posed,torsoRegion,shoulderCenter,up,across,halfWidth,torsoHeight,arm,chestIndex,automatic);
                     return;
                 }
                 int changed=0;
@@ -94,7 +97,8 @@ namespace MashBoxSDK.AnimationStudio
                     skin.Apply(Part.mesh); Rebuild(); Changed();
                 }
                 error=null;
-                lastView?.ShowNotification(new GUIContent(changed>0 ? $"Reduced armpit pull on {changed:N0} vertices" : "No excess arm weights found in the torso region"));
+                if(!automatic)RecordSkinTutorialAction("armpit");
+                if(!automatic) lastView?.ShowNotification(new GUIContent(changed>0 ? $"Reduced armpit pull on {changed:N0} vertices" : "No excess arm weights found in the torso region"));
             }
             finally
             {

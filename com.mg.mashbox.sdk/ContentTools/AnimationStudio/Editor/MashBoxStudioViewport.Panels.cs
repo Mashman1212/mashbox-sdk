@@ -220,7 +220,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 bool tucked = left ? skinLeftTucked : skinRightTucked;
                 string arrow = left == tucked ? "›" : "‹";
-                string title = left ? "Meshes" : retopologyPanels ? (retopologyTutorialGuide ? "Tutorial Guide" : "Topology Tools") : "Brush Settings";
+                string title = left ? "Meshes" : retopologyPanels ? (retopologyTutorialGuide ? "Tutorial Guide" : "Topology Tools") : (skinTutorialGuide?"Tutorial Guide":"Brush Settings");
                 var rect = new Rect(0,0,left ? 106 : SkinPanelTabWidth,24);
                 var content = new GUIContent(left ? arrow + "  " + title : title + "  " + arrow,(tucked ? "Show " : "Tuck ") + title);
                 EditorGUI.DrawRect(rect, rect.Contains(Event.current.mousePosition) ? new Color(.10f,.12f,.12f) : new Color(.035f,.04f,.04f));

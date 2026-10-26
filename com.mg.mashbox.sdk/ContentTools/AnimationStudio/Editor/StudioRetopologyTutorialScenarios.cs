@@ -57,6 +57,7 @@ namespace MashBoxSDK.AnimationStudio
                         var quads=part.faces.ToArray();part.faces.Clear();
                         foreach(var f in quads){var a=f.vertices;part.faces.Add(new Face(new[]{a[0],a[1],a[2]}));part.faces.Add(new Face(new[]{a[0],a[2],a[3]}));}
                     }
+                    if(lesson.scenario=="uvtransfer"){part.uv=part.uv.Select(v=>Vector2.zero).ToList();part.needsUV=true;}
                     // Put the working surface just above its reference toward the starting camera.
                     for(int i=0;i<part.vertices.Count;i++)part.vertices[i]+=Vector3.back*doc.offset;
                 }

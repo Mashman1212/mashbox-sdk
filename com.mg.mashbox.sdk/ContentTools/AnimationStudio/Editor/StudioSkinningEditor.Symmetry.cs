@@ -16,6 +16,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EndStroke(); Undo.RecordObject(Document,"Sculpt symmetry");
             Document.sculptSymmetryAxis=axis; Document.sculptSymmetryLocal=local; Changed();
+            if(axis==1)RecordSkinTutorialAction("symmetry");
         }
         private Matrix4x4 SymmetryFrame => Document.sculptSymmetryLocal && Part != null
             ? Matrix4x4.TRS(Part.sourceToWorkspace.GetColumn(3),Part.sourceToWorkspace.rotation,Vector3.one)

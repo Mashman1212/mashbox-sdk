@@ -56,6 +56,7 @@ namespace MashBoxSDK.AnimationStudio
                     Command(menu,"Mirror -X to +X",()=>Change("Mirror topology",()=>StudioRetopologyOperations.Mirror(Active,false)));
                     Command(menu,"Validate Topology",()=>{status=StudioRetopologyOperations.Audit(Active);RecordTutorialAction("validate");view?.ShowNotification(new GUIContent(status));});
                 });
+                DrawUVMenu();
             }
         }
         private void Menu(string title,Action<StudioMenu> build)
@@ -75,6 +76,7 @@ namespace MashBoxSDK.AnimationStudio
         private void HandleDrop(Event evt)
         {
             if(evt.type!=EventType.DragUpdated&&evt.type!=EventType.DragPerform)return;
+            if(DragAndDrop.objectReferences.Any(o=>o is Material))return;
             bool valid=DragAndDrop.objectReferences.OfType<GameObject>().Any()||DragAndDrop.paths.Any(p=>new[]{".fbx",".obj",".blend"}.Contains(Path.GetExtension(p).ToLowerInvariant()));
             if(!valid)return;DragAndDrop.visualMode=DragAndDropVisualMode.Copy;
             if(evt.type==EventType.DragPerform)
@@ -109,11 +111,16 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var culture=CultureInfo.InvariantCulture;var text=new StringBuilder("# MashBox Studio Retopology\n");
                 foreach(var v in Active.vertices)text.AppendFormat(culture,"v {0:R} {1:R} {2:R}\n",-v.x,v.y,v.z);
-                foreach(var uv in Active.uv)text.AppendFormat(culture,"vt {0:R} {1:R}\n",uv.x,uv.y);
+                var uvStarts=new System.Collections.Generic.Dictionary<StudioRetopologyDocument.Face,int>();int uvIndex=1;
+                foreach(var face in Active.faces)
+                {
+                    uvStarts[face]=uvIndex;
+                    for(int c=0;c<face.vertices.Length;c++){var uv=StudioRetopologyDocument.FaceUV(Active,face,c);text.AppendFormat(culture,"vt {0:R} {1:R}\n",uv.x,uv.y);uvIndex++;}
+                }
                 foreach(var group in Active.faces.GroupBy(f=>f.material))
                 {
                     text.AppendLine("g Material_"+group.Key);
-                    foreach(var face in group){text.Append("f");foreach(int i in face.vertices.Reverse())text.Append(" "+(i+1)+"/"+(i+1));text.AppendLine();}
+                    foreach(var face in group){text.Append("f");for(int c=face.vertices.Length-1;c>=0;c--)text.Append(" "+(face.vertices[c]+1)+"/"+(uvStarts[face]+c));text.AppendLine();}
                 }
                 File.WriteAllText(path,text.ToString());
             }

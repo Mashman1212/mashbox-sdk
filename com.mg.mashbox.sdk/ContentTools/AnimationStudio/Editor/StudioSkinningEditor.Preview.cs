@@ -124,13 +124,13 @@ namespace MashBoxSDK.AnimationStudio
             using (new EditorGUI.DisabledScope(!previewClip))
             {
                 if (DrawPosePresetButton(new Rect(x,y,poseWidth,26), false))
-                    Run(() => JumpToPreviewFrame(0));
+                    Run(() => { JumpToPreviewFrame(0); RecordSkinTutorialAction("pose:0"); });
                 x += poseWidth + 6;
                 if (DrawPosePresetButton(new Rect(x,y,poseWidth,26), true))
-                    Run(() => JumpToPreviewFrame(2));
+                    Run(() => { JumpToPreviewFrame(2); RecordSkinTutorialAction("pose:2"); });
                 x += poseWidth + 6;
                 if (DrawPosePresetButton(new Rect(x,y,poseWidth,26), true, true))
-                    Run(() => JumpToPreviewFrame(3));
+                    Run(() => { JumpToPreviewFrame(3); RecordSkinTutorialAction("pose:3"); });
                 x += poseWidth + 10;
             }
             var label = new GUIStyle(StudioTheme.Styles.miniLabel) { alignment = TextAnchor.MiddleLeft };
@@ -148,7 +148,7 @@ namespace MashBoxSDK.AnimationStudio
             var track = new Rect(x,row.y + 10,Mathf.Max(30,timeX-x-12),16);
             EditorGUI.BeginChangeCheck();
             float next = GUI.HorizontalSlider(track,previewTime,0,Mathf.Max(.001f,previewClip.length));
-            if (EditorGUI.EndChangeCheck()) { previewPlaying = false; Run(() => SamplePreviewAnimation(next,true)); }
+            if (EditorGUI.EndChangeCheck()) { previewPlaying = false; Run(() => { SamplePreviewAnimation(next,true); RecordSkinTutorialAction("scrub"); }); }
             label.alignment = TextAnchor.MiddleRight;
             GUI.Label(new Rect(timeX,y,timeWidth,26),$"{previewTime:0.00} / {previewClip.length:0.00}s",label);
         }

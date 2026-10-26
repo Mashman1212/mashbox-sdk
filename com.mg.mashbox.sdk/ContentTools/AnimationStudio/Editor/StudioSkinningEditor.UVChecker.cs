@@ -30,7 +30,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(DrawSkinModeButton(rect,false,"Toggle UV checker on the selected mesh"))
             {
-                showUVChecker=!showUVChecker;
+                showUVChecker=!showUVChecker;if(showUVChecker)showTextured=false;
                 if(showUVChecker) EnsureUVChecker();
                 UpdateDisplay();
             }

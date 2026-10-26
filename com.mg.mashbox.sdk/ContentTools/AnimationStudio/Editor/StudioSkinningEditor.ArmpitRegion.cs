@@ -6,7 +6,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
-        private float[] BuildArmpitTorsoRegion(Vector3[] points, Vector3[] restPoints, Vector3 center, Vector3 up, Vector3 across, float halfWidth, float height)
+        private float[] BuildArmpitTorsoRegion(Vector3[] points, Vector3[] restPoints, Vector3 center, Vector3 up, Vector3 across, float halfWidth, float height, bool automatic = false)
         {
             // Weld only for analysis: UV splits must not interrupt surface paths.
             var representatives=new Dictionary<Vector3,int>();
@@ -31,6 +31,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(lateral<=.68f && below>=.18f && below<=.85f) torsoSeeds.Add(r);
                 if(lateral>=1.65f) sleeveSeeds.Add(r);
             }
+            if(automatic && (torsoSeeds.Count==0 || sleeveSeeds.Count==0)) return new float[points.Length];
             if(torsoSeeds.Count==0 || sleeveSeeds.Count==0)
                 throw new InvalidOperationException("Could not identify torso and sleeve regions. Fit the shirt in A-pose before running armpit correction.");
             float[] Distances(List<int> seeds)

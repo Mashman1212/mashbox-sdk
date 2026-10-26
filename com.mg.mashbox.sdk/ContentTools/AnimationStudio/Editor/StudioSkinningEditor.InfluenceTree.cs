@@ -75,13 +75,13 @@ namespace MashBoxSDK.AnimationStudio
             var nameRect=new Rect(x+16,row.y,Mathf.Max(0,row.xMax-x-44),22);
             string name=StudioSkinningDocument.BoneName(bones[index].name);
             if (GUI.Button(nameRect,new GUIContent(name,"Select " + name),StudioTheme.Styles.label) && !selected)
-            { FinishPoseGesture(); boneIndex=index; UpdateDisplay(); }
+            { FinishPoseGesture(); boneIndex=index; UpdateDisplay(); RecordSkinTutorialAction("influence"); }
             var lockRect=new Rect(row.xMax-24,row.y+1,22,20);
             var previous=GUI.color;
             if (!locked[index]) GUI.color=new Color(previous.r,previous.g,previous.b,previous.a*.35f);
             bool toggle=GUI.Button(lockRect,new GUIContent(EditorGUIUtility.IconContent("LockIcon-On").image,locked[index] ? "Unlock influence for painting" : "Lock influence while painting"),GUIStyle.none);
             GUI.color=previous;
-            if (toggle) { locked[index]=!locked[index]; repaint(); }
+            if (toggle) { locked[index]=!locked[index]; if(locked[index])RecordSkinTutorialAction("lock"); repaint(); }
             if (hasChildren && (filtering || influenceExpanded[index]))
                 foreach (int child in influenceChildren[index]) DrawInfluenceBranch(child,depth+1,filtering);
         }

@@ -26,6 +26,8 @@ namespace MashBoxSDK.AnimationStudio
         public GameObject skeleton;
         public List<Part> parts = new List<Part>();
         public bool dirty;
+        [HideInInspector] public string tutorialId;
+        [HideInInspector] public List<string> tutorialActions = new List<string>();
         public int sculptSymmetryAxis; // 0 off; 1 X; 2 Y; 3 Z
         public bool sculptSymmetryLocal;
         public bool grabVolume = true;

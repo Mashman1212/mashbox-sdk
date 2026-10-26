@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void HandleModelDrop(Event evt)
         {
+            if (DragAndDrop.objectReferences.Any(o => o is Material)) return;
             var models = DragAndDrop.objectReferences.OfType<GameObject>().ToArray();
             var paths = DragAndDrop.paths.Where(IsDesktopModel).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (models.Length == 0 && paths.Length == 0) return;

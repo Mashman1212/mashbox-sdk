@@ -231,6 +231,11 @@ namespace MashBoxSDK.AnimationStudio
                 if(IconButton(3,wire,"Toggle working mesh polygon edges")){wire=!wire;repaint();}
                 if(IconButton(5,referenceWire,"Toggle reference quad wireframe. Imported triangles are paired for display where possible; the reference mesh is unchanged."))
                 {referenceWire=!referenceWire;EditorPrefs.SetBool("MashBox.Retopology.ReferenceWire",referenceWire);repaint();}
+                if(IconButton(17,referenceChecker,"UV checker on the selected reference mesh"))ToggleChecker(true);
+                if(IconButton(19,referenceTextured,"Textured preview on the selected reference mesh"))ToggleTextured(true);
+                GUILayout.Space(6);
+                if(IconButton(18,workingChecker,"UV checker on the selected working mesh"))ToggleChecker(false);
+                if(IconButton(20,workingTextured,"Textured preview on the selected working mesh"))ToggleTextured(false);
                 if(IconButton(6,workingXray,"Shallow X-ray: reveal nearby patches through the reference while hiding distant faces."))ToggleWorkingXray();
                 if(IconButton(4,Document.symmetry,"Mirror drawing about local X=0"))Document.symmetry=!Document.symmetry;
                 GUILayout.Space(6);GUILayout.Label(activeTool==RetopoTool.Select?"":activeTool==RetopoTool.EdgeBridge?(bridgeSource.HasValue?"Bridge: target":"Bridge: source"):activeTool==RetopoTool.TargetWeld?(weldSource<0?"Weld: source":"Weld: target"):activeTool==RetopoTool.Quad?"Draw Quad":activeTool==RetopoTool.Strip?"Quad Strip":activeTool==RetopoTool.Tube?"Tube":activeTool==RetopoTool.Resolution?"Resolution":activeTool==RetopoTool.RelaxBrush?"Relax":continuousPatch?"Patch +":"Quad Patch",StudioTheme.Styles.miniLabel,GUILayout.Height(24));
@@ -253,7 +258,15 @@ namespace MashBoxSDK.AnimationStudio
                 var previous=Handles.color;var matrix=Handles.matrix;Handles.matrix=Matrix4x4.identity;
                 Handles.color=active?new Color(.5f,1,.87f):new Color(.75f,.81f,.81f);
                 Vector3 P(float x,float y)=>new Vector3(rect.center.x+x,rect.center.y+y,0);
-                if(icon==0)
+                if(icon==19||icon==20)
+                {if(icon==19)Handles.DrawAAPolyLine(1.2f,P(-10,5),P(-10,-10),P(5,-10));StudioMeshMaterialPreview.DrawTextureIcon(rect,Handles.color);}
+                else if(icon==17||icon==18)
+                {
+                    if(icon==17)Handles.DrawAAPolyLine(1.2f,P(-10,5),P(-10,-10),P(5,-10));
+                    for(int y=0;y<4;y++)for(int x=0;x<4;x++)
+                        EditorGUI.DrawRect(new Rect(rect.center.x-7+x*4,rect.center.y-7+y*4,4,4),((x+y)&1)==0?Handles.color:new Color(.15f,.18f,.18f));
+                }
+                else if(icon==0)
                 {Handles.DrawAAPolyLine(1.6f,P(-7,-8),P(-7,7),P(-3,3),P(1,9),P(4,7),P(0,1),P(6,1),P(-7,-8));}
                 else if(icon==1)
                 {
@@ -350,7 +363,7 @@ namespace MashBoxSDK.AnimationStudio
             float size=Mathf.Max(bounds.size.x,Mathf.Max(bounds.size.y,bounds.size.z));
             workingXrayMaterial.SetFloat("_Depth",size*xrayDepthPercent*.01f);
             workingXrayMaterial.SetFloat("_Near",view.camera.nearClipPlane);
-            workingXrayMaterial.SetColor("_Color",new Color(.35f,1f,.8f,.14f));
+            workingXrayMaterial.SetColor("_Color",new Color(.35f,1f,.8f,(workingChecker||workingTextured)?0f:.14f));
             // Reuse the preview mesh; never offset or modify the authored geometry.
             for(int sub=0;sub<mesh.subMeshCount;sub++)
                 if(mesh.GetIndexCount(sub)>0&&workingXrayMaterial.SetPass(0))Graphics.DrawMeshNow(mesh,Matrix4x4.identity,sub);
@@ -369,7 +382,7 @@ namespace MashBoxSDK.AnimationStudio
             lighting.ConfigureCamera(canvas);StudioPreviewLighting.ConfigureStudioBackground(canvas);
             if(canvas.modelGridVisible)canvas.DrawGroundGrid();
             bool overUI=canvas.IsOverSkinningPanels(evt.mousePosition);
-            if(!overUI)HandleDrop(evt);
+            if(!overUI){DropMaterialOnViewport(evt);HandleDrop(evt);}
             canvas.wantsMouseMove=true;
             if(evt.type==EventType.MouseMove)canvas.Repaint();
             if(Active==null)
@@ -628,6 +641,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if(tutorialMoved)RecordTutorialAction("transform");
             rotation=turn;scale=resized;Document.dirty=true;EditorUtility.SetDirty(Document);
+            if(Active.faces.Any(f=>f.cornerUV!=null)){Rebuild();return;}
             var mesh=display[Document.selected];xrayLines[Document.selected].SetVertices(Active.vertices);mesh.SetVertices(Active.vertices);mesh.RecalculateNormals();mesh.RecalculateBounds();repaint();
         }
         private static float SafeRatio(float a,float b)=>Mathf.Abs(b)<1e-5f?1:a/b;
