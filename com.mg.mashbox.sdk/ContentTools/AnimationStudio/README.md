@@ -1,5 +1,10 @@
 # MashBox Studio
 
+## Axis and plane move snapping (2026-10-26)
+
+Arrow handles snap only X, Y or Z; plane squares snap only their two axes, in the captured World/Local orientation. Constrained vertex targets are chosen by distance along those axes from the unsnapped world handle position, independently of camera angle or cursor proximity. Locked coordinates only break target ties and remain unchanged in the result. Grid snapping rounds only the allowed coordinates. Single- and multi-mesh component moves share the resolver and exclude all moving selected vertices. The free center and instant middle-click retain cursor-based vertex picking; free grid movement retains the world X/Z ground plane. Vertex snap takes precedence over grid; no eligible vertex keeps the previous position. No new setting or shortcut.
+
+
 ## Shared selection mode (2026-10-26)
 
 Selection-mode changes apply to all selected meshes together, whether invoked over a mesh or from a control without a hovered target. They preserve the selected object cohort, acquire the hovered target as before, and use one grouped selection Undo action. Component types cannot diverge through modified viewport picking. The previous plain-click rule still selects a different mesh exclusively in Object mode.

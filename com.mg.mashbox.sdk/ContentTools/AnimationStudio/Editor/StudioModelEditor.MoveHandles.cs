@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -115,9 +116,74 @@ namespace MashBoxSDK.AnimationStudio
             var point = PivotCameraPoint(view, mouse);
             if (pivot) return TryPivotSnapVertex(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target);
             if (mode == ComponentMode.Object) return TryObjectSnapTarget(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target);
-            var selected = SelectedVertices();
+            var selected = MovingSnapVertices();
             return TryPivotSnapVertex(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target, null,
-                (node, vertex) => node != Active || !selected.Contains(vertex));
+                (node, vertex) => !selected.TryGetValue(node, out var vertices) || !vertices.Contains(vertex));
+        }
+        private Dictionary<int,HashSet<int>> MovingSnapVertices()
+        {
+            var result = new Dictionary<int,HashSet<int>>();
+            if (pivot || mode == ComponentMode.Object) return result;
+            foreach (int node in ComponentTargetNodes(true))
+                using (new ComponentTargetScope(this,node)) result[node] = SelectedVertices();
+            return result;
+        }
+        private bool TryConstrainedMoveSnapTarget(Vector3 handleTarget, out Vector3 target)
+        {
+            target = default;
+            if (!Document) return false;
+            var moving = MovingSnapVertices();
+            // Rank in the captured handle frame, never camera/screen space. The
+            // locked coordinates only break ties; they cannot select another level.
+            var inverse = Quaternion.Inverse(moveDragOrientation);
+            double best = double.PositiveInfinity, bestOther = double.PositiveInfinity;
+            bool found = false;
+            for (int node = 0; node < Transforms.Length; node++)
+            {
+                if (!pivot && mode == ComponentMode.Object && IsSnapMovingNode(node)) continue;
+                var mesh = Document.nodes[node].mesh;
+                var transform = Transforms[node];
+                if (!mesh || !transform.gameObject.activeInHierarchy) continue;
+                var renderer = transform.GetComponent<Renderer>();
+                if (!renderer || !renderer.enabled) continue;
+                moving.TryGetValue(node,out var excluded);
+                var vertices = PickVertices(node);
+                var matrix = transform.localToWorldMatrix;
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    if (excluded != null && excluded.Contains(i)) continue;
+                    var world = matrix.MultiplyPoint3x4(vertices[i]);
+                    if (!FiniteScalePoint(world)) continue;
+                    var delta = inverse * (world - handleTarget);
+                    double distance = 0, other = 0;
+                    for (int axis = 0; axis < 3; axis++)
+                    {
+                        double squared = (double)delta[axis] * delta[axis];
+                        if (((int)moveDragAxes & (1 << axis)) != 0) distance += squared;
+                        else other += squared;
+                    }
+                    if (distance > best || distance == best && other >= bestOther) continue;
+                    best = distance; bestOther = other; target = world; found = true;
+                }
+            }
+            return found;
+        }
+        private Vector3 ResolveMoveSnap(SceneView view, Vector2 mouse, Vector3 position, Vector3 previous)
+        {
+            if (pivotSnapHeld)
+            {
+                bool found = moveDragAxes == MoveAxes.Free
+                    ? TryMoveSnapTarget(view,mouse,out var target)
+                    : TryConstrainedMoveSnapTarget(position,out target);
+                return found ? ConstrainMove(moveDragOrigin,target,moveDragOrientation,moveDragAxes) : previous;
+            }
+            if (gridSnapHeld)
+            {
+                if (moveDragAxes == MoveAxes.Free)
+                    return TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(mouse),StudioSettings.Current.gridSpacing,out var ground) ? ground : previous;
+                return SnapConstrainedGrid(moveDragOrigin,position,moveDragOrientation,moveDragAxes,StudioSettings.Current.gridSpacing);
+            }
+            return position;
         }
         internal string SnapStatusText
         {

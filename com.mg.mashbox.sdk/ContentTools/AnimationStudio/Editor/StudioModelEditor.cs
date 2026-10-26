@@ -824,23 +824,8 @@ namespace MashBoxSDK.AnimationStudio
             componentHandleRotation = rotation;
             if ((pivot || tool == Tool.Move) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl && moveDragEvent)
             {
-                if (pivotSnapHeld)
-                {
-                    // V temporarily takes priority over X; retain the last position
-                    // when no eligible vertex is beneath the cursor.
-                    position = TryMoveSnapTarget(SceneView.currentDrawingSceneView, movePointer, out var target)
-                        ? ConstrainMove(moveDragOrigin, target, moveDragOrientation, moveDragAxes) : center;
-                    handleChanged = (position - center).sqrMagnitude > 1e-12f;
-                }
-                else if (gridSnapHeld)
-                {
-                    if (moveDragAxes == MoveAxes.Free)
-                        position = TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(movePointer), StudioSettings.Current.gridSpacing, out var ground)
-                            ? ground : center;
-                    else
-                        position = SnapConstrainedGrid(moveDragOrigin, position, moveDragOrientation, moveDragAxes, StudioSettings.Current.gridSpacing);
-                    handleChanged = (position - center).sqrMagnitude > 1e-12f;
-                }
+                position = ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,center);
+                if (pivotSnapHeld || gridSnapHeld) handleChanged = (position - center).sqrMagnitude > 1e-12f;
             }
             if (!handleChanged) return;
             if (indices!=null && vertices==null) vertices=readVertices.ToArray();
