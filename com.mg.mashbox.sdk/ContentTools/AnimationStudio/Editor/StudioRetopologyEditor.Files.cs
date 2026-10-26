@@ -28,6 +28,7 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("Import Reference..."),false,()=>Run(()=>ImportPath(EditorUtility.OpenFilePanel("Import Reference",Application.dataPath,"fbx,obj,blend"))));
                     menu.AddItem(new GUIContent("Save Workspace\tCtrl+S"),false,()=>Run(Document.SaveWorkspace));
                     menu.AddSeparator("");
+                    Command(menu,"Send to Skinner",()=>SendToSkinner?.Invoke(Active));
                     Command(menu,"Export Working Mesh / FBX...",()=>Export(false));Command(menu,"Export Working Mesh / OBJ (quads)...",()=>Export(true));
                 });
                 Menu("Edit",menu=>
@@ -43,22 +44,17 @@ namespace MashBoxSDK.AnimationStudio
                 });
                 Menu("Topology",menu=>
                 {
-                    if(Active!=null)menu.AddItem(new GUIContent("Draw Tube"),activeTool==RetopoTool.Tube,StartTube);
-                    else menu.AddDisabledItem(new GUIContent("Draw Tube"));
                     if(Active!=null)menu.AddItem(new GUIContent("Generate Pants Quad Cage"),false,()=>Run(GeneratePants));
                     else menu.AddDisabledItem(new GUIContent("Generate Pants Quad Cage"));
-                    Command(menu,"Reduce Working Mesh (LOD)",()=>Generate(false));Command(menu,"Pair Triangles into Quads",()=>Change("Pair quads",()=>StudioRetopologyOperations.PairQuads(Active)));
-                    if(Active!=null)menu.AddItem(new GUIContent("Relax Brush"),activeTool==RetopoTool.RelaxBrush,StartRelaxBrush);else menu.AddDisabledItem(new GUIContent("Relax Brush"));
+                    Command(menu,"Pair Triangles into Quads",()=>Change("Pair quads",()=>StudioRetopologyOperations.PairQuads(Active)));
                     Command(menu,"Project to Reference",Project);Command(menu,"Relax on Surface",Relax);
-                    Command(menu,"Target Weld",StartTargetWeld);
                     Command(menu,"Bridge Selected Borders",BridgeLoops);
-                    Command(menu,"Bridge Pants / Crotch",BridgePants);
                     Command(menu,"Subdivide and Project",()=>Change("Subdivide topology",()=>StudioRetopologyOperations.Subdivide(Active,Document.project?Surface:null,Document.offset)));
-                    Command(menu,"Clean Mesh",()=>Change("Clean topology",()=>StudioRetopologyOperations.Clean(Active)));
+                    Command(menu,"Clean Mesh",CleanMesh);
                     menu.AddSeparator("");
                     Command(menu,"Mirror +X to -X",()=>Change("Mirror topology",()=>StudioRetopologyOperations.Mirror(Active,true)));
                     Command(menu,"Mirror -X to +X",()=>Change("Mirror topology",()=>StudioRetopologyOperations.Mirror(Active,false)));
-                    Command(menu,"Validate Topology",()=>{status=StudioRetopologyOperations.Audit(Active);view?.ShowNotification(new GUIContent(status));});
+                    Command(menu,"Validate Topology",()=>{status=StudioRetopologyOperations.Audit(Active);RecordTutorialAction("validate");view?.ShowNotification(new GUIContent(status));});
                 });
             }
         }
@@ -133,6 +129,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 finally{UnityEngine.Object.DestroyImmediate(root);UnityEngine.Object.DestroyImmediate(mesh);}
             }
+            RecordTutorialAction("export");
             AssetDatabase.Refresh();status="Exported "+Path.GetFileName(path)+". UVs and skin binding can be finished in Modeling / Skinning.";
             if(skin)
             {

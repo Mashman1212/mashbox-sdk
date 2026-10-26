@@ -21,6 +21,10 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (!skinningDocument.skeleton) throw new System.InvalidOperationException("The SDK Skeleton asset is missing.");
             skinningEditor = new StudioSkinningEditor(skinningDocument, () => { UpdateClipSaveState(); viewport?.Repaint(); });
+            skinningEditor.SendToRetopology=(part,names,rest)=>
+            {
+                EnsureRetopologyEditor();retopologyEditor.ImportSkinning(part,names,rest);OpenRetopologyMode();
+            };
             if (newWorkspace)
             {
                 try
@@ -114,6 +118,8 @@ namespace MashBoxSDK.AnimationStudio
 #endif
             menu.AddItem(new GUIContent("Save FBX"), false, () => Guard(() => skinningEditor.SaveSelectedFbx()));
             menu.AddItem(new GUIContent("Save FBX As…"), false, () => Guard(() => skinningEditor.SaveSelectedFbxAs()));
+            if(skinningEditor.HasEditableMesh)menu.AddItem(new GUIContent("Send to Retopology"),false,()=>Guard(skinningEditor.SendSelectedToRetopology));
+            else menu.AddDisabledItem(new GUIContent("Send to Retopology"));
             menu.AddItem(new GUIContent("New skinning workspace"),false,()=>Guard(()=>
             {
                 if (!ConfirmSkinningReplacement()) return;
@@ -201,6 +207,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal bool SaveAllStudioDocuments()
         {
+            if(retopologyBeforeTutorial&&retopologyBeforeTutorial.dirty)
+            {retopologyBeforeTutorial.SaveWorkspace();if(retopologyBeforeTutorial.dirty)return false;}
             if(retopologyDocument&&retopologyDocument.dirty)
             {retopologyDocument.SaveWorkspace();if(retopologyDocument.dirty)return false;}
             skinningEditor?.EndStroke();

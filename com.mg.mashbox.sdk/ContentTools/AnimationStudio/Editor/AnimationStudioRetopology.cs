@@ -14,11 +14,18 @@ namespace MashBoxSDK.AnimationStudio
             if(!retopologyDocument)
             {retopologyDocument=CreateInstance<StudioRetopologyDocument>();retopologyDocument.name="Untitled Retopology";retopologyDocument.hideFlags=HideFlags.HideAndDontSave;}
             retopologyEditor=new StudioRetopologyEditor(retopologyDocument,()=>{UpdateClipSaveState();viewport?.Repaint();Repaint();});
+            retopologyEditor.StartTutorial=StartRetopologyTutorial;
+            retopologyEditor.RestartTutorial=RestartRetopologyTutorial;
+            retopologyEditor.ExitTutorial=ExitRetopologyTutorial;
             retopologyEditor.NewWorkspace=()=>Guard(()=>ReplaceRetopology(null));
             retopologyEditor.OpenWorkspace=document=>Guard(()=>ReplaceRetopology(document));
             retopologyEditor.SkinOutput=asset=>Guard(()=>
             {
                 EnsureSkinningEditor();skinningEditor.Import(asset);OpenSkinningMode();
+            });
+            retopologyEditor.SendToSkinner=part=>Guard(()=>
+            {
+                EnsureSkinningEditor();skinningEditor.ImportRetopology(part);OpenSkinningMode();
             });
             retopologyEditor.EditInModeling=(mesh,name)=>
             {
@@ -33,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ReplaceRetopology(StudioRetopologyDocument document)
         {
+            if(retopologyTutorialSession)ExitRetopologyTutorial();
             if(retopologyDocument && retopologyDocument.dirty)
             {
                 int choice=EditorUtility.DisplayDialogComplex("Unsaved retopology","Save this workspace before replacing it?","Save","Cancel","Discard");
@@ -49,6 +57,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DiscardRetopologyChanges()
         {
+            if(retopologyTutorialSession)
+            {
+                ReleaseRetopologyPractice();retopologyDocument=retopologyBeforeTutorial;
+                retopologyBeforeTutorial=null;retopologyTutorialSession=false;
+            }
             retopologyEditor?.Dispose();retopologyEditor=null;
             if(retopologyDocument&&EditorUtility.IsPersistent(retopologyDocument))
                 AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(retopologyDocument),ImportAssetOptions.ForceUpdate);
@@ -65,6 +78,8 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindViewportControls(DrawStudioMenuBar,retopologyEditor.DrawToolbar,DrawStudioSettings);
             viewport.BindStatistics(retopologyEditor.DrawStatistics);
             viewport.SetRetopologyPanels(true);
+            viewport.BindSkinPractice(retopologyEditor.DrawTutorialMenu);
+            viewport.SetRetopologyTutorialGuide(!string.IsNullOrEmpty(retopologyDocument.tutorialId));
         }
     }
     public sealed partial class MashBoxStudioViewport
@@ -76,7 +91,7 @@ namespace MashBoxSDK.AnimationStudio
             if(enabled&&!retopologyPanels){skinLeftTucked=false;skinRightTucked=true;skinInfluencesTucked=true;}
             retopologyPanels=enabled;UpdatePanelLayout();
             if(meshStatistics!=null)meshStatistics.style.width=enabled?420:256;
-            if(viewportOptions!=null){viewportOptions.style.width=enabled?612:202;viewportOptions.style.height=24;}
+            if(viewportOptions!=null){viewportOptions.style.width=enabled?704:202;viewportOptions.style.height=enabled?54:24;}
         }
     }
 }

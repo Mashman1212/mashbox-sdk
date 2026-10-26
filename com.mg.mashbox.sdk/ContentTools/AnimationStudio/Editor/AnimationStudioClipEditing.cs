@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdateClipSaveState()
         {
             if (!viewport) return;
-            viewport.SetClipUnsavedChanges((clipSession && clipSessionDirty) || (skinningDocument && skinningDocument.dirty) || (retopologyDocument && retopologyDocument.dirty));
+            viewport.SetClipUnsavedChanges((clipSession && clipSessionDirty) || (skinningDocument && skinningDocument.dirty) || (retopologyDocument && retopologyDocument.dirty) || (retopologyBeforeTutorial && retopologyBeforeTutorial.dirty));
             viewport.Repaint();
         }
 

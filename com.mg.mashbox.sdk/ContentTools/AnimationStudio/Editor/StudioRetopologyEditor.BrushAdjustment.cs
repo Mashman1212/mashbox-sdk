@@ -18,6 +18,11 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!adjustingRetopoBrush)return;
             if(cancel){RetopoBrushRadius=brushInitialRadius;if(brushAdjustmentTool==RetopoTool.RelaxBrush)relaxStrength=brushInitialStrength;}
+            else
+            {
+                if(!Mathf.Approximately(RetopoBrushRadius,brushInitialRadius))RecordTutorialAction("brushRadius");
+                if(brushAdjustmentTool==RetopoTool.RelaxBrush&&!Mathf.Approximately(relaxStrength,brushInitialStrength))RecordTutorialAction("brushStrength");
+            }
             if(GUIUtility.hotControl==brushAdjustmentControl)GUIUtility.hotControl=0;
             adjustingRetopoBrush=false;repaint();
         }

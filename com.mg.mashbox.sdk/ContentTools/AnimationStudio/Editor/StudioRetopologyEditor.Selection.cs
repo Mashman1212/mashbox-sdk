@@ -49,7 +49,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private readonly HashSet<int> selectedFaces=new HashSet<int>();
         private readonly HashSet<(int,int)> selectedEdges=new HashSet<(int,int)>();
-        private void ClearComponents(){selected.Clear();selectedFaces.Clear();selectedEdges.Clear();}
+        private void ClearComponents(){ResetLoopDirection();selected.Clear();selectedFaces.Clear();selectedEdges.Clear();}
         private void SyncComponentVertices()
         {
             selected.Clear();
@@ -63,9 +63,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawSelectionMode()
         {
-            if(IconButton(8,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Vertices,"Select vertices. Click or drag a box; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Vertices);
+            if(IconButton(8,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Vertices,"Select vertices. Click a vertex, then double-click its neighbor to follow that loop. Drag a box; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Vertices);
             if(IconButton(9,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Edges,"Select edges. Double-click selects an edge loop or border; Shift adds, Ctrl removes."))SetSelectionMode(SelectionMode.Edges);
-            if(IconButton(10,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Faces,"Select faces. Double-click selects the connected hull; Shift adds, Ctrl removes. Delete removes selected faces."))SetSelectionMode(SelectionMode.Faces);
+            if(IconButton(10,activeTool==RetopoTool.Select&&selectionMode==SelectionMode.Faces,"Select faces. Double-click the same face for its connected hull. Click a face, then double-click its neighbor to follow that row. Shift adds, Ctrl removes. Delete removes selected faces."))SetSelectionMode(SelectionMode.Faces);
             GUILayout.Space(6);
         }
         private void SelectAllComponents()
@@ -75,21 +75,6 @@ namespace MashBoxSDK.AnimationStudio
             else if(selectionMode==SelectionMode.Edges)selectedEdges.UnionWith(StudioRetopologyOperations.Edges(Active).Keys);
             if(selectionMode==SelectionMode.Vertices)for(int i=0;i<Active.vertices.Count;i++)selected.Add(i);
             else SyncComponentVertices();
-        }
-        private HashSet<int> ConnectedHullFaces(int seed)
-        {
-            var found=new HashSet<int>();
-            if(Active==null||seed<0||seed>=Active.faces.Count)return found;
-            var edges=StudioRetopologyOperations.Edges(Active);
-            var pending=new Queue<int>();found.Add(seed);pending.Enqueue(seed);
-            while(pending.Count>0)
-            {
-                var ids=Active.faces[pending.Dequeue()].vertices;
-                for(int i=0;i<ids.Length;i++)
-                    foreach(int neighbor in edges[StudioRetopologyOperations.Edge(ids[i],ids[(i+1)%ids.Length])])
-                        if(found.Add(neighbor))pending.Enqueue(neighbor);
-            }
-            return found;
         }
         private bool PointInMarquee(Vector3 point, Rect rect)
         {
@@ -136,11 +121,12 @@ namespace MashBoxSDK.AnimationStudio
         {
             bool click=(selectionEnd-selectionStart).sqrMagnitude<16;
             var rect=VertexSelectionRect(selectionStart,selectionEnd);
+            if(!click)ResetLoopDirection();
 
             if(selectionMode==SelectionMode.Faces)
             {
                 var hits=new HashSet<int>();
-                if(click){int face=PickFace(selectionEnd);if(face>=0){if(selectionClicks>=2)hits.UnionWith(ConnectedHullFaces(face));else hits.Add(face);}}
+                if(click){int face=PickFace(selectionEnd);if(face>=0)hits.UnionWith(ClickFaceLoop(face,selectionClicks>=2));else ResetLoopDirection();}
                 else for(int i=0;i<Active.faces.Count;i++)
                 {
                     if(FaceOverlapsMarquee(i,rect))hits.Add(i);
@@ -165,6 +151,7 @@ namespace MashBoxSDK.AnimationStudio
                         if(selectionClicks>=2)
                         {
                             hits.UnionWith(ConnectedEdgeLoop(Active,edge));
+                            if(!selectionSubtract&&hits.Count>1)RecordTutorialAction("selectEdgeLoop");
                         }
                     }
                 }

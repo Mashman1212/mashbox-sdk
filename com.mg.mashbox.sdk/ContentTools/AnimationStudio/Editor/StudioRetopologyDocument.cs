@@ -20,6 +20,8 @@ namespace MashBoxSDK.AnimationStudio
             public string name;
             public Mesh reference;
             public Material[] materials;
+            public string[] skinBoneNames;
+            public Matrix4x4[] skinBindCorrections;
             public bool showReference=true, showOutput=true;
             public List<Vector3> vertices=new List<Vector3>();
             public List<Vector2> uv=new List<Vector2>();
@@ -30,6 +32,8 @@ namespace MashBoxSDK.AnimationStudio
         public List<Part> parts=new List<Part>();
         public int selected=-1;
         public bool dirty;
+        [HideInInspector] public string tutorialId;
+        [HideInInspector] public List<string> tutorialActions=new List<string>();
         public bool project=true, symmetry, preserveBorders=true;
         public int targetTriangles=3000;
         public float offset=.002f, creaseAngle=55;

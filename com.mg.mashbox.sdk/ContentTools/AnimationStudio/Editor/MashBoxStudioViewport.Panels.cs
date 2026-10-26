@@ -117,7 +117,7 @@ namespace MashBoxSDK.AnimationStudio
             float optionsLeft = FoldablePanels ? SkinToolbarLeft : canvasLeft;
             if (viewportOptions != null) { viewportOptions.style.left = optionsLeft + 40; viewportOptions.style.top = optionsTop; }
             if (studioSettings != null) { studioSettings.style.left = optionsLeft + 8; studioSettings.style.top = optionsTop; }
-            if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop + 32; }
+            if (meshStatistics != null) { meshStatistics.style.left = canvasLeft + 8; meshStatistics.style.top = optionsTop + (retopologyPanels ? 62 : 32); }
             if (leftDivider == null || rightDivider == null) return;
             if (FoldablePanels)
             {
@@ -154,7 +154,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if(skinPracticeTab!=null)
             {
-                skinPracticeTab.style.display=skinPreviewTimeline&&!retopologyPanels?DisplayStyle.Flex:DisplayStyle.None;
+                skinPracticeTab.style.display=skinPreviewTimeline||retopologyPanels?DisplayStyle.Flex:DisplayStyle.None;
                 skinPracticeTab.style.top=0;
                 skinPracticeTab.style.right=PanelMargin;
                 skinPracticeTab.BringToFront();
@@ -220,7 +220,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 bool tucked = left ? skinLeftTucked : skinRightTucked;
                 string arrow = left == tucked ? "›" : "‹";
-                string title = left ? "Meshes" : retopologyPanels ? "Topology Tools" : "Brush Settings";
+                string title = left ? "Meshes" : retopologyPanels ? (retopologyTutorialGuide ? "Tutorial Guide" : "Topology Tools") : "Brush Settings";
                 var rect = new Rect(0,0,left ? 106 : SkinPanelTabWidth,24);
                 var content = new GUIContent(left ? arrow + "  " + title : title + "  " + arrow,(tucked ? "Show " : "Tuck ") + title);
                 EditorGUI.DrawRect(rect, rect.Contains(Event.current.mousePosition) ? new Color(.10f,.12f,.12f) : new Color(.035f,.04f,.04f));

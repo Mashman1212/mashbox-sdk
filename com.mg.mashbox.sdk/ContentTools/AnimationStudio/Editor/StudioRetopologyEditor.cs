@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
         private readonly List<GameObject> references=new List<GameObject>(),outputs=new List<GameObject>();
         private readonly List<Mesh> display=new List<Mesh>();
         private readonly List<Mesh> xrayLines=new List<Mesh>();
-        private float xrayDepthPercent=Mathf.Clamp(EditorPrefs.GetFloat("MashBox.Retopology.XrayDepthPercent",2f),0f,20f);
+        private readonly float xrayDepthPercent=Mathf.Clamp(EditorPrefs.GetFloat("MashBox.Retopology.XrayDepthPercent",2f),0f,20f);
         private readonly Dictionary<Mesh,StudioRetopologySurface> surfaces=new Dictionary<Mesh,StudioRetopologySurface>();
         private readonly Dictionary<Mesh,(bool reference,bool output)> visibility=new Dictionary<Mesh,(bool reference,bool output)>();
         private readonly HashSet<int> selected=new HashSet<int>();
@@ -33,12 +33,14 @@ namespace MashBoxSDK.AnimationStudio
         private bool referenceWire=EditorPrefs.GetBool("MashBox.Retopology.ReferenceWire",false);
         private readonly Dictionary<Mesh,Vector3[]> referenceWireLines=new Dictionary<Mesh,Vector3[]>();
         private int patchSegments=6;
+        private int bridgeBands=1;
         private bool patchAutoDensity=true;
         private float patchQuadSize;
         private float PatchQuadSize => patchQuadSize>0?patchQuadSize:Mathf.Max(.0001f,Active.reference?Mathf.Max(Active.reference.bounds.size.x,Mathf.Max(Active.reference.bounds.size.y,Active.reference.bounds.size.z))/48f:.05f);
         private SceneView view;
         internal Part Active => Document.selected>=0&&Document.selected<Document.parts.Count?Document.parts[Document.selected]:null;
         internal Action<Mesh,string> EditInModeling;
+        internal Action<Part> SendToSkinner;
         internal Action<GameObject> SkinOutput;
 
         internal StudioRetopologyEditor(StudioRetopologyDocument document,Action repaint)
@@ -48,7 +50,7 @@ namespace MashBoxSDK.AnimationStudio
             referenceMaterial.SetColor("_Color",new Color(.36f,.39f,.43f));referenceMaterial.SetFloat("_Cull",0);
             outputMaterial=new Material(referenceMaterial);outputMaterial.SetColor("_Color",new Color(.56f,.74f,.70f));
             lighting=new StudioPreviewLighting(Scene);lighting.Apply(new StudioLightingSettings());
-            Undo.undoRedoPerformed+=OnUndo; Rebuild();
+            Undo.undoRedoPerformed+=OnUndo; Rebuild();CaptureTutorialSettings();
         }
         internal void SuspendLighting()=>lighting?.RestoreCameras();
         private void OnUndo()
@@ -122,7 +124,12 @@ namespace MashBoxSDK.AnimationStudio
             var reference=part.reference;var materials=part.materials;bool needsUV=part.needsUV,dirty=Document.dirty;
             int revision=part.Revision;
             Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,label);
-            try { action();Active.Revision++;Document.dirty=true;EditorUtility.SetDirty(Document);ClearComponents();ClearPatchCorners();Rebuild(); }
+            try { action();Active.Revision++;Document.dirty=true;EditorUtility.SetDirty(Document);ClearComponents();ClearPatchCorners();Rebuild();
+                if(CurrentLesson!=null && (vertices.Count!=part.vertices.Count || faces.Count!=part.faces.Count || !vertices.SequenceEqual(part.vertices)
+                    || faces.Where((f,i)=>i<part.faces.Count&&!f.vertices.SequenceEqual(part.faces[i].vertices)).Any()))
+                    RecordTutorialAction(label);
+                if(CurrentLesson!=null)RecordTutorialGeometry(label,faces);
+            }
             catch
             {
                 part.vertices=vertices;part.uv=uv;part.faces=faces;part.reference=reference;part.materials=materials;
@@ -143,6 +150,7 @@ namespace MashBoxSDK.AnimationStudio
                     var part=new Part { name=renderer.name,reference=mesh,materials=renderer.sharedMaterials };added.Add(part);
                     // Imported local bind geometry remains the reference; no posing or source edits.
                     var matrix=source.transform.worldToLocalMatrix*renderer.transform.localToWorldMatrix;
+                    if(skin) CaptureReferenceSkin(part,skin,source.transform,matrix);
                     mesh.vertices=mesh.vertices.Select(matrix.MultiplyPoint3x4).ToArray();mesh.RecalculateNormals();mesh.RecalculateBounds();
                     if(matrix.determinant<0)
                     {for(int s=0;s<mesh.subMeshCount;s++){var indices=mesh.GetTriangles(s);for(int t=0;t<indices.Length;t+=3){int swap=indices[t];indices[t]=indices[t+2];indices[t+2]=swap;}mesh.SetTriangles(indices,s);}mesh.RecalculateNormals();}
@@ -237,6 +245,7 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddSeparator("");
             Item("Export FBX...",()=>Export(false),part.faces.Count>0);
             Item("Export OBJ (quads)...",()=>Export(true),part.faces.Count>0);
+            Item("Send to Skinner",()=>SendToSkinner?.Invoke(part),part.faces.Count>0&&SendToSkinner!=null);
             Item("Continue in Modeling",()=>Send(EditInModeling),part.faces.Count>0&&EditInModeling!=null);
             menu.AddSeparator("");
             Item("Clear Working Mesh",ClearWorkingMesh,hasMesh);
@@ -255,61 +264,34 @@ namespace MashBoxSDK.AnimationStudio
         internal void DrawTools()
         {
             toolsScroll=EditorGUILayout.BeginScrollView(toolsScroll);
+            if(DrawTutorialGuide()){EditorGUILayout.EndScrollView();return;}
             GUILayout.Label("RETOPOLOGY",StudioTheme.Styles.boldLabel);
             GUILayout.Label("Reference stays locked. Work on a separate mesh.",StudioTheme.Styles.wordWrappedMiniLabel);
             if(Active==null){GUILayout.Label("Drop an FBX, OBJ, prefab or mesh object to begin.",StudioTheme.Styles.wordWrappedMiniLabel);EditorGUILayout.EndScrollView();return;}
             string[] profiles={"Clothing","Pants","Shirt / Hoodie","Head","Hard Surface"};
             int profile=Array.IndexOf(profiles,Document.profile);int next=EditorGUILayout.Popup("Preset",Mathf.Max(0,profile),profiles);
-            if(next!=profile){Document.profile=profiles[next];Document.targetTriangles=next==3?6000:next==1?3000:4000;Document.creaseAngle=next==4?30:65;Document.preserveBorders=true;}
-            Document.targetTriangles=Mathf.Max(4,EditorGUILayout.IntField("Triangle budget",Document.targetTriangles));
+            if(next!=profile){Document.profile=profiles[next];Document.targetTriangles=next==3?6000:next==1?5000:4000;Document.preserveBorders=true;}
             Document.preserveBorders=EditorGUILayout.Toggle("Protect openings",Document.preserveBorders);
-            Document.creaseAngle=EditorGUILayout.Slider("Protect creases",Document.creaseAngle,15,90);
             if(Document.profile=="Pants")
             {
+                Document.targetTriangles=Mathf.Max(4,EditorGUILayout.IntField("Cage triangle budget",Document.targetTriangles));
                 if(GUILayout.Button("Generate pants quad cage"))Run(GeneratePants);
                 GUILayout.Label("Continuous waist, crotch and leg loops. Upright pants only; pockets and straps need separate topology. New UVs required.",StudioTheme.Styles.wordWrappedMiniLabel);
             }
-            if(GUILayout.Button("Reduce triangles (LOD)"))Run(()=>Generate(true));
-            GUILayout.Label("LOD reduction preserves detail, not garment edge flow.",StudioTheme.Styles.wordWrappedMiniLabel);
             if(GUILayout.Button("Copy reference to edit"))Run(()=>Change("Copy reference",()=>StudioRetopologyDocument.CopyReference(Active)));
             GUILayout.Space(8);
-            using(new EditorGUI.DisabledScope(!workingXray))
-            {
-                EditorGUI.BeginChangeCheck();
-                xrayDepthPercent=EditorGUILayout.Slider(new GUIContent("X-ray depth (%)","How far X-ray reaches behind the visible surface, as a percentage of reference size. Lower values hide the far side."),xrayDepthPercent,0f,20f);
-                if(EditorGUI.EndChangeCheck()){EditorPrefs.SetFloat("MashBox.Retopology.XrayDepthPercent",xrayDepthPercent);repaint();}
-            }
             Document.project=EditorGUILayout.Toggle("Surface snapping",Document.project);
             Document.offset=EditorGUILayout.FloatField("Surface offset",Document.offset);
             Document.symmetry=EditorGUILayout.Toggle(new GUIContent("Mirror drawing X","New quads and patches are mirrored around the imported model's local X=0 plane."),Document.symmetry);
-            if(activeTool==RetopoTool.Patch)
-            {
-                patchAutoDensity=EditorGUILayout.Toggle("Size-based resolution",patchAutoDensity);
-                if(patchAutoDensity)
-                {
-                    EditorGUI.BeginChangeCheck();float size=EditorGUILayout.FloatField(new GUIContent("Target quad size","Approximate edge length in model units. Larger patches get more rows and columns; existing continuous seams keep their vertex count."),PatchQuadSize);
-                    if(EditorGUI.EndChangeCheck())patchQuadSize=Mathf.Max(.0001f,size);
-                    GUILayout.Label("Smaller size = more quads. Continuous patches keep the shared edge intact. Maximum 96 divisions per direction.",StudioTheme.Styles.wordWrappedMiniLabel);
-                }
-            }
-            using(new EditorGUI.DisabledScope(activeTool==RetopoTool.Patch&&(patchContinuation!=null||patchAutoDensity)))
-                patchSegments=EditorGUILayout.IntSlider("Patch divisions",patchSegments,1,24);
-            if(activeTool==RetopoTool.Patch)
-            {
-                bool nextContinuous=EditorGUILayout.Toggle(new GUIContent("Continuous patch","After the first four corners, place only two new corners for each connected patch. Escape clears the continuation. Divisions stay fixed along the shared edge."),continuousPatch);
-                if(nextContinuous!=continuousPatch)ToggleContinuousPatch();
-                if(continuousPatch)GUILayout.Label(patchContinuation==null?"Place four corners to begin. Next patches need only two.":"Gold edge is shared. Place two new corners to continue. Escape ends the chain.",StudioTheme.Styles.wordWrappedMiniLabel);
-            }
             DrawStripSettings();DrawTubeSettings();DrawResolutionSettings();DrawRelaxBrushSettings();
             using(new EditorGUI.DisabledScope(Active.faces.Count==0))
             {
-                if(GUILayout.Button(new GUIContent("Bridge selected borders","Edges mode: Shift-click matching boundary chains, or double-click a boundary edge and Shift-double-click another loop. Patch divisions controls rows across the gap.")))Run(BridgeLoops);
-                if(GUILayout.Button(new GUIContent("Bridge Pants / Crotch","Select the hip bottom and both leg top borders. Joins all three with a crotch saddle; Patch divisions sets bridge rows. Upright Y-up pants.")))Run(BridgePants);
+                if(GUILayout.Button(new GUIContent("Bridge selected borders","Edges mode: Shift-click matching boundary chains, or double-click a boundary edge and Shift-double-click another loop. Bridge Bands in the top toolbar controls rows across the gap.")))Run(BridgeLoops);
                 if(GUILayout.Button("Project onto reference"))Run(Project);
                 if(GUILayout.Button("Relax on surface"))Run(Relax);
                 if(GUILayout.Button("Pair triangles into quads"))Run(()=>Change("Pair quads",()=>{int n=StudioRetopologyOperations.PairQuads(Active);status=$"Paired {n:N0} quads; unsuitable triangles retained.";}));
                 if(GUILayout.Button("Subdivide + project"))Run(()=>Change("Subdivide",()=>StudioRetopologyOperations.Subdivide(Active,Document.project?Surface:null,Document.offset)));
-                if(GUILayout.Button("Clean mesh"))Run(()=>Change("Clean topology",()=>StudioRetopologyOperations.Clean(Active)));
+                if(GUILayout.Button("Clean mesh"))Run(CleanMesh);
             }
             if(!audits.TryGetValue(Active,out var audit)){audit=StudioRetopologyOperations.Audit(Active);audits[Active]=audit;}
             GUILayout.Space(8);GUILayout.Label(audit,StudioTheme.Styles.wordWrappedMiniLabel);
@@ -329,40 +311,33 @@ namespace MashBoxSDK.AnimationStudio
                 status=$"{Active.faces.Count:N0} quads with continuous leg loops. Review crotch fit and unwrap UVs before skinning.";
             });
         }
-        private void Generate(bool reference)
+        private void CleanMesh()
         {
-            Change("Generate reduced topology",()=>
-            {
-                if(reference)StudioRetopologyDocument.CopyReference(Active);
-                int actual=StudioRetopologyReduction.Reduce(Active,Document.targetTriangles,Document.preserveBorders,Document.creaseAngle,
-                    progress=>EditorUtility.DisplayCancelableProgressBar("Retopology","Reducing while protecting seams and openings",progress));
-                int quads=StudioRetopologyOperations.PairQuads(Active);
-                status=$"{actual:N0} triangles / budget {Document.targetTriangles:N0}. {quads:N0} quad pairs."+(actual>Document.targetTriangles?" Protected features stopped further reduction.":"");
-            });
+            Change("Clean topology",()=>StudioRetopologyOperations.Clean(Active));
+            status=StudioRetopologyOperations.Audit(Active);
+            RecordTutorialAction("validate");
+            view?.ShowNotification(new GUIContent("Mesh cleaned and checked"));
         }
         private void Project()=>Change("Project topology",()=>{for(int i=0;i<Active.vertices.Count;i++)if(selected.Count==0||selected.Contains(i))Active.vertices[i]=Surface.Project(Active.vertices[i],Document.offset);});
         private void Relax()=>Change("Relax topology",()=>StudioRetopologyOperations.Relax(Active,Document.project?Surface:null,Document.preserveBorders,Document.offset,selected));
-        private void BridgePants()
-        {
-            if(selectionMode==SelectionMode.Faces){status="Switch to Edges and select the hip bottom and both leg tops.";return;}
-            var edgeSelection=selectionMode==SelectionMode.Edges?selectedEdges:null;
-            var issue=StudioRetopologyCrotch.Validate(Active,selected,edgeSelection,out _);
-            if(issue!=null){status=issue;view?.ShowNotification(new GUIContent(issue));return;}
-            if(Document.project&&!Active.reference){status="Reimport the reference or disable surface snapping first.";return;}
-            Change("Bridge pants crotch",()=>status=StudioRetopologyCrotch.Build(Active,selected,edgeSelection,patchSegments,Document.project?Surface:null,Document.offset));
-            view?.ShowNotification(new GUIContent(status));
-        }
         private void BridgeLoops()
         {
             if(selectionMode==SelectionMode.Faces){status="Switch to Edges and select matching borders on both sides of the gap.";return;}
             string issue=selectionMode==SelectionMode.Edges?StudioRetopologyBridgeEdges.Validate(Active,selectedEdges,out _,out _):StudioRetopologyLoops.BridgeIssue(Active,selected);
             if(issue!=null){status=issue;return;}
             if(Document.project&&!Active.reference){status="The reference mesh is missing. Reimport it or turn off surface snapping before bridging.";return;}
-            Change("Bridge boundary borders",()=>{if(selectionMode==SelectionMode.Edges)StudioRetopologyBridgeEdges.Bridge(Active,selectedEdges,patchSegments,Document.project?Surface:null,Document.offset);else StudioRetopologyLoops.Bridge(Active,selected,patchSegments,Document.project?Surface:null,Document.offset);});
+            var vertices=new HashSet<int>(selected);var edges=new HashSet<(int,int)>(selectedEdges);
+            bool byEdges=selectionMode==SelectionMode.Edges;
+            var surface=Document.project?Surface:null;float offset=Document.offset;
+            var bridge=new DensityBridge { owner=Active,before=new PatchGeometry(Active) };
+            bridge.build=()=>{if(byEdges)StudioRetopologyBridgeEdges.Bridge(Active,edges,bridgeBands,surface,offset);else StudioRetopologyLoops.Bridge(Active,vertices,bridgeBands,surface,offset);};
+            Change("Bridge boundary borders",bridge.build);
+            bridge.after=new PatchGeometry(Active);lastDensityBridge=bridge;
         }
         internal void Frame()
         {
             if(!view||Active==null)return;
+            RecordTutorialAction("frame");
             // Edge and face selections already maintain their participating vertex set.
             var indices=selected.Where(i=>i>=0&&i<Active.vertices.Count).ToArray();
             if(indices.Length>0)

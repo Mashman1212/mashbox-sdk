@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioRetopologyEditor
     {
-        private enum RetopoTool { Select, Quad, Patch, Tube, Resolution, RelaxBrush, Strip, TargetWeld }
+        private enum RetopoTool { Select, Quad, Patch, Tube, Resolution, RelaxBrush, Strip, TargetWeld, EdgeBridge }
         private RetopoTool activeTool;
         private Tool transformTool=Tool.Move;
         private readonly List<Vector3> corners=new List<Vector3>();
@@ -16,10 +16,10 @@ namespace MashBoxSDK.AnimationStudio
         private bool continuousPatch=EditorPrefs.GetBool("MashBox.Retopology.ContinuousPatch",false);
         private int[] patchContinuation,mirroredPatchContinuation;
         private StudioRetopologyDocument.Part patchOwner;
-        private void ClearPatchCorners()
-        {weldSource=-1;if(!stripStroke)ResetStrip();corners.Clear();patchContinuation=null;mirroredPatchContinuation=null;patchOwner=null;}
+        private void ClearPatchCorners(bool forgetDensity=true)
+        {if(forgetDensity){lastDensityPatch=null;lastDensityBridge=null;}bridgeSource=null;weldSource=-1;if(!stripStroke)ResetStrip();corners.Clear();patchContinuation=null;mirroredPatchContinuation=null;patchOwner=null;}
         private void ToggleContinuousPatch()
-        {continuousPatch=!continuousPatch;EditorPrefs.SetBool("MashBox.Retopology.ContinuousPatch",continuousPatch);ClearPatchCorners();repaint();}
+        {continuousPatch=!continuousPatch;EditorPrefs.SetBool("MashBox.Retopology.ContinuousPatch",continuousPatch);ClearPatchCorners(false);repaint();}
         private int dragUndo=-1;
         private Quaternion rotation=Quaternion.identity;
         private Vector3 scale=Vector3.one;
@@ -52,12 +52,13 @@ namespace MashBoxSDK.AnimationStudio
                     int vertex=PickVertex(selectionEnd);
                     if(vertex>=0)
                     {
-                        var loop=selectionClicks==2?StudioRetopologyLoops.Boundaries(Active).FirstOrDefault(r=>r.Contains(vertex)):null;
-                        if(loop!=null)hits.UnionWith(loop);else hits.Add(vertex);
+                        hits.UnionWith(ClickVertexLoop(vertex,selectionClicks>=2));
                     }
+                    else ResetLoopDirection();
                 }
                 else
                 {
+                    ResetLoopDirection();
                     var rect=VertexSelectionRect(selectionStart,selectionEnd);
                     for(int i=0;i<Active.vertices.Count;i++)
                         if(view.camera.WorldToViewportPoint(Active.vertices[i]).z>0&&rect.Contains(HandleUtility.WorldToGUIPoint(Active.vertices[i]))&&IsSelectionPointVisible(Active.vertices[i]))hits.Add(i);
@@ -92,7 +93,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly Vector2[] WheelOffsets={new Vector2(0,-94),new Vector2(132,-64),new Vector2(154,0),new Vector2(132,64),new Vector2(0,94),new Vector2(-132,64),new Vector2(-154,0),new Vector2(-132,-64)};
         private static readonly string[][] WheelLabels={
             new[]{"Draw Quad","Quad Patch","Topology ›","Display ›","Symmetry X","Surface Snap","Select >","Tube"},
-            new[]{"Project","Relax","Bridge Loops","Delete Selected","‹ Back","Pants / Crotch","Target Weld",""},
+            new[]{"Project","Relax","Bridge Loops","Delete Selected","‹ Back","","Target Weld","Edge Bridge"},
             new[]{"Reference Wire","Working Wire","Reference","Working Mesh","‹ Back","X-ray Display","X-ray Selection",""},
             new[]{"Draw Quad","Quad Patch","Tube","Resolution","< Back","Continuous Patch","Relax Brush","Quad Strip"},
             new[]{"Vertices","Edges","Faces","","< Back","","",""}};
@@ -106,7 +107,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static Rect WheelRect(Vector2 center,int slot)=>new Rect(center+WheelOffsets[slot]-new Vector2(56,15),new Vector2(112,30));
         private bool WheelEnabled(int slot)=>!string.IsNullOrEmpty(CurrentWheelLabels[slot]) &&
-            (contextPage!=1 || slot==4 || slot==6 || (Active.faces.Count>0 && (slot<2 || selected.Count>0)));
+            (contextPage!=1 || slot==4 || slot==6 || slot==7 || (Active.faces.Count>0 && (slot<2 || selected.Count>0)));
         private void PositionWheel(SceneView canvas,Vector2 mouse)
         {
             var point=new Vector2(Mathf.Clamp(mouse.x,Mathf.Min(218,canvas.position.width/2),Mathf.Max(canvas.position.width-218,canvas.position.width/2)),
@@ -171,7 +172,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if(item==7)StartTube();
             }
             else if(page==1)
-            {if(item==0)Project();else if(item==1)Relax();else if(item==2)BridgeLoops();else if(item==3)DeleteComponents();else if(item==5)BridgePants();else if(item==6)StartTargetWeld();}
+            {if(item==0)Project();else if(item==1)Relax();else if(item==2)BridgeLoops();else if(item==3)DeleteComponents();else if(item==6)StartTargetWeld();else if(item==7)StartEdgeBridge();}
             else
             {
                 if(item==0){referenceWire=!referenceWire;EditorPrefs.SetBool("MashBox.Retopology.ReferenceWire",referenceWire);}
@@ -214,29 +215,32 @@ namespace MashBoxSDK.AnimationStudio
                 var spaceRect=GUILayoutUtility.GetRect(82,24,GUILayout.Width(82),GUILayout.Height(24));
                 if(EditorGUI.DropdownButton(spaceRect,new GUIContent(local?"Local":"Global","Local uses the selected surface orientation"),FocusType.Passive,StudioTheme.Styles.menuDropdown))
                 {var menu=new StudioMenu();menu.AddItem(new GUIContent("Local"),local,()=>{local=true;rotation=Quaternion.identity;repaint();});menu.AddItem(new GUIContent("Global"),!local,()=>{local=false;rotation=Quaternion.identity;repaint();});menu.DropDown(spaceRect);}
-                GUILayout.Space(6);
+                GUILayout.Space(14);
                 DrawSelectionMode();
                 if(IconButton(12,xraySelection,"X-ray Selection: select through the mesh. Off selects visible components only; independent of X-ray display."))ToggleXraySelection();
-                GUILayout.Space(6);
+                GUILayout.Space(18);
                 if(IconButton(15,activeTool==RetopoTool.TargetWeld,"Target Weld: click the source vertex, then its destination. Escape cancels."))StartTargetWeld();
+                if(IconButton(16,activeTool==RetopoTool.EdgeBridge,"Edge Bridge: click two open border edges to join them. Escape cancels."))StartEdgeBridge();
                 ToolButton(RetopoTool.Quad,"Draw quad: click four corners. For a triangle, place three points then click the first point or press Enter. Snapped vertices are welded.");
                 ToolButton(RetopoTool.Patch,"Draw patch: four corners generate a projected quad grid.");
                 ToolButton(RetopoTool.Strip,"Quad Strip: drag connected quads on the reference. Resume near the yellow end; Escape starts a new strip. [ / ] adjusts width.");
-                ToolButton(RetopoTool.Tube,"Tube: click start and end along an arm or leg, then Enter to create quad rings. Sides and length divisions are in Topology Tools.");
+                ToolButton(RetopoTool.Tube,"Tube: click start and end along an arm or leg, then Enter to create quad rings. Adjust sides and rows in the top toolbar.");
                 ToolButton(RetopoTool.Resolution,"Resolution brush: paint to increase; Ctrl-paint to reduce clean quad blocks. [ / ] changes radius.");
                 ToolButton(RetopoTool.RelaxBrush,"Relax brush: drag to smooth edge spacing on the reference. [ / ] changes radius; settings control strength and open-border protection.");
-                GUILayout.Space(6);
+                GUILayout.Space(22);
                 if(IconButton(3,wire,"Toggle working mesh polygon edges")){wire=!wire;repaint();}
                 if(IconButton(5,referenceWire,"Toggle reference quad wireframe. Imported triangles are paired for display where possible; the reference mesh is unchanged."))
                 {referenceWire=!referenceWire;EditorPrefs.SetBool("MashBox.Retopology.ReferenceWire",referenceWire);repaint();}
-                if(IconButton(6,workingXray,"Shallow X-ray: reveal nearby patches through the reference. Adjust X-ray depth in Topology Tools to hide distant faces."))ToggleWorkingXray();
+                if(IconButton(6,workingXray,"Shallow X-ray: reveal nearby patches through the reference while hiding distant faces."))ToggleWorkingXray();
                 if(IconButton(4,Document.symmetry,"Mirror drawing about local X=0"))Document.symmetry=!Document.symmetry;
-                GUILayout.Space(6);GUILayout.Label(activeTool==RetopoTool.Select?"":activeTool==RetopoTool.TargetWeld?(weldSource<0?"Weld: source":"Weld: target"):activeTool==RetopoTool.Quad?"Draw Quad":activeTool==RetopoTool.Strip?"Quad Strip":activeTool==RetopoTool.Tube?"Tube":activeTool==RetopoTool.Resolution?"Resolution":activeTool==RetopoTool.RelaxBrush?"Relax":continuousPatch?"Patch +":"Quad Patch",StudioTheme.Styles.miniLabel,GUILayout.Height(24));
+                GUILayout.Space(6);GUILayout.Label(activeTool==RetopoTool.Select?"":activeTool==RetopoTool.EdgeBridge?(bridgeSource.HasValue?"Bridge: target":"Bridge: source"):activeTool==RetopoTool.TargetWeld?(weldSource<0?"Weld: source":"Weld: target"):activeTool==RetopoTool.Quad?"Draw Quad":activeTool==RetopoTool.Strip?"Quad Strip":activeTool==RetopoTool.Tube?"Tube":activeTool==RetopoTool.Resolution?"Resolution":activeTool==RetopoTool.RelaxBrush?"Relax":continuousPatch?"Patch +":"Quad Patch",StudioTheme.Styles.miniLabel,GUILayout.Height(24));
             }
+            DrawDensityToolbar();
         }
+
         private void ToolButton(RetopoTool value,string tooltip)
         {
-            if(IconButton(value==RetopoTool.Strip?14:value==RetopoTool.RelaxBrush?13:value==RetopoTool.Resolution?11:value==RetopoTool.Tube?7:(int)value,activeTool==value,tooltip)){activeTool=value;ClearPatchCorners();repaint();}
+            if(IconButton(ToolIconIndex(value),activeTool==value,tooltip)){activeTool=value;ClearPatchCorners();repaint();}
         }
         private bool IconButton(int icon,bool active,string tooltip)
         {
@@ -251,6 +255,17 @@ namespace MashBoxSDK.AnimationStudio
                 Vector3 P(float x,float y)=>new Vector3(rect.center.x+x,rect.center.y+y,0);
                 if(icon==0)
                 {Handles.DrawAAPolyLine(1.6f,P(-7,-8),P(-7,7),P(-3,3),P(1,9),P(4,7),P(0,1),P(6,1),P(-7,-8));}
+                else if(icon==1)
+                {
+                    // An unfinished face and pencil distinguish drawing from vertex selection.
+                    Handles.DrawAAPolyLine(1.3f,P(-8,-7),P(-8,7),P(5,7));
+                    Handles.DrawAAPolyLine(1.3f,P(-8,-7),P(0,-7));
+                    Handles.DrawAAPolyLine(1.5f,P(-2,3),P(1,-2),P(7,-8),P(10,-5),P(4,1),P(-2,3));
+                    Handles.DrawAAPolyLine(1.2f,P(1,-2),P(4,1));
+                    Handles.DrawAAPolyLine(1.2f,P(5,-6),P(8,-3));
+                }
+                else if(icon==16)
+                {Handles.DrawAAPolyLine(2.5f,P(-8,-7),P(-8,7));Handles.DrawAAPolyLine(2.5f,P(8,-7),P(8,7));Handles.DrawAAPolyLine(1.2f,P(-8,-7),P(8,-7));Handles.DrawAAPolyLine(1.2f,P(-8,7),P(8,7));Handles.DrawDottedLine(P(-8,0),P(8,0),2);}
                 else if(icon==15)
                 {Handles.DrawSolidDisc(P(-7,0),Vector3.forward,2);Handles.DrawWireDisc(P(7,0),Vector3.forward,3);Handles.DrawAAPolyLine(1.5f,P(-3,0),P(3,0),P(0,-3));Handles.DrawAAPolyLine(1.5f,P(3,0),P(0,3));}
                 else if(icon==14)
@@ -309,7 +324,6 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     Handles.DrawAAPolyLine(1.4f,P(-8,-7),P(8,-7),P(8,7),P(-8,7),P(-8,-7));
                     if(icon>=2){Handles.DrawAAPolyLine(1.2f,P(0,-7),P(0,7));Handles.DrawAAPolyLine(1.2f,P(-8,0),P(8,0));}
-                    if(icon==1)foreach(var p in new[]{P(-8,-7),P(8,-7),P(8,7),P(-8,7)})Handles.DrawSolidDisc(p,Vector3.forward,1.6f);
                     if(icon==3)Handles.DrawAAPolyLine(1.2f,P(-8,-7),P(8,7));
                 }
                 Handles.color=previous;Handles.matrix=matrix;
@@ -350,6 +364,8 @@ namespace MashBoxSDK.AnimationStudio
         internal void SceneGUI(MashBoxStudioViewport canvas)
         {
             view=canvas;var evt=Event.current;
+            ObserveTutorialNavigation(evt,canvas);
+            if(evt.type==EventType.Repaint)UpdateTutorialScene();
             lighting.ConfigureCamera(canvas);StudioPreviewLighting.ConfigureStudioBackground(canvas);
             if(canvas.modelGridVisible)canvas.DrawGroundGrid();
             bool overUI=canvas.IsOverSkinningPanels(evt.mousePosition);
@@ -400,6 +416,11 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 finally {Handles.color=old;Handles.zTest=oldDepth;}
             }
+            // The constructed tube is persistent scene feedback, not a hover cursor.
+            // Paint it before UI input guards so sliders and text fields cannot hide it.
+            if(activeTool==RetopoTool.Tube&&evt.type==EventType.Repaint)
+                DrawTubePreview(evt.mousePosition,!overUI&&!canvas.IsOverViewportControls(evt.mousePosition)&&canvas.ModelCanvasRect.Contains(evt.mousePosition)&&!evt.alt&&!contextHeld);
+            if(HandleEdgeBridge(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleTargetWeld(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleStrip(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleRelaxBrush(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
@@ -463,7 +484,7 @@ namespace MashBoxSDK.AnimationStudio
                         evt.Use();canvas.Repaint();
                     }
                 }
-                else if(activeTool!=RetopoTool.Resolution&&activeTool!=RetopoTool.RelaxBrush&&ReferenceHit(evt.mousePosition,out var hit))
+                else if((activeTool==RetopoTool.Quad||activeTool==RetopoTool.Patch)&&ReferenceHit(evt.mousePosition,out var hit))
                 {
                     int snap=PickVertex(evt.mousePosition,24f);
                     var point=snap>=0?Active.vertices[snap]:hit.point+hit.normal*Document.offset;
@@ -475,10 +496,10 @@ namespace MashBoxSDK.AnimationStudio
                     evt.Use();canvas.Repaint();
                 }
             }
-            if(activeTool!=RetopoTool.Select&&activeTool!=RetopoTool.Resolution&&activeTool!=RetopoTool.RelaxBrush&&!evt.alt)
+            if((activeTool==RetopoTool.Quad||activeTool==RetopoTool.Patch||activeTool==RetopoTool.Tube)&&!evt.alt)
             {
                 if(evt.type==EventType.MouseMove)canvas.Repaint();
-                if(evt.type==EventType.Repaint){if(activeTool==RetopoTool.Tube)DrawTubePreview(evt.mousePosition);else DrawQuadSnapPreview(evt.mousePosition);}
+                if(evt.type==EventType.Repaint&&activeTool!=RetopoTool.Tube)DrawQuadSnapPreview(evt.mousePosition);
             }
             if(dragUndo>=0 && (evt.rawType==EventType.MouseUp||GUIUtility.hotControl==0))
             {Undo.CollapseUndoOperations(dragUndo);dragUndo=-1;Rebuild();}
@@ -508,6 +529,7 @@ namespace MashBoxSDK.AnimationStudio
                     Handles.DrawAAPolyLine(4,patchContinuation.Select(i=>Active.vertices[i]).ToArray());
                 }
                 if(corners.Count>0&&hitSurface)Handles.DrawDottedLine(corners[corners.Count-1],point,3);
+                DrawPatchBorderCounts(PatchCompletionHint(snap));
                 Handles.BeginGUI();
                 try
                 {
@@ -524,22 +546,29 @@ namespace MashBoxSDK.AnimationStudio
                             var vertex=Active.vertices[i];
                             if(view.camera.WorldToViewportPoint(vertex).z<=0)continue;
                             var screen=HandleUtility.WorldToGUIPoint(vertex);
-                            if(i!=snap&&(screen-mouse).sqrMagnitude<80*80&&IsSelectionPointVisible(vertex,false))Dot(screen,2.5f,new Color(.48f,.67f,.82f,.8f));
+                            if(i!=snap&&(screen-mouse).sqrMagnitude<140*140&&IsSelectionPointVisible(vertex,false))
+                            {
+                                var hint=PatchCompletionHint(i);
+                                Dot(screen,hint!=null&&hint.matched&&!hint.mismatch?4.5f:2.5f,PatchHintColor(hint,new Color(.48f,.67f,.82f,.8f)));
+                            }
                         }
                     foreach(var corner in corners)Dot(HandleUtility.WorldToGUIPoint(corner),4f,new Color(.4f,1f,.8f));
                     if(snap>=0)
                     {
                         var screen=HandleUtility.WorldToGUIPoint(point);
                         bool used=corners.Contains(point);
-                        var color=used?new Color(1f,.35f,.25f):new Color(1f,.82f,.12f);
+                        var hint=PatchCompletionHint(snap);
+                        var color=used?new Color(1f,.35f,.25f):PatchHintColor(hint,new Color(1f,.82f,.12f));
                         Dot(screen,6f,color);
                         Handles.color=new Color(.025f,.04f,.04f,.95f);Handles.DrawWireDisc(screen,Vector3.forward,11);
                         Handles.color=color;Handles.DrawWireDisc(screen,Vector3.forward,10);
-                        var labelRect=new Rect(screen.x+15,screen.y-24,104,19);
+                        var caption=used?"Already placed":hint?.label??"Snap to vertex";
+                        var labelRect=new Rect(screen.x+15,screen.y-24,Mathf.Max(104,EditorStyles.miniBoldLabel.CalcSize(new GUIContent(caption)).x+16),19);
+                        labelRect.x=Mathf.Clamp(labelRect.x,4,Mathf.Max(4,view.position.width-labelRect.width-8));
                         EditorGUI.DrawRect(labelRect,new Color(.025f,.035f,.04f,.94f));
                         var labelStyle=new GUIStyle(EditorStyles.miniBoldLabel){alignment=TextAnchor.MiddleCenter};
                         labelStyle.normal.textColor=color;
-                        GUI.Label(labelRect,used?"Already placed":"Snap to vertex",labelStyle);
+                        GUI.Label(labelRect,caption,labelStyle);
                     }
                 }
                 finally {Handles.EndGUI();}
@@ -587,14 +616,17 @@ namespace MashBoxSDK.AnimationStudio
             else moved=Handles.PositionHandle(center,orientation);
             if(!EditorGUI.EndChangeCheck())return;
             if(dragUndo<0){Undo.IncrementCurrentGroup();dragUndo=Undo.GetCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,"Edit retopology vertices");}
+            bool tutorialMoved=false;
             foreach(int i in selected)
             {
                 var p=Active.vertices[i];
                 if(transformTool==Tool.Rotate)p=center+(turn*Quaternion.Inverse(rotation))*(p-center);
                 else if(transformTool==Tool.Scale)p=center+orientation*Vector3.Scale(Quaternion.Inverse(orientation)*(p-center),new Vector3(SafeRatio(resized.x,scale.x),SafeRatio(resized.y,scale.y),SafeRatio(resized.z,scale.z)));
                 else p+=moved-center;
-                Active.vertices[i]=Document.project?Surface.Project(p,Document.offset):p;
+                var result=Document.project?Surface.Project(p,Document.offset):p;
+                tutorialMoved|=(result-Active.vertices[i]).sqrMagnitude>1e-12f;Active.vertices[i]=result;
             }
+            if(tutorialMoved)RecordTutorialAction("transform");
             rotation=turn;scale=resized;Document.dirty=true;EditorUtility.SetDirty(Document);
             var mesh=display[Document.selected];xrayLines[Document.selected].SetVertices(Active.vertices);mesh.SetVertices(Active.vertices);mesh.RecalculateNormals();mesh.RecalculateBounds();repaint();
         }
@@ -612,13 +644,24 @@ namespace MashBoxSDK.AnimationStudio
             }
             var mirrorSeam=seam!=null?mirroredPatchContinuation:null;
             bool reverse=Vector3.Dot(Vector3.Cross(points[1]-points[0],points[3]-points[0]),cornerNormal)<0;
+            var densityPatch=activeTool==RetopoTool.Patch?new DensityPatch
+            {
+                owner=Active,before=new PatchGeometry(Active),points=(Vector3[])points.Clone(),normal=cornerNormal,
+                seam=seam==null?null:(int[])seam.Clone(),mirrorSeam=mirrorSeam==null?null:(int[])mirrorSeam.Clone(),
+                reverse=reverse,mirror=Document.symmetry,project=Document.project,offset=Document.offset
+            }:null;
             int[] end=null,mirrorEnd=null;
-            Change("Draw projected quad patch",()=>
+            Change(activeTool==RetopoTool.Quad?"Draw projected quad":"Draw projected quad patch",()=>
             {
                 end=AddPatch(points,columns,rows,reverse,seam);
                 if(Document.symmetry)mirrorEnd=AddPatch(points.Select(p=>new Vector3(-p.x,p.y,p.z)).ToArray(),columns,rows,!reverse,mirrorSeam);
                 Active.needsUV=true;
             });
+            if(densityPatch!=null)
+            {
+                densityPatch.after=new PatchGeometry(Active);lastDensityPatch=densityPatch;
+            }
+            if(seam!=null)RecordTutorialAction("continuePatch");
             status="Patch created. Existing borders reuse their full vertex chains and matching division counts.";
             if(chain)
             {

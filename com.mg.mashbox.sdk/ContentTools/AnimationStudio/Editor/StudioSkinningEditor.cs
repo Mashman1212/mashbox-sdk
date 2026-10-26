@@ -248,6 +248,7 @@ namespace MashBoxSDK.AnimationStudio
                             () => Run(() => SetMeshRole(part, StudioSkinningDocument.MeshRole.Body)));
                         if (CanStitchSelectedBust) menu.AddItem(new GUIContent("Stitch Bust"), false, () => Run(StitchBust));
                         else menu.AddDisabledItem(new GUIContent("Stitch Bust"));
+                        menu.AddItem(new GUIContent("Send to Retopology"), false, () => Run(SendSelectedToRetopology));
                         menu.AddItem(new GUIContent("Save FBX"), false, () => Run(SaveSelectedFbx));
                         menu.AddItem(new GUIContent("Save FBX As…"), false, () => Run(SaveSelectedFbxAs));
                         menu.AddSeparator("");

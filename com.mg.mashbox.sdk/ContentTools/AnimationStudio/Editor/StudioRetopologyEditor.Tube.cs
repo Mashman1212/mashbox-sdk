@@ -19,10 +19,6 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(activeTool!=RetopoTool.Tube)return;
             GUILayout.Space(6);GUILayout.Label("TUBE",StudioTheme.Styles.boldLabel);
-            EditorGUI.BeginChangeCheck();
-            tubeSides=EditorGUILayout.IntSlider("Sides",tubeSides,4,64);
-            tubeDivisions=EditorGUILayout.IntSlider("Length divisions",tubeDivisions,1,64);
-            if(EditorGUI.EndChangeCheck())Run(UpdateTubePreview);
             GUILayout.Label(corners.Count<2?"Click start and end along the same arm or leg. Keep points inside openings; use shorter sections for bends.":"Preview only. Enter creates the tube; Escape cancels. Open ends can be bridged to matching borders.",StudioTheme.Styles.wordWrappedMiniLabel);
             using(new EditorGUI.DisabledScope(tubePreview==null||corners.Count!=2))
                 if(GUILayout.Button("Create tube  [Enter]"))Run(CreateTube);
@@ -48,7 +44,7 @@ namespace MashBoxSDK.AnimationStudio
             });
             tubePreview=null;status="Created quad tube. Use Edges and Bridge selected borders to connect its open ends.";
         }
-        private void DrawTubePreview(Vector2 mouse)
+        private void DrawTubePreview(Vector2 mouse,bool drawPointer)
         {
             var color=Handles.color;var depth=Handles.zTest;
             try
@@ -59,7 +55,7 @@ namespace MashBoxSDK.AnimationStudio
                         Handles.DrawAAPolyLine(2,tubePreview.vertices[edge.Item1],tubePreview.vertices[edge.Item2]);
                 Handles.zTest=UnityEngine.Rendering.CompareFunction.Always;
                 foreach(var p in corners)Handles.DotHandleCap(0,p,Quaternion.identity,HandleUtility.GetHandleSize(p)*.035f,EventType.Repaint);
-                if(corners.Count==1&&ReferenceHit(mouse,out var hit))Handles.DrawDottedLine(corners[0],hit.point,4);
+                if(drawPointer&&corners.Count==1&&ReferenceHit(mouse,out var hit))Handles.DrawDottedLine(corners[0],hit.point,4);
             }
             finally {Handles.color=color;Handles.zTest=depth;}
         }
