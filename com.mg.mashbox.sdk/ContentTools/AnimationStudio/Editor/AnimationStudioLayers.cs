@@ -13,6 +13,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             try
             {
+                rig.ConstrainAuthoredPose(pose);
                 if(take.singleFramePose) frame=0;
                 if(take.activeLayer>=0 && take.activeLayer<take.layers.Count) take.SetLayerKey(take.activeLayer,pose,frame,boneMask,effectorMask);
                 else

@@ -25,6 +25,133 @@ namespace MashBoxSDK.AnimationStudio
         public readonly Transform[] Starts = new Transform[4];
         public string SolverStatus { get; private set; }
         public bool HasIK => solver != null;
+        public bool HumanLimitsEnabled { get; set; }
+        public bool SupportsHumanLimits => Animator && Animator.avatar && Animator.avatar.isValid && Animator.avatar.isHuman;
+        private LocalJointLimit[] humanJointLimits;
+
+        // Avatar muscle conversion is used only once to calibrate local axes/ranges.
+        // Never reconstruct a whole humanoid while the user is manipulating a joint:
+        // that distributes forearm twist into neighbouring bones and can flip the chain.
+        private sealed class LocalJointLimit
+        {
+            public Transform bone;
+            public Quaternion neutral, basis;
+            public Vector3 min, max;
+
+            public Quaternion Clamp(Quaternion rotation)
+            {
+                Quaternion q = Quaternion.Inverse(basis) * Quaternion.Inverse(neutral) * rotation * basis;
+                if (q.w < 0) q = new Quaternion(-q.x, -q.y, -q.z, -q.w);
+                // Separate axial twist from the two swing directions. Unlike Euler angles,
+                // this has no 90-degree gimbal transition at the elbow bend limit.
+                float length = Mathf.Sqrt(q.x * q.x + q.w * q.w);
+                Quaternion twist = length > 1e-6f ? new Quaternion(q.x / length, 0, 0, q.w / length) : Quaternion.identity;
+                Quaternion swing = q * Quaternion.Inverse(twist);
+                float x = Mathf.Clamp(2 * Mathf.Atan2(twist.x, twist.w) * Mathf.Rad2Deg, min.x, max.x);
+                float y = Mathf.Clamp(2 * Mathf.Atan2(swing.y, Mathf.Max(swing.w, 1e-6f)) * Mathf.Rad2Deg, min.y, max.y);
+                float z = Mathf.Clamp(2 * Mathf.Atan2(swing.z, Mathf.Max(swing.w, 1e-6f)) * Mathf.Rad2Deg, min.z, max.z);
+                var limitedSwing = new Quaternion(0, Mathf.Tan(y * Mathf.Deg2Rad * .5f), Mathf.Tan(z * Mathf.Deg2Rad * .5f), 1).normalized;
+                return neutral * basis * limitedSwing * Quaternion.AngleAxis(x, Vector3.right) * Quaternion.Inverse(basis);
+            }
+        }
+
+        private static float JointSampleAngle(Quaternion delta, Vector3 axis)
+        {
+            if (delta.w < 0) delta = new Quaternion(-delta.x, -delta.y, -delta.z, -delta.w);
+            return 2 * Mathf.Atan2(Vector3.Dot(new Vector3(delta.x, delta.y, delta.z), axis), delta.w) * Mathf.Rad2Deg;
+        }
+
+        private void BuildHumanJointLimits()
+        {
+            var saved = Bones.Select(BonePose.Read).ToArray();
+            var limits = new List<LocalJointLimit>();
+            try
+            {
+                using (var handler = new HumanPoseHandler(Animator.avatar, Root.transform))
+                {
+                    var human = new HumanPose();
+                    handler.GetHumanPose(ref human);
+                    Array.Clear(human.muscles, 0, human.muscles.Length);
+                    for (int b = 0; b < (int)HumanBodyBones.LastBone; b++)
+                    {
+                        if (b == (int)HumanBodyBones.Hips) continue;
+                        var bone = Animator.GetBoneTransform((HumanBodyBones)b);
+                        if (!bone) continue;
+                        int hinge = b == (int)HumanBodyBones.LeftLowerArm || b == (int)HumanBodyBones.RightLowerArm
+                            || b == (int)HumanBodyBones.LeftLowerLeg || b == (int)HumanBodyBones.RightLowerLeg
+                            ? HumanTrait.MuscleFromBone(b, 2) : -1;
+                        if (hinge >= 0) human.muscles[hinge] = 1;
+                        handler.SetHumanPose(ref human);
+                        var neutral = bone.localRotation;
+                        var low = new Quaternion[3]; var high = new Quaternion[3];
+                        var axes = new Vector3[3];
+                        bool any = false;
+                        for (int a = 0; a < 3; a++)
+                        {
+                            int muscle = HumanTrait.MuscleFromBone(b, a);
+                            if (muscle < 0) continue;
+                            human.muscles[muscle] = -1;
+                            handler.SetHumanPose(ref human);
+                            low[a] = Quaternion.Inverse(neutral) * bone.localRotation;
+                            human.muscles[muscle] = 1;
+                            handler.SetHumanPose(ref human);
+                            high[a] = Quaternion.Inverse(neutral) * bone.localRotation;
+                            human.muscles[muscle] = muscle == hinge ? 1 : 0;
+                            var delta = Quaternion.Inverse(low[a]) * high[a];
+                            if (delta.w < 0) delta = new Quaternion(-delta.x, -delta.y, -delta.z, -delta.w);
+                            axes[a] = new Vector3(delta.x, delta.y, delta.z).normalized;
+                            any |= axes[a].sqrMagnitude > .5f;
+                        }
+                        if (hinge >= 0) human.muscles[hinge] = 0;
+                        if (!any) continue;
+                        Vector3 x = axes[0], y = axes[1], z = axes[2];
+                        if (x.sqrMagnitude < .5f)
+                            x = y.sqrMagnitude > .5f && z.sqrMagnitude > .5f ? Vector3.Cross(y, z).normalized
+                                : Vector3.Cross(y.sqrMagnitude > .5f ? y : z,
+                                    Mathf.Abs(Vector3.Dot(y.sqrMagnitude > .5f ? y : z, Vector3.up)) < .9f ? Vector3.up : Vector3.right).normalized;
+                        if (y.sqrMagnitude < .5f) y = z.sqrMagnitude > .5f ? Vector3.Cross(z, x).normalized
+                            : Vector3.Cross(Mathf.Abs(Vector3.Dot(x, Vector3.up)) < .9f ? Vector3.up : Vector3.forward, x).normalized;
+                        y = Vector3.ProjectOnPlane(y, x).normalized;
+                        z = Vector3.Cross(x, y).normalized;
+                        var limit = new LocalJointLimit { bone = bone, neutral = neutral, basis = Quaternion.LookRotation(z, y) };
+                        for (int a = 0; a < 3; a++)
+                        {
+                            if (axes[a].sqrMagnitude < .5f) continue;
+                            var axis = a == 0 ? x : a == 1 ? y : z;
+                            float lo = JointSampleAngle(low[a], axis), hi = JointSampleAngle(high[a], axis);
+                            limit.min[a] = Mathf.Min(lo, hi); limit.max[a] = Mathf.Max(lo, hi);
+                        }
+                        limits.Add(limit);
+                    }
+                }
+                humanJointLimits = limits.ToArray();
+            }
+            finally
+            {
+                for (int i = 0; i < Bones.Length; i++) saved[i].Apply(Bones[i]);
+            }
+        }
+
+        public void EnforceHumanLimits()
+        {
+            if (!HumanLimitsEnabled || !SupportsHumanLimits) return;
+            if (humanJointLimits == null) BuildHumanJointLimits();
+            foreach (var limit in humanJointLimits)
+            {
+                var rotation = limit.bone.localRotation;
+                var constrained = limit.Clamp(rotation);
+                // Avoid touching valid joints (and accumulating quaternion roundoff).
+                if (Quaternion.Angle(rotation, constrained) > .01f) limit.bone.localRotation = constrained;
+            }
+        }
+        public void ConstrainAuthoredPose(PoseKey pose)
+        {
+            if (!HumanLimitsEnabled || !SupportsHumanLimits || pose == null) return;
+            for (int i = 0; i < Bones.Length; i++) pose.bones[i].Apply(Bones[i]);
+            EnforceHumanLimits();
+            // Preserve IK targets, weights and pins without baking solved IK into FK channels.
+            for (int i = 0; i < Bones.Length; i++) pose.bones[i] = BonePose.Read(Bones[i]);
+        }
         private FinalIKBridge solver;
         private Material neutralMaterial;
         private readonly HashSet<Renderer> doubleSidedRenderers = new HashSet<Renderer>();
@@ -236,6 +363,7 @@ namespace MashBoxSDK.AnimationStudio
 
         public PoseKey Capture()
         {
+            EnforceHumanLimits();
             var pose = new PoseKey { bones = Bones.Select(BonePose.Read).ToArray(), effectors = new EffectorPose[4] };
             for (int i = 0; i < 4; i++) pose.effectors[i] = MatchEffector(i, 0);
             return pose;
@@ -280,11 +408,14 @@ namespace MashBoxSDK.AnimationStudio
             if (pose == null || pose.bones.Length != Bones.Length || pose.effectors.Length != 4)
                 throw new InvalidOperationException("Take does not match this skeleton. Create a new take for this character.");
             for (int i = 0; i < Bones.Length; i++) pose.bones[i].Apply(Bones[i]);
+            EnforceHumanLimits();
             solver?.Solve(pose.effectors);
+            EnforceHumanLimits();
         }
 
         public void Dispose()
         {
+            humanJointLimits = null;
             solver = null;
             if (neutralMaterial) Object.DestroyImmediate(neutralMaterial);
             foreach (var material in texturedMaterials.Values) if (material) Object.DestroyImmediate(material);

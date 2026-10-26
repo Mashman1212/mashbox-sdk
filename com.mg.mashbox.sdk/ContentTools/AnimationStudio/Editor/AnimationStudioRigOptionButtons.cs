@@ -7,6 +7,27 @@ namespace MashBoxSDK.AnimationStudio
     {
         private void DrawRigOptionButtons()
         {
+            var selectedRig = OutfitRig;
+            using (new EditorGUI.DisabledScope(selectedRig == null || !selectedRig.SupportsHumanLimits))
+            {
+                bool enabled = selectedRig != null && selectedRig.HumanLimitsEnabled;
+                bool next = GUILayout.Toggle(enabled, new GUIContent("Human Limits",
+                    "Constrain this humanoid to its avatar joint ranges, including knees and elbows. Applies while posing and previewing. Key poses to save constrained rotations. Session only."),
+                    StudioTheme.Styles.overlayButton, GUILayout.Width(100), GUILayout.Height(24));
+                if (next != enabled && selectedRig != null)
+                {
+                    Guard(() =>
+                    {
+                        FinishSceneEdit(); FinishActorEdits();
+                        selectedRig.HumanLimitsEnabled = next;
+                        System.Action apply = () => { rig.Apply(pose); };
+                        if (activeActor >= 0 && activeActor < actorPreviews.Count) InActor(actorPreviews[activeActor], apply);
+                        else apply();
+                        EvaluateConstraints(); viewport?.Repaint(); Repaint();
+                    });
+                }
+            }
+            GUILayout.Space(6);
             bool fade = RigDisplayIcon(fadeRigControls, false, "Fade FK controls by blend. IK controls always fade with their influence.");
             if (fade != fadeRigControls)
             {
