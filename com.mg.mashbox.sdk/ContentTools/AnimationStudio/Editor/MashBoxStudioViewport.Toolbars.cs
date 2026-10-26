@@ -38,11 +38,21 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void RestoreStoredToolbars()
         {
+            // Window preferences can restore before native overlays are registered.
+            if (studioToolbarOverlays.Count == 0) return;
             restoringStoredToolbars = true;
             try
             {
                 string raw = StudioPreferenceStore.GetString("Studio.Toolbars");
-                if (string.IsNullOrEmpty(raw)) return;
+                if (string.IsNullOrEmpty(raw))
+                {
+                    // Unity may restore hidden overlays from its own window layout.
+                    // With no Studio preference, every Studio toolbar starts on.
+                    overlayCanvas.overlaysEnabled = true;
+                    foreach (var overlay in studioToolbarOverlays)
+                        if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) overlay.displayed = true;
+                    return;
+                }
                 var saved = JsonUtility.FromJson<StoredToolbars>(raw);
                 if (saved?.items == null) return;
                 saved.items.Sort((a, b) => a.index.CompareTo(b.index));

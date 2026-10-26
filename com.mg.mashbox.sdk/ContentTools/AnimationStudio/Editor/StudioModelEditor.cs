@@ -336,6 +336,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (!children.TryGetValue(parent, out var siblings)) children[parent] = siblings = new List<int>();
                 siblings.Add(i);
             }
+            foreach(var siblings in children.Values)
+                siblings.Sort((a,b)=> { int order=(Document.nodes[a].siblingOrder<0?int.MaxValue:Document.nodes[a].siblingOrder).CompareTo(Document.nodes[b].siblingOrder<0?int.MaxValue:Document.nodes[b].siblingOrder);return order!=0?order:a.CompareTo(b); });
             var rows = new List<int>();
             void Visit(int parent, int depth)
             {
@@ -656,7 +658,7 @@ namespace MashBoxSDK.AnimationStudio
                 return;
             }
             if (CutToolSceneGUI(view)) return;
-            if (mode != ComponentMode.Object && !CanEditComponents()) { mode = ComponentMode.Object; Components.Clear(); }
+            if (mode != ComponentMode.Object && !CanEditComponents()) Components.Clear();
             if ((evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) && evt.commandName == "FrameSelected") { if (evt.type == EventType.ExecuteCommand) Frame(view); evt.Use(); }
             HandleModelKeyboard(view);
             int id = GUIUtility.GetControlID("StudioModelSelection".GetHashCode(), FocusType.Passive);
@@ -726,6 +728,7 @@ namespace MashBoxSDK.AnimationStudio
                 Event.current.shift && !Event.current.alt && !Event.current.control && !Event.current.command;
             var movePointer = Event.current.mousePosition;
             if (!Document || Active < 0 || marquee || (tool == Tool.None && !pivot)) return;
+            if (mode != ComponentMode.Object && !CanEditComponents()) return;
             var t = Transforms[Active];
             if (moveDrag != null && (tool != Tool.Move || pivot || moveDrag.control != GUIUtility.hotControl || moveDrag.mesh != ActiveMesh || moveDrag.node != Active || moveDrag.mode != mode)) moveDrag = null;
             bool capturedMove = moveDrag != null;
@@ -952,7 +955,15 @@ namespace MashBoxSDK.AnimationStudio
                 Active = hit >= 0 && objects.Contains(hit) ? hit : objects.Count > 0 ? objects.Last() : -1;
                 Components.Clear(); return;
             }
-            if (!ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy) return;
+            // A component mode may be chosen before an editing target exists.
+            // Acquire the mesh with the existing object picker, retaining the mode.
+            if (!ActiveMesh && click && !subtract)
+            {
+                var selectedMode=mode;
+                try { mode=ComponentMode.Object; PickCore(view,rect,true); }
+                finally { mode=selectedMode; }
+            }
+            if (!ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy || !CanEditComponents()) return;
             if (!additive && !subtract) Components.Clear();
             if (click)
             {
@@ -1018,11 +1029,12 @@ namespace MashBoxSDK.AnimationStudio
             => FindComponentAt(view, pointer, vertices, ref occluders, null);
         private int FindComponentAt(SceneView view, Vector2 pointer, Vector3[] vertices, ref OcclusionMesh[] occluders, List<int> candidates)
             => FindComponentAt(view,pointer,vertices,ref occluders,candidates,null);
+        private const float ComponentPickRadius = 18f;
         private int FindComponentAt(SceneView view, Vector2 pointer, Vector3[] vertices, ref OcclusionMesh[] occluders, List<int> candidates, Ray? paintRay)
         {
             Vector2 Project(Vector3 world) => paintRay.HasValue ? PaintWorldToGUI(view.camera,world) : HandleUtility.WorldToGUIPoint(world);
             var edges = Edges(); var t = Transforms[Active];
-            int best = -1; float bestDistance = mode == ComponentMode.Face ? float.PositiveInfinity : 12;
+            int best = -1; float bestDistance = mode == ComponentMode.Face ? float.PositiveInfinity : ComponentPickRadius;
             int count = ComponentCount(); var ray = paintRay ?? HandleUtility.GUIPointToWorldRay(pointer);
             for (int candidate = 0; candidate < (candidates == null ? count : candidates.Count); candidate++)
             {
@@ -1046,7 +1058,7 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type != EventType.Repaint && !pointerChanged) return;
             int previous = Components.Contains(hoveredComponent) ? -1 : hoveredComponent;
             hoveredComponent = -1;
-            if (evt.type != EventType.MouseLeaveWindow && mode != ComponentMode.Object && !pivot && !pivotSnapHeld &&
+            if (evt.type != EventType.MouseLeaveWindow && mode != ComponentMode.Object && CanEditComponents() && !pivot && !pivotSnapHeld &&
                 !marquee && !evt.alt && GUIUtility.hotControl == 0 && HandleUtility.nearestControl == selectionId &&
                 EditorWindow.mouseOverWindow == view)
             {

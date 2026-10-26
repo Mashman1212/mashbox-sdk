@@ -75,7 +75,7 @@ namespace MashBoxSDK.AnimationStudio
             if (action == MarkingAction.Object || action == MarkingAction.TransformMenu || action == MarkingAction.SelectionMenu ||
                 action == MarkingAction.Move || action == MarkingAction.Rotate || action == MarkingAction.Scale || action == MarkingAction.Axes || action == MarkingAction.Through) return true;
             if (action == MarkingAction.Vertex || action == MarkingAction.Edge || action == MarkingAction.Face)
-                return ActiveMesh && CanEditComponents();
+                return true;
             if (action == MarkingAction.UVMenu || action == MarkingAction.UVSetsMenu || action == MarkingAction.OpenUV || (action >= MarkingAction.UV0 && action <= MarkingAction.UV7))
                 return true;
             if (action == MarkingAction.PivotMenu || action == MarkingAction.EditPivot || action == MarkingAction.CenterPivot)

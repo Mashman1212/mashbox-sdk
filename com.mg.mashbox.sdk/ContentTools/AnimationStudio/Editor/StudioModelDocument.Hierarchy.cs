@@ -34,7 +34,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             return PlanReparent(selection, parent, transforms, out _, out reason);
         }
-        private bool PlanReparent(IEnumerable<int> selection, int parent, Transform[] transforms, out List<ParentChange> changes, out string reason)
+        private bool PlanReparent(IEnumerable<int> selection, int parent, Transform[] transforms, out List<ParentChange> changes, out string reason, bool allowUnchanged = false)
         {
             changes = new List<ParentChange>(); reason = null;
             if (parent < -1 || parent >= nodes.Count || transforms.Length != nodes.Count) { reason = "The hierarchy changed. Start the drag again."; return false; }
@@ -71,8 +71,63 @@ namespace MashBoxSDK.AnimationStudio
                 changes.Add(new ParentChange { index = i, position = position - offset, offset = offset, rotation = rotation, scale = scale,
                     pivotRotation = Quaternion.Inverse(worldRotation) * transforms[i].rotation * node.pivotRotation });
             }
-            if (changes.Count == 0) { reason = "Already under this parent."; return false; }
+            if (changes.Count == 0 && !allowUnchanged) { reason = "Already under this parent."; return false; }
             return true;
+        }
+        internal int[] OrderedChildren(int parent) => Enumerable.Range(0,nodes.Count).Where(i=>nodes[i].parent==parent)
+            .OrderBy(i=>nodes[i].siblingOrder<0 ? int.MaxValue : nodes[i].siblingOrder).ThenBy(i=>i).ToArray();
+        internal int[] OrderedHierarchy()
+        {
+            var children=Enumerable.Range(0,nodes.Count).GroupBy(i=>nodes[i].parent).ToDictionary(g=>g.Key,g=>g.OrderBy(i=>nodes[i].siblingOrder<0?int.MaxValue:nodes[i].siblingOrder).ThenBy(i=>i).ToArray());
+            var order=new List<int>();
+            void Visit(int parent) { if(children.TryGetValue(parent,out var list)) foreach(int i in list) { order.Add(i); Visit(i); } }
+            Visit(-1); return order.ToArray();
+        }
+        internal void ApplyHierarchyOrder(Transform[] transforms)
+        {
+            foreach(var group in Enumerable.Range(0,nodes.Count).GroupBy(i=>nodes[i].parent))
+            {
+                int position=0;
+                foreach(int i in group.OrderBy(i=>nodes[i].siblingOrder<0?int.MaxValue:nodes[i].siblingOrder).ThenBy(i=>i))
+                    if(transforms[i]) transforms[i].SetSiblingIndex(position++);
+            }
+        }
+        private bool PlanHierarchyPlacement(IEnumerable<int> selected,int parent,int beforeSibling,Transform[] transforms,
+            out List<ParentChange> changes,out int[] roots,out int[] ordered,out string reason)
+        {
+            roots=Array.Empty<int>(); ordered=Array.Empty<int>();
+            if(!PlanReparent(selected,parent,transforms,out changes,out reason,true))return false;
+            if(beforeSibling < -1 || beforeSibling>=nodes.Count || (beforeSibling>=0 && nodes[beforeSibling].parent!=parent))
+            { reason="The insertion target changed. Start the drag again."; return false; }
+            var selection=new HashSet<int>(selected.Where(i=>i>=0&&i<nodes.Count));
+            bool HasSelectedAncestor(int i) { for(int p=nodes[i].parent;p>=0;p=nodes[p].parent)if(selection.Contains(p))return true;return false; }
+            roots=selected.Distinct().Where(i=>selection.Contains(i)&&!HasSelectedAncestor(i)).ToArray();
+            var moving=new HashSet<int>(roots);var original=OrderedChildren(parent);
+            int insertion=beforeSibling<0 ? original.Count(i=>!moving.Contains(i)) : original.TakeWhile(i=>i!=beforeSibling).Count(i=>!moving.Contains(i));
+            var result=original.Where(i=>!moving.Contains(i)).ToList();result.InsertRange(insertion,roots);ordered=result.ToArray();
+            if(changes.Count==0 && ordered.SequenceEqual(original)) { reason="Already in this position."; return false; }
+            return true;
+        }
+        internal bool CanPlaceHierarchy(IEnumerable<int> selected,int parent,int beforeSibling,Transform[] transforms,out string reason)
+            => PlanHierarchyPlacement(selected,parent,beforeSibling,transforms,out _,out _,out _,out reason);
+        internal void PlaceHierarchy(IEnumerable<int> selected,int parent,int beforeSibling,Transform[] transforms)
+        {
+            if(!PlanHierarchyPlacement(selected,parent,beforeSibling,transforms,out var changes,out var roots,out var targetOrder,out var reason))
+                throw new InvalidOperationException(reason);
+            var moving=new HashSet<int>(roots);
+            var orders=roots.Select(i=>nodes[i].parent).Append(parent).Distinct().ToDictionary(p=>p,p=>OrderedChildren(p).Where(i=>!moving.Contains(i)).ToArray());
+            orders[parent]=targetOrder;
+            Undo.IncrementCurrentGroup();int group=Undo.GetCurrentGroup();Undo.SetCurrentGroupName("Move hierarchy objects");
+            Undo.RegisterCompleteObjectUndo(this,"Move hierarchy objects");
+            foreach(var change in changes)
+            {
+                var node=nodes[change.index];node.parent=parent;node.position=change.position;node.positionOffset=change.offset;
+                node.rotation=change.rotation;node.scale=change.scale;node.pivotRotation=change.pivotRotation;
+                transforms[change.index].SetParent(parent<0 ? null : transforms[parent],false);
+                ApplyTransform(change.index,transforms[change.index]);
+            }
+            foreach(var order in orders.Values) for(int position=0;position<order.Length;position++)nodes[order[position]].siblingOrder=position;
+            ApplyHierarchyOrder(transforms);EditorUtility.SetDirty(this);Undo.CollapseUndoOperations(group);
         }
         private static bool FiniteHierarchyVector(Vector3 value) => !float.IsNaN(value.sqrMagnitude) && !float.IsInfinity(value.sqrMagnitude);
         internal void ReparentObjects(IEnumerable<int> selected, int parent, Transform[] transforms)

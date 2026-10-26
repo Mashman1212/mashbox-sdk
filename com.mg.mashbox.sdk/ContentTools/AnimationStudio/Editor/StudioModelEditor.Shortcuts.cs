@@ -62,9 +62,9 @@ namespace MashBoxSDK.AnimationStudio
             else if (Is(StudioShortcut.Frame)) Frame(view);
             else if (Is(StudioShortcut.SelectAll)) { if (Document) ExecuteMarkingAction(MarkingAction.SelectAll,view); }
             else if (Is(StudioShortcut.Object)) { SetComponentMode(ComponentMode.Object); }
-            else if (Is(StudioShortcut.Vertex)) { if (CanEditComponents()) SetComponentMode(ComponentMode.Vertex); }
-            else if (Is(StudioShortcut.Edge)) { if (CanEditComponents()) SetComponentMode(ComponentMode.Edge); }
-            else if (Is(StudioShortcut.Face)) { if (CanEditComponents()) SetComponentMode(ComponentMode.Face); }
+            else if (Is(StudioShortcut.Vertex)) { SetComponentMode(ComponentMode.Vertex); }
+            else if (Is(StudioShortcut.Edge)) { SetComponentMode(ComponentMode.Edge); }
+            else if (Is(StudioShortcut.Face)) { SetComponentMode(ComponentMode.Face); }
             else return false;
             evt.Use(); repaint(); return true;
         }

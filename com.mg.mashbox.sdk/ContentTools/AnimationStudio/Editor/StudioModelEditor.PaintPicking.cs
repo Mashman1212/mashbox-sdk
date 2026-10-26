@@ -35,7 +35,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             internal void Query(Vector2 point, List<int> results)
             { results.Clear(); if (root >= 0) Query(root,point,results); results.Sort(); }
-            private static bool Overlaps(Vector2 min, Vector2 max, Vector2 p) => min.x <= p.x+12 && max.x >= p.x-12 && min.y <= p.y+12 && max.y >= p.y-12;
+            private static bool Overlaps(Vector2 min, Vector2 max, Vector2 p) => min.x <= p.x+ComponentPickRadius && max.x >= p.x-ComponentPickRadius && min.y <= p.y+ComponentPickRadius && max.y >= p.y-ComponentPickRadius;
             private void Query(int id, Vector2 point, List<int> results)
             {
                 var node = nodes[id]; if (!Overlaps(node.Min,node.Max,point)) return;

@@ -33,10 +33,6 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.DrawWireDisc(center, orientation * Vector3.up, radius);
                 Handles.color = Handles.zAxisColor;
                 Handles.DrawWireDisc(center, orientation * Vector3.forward, radius);
-                Handles.color = Color.yellow;
-                var camera = Camera.current;
-                var rotation = camera ? camera.transform.rotation : Quaternion.identity;
-                Handles.RectangleHandleCap(0, center, rotation * Quaternion.Euler(0, 0, 45), radius * .2f, EventType.Repaint);
             }
         }
 
