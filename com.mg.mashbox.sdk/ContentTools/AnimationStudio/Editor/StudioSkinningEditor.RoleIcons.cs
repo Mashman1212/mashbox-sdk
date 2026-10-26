@@ -44,7 +44,7 @@ namespace MashBoxSDK.AnimationStudio
                 var previousColor = GUI.color;
                 GUI.color = new Color(.5f,1,.87f);
                 GUI.Label(stitchRect,new GUIContent(EditorGUIUtility.IconContent("LockIcon-On").image,
-                    "Stitch weight lock — " + part.stitchedVertices.Length + " seam vertices protected from painting and smoothing. The rest of the bust remains paintable."));
+                    "Stitch weight lock — " + part.stitchedVertices.Length + " seam vertices protected from painting and smoothing. The rest of the mesh remains paintable."));
                 GUI.color = previousColor;
             }
             var skinStatus = new Rect(row.xMax-42,row.center.y-8,16,16);

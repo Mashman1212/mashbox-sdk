@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
                 this.part = part;
                 var mesh = part.mesh;
                 points = mesh.vertices; normals = mesh.normals;
-                if (normals.Length != points.Length) throw new InvalidOperationException("Stitch Bust requires imported vertex normals.");
+                if (normals.Length != points.Length) throw new InvalidOperationException("Stitching requires imported vertex normals.");
                 weights = new StudioSkinWeights(mesh);
                 var binds = mesh.bindposes;
                 var skin = rest.Select((m,i) => i < binds.Length ? m * binds[i] : Matrix4x4.identity).ToArray();
@@ -105,6 +105,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool CanStitchSelectedBust => Part != null && !Part.referenceOnly && Part.bound && Part.role == StudioSkinningDocument.MeshRole.Bust;
+        internal bool CanStitchSelectedBody => Part != null && !Part.referenceOnly && Part.bound && Part.role == StudioSkinningDocument.MeshRole.Body;
         internal bool CanMatchDefaultBody => HasEditableMesh && Part.bound && Part.role == StudioSkinningDocument.MeshRole.Body;
 
         internal void MatchDefaultBody()
@@ -139,10 +140,14 @@ namespace MashBoxSDK.AnimationStudio
                     if(distance<best || (distance==best && (closest<0 || candidate<closest)))
                     {best=distance;closest=candidate;}
                 }
-                if(closest<0 || !used.Add(target.groups[closest]))
+                if(closest<0 || (source.boundary.Contains(vertex) && !target.boundary.Contains(target.groups[closest])) || !used.Add(target.groups[closest]))
                 {exact=false;break;}
                 mapping.Add(vertex,closest);
             }
+            float reach=bounds.size.magnitude*.025f;
+            var boundaryTargets=new Dictionary<int,Tuple<Vector3,Vector3>>();
+            var boundaryCorners=new Dictionary<int,Tuple<StitchSurface,int>>();
+            MatchStitchCorners(source,new[]{target},reach,boundaryTargets,boundaryCorners);
             FitBodySurface surface=null;
             if(!exact)
             {
@@ -170,10 +175,19 @@ namespace MashBoxSDK.AnimationStudio
                 var matchedWeights=new StudioSkinWeights(working);
                 var targetBinds=working.bindposes;
                 var targetSkin=pose.Select((m,i)=>m*targetBinds[i]).ToArray();
-                int matched=0,unmatched=0;
+                int matched=0,unmatched=0,unmatchedBoundary=0;
                 for(int v=0;v<points.Length;v++)
                 {
-                    if(exact)
+                    bool boundary=source.boundary.Contains(source.groups[v]);
+                    if(boundary && boundaryCorners.TryGetValue(source.groups[v],out var corner))
+                    {
+                        // A corresponding edge-loop corner must inherit the exact
+                        // reference bind-space point and weights in every pose.
+                        int donor=corner.Item2;
+                        points[v]=referencePoints[donor];normals[v]=referenceNormals[donor];
+                        matchedWeights.Values[v]=new List<BoneWeight1>(target.weights.Values[donor]);
+                    }
+                    else if(exact)
                     {
                         int donor=mapping[source.groups[v]];
                         points[v]=referencePoints[donor]; normals[v]=referenceNormals[donor];
@@ -181,11 +195,22 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     else
                     {
-                        if(!surface.Closest(source.points[v],bounds.size.magnitude*.025f,out var point,out var normal))
-                        {unmatched++;continue;}
+                        Vector3 point,normal;
+                        BoneWeight1[] sampled;
+                        if(boundary)
+                        {
+                            if(!MatchBodyBoundaryEdge(target,source.points[v],reach,out point,out normal,out sampled))
+                            {unmatched++;unmatchedBoundary++;continue;}
+                        }
+                        else
+                        {
+                            if(!surface.Closest(source.points[v],reach,out point,out normal))
+                            {unmatched++;continue;}
+                            sampled=surface.InterpolatedWeights(point);
+                        }
                         // Project to the triangle surface, not its nearest corner:
                         // different mesh densities must not collapse onto one vertex.
-                        var influences=surface.InterpolatedWeights(point).OrderByDescending(w=>w.weight).ThenBy(w=>w.boneIndex).Take(4).ToList();
+                        var influences=sampled.OrderByDescending(w=>w.weight).ThenBy(w=>w.boneIndex).Take(4).ToList();
                         float sum=influences.Sum(w=>w.weight);
                         for(int k=0;k<influences.Count;k++){var w=influences[k];w.weight/=sum;influences[k]=w;}
                         matchedWeights.Values[v]=influences;
@@ -209,11 +234,41 @@ namespace MashBoxSDK.AnimationStudio
                 EditorUtility.SetDirty(part.mesh); Undo.CollapseUndoOperations(group);
                 Rebuild(); Changed(); JumpToPreviewFrame(2);
                 string message="Matched "+matched+" vertices and skin weights to Default Body"+(exact?" (vertex match).":" (surface match).")+
-                    (unmatched>0?" "+unmatched+" vertices outside range were left in place.":"");
+                    (unmatched>0?" "+unmatched+" vertices outside range were left in place.":"")+
+                    (unmatchedBoundary>0?" "+unmatchedBoundary+" boundary vertices had no nearby matching open edge.":"");
                 Debug.Log("[MashBox Skinning] "+message+" Workspace copy only.");
                 if(lastView) lastView.ShowNotification(new GUIContent(message));
             }
             finally { UnityEngine.Object.DestroyImmediate(working); }
+        }
+
+        private static bool MatchBodyBoundaryEdge(StitchSurface target,Vector3 source,float reach,
+            out Vector3 point,out Vector3 normal,out BoneWeight1[] weights)
+        {
+            point=normal=default;weights=null;
+            float best=reach*reach,blend=0;Vector2Int closest=default;bool found=false;
+            foreach(var edge in target.edges)
+            {
+                var a=target.points[edge.x];var delta=target.points[edge.y]-a;
+                if(delta.sqrMagnitude<1e-16f)continue;
+                float t=Mathf.Clamp01(Vector3.Dot(source-a,delta)/delta.sqrMagnitude);
+                var candidate=a+t*delta;float distance=(candidate-source).sqrMagnitude;
+                if(distance>=best)continue;
+                best=distance;point=candidate;blend=t;closest=edge;found=true;
+            }
+            if(!found)return false;
+            normal=Vector3.Lerp(target.normals[closest.x],target.normals[closest.y],blend).normalized;
+            var merged=new Dictionary<int,float>();
+            void Add(int vertex,float amount)
+            {
+                float total=target.weights.Values[vertex].Sum(w=>w.weight);
+                if(total<=1e-8f)return;
+                foreach(var w in target.weights.Values[vertex])
+                    merged[w.boneIndex]=(merged.TryGetValue(w.boneIndex,out float value)?value:0)+amount*w.weight/total;
+            }
+            Add(closest.x,1-blend);Add(closest.y,blend);
+            weights=merged.Where(p=>p.Value>1e-8f).Select(p=>new BoneWeight1{boneIndex=p.Key,weight=p.Value}).ToArray();
+            return weights.Length>0;
         }
 
         private void SetMeshRole(StudioSkinningDocument.Part part, StudioSkinningDocument.MeshRole role)
@@ -227,6 +282,29 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!CanStitchSelectedBust) throw new InvalidOperationException("Select a bound mesh marked as Bust first.");
             StitchBustParts(new[] { Part });
+        }
+
+        internal void StitchBody()
+        {
+            if (!CanStitchSelectedBody) throw new InvalidOperationException("Select a bound mesh marked as Body first.");
+            StitchBodyParts(new[] { Part });
+        }
+
+        private void StitchBodyParts(StudioSkinningDocument.Part[] bodies)
+        {
+            // Prefer the user's visible bust; hidden alternatives must not silently
+            // become seam donors. With no visible user bust, use Default Bust.
+            var busts=Document.parts.Where(p=>!p.referenceOnly && p.visible && p.bound && p.mesh && p.role==StudioSkinningDocument.MeshRole.Bust).ToArray();
+            if(busts.Length>1) throw new InvalidOperationException("Leave only the bust you want to stitch to visible, then run Stitch Body again.");
+            if(busts.Length==0)
+            {
+                var defaults=StudioDefaultReferences.LoadSkinning("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Default Skinning Body.asset");
+                if(!defaults || !defaults.bust) throw new InvalidOperationException("Load a skinned bust or assign Default Bust first.");
+                var meshes=new HashSet<Mesh>(defaults.bust.GetComponentsInChildren<SkinnedMeshRenderer>(true).Select(r=>r.sharedMesh));
+                busts=Document.parts.Where(p=>p.referenceOnly && p.bound && p.mesh && meshes.Contains(p.sourceMesh)).ToArray();
+            }
+            if(busts.Length==0) throw new InvalidOperationException("Load Default Bust or show a skinned mesh marked as Bust first.");
+            StitchPartsToReference(bodies,busts,"Stitch Body");
         }
 
 #if MashBoxDev
@@ -268,9 +346,15 @@ namespace MashBoxSDK.AnimationStudio
             var bodyMeshes=meshes(defaults.body);
             var bodies=Document.parts.Where(p=>p.referenceOnly && bodyMeshes.Contains(p.sourceMesh)).ToArray();
             if(bodies.Length==0) throw new InvalidOperationException("Load the default body into this workspace first.");
+            StitchPartsToReference(busts,bodies,"Stitch Bust");
+        }
+
+        private void StitchPartsToReference(StudioSkinningDocument.Part[] busts,StudioSkinningDocument.Part[] bodies,string action)
+        {
+            EndStroke(); FinishPoseGesture();
             if(busts.Any(p=>bodies.Contains(p))) throw new InvalidOperationException("The bust must be a separate mesh from the body.");
             if (!previewClip || previewClip.frameRate <= 0 || previewClip.length < 2f / previewClip.frameRate)
-                throw new InvalidOperationException("Stitch Bust needs frame 2 of the SDK Skinning Test clip (A-pose). No geometry was changed.");
+                throw new InvalidOperationException(action+" needs frame 2 of the SDK Skinning Test clip (A-pose). No geometry was changed.");
             // Sample the same A-pose used by the timeline, then solve in that
             // shared posed space. Inverse skin matrices return edits to mesh space.
             JumpToPreviewFrame(2);
@@ -278,6 +362,8 @@ namespace MashBoxSDK.AnimationStudio
             var surfaces=bodies.Select(p=>new StitchSurface(p,stitchPose)).ToArray();
             var bounds=new Bounds(surfaces[0].points[0],Vector3.zero);
             foreach(var s in surfaces) foreach(var p in s.points) bounds.Encapsulate(p);
+            if(action=="Stitch Body")
+                foreach(var part in busts) foreach(var point in new StitchSurface(part,stitchPose).points) bounds.Encapsulate(point);
             // Restrict snapping to nearby open edges (about 1.5 cm on a human).
             float tolerance=bounds.size.magnitude*.008f;
             var changes=new List<Action>(); int matched=0, unmatched=0;
@@ -297,6 +383,7 @@ namespace MashBoxSDK.AnimationStudio
                     var positions=working.vertices; var normals=working.normals;
                     var targets=new Dictionary<int,Tuple<Vector3,Vector3>>();
                     var corners = new Dictionary<int,Tuple<StitchSurface,int>>();
+                    var edgeWeights = new Dictionary<int,BoneWeight1[]>();
                     MatchStitchCorners(source,surfaces,tolerance,targets,corners);
                     var bustBinds = working.bindposes;
                     var bustSkin = stitchPose.Select((m,i) => i < bustBinds.Length ? m * bustBinds[i] : Matrix4x4.identity).ToArray();
@@ -316,7 +403,22 @@ namespace MashBoxSDK.AnimationStudio
                             // disagreement is part of stitching, not a reason to skip it.
                             best=distance; point=candidate; normal=n; found=true;
                         }
-                        if(found) targets[v]=Tuple.Create(point,normal);
+                        if(found)
+                        {
+                            targets[v]=Tuple.Create(point,normal);
+                            if(action=="Stitch Body")
+                            {
+                                // A different-density body seam also needs the
+                                // bust edge's weights, not just its A-pose position.
+                                float nearest=tolerance;
+                                foreach(var donor in surfaces)
+                                    if(MatchBodyBoundaryEdge(donor,source.points[v],nearest,out var p,out var n,out var w))
+                                    {
+                                        nearest=Vector3.Distance(source.points[v],p);
+                                        targets[v]=Tuple.Create(p,n);edgeWeights[v]=w;
+                                    }
+                            }
+                        }
                         else unmatched++;
                     }
                     if(targets.Count==0) continue;
@@ -331,6 +433,13 @@ namespace MashBoxSDK.AnimationStudio
                             source.weights.Values[i] = new List<BoneWeight1>(corner.Item1.weights.Values[corner.Item2]);
                             checks.Add(Tuple.Create(bust,i,corner.Item1.part,corner.Item2));
                         }
+                        else if(edgeWeights.TryGetValue(source.groups[i],out var sampled))
+                        {
+                            var kept=sampled.OrderByDescending(w=>w.weight).ThenBy(w=>w.boneIndex).Take(4).ToList();
+                            float sum=kept.Sum(w=>w.weight);
+                            for(int k=0;k<kept.Count;k++){var w=kept[k];w.weight/=sum;kept[k]=w;}
+                            source.weights.Values[i]=kept;
+                        }
                         var matrix = source.weights.PreviewSkinMatrix(i,bustSkin);
                         if (Mathf.Abs(matrix.determinant)<1e-8f)
                             throw new InvalidOperationException("Cannot stitch a singular seam skin transform. No geometry was changed.");
@@ -339,11 +448,11 @@ namespace MashBoxSDK.AnimationStudio
                         stitchedVertices.Add(i);
                         matched++;
                     }
-                    changes.Add(()=> { Undo.RegisterCompleteObjectUndo(bust.mesh,"Stitch Bust"); working.vertices=positions; working.normals=normals; source.weights.Apply(working); working.RecalculateTangents(); working.RecalculateBounds(); EditorUtility.CopySerialized(working,bust.mesh); bust.preserveStitchedBindPose=true; bust.stitchedVertices=stitchedVertices.ToArray(); bust.stitchedVertexCount=positions.Length; bust.CaptureStitchWeights(); EditorUtility.SetDirty(bust.mesh); });
+                    changes.Add(()=> { Undo.RegisterCompleteObjectUndo(bust.mesh,action); working.vertices=positions; working.normals=normals; source.weights.Apply(working); working.RecalculateTangents(); working.RecalculateBounds(); EditorUtility.CopySerialized(working,bust.mesh); bust.preserveStitchedBindPose=true; bust.stitchedVertices=stitchedVertices.ToArray(); bust.stitchedVertexCount=positions.Length; bust.CaptureStitchWeights(); EditorUtility.SetDirty(bust.mesh); });
                 }
-                if(changes.Count==0) throw new InvalidOperationException("No nearby compatible open body/bust edges found. Stitch Bust leaves distant or overlapping surfaces unchanged.");
-                Undo.IncrementCurrentGroup(); int group=Undo.GetCurrentGroup(); Undo.SetCurrentGroupName("Stitch Bust");
-                Undo.RegisterCompleteObjectUndo(Document,"Stitch Bust");
+                if(changes.Count==0) throw new InvalidOperationException("No nearby compatible open body/bust edges found. Stitching leaves distant or overlapping surfaces unchanged.");
+                Undo.IncrementCurrentGroup(); int group=Undo.GetCurrentGroup(); Undo.SetCurrentGroupName(action);
+                Undo.RegisterCompleteObjectUndo(Document,action);
                 foreach(var apply in changes) apply();
                 Undo.CollapseUndoOperations(group); Rebuild(); Changed();
                 // Re-sample exactly as the A-pose button does and measure Unity's
