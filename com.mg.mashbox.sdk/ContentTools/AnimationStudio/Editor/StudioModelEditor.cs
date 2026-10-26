@@ -950,6 +950,7 @@ namespace MashBoxSDK.AnimationStudio
                 finally { mode=selectedMode; }
             }
             if (!ActiveMesh || !Transforms[Active].gameObject.activeInHierarchy || !CanEditComponents()) return;
+            if(!click&&loopSelections.TryGetValue(Document.nodes[Active],out var loopDirection))loopDirection.Reset();
             if (!additive && !subtract) Components.Clear();
             if (click)
             {
@@ -977,7 +978,7 @@ namespace MashBoxSDK.AnimationStudio
                     var world = worldVertices[i];
                     if (view.camera.WorldToViewportPoint(world).z < view.camera.nearClipPlane) continue;
                     var screen = HandleUtility.WorldToGUIPoint(world);
-                    float halfSize = Components.Contains(i) ? 2.5f : 2f;
+                    float halfSize = (Components.Contains(i) ? SelectedVertexMarkerSize : VertexMarkerSize) * .5f;
                     if (screen.x + halfSize >= rect.xMin && screen.x - halfSize <= rect.xMax &&
                         screen.y + halfSize >= rect.yMin && screen.y - halfSize <= rect.yMax) Candidate(i, world);
                 }

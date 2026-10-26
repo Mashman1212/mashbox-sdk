@@ -150,10 +150,13 @@ namespace MashBoxSDK.AnimationStudio
                 foreach(var cut in cutPreview) { Handles.color=CutPreviewColor;Handles.DrawAAPolyLine(3,transform.TransformPoint(cutTopology.Position(cut.A)),transform.TransformPoint(cutTopology.Position(cut.B))); }
                 foreach(var point in new[]{cutStart,cutHover})if(point.HasValue)
                 { var world=transform.TransformPoint(cutTopology.Position(point.Value));Handles.color=CutHoverColor;Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*.035f,EventType.Repaint); }
-                Handles.BeginGUI();
-                var rect=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(0,0,view.position.width,view.position.height);
-                GUI.Label(new Rect(rect.x+8,rect.y+38,rect.width-16,40),cutTool==CutTool.EdgeLoop?"Insert Edge Loop · "+edgeLoopCount+(edgeLoopCount == 1 ? " loop" : " loops")+" · Ctrl/Cmd+wheel: count · Middle click: centered · Shift: snap · "+StudioShortcuts.Label(StudioShortcut.Cancel)+": exit":"Multi-Cut · "+StudioShortcuts.Label(StudioShortcut.CommitCut)+"/"+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+": apply · Ctrl: loop · "+StudioShortcuts.Label(StudioShortcut.Cancel)+": cancel",StudioTheme.Styles.wordWrappedMiniLabel);
-                Handles.EndGUI();
+                if (cutTool == CutTool.MultiCut)
+                {
+                    Handles.BeginGUI();
+                    var rect=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(0,0,view.position.width,view.position.height);
+                    GUI.Label(new Rect(rect.x+8,rect.y+38,rect.width-16,40),"Multi-Cut · "+StudioShortcuts.Label(StudioShortcut.CommitCut)+"/"+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+": apply · Ctrl: loop · "+StudioShortcuts.Label(StudioShortcut.Cancel)+": cancel",StudioTheme.Styles.wordWrappedMiniLabel);
+                    Handles.EndGUI();
+                }
             }
             finally { Handles.color=previous;Handles.zTest=depth; }
         }

@@ -66,6 +66,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ClearAllComponentSelections()
         {
+            foreach(var loop in loopSelections.Values)loop.Reset();
             SyncComponentTarget();foreach(var target in componentTargets.Values)target.selection.Clear();unboundComponents.Clear();
         }
         private void ResetComponentTargets()
@@ -130,9 +131,9 @@ namespace MashBoxSDK.AnimationStudio
                 ClearAllComponentSelections();mode=next;foreach(var item in componentTargets.Values)item.mode=ComponentMode.Object;
                 if(target>=0){Active=target;objects.Add(target);}mode=next;
             }
-            else if(target>=0)ActivateComponentTarget(target,next);
             else
             {
+                if(target>=0)ActivateComponentTarget(target,next);
                 foreach(int node in objects.ToArray())
                 {
                     var item=ComponentTargetAt(node);if(item==null||!Document.nodes[node].mesh)continue;
@@ -154,7 +155,15 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int hit=MeshAtModePointer(view,end);
                 if(hit<0){if(!additive&&!subtract)ClearAllComponentSelections();return;}
-                var target=ComponentTargetAt(hit,false);var kind=target!=null&&target.mode!=ComponentMode.Object?target.mode:mode;
+                if(Active>=0&&hit!=Active&&!additive&&!subtract)
+                {
+                    // A plain click on another mesh chooses that object. Hover
+                    // and explicit component-mode acquisition remain independent.
+                    FinishLiveTool(); CloseLiveToolPanes(); ClearAllComponentSelections();
+                    mode=ComponentMode.Object;foreach(var item in componentTargets.Values)item.mode=ComponentMode.Object;
+                    objects.Clear();Active=hit;objects.Add(hit);pivot=false;return;
+                }
+                var kind=mode;
                 ActivateComponentTarget(hit,kind);PickSingleComponentTarget(view,rect,true);return;
             }
             var nodes=ComponentTargetNodes();if(!additive&&!subtract)ClearAllComponentSelections();
