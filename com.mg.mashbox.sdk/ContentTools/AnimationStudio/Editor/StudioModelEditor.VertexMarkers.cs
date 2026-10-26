@@ -118,10 +118,10 @@ namespace MashBoxSDK.AnimationStudio
                 ComponentOverlayDrawCalls++;
 #endif
             }
-            Draw(componentPositions.Length, 0, new Color(.35f, .9f, .9f, 1), 4);
+            Draw(componentPositions.Length, 0, VertexMarkerColor, VertexMarkerSize);
             markerMaterial.SetInt(MarkerHover, drawnHover);
             if (drawnHover >= 0) Draw(1, 2, new Color(1, .95f, .5f, displayXray ? 1 : .8f), 10);
-            Draw(markerSelectionCount, 1, new Color(1, .65f, .15f, displayXray ? 1 : .9f), 5);
+            Draw(markerSelectionCount, 1, new Color(1, .65f, .15f, displayXray ? 1 : .9f), SelectedVertexMarkerSize);
         }
     }
 }

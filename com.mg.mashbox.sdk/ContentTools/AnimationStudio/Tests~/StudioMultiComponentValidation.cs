@@ -43,12 +43,29 @@ public static class StudioMultiComponentValidation
    Check(Selection(0).Contains(0)&&Selection(1).Contains(0),"Second acquisition dropped first selection");
    Check(((HashSet<int>)Get("objects")).SetEquals(new[]{0,1}),"No-modifier acquisition did not retain both objects");
    stage="click across targets";
+   Reset();
    Set("end",HandleUtility.WorldToGUIPoint(editor.Transforms[0].position));Call("Pick",view,new Rect(),true);
-   Check(Selection(1).Contains(0),"Plain click discarded other mesh components");
+   Check(editor.Active==0&&editor.ToolbarComponentMode==StudioModelEditor.ComponentMode.Object&&((HashSet<int>)Get("objects")).SetEquals(new[]{0}),"Plain click did not exclusively select the other object in Object mode");
+   Check(editor.Components.Count==0&&StudioUndo.RetainedActions==1,"Replacement did not clear components in one action");
+   History();Check(editor.Active==1&&editor.ToolbarComponentMode==StudioModelEditor.ComponentMode.Vertex&&Selection(0).Contains(0)&&Selection(1).Contains(0),"Object-click Undo lost multi-component selection");
+   History(true);Check(editor.Active==0&&editor.ToolbarComponentMode==StudioModelEditor.ComponentMode.Object&&((HashSet<int>)Get("objects")).SetEquals(new[]{0}),"Object-click Redo failed");History();
    stage="marking start target";
    Call("ExecuteModeTargetAction",StudioModelEditor.MarkingAction.Edge,view,0);
    Check(editor.Active==0&&(StudioModelEditor.ComponentMode)Get("mode")==StudioModelEditor.ComponentMode.Edge,"Captured marking target ignored");
-   Check(Selection(1).Contains(0),"Per-object mode change discarded other target");
+   Check(Selection(1).Length==0,"Mode change retained incompatible vertex IDs on another mesh");
+   foreach(var next in new[]{StudioModelEditor.ComponentMode.Vertex,StudioModelEditor.ComponentMode.Edge,StudioModelEditor.ComponentMode.Face,StudioModelEditor.ComponentMode.Object})
+   {
+    stage="shared selection mode "+next;Pair(StudioModelEditor.ComponentMode.Vertex,0);Reset();
+    Call("ExecuteModeTargetAction",(StudioModelEditor.MarkingAction)Enum.Parse(typeof(StudioModelEditor.MarkingAction),next.ToString()),view,0);
+    Check(editor.ToolbarComponentMode==next&&editor.Active==0,"Shared mode lost requested active target");
+    Check(((HashSet<int>)Get("objects")).SetEquals(new[]{0,1}),"Shared mode lost selected objects");
+    for(int node=0;node<2;node++){var target=Call("ComponentTargetAt",node,false);Check((StudioModelEditor.ComponentMode)target.GetType().GetField("mode",F).GetValue(target)==next,"Selected mesh retained a different mode");}
+    Check(next==StudioModelEditor.ComponentMode.Vertex?Selection(0).Length==1&&Selection(1).Length==1:Selection(0).Length==0&&Selection(1).Length==0,"Shared mode mishandled existing components");
+    Check(StudioUndo.RetainedActions==1,"Shared mode made multiple history entries");History();Check(editor.ToolbarComponentMode==StudioModelEditor.ComponentMode.Vertex&&Selection(0).Contains(0)&&Selection(1).Contains(0),"Shared mode Undo lost cohort");History(true);Check(editor.ToolbarComponentMode==next,"Shared mode Redo failed");
+   }
+   stage="object cohort without hover";Pair(StudioModelEditor.ComponentMode.Object);Reset();Call("ChangeComponentMode",StudioModelEditor.ComponentMode.Face,null);
+   Check(editor.ToolbarComponentMode==StudioModelEditor.ComponentMode.Face&&((HashSet<int>)Get("objects")).SetEquals(new[]{0,1}),"No-hover mode change lost object cohort");
+   for(int node=0;node<2;node++){var target=Call("ComponentTargetAt",node,false);Check((StudioModelEditor.ComponentMode)target.GetType().GetField("mode",F).GetValue(target)==StudioModelEditor.ComponentMode.Face,"Object-mode selected mesh did not enter shared Face mode");}
    stage="marquee and history";Pair(StudioModelEditor.ComponentMode.Vertex);Set("xray",true);Reset();
    Call("Pick",view,new Rect(-100000,-100000,200000,200000),false);
    Check(Selection(0).Length>0&&Selection(1).Length>0,"Marquee did not select both meshes");var selected0=Selection(0);var selected1=Selection(1);
@@ -96,5 +113,5 @@ public static class StudioMultiComponentValidation
   var rt=new RenderTexture(640,400,24);rt.Create();var previous=RenderTexture.active;var target=view.camera.targetTexture;var rect=view.camera.pixelRect;GL.PushMatrix();
   try{view.camera.targetTexture=rt;view.camera.pixelRect=new Rect(0,0,640,400);Handles.SetCamera(new Rect(0,0,640,400),view.camera);RenderTexture.active=rt;GL.Clear(true,true,Color.black);GL.LoadProjectionMatrix(view.camera.projectionMatrix);GL.modelview=view.camera.worldToCameraMatrix;Call("DrawComponents",view);var image=new Texture2D(640,400,TextureFormat.RGBA32,false);image.ReadPixels(new Rect(0,0,640,400),0,0);image.Apply();var pixels=image.GetPixels32();for(int half=0;half<2;half++){int marks=0;for(int y=0;y<400;y++)for(int x=half*320;x<(half+1)*320;x++){var c=pixels[y*640+x];if(c.r>100&&c.r>c.g*1.3f)marks++;}Check(marks>5,"Missing rendered vertex markers in half "+half);}File.WriteAllBytes(Path.GetFullPath(Path.Combine(Application.dataPath,"../../multi-component-render.png")),image.EncodeToPNG());Object.DestroyImmediate(image);}finally{GL.PopMatrix();view.camera.targetTexture=target;view.camera.pixelRect=rect;RenderTexture.active=previous;Object.DestroyImmediate(rt);}
  }
- static void Finish(string result){SceneView.duringSceneGui-=Draw;File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"../../multi-component-result.txt")),result);EditorApplication.delayCall+=()=>{if(view)view.Close();editor?.Dispose();if(doc){foreach(var n in doc.nodes)if(n.mesh)Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(doc);}EditorApplication.delayCall+=()=>EditorApplication.Exit(result.StartsWith("PASS")?0:1);};}
+ static void Finish(string result){SceneView.duringSceneGui-=Draw;File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"../../multi-component-result.txt")),result);EditorApplication.delayCall+=()=>{if(view)view.Close();editor?.Dispose();if(doc){foreach(var n in doc.nodes)if(n.mesh)Object.DestroyImmediate(n.mesh);Object.DestroyImmediate(doc);}double exitAt=EditorApplication.timeSinceStartup+1;void Exit(){if(EditorApplication.timeSinceStartup<exitAt)return;EditorApplication.update-=Exit;EditorApplication.Exit(result.StartsWith("PASS")?0:1);}EditorApplication.update+=Exit;};}
 }

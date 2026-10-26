@@ -15,6 +15,8 @@ namespace MashBoxSDK.AnimationStudio
     }
     internal sealed partial class StudioModelEditor
     {
+        private static readonly Color VertexMarkerColor = new Color(.8f, .4f, 1f, 1f);
+        private const float VertexMarkerSize = 5f, SelectedVertexMarkerSize = 6f;
         private Mesh componentSource, componentLines, componentDots, componentHighlight, componentHover;
         private Vector3[] componentPositions;
         private List<Vector3> componentPositionBuffer = new List<Vector3>();
@@ -220,7 +222,7 @@ EnsureComponentDrawing();EnsureComponentHover();
                     Draw(componentHover,StudioFaceSelectionStyle.Fill(tint,StudioFaceSelectionStyle.HoverOpacity),0,0);
                     return;
                 }
-                if(mode==ComponentMode.Vertex)Draw(componentDots,new Color(.35f,.9f,.9f,1),1,4);
+                if(mode==ComponentMode.Vertex)Draw(componentDots,VertexMarkerColor,1,VertexMarkerSize);
                 if(mode==ComponentMode.Edge)
                 {
                     if(!PaintHoverVisible && drawnHover>=0)DrawComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
@@ -230,7 +232,7 @@ EnsureComponentDrawing();EnsureComponentHover();
                 else
                 {
                     if(!PaintHoverVisible)Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?10:5);
-                    Draw(componentHighlight,new Color(1,.65f,.15f,displayXray ? 1 : .9f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?5:4);
+                    Draw(componentHighlight,new Color(1,.65f,.15f,displayXray ? 1 : .9f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?SelectedVertexMarkerSize:4);
                     if(PaintHoverVisible)Draw(componentHover,new Color(1,.95f,.5f,displayXray ? 1 : .8f),mode==ComponentMode.Vertex?1:0,mode==ComponentMode.Vertex?10:5);
 
                 }
