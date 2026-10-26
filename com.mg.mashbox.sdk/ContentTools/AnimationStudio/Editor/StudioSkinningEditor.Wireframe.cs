@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
         private GameObject wireObject;
         private Matrix4x4[] wireBonePose;
         private readonly List<Vector3> wireVertices=new List<Vector3>();
+        private Vector3[] stitchMarkerLines;
         private void DrawWireframeButton(Rect rect)
         {
             if(DrawSkinModeButton(rect,false,"Toggle quad-style wireframe on the selected mesh"))
@@ -35,7 +36,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawSelectedMeshWireframe()
         {
-            if(!showSelectedWireframe || Event.current.type!=EventType.Repaint || Part==null || !Part.visible || !CanPaintPart(Part) || !Part.mesh) return;
+            if(Event.current.type!=EventType.Repaint || Part==null || !Part.visible || !CanPaintPart(Part) || !Part.mesh) return;
+            bool showStitches = !sculptMode && (Tool==Brush.Paint || Tool==Brush.SmoothWeights) && Part.HasStitchWeightLock;
+            if(!showSelectedWireframe && !showStitches) return;
             if(Document.selected<0 || Document.selected>=objects.Count) return;
             if(wireSource!=Part.mesh)
             {
@@ -84,10 +87,38 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 Handles.zTest=CompareFunction.LessEqual;
-                using(new Handles.DrawingScope(new Color(.06f,.12f,.12f,.8f),go.transform.localToWorldMatrix))
-                    Handles.DrawLines(wireLines);
+                if(showSelectedWireframe)
+                    using(new Handles.DrawingScope(new Color(.06f,.12f,.12f,.8f),go.transform.localToWorldMatrix))
+                        Handles.DrawLines(wireLines);
+                if(showStitches) DrawStitchWeightMarkers(go.transform);
             }
             finally { Handles.zTest=oldZ; }
+        }
+        private void DrawStitchWeightMarkers(Transform meshTransform)
+        {
+            if(!lastView || !lastView.camera) return;
+            const int segments=12;
+            int count=Part.stitchedVertices.Length*segments*2;
+            if(stitchMarkerLines==null || stitchMarkerLines.Length!=count) stitchMarkerLines=new Vector3[count];
+            var camera=lastView.camera.transform;
+            var right=camera.right; var up=camera.up;
+            int next=0;
+            foreach(int vertex in Part.stitchedVertices)
+            {
+                var center=meshTransform.TransformPoint(wireVertices[vertex]);
+                float radius=HandleUtility.GetHandleSize(center)*.035f;
+                // Lift the small screen-facing ring off the surface to avoid
+                // z-fighting, while retaining normal depth occlusion.
+                center-=camera.forward*(radius*.2f);
+                for(int i=0;i<segments;i++)
+                {
+                    float a=i*Mathf.PI*2/segments, b=(i+1)*Mathf.PI*2/segments;
+                    stitchMarkerLines[next++]=center+(right*Mathf.Cos(a)+up*Mathf.Sin(a))*radius;
+                    stitchMarkerLines[next++]=center+(right*Mathf.Cos(b)+up*Mathf.Sin(b))*radius;
+                }
+            }
+            using(new Handles.DrawingScope(Color.white,Matrix4x4.identity))
+                Handles.DrawLines(stitchMarkerLines);
         }
         private void DisposeWireframe()
         {
@@ -95,6 +126,7 @@ namespace MashBoxSDK.AnimationStudio
             wireSource=null;wireEdges=null;wireLines=null;wireVertices.Clear();
             wireObject=null;wirePoseDirty=true;
             wireBonePose=null;
+            stitchMarkerLines=null;
         }
     }
 }
