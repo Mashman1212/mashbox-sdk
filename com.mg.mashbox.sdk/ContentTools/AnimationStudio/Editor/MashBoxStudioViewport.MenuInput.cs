@@ -72,12 +72,14 @@ namespace MashBoxSDK.AnimationStudio
             if(MenuShieldOrderCorrect())return;
             menuInputShield.BringToFront();
             // Menubar hover switching remains available above the blocked content.
-            modelMenuBar?.BringToFront();modeSelector?.BringToFront();
+            modelMenuBar?.BringToFront();modeSelector?.BringToFront();skinPracticeTab?.BringToFront();
         }
         private bool MenuShieldOrderCorrect()
         {
             var children=StudioChromeRoot.hierarchy;
             int index=children.childCount-1;
+            if(skinPracticeTab!=null && skinPracticeTab.parent==StudioChromeRoot)
+            {if(index<0||children[index--]!=skinPracticeTab)return false;}
             if(modeSelector!=null && modeSelector.parent==StudioChromeRoot)
             {if(index<0||children[index--]!=modeSelector)return false;}
             if(modelMenuBar!=null && modelMenuBar.parent==StudioChromeRoot)
