@@ -1,0 +1,15 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace MashBoxSDK.ContentTools
+{
+    // Isolated test stand-in for pack data. Never copy into a project with the SDK installed.
+    public class ContentPackDefinition : ScriptableObject
+    {
+        internal const string CORE_STAGING_ROOT = "Assets/CoreStaging";
+        public bool IsCorePack;
+        public List<GameObject> _items = new List<GameObject>();
+        public List<Object> _coreBundleItems;
+        [SerializeField, HideInInspector] internal int probeAnchorMigrationVersion;
+    }
+}

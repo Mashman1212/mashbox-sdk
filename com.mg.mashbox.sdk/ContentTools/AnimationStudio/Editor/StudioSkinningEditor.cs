@@ -777,6 +777,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (owned.Count == 1) AssetDatabase.CreateAsset(mesh,meshPath); else AssetDatabase.AddObjectToAsset(mesh,meshPath);
                     var go = new GameObject(part.name); go.transform.SetParent(root.transform,false);
                     var skin = go.AddComponent<SkinnedMeshRenderer>(); skin.sharedMesh = mesh; skin.bones = rigBones; skin.rootBone = root.transform;
+                    skin.probeAnchor = root.transform;
                     skin.sharedMaterials = part.materials; skin.localBounds = new Bounds(Vector3.up,Vector3.one*4);
                 }
                 var prefab = PrefabUtility.SaveAsPrefabAsset(root,path); if (!prefab) throw new InvalidOperationException("Unity could not save the prefab.");

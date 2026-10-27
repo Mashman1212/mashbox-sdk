@@ -270,6 +270,8 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 PreserveExportedMeshData(importPath,part.preserveStitchedBindPose);
                 var savedModel = AssetDatabase.LoadAssetAtPath<GameObject>(importPath);
+                if (savedModel && savedModel.GetComponentsInChildren<SkinnedMeshRenderer>(true).Any(r => r.probeAnchor != savedModel.transform))
+                    throw new InvalidOperationException("The exported FBX did not retain its root light-probe anchors.");
                 var savedIds = new HashSet<string>(AssetDatabase.LoadAllAssetsAtPath(importPath).Where(a => a).Select(AssetIdentity));
                 var missingIds = sourceIds.Where(identity => !savedIds.Contains(identity)).ToArray();
                 if (!saveAs && missingIds.Length > 0)
@@ -377,6 +379,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(!displayBody)throw new InvalidOperationException("The default stitch body is unavailable. Restore it before export.");
             }
             bool poseChanged=StudioStitchedEditorPose.Configure(importer,displayBody);
+            bool probeAnchorsChanged=StudioSkinningProbeAnchors.Configure(importer);
             const string skeletonPath = "Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx";
             var avatar = AssetDatabase.LoadAllAssetsAtPath(skeletonPath).OfType<Avatar>()
                 .FirstOrDefault(a => a.name == "SkeletonAvatar");
@@ -384,7 +387,7 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("The SDK SkeletonAvatar is unavailable or invalid. Reimport the SDK Skeleton before saving clothing.");
             // These are authored data now. Recalculating normals or limiting the
             // influences would silently discard sculpt/stitch/weight edits.
-            bool changed = poseChanged || importer.importAnimation || importer.animationType != ModelImporterAnimationType.Human ||
+            bool changed = poseChanged || probeAnchorsChanged || importer.importAnimation || importer.animationType != ModelImporterAnimationType.Human ||
                 importer.avatarSetup != ModelImporterAvatarSetup.CopyFromOther || importer.sourceAvatar != avatar ||
                 importer.importNormals != ModelImporterNormals.Import ||
                 importer.importBlendShapeNormals != ModelImporterNormals.Import ||

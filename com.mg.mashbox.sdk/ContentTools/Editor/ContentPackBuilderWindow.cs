@@ -4747,6 +4747,7 @@ namespace MashBoxSDK.ContentTools.Editor
         private static string BuildUnityPackageForPack(ContentPackDefinition pack)
         {
             if (pack == null) throw new ArgumentNullException(nameof(pack));
+            pack.EnsureSkinnedMeshProbeAnchors();
 
             // Make sure latest edits (token/summary/screenshot) are on disk
             pack.StampMashBoxSdkVersion();
@@ -5324,6 +5325,7 @@ namespace MashBoxSDK.ContentTools.Editor
 
         private static string ExportUnityPackage(ContentPackDefinition pack)
         {
+            pack.EnsureSkinnedMeshProbeAnchors();
             pack.StampMashBoxSdkVersion();
             AssetDatabase.SaveAssets();
 

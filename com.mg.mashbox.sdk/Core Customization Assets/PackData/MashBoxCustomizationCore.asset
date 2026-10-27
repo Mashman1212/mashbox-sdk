@@ -48,9 +48,12 @@ MonoBehaviour:
   PackGroup: Ungrouped
   PublisingToGameName: 
   _items: []
+  probeAnchorMigrationVersion: 1
   _icons: []
   modioUserToken: 
   publisherEmail: 
+  publisherModioUserId: 
+  publisherModioUsername: 
   GameModMappings: []
   MashBoxSdkVersion: 0.14.14
   IsVanillaContent: 0

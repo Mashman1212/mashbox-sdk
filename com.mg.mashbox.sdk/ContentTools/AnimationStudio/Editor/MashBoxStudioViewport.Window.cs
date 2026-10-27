@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!storedConfigurationInitialized || (Studio && !ReferenceEquals(Studio.ActiveViewport, this))) return;
             // Docked tab bounds are controlled by Unity's workspace; preserve the last floating bounds.
             if (!docked && !IsStudioMaximized) StudioPreferenceStore.SetBounds("Studio.Bounds", position);
-            if (Studio) StudioPreferenceStore.SetString("Studio.Mode", Studio.IsModelingMode ? "Modeling" : "Animation");
+            if (Studio) StudioPreferenceStore.SetString("Studio.Mode", Studio.IsPaintingMode ? "Painting" : Studio.IsModelingMode ? "Modeling" : "Animation");
             StudioPreferenceStore.SetFloat("Studio.GridVisible", modelGridVisible ? 1 : 0);
             Studio?.SaveAnimationConfiguration();
             SaveStoredToolbars();

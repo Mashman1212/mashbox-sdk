@@ -143,6 +143,13 @@ namespace MashBoxSDK.ContentTools
         {
             if (def == null) { Debug.LogError("ContentPackDefinition is null"); return; }
 
+            // Do not let the optional sync's catch below hide a failed lighting repair.
+            if (!ContentPackProbeAnchors.EnsurePack(def))
+            {
+                Debug.LogError($"Cannot build '{def.name}': skinned mesh probe anchors could not be saved.", def);
+                return;
+            }
+
             if (!ValidateAddressablesVersionForTarget(def, out string versionError))
             {
                 Debug.LogError(versionError, def);
