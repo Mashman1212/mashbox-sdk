@@ -4,6 +4,17 @@ using UnityEditor.Overlays;
 
 namespace MashBoxSDK.AnimationStudio
 {
+    [Overlay(typeof(MashBoxStudioViewport), Id, "Polygon Primitives", true,
+        defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
+        defaultDockIndex = 3, defaultLayout = Layout.HorizontalToolbar)]
+    internal sealed class StudioPolygonPrimitivesToolbar : StudioCommandToolbar
+    {
+        internal const string Id = "MashBox/PolygonPrimitives";
+        public StudioPolygonPrimitivesToolbar() => Configure(new StudioCustomToolbarDefinition {
+            id = Id, name = "Polygon Primitives", commands = new List<string> {
+                "Create/Polygon Primitives/Cube", "Create/Polygon Primitives/Sphere",
+                "Create/Polygon Primitives/Plane", "Create/Polygon Primitives/Quad", "Create/Polygon Primitives/Cylinder" } });
+    }
     [Overlay(typeof(MashBoxStudioViewport), Id, "Mesh Tools", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
         defaultDockIndex = 4, defaultLayout = Layout.HorizontalToolbar)]
@@ -25,7 +36,6 @@ namespace MashBoxSDK.AnimationStudio
         public StudioMeshDisplayToolbar() => Configure(new StudioCustomToolbarDefinition {
             id = Id, name = "Mesh Display", commands = new List<string> {
                 "Mesh Display/Soften", "Mesh Display/Harden", "Mesh Display/Soften…",
-                "Mesh Display/X-ray Mode", "Mesh Display/Recalculate Normals",
-                "Mesh Display/Shaded", "Mesh Display/Wireframe", "Mesh Display/Shaded Wireframe" } });
+                "Mesh Display/X-ray Mode" } });
     }
 }

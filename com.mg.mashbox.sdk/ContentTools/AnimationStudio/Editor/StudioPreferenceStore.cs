@@ -99,14 +99,24 @@ namespace MashBoxSDK.AnimationStudio
             void Add(string key, string value) => defaults.entries.Add(new Entry { key = key, value = value });
             void Number(string key, float value) => Add(key, value.ToString("R", Invariant));
             Add(StudioSettings.PreferenceKey, JsonUtility.ToJson(new StudioSettings.Preferences()));
-            foreach (var item in new[] { ("Bevel Edges", "Width", .1f), ("Bevel Edges", "Subdivisions", 1f), ("Bevel Edges", "Tension", 1f), ("Bevel Edges", "Junction", 0f), ("Soften Edges", "Angle", 45f), ("Extrude", "Distance", .01f), ("Extrude", "Together", 1f) })
+            foreach (var item in new[] { ("Bevel Edges", "Width", .1f), ("Bevel Edges", "Subdivisions", 1f), ("Bevel Edges", "Tension", 1f), ("Bevel Edges", "Junction", 0f), ("Soften Edges", "Angle", 45f), ("Extrude", "Distance", .01f), ("Extrude", "Inset", 0f), ("Extrude", "Together", 1f) })
                 Number(ToolChannelPane.DefaultKey(item.Item1, item.Item2), item.Item3);
-            foreach (string title in new[] { "Bevel", "Soften Edges", "Extrude", "Tool Options" }) Number("MashBox.Studio.ToolDragSensitivity." + title, 1);
+            foreach (string title in new[] { "Bevel", "Soften Edges", "Extrude", "Edit Edge Flow", "Tool Options" }) Number("MashBox.Studio.ToolDragSensitivity." + title, 1);
             Number(MashBoxStudioViewport.LeftWidthKey, 260); Number(MashBoxStudioViewport.RightWidthKey, 350); Number(MashBoxStudioViewport.ToolOptionsHeightKey, 220);
             Number(MashBoxStudioViewport.NavigationSensitivityKey, 1);
             Number("Model.BackfaceCulling", 1);
             Number("Model.CheckerMap", 0);
             Number("Model.EdgeLoopCount", 1);
+            Number(StudioModelEditor.PivotLockKey, 0);
+            Number(ToolChannelPane.DefaultKey("Edit Edge Flow","Influence"),.5f);
+            Number(ToolChannelPane.DefaultKey("Edit Edge Flow","Iterations"),4);
+            Number(ToolChannelPane.DefaultKey("Bevel Edges","EdgeFlow"),0);
+            Number(ToolChannelPane.DefaultKey("Bevel Edges","FlowInfluence"),.5f);
+            Number(ToolChannelPane.DefaultKey("Bevel Edges","FlowIterations"),4);
+            Number(StudioMaterialLibraryIndex.SourcesKey, 3);
+            Number("Studio.MaterialLibrary.Thumbnail", 76);
+            Number("Studio.MaterialLibrary.FolderWidth", 145);
+            Number("Studio.MaterialLibrary.LockInspector", 0);
             Add("Studio.Mode", "Modeling");
             return defaults;
         }
@@ -188,8 +198,15 @@ namespace MashBoxSDK.AnimationStudio
             if (key.StartsWith("MashBox.Studio.RecentFiles.", StringComparison.Ordinal)) return "MashBox.Studio.RecentFiles";
             return key;
         }
+        internal static string LegacyToolbarString(string key)
+        {
+            EnsureLoaded();
+            var entry = data.entries.Find(e => e.key == key);
+            return entry != null ? entry.value : migrateLegacy ? EditorPrefs.GetString(key, "") : "";
+        }
         internal static string GetString(string key, string fallback = "")
         {
+            if (StudioToolbarPreferences.Owns(key)) return StudioToolbarPreferences.Get(key, fallback);
             EnsureLoaded();
             if (key == StudioShortcuts.PreferenceKey)
             {
@@ -204,6 +221,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static bool HasKey(string key)
         {
+            if (StudioToolbarPreferences.Owns(key)) return StudioToolbarPreferences.Has(key);
             EnsureLoaded();
             if (key == StudioShortcuts.PreferenceKey) return File.Exists(HotkeysPath);
             return data.entries.Exists(e => e.key == CanonicalKey(key)) || (migrateLegacy && EditorPrefs.HasKey(key));
@@ -226,10 +244,15 @@ namespace MashBoxSDK.AnimationStudio
             EnsureLoaded();
             if (key == StudioShortcuts.PreferenceKey) { EnsureWritable(true); WriteAtomic(HotkeysPath, value); return; }
             if (applyingSettings) return;
+            if (StudioToolbarPreferences.Owns(key)) { StudioToolbarPreferences.Set(key, value); return; }
             var entry = data.entries.Find(e => e.key == CanonicalKey(key));
             if (entry != null && entry.value == value) return;
             if (entry == null) data.entries.Add(new Entry { key = CanonicalKey(key), value = value }); else entry.value = value;
             dirty = true;
+            ScheduleFlush();
+        }
+        internal static void ScheduleFlush()
+        {
             flushAfter = EditorApplication.timeSinceStartup + .4;
             EditorApplication.update -= FlushWhenQuiet;
             EditorApplication.update += FlushWhenQuiet;
@@ -246,6 +269,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static void Flush()
         {
             EditorApplication.update -= FlushWhenQuiet;
+            StudioToolbarPreferences.Flush();
             if (!dirty) return;
             try { EnsureWritable(false); WriteAtomic(SettingsPath, JsonUtility.ToJson(data, true)); dirty = false; }
             catch (Exception ex) { Debug.LogError("MashBox Studio could not save preferences: " + ex.Message); }
@@ -277,7 +301,7 @@ namespace MashBoxSDK.AnimationStudio
             if (general != null && JsonUtility.FromJson<StudioSettings.Preferences>(general.value) == null)
                 throw new InvalidDataException("The general preferences are invalid.");
             ToolChannelPane.ReloadPreferences(); Flush();
-            if (dirty) throw new IOException("The current settings could not be saved. The selected file has not changed.");
+            if (dirty || StudioToolbarPreferences.Dirty) throw new IOException("The current settings could not be saved. The selected file has not changed.");
             SelectFile(false, path);
             data = imported; dirty = false; migrateLegacy = false;
             applyingSettings = true;
@@ -294,12 +318,15 @@ namespace MashBoxSDK.AnimationStudio
             ToolChannelPane.FlushDefaults();
             StudioSettings.Save();
             foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>()) view.SaveStoredConfiguration();
-            EnsureLoaded(); Flush(); WriteAtomic(path, JsonUtility.ToJson(data, true));
+            EnsureLoaded(); Flush();
+            var exported = JsonUtility.FromJson<Configuration>(JsonUtility.ToJson(data));
+            exported.entries.RemoveAll(entry => StudioToolbarPreferences.Owns(entry.key));
+            WriteAtomic(path, JsonUtility.ToJson(exported, true));
         }
         internal static void DrawTransferButtons()
         {
             GUILayout.Label("Configuration files", StudioTheme.Styles.boldLabel);
-            EditorGUILayout.SelectableLabel("Settings: " + SettingsPath + "\nHotkeys: " + HotkeysPath, StudioTheme.Styles.wordWrappedMiniLabel, GUILayout.Height(46));
+            EditorGUILayout.SelectableLabel("Settings: " + SettingsPath + "\nHotkeys: " + HotkeysPath + "\nToolbars: " + StudioToolbarPreferences.PathName, StudioTheme.Styles.wordWrappedMiniLabel, GUILayout.Height(66));
             GUILayout.Label("The last loaded files reopen automatically. Changes save to those files; factory presets create a personal copy on first edit.", StudioTheme.Styles.wordWrappedMiniLabel);
             using (new EditorGUILayout.HorizontalScope())
             {

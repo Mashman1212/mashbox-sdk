@@ -70,6 +70,7 @@ namespace MashBoxSDK.AnimationStudio
         private void PositionsChanged(bool deferStatistics = false, IList<Vector3> markerPositions = null, int[] markerIndices = null)
         {
             var mesh=ActiveMesh;
+            RefreshIsolatedPositions(markerPositions);
             // Separating UV/normal seams can change position-based edge deduplication.
             // Rebuild only that mesh in this case, never every object in the scene.
             if(!weld&&Document)
@@ -110,13 +111,37 @@ namespace MashBoxSDK.AnimationStudio
             for(int i=0;i<Transforms.Length && i<Document.nodes.Count;i++)
             {
                 if(!Transforms[i]||!Document.nodes[i].mesh||!Transforms[i].gameObject.activeInHierarchy)continue;
-                var renderer=Transforms[i].GetComponent<Renderer>();if(renderer&&renderer.enabled)yield return i;
+                var renderer=Transforms[i].GetComponent<Renderer>();if(renderer&&renderer.enabled&&!DisplayRendererHidden(renderer))yield return i;
             }
         }
         private void DrawSceneWireframes(Camera camera)
         {
             if(Event.current.type!=EventType.Repaint)return;
             DrawVisibleObjectWireframes(camera);
+        }
+        private static Color wireContrastBackground = new Color(-1,-1,-1,1);
+        private static readonly Dictionary<(Color,float,bool),Color> wireContrastColors = new Dictionary<(Color,float,bool),Color>();
+        internal static Color ContrastingWireColor(Color preferred,float minimum=3f,bool preferDark=false)
+        {
+            Color background=StudioSettings.Current.sceneBackground;
+            if(background!=wireContrastBackground){wireContrastBackground=background;wireContrastColors.Clear();}
+            var key=(preferred,minimum,preferDark);
+            if(wireContrastColors.TryGetValue(key,out var cached))return cached;
+            Color result=preferred;result.a=1;
+            if(StudioTheme.TextContrast(result,background)<minimum)
+            {
+                Color target=preferDark && StudioTheme.TextContrast(Color.black,background)>=minimum ? Color.black :
+                    StudioTheme.TextContrast(Color.white,background)>StudioTheme.TextContrast(Color.black,background)?Color.white:Color.black;
+                float low=0,high=1;
+                for(int i=0;i<16;i++)
+                {float middle=(low+high)*.5f;if(StudioTheme.TextContrast(Color.Lerp(result,target,middle),background)>=minimum+.025f)high=middle;else low=middle;}
+                result=Color.Lerp(result,target,high);
+            }
+            wireContrastColors[key]=result;return result;
+        }
+        internal static Color BackgroundWireColor
+        {
+            get {return ContrastingWireColor(new Color(.12f,.15f,.18f,1),1.5f,true);}
         }
         private void DrawVisibleObjectWireframes(Camera camera)
         {
@@ -138,7 +163,7 @@ namespace MashBoxSDK.AnimationStudio
                     if(!drawWire&&!highlight)continue;
                     SelectionWireframeLines(i, false);
                     var wire=selectionWireframes[Document.nodes[i]];
-                    var color=highlight?new Color(1,.65f,.15f,1):selected?new Color(.2f,.9f,.75f,1):new Color(.12f,.15f,.18f,1);
+                    var color=highlight?ContrastingWireColor(new Color(1,.65f,.15f,1)):selected?ContrastingWireColor(new Color(.2f,.9f,.75f,1)):BackgroundWireColor;
                     float width=highlight?1.2f:1.25f;
                     using(new Handles.DrawingScope(color,Matrix4x4.identity))
                     {
@@ -245,6 +270,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawComponentEdges(IEnumerable<int> selected,Color color,float width)
         {
+            color=ContrastingWireColor(color);
             if(DrawComponentWireSubset(selected,color,width))return;
             var depth=Handles.zTest;bool lighting=Handles.lighting;
             try
@@ -252,7 +278,7 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.zTest=displayXray?UnityEngine.Rendering.CompareFunction.Always:UnityEngine.Rendering.CompareFunction.LessEqual;
                 Handles.lighting=false;var edges=Edges();
                 using(new Handles.DrawingScope(color,Matrix4x4.identity))
-                    foreach(int id in selected)if(id>=0&&id<edges.Count)
+                    foreach(int id in selected)if(id>=0&&id<edges.Count&&IsolationAllowsComponent(id))
                     {var edge=edges[id];DrawNativeEdge(Transforms[Active].TransformPoint(componentPositions[edge.a]),Transforms[Active].TransformPoint(componentPositions[edge.b]),width,ComponentEdgeStroke);}
             }
             finally {Handles.zTest=depth;Handles.lighting=lighting;}
@@ -275,6 +301,7 @@ namespace MashBoxSDK.AnimationStudio
                 var edges = new Dictionary<(int, int),int>(); var indices = new List<int>(); var adjacent = new List<int>();
                 void Edge(int a, int b, int opposite = -1)
                 {
+                    if (!IsolationAllowsEdge(index,a,b)) return;
                     int x = canonical[a], y = canonical[b];
                     if(x==y)return;
                     var key=(Math.Min(x,y),Math.Max(x,y));

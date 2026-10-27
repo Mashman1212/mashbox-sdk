@@ -24,6 +24,10 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly Vector2[] PivotPickOffsets = { new Vector2(0, 6), new Vector2(0, -6), new Vector2(6, 0), new Vector2(-6, 0), new Vector2(6, 6), new Vector2(-6, 6), new Vector2(6, -6), new Vector2(-6, -6) };
         internal Quaternion PivotOrientation
         {
+            get { EnsureLockedPivot(); return HasLockedPivot ? lockedPivotOrientation : UnlockedPivotOrientation; }
+        }
+        private Quaternion UnlockedPivotOrientation
+        {
             get
             {
                 if (!componentAxes) return ObjectPivotOrientation;
@@ -90,6 +94,7 @@ namespace MashBoxSDK.AnimationStudio
             Undo.RegisterCompleteObjectUndo(Document, action + " pivot");
             if (action == PivotAction.Align || action == PivotAction.Position) Document.Repivot(Active, Transforms, target.position);
             if (action != PivotAction.Position) Document.nodes[Active].pivotRotation = Quaternion.Inverse(transform.rotation) * orientation;
+            RememberLockedPivot(Transforms[Active].position, orientation);
             EditorUtility.SetDirty(Document); Changed();
         }
         private static Quaternion PivotFrame(Vector3 x, Vector3 up)

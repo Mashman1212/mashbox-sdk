@@ -853,13 +853,19 @@ namespace MashBoxSDK.AnimationStudio
 
         private static Vector3 BevelProfile(Vector3 a, Vector3 b, Vector3 original, float t, float tension) =>
 
-            Vector3.Lerp(a, b, t) + (original - (a + b) * .5f) * (2 * tension * t * (1 - t));
+            BevelConicProfile(new ClipVector(a),new ClipVector(b),new ClipVector(original),1d-t,t,tension).Float;
 
         private static Vector3 BevelProfileNormal(Vector3 a, Vector3 b, Vector3 original, Vector3 along, Vector3 expected, float t, float tension)
 
         {
 
-            Vector3 derivative = b - a + (original - (a + b) * .5f) * (2 * tension * (1 - 2 * t));
+            var ca=new ClipVector(a);var cb=new ClipVector(b);var control=new ClipVector(original);
+            double u=1d-t,w=BevelConicWeight(ca,cb,control),den=u*u+2*w*u*t+t*t;
+            var numerator=ca*(u*u)+cb*((double)t*t)+control*(2*w*u*t);
+            var derivativeNumerator=ca*(-2*u)+cb*(2*t)+control*(2*w*(u-t));
+            double derivativeDenominator=-2*u+2*w*(u-t)+2*t;
+            var curveDerivative=(derivativeNumerator*den-numerator*derivativeDenominator)*(1/(den*den));
+            Vector3 derivative=((cb-ca)*(1-tension)+curveDerivative*tension).Float;
 
             var normal = BevelUnit(Vector3.Cross(along, derivative));
 
@@ -1158,8 +1164,10 @@ namespace MashBoxSDK.AnimationStudio
             {
                 return draft.JunctionFlowVertices.TryGetValue(Arc(side,sample),out var direction)?direction:Vector3.zero;
             }
+            bool spherical=false,triangular=false;Vector3 filletCenter=Vector3.zero;float filletRadius=0;
             Vector3 FlowPoint(int side,int u,int v,Vector3 fallback)
             {
+                if(spherical)return filletCenter+BevelUnit(fallback-filletCenter)*filletRadius;
                 bool bottom=v==1,left=u==1;if(!bottom&&!left)return fallback;
                 var a=draft.Positions[Arc(side,u)];var b=draft.Positions[Arc(side-1,steps-v)];
                 var da=Flow(side,u);var db=Flow(side-1,steps-v);
@@ -1251,6 +1259,36 @@ namespace MashBoxSDK.AnimationStudio
                 bool fitted = radius > epsilon && !float.IsInfinity(radius) && !float.IsNaN(radius);
 
                 var sphere = mean - meanNormal * radius;
+                // Only adopt a common spherical fillet when the complete sampled
+                // boundary and its source face-normal rays agree. A least-squares
+                // center alone is insufficient for skew/nonuniform-radius fans.
+                double tolerance=Math.Max(epsilon*16,radius*2e-5);
+                spherical=fitted&&Mathf.Abs(options.Tension-1)<1e-6f;
+                for(int i=0;spherical&&i<positions.Length;i++)
+                    spherical&=(positions[i]-sphere-directions[i]*radius).magnitude<=tolerance;
+                foreach(int point in ring)if(spherical)
+                    spherical&=Math.Abs((draft.Positions[point]-sphere).magnitude-radius)<=tolerance;
+                filletCenter=sphere;filletRadius=radius;
+                triangular=spherical&&anchors.Count==3;
+                var controls=new Vector3[3];var weights=new double[3];
+                if(triangular)for(int side=0;side<3;side++)
+                {
+                    var na=(positions[side]-sphere)/radius;var nb=(positions[(side+1)%3]-sphere)/radius;
+                    double dot=Math.Max(-1,Math.Min(1,Vector3.Dot(na,nb)));
+                    controls[side]=sphere+(na+nb)*(float)(radius/(1+dot));
+                    weights[side]=Math.Sqrt((1+dot)*.5);
+                }
+                // A rational quadratic triangular patch interpolates the same three
+                // conic profile boundaries. Its interior follows the boundary control
+                // net rather than an imposed spherical bulge at coarse tessellation.
+                Vector3 Triangle(Vector3 bary)
+                {
+                    double a=bary.x,b=bary.y,c=bary.z;
+                    double ab=2*weights[0]*a*b,bc=2*weights[1]*b*c,ca=2*weights[2]*c*a;
+                    double denominator=a*a+b*b+c*c+ab+bc+ca;
+                    return ((new ClipVector(positions[0])*(a*a)+new ClipVector(positions[1])*(b*b)+new ClipVector(positions[2])*(c*c)+
+                        new ClipVector(controls[0])*ab+new ClipVector(controls[1])*bc+new ClipVector(controls[2])*ca)*(1/denominator)).Float;
+                }
 
                 var direction = BevelUnit(draft.Originals[owner] - sphere);
 
@@ -1278,6 +1316,20 @@ namespace MashBoxSDK.AnimationStudio
 
                 bool odd = (steps & 1) != 0;
 
+                Vector3 InnerBary(int side)
+                {
+                    var bary=Vector3.one*((1-(odd?1f/steps:0))/3);
+                    if(odd)bary[side]+=1f/steps;return bary;
+                }
+                Vector3 GridBary(int side,float x,float y)
+                {
+                    float edge=half/(float)steps;
+                    var a=Vector3.zero;a[side]=1;
+                    var b=a*(1-edge);b[(side+1)%3]=edge;
+                    var d=a*(1-edge);d[(side+2)%3]=edge;
+                    return a*((1-x)*(1-y))+b*(x*(1-y))+d*((1-x)*y)+InnerBary(side)*(x*y);
+                }
+
                 var commonCenter=center;
                 if(half==1&&!odd)
                 {
@@ -1298,7 +1350,8 @@ namespace MashBoxSDK.AnimationStudio
 
                     var p = odd ? Radial(center, positions[side], 1f / steps) : center;
 
-                    if(half==1)p=odd?FlowPoint(side,1,1,p):commonCenter;
+                    if(triangular)p=Triangle(InnerBary(side));
+                    else if(half==1)p=odd?FlowPoint(side,1,1,p):commonCenter;
                     inner[side] = draft.AddPoint(p, owner);
 
                 }
@@ -1349,7 +1402,7 @@ namespace MashBoxSDK.AnimationStudio
 
                         }
 
-                        p=half==1&&!odd?commonCenter:FlowPoint(side,u,v,p);
+                        p=triangular?Triangle(GridBary(side,x,y)):(half==1&&!odd?commonCenter:FlowPoint(side,u,v,p));
                         grid[u, v] = draft.AddPoint(p, owner);
 
                     }
@@ -1418,7 +1471,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 var faceNormals = new List<Vector3>(face.Count);
 
-                foreach (int point in face) faceNormals.Add(BevelUnit(normals[point]));
+                foreach (int point in face) faceNormals.Add(spherical&&!triangular ? BevelUnit(draft.Positions[point]-filletCenter) : BevelUnit(normals[point]));
 
                 addFace(face, source, material, faceNormals);
 

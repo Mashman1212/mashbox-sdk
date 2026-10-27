@@ -20,9 +20,25 @@ namespace MashBoxSDK.AnimationStudio
             // Integer complementary weights make reversing a shared cross-section
             // bit-identical. Round each coordinate only once at publication precision.
             var left=new ClipVector(a);var right=new ClipVector(b);
-            var linear=(left*(steps-sample)+right*sample)*(1d/steps);
-            var offset=new ClipVector(control)-(left+right)*.5;
-            return (linear+offset*(2d*tension*sample*(steps-sample)/((double)steps*steps))).Float;
+            return BevelConicProfile(left,right,new ClipVector(control),(steps-sample)/(double)steps,sample/(double)steps,tension).Float;
+        }
+
+        // Rational quadratic conic: the middle weight is sin(half the control
+        // angle). Equal tangent lengths therefore give an exact circular fillet.
+        // See the Circular Arcs reference in BEVEL_ENGINE.md.
+        private static double BevelConicWeight(ClipVector a,ClipVector b,ClipVector control)
+        {
+            var x=a-control;var y=b-control;double length=Math.Sqrt(x.Squared*y.Squared);
+            if(length<=1e-30)return 1;
+            double dot=Math.Max(-1,Math.Min(1,x.Dot(y)/length));
+            return Math.Sqrt(Math.Max(1e-12,(1-dot)*.5));
+        }
+        private static ClipVector BevelConicProfile(ClipVector a,ClipVector b,ClipVector control,double u,double t,float tension)
+        {
+            var linear=a*u+b*t;if(tension==0)return linear;
+            double w=BevelConicWeight(a,b,control),middle=2*w*u*t,denominator=u*u+middle+t*t;
+            var curve=(a*(u*u)+b*(t*t)+control*middle)*(1/denominator);
+            return linear+(curve-linear)*tension;
         }
 
         private bool PrepareClipProfileLayout(FlatClipPlan plan)

@@ -13,6 +13,7 @@ namespace MashBoxSDK.AnimationStudio
         [Serializable] internal sealed class Preferences
         {
             public string theme = "graphite";
+            public Color sceneBackground = new Color32(71, 71, 71, 255);
             public Color customPrimary = new Color(.18f, .22f, .25f, 1);
             public Color customSecondary = new Color(.85f, .70f, .47f, 1);
             public bool showMeshStatistics = true;
@@ -54,6 +55,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (value.theme != "custom" && Array.FindIndex(StudioTheme.Palettes, p => p.Id == value.theme) < 0) value.theme = "graphite";
             Color CleanColor(Color c, Color fallback) => new Color(Clamp(c.r,0,1,fallback.r),Clamp(c.g,0,1,fallback.g),Clamp(c.b,0,1,fallback.b),1);
+            value.sceneBackground = CleanColor(value.sceneBackground, new Color32(71,71,71,255));
             value.customPrimary = CleanColor(value.customPrimary,new Color(.18f,.22f,.25f,1));
             value.customSecondary = CleanColor(value.customSecondary,new Color(.85f,.70f,.47f,1));
             value.gridSpacing = Clamp(value.gridSpacing, .01f, 10, .25f);
@@ -126,12 +128,21 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 GUILayout.Label("Choose two colors. Text, surfaces, borders and highlights adjust automatically.", StudioTheme.Styles.wordWrappedMiniLabel);
                 GUILayout.Space(12);
+                EditorGUI.BeginChangeCheck();
+                var background = EditorGUILayout.ColorField(new GUIContent("Scene background", "Background color of Studio viewports."), settings.sceneBackground, true, false, false);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    settings.sceneBackground = background;
+                    StudioSettings.Save();
+                }
+                GUILayout.Space(12);
                 if (GUILayout.Button("Restore Theme Defaults"))
                 {
                     var defaults = new StudioSettings.Preferences();
                     settings.theme = defaults.theme;
                     settings.customPrimary = defaults.customPrimary;
                     settings.customSecondary = defaults.customSecondary;
+                    settings.sceneBackground = defaults.sceneBackground;
                     StudioSettings.Save();
                 }
             }

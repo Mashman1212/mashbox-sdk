@@ -11,6 +11,8 @@ namespace MashBoxSDK.AnimationStudio
         // Keep native handle callbacks stable across Layout, drag and Repaint.
         private static readonly Handles.CapFunction MoveArrowCap = Handles.ArrowHandleCap;
         private static readonly Handles.CapFunction MoveRectangleCap = Handles.RectangleHandleCap;
+        private static readonly Handles.CapFunction PlaneRectangleCap = DrawPlaneRectangleCap;
+        private static readonly Vector3[] PlaneRectanglePoints = new Vector3[4];
         private static readonly Handles.CapFunction PivotTriangleCap = DrawPivotTriangleCap;
         private static readonly Vector3[] PivotTrianglePoints = new Vector3[3];
         private readonly int[] moveHandleIds = new int[7];
@@ -63,7 +65,7 @@ namespace MashBoxSDK.AnimationStudio
                     var offset = (first + second) * size * .23f;
                     int id = moveHandleIds[3 + plane] = GUIUtility.GetControlID(0x4d5310 + plane, FocusType.Passive);
                     Handles.color = plane == 0 ? Handles.zAxisColor : plane == 1 ? Handles.yAxisColor : Handles.xAxisColor;
-                    var next = Handles.Slider2D(id, center + offset, normal, first, second, size * .065f, MoveRectangleCap, Vector2.zero);
+                    var next = Handles.Slider2D(id, center + offset, normal, first, second, size * .065f, PlaneRectangleCap, Vector2.zero);
                     TrackMoveControl(id, (MoveAxes)((1 << a) | (1 << b)), center, orientation);
                     if (GUIUtility.hotControl == id) result = next - offset;
                 }
@@ -75,6 +77,55 @@ namespace MashBoxSDK.AnimationStudio
             }
             return result;
         }
+        // Preserve native rectangle picking; fill only the hovered or captured plane.
+        private static void DrawPlaneRectangleCap(int control, Vector3 position, Quaternion rotation, float size, EventType type)
+        {
+            bool active = GUIUtility.hotControl == control ||
+                GUIUtility.hotControl == 0 && HandleUtility.nearestControl == control;
+            if (type != EventType.Repaint || !active)
+            {
+                Handles.RectangleHandleCap(control, position, rotation, size, type);
+                return;
+            }
+            var right = rotation * Vector3.right * size;
+            var up = rotation * Vector3.up * size;
+            PlaneRectanglePoints[0] = position - right - up;
+            PlaneRectanglePoints[1] = position - right + up;
+            PlaneRectanglePoints[2] = position + right + up;
+            PlaneRectanglePoints[3] = position + right - up;
+            using (new Handles.DrawingScope(Handles.selectedColor))
+                Handles.DrawAAConvexPolygon(PlaneRectanglePoints);
+        }
+
+        private Vector3 DrawScaleHandle(Vector3 center, Quaternion orientation, float sizeMultiplier)
+        {
+            float size = HandleUtility.GetHandleSize(center) * sizeMultiplier;
+            var result = Handles.ScaleHandle(Vector3.one, center, orientation, size);
+            using (new Handles.DrawingScope())
+            {
+                for (int plane = 0; plane < 3; plane++)
+                {
+                    int a = plane == 2 ? 1 : 0, b = plane == 0 ? 1 : 2;
+                    var first = orientation * (a == 0 ? Vector3.right : Vector3.up);
+                    var second = orientation * (b == 1 ? Vector3.up : Vector3.forward);
+                    var offset = (first + second) * size * .23f;
+                    int id = GUIUtility.GetControlID(0x4d5340 + plane, FocusType.Passive);
+                    Handles.color = plane == 0 ? Handles.zAxisColor : plane == 1 ? Handles.yAxisColor : Handles.xAxisColor;
+                    var next = Handles.Slider2D(id, center + offset, Vector3.Cross(first, second),
+                        first, second, size * .065f, PlaneRectangleCap, Vector2.zero);
+                    if (GUIUtility.hotControl != id) continue;
+                    float factor = PlaneScaleFactor(next - center - offset, first, second, size);
+                    if (Event.current.control || Event.current.command)
+                        factor = 1 + Handles.SnapValue(factor - 1, EditorSnapSettings.scale);
+                    result = Vector3.one; result[a] = factor; result[b] = factor;
+                }
+            }
+            return result;
+        }
+
+        internal static float PlaneScaleFactor(Vector3 delta, Vector3 first, Vector3 second, float size)
+            => 1 + Vector3.Dot(delta, (first + second).normalized) / Mathf.Max(size, 1e-6f);
+
         private static void DrawPivotTriangleCap(int control, Vector3 position, Quaternion rotation, float size, EventType type)
         {
             if (type == EventType.Layout || type == EventType.MouseMove)

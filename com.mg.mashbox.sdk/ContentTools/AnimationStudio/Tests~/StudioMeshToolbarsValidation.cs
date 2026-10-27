@@ -38,9 +38,9 @@ public class StudioMeshToolbarsValidation : EditorWindow
         foreach(var bar in added)
         {
             var state=StateOf(bar);Check(bar.displayed,"New toolbar is not enabled: "+bar.id);Check(state.containerId=="overlay-toolbar__top","New toolbar not at top");Check(state.dockPosition==0,"New toolbar right-aligned");Check(state.layout==1,"New toolbar not horizontal");
-            var contents=bar.CreatePanelContent();var buttons=contents.Children().OfType<EditorToolbarButton>().ToArray();Check(buttons.Length==8,"Menu functions missing");
+            var contents=bar.CreatePanelContent();var buttons=contents.Children().OfType<EditorToolbarButton>().ToArray();Check(buttons.Length==(bar is StudioMeshDisplayToolbar?4:8),"Menu functions missing");
             var commands=view.Studio.ToolbarModelEditor.ToolbarCommands(view);
-            foreach(var button in buttons){string key=(string)button.userData;var command=commands.SingleOrDefault(x=>x.Key==key);Check(command!=null,"Unknown command: "+key);Check(button.icon,"Missing icon: "+key);Check(string.IsNullOrEmpty(button.text),"Visible word label: "+key);Check(button.enabledSelf==command.Enabled,"Menu availability differs: "+key);Check(button.tooltip==command.Path,"Tooltip differs: "+key);}
+            foreach(var button in buttons){string key=(string)button.userData;var command=commands.SingleOrDefault(x=>x.Key==key);Check(command!=null,"Unknown command: "+key);Check(button.icon,"Missing icon: "+key);Check(string.IsNullOrEmpty(button.text),"Visible word label: "+key);Check(button.enabledSelf==command.Enabled,"Menu availability differs: "+key);Check(button.tooltip==command.Tooltip&&button.tooltip.IndexOf((char)10)>=0&&!button.tooltip.Contains(command.Path),"Tooltip must contain a description without its menu path: "+key);}
         }
         foreach(var entry in saved.items)
         {var actual=StateOf(view.overlayCanvas.overlays.Single(x=>x.id==entry.id));var expected=JsonUtility.FromJson<State>(JsonUtility.ToJson(entry.state));Check(actual.containerId==expected.containerId&&actual.dockPosition==expected.dockPosition&&actual.index==expected.index,"Existing toolbar moved: "+entry.id);}
@@ -54,9 +54,9 @@ public class StudioMeshToolbarsValidation : EditorWindow
         Finish("PASS "+checks+" default-on/top-leading, command/icon/availability, existing placement, custom coexistence and saved layout checks",false);
     }catch(Exception ex){Finish(ex.ToString(),false);}};}
     public static void Render(){EditorApplication.delayCall+=()=>{try{
-        Open();host=CreateInstance<StudioMeshToolbarsValidation>();host.position=new Rect(100,100,420,150);host.titleContent=new GUIContent("Mesh toolbars validation");
+        Open();host=CreateInstance<StudioMeshToolbarsValidation>();host.position=new Rect(100,100,420,210);host.titleContent=new GUIContent("Mesh toolbars validation");
         host.rootVisualElement.style.paddingLeft=12;host.rootVisualElement.style.paddingTop=8;host.rootVisualElement.style.backgroundColor=StudioTheme.Current.Panel;
-        foreach(var bar in new StudioCommandToolbar[]{view.overlayCanvas.overlays.OfType<StudioMeshToolsToolbar>().Single(),view.overlayCanvas.overlays.OfType<StudioMeshDisplayToolbar>().Single()})
+        foreach(var bar in new StudioCommandToolbar[]{view.overlayCanvas.overlays.OfType<StudioPolygonPrimitivesToolbar>().Single(),view.overlayCanvas.overlays.OfType<StudioMeshToolsToolbar>().Single(),view.overlayCanvas.overlays.OfType<StudioMeshDisplayToolbar>().Single()})
         {var label=new Label(bar.displayName);label.style.color=StudioTheme.Current.Text;label.style.marginBottom=5;host.rootVisualElement.Add(label);var content=bar.CreatePanelContent();content.style.flexDirection=FlexDirection.Row;content.style.marginBottom=12;host.rootVisualElement.Add(content);}
         typeof(MashBoxStudioViewport).GetMethod("StyleStudioToolbar",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{host.rootVisualElement});
         host.ShowUtility();next=EditorApplication.timeSinceStartup+1;EditorApplication.update+=Tick;
@@ -66,7 +66,7 @@ public class StudioMeshToolbarsValidation : EditorWindow
         if(EditorApplication.timeSinceStartup<next)return;next=EditorApplication.timeSinceStartup+.3;
         try{
             if(stage++==0){host.Repaint();return;}
-            var buttons=host.rootVisualElement.Query<EditorToolbarButton>().ToList();Check(buttons.Count==16,"Rendered buttons missing");foreach(var b in buttons)Check(b.worldBound.width>0&&b.worldBound.height>0,"Button has no rendered bounds: "+b.worldBound);
+            var buttons=host.rootVisualElement.Query<EditorToolbarButton>().ToList();Check(buttons.Count==17,"Rendered buttons missing");foreach(var b in buttons)Check(b.worldBound.width>0&&b.worldBound.height>0,"Button has no rendered bounds: "+b.worldBound);
             var parent=typeof(EditorWindow).GetField("m_Parent",F).GetValue(host);var rect=new Rect(Vector2.zero,host.position.size);var rt=new RenderTexture((int)rect.width,(int)rect.height,0);rt.Create();var previous=RenderTexture.active;
             try{parent.GetType().GetMethod("GrabPixels",F).Invoke(parent,new object[]{rt,rect});RenderTexture.active=rt;var image=new Texture2D(rt.width,rt.height,TextureFormat.RGBA32,false);image.ReadPixels(new Rect(0,0,rt.width,rt.height),0,0);image.Apply();Check(image.GetPixels32().Select(x=>x.r).Distinct().Count()>20,"Retained toolbar UI did not render");File.WriteAllBytes(Out("mesh-toolbars-native.png"),image.EncodeToPNG());UnityEngine.Object.DestroyImmediate(image);}finally{RenderTexture.active=previous;UnityEngine.Object.DestroyImmediate(rt);}
             Finish("PASS "+checks+" retained toolbar layout/native pixel checks",true);

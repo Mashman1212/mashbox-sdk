@@ -17,7 +17,7 @@ public static class StudioToolbarPersistenceValidation
     [Serializable] class Layout { public bool enabled;public List<Entry> items; }
     [Serializable] class Snapshot { public string layout,definitions;public List<NativeState> states=new List<NativeState>();public Vector2 floatingPosition;public string floatingId; }
     [Serializable] class PreferenceEntry { public string key,value; }
-    [Serializable] class Preferences { public List<PreferenceEntry> entries; }
+    [Serializable] class Preferences { public string layout,customToolbars;public List<PreferenceEntry> entries; }
     static string Out(string name)=>Path.GetFullPath(Path.Combine(Application.dataPath,"../../"+name));
     static void Check(bool value,string message){if(!value)throw new Exception(message);checks++;}
     static void Call(string method)=>typeof(MashBoxStudioViewport).GetMethod(method,F).Invoke(view,null);
@@ -82,9 +82,9 @@ public static class StudioToolbarPersistenceValidation
                 bars[0].displayed=!bars[0].displayed;Check(Queued,"Visibility event missing before read-only restore");
                 Call("RestoreStoredToolbars");Check(!Queued,"Restore left a pending write");Check(StudioPreferenceStore.GetString("Studio.Toolbars")==raw,"Restoration overwrote saved layout");
                 StudioPreferenceStore.Flush();
-                var disk=JsonUtility.FromJson<Preferences>(File.ReadAllText(StudioPreferenceStore.SettingsPath));
-                Check(disk.entries.Single(x=>x.key=="Studio.Toolbars").value==raw,"Layout missing from settings JSON on disk");
-                Check(disk.entries.Any(x=>x.key==StudioCustomToolbars.PreferenceKey),"Custom contents missing from settings JSON");
+                var disk=JsonUtility.FromJson<Preferences>(File.ReadAllText(StudioToolbarPreferences.PathName));
+                Check(disk.layout==raw,"Layout missing from settings JSON on disk");
+                Check(!string.IsNullOrEmpty(disk.customToolbars),"Custom contents missing from settings JSON");
                 var snapshot=new Snapshot{layout=raw,definitions=StudioPreferenceStore.GetString(StudioCustomToolbars.PreferenceKey),floatingPosition=floating.floatingPosition,floatingId=floating.id};
                 snapshot.states.AddRange(bars.Select(State));File.WriteAllText(Out("toolbar-persistence-expected.json"),JsonUtility.ToJson(snapshot));
             }

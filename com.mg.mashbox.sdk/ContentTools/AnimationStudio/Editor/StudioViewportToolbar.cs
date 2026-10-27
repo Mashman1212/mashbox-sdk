@@ -12,8 +12,8 @@ namespace MashBoxSDK.AnimationStudio
     // Default indices apply only when Unity has no saved placement for an
     // overlay. Stable IDs let Unity restore each toolbar independently.
     [Overlay(typeof(MashBoxStudioViewport), Id, "Selection Modes", true,
-        defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 0, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockZone = DockZone.LeftToolbar, defaultDockPosition = DockPosition.Top,
+        defaultDockIndex = 1, defaultLayout = Layout.VerticalToolbar)]
     internal sealed class StudioSelectionToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/SelectionModes";
@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Grid", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 0, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioGridToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Grid";
@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, DisplayName, true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioViewportToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Viewport";
@@ -42,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Viewport Shading", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 3, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioDisplayToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Display";
@@ -73,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
         protected StudioToolbarToggle(string elementName, string iconName, string hint)
         {
             name = elementName; tooltip = hint;
-            if (!string.IsNullOrEmpty(iconName)) icon = StudioToolbarIcons.Get(iconName);
+            if (!string.IsNullOrEmpty(iconName)) { var key = StudioCommandIcons.ControlKey(elementName); icon = key == null ? StudioToolbarIcons.Get(iconName) : StudioCommandIcons.Get(key); }
             RegisterCallback<AttachToPanelEvent>(_ => Bind());
             RegisterCallback<DetachFromPanelEvent>(_ => Unbind());
             this.RegisterValueChangedCallback(evt => {
@@ -286,7 +286,7 @@ namespace MashBoxSDK.AnimationStudio
         public StudioToolbarOrientation()
         {
             name = "studio-toolbar-orientation"; tooltip = "World, Object or Component transform axes";
-            icon = StudioToolbarIcons.Get("ToolHandleLocal");
+            icon = StudioCommandIcons.Get("Viewport/Orientation");
             clicked += OpenMenu;
             RegisterCallback<AttachToPanelEvent>(_ => Bind());
             RegisterCallback<DetachFromPanelEvent>(_ => Unbind());

@@ -113,7 +113,7 @@ namespace MashBoxSDK.AnimationStudio
             var positions=new List<Vector3>();var corners=new List<Vector2>();var indices=new List<int>();var sourcePoints=new List<int>();
             foreach(int point in points)
             {
-                if(point<0||point>=componentPositions.Length)continue;
+                if(point<0||point>=componentPositions.Length||!IsolationAllowsComponent(point))continue;
                 sourcePoints.Add(point);
                 int start=positions.Count;
                 for(int i=0;i<4;i++)positions.Add(componentPositions[point]);
@@ -159,6 +159,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private Mesh ComponentHighlight(IEnumerable<int> components)
         {
+            components=System.Linq.Enumerable.Where(components,IsolationAllowsComponent);
             Mesh highlight=null;
             if(mode==ComponentMode.Vertex)highlight=PointBatch(components);
             else if(mode==ComponentMode.Face)
@@ -248,7 +249,7 @@ EnsureComponentDrawing();EnsureComponentHover();
             {
                 Handles.zTest=displayXray?CompareFunction.Always:CompareFunction.LessEqual;
                 Handles.lighting=false;
-                using(new Handles.DrawingScope(Components.Contains(index)?StudioFaceSelectionStyle.Selected:StudioFaceSelectionStyle.Hover,Matrix4x4.identity))
+                using(new Handles.DrawingScope(ContrastingWireColor(Components.Contains(index)?StudioFaceSelectionStyle.Selected:StudioFaceSelectionStyle.Hover),Matrix4x4.identity))
                     for(int i=0;i<vertices.Count;i++)
                         DrawNativeEdge(Transforms[Active].TransformPoint(componentPositions[vertices[i]]),
                             Transforms[Active].TransformPoint(componentPositions[vertices[(i+1)%vertices.Count]]),width);

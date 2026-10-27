@@ -49,6 +49,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     // Unity may restore hidden overlays from its own window layout.
                     // With no Studio preference, every Studio toolbar starts on.
+                    RestoreFactoryToolbarPlacements(null);
                     overlayCanvas.overlaysEnabled = true;
                     foreach (var overlay in studioToolbarOverlays)
                         if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) overlay.displayed = true;
@@ -63,16 +64,66 @@ namespace MashBoxSDK.AnimationStudio
                         {
                             overlayCanvas.RestoreOverlay(overlay, item.state);
                         }
-                // Newly introduced toolbars have no Studio placement yet. Append
-                // them at the leading top dock without disturbing saved toolbars.
-                foreach (var overlay in studioToolbarOverlays)
-                    if ((overlay is StudioMeshToolsToolbar || overlay is StudioMeshDisplayToolbar) &&
-                        !saved.items.Exists(item => item.id == overlay.id))
-                        overlayCanvas.RestoreOverlay(overlay, JsonUtility.FromJson<SaveData>("{\"containerId\":\"overlay-toolbar__top\",\"dockPosition\":0,\"index\":1000,\"displayed\":true,\"layout\":1}"));
+                RestoreFactoryToolbarPlacements(new HashSet<string>(saved.items.ConvertAll(item => item.id), StringComparer.Ordinal));
                 overlayCanvas.overlaysEnabled = saved.enabled;
             }
             catch (ArgumentException ex) { Debug.LogWarning("MashBox Studio could not restore toolbar layout: " + ex.Message); }
             finally { restoringStoredToolbars = false; restoredStoredToolbars = true; }
+        }
+        private void RestoreDefaultToolbarLayout()
+        {
+            CancelStoredToolbarSave();
+            restoringStoredToolbars = true;
+            try { RestoreFactoryToolbarPlacements(null); overlayCanvas.overlaysEnabled = true; }
+            finally { restoringStoredToolbars = false; }
+            SaveStoredToolbars(); UpdatePanelLayout(); MarkDirty(DirtyState.UI);
+        }
+        private void RestoreFactoryToolbarPlacements(HashSet<string> savedIds)
+        {
+            string[] top = { StudioGridToolbar.Id, StudioViewportToolbar.Id, StudioDisplayToolbar.Id,
+                StudioPolygonPrimitivesToolbar.Id, StudioMeshToolsToolbar.Id, StudioMeshDisplayToolbar.Id };
+            string[] left = { StudioTransformToolbar.Id, StudioSelectionToolbar.Id };
+            void Place(string[] ids, string container, int layout)
+            {
+                for (int i = 0; i < ids.Length; i++)
+                    if (savedIds == null || !savedIds.Contains(ids[i]))
+                        foreach (var overlay in studioToolbarOverlays)
+                            if (overlay.id == ids[i])
+                            {
+                                overlayCanvas.RestoreOverlay(overlay, JsonUtility.FromJson<SaveData>(
+                                    "{\"containerId\":\"" + container + "\",\"dockPosition\":0,\"index\":" + (savedIds == null ? i : 1000) + ",\"displayed\":true,\"layout\":" + layout + "}"));
+                                if (savedIds != null) PlaceNewToolbarBesideFactoryNeighbor(overlay, ids, i, container);
+                            }
+            }
+            Place(top, "overlay-toolbar__top", 1);
+            Place(left, "overlay-toolbar__left", 2);
+        }
+        [Serializable] private sealed class ToolbarDockGroup { public string containerId; public int dockPosition; }
+        private static readonly MethodInfo NativeToolbarBefore = typeof(Overlay).GetMethod("DockBefore", WindowMembers);
+        private static readonly MethodInfo NativeToolbarAfter = typeof(Overlay).GetMethod("DockAfter", WindowMembers);
+        private void PlaceNewToolbarBesideFactoryNeighbor(Overlay overlay, string[] ids, int index, string container)
+        {
+            // RestoreOverlay appends within a dock section on current Unity; its
+            // SaveData.index is not an insertion API. Place only NEW controls
+            // beside their category neighbors, without redocking saved toolbars.
+            bool SameGroup(Overlay candidate)
+            {
+                if (candidate == null || candidate.floating) return false;
+                var group = JsonUtility.FromJson<ToolbarDockGroup>(JsonUtility.ToJson(new SaveData(candidate)));
+                return group.containerId == container && group.dockPosition == 0;
+            }
+            for (int i = index + 1; i < ids.Length; i++)
+            {
+                var candidate = studioToolbarOverlays.Find(item => item.id == ids[i]);
+                if (!SameGroup(candidate)) continue;
+                NativeToolbarBefore?.Invoke(overlay, new object[] { candidate }); return;
+            }
+            for (int i = index - 1; i >= 0; i--)
+            {
+                var candidate = studioToolbarOverlays.Find(item => item.id == ids[i]);
+                if (!SameGroup(candidate)) continue;
+                NativeToolbarAfter?.Invoke(overlay, new object[] { candidate }); return;
+            }
         }
         private const string DisplayToolbarId = StudioViewportToolbar.Id;
         private static readonly PropertyInfo NativeCanvasRoot = typeof(OverlayCanvas).GetProperty("rootVisualElement", WindowMembers);
@@ -262,6 +313,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void AddStudioToolbarMenu(StudioMenu menu)
         {
             menu.AddItem(new GUIContent("Toolbars/Customize Toolbars…"), false, () => StudioToolbarCustomization.Open(this), commandKey: "Toolbars/Customize", shortcutEligible: false);
+            menu.AddItem(new GUIContent("Toolbars/Restore Default Layout"), false, RestoreDefaultToolbarLayout, commandKey: "Toolbars/RestoreDefaultLayout", shortcutEligible: false);
             menu.AddSeparator("Toolbars");
             // Unity's canvas is the registry. Query it when opening the menu so
             // restored, hidden and newly registered toolbars are included too.

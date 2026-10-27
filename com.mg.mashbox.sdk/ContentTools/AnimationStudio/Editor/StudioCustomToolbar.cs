@@ -46,7 +46,7 @@ namespace MashBoxSDK.AnimationStudio
                 var items = JsonUtility.FromJson<Collection>(raw)?.items ?? new List<StudioCustomToolbarDefinition>();
                 var seen = new HashSet<string>();
                 items.RemoveAll(x => x == null || string.IsNullOrEmpty(x.id) || !x.id.StartsWith("MashBox/Custom/", StringComparison.Ordinal) || !seen.Add(x.id));
-                foreach (var item in items) { if (item.commands == null) item.commands = new List<string>(); item.commands.RemoveAll(string.IsNullOrEmpty); if (string.IsNullOrWhiteSpace(item.name)) item.name = "Custom Toolbar"; }
+                foreach (var item in items) { if (item.commands == null) item.commands = new List<string>(); item.commands.RemoveAll(key => string.IsNullOrEmpty(key) || key == "Mesh Display/Recalculate Normals"); if (string.IsNullOrWhiteSpace(item.name)) item.name = "Custom Toolbar"; }
                 return items;
             }
             catch (ArgumentException) { return new List<StudioCustomToolbarDefinition>(); }
@@ -84,11 +84,13 @@ namespace MashBoxSDK.AnimationStudio
         {
             base.OnCreated();
             layoutChanged += OnLayout;
+            StudioShortcuts.changed += Refresh;
             if (containerWindow is MashBoxStudioViewport view) view.StudioToolbarStateChanged += Refresh;
         }
         public override void OnWillBeDestroyed()
         {
             layoutChanged -= OnLayout;
+            StudioShortcuts.changed -= Refresh;
             if (containerWindow is MashBoxStudioViewport view) view.StudioToolbarStateChanged -= Refresh;
             base.OnWillBeDestroyed();
         }
@@ -141,7 +143,7 @@ namespace MashBoxSDK.AnimationStudio
                 var command = commands?.Find(x => x.Key == key);
                 button.text = string.Empty;
                 if (button is EditorToolbarButton action) action.icon = StudioCommandIcons.Get(command == null ? "Unavailable" : key);
-                button.tooltip = command?.Path ?? key + " (function unavailable)";
+                button.tooltip = command?.Tooltip ?? key.Substring(key.LastIndexOf('/')+1) + "\nThis function is unavailable in the current context.";
                 button.SetEnabled(command != null && command.Enabled);
                 button.EnableInClassList("unity-button--checked", command != null && command.Checked);
             }

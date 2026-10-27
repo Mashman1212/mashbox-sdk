@@ -60,7 +60,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             int count = 0;
             foreach (int point in Components)
-                if (point >= 0 && point < componentPositions.Length) count++;
+                if (point >= 0 && point < componentPositions.Length && IsolationAllowsComponent(point)) count++;
             if (count > markerSelectionIds.Length)
             {
                 markerSelectionIds = new int[Mathf.NextPowerOfTwo(count)];
@@ -69,7 +69,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             markerSelectionCount = 0;
             foreach (int point in Components)
-                if (point >= 0 && point < componentPositions.Length) markerSelectionIds[markerSelectionCount++] = point;
+                if (point >= 0 && point < componentPositions.Length && IsolationAllowsComponent(point)) markerSelectionIds[markerSelectionCount++] = point;
             if (count == 0 || markerSelection == null) return;
             markerSelection.SetData(markerSelectionIds, 0, 0, count);
 #if MASHBOX_STUDIO_TESTS
@@ -118,7 +118,17 @@ namespace MashBoxSDK.AnimationStudio
                 ComponentOverlayDrawCalls++;
 #endif
             }
-            Draw(componentPositions.Length, 0, VertexMarkerColor, VertexMarkerSize);
+            var isolated=ComponentIsolation(Active);
+            if(isolated!=null)
+            {
+                if(isolated.VertexIds!=null)
+                {
+                    markerMaterial.SetBuffer(MarkerIds,isolated.VertexIds);
+                    Draw(isolated.vertices.Count,1,VertexMarkerColor,VertexMarkerSize);
+                    markerMaterial.SetBuffer(MarkerIds,markerSelection);
+                }
+            }
+            else Draw(componentPositions.Length, 0, VertexMarkerColor, VertexMarkerSize);
             markerMaterial.SetInt(MarkerHover, drawnHover);
             if (drawnHover >= 0) Draw(1, 2, new Color(1, .95f, .5f, displayXray ? 1 : .8f), 10);
             Draw(markerSelectionCount, 1, new Color(1, .65f, .15f, displayXray ? 1 : .9f), SelectedVertexMarkerSize);

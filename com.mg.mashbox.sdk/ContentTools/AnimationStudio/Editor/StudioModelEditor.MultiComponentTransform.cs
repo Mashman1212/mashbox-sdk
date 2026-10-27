@@ -136,7 +136,7 @@ namespace MashBoxSDK.AnimationStudio
             bool shiftDown=(mode==ComponentMode.Edge||mode==ComponentMode.Face)&&evt.type==EventType.MouseDown&&evt.button==0&&evt.shift&&!evt.alt&&!evt.control&&!evt.command;
             if(multiComponentGesture!=null&&(multiComponentGesture.tool!=tool||!released&&multiComponentGesture.control!=GUIUtility.hotControl))multiComponentGesture=null;
             var gesture=multiComponentGesture;
-            var center=gesture?.center??(HasComponentPivot?componentPivot.position:MultiComponentCenter(nodes));
+            var center=gesture?.center??ResolveLockedPivotCenter(HasComponentPivot?componentPivot.position:MultiComponentCenter(nodes));
             var orientation=gesture?.orientation??(local?PivotOrientation:Quaternion.identity);
             var position=gesture?.position??center;var rotation=gesture?.rotation??orientation;var factor=Vector3.one;
             float size=StudioSettings.Current.handleSize;
@@ -152,7 +152,7 @@ namespace MashBoxSDK.AnimationStudio
                     var modifiers=evt.modifiers;if(evt.control||evt.command)evt.modifiers=modifiers&~EventModifiers.Shift;
                     try{rotation=DrawSizedRotationHandle(Handles.RotationHandleIds.@default,rotation,center,size);}finally{evt.modifiers=modifiers;}
                 }
-                else factor=Handles.ScaleHandle(Vector3.one,center,orientation,HandleUtility.GetHandleSize(center)*size);
+                else factor=DrawScaleHandle(center,orientation,size);
                 AntialiasTransformGizmo(center,HandleUtility.GetHandleSize(center)*size*1.35f);
             }
             bool changed=EditorGUI.EndChangeCheck();

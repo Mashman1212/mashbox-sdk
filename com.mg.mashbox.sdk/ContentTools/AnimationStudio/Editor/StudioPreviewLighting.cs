@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
         private readonly Dictionary<SceneView,(Color background, CameraClearFlags clearFlags)> cameraColors = new Dictionary<SceneView,(Color,CameraClearFlags)>();
         private readonly Dictionary<SceneView,(Component data, bool preview, LayerMask mask, bool effects, Color background, object clearMode, object aa, object aaQuality)> cameras = new Dictionary<SceneView,(Component,bool,LayerMask,bool,Color,object,object,object)>();
         private readonly Dictionary<Component,(bool custom,object frames,object mask)> cameraFrameSettings = new Dictionary<Component,(bool,object,object)>();
-        private readonly Dictionary<SceneView,(Component data,bool lights,bool aa,bool smaa)> configuredCameras = new Dictionary<SceneView,(Component,bool,bool,bool)>();
+        private readonly Dictionary<SceneView,(Component data,bool lights,bool aa,bool smaa,Color background)> configuredCameras = new Dictionary<SceneView,(Component,bool,bool,bool,Color)>();
         internal int CameraConfigurationCount { get; private set; }
 
         internal StudioPreviewLighting(Scene scene)
@@ -179,7 +179,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!cameraColors.ContainsKey(view)) cameraColors.Add(view,(view.camera.backgroundColor,view.camera.clearFlags));
             // Preserve the original neutral viewport gray in display space. HDRP's
             // camera-preview path needs the explicit linear equivalent below.
-            Color background = new Color32(71,71,71,255);
+            Color background = StudioSettings.Current.sceneBackground;
             view.camera.clearFlags = CameraClearFlags.SolidColor;
             view.camera.backgroundColor = background;
             if (!hdrp || !view.camera || CameraDataType == null || !profile) return;
@@ -191,24 +191,31 @@ namespace MashBoxSDK.AnimationStudio
             var state = cameras[view];
             // HDRP's regular asset preview forcibly disables exposure and shadows.
             // Camera-preview mode retains preview-scene isolation while enabling them.
+            // Clear color can change independently of the cached lighting/AA setup.
+            bool configuredData = configuredCameras.TryGetValue(view,out var configured) && configured.data == state.data;
+            bool backgroundChanged = !configuredData || configured.background != background;
+            if (backgroundChanged)
+            {
+                Set(state.data,"clearColorMode",Enum.Parse(state.clearMode.GetType(),"Color"));
+                Set(state.data,"backgroundColorHDR",background.linear);
+            }
             bool antialiasing = !StudioSettings.Current.disableViewportAntialiasing;
             bool smaa = StudioSettings.Current.useViewportSmaa;
             view.sceneViewState.showImageEffects = studioLights || antialiasing;
             // Native layout, input and repaint passes share these camera settings.
             // Rebuild the reflected HDRP overrides only when their inputs change.
-            if (configuredCameras.TryGetValue(view,out var configured) && configured.data == state.data &&
-                configured.lights == studioLights && configured.aa == antialiasing && configured.smaa == smaa) return;
+            if (configuredData && configured.lights == studioLights && configured.aa == antialiasing && configured.smaa == smaa)
+            {
+                if (backgroundChanged) configuredCameras[view] = (state.data,studioLights,antialiasing,smaa,background);
+                return;
+            }
             // Regular asset previews disable HDRP post-processing, including AA.
             // Keep camera-preview rendering enabled for SMAA even with studio lights off.
             Set(state.data,"isEditorCameraPreview",studioLights || antialiasing); Set(state.data,"volumeLayerMask",(LayerMask)1);
             Set(state.data,"antialiasing",Enum.Parse(state.aa.GetType(),!antialiasing ? "None" : StudioSettings.Current.useViewportSmaa ? "SubpixelMorphologicalAntiAliasing" : "FastApproximateAntialiasing"));
             Set(state.data,"SMAAQuality",Enum.Parse(state.aaQuality.GetType(),"High"));
             ConfigureFrameSettings(state.data, studioLights || antialiasing, !studioLights);
-            // Camera-preview mode bypasses Unity's gray asset-preview background.
-            // Set HDRP's own clear color explicitly; Camera.backgroundColor alone is ignored.
-            Set(state.data,"clearColorMode",Enum.Parse(state.clearMode.GetType(),"Color"));
-            Set(state.data,"backgroundColorHDR",background.linear);
-            configuredCameras[view] = (state.data,studioLights,antialiasing,smaa);
+            configuredCameras[view] = (state.data,studioLights,antialiasing,smaa,background);
             CameraConfigurationCount++;
         }
         private void ConfigureFrameSettings(Component data, bool postprocessing, bool neutralPreview)
@@ -258,7 +265,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static void ConfigureStudioBackground(SceneView view)
         {
             if (!view || !view.camera) return;
-            var background = new Color(.35f,.35f,.35f,1);
+            var background = StudioSettings.Current.sceneBackground;
             view.sceneViewState.showSkybox = false;
             view.sceneViewState.showFog = false;
             view.camera.clearFlags = CameraClearFlags.SolidColor;

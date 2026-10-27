@@ -13,6 +13,7 @@ namespace MashBoxSDK.AnimationStudio
             internal bool liveMergePair;
             internal bool liveExtrusionTogether;
             internal Vector4 liveParameters;
+            internal Vector3 liveFlowParameters;
             internal ComponentMode liveMode;
             internal int[] liveSelection;
             internal int[] liveFaces;
@@ -39,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
             state.liveMergePair = liveMergePair;
             state.liveExtrusionTogether = liveExtrusionTogether;
             state.liveParameters = liveParameters;
+            state.liveFlowParameters = liveFlowParameters;
             state.liveMode = liveMode;
             state.liveSelection = liveSelection;
             state.liveFaces = liveFaces;
@@ -65,6 +67,7 @@ namespace MashBoxSDK.AnimationStudio
             liveMergePair = state.liveMergePair;
             liveExtrusionTogether = state.liveExtrusionTogether;
             liveParameters = state.liveParameters;
+            liveFlowParameters = state.liveFlowParameters;
             liveMode = state.liveMode;
             liveSelection = state.liveSelection;
             liveFaces = state.liveFaces;

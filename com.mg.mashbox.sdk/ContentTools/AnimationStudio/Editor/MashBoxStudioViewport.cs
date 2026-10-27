@@ -338,7 +338,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverNativeToolbar(point) || IsOverControl(viewportCameraButton, point) || IsOverControl(viewportLightingButton, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
+            IsOverNativeToolbar(point) || IsOverControl(viewportCameraButton, point) || IsOverControl(viewportLightingButton, point) || IsOverControl(viewportIsolateButton, point) || IsOverControl(viewportShowAllButton, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
         private bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.worldBound.Contains(rootVisualElement.LocalToWorld(point));
 

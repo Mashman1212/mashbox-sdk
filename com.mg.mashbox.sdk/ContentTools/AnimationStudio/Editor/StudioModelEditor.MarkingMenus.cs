@@ -97,7 +97,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.SelectionMenu: return "Selection ›";
                 case MarkingAction.UVMenu: return "UV ›";
                 case MarkingAction.UVSetsMenu: return "UV Sets ›";
-                case MarkingAction.EditPivot: return pivot ? "Lock Pivot" : "Edit Pivot";
+                case MarkingAction.EditPivot: return pivot ? "Finish Pivot Edit" : "Edit Pivot";
                 case MarkingAction.CenterPivot: return "Center Pivot";
                 case MarkingAction.Freeze: return "Freeze Transforms";
                 case MarkingAction.SelectAll: return "Select All";
@@ -334,7 +334,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.Clear: ClearAllComponentSelections(); if (mode == ComponentMode.Object) { objects.Clear(); Active = -1; } break;
                 case MarkingAction.SelectAll:
                     if (mode == ComponentMode.Object) { for (int i = 0; i < Transforms.Length; i++) objects.Add(i); if (Active < 0 && Transforms.Length > 0) Active = 0; }
-                    else { foreach(int node in ComponentTargetNodes()) using(new ComponentTargetScope(this,node)) for (int i = 0; i < ComponentCount(); i++) Components.Add(i); }
+                    else { foreach(int node in ComponentTargetNodes()) using(new ComponentTargetScope(this,node)) for (int i = 0; i < ComponentCount(); i++) if(IsolationAllowsComponent(i)) Components.Add(i); }
                     break;
                 default: if (action >= MarkingAction.UV0 && action <= MarkingAction.UV7) StudioUVEditor.Open(this, action - MarkingAction.UV0); break;
             }

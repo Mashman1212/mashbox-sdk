@@ -10,10 +10,47 @@ namespace MashBoxSDK.AnimationStudio
     internal static class StudioCommandIcons
     {
         private static readonly Dictionary<string, Texture2D> cache = new Dictionary<string, Texture2D>();
+        internal static string ControlKey(string element)
+        {
+            switch(element)
+            {
+                case "studio-toolbar-grid": return "Viewport/Grid";
+                case "studio-toolbar-wireframe": return "Mesh Display/Wireframe";
+                case "studio-toolbar-shaded-wireframe": return "Mesh Display/Shaded Wireframe";
+                case "studio-toolbar-lighting": return "Viewport/LightingToggle";
+                case "studio-toolbar-textures": return "Viewport/Textures";
+                case "studio-toolbar-checker-map": return "Viewport/CheckerMap";
+                case "studio-toolbar-backface-culling": return "Viewport/BackfaceCulling";
+                default: return null;
+            }
+        }
+        private static string CanonicalIconKey(string key)
+        {
+            switch(key)
+            {
+                case "Control/MashBox/Selection/Object": return "Select/Object Mode";
+                case "Control/MashBox/Selection/Vertex": return "Select/Vertex";
+                case "Control/MashBox/Selection/Edge": return "Select/Edge";
+                case "Control/MashBox/Selection/Face": return "Select/Face";
+                case "Control/MashBox/Tools/Select": return "Modify/Select";
+                case "Control/MashBox/Tools/Move": return "Modify/Move";
+                case "Control/MashBox/Tools/Rotate": return "Modify/Rotate";
+                case "Control/MashBox/Tools/Scale": return "Modify/Scale";
+                case "Control/MashBox/Viewport/Orientation": return "Viewport/Orientation";
+                case "Control/MashBox/Viewport/Lighting": return "Viewport/LightingToggle";
+                case "Control/MashBox/Viewport/Wireframe": return "Mesh Display/Wireframe";
+                case "Control/MashBox/Viewport/ShadedWireframe": return "Mesh Display/Shaded Wireframe";
+                default: return key.StartsWith("Control/MashBox/Viewport/",StringComparison.Ordinal) ? key.Substring("Control/MashBox/".Length) : key;
+            }
+        }
         internal static Texture2D Get(string key)
         {
+            key = CanonicalIconKey(key);
             string identity = (EditorGUIUtility.isProSkin ? "dark:" : "light:") + key;
             if (cache.TryGetValue(identity, out var icon) && icon) return icon;
+            if (StudioSymbolIcons.TryGet(key, out icon)) { cache[identity] = icon; return icon; }
+            if (key == "Viewport/Grid") { icon = StudioToolbarIcons.Get("GridLayoutGroup Icon"); cache[identity] = icon; return icon; }
+            if (key == "Viewport/CheckerMap") { icon = StudioToolbarIcons.Get("CheckerMap"); cache[identity] = icon; return icon; }
             if (key == "Create/Polygon Primitives/Plane" || key == "Create/Polygon Primitives/Quad" || key == "Create/Polygon Primitives/Cylinder")
             {
                 string primitive = key.Substring(key.LastIndexOf('/') + 1);
@@ -112,6 +149,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static IEnumerable<string> Candidates(string key)
         {
+            if (key == "Viewport/Textures") return new[] { "Material Icon", "Texture2D Icon" };
+            if (key == "Window/Material Library") return new[] { "Material Icon" };
             if (key == "Customize/Add") return new[] { "Toolbar Plus", "CreateAddNew", "SettingsIcon" };
             if (key == "Unavailable") return new[] { "console.warnicon", "console.infoicon" };
             if (key.Contains("/Camera")) return new[] { "Camera Icon" };
@@ -170,7 +209,6 @@ namespace MashBoxSDK.AnimationStudio
             if (key.Contains("Wireframe")) return new[] { "Toolbars/wireframe", "Mesh Icon" };
             if (key.Contains("X-ray")) return new[] { "SceneViewFx", "scenevis_visible" };
             if (key.Contains("Shaded")) return new[] { "PreMatSphere", "Material Icon" };
-            if (key.Contains("Recalculate Normals")) return new[] { "Refresh" };
             if (key.Contains("Soften")) return new[] { "PreMatSphere", "Mesh Icon" };
             if (key.Contains("Harden")) return new[] { "PreMatCube", "Mesh Icon" };
             if (key.StartsWith("UV/")) return new[] { "UVEditor", "Texture2D Icon" };

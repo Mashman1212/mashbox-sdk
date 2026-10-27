@@ -188,7 +188,7 @@ namespace MashBoxSDK.AnimationStudio
             var defaults = Find(action)?.defaults ?? Array.Empty<Binding>();
             // New standard chords must not steal an older explicit assignment.
             if (StudioModelCommands.StandardKeys.Any(key => StudioModelCommands.StableId(key) == action))
-                defaults = defaults.Where(binding => !profile.overrides.Any(other => other.id != action && other.id != StudioShortcut.Preferences && !CanShare(action, other.id) && other.bindings.Any(b => Overlaps(binding, b)))).ToArray();
+                defaults = defaults.Where(binding => !profile.overrides.Any(other => other.id != action && other.id != StudioShortcut.Preferences && !CanShare(action, other.id) && other.bindings.Any(b => BindingConflict(action,binding,other.id,b)))).ToArray();
             return bindingCache[action] = defaults;
         }
         internal static bool Matches(StudioShortcut action, Event evt, bool release = false)
@@ -249,13 +249,24 @@ namespace MashBoxSDK.AnimationStudio
         private static bool Overlaps(Binding binding, Binding other) => binding.key == other.key &&
             (binding.allowModifiers || other.allowModifiers || binding.modifiers == other.modifiers ||
              ((binding.allowShift || other.allowShift) && (binding.modifiers & ~StudioModifiers.Shift) == (other.modifiers & ~StudioModifiers.Shift)));
+        // Move's historical plain-W binding tolerates Shift; it does not reserve
+        // the newly explicit Shift+W isolation chord. Exact/custom chords still win.
+        private static bool BindingConflict(StudioShortcut action,Binding binding,StudioShortcut otherId,Binding other)
+        {
+            var isolate=StudioModelCommands.StableId("Select/Isolate Selected");
+            bool DefaultMove(Binding b) => b.key==KeyCode.W && b.modifiers==StudioModifiers.None && b.allowShift && !b.allowModifiers;
+            bool IsolationChord(Binding b) => b.key==KeyCode.W && b.modifiers==StudioModifiers.Shift && !b.allowShift && !b.allowModifiers;
+            if((action==isolate && otherId==StudioShortcut.Move && IsolationChord(binding) && DefaultMove(other)) ||
+               (otherId==isolate && action==StudioShortcut.Move && IsolationChord(other) && DefaultMove(binding)))return false;
+            return Overlaps(binding,other);
+        }
         internal static string Conflict(StudioShortcut action, Binding binding)
         {
             foreach (var definition in Definitions)
             {
                 if (definition.id == action || CanShare(action,definition.id)) continue;
                 foreach (var other in Bindings(definition.id))
-                    if (Overlaps(binding, other))
+                    if (BindingConflict(action,binding,definition.id,other))
                         return definition.name;
             }
             return null;

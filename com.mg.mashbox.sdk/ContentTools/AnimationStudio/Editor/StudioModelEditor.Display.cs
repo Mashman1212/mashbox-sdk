@@ -10,6 +10,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         private void SaveDisplayConfiguration()
         {
+            StudioPreferenceStore.SetFloat(PivotLockKey, pivotLocked ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.ThroughSelection", xray ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.PreventNegativeScale", preventNegativeScale ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.LocalAxes", local ? 1 : 0);
@@ -23,6 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void LoadDisplayConfiguration()
         {
+            LoadPivotLock();
             transformChannelsExpanded = StudioPreferenceStore.GetFloat("Model.TransformChannelsExpanded", 1) >= .5f;
             xray = StudioPreferenceStore.GetFloat("Model.ThroughSelection", 1) >= .5f;
             preventNegativeScale = StudioPreferenceStore.GetFloat("Model.PreventNegativeScale", 1) >= .5f;
@@ -113,6 +115,17 @@ namespace MashBoxSDK.AnimationStudio
             return material;
         }
         private bool wireframeOnly;
+        // Surface suppression is not logical visibility: wires and picking still
+        // use the underlying hidden state, including temporary isolation masks.
+        private readonly Dictionary<Renderer,bool> wireframeSurfaceSuppression = new Dictionary<Renderer,bool>();
+        private bool DisplayRendererHidden(Renderer renderer) => renderer &&
+            (wireframeSurfaceSuppression.TryGetValue(renderer,out bool hidden) ? hidden : renderer.forceRenderingOff);
+        private void SetDisplayRendererHidden(Renderer renderer,bool hidden)
+        {
+            if(!renderer)return;
+            if(wireframeSurfaceSuppression.ContainsKey(renderer)){wireframeSurfaceSuppression[renderer]=hidden;renderer.forceRenderingOff=true;}
+            else renderer.forceRenderingOff=hidden;
+        }
         internal DrawCameraMode ModelDrawMode => wireframeOnly ? DrawCameraMode.Wireframe :
             StudioSettings.Current.hideObjectWireframe ? DrawCameraMode.Textured : DrawCameraMode.TexturedWire;
         // Shared on/off semantics for toolbar buttons, menu clicks and shortcuts.
@@ -177,10 +190,13 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var renderer = Transforms[i] ? Transforms[i].GetComponent<Renderer>() : null;
                 if (!renderer) continue;
-                // A depth-only surface still occludes the grid and rear edges.
                 // Pure wireframe renders only Studio's edge overlay; keep the
                 // renderer enabled for picking and restore surfaces in shaded modes.
-                renderer.forceRenderingOff = wireframeOnly;
+                if(wireframeOnly)
+                {
+                    wireframeSurfaceSuppression[renderer]=renderer.forceRenderingOff;
+                    renderer.forceRenderingOff=true;
+                }
                 var node = Document.nodes[i];
                 var originals = node.materials ?? Array.Empty<Material>();
                 int slots = Math.Max(originals.Length,node.mesh ? node.mesh.subMeshCount : 1);
@@ -263,6 +279,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ClearDisplayMaterials()
         {
+            foreach(var pair in wireframeSurfaceSuppression)if(pair.Key)pair.Key.forceRenderingOff=pair.Value;
+            wireframeSurfaceSuppression.Clear();
             blackBackfaceCommands?.Release(); blackBackfaceCommands = null;
             blackBackfaceDraws.Clear();
             foreach (var material in blackBackfaceMaterials.Values) if (material) UnityEngine.Object.DestroyImmediate(material);

@@ -15,8 +15,11 @@ namespace MashBoxSDK.AnimationStudio
         private readonly List<Vector3> normalGroupValues = new List<Vector3>();
         private void RecalculateEditableNormals(Mesh mesh)
         {
+            RecalculateGroupedNormals(mesh,Document && Active >= 0 && ActiveMesh == mesh ? Document.nodes[Active].normalGroups : null);
+        }
+        private void RecalculateGroupedNormals(Mesh mesh,int[] groups)
+        {
             mesh.RecalculateNormals();
-            var groups = Document && Active >= 0 && ActiveMesh == mesh ? Document.nodes[Active].normalGroups : null;
             if (groups == null || groups.Length != mesh.vertexCount) return;
             if (!ReferenceEquals(cachedNormalGroups, groups))
             {
