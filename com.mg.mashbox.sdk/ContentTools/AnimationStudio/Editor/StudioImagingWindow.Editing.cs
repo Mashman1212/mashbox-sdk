@@ -545,6 +545,14 @@ namespace MashBoxSDK.AnimationStudio
             if(HandleInlineImageTextInput())return;
             HandleMarqueeSpaceKey();HandleMarqueeSnapKey();
             var e=Event.current;
+            if(imageTool==ImageTool.Transform && !EditorGUIUtility.editingTextField && e.type==EventType.KeyDown &&
+                !e.control && !e.command && !e.alt && (e.keyCode==KeyCode.Return || e.keyCode==KeyCode.KeypadEnter))
+            {
+                EndImageTransform();
+                imageTool=ImageTool.Move;
+                GUIUtility.keyboardControl=0;
+                e.Use(); Repaint(); return;
+            }
             if(imageTool==ImageTool.Text&&e.type==EventType.KeyDown&&(e.control||e.command)&&e.keyCode==KeyCode.T)
             {GUIUtility.keyboardControl=0;EditorGUIUtility.editingTextField=false;imageTool=ImageTool.Transform;e.Use();Repaint();}
             // Hover changes only the cursor; repaint without invalidating the image composite.
