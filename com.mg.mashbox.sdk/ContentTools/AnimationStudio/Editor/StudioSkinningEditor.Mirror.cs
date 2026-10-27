@@ -39,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
             if (binds.Length != bones.Length) throw new InvalidOperationException("Skin bone mapping does not match the SDK skeleton.");
             var matrices = bones.Select((b,i) => b.localToWorldMatrix * binds[i]).ToArray();
             var verts = Part.mesh.vertices;
-            var points = verts.Select((v,i) => original.SkinMatrix(i,matrices).MultiplyPoint3x4(v)).ToArray();
+            var points = verts.Select((v,i) => original.PreviewSkinMatrix(i,matrices).MultiplyPoint3x4(v)).ToArray();
             float sign = leftToRight ? 1 : -1;
             float Side(Vector3 p) => Vector3.Dot(p-center,axis) * sign;
             var triangles = new List<FitBodyTriangle>();

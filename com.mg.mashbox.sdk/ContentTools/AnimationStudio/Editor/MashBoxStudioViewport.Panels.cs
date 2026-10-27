@@ -164,7 +164,12 @@ namespace MashBoxSDK.AnimationStudio
             if (viewportOptions != null) { viewportOptions.style.left = overlayLeft + 32; viewportOptions.style.top = optionsTop; }
             if (studioSettings != null) { studioSettings.style.left = overlayLeft; studioSettings.style.top = optionsTop; }
             LayoutCameraSettingsButton(overlayLeft, optionsTop);
-            if (meshStatistics != null) { meshStatistics.style.left = overlayLeft; meshStatistics.style.top = optionsTop + 32; }
+            if (meshStatistics != null)
+            {
+                meshStatistics.style.left = overlayLeft;
+                // Retopology reserves a second toolbar row for density/bridge controls.
+                meshStatistics.style.top = optionsTop + (retopologyPanels ? 54 : 24) + 8;
+            }
             LayoutWorkspaceStatistics(widths.y);
             if (leftDivider == null || rightDivider == null) return;
             if (FoldablePanels)

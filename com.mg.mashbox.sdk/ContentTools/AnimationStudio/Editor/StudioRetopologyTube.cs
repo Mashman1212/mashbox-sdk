@@ -20,9 +20,10 @@ namespace MashBoxSDK.AnimationStudio
             var v=Vector3.Cross(axis,u);
             var vertices=reference.vertices;var triangles=reference.triangles;
             var result=new Part{name="Tube"};float tolerance=Mathf.Max(size*1e-6f,1e-7f);
-            for(int row=0;row<=divisions;row++)
+            List<Vector3> SampleRing(float along)
             {
-                var origin=Vector3.Lerp(start,end,(float)row/divisions);
+                var origin=Vector3.Lerp(start,end,along);
+                var ring=new List<Vector3>(sides);
                 var points=new List<Vector2>();var edges=new HashSet<(int,int)>();
                 int Weld(Vector3 p)
                 {
@@ -61,7 +62,7 @@ namespace MashBoxSDK.AnimationStudio
                     if(distance<best){best=distance;chosen=component;}
                 }
                 if(chosen==null||chosen.Count<3||chosen.Any(i=>adjacent[i].Count!=2))
-                    throw new InvalidOperationException("Tube needs a closed section around the limb. Place both points slightly inside the cuff/opening, away from the armpit or crotch split.");
+                    return null;
                 var min=new Vector2(float.MaxValue,float.MaxValue);var max=-min;
                 foreach(int i in chosen){min=Vector2.Min(min,points[i]);max=Vector2.Max(max,points[i]);}
                 var center=(min+max)*.5f;
@@ -76,10 +77,41 @@ namespace MashBoxSDK.AnimationStudio
                         float d=Cross(a,span)/den,f=Cross(a,direction)/den;
                         if(d>0&&f>=-1e-5f&&f<=1.00001f)distance=Mathf.Min(distance,d);
                     }
-                    if(float.IsInfinity(distance))throw new InvalidOperationException("This section bends or folds too sharply for a tube. Use a shorter section, then bridge the ends.");
+                    if(float.IsInfinity(distance))return null;
                     var xy=center+direction*(distance+offset);
-                    result.vertices.Add(origin+u*xy.x+v*xy.y);result.uv.Add(new Vector2((float)i/sides,(float)row/divisions));
+                    ring.Add(origin+u*xy.x+v*xy.y);
                 }
+                return ring;
+            }
+            // Surface clicks near an open cuff can put an oblique slice across the rim.
+            // Search only toward the other click, bounded to a quarter of the guide at
+            // each end. Never bridge an invalid interior section or choose another limb.
+            float FitEnd(bool first)
+            {
+                float edge=first?0:1,sign=first?1:-1;
+                if(SampleRing(edge)!=null)return edge;
+                float failed=0;
+                for(int step=1;step<=32;step++)
+                {
+                    float inset=.25f*step/32;
+                    if(SampleRing(edge+sign*inset)==null){failed=inset;continue;}
+                    float valid=inset;
+                    for(int refine=0;refine<8;refine++)
+                    {
+                        float mid=(failed+valid)*.5f;
+                        if(SampleRing(edge+sign*mid)==null)failed=mid;else valid=mid;
+                    }
+                    return edge+sign*valid;
+                }
+                throw new InvalidOperationException("Could not fit a complete ring near this tube end. Choose two points along the same unbranched sleeve or limb, or use a shorter section.");
+            }
+            float firstRow=FitEnd(true),lastRow=FitEnd(false);
+            for(int row=0;row<=divisions;row++)
+            {
+                var ring=SampleRing(Mathf.Lerp(firstRow,lastRow,(float)row/divisions));
+                if(ring==null)throw new InvalidOperationException("The tube crosses an opening or a sharp bend between its ends. Use a shorter section, then bridge the ends.");
+                result.vertices.AddRange(ring);
+                for(int i=0;i<sides;i++)result.uv.Add(new Vector2((float)i/sides,(float)row/divisions));
             }
             for(int row=0;row<divisions;row++)for(int i=0;i<sides;i++)
             {int j=(i+1)%sides;result.faces.Add(new Face(new[]{row*sides+i,row*sides+j,(row+1)*sides+j,(row+1)*sides+i}));}

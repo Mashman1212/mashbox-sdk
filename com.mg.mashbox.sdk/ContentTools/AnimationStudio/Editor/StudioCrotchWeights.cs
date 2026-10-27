@@ -27,38 +27,45 @@ namespace MashBoxSDK.AnimationStudio
                 caps[v]=Mathf.Lerp(strong ? .08f : .3f,1,1-masks[v]);
                 Cap(skin.Values[v],caps[v],legs,hips,locked);
             }
-            var corrected=skin.Values.Select(v=>v.ToArray()).ToArray();
-            // Smooth only the unlocked leg/hips budget along garment edges,
-            // using snapshots so results do not depend on vertex order. The
-            // caller supplies seam-aware adjacency (UV splits stay together).
-            for(int pass=0;pass<3;pass++)
+            // Heavy performs twenty bounded cleanup rounds, like repeating the
+            // command, without rebuilding the preview or uploading weights each
+            // time. Reset the per-round anchor so the small safety limit does
+            // not prevent later rounds from making further progress.
+            for(int round=0;round<(strong ? 20 : 1);round++)
             {
-                var before=skin.Values.Select(v=>v.ToArray()).ToArray();
-                for(int v=0;v<points.Length;v++)
+                var corrected=skin.Values.Select(v=>v.ToArray()).ToArray();
+                // Smooth only the unlocked leg/hips budget along garment edges,
+                // using snapshots so results do not depend on vertex order. The
+                // caller supplies seam-aware adjacency (UV splits stay together).
+                for(int pass=0;pass<3;pass++)
                 {
-                    if(masks[v]<.001f || neighbours[v].Length==0) continue;
-                    bool Editable(int b) => !locked[b] && (b==hips || legs[b]);
-                    float budget=before[v].Where(w=>Editable(w.boneIndex)).Sum(w=>w.weight);
-                    if(budget<1e-8f) continue;
-                    var average=new Dictionary<int,float>();
-                    foreach(int n in neighbours[v]) foreach(var w in before[n]) if(Editable(w.boneIndex))
-                        average[w.boneIndex]=(average.TryGetValue(w.boneIndex,out float x)?x:0)+w.weight;
-                    float sum=average.Values.Sum(); if(sum<1e-8f) continue;
-                    var result=before[v].Where(w=>!Editable(w.boneIndex)).ToList();
-                    var keys=before[v].Where(w=>Editable(w.boneIndex)).Select(w=>w.boneIndex).Union(average.Keys);
-                    var values=new Dictionary<int,float>();
-                    foreach(int bone in keys)
+                    var before=skin.Values.Select(v=>v.ToArray()).ToArray();
+                    for(int v=0;v<points.Length;v++)
                     {
-                        float old=before[v].Where(w=>w.boneIndex==bone).Sum(w=>w.weight);
-                        float start=corrected[v].Where(w=>w.boneIndex==bone).Sum(w=>w.weight);
-                        float target=average.TryGetValue(bone,out float x)?x/sum*budget:0;
-                        float limit=(strong ? .1f : .05f)*masks[v];
-                        values[bone]=Mathf.Clamp(Mathf.Lerp(old,target,.3f*masks[v]),Mathf.Max(0,start-limit),start+limit);
+                        if(masks[v]<.001f || neighbours[v].Length==0) continue;
+                        bool Editable(int b) => !locked[b] && (b==hips || legs[b]);
+                        float budget=before[v].Where(w=>Editable(w.boneIndex)).Sum(w=>w.weight);
+                        if(budget<1e-8f) continue;
+                        var average=new Dictionary<int,float>();
+                        foreach(int n in neighbours[v]) foreach(var w in before[n]) if(Editable(w.boneIndex))
+                            average[w.boneIndex]=(average.TryGetValue(w.boneIndex,out float x)?x:0)+w.weight;
+                        float sum=average.Values.Sum(); if(sum<1e-8f) continue;
+                        var result=before[v].Where(w=>!Editable(w.boneIndex)).ToList();
+                        var keys=before[v].Where(w=>Editable(w.boneIndex)).Select(w=>w.boneIndex).Union(average.Keys);
+                        var values=new Dictionary<int,float>();
+                        foreach(int bone in keys)
+                        {
+                            float old=before[v].Where(w=>w.boneIndex==bone).Sum(w=>w.weight);
+                            float start=corrected[v].Where(w=>w.boneIndex==bone).Sum(w=>w.weight);
+                            float target=average.TryGetValue(bone,out float x)?x/sum*budget:0;
+                            float limit=(strong ? .1f : .05f)*masks[v];
+                            values[bone]=Mathf.Clamp(Mathf.Lerp(old,target,.3f*masks[v]),Mathf.Max(0,start-limit),start+limit);
+                        }
+                        float total=values.Values.Sum(); if(total<1e-8f) continue;
+                        foreach(var pair in values) if(pair.Value>0) result.Add(new BoneWeight1{boneIndex=pair.Key,weight=pair.Value/total*budget});
+                        Cap(result,caps[v],legs,hips,locked);
+                        skin.Values[v].Clear();skin.Values[v].AddRange(result);
                     }
-                    float total=values.Values.Sum(); if(total<1e-8f) continue;
-                    foreach(var pair in values) if(pair.Value>0) result.Add(new BoneWeight1{boneIndex=pair.Key,weight=pair.Value/total*budget});
-                    Cap(result,caps[v],legs,hips,locked);
-                    skin.Values[v].Clear();skin.Values[v].AddRange(result);
                 }
             }
             int changed=0;

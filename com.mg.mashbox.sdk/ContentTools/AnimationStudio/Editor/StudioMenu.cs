@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         internal sealed class Item
         {
             internal string Text;
+            internal Texture Image;
             internal string Shortcut;
             internal string ToolbarKey;
             internal StudioShortcut? Command;
@@ -24,9 +25,9 @@ namespace MashBoxSDK.AnimationStudio
         internal readonly bool CatalogOnly;
         internal StudioMenu(string commandCategory = null, bool catalogOnly = false)
         { this.commandCategory = commandCategory; CatalogOnly = catalogOnly; }
-        internal void AddItem(GUIContent label, bool selected, Action action, string commandKey = null, bool shortcutEligible = true) => Add(label.text, selected, true, action, commandKey, shortcutEligible);
-        internal void AddDisabledItem(GUIContent label, string commandKey = null, bool shortcutEligible = true) => Add(label.text, false, false, null, commandKey, shortcutEligible);
-        private void Add(string path, bool selected, bool enabled, Action action, string commandKey, bool shortcutEligible)
+        internal void AddItem(GUIContent label, bool selected, Action action, string commandKey = null, bool shortcutEligible = true) => Add(label.text, label.image, selected, true, action, commandKey, shortcutEligible);
+        internal void AddDisabledItem(GUIContent label, string commandKey = null, bool shortcutEligible = true) => Add(label.text, label.image, false, false, null, commandKey, shortcutEligible);
+        private void Add(string path, Texture image, bool selected, bool enabled, Action action, string commandKey, bool shortcutEligible)
         {
             // Shortcut alternatives may contain '/'; only the label defines the menu path.
             int shortcutStart = path.IndexOf('\t');
@@ -42,7 +43,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (branch == null) { branch = new Item { Text = parts[i] }; level.Add(branch); }
                 level = branch.Children;
             }
-            level.Add(new Item { Text = parts[parts.Length - 1], Shortcut = shortcut, Command = command, ShortcutEligible = shortcutEligible, ToolbarKey = commandCategory == null ? null : StudioModelCommands.ToolbarKey(commandCategory, labelPath, commandKey), Checked = selected, Enabled = enabled, Action = action });
+            level.Add(new Item { Text = parts[parts.Length - 1], Image = image, Shortcut = shortcut, Command = command, ShortcutEligible = shortcutEligible, ToolbarKey = commandCategory == null ? null : StudioModelCommands.ToolbarKey(commandCategory, labelPath, commandKey), Checked = selected, Enabled = enabled, Action = action });
         }
         internal void AddSeparator(string path)
         {
@@ -133,6 +134,7 @@ namespace MashBoxSDK.AnimationStudio
             else if(menuBarOwner)menuBarOwner.Repaint();
         }
         internal int ColumnCount => columns.Count;
+        private float ColumnIconWidth(int index) => columns[index].Exists(item => item.Image != null) ? 22 : 0;
         private Vector2 ColumnSize(int index)
         {
             float width = 80, height = Padding * 2;
@@ -142,7 +144,7 @@ namespace MashBoxSDK.AnimationStudio
                 height += item.Separator ? 7 : RowHeight;
                 if (item.Separator) continue;
                 float shortcut = string.IsNullOrEmpty(item.Shortcut) ? 0 : measure.CalcSize(new GUIContent(item.Shortcut)).x + 16;
-                width = Mathf.Max(width, measure.CalcSize(new GUIContent(item.Text)).x + shortcut + 46 + Padding * 2);
+                width = Mathf.Max(width, measure.CalcSize(new GUIContent(item.Text)).x + shortcut + 46 + ColumnIconWidth(index) + Padding * 2);
             }
             return new Vector2(Mathf.Ceil(width), height);
         }
@@ -270,6 +272,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int c = column;
                 float x = 0, y = Padding, columnWidth = size.x;
+                float iconWidth = ColumnIconWidth(c);
                 for (int r = 0; r < columns[c].Count; r++)
                 {
                     var item = columns[c][r];
@@ -279,8 +282,18 @@ namespace MashBoxSDK.AnimationStudio
                     if (selected[c] == r && item.Enabled) EditorGUI.DrawRect(rect, StudioTheme.Current.Selection);
                     textStyle.normal.textColor = item.Enabled ? StudioTheme.Current.Text : StudioTheme.Current.Muted;
                     if (item.Checked) GUI.Label(new Rect(rect.x + 3, rect.y, 18, rect.height), "✓", textStyle);
+                    if (item.Image)
+                    {
+                        var tint = GUI.color;
+                        try
+                        {
+                            if (!item.Enabled) GUI.color = new Color(tint.r, tint.g, tint.b, tint.a * .45f);
+                            GUI.DrawTexture(new Rect(rect.x + 24, rect.center.y - 8, 16, 16), item.Image, ScaleMode.ScaleToFit, true);
+                        }
+                        finally { GUI.color = tint; }
+                    }
                     float shortcutWidth = string.IsNullOrEmpty(item.Shortcut) ? 0 : textStyle.CalcSize(new GUIContent(item.Shortcut)).x + 16;
-                    GUI.Label(new Rect(rect.x + 24, rect.y, rect.width - 46 - shortcutWidth, rect.height), item.Text, textStyle);
+                    GUI.Label(new Rect(rect.x + 24 + iconWidth, rect.y, rect.width - 46 - iconWidth - shortcutWidth, rect.height), item.Text, textStyle);
                     if (shortcutWidth > 0)
                     {
                         if (shortcutStyle == null) shortcutStyle = new GUIStyle(textStyle) { alignment = TextAnchor.MiddleRight };

@@ -7,6 +7,19 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
+        private Matrix4x4[] CapturePartExportPose(StudioSkinningDocument.Part part)
+        {
+            // Re-baking blended seam vertices into another bind pose changes
+            // their motion relative to the original, separately equipped body.
+            if (part.preserveStitchedBindPose)
+            {
+                var binds = part.mesh.bindposes;
+                if (binds.Length != bones.Length)
+                    throw new InvalidOperationException("Stitched mesh no longer matches this skeleton. Stitch it again before export.");
+                return binds.Select(b => b.inverse).ToArray();
+            }
+            return CaptureExportTPose();
+        }
         private Matrix4x4[] CaptureExportTPose()
         {
             if(!previewClip) throw new InvalidOperationException("T-pose export requires the SDK Skinning Test animation (frame 0).");
@@ -50,6 +63,10 @@ namespace MashBoxSDK.AnimationStudio
             var weights=new StudioSkinWeights(mesh);
             var transforms=new Matrix4x4[mesh.vertexCount];
             for(int v=0;v<transforms.Length;v++) transforms[v]=weights.SkinMatrix(v,boneMatrices);
+            TransformExportVertices(mesh, transforms);
+        }
+        private static void TransformExportVertices(Mesh mesh, Matrix4x4[] transforms)
+        {
             var vertices=mesh.vertices; var normals=mesh.normals; var tangents=mesh.tangents;
             var normalMatrices=transforms.Select(m=>m.inverse.transpose).ToArray();
             for(int v=0;v<vertices.Length;v++)
@@ -72,6 +89,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void BakePartForTPose(Mesh copy,Matrix4x4[] pose)
         {
+            var weights = new StudioSkinWeights(copy);
+            weights.LimitToFour(); weights.Apply(copy);
             var bind=copy.bindposes;
             if(bind.Length!=bones.Length) throw new InvalidOperationException("T-pose export requires a mesh bound to the SDK skeleton.");
             BakeExportGeometry(copy,pose.Select((m,i)=>m*bind[i]).ToArray());

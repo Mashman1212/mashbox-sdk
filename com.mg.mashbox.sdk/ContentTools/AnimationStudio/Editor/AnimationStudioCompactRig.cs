@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawCompactRigToolbar()
         {
-            using (new GUILayout.VerticalScope(GUILayout.Width(386)))
+            using (new GUILayout.VerticalScope(GUILayout.Width(492)))
             {
                 // Match the settings controls, which draw at y = 0 with 24px height.
                 using (new GUILayout.HorizontalScope())

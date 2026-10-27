@@ -31,16 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 try
                 {
-                    var defaults = StudioDefaultReferences.LoadSkinning(SkinningDefaultsPath);
-                    if (defaults)
-                    {
-                        if (defaults.body) skinningEditor.Import(defaults.body, true);
-                        if (defaults.bust && defaults.bust != defaults.body) skinningEditor.Import(defaults.bust, true);
-                        if (defaults.pants && defaults.pants != defaults.body && defaults.pants != defaults.bust)
-                            skinningEditor.Import(defaults.pants, true, false);
-                        if (defaults.shirt && defaults.shirt != defaults.body && defaults.shirt != defaults.bust && defaults.shirt != defaults.pants)
-                            skinningEditor.Import(defaults.shirt, true, false);
-                    }
+                    EnsureSkinningDefaultReferences();
                     // Default setup is the starting document, not a user edit.
                     skinningDocument.dirty = false; Undo.ClearUndo(skinningDocument);
                     UpdateClipSaveState();
@@ -54,8 +45,31 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
         }
+        private void EnsureSkinningDefaultReferences()
+        {
+            var defaults = StudioDefaultReferences.LoadSkinning(SkinningDefaultsPath);
+            if (!defaults) return;
+            var sources = new System.Collections.Generic.HashSet<GameObject>();
+            void Add(GameObject source, bool visible)
+            {
+                if (!source || !sources.Add(source)) return;
+                var meshes = new System.Collections.Generic.HashSet<Mesh>();
+                foreach (var renderer in source.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    if (renderer.sharedMesh) meshes.Add(renderer.sharedMesh);
+                foreach (var filter in source.GetComponentsInChildren<MeshFilter>(true))
+                    if (filter.sharedMesh) meshes.Add(filter.sharedMesh);
+                // Keep existing references, visibility choices and authored meshes intact.
+                if (skinningDocument.parts.Exists(part => part.referenceOnly && part.sourceMesh && meshes.Contains(part.sourceMesh))) return;
+                skinningEditor.Import(source, true, visible);
+            }
+            Add(defaults.body, true);
+            Add(defaults.bust, true);
+            Add(defaults.pants, false);
+            Add(defaults.shirt, false);
+        }
         private void OpenSkinningMode()
         {
+            LeavePaintingMode();
             retopologyMode=false; retopologyEditor?.SuspendLighting(); viewport?.SetRetopologyPanels(false);
             FlushEdits(); playing = false;
             if (!modelingMode && !skinningMode && viewport)
@@ -152,6 +166,19 @@ namespace MashBoxSDK.AnimationStudio
             if (skinningEditor.CanUnskinSelected) menu.AddItem(new GUIContent("Unskin"),false,()=>skinningEditor.Run(skinningEditor.UnskinSelected));
             else menu.AddDisabledItem(new GUIContent("Unskin"));
             menu.AddSeparator("");
+            if (skinningEditor.CanStitchSelectedBust)
+                menu.AddItem(new GUIContent("Stitch to Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBust)));
+            else menu.AddDisabledItem(new GUIContent("Stitch to Body"));
+            if (skinningEditor.CanStitchSelectedBody)
+                menu.AddItem(new GUIContent("Stitch to Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBody)));
+            else menu.AddDisabledItem(new GUIContent("Stitch to Bust"));
+            if (skinningEditor.CanMatchDefaultBody)
+                menu.AddItem(new GUIContent("Match Default Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.MatchDefaultBody)));
+            else menu.AddDisabledItem(new GUIContent("Match Default Body"));
+#if MashBoxDev
+            menu.AddItem(new GUIContent("Stitch Default Bust to Body"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchDefaultBust)));
+#endif
+            menu.AddSeparator("");
             if (skinningEditor.CanMirrorSkin)
             {
                 menu.AddItem(new GUIContent("Mirror Weights Left to Right"),false,()=>skinningEditor.Run(()=>skinningEditor.MirrorSkinWeights(true)));
@@ -213,12 +240,6 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddSeparator("");
             if(skinningEditor.HasEditableMesh)menu.AddItem(new GUIContent("Remove Mesh"),false,()=>skinningEditor.Run(skinningEditor.RemoveSelectedMesh));
             else menu.AddDisabledItem(new GUIContent("Remove Mesh"));
-            if (skinningEditor.CanStitchSelectedBust)
-                menu.AddItem(new GUIContent("Stitch Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchBust)));
-            else menu.AddDisabledItem(new GUIContent("Stitch Bust"));
-#if MashBoxDev
-            menu.AddItem(new GUIContent("Stitch Default Bust"), false, () => Guard(() => skinningEditor.Run(skinningEditor.StitchDefaultBust)));
-#endif
             menu.DropDown(rect);
         }
         internal bool SaveAllStudioDocuments()

@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         internal int ViewportCacheCaptureCount { get; private set; }
 #endif
         internal bool ViewportImageReused { get; private set; }
-        private bool UseViewportCache => panelsModeling && !StudioSettings.Current.disableViewportImageCache &&
+        private bool UseViewportCache => (panelsModeling || retopologyPanels || skinPreviewTimeline) && !StudioSettings.Current.disableViewportImageCache &&
             !EditorApplication.isPlayingOrWillChangePlaymode && NativeSceneTarget != null && SceneBlitMaterial != null && OverlayBlitMaterial != null;
 
         private struct CacheViewState

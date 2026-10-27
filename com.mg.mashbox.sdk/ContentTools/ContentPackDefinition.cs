@@ -24,7 +24,7 @@ namespace MashBoxSDK.ContentTools
         [NonSerialized] public bool PackTogetherByLabel = true;
         
         public bool IsCorePack;
-        private const string CORE_STAGING_ROOT = "Packages/com.mg.mashbox.sdk/Core Customization Assets";
+        internal const string CORE_STAGING_ROOT = "Packages/com.mg.mashbox.sdk/Core Customization Assets";
         
         [Header("Core Content (Folder Roots)")]
         public List<UnityEngine.Object> RootFolders = new List<UnityEngine.Object>();
@@ -52,6 +52,9 @@ namespace MashBoxSDK.ContentTools
         
         [Header("Content")] [Tooltip("Drop prefabs here to include them in this pack.")]
         public List<GameObject> _items = new List<GameObject>();
+
+        [SerializeField, HideInInspector]
+        internal int probeAnchorMigrationVersion;
 
         [Header("Icons")]
         [Tooltip("Auto-populated list of icon textures generated for this pack.")]
@@ -222,6 +225,7 @@ namespace MashBoxSDK.ContentTools
 
         public void OnValidate()
         {
+            ContentPackProbeAnchors.Schedule(this);
             _packName = name;
             NormalizePublishTargets();
 
@@ -238,9 +242,26 @@ namespace MashBoxSDK.ContentTools
         }
         
 
+        public void EnsureSkinnedMeshProbeAnchors()
+        {
+            if (!ContentPackProbeAnchors.EnsurePack(this))
+                throw new InvalidOperationException($"Could not repair probe anchors in content pack '{name}'. See the Console for the affected prefab.");
+        }
+
         [ContextMenu("Addressables/Sync Now")]
         public void SyncToAddressables()
         {
+            // Lighting is a prefab invariant, including in game-title projects where
+            // Addressables synchronization below is intentionally disabled.
+            if (!IsAssetImportWorkerProcess() && !EditorApplication.isCompiling &&
+                !EditorApplication.isUpdating && !EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                EnsureSkinnedMeshProbeAnchors();
+            }
+            else
+            {
+                ContentPackProbeAnchors.Schedule(this);
+            }
 
             if (IsCorePack)
             {

@@ -7,3 +7,13 @@ Copy `Editor/ContentPackGroupSettings.cs`, its `.meta` file, and `ContentPackGro
 Run Unity with `-batchmode -nographics -projectPath <isolated-project> -executeMethod MashBoxSDK.ContentTools.Editor.ContentPackGroupPersistenceValidation.Write -logFile <write-log>`. After that process exits, run a second process with `MashBoxSDK.ContentTools.Editor.ContentPackGroupPersistenceValidation.ReadAfterRestart` and a separate log. Do not use `-quit`: the write fixture waits for the delayed save before exiting.
 
 Passed in Unity 2022.3.62f2: matching settings script; delayed disk save; undo persistence; legacy and null-script reference recovery; preservation of colors and asset GUIDs; idempotent migration; and fresh-process restoration of nested, prefix-style, and empty groups. This validates asset persistence and migration in isolation; it does not exercise the full Content Builder UI or its Auto Nest dialog.
+
+## Skinned mesh probe anchors
+
+In a separate empty Unity project, copy `ContentTools/ContentPackProbeAnchors.cs` and `ContentPackProbeAnchorValidation.cs` into `Assets/Editor`. Copy `ContentPackDefinition.stub.txt` there as `ContentPackDefinition.cs`. The harness substitutes only pack data so the production prefab repair and migration code can run without Addressables or the rest of the SDK. Do not install this stand-in alongside the SDK.
+
+Run Unity with `-batchmode -nographics -projectPath <isolated-project> -executeMethod MashBoxSDK.ContentTools.ContentPackProbeAnchorValidation.Run -logFile <run-log>`, then run a second process with `MashBoxSDK.ContentTools.ContentPackProbeAnchorValidation.AfterRestart`. Do not add `-quit`; the restart test waits for the migration's editor update. Both entry points exit with code 0 on success and 1 on failure. One read-only-prefab error is intentional and tests retry behavior.
+
+Coverage: null/custom anchors, inactive renderers, unchanged root bones, ordinary mesh renderers, variants, nested prefab overrides without changing their source, duplicate/shared references, core items, idempotence, additions after migration, failed-save retry, startup discovery, and migration persistence across editor restarts. Pack add/sync/build/export integration should also be checked in a full SDK project.
+
+Both entry points passed in Unity 2022.3.62f2 (25 assertions across two editor processes).

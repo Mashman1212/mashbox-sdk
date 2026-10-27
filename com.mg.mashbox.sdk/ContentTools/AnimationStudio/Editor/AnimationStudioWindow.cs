@@ -51,7 +51,20 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool showFKControls = true;
 
         [MenuItem("MashBox/MashBox Studio", false, 119)]
-        public static void Open() => OpenInStudio(Selection.activeObject as AnimationTake);
+        public static void Open()
+        {
+            var window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().FirstOrDefault();
+            if (!window) window = CreateInstance<AnimationStudioWindow>();
+            if (window.viewport) window.SwitchStudioMode(true);
+            else
+            {
+                window.modelingMode = true;
+                window.skinningMode = false;
+                window.retopologyMode = false;
+                window.OpenViewport();
+            }
+            window.viewport?.Focus();
+        }
 
         [MenuItem("Assets/Retopologize in MashBox Studio", false, 2001)]
         private static void RetopologizeSelectedMesh() => OpenSelectedMeshInStudio(false);
@@ -234,7 +247,9 @@ namespace MashBoxSDK.AnimationStudio
         {
             audioPreview.ReportError = text => message = text;
             LoadAnimationConfiguration();
-            modelingMode = StudioPreferenceStore.GetString("Studio.Mode", modelingMode ? "Modeling" : "Animation") == "Modeling";
+            string storedMode = StudioPreferenceStore.GetString("Studio.Mode", "Modeling");
+            paintingMode = storedMode == "Painting";
+            modelingMode = paintingMode || storedMode == "Modeling";
             RestoreMotionJob();
             minSize = new Vector2(470, 640);
             SceneView.duringSceneGui += DuringSceneGUI;
@@ -246,6 +261,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnDisable()
         {
+            ReleasePainting();
             SaveAnimationConfiguration();
             StudioPreferenceStore.Flush();
             ReleaseModelEditor();
@@ -917,13 +933,16 @@ namespace MashBoxSDK.AnimationStudio
 
         private void BeforeSceneGUI(SceneView view)
         {
+            if (view == viewport && paintingMode) { BeforePaintingScene(view); return; }
+            if(view==viewport && !skinningMode) skinningEditor?.SuspendLighting();
             if (view == viewport && viewport.HandleWindowShortcut()) return;
             if (view == viewport && retopologyMode)
-            { retopologyEditor?.BeforeRetopologySceneGUI(view); if(view.camera) view.camera.cameraType=CameraType.Preview; StudioPreviewLighting.ConfigureStudioBackground(view); return; }
+            { retopologyEditor?.BeforeRetopologySceneGUI(view); if(view.camera) view.camera.cameraType=CameraType.Preview; retopologyEditor?.ConfigureLightingCamera(view); StudioPreviewLighting.ConfigureStudioBackground(view); return; }
             if (view == viewport && skinningMode)
             {
                 skinningEditor?.BeforeSkinSceneGUI(view);
                 if (view.camera) view.camera.cameraType = CameraType.Preview;
+                skinningEditor?.ConfigureLightingCamera(view);
                 StudioPreviewLighting.ConfigureStudioBackground(view);
                 return;
             }

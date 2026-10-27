@@ -275,13 +275,17 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 Handles.zTest=UnityEngine.Rendering.CompareFunction.LessEqual;
-                if(selectionMode==SelectionMode.Vertices)
+                if(selectionMode==SelectionMode.Vertices && !DrawTopologyVertices(false,new Color(.48f,.72f,.78f,.9f),3,UnityEngine.Rendering.CompareFunction.LessEqual))
                     for(int i=0;i<Active.vertices.Count;i++)Vertex(i,new Color(.48f,.72f,.78f,.9f),.022f);
                 // Explicit selected/hovered components remain readable through the reference.
                 Handles.zTest=workingXray?UnityEngine.Rendering.CompareFunction.Always:UnityEngine.Rendering.CompareFunction.LessEqual;
-                if(selectionMode==SelectionMode.Vertices)foreach(int i in selected)Vertex(i,selectedColor,.045f);
-                else if(selectionMode==SelectionMode.Edges)foreach(var edge in selectedEdges)Edge(edge,selectedColor,3.5f);
-                else foreach(int face in selectedFaces)Face(face,selectedColor,StudioFaceSelectionStyle.SelectedOpacity);
+                if(selectionMode==SelectionMode.Vertices)
+                { if(!DrawTopologyVertices(true,selectedColor,6,Handles.zTest))foreach(int i in selected)Vertex(i,selectedColor,.045f); }
+                else if(!DrawTopologySelectedSurfaces(selectedColor,Handles.zTest))
+                {
+                    if(selectionMode==SelectionMode.Edges)foreach(var edge in selectedEdges)Edge(edge,selectedColor,3.5f);
+                    else foreach(int face in selectedFaces)Face(face,selectedColor,StudioFaceSelectionStyle.SelectedOpacity);
+                }
                 if(!allowHover)return;
                 var mouse=Event.current.mousePosition;
                 if(selectionMode==SelectionMode.Vertices)

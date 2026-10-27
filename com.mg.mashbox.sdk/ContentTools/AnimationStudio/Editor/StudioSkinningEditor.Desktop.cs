@@ -34,13 +34,13 @@ namespace MashBoxSDK.AnimationStudio
                 if (importedSelection >= 0)
                 {
                     CancelBrushInteraction();
-                    ChooseBrush(Brush.Object);
                     Document.selected = importedSelection;
                     cachedPart = -1;
                     objectScale = false;
                     poseTranslate = true;
                     poseGlobalHandleRotation = Quaternion.identity;
                     RefreshSurface();
+                    ChooseImportedMeshTool();
                     repaint();
                 }
             }

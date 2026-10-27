@@ -51,6 +51,18 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (value > 1e-8f) list.Add(new BoneWeight1 { boneIndex = bone, weight = value });
         }
+        internal void LimitToFour()
+        {
+            for (int i = 0; i < Values.Length; i++)
+            {
+                var kept = Values[i].Where(w => w.weight > 0)
+                    .OrderByDescending(w => w.weight).ThenBy(w => w.boneIndex).Take(4).ToList();
+                float sum = kept.Sum(w => w.weight);
+                for (int k = 0; k < kept.Count; k++)
+                { var w = kept[k]; w.weight /= sum; kept[k] = w; }
+                Values[i] = kept;
+            }
+        }
         internal void Apply(Mesh mesh)
         {
             var counts = new NativeArray<byte>(Values.Length, Allocator.Temp);
@@ -75,6 +87,33 @@ namespace MashBoxSDK.AnimationStudio
             var result = new Matrix4x4();
             foreach (var w in Values[vertex])
             { var m = matrices[w.boneIndex]; for (int i = 0; i < 16; i++) result[i] += m[i] * w.weight; }
+            return result;
+        }
+        internal Matrix4x4 PreviewSkinMatrix(int vertex, Matrix4x4[] matrices)
+        {
+            // Match export's strongest-four ordering without allocating or
+            // throwing away influences in the editable document.
+            Span<BoneWeight1> kept = stackalloc BoneWeight1[4];
+            int count=0;
+            foreach(var weight in Values[vertex])
+            {
+                if(weight.weight<=0)continue;
+                int index=0;
+                while(index<count && (kept[index].weight>weight.weight ||
+                    (kept[index].weight==weight.weight && kept[index].boneIndex<weight.boneIndex)))index++;
+                if(index>=4)continue;
+                int last=Math.Min(count,3);
+                for(int i=last;i>index;i--)kept[i]=kept[i-1];
+                kept[index]=weight;count=Math.Min(4,count+1);
+            }
+            if(count==0)return Matrix4x4.identity;
+            float sum=0;for(int i=0;i<count;i++)sum+=kept[i].weight;
+            var result=new Matrix4x4();
+            for(int i=0;i<count;i++)
+            {
+                var matrix=matrices[kept[i].boneIndex];float weight=kept[i].weight/sum;
+                for(int k=0;k<16;k++)result[k]+=matrix[k]*weight;
+            }
             return result;
         }
     }

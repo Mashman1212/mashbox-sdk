@@ -49,10 +49,11 @@ namespace MashBoxSDK.AnimationStudio
             referenceMaterial=new Material(Shader.Find("MashBox/Studio/Preview")) { hideFlags=HideFlags.HideAndDontSave };
             referenceMaterial.SetColor("_Color",new Color(.36f,.39f,.43f));referenceMaterial.SetFloat("_Cull",0);
             outputMaterial=new Material(referenceMaterial);outputMaterial.SetColor("_Color",new Color(.56f,.74f,.70f));
-            lighting=new StudioPreviewLighting(Scene);lighting.Apply(new StudioLightingSettings());
+            lighting=new StudioPreviewLighting(Scene);lighting.ApplyMaterialPreview();
             Undo.undoRedoPerformed+=OnUndo; Rebuild();CaptureTutorialSettings();
         }
         internal void SuspendLighting()=>lighting?.RestoreCameras();
+        internal void ConfigureLightingCamera(SceneView view)=>lighting?.ConfigureCamera(view);
         private void OnUndo()
         {
             // Visibility is a viewport preference, independent of geometry Undo.
@@ -74,6 +75,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Rebuild()
         {
+            ClearTopologyDrawing();
             // Recover references lost by the old JSON rollback while the original
             // transient mesh is still alive. Never guess between duplicate names.
             for(int i=0;i<Document.parts.Count;i++)
@@ -187,6 +189,9 @@ namespace MashBoxSDK.AnimationStudio
                     if(visible!=p.showReference){p.showReference=visible;if(p.reference)visibility[p.reference]=(p.showReference,p.showOutput);references[index].SetActive(visible);repaint();}
                 }
                 var referenceRow=GUILayoutUtility.GetLastRect();
+                bool referenceSkinned=StudioSkinStatusIcon.HasWeights(p.reference);
+                StudioSkinStatusIcon.Draw(new Rect(referenceRow.xMax-20,referenceRow.center.y-8,16,16),referenceSkinned,
+                    referenceSkinned ? "Skinned reference — contains skin weights" : "Unskinned reference — no skin weights");
                 if(referenceRow.Contains(Event.current.mousePosition)&&StudioMeshMaterialPreview.IsMaterialDrag)StudioMeshMaterialPreview.Drop(m=>SetMaterial(p,0,m));
                 var workingRow=GUILayoutUtility.GetRect(50,22,GUILayout.ExpandWidth(true));
                 if(workingRow.Contains(Event.current.mousePosition)&&StudioMeshMaterialPreview.IsMaterialDrag)StudioMeshMaterialPreview.Drop(m=>SetMaterial(p,0,m));
@@ -204,7 +209,9 @@ namespace MashBoxSDK.AnimationStudio
                 var toggleRect=new Rect(workingRow.x+12,workingRow.y,125,workingRow.height);
                 bool outputVisible=GUI.Toggle(toggleRect,p.showOutput,new GUIContent("Working mesh","Right-click for mesh actions"));
                 if(outputVisible!=p.showOutput&&Event.current.button==0){p.showOutput=outputVisible;if(p.reference)visibility[p.reference]=(p.showReference,p.showOutput);outputs[index].SetActive(outputVisible);repaint();}
-                GUI.Label(new Rect(toggleRect.xMax,workingRow.y,Mathf.Max(0,workingRow.xMax-toggleRect.xMax),workingRow.height),p.faces.Count.ToString("N0"),StudioTheme.Styles.miniLabel);
+                GUI.Label(new Rect(toggleRect.xMax,workingRow.y,Mathf.Max(0,workingRow.xMax-toggleRect.xMax-24),workingRow.height),p.faces.Count.ToString("N0"),StudioTheme.Styles.miniLabel);
+                StudioSkinStatusIcon.Draw(new Rect(workingRow.xMax-20,workingRow.center.y-8,16,16),false,
+                    referenceSkinned ? "Unskinned working mesh — reference weights transfer when sent to Skinner" : "Unskinned working mesh — no reference skin weights to transfer");
                 DrawMaterialSlots(p);
                 GUILayout.Space(6);
             }
@@ -385,8 +392,8 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             Row("Mesh","Verts","Faces","Tris","Quads");
-            Row("Reference",Active.reference?Active.reference.vertexCount.ToString("N0"):"�",
-                Active.reference?referenceFaces.ToString("N0"):"�",Active.reference?referenceTriangles.ToString("N0"):"�",Active.reference?referenceQuads.ToString("N0"):"�",
+            Row("Reference",Active.reference?Active.reference.vertexCount.ToString("N0"):"—",
+                Active.reference?referenceFaces.ToString("N0"):"—",Active.reference?referenceTriangles.ToString("N0"):"—",Active.reference?referenceQuads.ToString("N0"):"—",
                 "Actual imported topology. Unity usually imports polygon faces as triangles; inferred wireframe quad pairs are not counted as source quads.");
             Row("Working",Active.vertices.Count.ToString("N0"),Active.faces.Count.ToString("N0"),triangles.ToString("N0"),quads.ToString("N0"),
                 "Editable polygon faces, their triangulated count, and four-sided faces.");
@@ -396,6 +403,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            ClearTopologyDrawing(); if(topologyOverlayMaterial)Object.DestroyImmediate(topologyOverlayMaterial);
+            if(topologyWireMaterial)Object.DestroyImmediate(topologyWireMaterial);
             EndStripStroke();
             EndBrushAdjustment();EndRelaxBrush();CancelResolution();CancelVertexSelection(); CancelContextWheel(); Undo.undoRedoPerformed-=OnUndo;lighting?.Dispose();
             referenceWireLines.Clear();

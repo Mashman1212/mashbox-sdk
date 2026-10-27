@@ -51,7 +51,7 @@ namespace MashBoxSDK.AnimationStudio
                     bones[i]==bones[left] || bones[i]==bones[right] || bones[i].IsChildOf(bones[left]) || bones[i].IsChildOf(bones[right]);
                 arm[chestIndex]=false;
                 var posed=new Vector3[verts.Length];
-                for(int i=0;i<posed.Length;i++) posed[i]=skin.SkinMatrix(i,matrices).MultiplyPoint3x4(verts[i]);
+                for(int i=0;i<posed.Length;i++) posed[i]=skin.PreviewSkinMatrix(i,matrices).MultiplyPoint3x4(verts[i]);
                 var torsoRegion=BuildArmpitTorsoRegion(posed,verts,shoulderCenter,up,across,halfWidth,torsoHeight,automatic);
                 if(smoothOnly)
                 {
