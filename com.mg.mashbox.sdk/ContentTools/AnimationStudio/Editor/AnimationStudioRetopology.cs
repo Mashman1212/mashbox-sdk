@@ -51,6 +51,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OpenRetopologyMode()
         {
+            LeaveClothMode();
             LeavePaintingMode();
             FlushEdits();playing=false;skinningEditor?.EndStroke();modelEditor?.CancelMarkingMenu();
             modelEditor?.SuspendLighting();retopologyMode=true;modelingMode=false;skinningMode=false;

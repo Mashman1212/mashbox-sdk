@@ -166,7 +166,7 @@ namespace MashBoxSDK.AnimationStudio
             label.alignment = TextAnchor.MiddleRight;
             GUI.Label(new Rect(timeX,y,timeWidth,26),$"{previewTime:0.00} / {previewClip.length:0.00}s",label);
         }
-        private static bool DrawPosePresetButton(Rect rect, bool aPose, bool plus = false)
+        internal static bool DrawPosePresetButton(Rect rect, bool aPose, bool plus = false)
         {
             bool clicked = GUI.Button(rect,new GUIContent("",plus ? "A-pose+ — Skinning Test frame 3" : aPose ? "A-pose — Skinning Test frame 2" : "T-pose — Skinning Test frame 0"));
             if (Event.current.type != EventType.Repaint) return clicked;

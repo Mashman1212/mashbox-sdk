@@ -385,7 +385,7 @@ namespace MashBoxSDK.AnimationStudio
 
         internal void BindTimeline(System.Action draw)
         {
-            skinPreviewTimeline = false;
+            skinPreviewTimeline = false; compactPreviewTimeline = false;
             minSize = new Vector2(700, 400);
             if (timeline == null)
             {
@@ -405,15 +405,22 @@ namespace MashBoxSDK.AnimationStudio
             timeline.BringToFront();
         }
         private bool skinPreviewTimeline;
+        private bool compactPreviewTimeline;
         private const float SkinPreviewBarHeight = 36, SkinPreviewBarInset = 8;
         internal float SkinPreviewBarTop => StudioContentHeight - SkinPreviewBarInset - SkinPreviewBarHeight;
         internal bool IsSkinPreviewScene(Scene scene) => skinPreviewTimeline && customScene == scene;
         internal void BindSkinPreviewTimeline(System.Action draw)
         {
-            BindTimeline(draw); skinPreviewTimeline = true;
+            BindCompactPreviewTimeline(draw); skinPreviewTimeline = true;
+            UpdatePanelLayout();
+        }
+        internal void BindCompactPreviewTimeline(System.Action draw)
+        {
+            BindTimeline(draw); compactPreviewTimeline = draw != null;
             timeline.style.height = SkinPreviewBarHeight; timeline.style.bottom = SkinPreviewBarInset; timeline.style.display = DisplayStyle.Flex;
             UpdatePanelLayout();
         }
+        internal bool IsOverPreviewTimeline(Vector2 point) => compactPreviewTimeline && IsOverControl(timeline, point);
 
         internal void Bind(Scene scene)
         {

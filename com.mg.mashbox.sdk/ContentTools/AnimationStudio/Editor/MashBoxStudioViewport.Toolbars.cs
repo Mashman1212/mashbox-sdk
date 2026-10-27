@@ -19,17 +19,98 @@ namespace MashBoxSDK.AnimationStudio
         {
             public string id;
             public int index;
+#if UNITY_6000_0_OR_NEWER
             public SaveData state;
+#else
+            public StoredOverlayState state;
+#endif
+        }
+#if !UNITY_6000_0_OR_NEWER
+        // Match Unity 2022's serialized layout without referencing its internal SaveData type.
+        // Keep the existing preference shape so layouts survive SDK upgrades.
+        [Serializable] private sealed class StoredOverlayState
+        {
+            public DockPosition dockPosition = DockPosition.Bottom;
+            public string containerId = string.Empty;
+            public bool floating, collapsed, displayed;
+            public Vector2 snapOffset, snapOffsetDelta;
+            public int snapCorner;
+            public string id;
+            public int index = -1;
+            public Layout layout = Layout.Panel;
+            public Vector2 size;
+            public bool sizeOverriden;
+        }
+        private static readonly Type NativeOverlayState = typeof(OverlayCanvas).Assembly.GetType("UnityEditor.Overlays.SaveData");
+        private static readonly ConstructorInfo NativeOverlayStateConstructor = NativeOverlayState?.GetConstructor(new[] { typeof(Overlay), typeof(int) });
+        private static readonly MethodInfo NativeRestoreOverlay = NativeOverlayState == null ? null : typeof(OverlayCanvas)
+            .GetMethod("RestoreOverlay", WindowMembers, null, new[] { typeof(Overlay), NativeOverlayState }, null);
+        private static readonly PropertyInfo NativeCanvasOverlays = typeof(OverlayCanvas).GetProperty("overlays", WindowMembers);
+        private static readonly PropertyInfo NativeCanvasEnabled = typeof(OverlayCanvas).GetProperty("overlaysEnabled", WindowMembers);
+        private static readonly MethodInfo NativeSetCanvasEnabled = typeof(OverlayCanvas).GetMethod("SetOverlaysEnabled", WindowMembers);
+        private static readonly PropertyInfo NativeOverlayRoot = typeof(Overlay).GetProperty("rootVisualElement", WindowMembers);
+        private static readonly PropertyInfo NativeOverlayContainer = typeof(Overlay).GetProperty("container", WindowMembers);
+        private static readonly Type NativeContainerSection = typeof(OverlayCanvas).Assembly.GetType("UnityEditor.Overlays.OverlayContainerSection");
+        private static readonly MethodInfo NativeDockOverlay = typeof(Overlay).GetMethod("DockAt", WindowMembers, null,
+            new[] { NativeOverlayContainer.PropertyType, NativeContainerSection, typeof(int) }, null);
+        private static readonly MethodInfo NativeOverlayIndex = typeof(OverlayCanvas).Assembly.GetType("UnityEditor.Overlays.OverlayContainer")
+            ?.GetMethod("GetOverlayIndex", WindowMembers);
+        private static StoredOverlayState CaptureStoredOverlay(Overlay overlay)
+        {
+            int index = -1;
+            var container = NativeOverlayContainer?.GetValue(overlay);
+            if (container != null && NativeOverlayIndex != null)
+            {
+                var arguments = new object[] { overlay, null, 0 };
+                if ((bool)NativeOverlayIndex.Invoke(container, arguments)) index = (int)arguments[2];
+            }
+            var native = NativeOverlayStateConstructor?.Invoke(new object[] { overlay, index });
+            return native == null ? null : JsonUtility.FromJson<StoredOverlayState>(JsonUtility.ToJson(native));
+        }
+#endif
+        private IEnumerable<Overlay> NativeOverlays
+        {
+            get
+            {
+#if UNITY_6000_0_OR_NEWER
+                return overlayCanvas.overlays;
+#else
+                return NativeCanvasOverlays?.GetValue(overlayCanvas) as IEnumerable<Overlay> ?? Array.Empty<Overlay>();
+#endif
+            }
+        }
+        private bool NativeOverlaysEnabled
+        {
+#if UNITY_6000_0_OR_NEWER
+            get => overlayCanvas.overlaysEnabled;
+            set => overlayCanvas.overlaysEnabled = value;
+#else
+            get => NativeCanvasEnabled?.GetValue(overlayCanvas) is bool enabled && enabled;
+            set => NativeSetCanvasEnabled?.Invoke(overlayCanvas, new object[] { value });
+#endif
+        }
+        private static VisualElement ToolbarRoot(Overlay overlay)
+        {
+#if UNITY_6000_0_OR_NEWER
+            return overlay.rootVisualElement;
+#else
+            return NativeOverlayRoot?.GetValue(overlay) as VisualElement;
+#endif
         }
         private bool restoringStoredToolbars, restoredStoredToolbars;
         private void SaveStoredToolbars()
         {
             if (restoringStoredToolbars || !restoredStoredToolbars || studioToolbarOverlays.Count == 0 || modeHiddenToolbars.Count > 0) return;
-            var saved = new StoredToolbars { enabled = overlayCanvas.overlaysEnabled };
+            var saved = new StoredToolbars { enabled = NativeOverlaysEnabled };
             foreach (var overlay in studioToolbarOverlays)
             {
                 if (overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) continue;
+#if UNITY_6000_0_OR_NEWER
                 var state = new SaveData(overlay);
+#else
+                if (NativeOverlayStateConstructor == null || NativeRestoreOverlay == null) return;
+                var state = CaptureStoredOverlay(overlay);
+#endif
                 // SaveData owns Unity's native container index; a tiny reader avoids private-field reflection.
                 var order = JsonUtility.FromJson<StoredToolbar>(JsonUtility.ToJson(state));
                 saved.items.Add(new StoredToolbar { id = overlay.id, index = order.index, state = state });
@@ -48,7 +129,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     // Unity may restore hidden overlays from its own window layout.
                     // With no Studio preference, every Studio toolbar starts on.
-                    overlayCanvas.overlaysEnabled = true;
+                    NativeOverlaysEnabled = true;
                     foreach (var overlay in studioToolbarOverlays)
                         if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) overlay.displayed = true;
                     return;
@@ -60,9 +141,24 @@ namespace MashBoxSDK.AnimationStudio
                     foreach (var overlay in studioToolbarOverlays)
                         if (overlay.id == item.id && item.state != null)
                         {
+#if UNITY_6000_0_OR_NEWER
                             overlayCanvas.RestoreOverlay(overlay, item.state);
+#else
+                            if (NativeOverlayState != null)
+                            {
+                                NativeRestoreOverlay?.Invoke(overlayCanvas, new[] { (object)overlay,
+                                    JsonUtility.FromJson(JsonUtility.ToJson(item.state), NativeOverlayState) });
+                                // Unity 2022's RestoreOverlay appends to the dock section;
+                                // explicitly reinsert at the saved index when restoring a live canvas.
+                                var container = NativeOverlayContainer?.GetValue(overlay);
+                                if (container != null && item.state.index >= 0)
+                                    NativeDockOverlay?.Invoke(overlay, new[] { container,
+                                        Enum.Parse(NativeContainerSection, item.state.dockPosition == DockPosition.Top ? "BeforeSpacer" : "AfterSpacer"),
+                                        (object)item.state.index });
+                            }
+#endif
                         }
-                overlayCanvas.overlaysEnabled = saved.enabled;
+                NativeOverlaysEnabled = saved.enabled;
             }
             catch (ArgumentException ex) { Debug.LogWarning("MashBox Studio could not restore toolbar layout: " + ex.Message); }
             finally { restoringStoredToolbars = false; restoredStoredToolbars = true; }
@@ -97,7 +193,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             RestrictStudioDockTargets();
             studioToolbarOverlays.Clear();
-            foreach (var overlay in overlayCanvas.overlays)
+            foreach (var overlay in NativeOverlays)
             {
                 if (studioToolbarVersion < 2)
                 {
@@ -106,13 +202,13 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 if (!(overlay is ToolbarOverlay)) continue;
                 studioToolbarOverlays.Add(overlay);
-                overlay.rootVisualElement.UnregisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
-                overlay.rootVisualElement.RegisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
-                StyleStudioToolbar(overlay.rootVisualElement);
+                ToolbarRoot(overlay).UnregisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
+                ToolbarRoot(overlay).RegisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
+                StyleStudioToolbar(ToolbarRoot(overlay));
             }
             if (studioToolbarVersion < 2)
             {
-                overlayCanvas.overlaysEnabled = true;
+                NativeOverlaysEnabled = true;
                 studioToolbarVersion = 2;
                 cameraMode = SceneView.GetBuiltinCameraMode(DrawCameraMode.Textured);
             }
@@ -161,11 +257,11 @@ namespace MashBoxSDK.AnimationStudio
         private bool HasRightDockedToolbar => HasDockedToolbar("overlay-toolbar__right");
         private bool HasDockedToolbar(string dockName)
         {
-            if (studioOverlayRoot == null || !overlayCanvas.overlaysEnabled) return false;
+            if (studioOverlayRoot == null || !NativeOverlaysEnabled) return false;
             var dock = studioOverlayRoot.Q(dockName);
             if (dock == null) return false;
             foreach (var overlay in studioToolbarOverlays)
-                if (overlay.displayed && !overlay.floating && dock.Contains(overlay.rootVisualElement)) return true;
+                if (overlay.displayed && !overlay.floating && dock.Contains(ToolbarRoot(overlay))) return true;
             return false;
         }
         private void OnStudioToolbarGeometry(GeometryChangedEvent evt)
@@ -243,10 +339,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         private bool IsOverNativeToolbar(Vector2 point)
         {
-            if (studioOverlayRoot == null || !overlayCanvas.overlaysEnabled) return false;
+            if (studioOverlayRoot == null || !NativeOverlaysEnabled) return false;
             var world = rootVisualElement.LocalToWorld(point);
             foreach (var overlay in studioToolbarOverlays)
-                if (overlay.displayed && overlay.rootVisualElement.worldBound.Contains(world)) return true;
+                if (overlay.displayed && ToolbarRoot(overlay).worldBound.Contains(world)) return true;
             return false;
         }
         internal void AddStudioToolbarMenu(StudioMenu menu)
@@ -254,11 +350,11 @@ namespace MashBoxSDK.AnimationStudio
             // Unity's canvas is the registry. Query it when opening the menu so
             // restored, hidden and newly registered toolbars are included too.
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var overlay in overlayCanvas.overlays)
+            foreach (var overlay in NativeOverlays)
             {
                 if (!(overlay is ToolbarOverlay) || overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly || !seen.Add(overlay.id)) continue;
                 var item = overlay;
-                bool visible = overlayCanvas.overlaysEnabled && item.displayed;
+                bool visible = NativeOverlaysEnabled && item.displayed;
                 // Saved Unity layouts may retain an obsolete displayName. The
                 // toolbar declaration owns its current user-facing name; its ID
                 // stays unchanged so visibility and docking still restore.
@@ -266,7 +362,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (string.IsNullOrWhiteSpace(label)) label = string.IsNullOrWhiteSpace(item.displayName) ? item.id : item.displayName;
                 label = label.Replace('/', '∕'); // A toolbar title is one menu leaf.
                 menu.AddItem(new GUIContent("Toolbars/" + label), visible, () => {
-                    overlayCanvas.overlaysEnabled = true;
+                    NativeOverlaysEnabled = true;
                     item.displayed = !visible; SaveStoredToolbars();
                     UpdatePanelLayout();
                     MarkDirty(DirtyState.UI);
@@ -316,7 +412,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             foreach (var overlay in studioToolbarOverlays)
             {
-                overlay.rootVisualElement.UnregisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
+                ToolbarRoot(overlay).UnregisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
             }
             studioToolbarOverlays.Clear();
             if (modelMenuBar != null) UnbindStudioHoverRedraw(modelMenuBar);

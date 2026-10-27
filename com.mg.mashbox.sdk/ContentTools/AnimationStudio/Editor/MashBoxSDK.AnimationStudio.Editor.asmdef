@@ -10,6 +10,7 @@
   "autoReferenced": true,
   "references": [
     "MashBoxSDK.Tools.Editor",
-    "Unity.Mathematics"
+    "Unity.Mathematics",
+    "MashBoxSDK.Cloth"
   ]
 }

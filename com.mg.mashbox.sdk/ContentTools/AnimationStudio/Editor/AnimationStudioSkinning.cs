@@ -69,6 +69,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OpenSkinningMode()
         {
+            LeaveClothMode();
             LeavePaintingMode();
             retopologyMode=false; retopologyEditor?.SuspendLighting(); viewport?.SetRetopologyPanels(false);
             FlushEdits(); playing = false;

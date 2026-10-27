@@ -21,6 +21,7 @@ Shader "Hidden/MashBox/ImagingComposite"
             float _Warped;
             float cross2(float2 a,float2 b){return a.x*b.y-a.y*b.x;}
             float _Rotation, _BlackToAlpha, _Blend, _Exposure, _Saturation;
+            float _DataMap, _LayerOpacity;
             float4 _MainTex_TexelSize;
             float lum(float3 c){return dot(c,float3(.3,.59,.11));}
             float sat(float3 c){return max(c.r,max(c.g,c.b))-min(c.r,min(c.g,c.b));}
@@ -105,6 +106,8 @@ Shader "Hidden/MashBox/ImagingComposite"
                     src.a=src.a>noise?1:0;
                 }
                 float3 blend=blendmode(dst.rgb,src.rgb);
+                // Packed masks store data in alpha (e.g. smoothness), not coverage.
+                if (_DataMap > .5) return lerp(dst, float4(blend, src.a), _LayerOpacity);
                 float alpha=src.a+dst.a*(1-src.a);
                 float3 rgb=src.a*((1-dst.a)*src.rgb+dst.a*blend)+dst.a*(1-src.a)*dst.rgb;
                 return float4(alpha>0?rgb/alpha:0,alpha);

@@ -179,11 +179,11 @@ namespace MashBoxSDK.AnimationStudio
                 if (rigControls != null) rigControls.style.bottom = PanelMargin;
                 LayoutSkinInfluences(widths);
                 if (inspector != null) inspector.style.bottom = PanelMargin;
-                if (timeline != null && skinPreviewTimeline)
-                {
-                    timeline.style.left = canvasLeft + 8;
-                    timeline.style.right = PanelMargin + widths.y + DividerWidth + 8;
-                }
+            }
+            if (timeline != null && compactPreviewTimeline)
+            {
+                timeline.style.left = canvasLeft + 8;
+                timeline.style.right = PanelMargin + widths.y + DividerWidth + 8;
             }
             if (!FoldablePanels)
             {

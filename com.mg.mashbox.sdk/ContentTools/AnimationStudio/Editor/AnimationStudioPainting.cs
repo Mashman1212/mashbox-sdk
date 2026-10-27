@@ -32,6 +32,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void OpenPaintingMode()
         {
+            LeaveClothMode();
             if (paintingMode) return;
             FlushEdits(); playing = false;
             skinningEditor?.EndStroke(); skinningEditor?.SuspendLighting(); retopologyEditor?.SuspendLighting();

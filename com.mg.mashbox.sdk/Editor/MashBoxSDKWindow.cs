@@ -339,7 +339,7 @@ namespace MashBoxSDK.SDKMain
         {
 #if MashBoxDev && UNITY_6000_0_OR_NEWER
             if (GUILayout.Button("Open MashBox Studio", GUILayout.Height(28)))
-                EditorApplication.ExecuteMenuItem("MashBox/MashBox Studio");
+                EditorApplication.ExecuteMenuItem("MashBox/MashBox Studio/Modelling");
             GUILayout.Space(6f);
 #endif
 

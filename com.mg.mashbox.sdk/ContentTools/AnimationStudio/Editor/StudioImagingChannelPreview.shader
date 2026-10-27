@@ -10,9 +10,12 @@ Shader "Hidden/MashBox/ImagingChannelPreview"
         float4 frag(v2f_img i):SV_Target
         {
             float4 c=tex2D(_MainTex,i.uv);if(_Channel<.5)return c;
-            float value=_Channel<1.5?c.r:_Channel<2.5?c.g:_Channel<3.5?c.b:c.a;
+            if(_Channel<1.5)return float4(c.r,0,0,1);
+            if(_Channel<2.5)return float4(0,c.g,0,1);
+            if(_Channel<3.5)return float4(0,0,c.b,1);
+            float value=c.a;
             #ifndef UNITY_COLORSPACE_GAMMA
-            if(_Channel>3.5)value=GammaToLinearSpace(value);
+            value=GammaToLinearSpace(value);
             #endif
             return float4(value,value,value,1);
         }

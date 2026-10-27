@@ -29,7 +29,7 @@ namespace MashBoxSDK.AnimationStudio
             else if(Contains(defaults.shirt))
             { part.role=StudioSkinningDocument.MeshRole.Clothing; part.defaultReferenceLabel="Default Shirt"; }
         }
-        private static void DrawMeshRoleRow(Rect row,StudioSkinningDocument.Part part)
+        internal static void DrawMeshRoleRow(Rect row,StudioSkinningDocument.Part part, string skinTooltip = null)
         {
             if(part.referenceOnly)
                 EditorGUI.DrawRect(row,new Color(.12f,.13f,.14f,1));
@@ -48,7 +48,7 @@ namespace MashBoxSDK.AnimationStudio
                 GUI.color = previousColor;
             }
             var skinStatus = new Rect(row.xMax-42,row.center.y-8,16,16);
-            StudioSkinStatusIcon.Draw(skinStatus,part.bound,part.bound ? "Skinned — bound to the SDK skeleton" : "Unskinned — right-click and choose Skin to bind");
+            StudioSkinStatusIcon.Draw(skinStatus,part.bound,skinTooltip ?? (part.bound ? "Skinned — bound to the SDK skeleton" : "Unskinned — right-click and choose Skin to bind"));
             GUI.Label(icon,new GUIContent("",part.role.ToString()));
             if(Event.current.type!=EventType.Repaint) return;
             var previous=Handles.color; var matrix=Handles.matrix;

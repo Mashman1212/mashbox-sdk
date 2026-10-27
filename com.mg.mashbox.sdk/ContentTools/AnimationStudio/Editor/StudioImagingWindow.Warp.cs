@@ -45,6 +45,26 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static void SetImageCorners(StickerLayer layer,Vector2[] offsets)
         {layer.corner0=offsets[0];layer.corner1=offsets[1];layer.corner2=offsets[2];layer.corner3=offsets[3];}
+        private void ApplyImageAspectTransform(Vector2 point)
+        {
+            if(imageTransformOffsets==null)return;
+            var layer=imageTransformLayer;
+            layer.scale=imageTransformScale;
+            var basis=new[]{Vector2.zero,Vector2.right,Vector2.one,Vector2.up};
+            int opposite=(imageTransformCorner+2)%4;
+            var anchor=basis[opposite]+imageTransformOffsets[opposite];
+            var span=basis[imageTransformCorner]+imageTransformOffsets[imageTransformCorner]-anchor;
+            var size=CroppedPixelSize(layer);
+            var local=Rotate(point-imageTransformStart,-imageTransformRotation)/imageTransformScale;
+            var delta=new Vector2(local.x/size.x,local.y/size.y);
+            // Scale both local axes independently around the opposite corner.
+            // Every corner follows the same transform, preserving the existing shape.
+            var factors=new Vector2(Mathf.Abs(span.x)<.0001f?1:Mathf.Clamp((span.x+delta.x)/span.x,.001f,100),
+                Mathf.Abs(span.y)<.0001f?1:Mathf.Clamp((span.y+delta.y)/span.y,.001f,100));
+            var offsets=new Vector2[4];
+            for(int i=0;i<4;i++)offsets[i]=anchor+Vector2.Scale(basis[i]+imageTransformOffsets[i]-anchor,factors)-basis[i];
+            SetImageCorners(layer,offsets);
+        }
         private void ApplyImageCornerTransform(Vector2 point,bool skew)
         {
             var layer=imageTransformLayer;
