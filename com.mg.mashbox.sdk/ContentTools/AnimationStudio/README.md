@@ -1,5 +1,19 @@
 # MashBox Studio
 
+## Checker Map viewport toggle (2026-10-27)
+
+Viewport Shading includes Checker Map, using the supplied MashBoxStudio_Checkerboard material. It overrides material/neutral display temporarily and restores that view when disabled; object assignments remain unchanged. Camera Lighting displays the target _CheckerboardMap texture through computed shading when _Checkerboard is enabled; Studio Lights uses the target material shader. The toggle is saved through StudioPreferenceStore and defaults off. No new shortcut or source material/graph edits.
+
+
+## Camera Lighting and material defaults (2026-10-27)
+
+Camera Lighting uses the restored lightweight shader that calculates shading from normals and view direction. Studio Lights material view uses the real assigned materials. Neutral shading always uses fixed white-gray computed camera lighting, regardless of the assigned material. The material-texture toggle changes preview appearance without changing source assignments. Neutral preview ignores assigned/default RGB tint. Material view refreshes existing meshes when their assigned material changes. Vehicle preview uses its graph's RGB tint without clipping on the unused tint-alpha channel; base-map alpha cutoff remains active. No real camera lights were added. Lower lighting work is expected, but no FPS comparison was measured.
+
+## Creation materials (2026-10-27)
+
+Ordinary polygon primitives and bare-Mesh imports use the packaged MashBoxStudio_Default material. Studio Lights uses the real default or assigned shader. Camera Lighting uses the lightweight preview shader. Texture-off neutral shading is always fixed gray, not the default-material tint. Toggling preview preserves imported and explicitly assigned source materials. Vehicle Parts are the exception: each creation uses MG_Vehicle with untouched shader defaults, shared by its generated mesh nodes. The vehicle material is retained by workspace save/load. Existing user material assignments are preserved.
+
+
 ## Axis and plane move snapping (2026-10-26)
 
 Arrow handles snap only X, Y or Z; plane squares snap only their two axes, in the captured World/Local orientation. Constrained vertex targets are chosen by distance along those axes from the unsnapped world handle position, independently of camera angle or cursor proximity. Locked coordinates only break target ties and remain unchanged in the result. Grid snapping rounds only the allowed coordinates. Single- and multi-mesh component moves share the resolver and exclude all moving selected vertices. The free center and instant middle-click retain cursor-based vertex picking; free grid movement retains the world X/Z ground plane. Vertex snap takes precedence over grid; no eligible vertex keeps the previous position. No new setting or shortcut.
@@ -649,3 +663,21 @@ Undo/Redo for static mesh component Move/Rotate/Scale reuses the existing previe
 Insert Edge Loop (default Ctrl/Cmd+Shift+X) keeps its description in Tool Options, with no duplicate viewport instruction overlay. It offers a Loop count slider in Tool Options (1–64, default 1). Ctrl/Cmd + wheel over the viewport increases/decreases that count, including during a drag, without zooming. The count persists in Studio settings. Drag positions the loop group; Shift snaps its anchor to tenths. Middle-click a face or its strip to insert centered, evenly spaced loops immediately. A single loop uses edge midpoints; multiple loops use evenly spaced fractions across the strip. Placement is one grouped Undo action.
 
 Unapplied cut previews and pending Multi-Cut paths are blue, with warm yellow hover markers; committed cuts use normal mesh wire/selection colors. Ctrl/Cmd loop mode within Multi-Cut shares the count. Existing quad-strip traversal, active static-mesh restrictions, boundary/nonmanifold stops, source-topology capture, cancellation and attribute preservation remain. Count edits change preview data only and add no mesh Undo or scene rebuild. There is no continuous idle redraw loop.
+
+### Custom toolbar overlays
+
+Open **Display > Toolbars > Customize Toolbars…**. Create named custom toolbars in the left column. The right side shows the selected toolbar's ordered contents and a searchable categorized function list. Use + or drag a function into the contents; drag existing rows or use the arrow buttons to reorder, and × to remove. Names and contents save automatically in the active settings profile. Deleting a custom toolbar removes that toolbar; built-in toolbars are retained.
+
+The function list comes from the same menu declarations as Studio commands, including disabled functions, UI-only actions and available dynamic vehicle-part entries. Native Studio toolbar controls are discovered separately and reused directly, including dropdowns/toggles such as orientation, textures and backface culling. Camera/lighting options are also available. Hold gestures and individual settings fields are not standalone commands. Missing functions retain their stored keys and display a disabled warning icon with an unavailable tooltip until they are available again.
+
+These are native dockable/floating ToolbarOverlay instances, separate from the permanent Viewport Overlay camera/lighting icons. They participate in existing Display > Toolbars visibility, docking, modeling-mode hiding and saved layout restoration. Definitions are in Studio.CustomToolbars; positions/visibility remain in Studio.Toolbars, both through StudioPreferenceStore. Stable IDs survive renaming and contents edits; settings import/export includes custom toolbars, while hotkeys remain independent. Buttons resolve current context again immediately before execution and use the existing command callbacks/Undo/tool restrictions. No idle repaint loop or scene rebuild is added. Dynamic overlay registration uses a narrowly scoped Unity Overlay.Initialize metadata bridge, validated on Unity 6000.4.12f1; other native API versions are not claimed.
+
+Custom toolbar buttons are icon-only, with full function names in tooltips and icon previews beside searchable customization names. Unity built-in icons are preferred; existing Studio selection artwork is reused. Plane, Quad and Cylinder have distinct antialiased 24px silhouette icons, while Cube and Sphere use Unity artwork. Custom orientation dropdowns show only their icon/arrow and retain the current space in the tooltip; built-in orientation controls keep their labels. Icons share the existing cached 16/24px toolbar sizing and resource cleanup.
+
+Toolbar layout persistence: built-in and custom toolbar dock side, dock section/order, horizontal/vertical layout, floating position, collapsed/visible state and canvas visibility autosave to Studio.Toolbars in the active settings JSON. Names/function order remain in Studio.CustomToolbars in the same profile. Native docking/reordering and state events coalesce into one save after the native operation, so unchanged bounds do not prevent a save. Loading cancels pending saves and applies layouts without rewriting intermediate states. Window close flushes the current settings. No new preference or reset is required. Fresh-process restoration is verified on Unity 6000.4.12f1.
+
+Primitive creation menu catalogs reuse parsed vehicle-rule templates until the rules asset revision or project assets change. This avoids repeated SerializedObject rule traversal during toolbar/menu refresh without caching command execution context. Primitive preview-scene rebuilding remains unchanged; isolated timings do not establish the full reported working-scene delay is resolved.
+
+New custom toolbars append to the left-aligned section of the top dock. They never default to the right dock or right-aligned/trailing top section. Saved user positions remain authoritative; creating, renaming or changing contents does not relocate existing toolbars or reset their layout.
+
+Deleting a custom toolbar asks for confirmation with its name and Delete/Cancel buttons. Cancel leaves the toolbar and saved configuration unchanged.

@@ -43,10 +43,13 @@ namespace MashBoxSDK.AnimationStudio
                 if (new[] { "Griptape", "Axle", "HubDriver" }.Contains(created[path.Value].name)) meshSlots.Add(path.Value);
             if (template.maxRenderers >= 0) meshSlots = meshSlots.Take(template.maxRenderers).ToList();
             var owned = new List<Mesh>();
+            Material material = null;
             try
             {
-                var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
-                var material = pipeline ? pipeline.defaultMaterial : AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat");
+                var shader = AssetDatabase.LoadAssetAtPath<Shader>(AssetDatabase.GUIDToAssetPath("ef2f63690a486964faa40c2e3d756d1c"))
+                    ?? Shader.Find("MGShaders/HDRP/Lit/MG_Vehicle");
+                if (!shader) throw new InvalidOperationException("The vehicle shader is unavailable.");
+                material = new Material(shader) { name = "Vehicle Default" };
                 foreach (int index in meshSlots.Distinct())
                 {
                     var node = created[index];
@@ -64,7 +67,7 @@ namespace MashBoxSDK.AnimationStudio
                 // Meshes remain in memory until the user explicitly saves the workspace.
                 return root;
             }
-            catch { foreach (var mesh in owned) if (mesh) DestroyImmediate(mesh); throw; }
+            catch { foreach (var mesh in owned) if (mesh) DestroyImmediate(mesh); if (material) DestroyImmediate(material); throw; }
         }
     }
 }

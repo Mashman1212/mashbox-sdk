@@ -12,6 +12,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             internal string Text;
             internal string Shortcut;
+            internal string ToolbarKey;
             internal StudioShortcut? Command;
             internal bool ShortcutEligible;
             internal bool Checked, Enabled = true, Separator;
@@ -41,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (branch == null) { branch = new Item { Text = parts[i] }; level.Add(branch); }
                 level = branch.Children;
             }
-            level.Add(new Item { Text = parts[parts.Length - 1], Shortcut = shortcut, Command = command, ShortcutEligible = shortcutEligible, Checked = selected, Enabled = enabled, Action = action });
+            level.Add(new Item { Text = parts[parts.Length - 1], Shortcut = shortcut, Command = command, ShortcutEligible = shortcutEligible, ToolbarKey = commandCategory == null ? null : StudioModelCommands.ToolbarKey(commandCategory, labelPath, commandKey), Checked = selected, Enabled = enabled, Action = action });
         }
         internal void AddSeparator(string path)
         {

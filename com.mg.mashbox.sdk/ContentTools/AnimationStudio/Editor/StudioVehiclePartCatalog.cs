@@ -9,6 +9,13 @@ namespace MashBoxSDK.AnimationStudio
     internal static class StudioVehiclePartCatalog
     {
         private const string RulesGuid = "c7baf1b43fbb9564ea4bcc515370d9ad";
+        private static UnityEngine.Object cachedAsset;
+        private static int cachedRevision;
+        private static List<Template> cachedTemplates;
+        static StudioVehiclePartCatalog()
+        {
+            EditorApplication.projectChanged += () => cachedTemplates = null;
+        }
         internal sealed class Template
         {
             internal string vehicle, part, brand, color;
@@ -28,6 +35,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             var result = new List<Template>(); var asset = RulesAsset;
             if (!asset) return result;
+            int revision = EditorUtility.GetDirtyCount(asset);
+            if (cachedTemplates != null && cachedAsset == asset && cachedRevision == revision) return cachedTemplates;
             using (var data = new SerializedObject(asset))
             {
                 var pairs = data.FindProperty("AllowedPairs"); var rules = data.FindProperty("ItemRules");
@@ -84,7 +93,8 @@ namespace MashBoxSDK.AnimationStudio
                     }
                 }
             }
-            return result.OrderBy(t => t.vehicle, StringComparer.Ordinal).ThenBy(t => t.part, StringComparer.Ordinal).ThenBy(t => t.brand, StringComparer.Ordinal).ToList();
+            cachedAsset = asset; cachedRevision = revision;
+            return cachedTemplates = result.OrderBy(t => t.vehicle, StringComparer.Ordinal).ThenBy(t => t.part, StringComparer.Ordinal).ThenBy(t => t.brand, StringComparer.Ordinal).ToList();
         }
         private static string NormalizePath(string value) => (value ?? "").Trim().Replace('\\', '/').Trim('/');
         private static void AddPath(Template template, string value)

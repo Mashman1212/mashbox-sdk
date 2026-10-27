@@ -33,7 +33,7 @@ namespace MashBoxSDK.AnimationStudio
             preferredToolHeight = StudioPreferenceStore.GetFloat(ToolOptionsHeightKey, 220);
             if (!docked && !IsStudioMaximized) position = StudioPreferenceStore.GetBounds("Studio.Bounds", position);
             modelGridVisible = StudioPreferenceStore.GetFloat("Studio.GridVisible", 1) >= .5f;
-            RestoreStoredToolbars(); UpdatePanelLayout();
+            ReloadCustomToolbars(); RestoreStoredToolbars(); UpdatePanelLayout();
         }
         private const BindingFlags WindowMembers = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         private static readonly FieldInfo HostField = typeof(EditorWindow).GetField("m_Parent", WindowMembers);

@@ -8,6 +8,13 @@ namespace MashBoxSDK.AnimationStudio
     // Preview copies isolate source material assets and work in HDRP and built-in projects.
     internal sealed class StudioMeshMaterialPreview : IDisposable
     {
+        internal static Material CheckerMaterial =>
+            AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath("d2e73f08095e90e44bababe99ee53c76"))
+            ?? Resources.Load<Material>("MashBoxStudio_Checkerboard");
+        internal static Material DefaultMaterial =>
+            AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath("410de6c3c565a5b459045246f998f390"))
+            ?? Resources.Load<Material>("MashBoxStudio_Default")
+            ?? AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat");
         private readonly Dictionary<Material,Material> cache=new Dictionary<Material,Material>();
         internal Material[] Materials(Material[] sources,int count,Material fallback)
         {

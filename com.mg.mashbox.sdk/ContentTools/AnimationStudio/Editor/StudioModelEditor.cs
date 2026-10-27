@@ -60,6 +60,8 @@ namespace MashBoxSDK.AnimationStudio
             LoadDisplayConfiguration();
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
+            ObjectChangeEvents.changesPublished += OnMaterialAssetChanges;
+            EditorApplication.projectChanged += QueueMaterialPreviewRefresh;
         }
         internal void Load(StudioModelDocument document)
         {
@@ -221,6 +223,9 @@ namespace MashBoxSDK.AnimationStudio
             if(wireBatchMaterial)UnityEngine.Object.DestroyImmediate(wireBatchMaterial);
             if(componentEdgeStroke)UnityEngine.Object.DestroyImmediate(componentEdgeStroke);
             CancelMarkingMenu();
+            ObjectChangeEvents.changesPublished -= OnMaterialAssetChanges;
+            EditorApplication.projectChanged -= QueueMaterialPreviewRefresh;
+            EditorApplication.delayCall -= RefreshChangedMaterials;
             Undo.undoRedoEvent -= OnUndoEvent; EditorApplication.update -= Tick;
             if (Scene.IsValid()) EditorSceneManager.ClosePreviewScene(Scene);
             Document = null; Transforms = Array.Empty<Transform>(); Active = -1;

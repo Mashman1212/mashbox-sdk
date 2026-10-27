@@ -16,6 +16,7 @@ namespace MashBoxSDK.AnimationStudio
             StudioPreferenceStore.SetFloat("Model.ComponentAxes", componentAxes ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.Lighting", displayLighting ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.Textures", displayTextures ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.CheckerMap", checkerMap ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.XRay", displayXray ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.BackfaceCulling", backfaceCulling ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.WireframeOnly", wireframeOnly ? 1 : 0);
@@ -29,12 +30,20 @@ namespace MashBoxSDK.AnimationStudio
             componentAxes = local && StudioPreferenceStore.GetFloat("Model.ComponentAxes", 0) >= .5f;
             displayLighting = StudioPreferenceStore.GetFloat("Model.Lighting", 1) >= .5f;
             displayTextures = StudioPreferenceStore.GetFloat("Model.Textures", 1) >= .5f;
+            checkerMap = StudioPreferenceStore.GetFloat("Model.CheckerMap", 0) >= .5f;
             displayXray = StudioPreferenceStore.GetFloat("Model.XRay", 0) >= .5f;
             backfaceCulling = StudioPreferenceStore.GetFloat("Model.BackfaceCulling", 1) >= .5f;
             wireframeOnly = StudioPreferenceStore.GetFloat("Model.WireframeOnly", 0) >= .5f;
             ApplyDisplayMaterials();
         }
-        private bool displayLighting = true, displayTextures = true;
+        private bool displayLighting = true, displayTextures = true, checkerMap;
+        internal bool CheckerMap => checkerMap;
+        internal void SetCheckerMap(bool enabled)
+        {
+            if (checkerMap == enabled) return;
+            if (enabled && !StudioMeshMaterialPreview.CheckerMaterial) { error="MashBoxStudio_Checkerboard material is unavailable.";return; }
+            checkerMap=enabled;SaveDisplayConfiguration();ApplyDisplayMaterials();repaint();
+        }
         private bool displayXray;
         private bool backfaceCulling = true;
         internal bool BackfaceCulling => backfaceCulling;
@@ -137,7 +146,7 @@ namespace MashBoxSDK.AnimationStudio
             displayXray = enabled; SaveDisplayConfiguration(); ApplyDisplayMaterials(); repaint();
         }
         private readonly Dictionary<(Material source, int slice), Material> previewMaterials = new Dictionary<(Material source, int slice), Material>();
-        private Material neutralLit, neutralPreview;
+        private Material neutralPreview;
 
         private bool componentAxes;
         internal bool ToolbarComponentAxes => local && componentAxes;
@@ -185,33 +194,11 @@ namespace MashBoxSDK.AnimationStudio
         private static bool IsGodGrass(Material source) => source && source.HasProperty("_GrassBaseArray");
         private Material DisplayMaterial(Material source, int slice = 0)
         {
+            bool textures=displayTextures || checkerMap;
+            if (checkerMap) source=StudioMeshMaterialPreview.CheckerMaterial;
             // Editable geometry already contains its pose; terrain deformation must not run again.
-            if (!displayXray && !wireframeOnly && LightingSettings.studioLights && displayLighting && displayTextures && !IsGodGrass(source) && source) return CulledSourceMaterial(source);
-            if (!displayXray && !wireframeOnly && displayLighting && LightingSettings.studioLights && !displayTextures)
-            {
-                if (!neutralLit)
-                {
-                    var pipeline = GraphicsSettings.currentRenderPipeline;
-                    bool hdrp = pipeline && pipeline.GetType().Name.IndexOf("HDRenderPipeline", StringComparison.Ordinal) >= 0;
-                    var template = hdrp ? AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath("410de6c3c565a5b459045246f998f390")) : null;
-                    if (template)
-                        neutralLit = new Material(template) { parent=template, name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
-                    else
-                    {
-                        var shader = hdrp ? AssetDatabase.LoadAssetAtPath<Shader>(AssetDatabase.GUIDToAssetPath("409bba92b9fbb904cbfd7cf58b9531a6")) : null;
-                        if (shader)
-                            neutralLit = new Material(shader) { name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
-                        else
-                            neutralLit = new Material(pipeline ? pipeline.defaultMaterial : AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat")) { name="Studio Neutral", hideFlags=HideFlags.HideAndDontSave };
-                        foreach(var property in new[] {"_BaseColor","_Color"}) if(neutralLit.HasProperty(property)) neutralLit.SetColor(property,new Color(.65f,.65f,.65f));
-                        foreach(var property in new[] {"_Smoothness","_Glossiness","_Metallic"}) if(neutralLit.HasProperty(property)) neutralLit.SetFloat(property,0);
-                        foreach(var property in new[] {"_MetallicRemap","_SmoothnessRemap"}) if(neutralLit.HasProperty(property)) neutralLit.SetVector(property,Vector4.zero);
-                    }
-                    ConfigureDisplayCulling(neutralLit);
-                }
-                return neutralLit;
-            }
-            if (!displayTextures || !source)
+            if (!displayXray && !wireframeOnly && LightingSettings.studioLights && displayLighting && textures && !IsGodGrass(source) && source) return CulledSourceMaterial(source);
+            if (!textures || !source)
             {
                 if (!neutralPreview) neutralPreview = NewPreviewMaterial(null);
                 return neutralPreview;
@@ -233,9 +220,18 @@ namespace MashBoxSDK.AnimationStudio
             {
                 color = Color.white;
                 foreach(var property in new[] {"_BaseColor","_UnlitColor","_Color"})
-                    if(source.HasProperty(property)) { color=source.GetColor(property); break; }
-                foreach(var property in new[] {"_BaseColorMap","_BaseMap","_UnlitColorMap","_MainTex"})
-                    if(source.HasProperty(property) && source.GetTexture(property)) {
+                    if(source.HasColor(property)) { color=source.GetColor(property); break; }
+                // Vehicle tint alpha is not its surface alpha; the graph clips the base map.
+                if(source.shader && source.shader.name=="MGShaders/HDRP/Lit/MG_Vehicle") color.a=1;
+                if(source.HasFloat("_Checkerboard") && source.GetFloat("_Checkerboard")>=.5f && source.HasTexture("_CheckerboardMap"))
+                {
+                    color=Color.white;
+                    material.SetTexture("_MainTex",source.GetTexture("_CheckerboardMap"));
+                    material.SetTextureScale("_MainTex",source.GetTextureScale("_CheckerboardMap"));
+                    material.SetTextureOffset("_MainTex",source.GetTextureOffset("_CheckerboardMap"));
+                }
+                else foreach(var property in new[] {"_BaseColorMap","_BaseMap","_UnlitColorMap","_MainTex"})
+                    if(source.HasTexture(property) && source.GetTexture(property)) {
                         material.SetTexture("_MainTex",source.GetTexture(property));
                         material.SetTextureScale("_MainTex",source.GetTextureScale(property));
                         material.SetTextureOffset("_MainTex",source.GetTextureOffset(property)); break;
@@ -275,7 +271,6 @@ namespace MashBoxSDK.AnimationStudio
             culledSourceMaterials.Clear();
             foreach(var material in previewMaterials.Values) if(material) UnityEngine.Object.DestroyImmediate(material);
             previewMaterials.Clear();
-            if(neutralLit) UnityEngine.Object.DestroyImmediate(neutralLit);
             if(neutralPreview) UnityEngine.Object.DestroyImmediate(neutralPreview);
         }
     }

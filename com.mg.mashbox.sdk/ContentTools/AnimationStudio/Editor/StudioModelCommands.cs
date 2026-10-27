@@ -37,6 +37,7 @@ namespace MashBoxSDK.AnimationStudio
             if (key == "Mesh/UV Editor") return "UV/UV Editor";
             return key;
         }
+        internal static string ToolbarKey(string category, string label, string explicitKey) => Canonical(category, explicitKey ?? label);
         private static StudioShortcut Hash(string key)
         {
             unchecked

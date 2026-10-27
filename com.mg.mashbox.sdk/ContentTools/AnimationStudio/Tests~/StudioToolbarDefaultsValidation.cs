@@ -9,7 +9,7 @@ public static class StudioToolbarDefaultsValidation
  public static void Run(){EditorApplication.delayCall+=()=>{
   MashBoxStudioViewport view=null;string result;
   try{
-   view=ScriptableObject.CreateInstance<MashBoxStudioViewport>();view.Show();Call(view,"InitializeStudioToolbars");
+   AnimationStudioWindow.Open();var studio=Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode",F).Invoke(studio,new object[]{true});view=Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(x=>x.Studio==studio);Call(view,"InitializeStudioToolbars");
    var bars=view.overlayCanvas.overlays.Where(o=>o is ToolbarOverlay&&o.GetType().Assembly==typeof(MashBoxStudioViewport).Assembly).ToArray();Check(bars.Length>=5,"Missing registered Studio toolbars");
    var registry=(List<Overlay>)typeof(MashBoxStudioViewport).GetField("studioToolbarOverlays",F).GetValue(view);
    registry.Clear();Set(view,"restoredStoredToolbars",false);StudioPreferenceStore.DeleteKey("Studio.Toolbars");Call(view,"RestoreStoredToolbars");Check(!(bool)typeof(MashBoxStudioViewport).GetField("restoredStoredToolbars",F).GetValue(view),"Empty registry incorrectly completed restoration");

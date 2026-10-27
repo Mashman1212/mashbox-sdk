@@ -40,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             // Window preferences can restore before native overlays are registered.
             if (studioToolbarOverlays.Count == 0) return;
+            CancelStoredToolbarSave();
             restoringStoredToolbars = true;
             try
             {
@@ -62,6 +63,12 @@ namespace MashBoxSDK.AnimationStudio
                         {
                             overlayCanvas.RestoreOverlay(overlay, item.state);
                         }
+                // Newly introduced toolbars have no Studio placement yet. Append
+                // them at the leading top dock without disturbing saved toolbars.
+                foreach (var overlay in studioToolbarOverlays)
+                    if ((overlay is StudioMeshToolsToolbar || overlay is StudioMeshDisplayToolbar) &&
+                        !saved.items.Exists(item => item.id == overlay.id))
+                        overlayCanvas.RestoreOverlay(overlay, JsonUtility.FromJson<SaveData>("{\"containerId\":\"overlay-toolbar__top\",\"dockPosition\":0,\"index\":1000,\"displayed\":true,\"layout\":1}"));
                 overlayCanvas.overlaysEnabled = saved.enabled;
             }
             catch (ArgumentException ex) { Debug.LogWarning("MashBox Studio could not restore toolbar layout: " + ex.Message); }
@@ -83,6 +90,8 @@ namespace MashBoxSDK.AnimationStudio
 
         private void InitializeStudioToolbars()
         {
+            UnbindStoredToolbarEvents();
+            SyncCustomToolbarDefinitions();
             if (studioOverlayRoot == null)
             {
                 studioOverlayRoot = NativeCanvasRoot?.GetValue(overlayCanvas) as VisualElement;
@@ -106,6 +115,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 if (!(overlay is ToolbarOverlay)) continue;
                 studioToolbarOverlays.Add(overlay);
+                if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) BindStoredToolbarEvents(overlay);
                 overlay.rootVisualElement.UnregisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
                 overlay.rootVisualElement.RegisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);
                 StyleStudioToolbar(overlay.rootVisualElement);
@@ -170,7 +180,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnStudioToolbarGeometry(GeometryChangedEvent evt)
         {
-            SaveStoredToolbars();
+            QueueStoredToolbarSave();
             if (evt.currentTarget is VisualElement root) StyleStudioToolbar(root);
             UpdatePanelLayout();
         }
@@ -251,6 +261,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void AddStudioToolbarMenu(StudioMenu menu)
         {
+            menu.AddItem(new GUIContent("Toolbars/Customize Toolbars…"), false, () => StudioToolbarCustomization.Open(this), commandKey: "Toolbars/Customize", shortcutEligible: false);
+            menu.AddSeparator("Toolbars");
             // Unity's canvas is the registry. Query it when opening the menu so
             // restored, hidden and newly registered toolbars are included too.
             var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -301,7 +313,7 @@ namespace MashBoxSDK.AnimationStudio
             int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.Wireframe ? 16 : 0) |
-                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0) | (editor.ToolbarComponentAxes ? 262144 : 0);
+                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0) | (editor.ToolbarComponentAxes ? 262144 : 0) | (editor.CheckerMap ? 524288 : 0);
             // Track selection identity without reading skin bind-pose arrays on
             // every dirty redraw. Controls validate component editing on refresh.
             var mesh = editor?.ActiveMesh;
@@ -314,6 +326,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ReleaseStudioToolbars()
         {
+            CancelStoredToolbarSave();
+            UnbindStoredToolbarEvents();
             foreach (var overlay in studioToolbarOverlays)
             {
                 overlay.rootVisualElement.UnregisterCallback<GeometryChangedEvent>(OnStudioToolbarGeometry);

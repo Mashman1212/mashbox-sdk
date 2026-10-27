@@ -108,7 +108,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!source)return;
             bool grass=IsGodGrass(source);
-            float Get(string property,float fallback) => source.HasProperty(property)?source.GetFloat(property):fallback;
+            float Get(string property,float fallback) => source.HasFloat(property)?source.GetFloat(property):fallback;
             bool arrays=grass && Get("_GrassUseArrays",0)>.5f && source.GetTexture("_GrassBaseArray") is Texture2DArray;
             if(arrays)
             {
@@ -134,7 +134,7 @@ namespace MashBoxSDK.AnimationStudio
             if(arrays && source.GetTexture("_GrassNormalArray") is Texture2DArray normals)
             { preview.SetTexture("_NormalArray",normals);preview.SetFloat("_UseNormal",2); }
             else foreach(string name in new[]{"_NormalMap","_BumpMap","Texture2D_364700D4"})
-                if(source.HasProperty(name)&&source.GetTexture(name) is Texture2D normal)
+                if(source.HasTexture(name)&&source.GetTexture(name) is Texture2D normal)
                 { preview.SetTexture("_NormalTex",normal);preview.SetFloat("_UseNormal",1);break; }
         }
     }
