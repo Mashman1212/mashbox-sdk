@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed class StudioSkinningDocument : ScriptableObject
     {
-        public enum MeshRole { Clothing, Bust, Body }
+        public enum MeshRole { Clothing, Bust, Body, Headgear }
         [Serializable] public sealed class StitchWeights
         {
             public int vertex;

@@ -45,7 +45,7 @@ namespace MashBoxSDK.AnimationStudio
         private void TransferBodySkin()
         {
             EndStroke();
-            if (Part == null || IsReferencePart) return;
+            if (Part == null || IsReferencePart || Part.role == StudioSkinningDocument.MeshRole.Headgear) return;
             // Freeze the displayed pose without resampling or changing the timeline.
             // Body transfer and the new bind matrices must use the same pose.
             PausePreviewAnimation();

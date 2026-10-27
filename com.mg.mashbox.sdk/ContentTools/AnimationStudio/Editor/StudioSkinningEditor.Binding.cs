@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioSkinningEditor
     {
         internal bool HasEditableMesh => Part != null && !Part.referenceOnly;
-        internal bool CanSkinSelected => HasEditableMesh && !Part.bound;
+        internal bool CanSkinSelected => HasEditableMesh && Part.role != StudioSkinningDocument.MeshRole.Headgear && !Part.bound;
         internal bool CanUnskinSelected => HasEditableMesh && Part.bound;
         internal void SkinSelected()
         {
@@ -36,6 +36,8 @@ namespace MashBoxSDK.AnimationStudio
             if (HasEditableMesh) SetMeshRole(Part,bust ? StudioSkinningDocument.MeshRole.Bust : StudioSkinningDocument.MeshRole.Clothing);
         }
         internal bool SelectedIsBust => HasEditableMesh && Part.role == StudioSkinningDocument.MeshRole.Bust;
+        internal bool SelectedIsHeadgear => HasEditableMesh && Part.role == StudioSkinningDocument.MeshRole.Headgear;
+        internal void MarkSelectedHeadgear() { if (HasEditableMesh) SetMeshRole(Part,StudioSkinningDocument.MeshRole.Headgear); }
         internal bool SelectedIsBody => HasEditableMesh && Part.role == StudioSkinningDocument.MeshRole.Body;
         internal void MarkSelectedBody()
         { if (HasEditableMesh) SetMeshRole(Part,StudioSkinningDocument.MeshRole.Body); }

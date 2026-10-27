@@ -8,10 +8,12 @@ namespace MashBoxSDK.AnimationStudio
     {
         private int objectUndoGroup = -1;
         private bool objectScale;
+        private Vector3 headgearMoveHandleOffset;
         private Vector3 objectScaleHandle = Vector3.one;
         private void FinishObjectGesture()
         {
             objectScaleHandle = Vector3.one;
+            headgearMoveHandleOffset = Vector3.zero;
             if (objectUndoGroup < 0) return;
             Undo.CollapseUndoOperations(objectUndoGroup);
             objectUndoGroup = -1;
@@ -43,13 +45,18 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.Label(part.mesh.bounds.center, "Press W to move this skinned mesh. Unskin before rotating or scaling.");
                 return;
             }
+            if(part.role == StudioSkinningDocument.MeshRole.Headgear)
+                Handles.Label(HeadgearPivot,"Head pivot locked — object edits change the mesh around the Head attachment");
             var e = Event.current;
             if(part.bound && cachedPart!=Document.selected)RefreshSurface();
-            var pivot = part.mesh.bounds.center;
+            bool headgear = part.role == StudioSkinningDocument.MeshRole.Headgear;
+            var headPose = headgear ? HeadgearPreviewMatrix : Matrix4x4.identity;
+            var pivot = headgear ? HeadgearPivot + (poseTranslate && !objectScale ? headgearMoveHandleOffset : Vector3.zero) : part.mesh.bounds.center;
             if(part.bound && deformed.Length>0)
             { var bounds=new Bounds(deformed[0],Vector3.zero);foreach(var point in deformed)bounds.Encapsulate(point);pivot=bounds.center; }
             var rotation = part.objectRotation;
             if (rotation == new Quaternion(0,0,0,0)) rotation = Quaternion.identity;
+            if(headgear) rotation = headPose.rotation * rotation;
             EditorGUI.BeginChangeCheck();
             var position = pivot;
             var nextRotation = rotation;
@@ -83,8 +90,12 @@ namespace MashBoxSDK.AnimationStudio
                 // Bake into editable geometry: preview rebuilds, binding and FBX export
                 // all use this same mesh. Source transforms remain export provenance.
                 if(part.bound) TranslateBoundMesh(part.mesh,position-pivot);
-                else StudioSkinningDocument.TransformGeometry(part.mesh, delta);
-                part.objectRotation = nextRotation;
+                else
+                {
+                    StudioSkinningDocument.TransformGeometry(part.mesh,headgear ? headPose.inverse * delta * headPose : delta);
+                    if(headgear && poseTranslate && !objectScale) headgearMoveHandleOffset += position-pivot;
+                }
+                part.objectRotation = headgear ? Quaternion.Inverse(headPose.rotation) * nextRotation : nextRotation;
                 Rebuild(); Changed(); RecordSkinTutorialAction("transform");
             }
             if (e.rawType == EventType.MouseUp || e.type == EventType.Ignore)

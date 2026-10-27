@@ -23,6 +23,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SaveSelectedFbx()
         {
+            if(Part != null && Part.role == StudioSkinningDocument.MeshRole.Headgear) { SaveHeadgearFbxAs(); return; }
             if(HasTutorial){SaveSelectedFbxAs();return;}
             if (!StudioFbxDependency.Require()) return;
             EndStroke();
@@ -68,6 +69,7 @@ namespace MashBoxSDK.AnimationStudio
 #endif
         internal void SaveSelectedFbxAs()
         {
+            if(Part != null && Part.role == StudioSkinningDocument.MeshRole.Headgear) { SaveHeadgearFbxAs(); return; }
             if (!StudioFbxDependency.Require()) return;
             EndStroke();
             if (!CanUnskinSelected) throw new InvalidOperationException("Select a skinned editable mesh first.");

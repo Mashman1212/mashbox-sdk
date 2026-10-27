@@ -275,7 +275,10 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (part.referenceOnly) return;
             EndStroke(); Undo.RegisterCompleteObjectUndo(Document,"Set skinning mesh role");
-            part.role=role; Changed();
+            part.role=role;
+            if (role == StudioSkinningDocument.MeshRole.Headgear)
+            { Undo.RegisterCompleteObjectUndo(part.mesh,"Make headgear rigid"); MakeHeadgearRigid(part); Rebuild(); ChooseBrush(Brush.Object); }
+            Changed();
         }
 
         internal void StitchBust()
