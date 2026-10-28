@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         // Fit four boundary chains, then use the same transfinite rows/columns
         // as Draw Patch. Extra clicks shape the sides instead of seeding fans.
-        private static bool TryBuildPolygonLayout(Vector3[] points,float target,int divisions,Vector3 normal,out Part result)
+        private static bool TryBuildPolygonLayout(Vector3[] points,float target,int divisions,Vector3 normal,out Part result,bool[] fixedEdges=null,int[] layoutCorners=null)
         {
             result=null;
             if(points.Length<4)return false;
@@ -38,7 +38,9 @@ namespace MashBoxSDK.AnimationStudio
                 while(index<count-1&&distance>lengths[index]){distance-=lengths[index];index++;}
                 candidates.Add(index);
             }
-            var choices=candidates.OrderBy(i=>i).ToArray();
+            if(fixedEdges!=null)
+                for(int i=0;i<count;i++)if(fixedEdges[i]!=fixedEdges[(i+count-1)%count])candidates.Add(i);
+            var choices=layoutCorners??candidates.OrderByDescending(Turn).Take(24).OrderBy(i=>i).ToArray();
             var sideCosts=new Dictionary<(int,int),float>();
             float SideCost(int a,int b)
             {
@@ -77,13 +79,30 @@ namespace MashBoxSDK.AnimationStudio
                 int rows=Mathf.Clamp(target>0?Mathf.CeilToInt((arcs[1]+arcs[3])/(2*target)):divisions,1,96);
                 columns=Mathf.Max(columns,Mathf.Max(sides[0].Length,sides[2].Length)-1);
                 rows=Mathf.Max(rows,Mathf.Max(sides[1].Length,sides[3].Length)-1);
+                int Locked(int side)=>fixedEdges!=null&&sides[side].Take(sides[side].Length-1).All(i=>fixedEdges[i])?sides[side].Length-1:0;
+                int bottomCount=Locked(0),rightCount=Locked(1),topCount=Locked(2),leftCount=Locked(3);
+                if(bottomCount>0&&topCount>0&&bottomCount!=topCount||leftCount>0&&rightCount>0&&leftCount!=rightCount)continue;
+                if(bottomCount>0||topCount>0)columns=Mathf.Max(bottomCount,topCount);
+                if(leftCount>0||rightCount>0)rows=Mathf.Max(leftCount,rightCount);
+                if(columns<Mathf.Max(sides[0].Length,sides[2].Length)-1||rows<Mathf.Max(sides[1].Length,sides[3].Length)-1)continue;
                 if(columns>96||rows>96)continue;
                 // Give each clicked segment at least one interval, distributing
                 // the rest by length. Every outline click remains an exact vertex.
                 Vector3[] Sample(int side,int intervals,out int[] original)
                 {
                     var ids=sides[side];var positions=new int[ids.Length];float arc=0;
-                    for(int i=1;i<ids.Length-1;i++)
+                    if(fixedEdges!=null)
+                    {
+                        var segments=Enumerable.Repeat(1,ids.Length-1).ToArray();
+                        int extra=intervals-segments.Length;
+                        var free=Enumerable.Range(0,segments.Length).Where(i=>!fixedEdges[ids[i]]).ToArray();
+                        float freeLength=free.Sum(i=>lengths[ids[i]]);
+                        int assigned=0;
+                        foreach(int i in free){int added=Mathf.FloorToInt(extra*lengths[ids[i]]/freeLength);segments[i]+=added;assigned+=added;}
+                        foreach(int i in free.OrderByDescending(i=>extra*lengths[ids[i]]/freeLength-Mathf.Floor(extra*lengths[ids[i]]/freeLength)).Take(extra-assigned))segments[i]++;
+                        for(int i=1;i<ids.Length;i++)positions[i]=positions[i-1]+segments[i-1];
+                    }
+                    else for(int i=1;i<ids.Length-1;i++)
                     {
                         arc+=lengths[ids[i-1]];
                         positions[i]=Mathf.Clamp(Mathf.RoundToInt(arc/arcs[side]*intervals),positions[i-1]+1,intervals-(ids.Length-1-i));

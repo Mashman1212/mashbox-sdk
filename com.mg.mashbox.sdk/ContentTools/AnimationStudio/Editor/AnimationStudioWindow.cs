@@ -342,7 +342,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UndoRedo()
         {
-            if (clothMode) { StopClothSession(); viewport?.Repaint(); return; }
+            if (clothMode) { EndClothStroke(); RefreshClothPickMesh(); viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene); return; }
             if (skinningMode || retopologyMode) return; // Skinning owns mesh/document Undo and preview rebuilding.
             if (RestoreUnkeyedPoseUndo()) return;
             sceneDraft = false;

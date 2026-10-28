@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioRetopologyEditor
     {
         private float relaxRadius=64,relaxStrength=.5f;
-        private bool relaxBorders=true,relaxStroke;
+        private bool relaxBorders=true,relaxStroke,relaxQuadCleanup;
         private int relaxControl,relaxUndo;
         private Vector2 relaxLast;
         private void StartRelaxBrush(){activeTool=RetopoTool.RelaxBrush;ClearPatchCorners();repaint();}
@@ -22,10 +22,11 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(activeTool!=RetopoTool.RelaxBrush)return;
             GUILayout.Space(6);GUILayout.Label("RELAX BRUSH",StudioTheme.Styles.boldLabel);
+            relaxQuadCleanup=EditorGUILayout.Popup("Mode",relaxQuadCleanup?1:0,new[]{"Relax","Quad Cleanup"})==1;
             relaxRadius=EditorGUILayout.Slider("Radius (px)",relaxRadius,12,200);
             relaxStrength=EditorGUILayout.Slider("Strength",relaxStrength,0,1);
             relaxBorders=EditorGUILayout.Toggle("Protect open borders",relaxBorders);
-            GUILayout.Label("Drag to even out edge spacing. Ctrl + MMB drag: sideways radius, up/down strength. [ / ] adjusts radius. Surface snapping keeps new positions fitted to the reference. One Undo per stroke; Escape cancels. Face connectivity and vertex count stay unchanged.",StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Drag to even out edge spacing. Ctrl + MMB drag: sideways radius, up/down strength. [ / ] adjusts radius. Surface snapping keeps new positions fitted to the reference. One Undo per stroke; Escape cancels. Relax preserves connectivity. Quad Cleanup pairs triangles and improves quad edges inside the brush, protecting the region boundary and authored UV faces.",StudioTheme.Styles.wordWrappedMiniLabel);
         }
         private void RelaxDab(Vector2 mouse)
         {
@@ -38,9 +39,15 @@ namespace MashBoxSDK.AnimationStudio
                 float t=1-Mathf.Clamp01((HandleUtility.WorldToGUIPoint(Active.vertices[i])-mouse).magnitude/relaxRadius);
                 if(t>0)weights[i]=t*t*(3-2*t);
             }
+            var region=new HashSet<int>(resolutionFaces);
             resolutionFaces.Clear();if(weights.Count==0)return;
             // Change supplies rollback on errors; all dabs collapse into the stroke's Undo group.
-            Change("Relax topology brush",()=>StudioRetopologyRelaxBrush.Apply(Active,weights,relaxStrength,relaxBorders,Document.project?Surface:null,Document.offset));
+            ChangeCore(relaxQuadCleanup?"Quad cleanup brush":"Relax topology brush",()=>
+            {
+                int changes=relaxQuadCleanup?StudioRetopologyQuadCleanup.Apply(Active,region,weights):0;
+                StudioRetopologyRelaxBrush.Apply(Active,weights,relaxStrength,relaxBorders,Document.project?Surface:null,Document.offset);
+                if(relaxQuadCleanup)status=$"Quad cleanup: {changes} connectivity improvements; region boundary preserved.";
+            },relaxQuadCleanup);
         }
         private bool HandleRelaxBrush(Event evt,MashBoxStudioViewport canvas,bool overUI)
         {
@@ -72,7 +79,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(evt.type==EventType.Repaint)
                 {
                     var color=Handles.color;Handles.BeginGUI();
-                    try{Handles.color=Active.showOutput&&PickFace(evt.mousePosition)>=0?new Color(.5f,1,.87f):StudioBrushCursor.Inactive;Handles.DrawWireDisc(evt.mousePosition,Vector3.forward,relaxRadius);GUI.Label(new Rect(evt.mousePosition.x+16,evt.mousePosition.y+16,160,20),$"Relax  {relaxStrength:P0}",EditorStyles.whiteMiniLabel);}
+                    try{Handles.color=Active.showOutput&&PickFace(evt.mousePosition)>=0?new Color(.5f,1,.87f):StudioBrushCursor.Inactive;Handles.DrawWireDisc(evt.mousePosition,Vector3.forward,relaxRadius);GUI.Label(new Rect(evt.mousePosition.x+16,evt.mousePosition.y+16,160,20),$"{(relaxQuadCleanup?"Quad Cleanup":"Relax")}  {relaxStrength:P0}",EditorStyles.whiteMiniLabel);}
                     finally{Handles.EndGUI();Handles.color=color;}
                 }
             }

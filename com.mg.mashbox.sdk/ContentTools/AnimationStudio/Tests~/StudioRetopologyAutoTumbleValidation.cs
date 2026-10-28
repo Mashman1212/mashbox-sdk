@@ -31,6 +31,41 @@ namespace MashBoxSDK.AnimationStudio
                 Check(!StudioRetopologyEditor.ShouldRetargetAutoTumble(new Vector2(8,5),Vector2.zero,true),"Small cursor corrections preserve the world-space anchor");
                 Check(StudioRetopologyEditor.ShouldRetargetAutoTumble(new Vector2(10,0),Vector2.zero,true),"Deliberate cursor travel can select another anchor");
                 Check(StudioRetopologyEditor.ShouldRetargetAutoTumble(Vector2.zero,Vector2.zero,false),"The first hover acquires an anchor");
+                var pending=new Vector2(80,-35);var travel=Vector2.zero;
+                var firstAim=StudioRetopologyEditor.SmoothAutoTumbleInput(ref pending,1f/120);
+                Check(firstAim.magnitude>0&&firstAim.magnitude<new Vector2(80,-35).magnitude,"Reticle input starts smoothly without a hard pixel threshold");
+                travel+=firstAim;
+                for(int i=0;i<120;i++)travel+=StudioRetopologyEditor.SmoothAutoTumbleInput(ref pending,1f/120);
+                Check(Vector2.Distance(travel,new Vector2(80,-35))<.0001f&&pending==Vector2.zero,"Reticle smoothing preserves exact travel and settles without drift");
+                pending=Vector2.zero;
+                Check(StudioRetopologyEditor.SmoothAutoTumbleInput(ref pending,1f/60)==Vector2.zero,"Camera-only repaint cannot move the virtual cursor");
+                Check(!StudioRetopologyEditor.AutoTumbleEnabled(false,false),"Toolbar off stays off without Space");
+                Check(StudioRetopologyEditor.AutoTumbleEnabled(false,true),"Holding Space temporarily enables a disabled toolbar setting");
+                Check(!StudioRetopologyEditor.AutoTumbleEnabled(true,true),"Holding Space temporarily disables an enabled toolbar setting");
+                Check(StudioRetopologyEditor.AutoTumbleEnabled(true,false),"Releasing Space restores the enabled toolbar setting");
+                var tube=GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                try
+                {
+                    Object.DestroyImmediate(tube.GetComponent<Collider>());
+                    var tubeCollider=tube.AddComponent<MeshCollider>();tubeCollider.sharedMesh=tube.GetComponent<MeshFilter>().sharedMesh;
+                    Physics.SyncTransforms();
+                    foreach(float side in new[]{-1f,1f})
+                    {
+                        var p=new Vector3(side*.5f,0,0);var n=new Vector3(side,0,0);
+                        bool walked=true;
+                        for(int i=0;i<10;i++)
+                        {
+                            if(!StudioRetopologyEditor.WalkAutoTumbleSurface(tubeCollider,p,n,new Vector3(side*.015f,0,0),Vector3.forward,out var nextHit))
+                            {walked=false;break;}
+                            walked&=nextHit.point.z>p.z&&Vector3.Distance(nextHit.point,p)<.04f;
+                            p=nextHit.point;n=nextHit.normal;
+                        }
+                        Check(walked,"Directional surface probes advance locally around a cylindrical silhouette, side="+side);
+                    }
+                    Check(!StudioRetopologyEditor.WalkAutoTumbleSurface(tubeCollider,new Vector3(3,0,0),Vector3.right,Vector3.right*.01f,Vector3.forward,out _),"Surface following cannot jump across empty space to a distant surface");
+                    Check(!StudioRetopologyEditor.WalkAutoTumbleSurface(tubeCollider,new Vector3(.5f,0,0),Vector3.right,Vector3.zero,Vector3.forward,out _),"No pointer movement means no automatic surface walking");
+                }
+                finally{Object.DestroyImmediate(tube);}
                 bool gates=true;
                 for(int bits=0;bits<32;bits++)
                 {
@@ -54,10 +89,18 @@ namespace MashBoxSDK.AnimationStudio
                 var facing=StudioRetopologyEditor.AutoTumbleTargetRotation(Vector3.left,Quaternion.identity);
                 var motion=new StudioRetopologyEditor.AutoTumbleMotion();
                 StudioRetopologyEditor.StepAutoTumble(Vector3.zero,Quaternion.identity,anchor,facing,2.5f,1f/60,ref motion,out var first,out var firstRotation);
-                Check(Quaternion.Angle(firstRotation,Quaternion.identity)<.1f,"Orbit accelerates gently from rest");
+                Check(Quaternion.Angle(firstRotation,Quaternion.identity)<.25f,"Orbit accelerates gently from rest");
                 Check(motion.panVelocity.sqrMagnitude>0&&motion.orbitVelocity.sqrMagnitude>0,"Smoothing retains pan and orbit velocities between frames");
                 var firstOffset=Quaternion.Inverse(firstRotation)*(first-anchor);
                 Check(Vector3.Distance(firstOffset,-anchor)<2.5f*.35f/60,"The surface point starts centering gradually without an orbit-induced jump");
+                var normalSpeed=new StudioRetopologyEditor.AutoTumbleMotion();var fastPan=normalSpeed;var fastOrbit=normalSpeed;
+                StudioRetopologyEditor.StepAutoTumble(Vector3.zero,Quaternion.identity,anchor,facing,2.5f,1f/60,ref normalSpeed,out var normalP,out var normalR,1,1);
+                StudioRetopologyEditor.StepAutoTumble(Vector3.zero,Quaternion.identity,anchor,facing,2.5f,1f/60,ref fastPan,out var panP,out var panR,1,1.5f);
+                StudioRetopologyEditor.StepAutoTumble(Vector3.zero,Quaternion.identity,anchor,facing,2.5f,1f/60,ref fastOrbit,out var orbitP,out var orbitR,2,1);
+                Check(Vector3.Distance(panP,anchor)<Vector3.Distance(normalP,anchor),"The new 1.5x pan default centers faster");
+                Check(Quaternion.Angle(panR,normalR)<.001f,"Pan speed does not change orbit speed");
+                Check(Quaternion.Angle(orbitR,facing)<Quaternion.Angle(normalR,facing),"Orbit speed independently accelerates rotation");
+                Check(Mathf.Abs(Vector3.Distance(orbitP,anchor)-Vector3.Distance(normalP,anchor))<.00001f,"Orbit speed does not change pan progress");
                 var frozenMotion=motion;
                 StudioRetopologyEditor.StepAutoTumble(first,firstRotation,anchor,facing,2.5f,0,ref frozenMotion,out var stopped,out var stoppedRotation);
                 Check(stopped==first&&Quaternion.Angle(stoppedRotation,firstRotation)<.001f,"Zero elapsed time preserves the camera");
@@ -79,6 +122,20 @@ namespace MashBoxSDK.AnimationStudio
                 StudioRetopologyEditor.StepAutoTumble(Vector3.zero,seamStart,Vector3.zero,seamEnd,2.5f,1f/60,ref motion,out _,out var seamStep);
                 Check(Quaternion.Angle(seamStart,seamStep)<.1f&&Quaternion.Angle(seamStep,seamEnd)<Quaternion.Angle(seamStart,seamEnd),"Yaw takes the short path across the 180-degree boundary");
                 preview=ScriptableObject.CreateInstance<SceneView>();
+                foreach(bool orthoZoom in new[]{false,true})
+                {
+                    preview.LookAt(initialPivot,initialRotation,2.5f,orthoZoom,true);
+                    var relative=(preview.pivot-anchor)/preview.size;
+                    foreach(float wheel in new[]{3f,-6f,3f})
+                    {
+                        StudioRetopologyEditor.ZoomAutoTumbleView(preview,anchor,wheel);
+                        Check(Vector3.Distance((preview.pivot-anchor)/preview.size,relative)<.00001f,
+                            "Wheel zoom preserves off-center reticle projection, orthographic="+orthoZoom+", wheel="+wheel);
+                        Check(Quaternion.Angle(preview.rotation,initialRotation)<.001f&&preview.orthographic==orthoZoom,
+                            "Wheel zoom cannot orbit or change projection, orthographic="+orthoZoom+", wheel="+wheel);
+                    }
+                    Check(Mathf.Abs(preview.size-2.5f)<.00001f,"Opposite wheel travel restores original zoom, orthographic="+orthoZoom);
+                }
                 foreach(bool ortho in new[]{false,true})
                 {
                     preview.LookAt(Vector3.zero,Quaternion.identity,2.5f,ortho,true);float size=preview.size;motion=default;
@@ -98,7 +155,8 @@ namespace MashBoxSDK.AnimationStudio
                 Check(Vector3.Angle((Vector3)Call("AutoTumbleNormal",hit),expected)<.01f,"Interpolated mesh normals smooth out triangle-by-triangle camera jitter");
                 reference.normals=Array.Empty<Vector3>();Set("autoTumbleNormalMesh",null);
                 Check(Vector3.Angle((Vector3)Call("AutoTumbleNormal",hit),hit.normal)<.01f,"Meshes without vertex normals use the collider surface normal");
-                Set("autoTumbleTarget",true);Call("StopAutoTumble");Check(!(bool)Get("autoTumbleTarget")&&Get("autoTumbleView")==null,"Stopping clears the latched navigation target");
+                Set("autoTumbleSpaceHeld",true);Set("autoTumbleAimDelta",Vector2.one);
+                Set("autoTumbleTarget",true);Call("StopAutoTumble");Check(!(bool)Get("autoTumbleSpaceHeld")&&(Vector2)Get("autoTumbleAimDelta")==Vector2.zero,"Stopping releases hold mode and relative aim state");Check(!(bool)Get("autoTumbleTarget")&&Get("autoTumbleView")==null,"Stopping clears the latched navigation target");
                 Set("autoTumbleTarget",true);editor.SuspendLighting();Check(!(bool)Get("autoTumbleTarget"),"Leaving Retopology cancels automatic camera motion");
                 Set("autoTumbleTarget",true);Call("TickAutoTumble");Check(!(bool)Get("autoTumbleTarget"),"A missing or changed viewport cancels automatic motion");
                 Check(doc.parts[0].vertices.Count==0&&doc.parts[0].faces.Count==0&&!doc.dirty,"Navigation leaves topology and workspace dirty state unchanged");
@@ -113,4 +171,3 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
-

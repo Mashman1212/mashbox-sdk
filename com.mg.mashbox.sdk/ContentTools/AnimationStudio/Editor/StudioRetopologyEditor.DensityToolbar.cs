@@ -17,9 +17,9 @@ namespace MashBoxSDK.AnimationStudio
             FinishDensityUndo();
             if(activeTool==RetopoTool.Select)
             {
-                DrawBridgeBands();return;
+                DrawBridgeBands();DrawAutoTumbleSpeedRow();return;
             }
-            if(activeTool!=RetopoTool.Patch&&activeTool!=RetopoTool.Polygon&&activeTool!=RetopoTool.Tube)return;
+            if(activeTool!=RetopoTool.Patch&&activeTool!=RetopoTool.Polygon&&activeTool!=RetopoTool.Tube){DrawAutoTumbleSpeedRow();return;}
             GUILayout.Space(4);
             using(new GUILayout.HorizontalScope())
             using(new EditorGUI.DisabledScope(Active==null||!Active.reference))
@@ -64,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
                         Run(UpdateLastPatchDensity);
                     ObserveTutorialSettings();repaint();
                 }
+                DrawAutoTumbleSpeedControls();
                 if(activeTool==RetopoTool.Tube)
                 {
                     GUILayout.Space(10);
@@ -84,6 +85,37 @@ namespace MashBoxSDK.AnimationStudio
                     GUILayout.Label("Outline: "+corners.Count+" points · Enter: create quad patch",StudioTheme.Styles.miniLabel,GUILayout.Height(24));
                 }
                 GUILayout.FlexibleSpace();
+            }
+        }
+
+        private void DrawAutoTumbleSpeedRow()
+        {
+            if(!autoTumble&&!AutoTumbleActive)return;
+            GUILayout.Space(4);
+            using(new GUILayout.HorizontalScope()){DrawAutoTumbleSpeedControls();GUILayout.FlexibleSpace();}
+        }
+
+        private void DrawAutoTumbleSpeedControls()
+        {
+            // Keep controls available while Space temporarily suspends an
+            // enabled toolbar mode, so the cursor can reach these sliders.
+            if(!autoTumble&&!AutoTumbleActive)return;
+            GUILayout.Space(12);
+            float Slider(string label,string tooltip,float value)
+            {
+                GUILayout.Label(new GUIContent(label,tooltip),StudioTheme.Styles.miniLabel,GUILayout.Width(72),GUILayout.Height(24));
+                var rect=GUILayoutUtility.GetRect(135,24,GUILayout.Width(135),GUILayout.Height(24));rect.y+=4;rect.height=18;
+                return EditorGUI.Slider(rect,value,.25f,4f);
+            }
+            EditorGUI.BeginChangeCheck();
+            autoTumbleOrbitSpeed=Slider("Orbit speed","Orbit speed multiplier. 1 is the standard orbit speed.",autoTumbleOrbitSpeed);
+            GUILayout.Space(8);
+            autoTumblePanSpeed=Slider("Pan speed","Pan speed multiplier. Default: 1.5 for faster centering.",autoTumblePanSpeed);
+            if(EditorGUI.EndChangeCheck())
+            {
+                EditorPrefs.SetFloat("MashBox.Retopology.AutoTumble.OrbitSpeed",autoTumbleOrbitSpeed);
+                EditorPrefs.SetFloat("MashBox.Retopology.AutoTumble.PanSpeed",autoTumblePanSpeed);
+                repaint();
             }
         }
     }

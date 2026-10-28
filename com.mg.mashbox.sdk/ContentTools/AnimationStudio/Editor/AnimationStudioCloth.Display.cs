@@ -48,7 +48,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int count = Mathf.Max(1, clothMeshRows[i].sourceMesh.subMeshCount);
                 var assigned = ClothAssignedMaterials(i);
-                var materials = Enumerable.Range(0, count).Select(slot => clothTextured && !clothMeshRows[i].referenceOnly &&
+                var materials = Enumerable.Range(0, count).Select(slot => clothTextured &&
                     assigned != null && slot < assigned.Length && assigned[slot] ? assigned[slot] : clothNeutralMaterial).ToArray();
                 clothRenderers[i].sharedMaterials = materials;
                 if (clothSession != null && clothSession.Source == clothRenderers[i])
@@ -60,28 +60,101 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawClothDisplayControls()
         {
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                bool textured = GUILayout.Toggle(clothTextured, new GUIContent("Textured", "Show assigned materials on user meshes"), "Button");
-                bool wire = GUILayout.Toggle(clothWireframe, new GUIContent("Wireframe", "Show quad-style edges on the selected garment"), "Button");
-                if (textured != clothTextured) { clothTextured = textured; ApplyClothDisplay(); }
-                if (wire != clothWireframe) { clothWireframe = wire; viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene); }
-            }
             if (ClothEditable)
                 clothMaterialSlotsOpen = StudioMeshMaterialPreview.DrawSlots(ClothAssignedMaterials(clothRendererIndex),
                     clothMeshRows[clothRendererIndex].sourceMesh.subMeshCount, clothMaterialSlotsOpen,
                     (slot, material) => ClothAction(() => AssignClothMaterial(clothRendererIndex, slot, material)));
         }
 
+        private void DrawClothToolbar()
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                if (ClothToolbarButton(0, clothTextured, "Textured — show assigned materials"))
+                { clothTextured = !clothTextured; ApplyClothDisplay(); }
+                if (ClothToolbarButton(1, clothWireframe, "Wireframe — show garment edges"))
+                { clothWireframe = !clothWireframe; viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Scene); }
+                if (ClothToolbarButton(4, clothPaintXray, "X-ray — show occluded weight colors and wireframe. Does not change which vertices the brush paints."))
+                { clothPaintXray = !clothPaintXray; viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay); }
+                if (ClothToolbarButton(5, clothShowColliders, "Show collisions � show or hide body collider outlines"))
+                { clothShowColliders = !clothShowColliders; viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay); }
+                GUILayout.Space(10);
+                using (new EditorGUI.DisabledScope(!CanSimulateCloth))
+                    if (ClothToolbarButton(2, clothPainting, "Paint movement limits — toggle painting. Ctrl + middle-drag or [ / ] changes brush size."))
+                    {
+                        EndClothStroke(); clothPainting = !clothPainting;
+                        if (clothPainting) clothTool = 0;
+                        viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);
+                    }
+                using (new EditorGUI.DisabledScope(!CanSimulateCloth || clothSession == null))
+                    if (ClothToolbarButton(3, clothTool == 1 && !clothPainting && clothSession != null,
+                        "Grab particles — toggle click-and-drag pulling during simulation. Start Play first. Ctrl + middle-drag or [ / ] changes grab radius."))
+                    {
+                        EndClothStroke(); clothTool = clothTool == 1 ? 0 : 1;
+                        if (clothTool == 1) clothPainting = false;
+                        viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);
+                    }
+                GUILayout.FlexibleSpace();
+            }
+        }
+
+        private static bool ClothToolbarButton(int icon, bool active, string tooltip)
+        {
+            var rect = GUILayoutUtility.GetRect(24, 24, GUILayout.Width(24), GUILayout.Height(24));
+            GUILayout.Space(4);
+            bool clicked = GUI.Button(rect, new GUIContent("", tooltip), GUIStyle.none);
+            if (Event.current.type != EventType.Repaint) return clicked;
+            EditorGUI.DrawRect(rect, rect.Contains(Event.current.mousePosition) ? new Color(.10f,.12f,.12f) : new Color(.035f,.04f,.04f));
+            var color = GUI.enabled ? (active ? new Color(.5f,1,.87f) : new Color(.75f,.81f,.81f)) : new Color(.35f,.38f,.38f);
+            if (active) EditorGUI.DrawRect(new Rect(rect.x+4,rect.yMax-2,16,2), color);
+            using (new Handles.DrawingScope(color, Matrix4x4.identity))
+            {
+                Vector3 P(float x, float y) => new Vector3(rect.center.x+x,rect.center.y+y,0);
+                if (icon == 0) StudioMeshMaterialPreview.DrawTextureIcon(rect, color);
+                else if (icon == 1)
+                {
+                    Handles.DrawAAPolyLine(1.2f,P(-8,-8),P(8,-8),P(8,8),P(-8,8),P(-8,-8));
+                    Handles.DrawAAPolyLine(1.2f,P(0,-8),P(0,8));
+                    Handles.DrawAAPolyLine(1.2f,P(-8,0),P(8,0));
+                }
+                else if (icon == 2)
+                {
+                    Handles.DrawAAPolyLine(2,P(-1,1),P(7,-8),P(9,-6),P(1,3));
+                    Handles.DrawAAPolyLine(1.5f,P(-1,1),P(-5,2),P(-7,7),P(-2,6),P(1,3));
+                }
+                else if (icon == 5)
+                {
+                    // Capsule outline distinguishes collision visibility from X-ray.
+                    Handles.DrawAAPolyLine(1.4f, P(-5,-4), P(-5,4));
+                    Handles.DrawAAPolyLine(1.4f, P(5,-4), P(5,4));
+                    Handles.DrawWireArc(P(0,-4), Vector3.forward, Vector3.left, 180, 5);
+                    Handles.DrawWireArc(P(0,4), Vector3.forward, Vector3.right, 180, 5);
+                    Handles.DrawAAPolyLine(1, P(0,-9), P(0,9));
+                }
+                else if (icon == 4)
+                {
+                    Handles.DrawAAPolyLine(1.4f,P(-10,0),P(-5,-5),P(0,-6),P(5,-5),P(10,0),P(5,5),P(0,6),P(-5,5),P(-10,0));
+                    Handles.DrawWireDisc(P(0,0),Vector3.forward,3);
+                }
+                else
+                {
+                    // Open hand distinguishes direct grabbing from painting.
+                    Handles.DrawAAPolyLine(1.4f,P(-4,8),P(-8,1),P(-8,-1),P(-6,-2),P(-3,1),
+                        P(-3,-7),P(-1,-8),P(0,-7),P(0,-2),P(0,-9),P(2,-9),P(3,-8),P(3,-2),
+                        P(3,-7),P(5,-7),P(6,-6),P(6,-1),P(6,-4),P(8,-4),P(9,-3),P(9,3),P(6,8),P(-4,8));
+                }
+            }
+            return clicked;
+        }
+
         private void AssignClothMaterial(int index, int slot, Material material)
         {
-            if (index < 0 || index >= clothMeshRows.Length || clothMeshRows[index].referenceOnly) return;
-            EndClothStroke(); StopClothSession();
+            if (index < 0 || index >= clothMeshRows.Length) return;
             var mesh = clothMeshRows[index].sourceMesh;
             var materials = StudioMeshMaterialPreview.Assign(ClothAssignedMaterials(index), mesh.subMeshCount, slot, material);
             clothMaterialAssignments.RemoveAll(a => a.mesh == mesh);
             clothMaterialAssignments.Add(new ClothMaterialAssignment { mesh = mesh, materials = materials });
-            SelectClothMesh(index); clothTextured = true; ApplyClothDisplay();
+            clothTextured = true; ApplyClothDisplay();
         }
 
         private void HandleClothMaterialDrop(SceneView view)
@@ -143,7 +216,7 @@ namespace MashBoxSDK.AnimationStudio
             var previous = Handles.zTest;
             try
             {
-                Handles.zTest = CompareFunction.LessEqual;
+                Handles.zTest = clothPaintXray ? CompareFunction.Always : CompareFunction.LessEqual;
                 using (new Handles.DrawingScope(new Color(.06f, .12f, .12f, .8f), ClothRenderer.transform.localToWorldMatrix))
                     Handles.DrawLines(clothWireLines);
             }
@@ -152,6 +225,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void ReleaseClothDisplay()
         {
+            DisposeClothWeightSurface();
             if (clothNeutralMaterial) DestroyImmediate(clothNeutralMaterial);
             clothNeutralMaterial = null; clothSourceMaterials = null;
             clothWireSource = null; clothWireEdges = null; clothWireLines = null;

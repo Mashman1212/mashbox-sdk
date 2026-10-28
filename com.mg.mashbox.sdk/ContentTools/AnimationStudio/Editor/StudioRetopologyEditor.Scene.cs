@@ -118,6 +118,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void BeforeRetopologySceneGUI(SceneView canvas)
         {
+            if(HandlePolygonEscape(Event.current))return;
             if(HandleBrushAdjustment(canvas))return;
             var e=Event.current;int id=GUIUtility.GetControlID("Retopology wheel".GetHashCode(),FocusType.Passive);
             if(e.type==EventType.ContextClick&&suppressContext){suppressContext=false;e.Use();return;}
@@ -220,7 +221,7 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.Space(14);
                 DrawSelectionMode();
                 if(IconButton(12,xraySelection,"X-ray Selection: select through the mesh. Off selects visible components only; independent of X-ray display."))ToggleXraySelection();
-                if(IconButton(22,autoTumble,"Auto Tumble: pause over a surface point to gently center it and orbit around it. Small pointer adjustments keep that anchor; each turn is limited. Pauses while drawing or navigating manually."))ToggleAutoTumble();
+                if(IconButton(22,AutoTumbleActive,"Auto Tumble: click to set on/off. Hold Space to temporarily invert that setting; release to restore it. Move the mouse to steer the surface reticle."))ToggleAutoTumble();
                 GUILayout.Space(18);
                 if(IconButton(15,activeTool==RetopoTool.TargetWeld,"Target Weld: click the source vertex, then its destination. Escape cancels."))StartTargetWeld();
                 if(IconButton(16,activeTool==RetopoTool.EdgeBridge,"Edge Bridge: click two open border edges to join them. Escape cancels."))StartEdgeBridge();
@@ -389,13 +390,35 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SceneGUI(MashBoxStudioViewport canvas)
         {
+            var pointer=Event.current.mousePosition;
+            try { SceneGUIWithAutoTumble(canvas); }
+            finally
+            {
+                if(autoTumbleToolInput&&autoTumbleControl!=0)
+                    DrawAutoTumbleReticle(autoTumbleToolPointer);
+                Event.current.mousePosition=pointer;
+                if(autoTumbleControl!=0&&GUIUtility.hotControl==0)
+                    GUIUtility.hotControl=autoTumbleControl;
+            }
+        }
+
+        private void SceneGUIWithAutoTumble(MashBoxStudioViewport canvas)
+        {
             view=canvas;var evt=Event.current;
             ObserveTutorialNavigation(evt,canvas);
             if(evt.type==EventType.Repaint)UpdateTutorialScene();
             lighting.ConfigureCamera(canvas);StudioPreviewLighting.ConfigureStudioBackground(canvas);
             if(canvas.modelGridVisible)canvas.DrawGroundGrid();
             bool overUI=canvas.IsOverSkinningPanels(evt.mousePosition);
+            if(HandlePolygonEscape(evt)){canvas.Repaint();return;}
             ObserveAutoTumble(canvas,overUI);
+            if(autoTumbleToolInput)
+            {
+                // All tools, picking and preview drawing receive exactly the
+                // same GUI position used to paint the reticle at frame end.
+                evt.mousePosition=autoTumbleToolPointer;overUI=false;
+                if(GUIUtility.hotControl==autoTumbleControl)GUIUtility.hotControl=0;
+            }
             if(!overUI){DropMaterialOnViewport(evt);HandleDrop(evt);}
             canvas.wantsMouseMove=true;
             if(evt.type==EventType.MouseMove)canvas.Repaint();
@@ -436,6 +459,7 @@ namespace MashBoxSDK.AnimationStudio
             // Paint it before UI input guards so sliders and text fields cannot hide it.
             if(activeTool==RetopoTool.Tube&&evt.type==EventType.Repaint)
                 DrawTubePreview(evt.mousePosition,!overUI&&!canvas.IsOverViewportControls(evt.mousePosition)&&canvas.ModelCanvasRect.Contains(evt.mousePosition)&&!evt.alt&&!contextHeld);
+            if(autoTumbleControl!=0&&!autoTumbleToolInput)return;
             if(HandleQuadDrag(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleEdgeBridge(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
             if(HandleTargetWeld(evt,canvas,overUI||canvas.IsOverViewportControls(evt.mousePosition)))return;
@@ -459,6 +483,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if(evt.keyCode==KeyCode.F){Frame();evt.Use();}
                 else if((evt.control||evt.command)&&evt.keyCode==KeyCode.S){Run(Document.SaveWorkspace);evt.Use();}
                 else if((evt.control||evt.command)&&evt.keyCode==KeyCode.A){SelectAllComponents();evt.Use();}
+                else if(evt.shift&&!evt.control&&!evt.command&&evt.keyCode==KeyCode.E&&selectionMode==SelectionMode.Edges){Run(ExtrudeSelectedEdges);evt.Use();}
                 else if(evt.keyCode==KeyCode.W||evt.keyCode==KeyCode.E||evt.keyCode==KeyCode.R||evt.keyCode==KeyCode.Q)
                 {activeTool=RetopoTool.Select;transformTool=evt.keyCode==KeyCode.E?Tool.Rotate:evt.keyCode==KeyCode.R?Tool.Scale:evt.keyCode==KeyCode.Q?Tool.None:Tool.Move;rotation=Quaternion.identity;scale=Vector3.one;evt.Use();}
                 else if(evt.keyCode==KeyCode.Delete||evt.keyCode==KeyCode.Backspace){Run(DeleteComponents);evt.Use();}
@@ -483,7 +508,8 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             if(activeTool==RetopoTool.Select)DrawTransform();
-            if(evt.type==EventType.MouseDown&&evt.button==0&&!evt.alt&&GUIUtility.hotControl==0)
+            if(evt.type==EventType.MouseDown&&evt.button==0&&!evt.alt&&
+                (GUIUtility.hotControl==0||(autoTumbleToolInput&&GUIUtility.hotControl==autoTumbleControl)))
             {
                 if(activeTool==RetopoTool.Select)
                 {
@@ -512,7 +538,14 @@ namespace MashBoxSDK.AnimationStudio
                     {Run(CreatePolygon);evt.Use();canvas.Repaint();return;}
                     if(activeTool==RetopoTool.Quad&&corners.Count==3&&Vector2.Distance(HandleUtility.WorldToGUIPoint(corners[0]),evt.mousePosition)<=24f)
                     {Run(CreateDrawTriangle);evt.Use();canvas.Repaint();return;}
-                    Run(()=>AddConstructionPoint(point,hit.normal));
+                    Run(()=>
+                    {
+                        int previousCount=corners.Count;
+                        AddConstructionPoint(point,hit.normal);
+                        if(activeTool==RetopoTool.Polygon&&snap>=0&&corners.Count>previousCount&&
+                            PolygonClosesOnBorder(Active,corners.ToArray(),Mathf.Max(.000001f,Active.reference.bounds.size.magnitude*.00001f)))
+                            CreatePolygon();
+                    });
                     GUIUtility.keyboardControl=0;EditorGUIUtility.editingTextField=false;
                     evt.Use();canvas.Repaint();
                 }
@@ -595,13 +628,7 @@ namespace MashBoxSDK.AnimationStudio
                         Dot(screen,6f,color);
                         Handles.color=new Color(.025f,.04f,.04f,.95f);Handles.DrawWireDisc(screen,Vector3.forward,11);
                         Handles.color=color;Handles.DrawWireDisc(screen,Vector3.forward,10);
-                        var caption=used?"Already placed":hint?.label??"Snap to vertex";
-                        var labelRect=new Rect(screen.x+15,screen.y-24,Mathf.Max(104,EditorStyles.miniBoldLabel.CalcSize(new GUIContent(caption)).x+16),19);
-                        labelRect.x=Mathf.Clamp(labelRect.x,4,Mathf.Max(4,view.position.width-labelRect.width-8));
-                        EditorGUI.DrawRect(labelRect,new Color(.025f,.035f,.04f,.94f));
-                        var labelStyle=new GUIStyle(EditorStyles.miniBoldLabel){alignment=TextAnchor.MiddleCenter};
-                        labelStyle.normal.textColor=color;
-                        GUI.Label(labelRect,caption,labelStyle);
+
                     }
                 }
                 finally {Handles.EndGUI();}

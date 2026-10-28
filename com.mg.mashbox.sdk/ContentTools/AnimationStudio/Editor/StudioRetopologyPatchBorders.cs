@@ -18,10 +18,11 @@ namespace MashBoxSDK.AnimationStudio
                 if(!neighbors.ContainsKey(b))neighbors[b]=new List<int>();
                 neighbors[a].Add(b);neighbors[b].Add(a);
             }
-            var result=new int[4][];
-            for(int side=0;side<4;side++)
+            int count=corners.Length;
+            var result=new int[count][];
+            for(int side=0;side<count;side++)
             {
-                var from=corners[side];var to=corners[(side+1)%4];var axis=to-from;float length=axis.magnitude;
+                var from=corners[side];var to=corners[(side+1)%count];var axis=to-from;float length=axis.magnitude;
                 if(length<=tolerance)continue;
                 int start=part.vertices.FindIndex(p=>(p-from).sqrMagnitude<=tolerance*tolerance);
                 int end=part.vertices.FindIndex(p=>(p-to).sqrMagnitude<=tolerance*tolerance);
@@ -35,7 +36,7 @@ namespace MashBoxSDK.AnimationStudio
                     while(visited.Add(current))
                     {
                         path.Add(current);if(current==end){paths.Add(path.ToArray());break;}
-                        bool otherCorner=Enumerable.Range(0,4).Where(c=>c!=side&&c!=(side+1)%4)
+                        bool otherCorner=Enumerable.Range(0,count).Where(c=>c!=side&&c!=(side+1)%count)
                             .Any(c=>(part.vertices[current]-corners[c]).sqrMagnitude<=tolerance*tolerance);
                         if(otherCorner||neighbors[current].Count!=2)break;
                         int next=neighbors[current][0]==previous?neighbors[current][1]:neighbors[current][0];

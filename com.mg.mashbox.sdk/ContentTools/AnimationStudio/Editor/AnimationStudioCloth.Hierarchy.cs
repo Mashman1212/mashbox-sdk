@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("The default Skinning body and bust could not be loaded.");
             bodyMeshes = ClothSourceMeshes(defaults.body);
             bustMeshes = ClothSourceMeshes(defaults.bust);
-            var sources = new List<GameObject> { defaults.body, defaults.bust, defaults.pants, defaults.shirt };
+            var sources = new List<GameObject> { defaults.body, defaults.bust };
             if (!clothDefaultClothingInitialized)
             {
                 foreach (var source in new[] { defaults.pants, defaults.shirt }.Where(s => s))
@@ -33,8 +33,13 @@ namespace MashBoxSDK.AnimationStudio
                 clothDefaultClothingInitialized = true;
             }
             // The old single-garment field overrides its stored Animation outfit.
-            if (clothGarment) sources.Add(clothGarment);
-            else sources.AddRange(clothOutfit ?? Array.Empty<GameObject>());
+            var garments = clothGarment ? new[] { clothGarment } : clothOutfit ?? Array.Empty<GameObject>();
+            var garmentMeshes = new HashSet<Mesh>(garments.Where(g=>g).SelectMany(ClothSourceMeshes));
+            // An explicit drop promotes default clothing into an editable target.
+            // Do not also instantiate a locked copy of the same garment mesh.
+            foreach(var reference in new[]{defaults.pants,defaults.shirt}.Where(g=>g))
+                if(!ClothSourceMeshes(reference).Overlaps(garmentMeshes))sources.Add(reference);
+            sources.AddRange(garments);
             return sources.Where(s => s).Distinct().ToArray();
         }
 
@@ -46,6 +51,8 @@ namespace MashBoxSDK.AnimationStudio
             var defaults = StudioDefaultReferences.LoadSkinning(StudioDefaultReferences.SkinningPath);
             var pantsMeshes = defaults && defaults.pants ? ClothSourceMeshes(defaults.pants) : new HashSet<Mesh>();
             var shirtMeshes = defaults && defaults.shirt ? ClothSourceMeshes(defaults.shirt) : new HashSet<Mesh>();
+            var garments=clothGarment?new[]{clothGarment}:clothOutfit??Array.Empty<GameObject>();
+            var editableMeshes=new HashSet<Mesh>(garments.Where(g=>g).SelectMany(ClothSourceMeshes));
             var sourceMeshes = sources.Select(ClothSourceMeshes).ToArray();
             // A skeleton prefab may contain its own preview geometry. Only explicitly
             // imported models belong to this workspace; keep bone transforms active.
@@ -65,12 +72,13 @@ namespace MashBoxSDK.AnimationStudio
                 var mesh = MashBoxClothSession.GetMesh(renderer);
                 bool isBody = bodyMeshes.Contains(mesh), isBust = bustMeshes.Contains(mesh);
                 bool isPants = pantsMeshes.Contains(mesh), isShirt = shirtMeshes.Contains(mesh);
+                bool lockedClothing=(isPants||isShirt)&&!editableMeshes.Contains(mesh);
                 int source = Array.FindIndex(sourceMeshes, set => set.Contains(mesh));
                 clothMeshSources[i] = source >= 0 ? sources[source] : null;
                 clothMeshRows[i] = new StudioSkinningDocument.Part {
                     name = renderer.name.Replace("Preview • ", ""), mesh = mesh, sourceMesh = mesh,
-                    referenceOnly = isBody || isBust || isPants || isShirt, bound = renderer is SkinnedMeshRenderer,
-                    defaultReferenceLabel = isPants ? "Default Pants" : isShirt ? "Default Shirt" : null,
+                    referenceOnly = isBody || isBust || lockedClothing, bound = renderer is SkinnedMeshRenderer,
+                    defaultReferenceLabel = lockedClothing ? (isPants ? "Default Pants" : "Default Shirt") : null,
                     role = isBody ? StudioSkinningDocument.MeshRole.Body : isBust ? StudioSkinningDocument.MeshRole.Bust : StudioSkinningDocument.MeshRole.Clothing,
                     visible = !clothHiddenMeshes.Contains(mesh)
                 };
@@ -95,21 +103,67 @@ namespace MashBoxSDK.AnimationStudio
             viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
         }
 
+        private bool EnsureClothModelsReadable(IEnumerable<GameObject> models)
+        {
+            // Resolve mesh assets rather than prefab roots: a garment prefab
+            // can reference meshes from several different imported models.
+            var paths = models.Where(model => model).SelectMany(ClothSourceMeshes)
+                .Where(mesh => mesh && !mesh.isReadable)
+                .Select(AssetDatabase.GetAssetPath).Where(path => !string.IsNullOrEmpty(path)).Distinct().ToArray();
+            bool changed = false;
+            foreach (var path in paths)
+            {
+                var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (!importer || importer.isReadable) continue;
+                try
+                {
+                    EndClothStroke(); StopClothSession();
+                    importer.isReadable = true;
+                    importer.SaveAndReimport();
+                    changed = true;
+                }
+                catch (Exception e)
+                {
+                    // Keep the garment available and retain the manual repair
+                    // control when an importer cannot be changed or reimported.
+                    clothStatus = "Could not automatically enable Read/Write for " + path + ": " + e.GetBaseException().Message;
+                }
+            }
+            return changed;
+        }
+
         private void AddClothModels(IEnumerable<GameObject> models)
         {
-            var existing = ClothSources(out var bodyMeshes, out var bustMeshes).ToList();
-            var additions = models.Where(g => g && EditorUtility.IsPersistent(g) && !existing.Contains(g))
+            ClothSources(out var bodyMeshes, out var bustMeshes);
+            var garments = new List<GameObject>(clothGarment ? new[] { clothGarment } : clothOutfit ?? Array.Empty<GameObject>());
+            var requested = models.Where(g => g && EditorUtility.IsPersistent(g))
                 .Distinct().Where(g => { var meshes = ClothSourceMeshes(g); return meshes.Count > 0 && !meshes.Overlaps(bodyMeshes) && !meshes.Overlaps(bustMeshes); }).ToArray();
-            if (additions.Length == 0) return;
+            if(requested.Length==0)return;
+            var additions=requested.Where(g=>!garments.Contains(g)).ToArray();
+            bool readabilityChanged = additions.Length == 0 && EnsureClothModelsReadable(requested);
             RememberClothProfile();
             var previousGarment = clothGarment;var previousOutfit = clothOutfit;
-            var garments = new List<GameObject>(clothGarment ? new[] { clothGarment } : clothOutfit ?? Array.Empty<GameObject>());
+            var previousHidden=clothHiddenMeshes.ToArray();
+            var requestedMeshes=new HashSet<Mesh>(requested.SelectMany(ClothSourceMeshes));
+            clothHiddenMeshes.RemoveAll(mesh=>requestedMeshes.Contains(mesh));
             garments.AddRange(additions);
-            clothGarment = null; clothOutfit = garments.Distinct().ToArray();
-            try { BuildClothPreview(); }
-            catch { clothGarment = previousGarment;clothOutfit = previousOutfit;throw; }
-            SelectClothMesh(Array.FindIndex(clothMeshSources, source => source == additions[additions.Length - 1]));
-            FrameCloth();
+            if(additions.Length>0 || readabilityChanged)
+            {
+                clothGarment = null; clothOutfit = garments.Distinct().ToArray();
+                try { BuildClothPreview(); }
+                catch { clothGarment = previousGarment;clothOutfit = previousOutfit;clothHiddenMeshes.Clear();clothHiddenMeshes.AddRange(previousHidden);throw; }
+            }
+            int selected=Array.FindIndex(clothMeshSources,source=>source==requested[requested.Length-1]);
+            if(selected<0)selected=Array.FindIndex(clothMeshRows,part=>!part.referenceOnly&&requestedMeshes.Contains(part.sourceMesh));
+            for(int i=0;i<clothMeshRows.Length;i++)
+                if(!clothMeshRows[i].referenceOnly&&requestedMeshes.Contains(clothMeshRows[i].sourceMesh))
+                {clothMeshRows[i].visible=true;clothRenderers[i].gameObject.SetActive(true);}
+            if(selected>=0)
+            {
+                if(selected!=clothRendererIndex)SelectClothMesh(selected);
+            }
+            if(additions.Length>0)FrameCloth();
+            viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
         }
 
         private void HandleClothDrop()
@@ -151,6 +205,7 @@ namespace MashBoxSDK.AnimationStudio
                         clothHiddenMeshes.Remove(part.sourceMesh);
                         if (!visible) clothHiddenMeshes.Add(part.sourceMesh);
                         clothRenderers[i].gameObject.SetActive(visible);
+                        ClothAction(ApplyClothClipping);
                         viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
                     }
                     var row = GUILayoutUtility.GetRect(GUIContent.none, GUI.skin.button, GUILayout.ExpandWidth(true));
@@ -164,6 +219,7 @@ namespace MashBoxSDK.AnimationStudio
                         menu.ShowAsContext(); Event.current.Use();
                     }
                 }
+                DrawClothMeshReferences(i);
             }
             EditorGUILayout.EndScrollView();
         }
@@ -185,7 +241,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach (var profile in clothProfiles) if (profile) AssetDatabase.SaveAssetIfDirty(profile);
             clothCharacter = ResolveSdkSkeleton();
             clothGarment = null; clothOutfit = Array.Empty<GameObject>(); clothProfile = null; clothProfiles.Clear();
-            clothMaterialAssignments.Clear();
+            clothMaterialAssignments.Clear(); clothClippingAssignments.Clear(); clothClippingPreview = 0; clothPreviewClipping = null;
             clothClip = null; clothCustomMotion = false; clothHiddenMeshes.Clear(); clothRendererIndex = -1;
             // A new Cloth scene starts with all four default references visible.
             clothDefaultClothingInitialized = true;

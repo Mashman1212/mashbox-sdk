@@ -10,11 +10,12 @@ namespace MashBoxSDK.AnimationStudio
     public sealed partial class AnimationStudioWindow
     {
         private const string ClothMotionFolder = "Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Animations/";
-        private static readonly string[] ClothMotionNames = { "Rest Pose", "Party Kid", "Locking Hip Hop Dance", "Custom…" };
+        private static readonly string[] ClothMotionNames = { "Rest Pose", "A-Pose", "Party Kid", "Locking Hip Hop Dance", "Custom…" };
         [NonSerialized] private AnimationClip[] clothBuiltinClips;
         [SerializeField] private bool clothCustomMotion;
+        [SerializeField] private bool clothAPoseMotion;
 
-        private bool HasClothMotion => clothClip && !clothClip.legacy && clothClip.length > 0;
+        private bool HasClothMotion => !clothAPoseMotion && clothClip && !clothClip.legacy && clothClip.length > 0;
         private bool CanSimulateCloth => ClothVisible && clothProfile && clothProfile.Matches(MashBoxSDK.Cloth.MashBoxClothSession.GetMesh(ClothRenderer));
 
         private void DrawClothMotionSelector(ref float x, float y, float right)
@@ -24,7 +25,7 @@ namespace MashBoxSDK.AnimationStudio
                     AssetDatabase.LoadAssetAtPath<AnimationClip>(ClothMotionFolder + "Party Kid.anim"),
                     AssetDatabase.LoadAssetAtPath<AnimationClip>(ClothMotionFolder + "Locking Hip Hop Dance.anim")
                 };
-            int current = clothCustomMotion ? 3 : !clothClip ? 0 : clothClip == clothBuiltinClips[0] ? 1 : clothClip == clothBuiltinClips[1] ? 2 : 3;
+            int current = clothCustomMotion ? 4 : clothAPoseMotion ? 1 : !clothClip ? 0 : clothClip == clothBuiltinClips[0] ? 2 : clothClip == clothBuiltinClips[1] ? 3 : 4;
             float width = Mathf.Min(180, Mathf.Max(80, (right - x - 8) * .45f));
             var selector = new Rect(x, y + 3, width, 20);
             if (EditorGUI.DropdownButton(selector, new GUIContent(ClothMotionNames[current], "Preview animation"), FocusType.Passive, EditorStyles.popup))
@@ -35,16 +36,16 @@ namespace MashBoxSDK.AnimationStudio
                     int chosen = i;
                     menu.AddItem(new GUIContent(ClothMotionNames[i]), current == i, () => ClothAction(() =>
                     {
-                        if (chosen == 3) { clothCustomMotion = true; return; }
-                        var clip = chosen == 0 ? null : clothBuiltinClips[chosen - 1];
-                        if (chosen != 0 && !clip) throw new InvalidOperationException("Built-in animation could not be loaded. Refresh the SDK package.");
-                        SetClothMotion(clip); clothCustomMotion = false;
+                        if (chosen == 4) { clothCustomMotion = true; return; }
+                        var clip = chosen <= 1 ? null : clothBuiltinClips[chosen - 2];
+                        if (chosen > 1 && !clip) throw new InvalidOperationException("Built-in animation could not be loaded. Refresh the SDK package.");
+                        SetClothMotion(clip, chosen == 1); clothCustomMotion = false;
                     }));
                 }
                 menu.DropDown(selector);
             }
             x += width + 8;
-            if (current != 3) return;
+            if (current != 4) return;
             width = Mathf.Min(170, Mathf.Max(60, right - x - 90));
             var custom = (AnimationClip)EditorGUI.ObjectField(new Rect(x, y + 3, width, 20), clothClip, typeof(AnimationClip), false);
             if (custom != clothClip) ClothAction(() => { SetClothMotion(custom); clothCustomMotion = true; });
@@ -73,12 +74,20 @@ namespace MashBoxSDK.AnimationStudio
         private void SetClothPose(int frame)
         {
             if (clothRig == null) return;
+            EndClothStroke(); StopClothSession(); clothSimulationTime = 0;
+            ApplyClothPose(frame);
+            // Preview buttons temporarily override the selected simulation motion.
+            clothPoseOverride = true;
+            RefreshClothPickMesh();
+        }
+
+        private void ApplyClothPose(int frame)
+        {
+            if (clothRig == null) return;
             if (!clothPoseClip)
                 clothPoseClip = AssetDatabase.LoadAllAssetsAtPath("Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Skeleton.fbx")
                     .OfType<AnimationClip>().FirstOrDefault(c => string.Equals(c.name.Trim(), "Skinning Test", StringComparison.OrdinalIgnoreCase));
             if (!clothPoseClip) throw new InvalidOperationException("The SDK Skeleton's Skinning Test poses could not be loaded.");
-            EndClothStroke(); StopClothSession();
-            clothSimulationTime = 0;
             for (int i = 0; i < clothRig.Bones.Length; i++) clothRig.Rest.bones[i].Apply(clothRig.Bones[i]);
             var hips = clothRig.Bones.FirstOrDefault(b => StudioSkinningDocument.BoneName(b.name) == "Hips");
             var restHips = hips ? hips.localPosition : Vector3.zero;
@@ -98,9 +107,6 @@ namespace MashBoxSDK.AnimationStudio
                 if (hips) hips.localPosition += offset;
             }
             finally { graph.Destroy(); animator.enabled = enabled; }
-            // One-shot pose sample: keep the selected emote and its timeline position.
-            clothPoseOverride = true;
-            RefreshClothPickMesh();
         }
 
         private void ResumeClothMotionFromPose()
@@ -108,7 +114,7 @@ namespace MashBoxSDK.AnimationStudio
             if (clothPoseOverride) SampleClothMotion(clothAnimationTime);
         }
 
-        private void SetClothMotion(AnimationClip clip)
+        private void SetClothMotion(AnimationClip clip, bool aPose = false)
         {
             if (clip)
             {
@@ -122,7 +128,7 @@ namespace MashBoxSDK.AnimationStudio
                     throw new InvalidOperationException("This animation has no transform curves matching the character skeleton.");
             }
             EndClothStroke(); StopClothSession(); clothPainting = false;
-            clothClip = clip; clothSimulationTime = 0; clothGrabParticle = -1;
+            clothClip = clip; clothAPoseMotion = aPose; clothSimulationTime = 0; clothGrabParticle = -1;
             SampleClothMotion(0); RefreshClothPickMesh();
         }
     }

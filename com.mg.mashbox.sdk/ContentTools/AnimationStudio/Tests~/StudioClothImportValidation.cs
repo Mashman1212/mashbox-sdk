@@ -98,6 +98,33 @@ namespace MashBoxSDK.AnimationStudio
                 Check(rows.Count(p=>!p.referenceOnly)==2,"Another valid pair of pants can be dropped after an import failure");
                 var currentRig=Get("clothRig");Call("AddClothModels",(object)new[]{pants});
                 Check(ReferenceEquals(Get("clothRig"),currentRig),"Dropping an existing garment again does not duplicate it or rebuild the preview");
+                var defaults=StudioDefaultReferences.LoadSkinning(StudioDefaultReferences.SkinningPath);
+                var sdkPants=AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Human_Pants_Punch_WC.fbx");
+                Check(defaults&&sdkPants&&defaults.pants==sdkPants,"The screenshot's SDK pants are the default locked pants asset");
+                var sdkRenderer=sdkPants.GetComponentInChildren<SkinnedMeshRenderer>(true);var sdkMesh=sdkRenderer.sharedMesh;
+                var sdkVertices=sdkMesh.vertices;var sdkBones=sdkRenderer.bones;
+                var hidden=(List<Mesh>)Get("clothHiddenMeshes");
+                Check(hidden.Contains(sdkMesh),"Default SDK pants start hidden before an explicit drop");
+                var priorRig=Get("clothRig");var priorOutfit=(GameObject[])Get("clothOutfit");
+                rejected=false;try{Call("AddClothModels",(object)new[]{sdkPants,invalidAsset});}catch(TargetInvocationException e){rejected=e.GetBaseException() is InvalidOperationException;}
+                Check(rejected&&ReferenceEquals(Get("clothRig"),priorRig)&&ReferenceEquals(Get("clothOutfit"),priorOutfit)&&hidden.Contains(sdkMesh),"Failed mixed drops restore the locked default garment and its hidden state");
+                Call("AddClothModels",(object)new[]{sdkPants});
+                rows=(StudioSkinningDocument.Part[])Get("clothMeshRows");renderers=(Renderer[])Get("clothRenderers");selected=(int)Get("clothRendererIndex");
+                Check(rows.Count(p=>p.sourceMesh==sdkMesh)==1&&!rows[selected].referenceOnly&&rows[selected].sourceMesh==sdkMesh,"Dropping the SDK default pants promotes exactly one editable garment row");
+                Check(rows[selected].visible&&renderers[selected].gameObject.activeSelf&&!hidden.Contains(sdkMesh)&&rows[selected].defaultReferenceLabel==null,"Explicitly dropped default pants are selected, visible and unlocked");
+                Check(rows.Where(p=>p.role==StudioSkinningDocument.MeshRole.Body||p.role==StudioSkinningDocument.MeshRole.Bust).All(p=>p.referenceOnly),"Body and bust remain locked reference meshes");
+                Check(rows.Any(p=>p.defaultReferenceLabel=="Default Shirt"&&p.referenceOnly&&!p.visible),"Other default clothing keeps its locked reference state");
+                currentRig=Get("clothRig");hidden.Add(sdkMesh);rows[selected].visible=false;renderers[selected].gameObject.SetActive(false);
+                Call("AddClothModels",(object)new[]{sdkPants});
+                Check(ReferenceEquals(Get("clothRig"),currentRig)&&rows[selected].visible&&renderers[selected].gameObject.activeSelf&&!hidden.Contains(sdkMesh),"Dropping an already imported hidden garment reveals it without duplicates or a rig rebuild");
+                Call("BuildClothPreview");rows=(StudioSkinningDocument.Part[])Get("clothMeshRows");
+                Check(rows.Count(p=>p.sourceMesh==sdkMesh)==1&&rows.Any(p=>p.sourceMesh==sdkMesh&&!p.referenceOnly&&p.visible),"Default pants stay editable and visible after the preview rebuilds");
+                Call("AddClothModels",(object)new[]{defaults.shirt});rows=(StudioSkinningDocument.Part[])Get("clothMeshRows");
+                var shirtMeshes=defaults.shirt.GetComponentsInChildren<SkinnedMeshRenderer>(true).Select(r=>r.sharedMesh).ToArray();
+                Check(rows.Any(p=>shirtMeshes.Contains(p.sourceMesh)&&!p.referenceOnly&&p.visible)&&rows.Count(p=>!p.referenceOnly)==4,"Dropping the default SDK shirt uses the same editable-garment path");
+                Check(sdkRenderer.sharedMesh==sdkMesh&&sdkMesh.vertices.SequenceEqual(sdkVertices)&&sdkRenderer.bones.SequenceEqual(sdkBones),"Promoting the default garment leaves the package FBX geometry and skeleton unchanged");
+                int pantsIndex=Array.FindIndex(rows,p=>p.sourceMesh==sdkMesh);Call("RemoveClothModel",pantsIndex);rows=(StudioSkinningDocument.Part[])Get("clothMeshRows");
+                Check(rows.Count(p=>p.sourceMesh==sdkMesh)==1&&rows.Any(p=>p.sourceMesh==sdkMesh&&p.referenceOnly&&p.defaultReferenceLabel=="Default Pants"),"Removing the editable default garment restores one locked reference row");
                 log.Add("SUCCESS");
             }
             catch(Exception e){log.Add("FAIL "+e);}
@@ -112,3 +139,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+
