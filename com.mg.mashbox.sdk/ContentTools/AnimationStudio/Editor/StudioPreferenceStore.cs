@@ -108,6 +108,10 @@ namespace MashBoxSDK.AnimationStudio
             Number("Model.CheckerMap", 0);
             Number("Model.EdgeLoopCount", 1);
             Number(StudioModelEditor.PivotLockKey, 0);
+            Number(ToolChannelPane.DefaultKey("Combine Meshes","CombineUVs"),1);
+            Number(ToolChannelPane.DefaultKey("Combine Meshes","Pivot"),0);
+            Number(ToolChannelPane.DefaultKey("Combine Meshes","KeepFirstName"),0);
+            Number("MashBox.Studio.ToolDragSensitivity.Combine Meshes",1);
             Number(ToolChannelPane.DefaultKey("Edit Edge Flow","Influence"),.5f);
             Number(ToolChannelPane.DefaultKey("Edit Edge Flow","Iterations"),4);
             Number(ToolChannelPane.DefaultKey("Bevel Edges","EdgeFlow"),0);

@@ -44,6 +44,7 @@ namespace MashBoxSDK.AnimationStudio
             if (softenToolPane) softenToolPane.Repaint();
             if (extrudeToolPane) extrudeToolPane.Repaint();
             if (edgeFlowToolPane) edgeFlowToolPane.Repaint();
+            if (combineToolPane) combineToolPane.Repaint();
         }
         private void CloseLiveToolPane(LiveTool kind)
         {
@@ -60,6 +61,7 @@ namespace MashBoxSDK.AnimationStudio
             kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : CanExtrude);
         private Vector4 LiveParameters(LiveTool kind)
         {
+            if (repeatingAction != null && repeatingAction.kind == RepeatKind.Live && repeatingAction.live == kind) return repeatingAction.parameters;
             if (kind == LiveTool.Bevel) return new Vector4(ToolChannelPane.GetFloatDefault(BevelTool, "Width", .1f),
                 ToolChannelPane.GetFloatDefault(BevelTool, "Subdivisions", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Tension", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Junction", 0));
             if (kind == LiveTool.EdgeFlow) return new Vector4(ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Influence",.5f),ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Iterations",4),0,0);
@@ -326,6 +328,7 @@ namespace MashBoxSDK.AnimationStudio
             // Completion keeps the object and component mode active, but a bevel
             // must not leave generated edges armed for an accidental second bevel.
             bool clearBevelSelection = changed && liveTool == LiveTool.Bevel;
+            if (changed && !dispatchingComponentTool) RememberLiveAction(finishedTool,liveParameters,liveFlowParameters);
             RefreshLiveMeshes(changed); livePreview.Dispose(); ClearLiveToolState();
             if (clearBevelSelection) { Components.Clear(); ClearComponentDrawing(); }
             error = changed ? label + " applied." : "No mesh changes to apply.";

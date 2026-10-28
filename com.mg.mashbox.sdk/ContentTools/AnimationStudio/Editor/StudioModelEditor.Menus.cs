@@ -36,6 +36,8 @@ namespace MashBoxSDK.AnimationStudio
                 
                     break; }
                 case "Edit": {
+                    AddCommand(menu,"Repeat Last Action",CanRepeatLastAction || livePreview != null || componentLiveTargets != null || previewQueued,RepeatLastAction,finishPreview:false);
+                    menu.AddSeparator("");
                     if (Document)
                     {
                         menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Undo",StudioShortcut.Undo)), false, () => Run(() => PerformWorkspaceHistory(false), false));
@@ -131,6 +133,8 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Edit Edge Flow…", CanEditEdgeFlow, OpenEdgeFlowTool, finishPreview: false);
                     break; }
                 case "Mesh Tools": {
+                    AddCommand(menu, "Combine Meshes…", CanCombineObjects, OpenCombineTool);
+                    AddCommand(menu, "Split Selection", CanSplitSelection, SplitSelectedComponents);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected, finishPreview: false);
                     AddCommand(menu, "Bevel…", CanBevelEdges, OpenBevelTool, finishPreview: false);
                     AddCommand(menu, "Merge to Center", CanMergeVertices, MergeToCenter, commandKey: "Merge Vertices");
@@ -210,7 +214,7 @@ namespace MashBoxSDK.AnimationStudio
             int parent = asChild ? Active : -1;
             int index = Document.AddEmptyTransform(parent, CreationPosition(parent));
             mode = ComponentMode.Object; pivot = false; search = "";
-            Rebuild(); SelectObject(index); Changed(false);
+            Rebuild(); SelectObject(index); Changed(false); RememberAction(RepeatKind.Empty,new Vector4(asChild?1:0,0,0,0));
         }
         internal void CreatePrimitive(PrimitiveType type, SceneView view, Action<StudioModelDocument> loaded)
         {
@@ -219,7 +223,7 @@ namespace MashBoxSDK.AnimationStudio
             EnsureWorkspace(loaded);
             int index = Document.AddPrimitive(type);
             mode = ComponentMode.Object; pivot = false; search = "";
-            Rebuild(); SelectObject(index); Changed();
+            Rebuild(); SelectObject(index); Changed(); RememberAction(RepeatKind.Primitive,new Vector4((int)type,0,0,0));
         }
         private Vector3 CreationPosition(int parent) => parent >= 0
             ? Transforms[parent].InverseTransformPoint(Vector3.zero) : Vector3.zero;

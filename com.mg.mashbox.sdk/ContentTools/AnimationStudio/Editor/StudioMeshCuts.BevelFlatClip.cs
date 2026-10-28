@@ -68,6 +68,7 @@ namespace MashBoxSDK.AnimationStudio
             internal readonly Dictionary<(int,int),(int count,int direction)> Interface=new Dictionary<(int,int),(int,int)>();
             internal List<FlatClipPolygon> Output;
             internal float Limit=float.PositiveInfinity;
+            internal double TerminalWidth=double.PositiveInfinity;
             internal float LastWidth=float.NaN;
         }
         private FlatClipPlan bevelFlatClip;
@@ -258,8 +259,13 @@ namespace MashBoxSDK.AnimationStudio
                         if(boundary.Contains(vertex))
                         {
                             if(distance>=-error)return null;
-                            double time=(distance+bevelEpsilon*8)/plane.Speed;
-                            if(time<=0)return null;plan.Limit=Mathf.Min(plan.Limit,(float)time);
+                            // The captured patch may reach its unchanged interface,
+                            // but must not cross it. Evaluate that contact at its
+                            // analytic time so the existing boundary vertex owns it.
+                            double time=distance/plane.Speed;
+                            if(time<=0)return null;
+                            plan.TerminalWidth=Math.Min(plan.TerminalWidth,time);
+                            plan.Limit=(float)plan.TerminalWidth;
                         }
                     }
                     foreach(int f in group.Faces)
@@ -358,7 +364,7 @@ namespace MashBoxSDK.AnimationStudio
             return result;
         }
 
-        private void BuildFlatClip(FlatClipPlan plan,float width)
+        private void BuildFlatClip(FlatClipPlan plan,double width)
         {
             plan.Points.Clear();plan.Points.AddRange(plan.OriginalPoints);plan.FloatPoints.Clear();plan.Info.Clear();plan.Identities.Clear();plan.Steps.Clear();plan.Checks.Clear();
             for(int i=0;i<plan.OriginalPoints.Count;i++){var point=plan.OriginalPoints[i].Float;plan.FloatPoints.Add(point);plan.Info.Add(plan.OriginalInfo[i].Copy());plan.Identities.Add(point,i);}
@@ -447,7 +453,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             return result;
         }
-        private bool ReplayFlatClip(FlatClipPlan plan,float width)
+        private bool ReplayFlatClip(FlatClipPlan plan,double width)
         {
             foreach(var step in plan.Steps)
             {
@@ -463,7 +469,11 @@ namespace MashBoxSDK.AnimationStudio
         private void EvaluateFlatClip(FlatClipPlan plan,float width)
         {
             if(plan.LastWidth==width&&plan.Output!=null)return;
-            if(plan.Output==null||!ReplayFlatClip(plan,width))BuildFlatClip(plan,width);
+            // A float UI distance cannot generally represent the exact event time.
+            // Preserve the double root at the clamped endpoint; below it, retain
+            // distinct intersections and their normal reversible cache behavior.
+            double evaluated=width==plan.Limit?plan.TerminalWidth:width;
+            if(plan.Output==null||!ReplayFlatClip(plan,evaluated))BuildFlatClip(plan,evaluated);
             plan.LastWidth=width;
         }
         private bool FlatClipChanged(FlatClipPlan plan)

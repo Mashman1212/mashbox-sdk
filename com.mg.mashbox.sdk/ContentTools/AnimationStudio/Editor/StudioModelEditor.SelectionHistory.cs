@@ -52,7 +52,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private SelectionSnapshot CaptureSelection() => new SelectionSnapshot {
             document = Document, mesh = ActiveMesh, active = Active, mode = mode,
-            components = Components.ToArray(), objects = objects.ToArray(), targets = CaptureComponentTargets()
+            components = Components.ToArray(), objects = OrderedObjectSelection(), targets = CaptureComponentTargets()
         };
         private bool SelectionMatches(SelectionSnapshot value) => value.document == Document &&
             value.active == Active && value.mode == mode && value.mesh == ActiveMesh &&
@@ -95,7 +95,8 @@ namespace MashBoxSDK.AnimationStudio
             // History restores selected IDs/modes, not ownership of GPU buffers
             // and topology caches. Mesh changes invalidate their affected caches.
             ClearAllComponentSelections(); objects.Clear();
-            foreach (int i in state.objects) if (i >= 0 && i < Transforms.Length) objects.Add(i);
+            objectSelectionOrder.Clear();
+            foreach (int i in state.objects) if (i >= 0 && i < Transforms.Length) { objects.Add(i); objectSelectionOrder.Add(Document.nodes[i]); }
             RestoreComponentTargets(state.targets);
             Active = state.active >= 0 && state.active < Transforms.Length ? state.active : -1;
             mode = (ComponentMode)state.mode;

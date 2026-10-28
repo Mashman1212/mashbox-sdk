@@ -98,7 +98,7 @@ namespace MashBoxSDK.AnimationStudio
                 new Vector2(300, 185), new Vector2(260, 175),
                 execute: () => ApplyLiveTool(LiveTool.Extrude), canExecute: () => CanRunLiveTool(LiveTool.Extrude),
                 failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
-                preview: () => QueueLiveTool(LiveTool.Extrude), cancelPreview: () => CancelLiveTool(LiveTool.Extrude), history: PerformWorkspaceHistory);
+                preview: () => QueueLiveTool(LiveTool.Extrude), cancelPreview: () => CancelLiveTool(LiveTool.Extrude), history: PerformWorkspaceHistory, repeat: PerformRepeatLastAction);
             QueueLiveTool(LiveTool.Extrude);
         }
         private void DrawLiveExtrudeFields()

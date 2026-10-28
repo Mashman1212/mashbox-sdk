@@ -65,6 +65,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void Load(StudioModelDocument document)
         {
+            if (Document != document) lastRepeatAction = null;
             StopTargetWeld(); FinishSelectionPaint();
             CancelLiveTool(); CloseExtrudeToolWindow();
             FinishChannelEdit();
@@ -72,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
             CloseMergeToolWindow();
             CloseNormalsToolWindow();
             CloseBevelToolWindow();
-            CloseEdgeFlowToolWindow();
+            CloseEdgeFlowToolWindow(); CloseCombineToolWindow();
             CancelHierarchyDrag();
             collapsedHierarchy.Clear();
             EndPivotSnap();
@@ -205,6 +206,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            lastRepeatAction = repeatingAction = null;
+            CloseCombineToolWindow();
             FinishSelectionPaint();
             ClearViewportIsolation();
             StopTargetWeld(); StudioModelCommands.Release(this); commandView = null; commandLoaded = null;

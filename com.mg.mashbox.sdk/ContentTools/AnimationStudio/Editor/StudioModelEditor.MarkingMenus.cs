@@ -145,8 +145,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (evt.type == EventType.MouseDown && StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt) &&
                     (!(view is MashBoxStudioViewport studio) || studio.ModelCanvasRect.Contains(evt.mousePosition)))
                 {
-                    Run(() => CommitCuts(new List<StudioMeshCuts.Cut>(pendingCuts)));
-                    ResetCutGesture(); suppressModelContext = true; evt.Use(); repaint();
+                    CommitPendingCutGesture();
+                    suppressModelContext = true; evt.Use(); repaint();
                 }
                 else if (evt.type == EventType.ContextClick) evt.Use();
                 return;
@@ -327,7 +327,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.WorldAxes: SetToolbarLocalAxes(false); break;
                 case MarkingAction.EditPivot: pivot = !pivot; break;
                 case MarkingAction.CenterPivot: CenterEditingPivot(); break;
-                case MarkingAction.Freeze: Document.Freeze(Active, Transforms); Changed(); break;
+                case MarkingAction.Freeze: Document.Freeze(Active, Transforms); Changed(); RememberAction(RepeatKind.Freeze); break;
                 case MarkingAction.OpenUV: StudioUVEditor.Open(this); break;
                 case MarkingAction.Frame: Frame(view); break;
                 case MarkingAction.Through: xray = !xray; SaveDisplayConfiguration(); break;

@@ -18,7 +18,7 @@ namespace MashBoxSDK.AnimationStudio
         private Vector3 liveFlowParameters;
         private bool CanEditEdgeFlow => CanBevelEdges;
         private static bool BevelEdgeFlow => ToolChannelPane.GetFloatDefault(BevelTool,"EdgeFlow",0)>=.5f;
-        private Vector3 FlowParameters(LiveTool kind) => kind==LiveTool.Bevel
+        private Vector3 FlowParameters(LiveTool kind) => repeatingAction != null && repeatingAction.kind == RepeatKind.Live && repeatingAction.live == kind ? repeatingAction.flow : kind==LiveTool.Bevel
             ? new Vector3(BevelEdgeFlow?1:0,ToolChannelPane.GetFloatDefault(BevelTool,"FlowInfluence",.5f),ToolChannelPane.GetFloatDefault(BevelTool,"FlowIterations",4)) : Vector3.zero;
         private void CloseEdgeFlowToolWindow(){if(edgeFlowToolPane)edgeFlowToolPane.Close();edgeFlowToolPane=null;}
         private void OpenEdgeFlowTool()
@@ -29,7 +29,7 @@ namespace MashBoxSDK.AnimationStudio
                 new Vector2(350,235),new Vector2(310,215),
                 execute:()=>ApplyLiveTool(LiveTool.EdgeFlow),canExecute:()=>CanRunLiveTool(LiveTool.EdgeFlow),
                 failed:ex=>{error=ex.Message;repaint();},owner:ToolChannelPaneOwner,
-                preview:()=>QueueLiveTool(LiveTool.EdgeFlow),cancelPreview:()=>CancelLiveTool(LiveTool.EdgeFlow),history:PerformWorkspaceHistory);
+                preview:()=>QueueLiveTool(LiveTool.EdgeFlow),cancelPreview:()=>CancelLiveTool(LiveTool.EdgeFlow),history:PerformWorkspaceHistory,repeat:PerformRepeatLastAction);
             QueueLiveTool(LiveTool.EdgeFlow);
         }
         private static void DrawFlowParameters(string tool,bool bevel)

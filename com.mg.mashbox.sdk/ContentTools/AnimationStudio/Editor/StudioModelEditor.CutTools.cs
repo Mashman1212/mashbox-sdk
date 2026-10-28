@@ -28,7 +28,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ResetCutGesture()
         {
             if (cutDragging && GUIUtility.hotControl == cutControl) GUIUtility.hotControl = 0;
-            cutDragging = false; pendingCuts.Clear(); cutPreview.Clear(); cutStart = cutHover = loopSeed = null;
+            ResetMultiCutGesture(); cutDragging = false; pendingCuts.Clear(); cutPreview.Clear(); cutStart = cutHover = loopSeed = null;
         }
         private void StopCutTool() { ResetCutGesture(); cutTool = CutTool.None; cutTopology = null; cutMesh = null; }
         private void CommitCuts(IList<StudioMeshCuts.Cut> cuts)
@@ -43,7 +43,7 @@ namespace MashBoxSDK.AnimationStudio
                 EditorUtility.SetDirty(ActiveMesh); EditorUtility.SetDirty(Document);
                 ResetCutGesture(); MeshTopologyChanged();
                 cutTopology = new StudioMeshCuts(Document.nodes[Active]); cutMesh = ActiveMesh;
-                error = null;
+                error = null; RememberAction(RepeatKind.Cut,new Vector4(label == "Insert edge loop" ? (int)CutTool.EdgeLoop : (int)CutTool.MultiCut,edgeLoopCount,0,0));
             }
             catch { Undo.RevertAllDownToGroup(group); throw; }
             finally { Undo.CollapseUndoOperations(group); }
@@ -58,10 +58,11 @@ namespace MashBoxSDK.AnimationStudio
             cutControl = GUIUtility.GetControlID("MashBoxStudioCutTool".GetHashCode(), FocusType.Passive);
             if (HandleModelKeyboard(view)) return true;
             if (HandleLoopCountWheel(view, evt)) return true;
-            if (evt.alt) return true;
+            if (evt.alt) { if(cutTool==CutTool.MultiCut)ReleaseMultiCutPointer(); return true; }
             if (evt.type == EventType.Layout || evt.type == EventType.MouseMove) HandleUtility.AddDefaultControl(cutControl);
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,0,view.position.width,view.position.height);
             bool overCanvas = canvas.Contains(evt.mousePosition) && (!(view is MashBoxStudioViewport overlay) || !overlay.IsOverViewportControls(evt.mousePosition));
+            if(cutTool==CutTool.MultiCut && ((!evt.control && !evt.command) || HasMultiCutGesture)) return MultiCutSceneGUI(view,overCanvas);
             bool loop = cutTool == CutTool.EdgeLoop || evt.control || evt.command || cutDragging;
             if (overCanvas && (evt.type == EventType.MouseMove || evt.type == EventType.MouseDrag || evt.type == EventType.MouseDown || evt.type == EventType.Repaint))
             {
