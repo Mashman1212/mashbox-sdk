@@ -39,7 +39,10 @@ namespace MashBoxSDK.AnimationStudio
         private void CreatePolygon()
         {
             if(corners.Count<3)throw new InvalidOperationException("Place at least three points, then press Enter to fill the outline.");
-            var points=corners.ToArray();var normal=cornerNormal;
+            var points=corners.ToArray();var normal=Vector3.zero;
+            for(int i=0;i<points.Length;i++)normal+=Vector3.Cross(points[i]-points[0],points[(i+1)%points.Length]-points[0]);
+            normal=normal.sqrMagnitude>1e-12f?normal.normalized:cornerNormal;
+            if(Vector3.Dot(normal,cornerNormal)<0)normal=-normal;
             var grid=BuildPolygonGrid(points,patchAutoDensity?PatchQuadSize:0,patchSegments);
             // Keep the complete draft in the same Undo snapshot as the fill.
             StorePolygonDraft();

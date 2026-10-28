@@ -37,13 +37,19 @@ namespace MashBoxSDK.AnimationStudio
                 for(int y=0;y<rows;y++)for(int x=0;x<columns;x++)result.faces.Add(new Face(new[]{grid[x,y],grid[x+1,y],grid[x+1,y+1],grid[x,y+1]}));
                 return result;
             }
+            if(TryBuildPolygonLayout(points,target,divisions,normal,out var layout))return layout;
             // Seed non-rectangular outlines with convex patches, then subdivide
             // conformingly: shared edge midpoints are created only once, and a
             // remaining triangle becomes three quads around its center.
             for(int i=0;i<triangles.Length;i+=3)result.faces.Add(new Face(new[]{triangles[i],triangles[i+1],triangles[i+2]}));
             StudioRetopologyOperations.PairQuads(result);
-            float longest=StudioRetopologyOperations.Edges(result).Keys.Max(e=>Vector3.Distance(result.vertices[e.Item1],result.vertices[e.Item2]));
-            int levels=Mathf.Clamp(Mathf.CeilToInt(Mathf.Log(Mathf.Max(1,target>0?longest/target:divisions),2)),1,6);
+            // Irregular concave regions need extraordinary vertices, but their
+            // density must follow area, not the longest triangulation diagonal.
+            float area=0;
+            for(int i=0;i<triangles.Length;i+=3)area+=Vector3.Cross(points[triangles[i+1]]-points[triangles[i]],points[triangles[i+2]]-points[triangles[i]]).magnitude*.5f;
+            float desired=target>0?area/(target*target):divisions*divisions;
+            int seedQuads=result.faces.Sum(f=>f.vertices.Length);
+            int levels=Mathf.Clamp(1+Mathf.RoundToInt(Mathf.Log(Mathf.Max(1,desired/seedQuads),4)),1,5);
             for(int level=0;level<levels;level++)
             {
                 if(result.faces.Sum(f=>f.vertices.Length)>24000)throw new InvalidOperationException("This outline would create too many quads. Lower Density or Divisions before filling.");
@@ -81,7 +87,7 @@ namespace MashBoxSDK.AnimationStudio
                 int added=Active.vertices.Count;Active.vertices.Add(point);Active.uv.Add(Vector2.zero);Bucket(added);return added;
             }
             var map=new int[grid.vertices.Count];
-            float span=StudioRetopologyOperations.Edges(grid).Keys.Max(e=>Vector3.Distance(grid.vertices[e.Item1],grid.vertices[e.Item2]));
+            float span=StudioRetopologyOperations.Edges(grid).Keys.Average(e=>Vector3.Distance(grid.vertices[e.Item1],grid.vertices[e.Item2]));
             for(int i=0;i<map.Length;i++)
             {
                 var point=grid.vertices[i];

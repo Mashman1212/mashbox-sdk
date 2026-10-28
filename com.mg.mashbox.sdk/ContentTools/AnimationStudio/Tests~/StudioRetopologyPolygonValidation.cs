@@ -45,6 +45,30 @@ namespace MashBoxSDK.AnimationStudio
                 Check(regular.faces.Count==25&&regular.vertices.Count==36,"Four-corner polygon makes a regular five-by-five quad patch");
                 var automatic=StudioRetopologyEditor.BuildPolygonGrid(rectangle,.25f,1);
                 Check(automatic.faces.Count==32,"Auto density uses patch-sized rows and columns");
+                var tracedRectangle=new[]{new Vector3(0,0,0),new Vector3(.3f,0,0),new Vector3(.7f,0,0),new Vector3(1,0,0),new Vector3(1,.3f,0),new Vector3(1,.7f,0),new Vector3(1,1,0),new Vector3(.7f,1,0),new Vector3(.3f,1,0),new Vector3(0,1,0),new Vector3(0,.7f,0),new Vector3(0,.3f,0)};
+                var traced=StudioRetopologyEditor.BuildPolygonGrid(tracedRectangle,.15f,1);
+                Check(traced.faces.Count==49&&traced.vertices.Count==64,"Twelve-click outline produces the same seven-by-seven grid density as Draw Patch");
+                Check(Enumerable.Range(0,tracedRectangle.Length).All(i=>traced.faces.Any(f=>f.vertices.Contains(i))),"Every clicked boundary point remains part of the connected grid");
+                Check(Mathf.Abs(QuadArea(traced)-1)<.00001f&&StudioRetopologyLoops.Boundaries(traced).Count==1,"Traced rectangle covers its outline without gaps or overlap");
+                float Aspect(StudioRetopologyDocument.Part p)=>p.faces.Max(f=>
+                {
+                    var edges=Enumerable.Range(0,4).Select(i=>Vector3.Distance(p.vertices[f.vertices[i]],p.vertices[f.vertices[(i+1)%4]])).ToArray();
+                    return edges.Max()/Mathf.Max(.000001f,edges.Min());
+                });
+                Check(Aspect(traced)<2,"Polygon rows and columns have even quad spacing instead of diagonal fans");
+                var turn=Quaternion.Euler(23,42,11);
+                foreach(bool reverse in new[]{false,true})
+                {
+                    var curved=(reverse?tracedRectangle.Reverse():tracedRectangle).Select(p=>turn*new Vector3(p.x,p.y,.3f*p.x*p.x)+new Vector3(4,-2,8)).ToArray();
+                    var shell=StudioRetopologyEditor.BuildPolygonGrid(curved,.16f,1);
+                    Check(shell.faces.Count<=64&&shell.faces.All(f=>f.vertices.Length==4)&&Aspect(shell)<2.5f,"Curved, rotated multi-click patch keeps coherent quad rows, reverse="+reverse);
+                    Check(StudioRetopologyOperations.Edges(shell).All(e=>e.Value.Count<=2)&&StudioRetopologyLoops.Boundaries(shell).Count==1,"Curved grid remains connected and manifold, reverse="+reverse);
+                }
+                var circle=Enumerable.Range(0,16).Select(i=>new Vector3(Mathf.Cos(i*Mathf.PI/8),Mathf.Sin(i*Mathf.PI/8),0)).ToArray();
+                var rounded=StudioRetopologyEditor.BuildPolygonGrid(circle,.22f,1);
+                Check(rounded.faces.Count<=81&&rounded.faces.All(f=>f.vertices.Length==4)&&Mathf.Abs(QuadArea(rounded)-QuadArea(StudioRetopologyEditor.BuildPolygonGrid(circle,0,4)))<.001f,"Rounded outline gets bounded density and preserves its area");
+                var concaveAuto=StudioRetopologyEditor.BuildPolygonGrid(polygon,.3f,1);
+                Check(concaveAuto.faces.Count<=100&&Mathf.Abs(QuadArea(concaveAuto)-3)<.0001f,"Concave fill budgets density by area without diagonal-driven over-subdivision");
                 reference=new Mesh();reference.vertices=polygon;reference.triangles=StudioRetopologyEditor.TriangulatePolygon(polygon);reference.RecalculateNormals();reference.RecalculateBounds();
                 document=ScriptableObject.CreateInstance<StudioRetopologyDocument>();
                 document.parts.Add(new StudioRetopologyDocument.Part{name="Polygon validation",reference=reference});document.selected=0;
