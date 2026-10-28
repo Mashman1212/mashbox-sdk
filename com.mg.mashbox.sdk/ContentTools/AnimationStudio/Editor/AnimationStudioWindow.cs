@@ -50,20 +50,32 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool showPoles = true;
         [SerializeField] private bool showFKControls = true;
 
-        [MenuItem("MashBox/MashBox Studio", false, 119)]
-        public static void Open()
+        [MenuItem("MashBox/MashBox Studio/Modelling", false, 119)]
+        public static void Open() => OpenWorkspace(window => window.SwitchStudioMode(true));
+
+        [MenuItem("MashBox/MashBox Studio/Skinning", false, 120)]
+        private static void OpenSkinningWorkspace() => OpenWorkspace(window => window.OpenSkinningMode());
+
+        [MenuItem("MashBox/MashBox Studio/Retopology", false, 121)]
+        private static void OpenRetopologyWorkspace() => OpenWorkspace(window => window.OpenRetopologyMode());
+
+        [MenuItem("MashBox/MashBox Studio/Painting", false, 122)]
+        private static void OpenPaintingWorkspace() => OpenWorkspace(window => window.OpenPaintingMode());
+
+        [MenuItem("MashBox/MashBox Studio/Animation", false, 123)]
+        private static void OpenAnimationWorkspace() => OpenWorkspace(window => window.SwitchStudioMode(false));
+
+        private static void OpenWorkspace(Action<AnimationStudioWindow> activate)
         {
             var window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().FirstOrDefault();
             if (!window) window = CreateInstance<AnimationStudioWindow>();
-            if (window.viewport) window.SwitchStudioMode(true);
-            else
+            window.Guard(() =>
             {
-                window.modelingMode = true;
-                window.skinningMode = false;
-                window.retopologyMode = false;
-                window.OpenViewport();
-            }
-            window.viewport?.Focus();
+                if (!window.viewport) window.OpenViewport();
+                activate(window);
+                window.viewport?.Focus();
+                window.viewport?.Repaint();
+            });
         }
 
         [MenuItem("Assets/Retopologize in MashBox Studio", false, 2001)]
@@ -171,6 +183,7 @@ namespace MashBoxSDK.AnimationStudio
                 int previousFrame = window.frame;
                 try
                 {
+                window.LeaveClothMode();
                 window.retopologyMode = false; window.modelingMode = false;
                 window.skinningEditor?.EndStroke(); window.skinningMode = false;
                 var model = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(clip));
@@ -248,8 +261,9 @@ namespace MashBoxSDK.AnimationStudio
             audioPreview.ReportError = text => message = text;
             LoadAnimationConfiguration();
             string storedMode = StudioPreferenceStore.GetString("Studio.Mode", "Modeling");
-            paintingMode = storedMode == "Painting";
-            modelingMode = paintingMode || storedMode == "Modeling";
+            clothMode = clothMode || storedMode == "Cloth";
+            paintingMode = !clothMode && storedMode == "Painting";
+            modelingMode = !clothMode && (paintingMode || storedMode == "Modeling");
             RestoreMotionJob();
             minSize = new Vector2(470, 640);
             SceneView.duringSceneGui += DuringSceneGUI;
@@ -261,6 +275,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnDisable()
         {
+            ReleaseClothPreview();
             ReleasePainting();
             SaveAnimationConfiguration();
             StudioPreferenceStore.Flush();
@@ -309,7 +324,7 @@ namespace MashBoxSDK.AnimationStudio
         private void PlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.ExitingPlayMode)
-            { ReleaseRig(); ReleaseModelEditor(); }
+            { ReleaseClothPreview(); ReleaseRig(); ReleaseModelEditor(); }
             else if (state == PlayModeStateChange.EnteredEditMode || state == PlayModeStateChange.EnteredPlayMode)
                 MashBoxStudioViewport.RestoreStudioViews();
         }
@@ -327,6 +342,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UndoRedo()
         {
+            if (clothMode) { StopClothSession(); viewport?.Repaint(); return; }
             if (skinningMode || retopologyMode) return; // Skinning owns mesh/document Undo and preview rebuilding.
             if (RestoreUnkeyedPoseUndo()) return;
             sceneDraft = false;
@@ -521,6 +537,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.SetInspectorExpanded(inspectorExpanded);
             BindStudioMode();
             if (migrateHost) { viewport.pivot = previousPivot; viewport.rotation = previousRotation; viewport.size = previousSize; viewport.orthographic = previousOrthographic; return; }
+            if (clothMode) { if (freshViewport) FrameCloth(); return; }
             if (modelingMode)
             {
                 if (freshViewport) modelEditor.Frame(viewport);
@@ -816,17 +833,18 @@ namespace MashBoxSDK.AnimationStudio
         private bool automaticSessionFailed;
         private void Tick()
         {
+            TickCloth();
             // Bootstrap only on the editor update, never during GUI layout or the
             // nested BuildRig/OpenViewport calls. NewTake creates an in-memory
             // document; no asset is written until the user explicitly saves it.
-            if (viewport && !modelingMode && !skinningMode && !retopologyMode && !take && !automaticSessionFailed &&
+            if (viewport && !modelingMode && !skinningMode && !retopologyMode && !clothMode && !take && !automaticSessionFailed &&
                 !EditorApplication.isCompiling && !EditorApplication.isUpdating &&
                 EditorApplication.isPlaying == EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 try { NewTake(); }
                 catch (Exception e) { automaticSessionFailed = true; message = e.GetBaseException().Message; Debug.LogException(e); }
             }
-            if (hadViewport && !viewport) { hadViewport = false; ReleaseRig(); ReleaseModelEditor(); }
+            if (hadViewport && !viewport) { hadViewport = false; ReleaseClothPreview(); ReleaseRig(); ReleaseModelEditor(); }
             PollMotionJob();
             if (sceneDraft && !viewport) FinishSceneEdit();
             if (pendingSave && !sceneDraft && GUIUtility.hotControl == 0 &&
@@ -933,6 +951,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void BeforeSceneGUI(SceneView view)
         {
+            if (view == viewport && clothMode) { BeforeClothScene(view); return; }
             if (view == viewport && paintingMode) { BeforePaintingScene(view); return; }
             if(view==viewport && !skinningMode) skinningEditor?.SuspendLighting();
             if (view == viewport && viewport.HandleWindowShortcut()) return;

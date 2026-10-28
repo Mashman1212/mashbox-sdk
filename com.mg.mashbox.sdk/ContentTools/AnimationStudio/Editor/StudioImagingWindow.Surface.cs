@@ -32,10 +32,11 @@ namespace MashBoxSDK.AnimationStudio
             rendererScope = RendererScope.SelectedRenderer;
             surfaceRenderers = renderers;
             surfaceSuspended = false;
-            liveMaterialPreview = true;
+
             autoOpenCurrentMap = false;
             RefreshTextureProperties();
             texturePropertyIndex = Array.IndexOf(texturePropertyNames, property);
+            RememberShaderImageSelection();
             if (initialize)
             {
                 restoring = true;

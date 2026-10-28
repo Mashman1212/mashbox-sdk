@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor : IDisposable
     {
-        internal enum Brush { Select, Paint, SmoothWeights, Inflate, Bulge, Grab, SmoothShape, Pose, Object, FitBody }
+        internal enum Brush { Select, Paint, SmoothWeights, Inflate, Bulge, Grab, SmoothShape, Pose, Object, FitBody, Culling }
         internal readonly StudioSkinningDocument Document;
         internal readonly Scene Scene;
         internal Brush Tool;
@@ -124,7 +124,7 @@ namespace MashBoxSDK.AnimationStudio
         private void Changed()
         { Document.dirty = true; EditorUtility.SetDirty(Document); if (Part?.mesh) EditorUtility.SetDirty(Part.mesh); repaint(); }
         private void OnUndo()
-        { objectUndoGroup = -1; poseUndoGroup = -1; CancelBrushInteraction(); stroke = false; GUIUtility.hotControl = 0; Run(Rebuild); }
+        { cullingUndo = -1; objectUndoGroup = -1; poseUndoGroup = -1; CancelBrushInteraction(); stroke = false; GUIUtility.hotControl = 0; Run(Rebuild); }
         private static void ApplyPreviewWeights(Mesh source,Mesh preview)
         {
             var previewWeights=new StudioSkinWeights(source);
@@ -132,6 +132,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Rebuild()
         {
+            DisposeCullingPicks();
             foreach (var go in objects) if (go) Object.DestroyImmediate(go); objects.Clear();
             foreach (var mesh in displayMeshes) if (mesh) Object.DestroyImmediate(mesh); displayMeshes.Clear();
             foreach (var part in Document.parts)
@@ -149,7 +150,11 @@ namespace MashBoxSDK.AnimationStudio
                     skin.quality = SkinQuality.Bone4;
                     skin.rootBone = skeleton.transform; skin.updateWhenOffscreen = true; skin.localBounds = new Bounds(Vector3.up, Vector3.one * 20); renderer = skin;
                 }
-                else { go.AddComponent<MeshFilter>().sharedMesh = mesh; renderer = go.AddComponent<MeshRenderer>(); }
+                else
+                {
+                    if(part.role == StudioSkinningDocument.MeshRole.Headgear) AttachHeadgearPreview(go,mesh);
+                    go.AddComponent<MeshFilter>().sharedMesh = mesh; renderer = go.AddComponent<MeshRenderer>();
+                }
                 renderer.sharedMaterials = Enumerable.Repeat(part.referenceOnly ? referenceShaded : shaded, mesh.subMeshCount).ToArray(); go.SetActive(part.visible);
             }
             if (Document.selected < 0 || Document.selected >= Document.parts.Count || !CanPaintPart(Document.parts[Document.selected]))
@@ -164,7 +169,9 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Document.parts[i].referenceOnly = referenceOnly || IsDefaultReference(Document.parts[i]);
                 Document.parts[i].visible = visible;
-                AssignImportedMeshRole(Document.parts[i]);
+                AssignImportedMeshRole(Document.parts[i], source);
+                if (Document.parts[i].role == StudioSkinningDocument.MeshRole.Headgear)
+                { AlignImportedHeadgear(Document.parts[i],source); MakeHeadgearRigid(Document.parts[i]); }
             }
             Rebuild();
             if (Document.selected >= first) ChooseImportedMeshTool();
@@ -263,6 +270,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DrawHierarchy()
         {
+            if(Event.current.type==EventType.MouseMove || Event.current.type==EventType.MouseLeaveWindow)
+                repaint();
             if (Event.current.type == EventType.DragUpdated || Event.current.type == EventType.DragPerform)
                 HandleModelDrop(Event.current);
             GUILayout.Label("Drop clothing or objects into the viewport.", StudioTheme.Styles.wordWrappedMiniLabel);
@@ -328,7 +337,7 @@ namespace MashBoxSDK.AnimationStudio
                         var menu = new GenericMenu();
                         menu.AddItem(new GUIContent("Rename"), false, () => Run(() => BeginMeshRename(part)));
                         menu.AddSeparator("");
-                        if (!part.bound) menu.AddItem(new GUIContent("Skin"), false, () => Run(SkinSelected));
+                        if (CanSkinSelected) menu.AddItem(new GUIContent("Skin"), false, () => Run(SkinSelected));
                         else menu.AddDisabledItem(new GUIContent("Skin"));
                         if (part.bound) menu.AddItem(new GUIContent("Unskin"), false, () => Run(UnskinSelected));
                         else menu.AddDisabledItem(new GUIContent("Unskin"));
@@ -339,6 +348,8 @@ namespace MashBoxSDK.AnimationStudio
                             () => Run(() => SetMeshRole(part, StudioSkinningDocument.MeshRole.Clothing)));
                         menu.AddItem(new GUIContent("Mark as Body"), part.role == StudioSkinningDocument.MeshRole.Body,
                             () => Run(() => SetMeshRole(part, StudioSkinningDocument.MeshRole.Body)));
+                        menu.AddItem(new GUIContent("Mark as Headgear"), part.role == StudioSkinningDocument.MeshRole.Headgear,
+                            () => Run(() => SetMeshRole(part, StudioSkinningDocument.MeshRole.Headgear)));
                         if (CanStitchSelectedBust) menu.AddItem(new GUIContent("Stitch to Body"), false, () => Run(StitchBust));
                         else menu.AddDisabledItem(new GUIContent("Stitch to Body"));
                         if (CanStitchSelectedBody) menu.AddItem(new GUIContent("Stitch to Bust"), false, () => Run(StitchBody));
@@ -353,7 +364,7 @@ namespace MashBoxSDK.AnimationStudio
                         menu.ShowAsContext(); Event.current.Use();
                     }
                     if (GUI.Toggle(row,Document.selected == i,GUIContent.none,"Button") && Document.selected != i)
-                    { EndStroke(); Document.selected = i; RefreshSurface(); }
+                    { EndStroke(); Document.selected = i; RefreshSurface(); if (part.role == StudioSkinningDocument.MeshRole.Headgear) ChooseBrush(Brush.Object); }
                     DrawMeshRoleRow(row,part);
                 }
         }
@@ -392,6 +403,14 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUIUtility.labelWidth = Mathf.Min(126, width * .46f); EditorGUIUtility.fieldWidth = 42;
             if(scroll)inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll, GUILayout.MinWidth(0));
             EditorGUILayout.BeginVertical(GUILayout.Width(width), GUILayout.MaxWidth(width));
+            if(Tool==Brush.Culling)
+            {
+                DrawCullingInspector();
+                EditorGUILayout.EndVertical();
+                if(scroll)EditorGUILayout.EndScrollView();
+                EditorGUIUtility.labelWidth=oldLabelWidth;EditorGUIUtility.fieldWidth=oldFieldWidth;
+                return;
+            }
             GUILayout.Label(sculptMode ? "SCULPT" : "SKIN WEIGHT PAINT", StudioTheme.Styles.boldLabel);
             var choices = ModeBrushes;
             int chosen = GUILayout.SelectionGrid(Array.IndexOf(choices, Tool), choices.Select(BrushLabel).ToArray(), 2, GUILayout.Width(width));
@@ -441,7 +460,7 @@ namespace MashBoxSDK.AnimationStudio
             var matrices = skinMatrices = Part.bound ? bones.Select((b,i) => b.localToWorldMatrix * binds[i]).ToArray() : null;
             for (int i = 0; i < vertices.Length; i++)
             {
-                var matrix = Part.bound ? weights.PreviewSkinMatrix(i, matrices) : Matrix4x4.identity;
+                var matrix = Part.bound ? weights.PreviewSkinMatrix(i, matrices) : Part.role == StudioSkinningDocument.MeshRole.Headgear ? HeadgearPreviewMatrix : Matrix4x4.identity;
                 if (Mathf.Abs(matrix.determinant) < 1e-8f) throw new InvalidOperationException("A posed skin transform is singular. Reset the preview pose before sculpting.");
                 deformed[i] = matrix.MultiplyPoint3x4(vertices[i]); inverses[i] = matrix.inverse;
             }
@@ -487,6 +506,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UpdateDisplay()
         {
+            UpdateCullingDisplay();
             wirePoseDirty = true;
             if (referenceShaded) referenceShaded.SetColor("_Color",ReferencePreviewTint);
             for (int i = 0; i < objects.Count; i++)
@@ -524,14 +544,24 @@ namespace MashBoxSDK.AnimationStudio
                 !influenceHoverScreenRect.Contains(GUIUtility.GUIToScreenPoint(Event.current.mousePosition))))
                 SetInfluencePreview(-1);
             DrawBrushOverlay(view);
-            DrawSelectedMeshWireframe();
+            if(Tool!=Brush.Culling || previewPlaying)DrawSelectedMeshWireframe();
             if (adjustingBrush)
             {
+                if (Tool == Brush.Culling)
+                {
+                    if (!cullingCutouts && Event.current.type == EventType.Repaint) DrawCullingFill();
+                    DrawSelectedMeshWireframe();
+                    var pick = PickCullingSurface(HandleUtility.GUIPointToWorldRay(adjustmentAnchor), out var cullingHit);
+                    DrawCullingCursor(view, adjustmentAnchor, pick != null, cullingHit, false);
+                }
+                else
+                {
                 bool valid=Part!=null&&Part.visible&&!IsBrushLocked&&
                     ((Tool!=Brush.Paint&&Tool!=Brush.SmoothWeights)||Part.bound);
                 RaycastHit adjustmentHit=default;
                 valid=valid&&picker.Raycast(HandleUtility.GUIPointToWorldRay(adjustmentAnchor),out adjustmentHit,10000);
                 StudioBrushCursor.Draw(view,adjustmentAnchor,radius,valid,adjustmentHit.point,adjustmentHit.normal,new Color(1,.7f,.2f,.85f),ref brushCursorDepth);
+                }
             }
             if (brushMenuOpen || adjustingBrush) return;
             var evt = Event.current;
@@ -549,7 +579,10 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (evt.type == EventType.KeyDown && (evt.control || evt.command) && evt.keyCode == KeyCode.S)
             { Run(() => { EndStroke(); Document.SaveDocument(); }); evt.Use(); }
+            if (Tool == Brush.Culling) { DrawCullingScene(view); DrawSelectedMeshWireframe(); return; }
             if (Tool == Brush.Object) { DrawObjectTransform(view); return; }
+            if (Part != null && Part.role == StudioSkinningDocument.MeshRole.Headgear)
+            { Handles.Label(Part.mesh.bounds.center, "Headgear is rigid. Use Object mode (W / E / R) to position it."); return; }
             Handles.color = new Color(.3f,.9f,.75f,.7f);
             for (int i = 1; i < bones.Length; i++) if (deformBones[i] && bones[i].parent && Array.IndexOf(bones,bones[i].parent) is int parent && parent >= 0 && deformBones[parent])
                 Handles.DrawLine(bones[i].parent.position, bones[i].position);
@@ -746,7 +779,7 @@ namespace MashBoxSDK.AnimationStudio
         private void Export()
         {
             EndStroke();
-            if (!Document.parts.Any(p => p.bound)) throw new InvalidOperationException("Bind at least one mesh before exporting.");
+            if (!Document.parts.Any(p => p.bound || p.role == StudioSkinningDocument.MeshRole.Headgear)) throw new InvalidOperationException("Add a skinned mesh or rigid headgear before exporting.");
             string path = EditorUtility.SaveFilePanelInProject("Export skinned character", "Skinned Character", "prefab", "Export independent meshes and a skeleton prefab.");
             if (string.IsNullOrEmpty(path)) return;
             path = AssetDatabase.GenerateUniqueAssetPath(path);
@@ -756,10 +789,10 @@ namespace MashBoxSDK.AnimationStudio
         internal GameObject ExportToPath(string path, string meshPath)
         {
             EndStroke();
-            if (!Document.parts.Any(p => p.bound)) throw new InvalidOperationException("Bind at least one mesh before exporting.");
+            if (!Document.parts.Any(p => p.bound || p.role == StudioSkinningDocument.MeshRole.Headgear)) throw new InvalidOperationException("Add a skinned mesh or rigid headgear before exporting.");
             if (AssetDatabase.LoadMainAssetAtPath(path) || AssetDatabase.LoadMainAssetAtPath(meshPath))
                 throw new InvalidOperationException("Export paths must be new assets.");
-            var exportPose = CaptureExportTPose();
+            var exportPose = Document.parts.Any(p => p.bound) ? CaptureExportTPose() : rest;
             var root = Object.Instantiate(Document.skeleton); root.hideFlags = HideFlags.None;
             var owned = new List<Mesh>();
             try
@@ -768,9 +801,19 @@ namespace MashBoxSDK.AnimationStudio
                 foreach (var renderer in root.GetComponentsInChildren<Renderer>()) Object.DestroyImmediate(renderer);
                 PoseExportSkeleton(root,exportPose);
                 var rigBones = root.GetComponentsInChildren<Transform>(true);
-                foreach (var part in Document.parts.Where(p => p.bound))
+                foreach (var part in Document.parts.Where(p => p.bound || p.role == StudioSkinningDocument.MeshRole.Headgear))
                 {
                     var mesh = Object.Instantiate(part.mesh); mesh.hideFlags = HideFlags.None; owned.Add(mesh);
+                    if (part.role == StudioSkinningDocument.MeshRole.Headgear)
+                    {
+                        if (owned.Count == 1) AssetDatabase.CreateAsset(mesh,meshPath); else AssetDatabase.AddObjectToAsset(mesh,meshPath);
+                        var anchor = rigBones.Single(b => StudioSkinningDocument.BoneName(b.name) == "Head");
+                        StudioSkinningDocument.TransformGeometry(mesh, rest[HeadgearAnchorIndex()].inverse);
+                        var rigid = new GameObject(part.name); rigid.transform.SetParent(anchor,false);
+                        rigid.AddComponent<MeshFilter>().sharedMesh=mesh;
+                        rigid.AddComponent<MeshRenderer>().sharedMaterials=part.materials;
+                        continue;
+                    }
                     BakePartForTPose(mesh,part.preserveStitchedBindPose ? CapturePartExportPose(part) : exportPose);
                     if (!part.preserveStitchedBindPose)
                         mesh.bindposes=rigBones.Select(b=>b.worldToLocalMatrix*root.transform.localToWorldMatrix).ToArray();
@@ -779,6 +822,7 @@ namespace MashBoxSDK.AnimationStudio
                     var skin = go.AddComponent<SkinnedMeshRenderer>(); skin.sharedMesh = mesh; skin.bones = rigBones; skin.rootBone = root.transform;
                     skin.probeAnchor = root.transform;
                     skin.sharedMaterials = part.materials; skin.localBounds = new Bounds(Vector3.up,Vector3.one*4);
+                    AttachExportCulling(go,part,System.IO.Path.ChangeExtension(meshPath,null)+"."+Document.parts.IndexOf(part)+".culling.asset");
                 }
                 var prefab = PrefabUtility.SaveAsPrefabAsset(root,path); if (!prefab) throw new InvalidOperationException("Unity could not save the prefab.");
                 foreach (var mesh in owned) AssetDatabase.SaveAssetIfDirty(mesh);
@@ -788,6 +832,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            FinishCullingStroke();DisposeCullingPicks();
             materialLighting?.Dispose(); materialLighting=null;
             DisposeUVChecker();materialPreview.Dispose();
             DisposeWireframe();
@@ -804,3 +849,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

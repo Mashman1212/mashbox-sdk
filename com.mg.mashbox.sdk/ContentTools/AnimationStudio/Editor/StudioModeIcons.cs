@@ -20,6 +20,7 @@ namespace MashBoxSDK.AnimationStudio
             Texture icon;
             switch (mode)
             {
+                case "Cloth": icon = EditorGUIUtility.IconContent("Cloth Icon").image; break;
                 case "Painting": icon = Painting; break;
                 case "Animation": icon = EditorGUIUtility.IconContent("AnimationClip Icon").image; break;
                 case "Skinning": icon = EditorGUIUtility.IconContent("SkinnedMeshRenderer Icon").image; break;

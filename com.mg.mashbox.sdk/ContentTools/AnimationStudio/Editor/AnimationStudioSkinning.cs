@@ -69,6 +69,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OpenSkinningMode()
         {
+            LeaveClothMode();
             LeavePaintingMode();
             retopologyMode=false; retopologyEditor?.SuspendLighting(); viewport?.SetRetopologyPanels(false);
             FlushEdits(); playing = false;
@@ -224,8 +225,9 @@ namespace MashBoxSDK.AnimationStudio
             if (skinningEditor.HasEditableMesh)
             {
                 menu.AddItem(new GUIContent("Mark as Bust"),skinningEditor.SelectedIsBust,()=>skinningEditor.Run(()=>skinningEditor.SetSelectedMeshRole(true)));
-                menu.AddItem(new GUIContent("Mark as Clothing"),!skinningEditor.SelectedIsBust && !skinningEditor.SelectedIsBody,()=>skinningEditor.Run(()=>skinningEditor.SetSelectedMeshRole(false)));
+                menu.AddItem(new GUIContent("Mark as Clothing"),!skinningEditor.SelectedIsBust && !skinningEditor.SelectedIsBody && !skinningEditor.SelectedIsHeadgear,()=>skinningEditor.Run(()=>skinningEditor.SetSelectedMeshRole(false)));
                 menu.AddItem(new GUIContent("Mark as Body"),skinningEditor.SelectedIsBody,()=>skinningEditor.Run(skinningEditor.MarkSelectedBody));
+                menu.AddItem(new GUIContent("Mark as Headgear"),skinningEditor.SelectedIsHeadgear,()=>skinningEditor.Run(skinningEditor.MarkSelectedHeadgear));
                 menu.AddItem(new GUIContent("Save FBX"),false,()=>skinningEditor.Run(skinningEditor.SaveSelectedFbx));
                 menu.AddItem(new GUIContent("Save FBX As…"),false,()=>skinningEditor.Run(skinningEditor.SaveSelectedFbxAs));
             }

@@ -4359,7 +4359,8 @@ namespace MashBoxSDK.ContentTools.Editor
             EnsureFolderExists(FORCED_PACKS_FOLDER);
 
             string assetPath = $"{FORCED_PACKS_FOLDER}/{safeName}.asset";
-            var asset = ScriptableObject.CreateInstance<ContentPackDefinition>();
+            var asset = PackDefinitionScriptRecovery.CreatePack<ContentPackDefinition>();
+            if (asset == null) return;
             AssetDatabase.CreateAsset(asset, assetPath);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -5364,22 +5365,6 @@ namespace MashBoxSDK.ContentTools.Editor
             return prefab.name.StartsWith("Human_", System.StringComparison.OrdinalIgnoreCase);
         }
 
-        private static ClothingClipSettings GetOrAddClothingClipSettings(GameObject prefab)
-        {
-            var settings = prefab.GetComponent<ClothingClipSettings>();
-            if (settings != null)
-                return settings;
-
-            // Add component safely
-            Undo.RecordObject(prefab, "Add Clothing Clip Settings");
-            settings = prefab.AddComponent<ClothingClipSettings>();
-
-            EditorUtility.SetDirty(prefab);
-            PrefabUtility.RecordPrefabInstancePropertyModifications(settings);
-
-            return settings;
-        }
-
         private void DrawClothingControlsIfNeeded(GameObject prefab)
         {
             if (!IsHumanClothing(prefab))
@@ -5388,31 +5373,34 @@ namespace MashBoxSDK.ContentTools.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Clothing Settings", EditorStyles.boldLabel);
 
-            var settings = GetOrAddClothingClipSettings(prefab);
+            var settings = prefab.GetComponent<ClothingClipSettings>();
 
             EditorGUI.BeginChangeCheck();
 
             // --- Clipping Type ---
             var newClipType = (ClothingClipType)EditorGUILayout.EnumPopup(
                 "Clipping Type",
-                settings.clipType
+                ContentPackClothingSettings.GetClippingType(prefab)
             );
+            var customProfile = ContentPackClothingSettings.GetProfile(prefab);
+            if (newClipType == ClothingClipType.Custom)
+            {
+                customProfile = (MashBoxSDK.Culling.ClothingCullingProfile)EditorGUILayout.ObjectField(
+                    new GUIContent("Culling Data", "Assign the culling data asset saved by Skinning Studio."),
+                    customProfile, typeof(MashBoxSDK.Culling.ClothingCullingProfile), false);
+                if (!customProfile)
+                    EditorGUILayout.HelpBox("Assign a culling data asset for custom clipping.", MessageType.Warning);
+            }
 
             // --- Disable Features (Flags Enum) ---
             var newDisableFeatures = (CharacterFeatureFlags)EditorGUILayout.EnumFlagsField(
                 "Disable Features",
-                settings.disableFeatures
+                settings ? settings.disableFeatures : CharacterFeatureFlags.None
             );
 
             if (EditorGUI.EndChangeCheck())
             {
-                Undo.RecordObject(settings, "Modify Clothing Settings");
-
-                settings.clipType = newClipType;
-                settings.disableFeatures = newDisableFeatures;
-
-                EditorUtility.SetDirty(settings);
-                PrefabUtility.RecordPrefabInstancePropertyModifications(settings);
+                ContentPackClothingSettings.Apply(prefab, newClipType, newDisableFeatures, customProfile);
             }
 
             EditorGUILayout.EndVertical();

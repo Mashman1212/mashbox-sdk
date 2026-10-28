@@ -43,7 +43,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private readonly StudioShortcutFocusGuard imageShortcutFocus = new StudioShortcutFocusGuard();
         private void OnFocus() => imageShortcutFocus.Acquire();
-        private void OnLostFocus() { FinishImageLayerRename(true);FinishInlineImageText(true); marqueeSpaceHeld=false;marqueeSnapHeld=false; RestoreImageSelectionCursor(); holdingToolGroup=false; EndImageShape(); EndImageGradient(); CancelSelectionTrace(); EndImageMarquee(); EndImageTransform(); EndImageBrushAdjustment(); imageShortcutFocus.Release(); }
+        private void OnLostFocus() { FinishImageUvGesture(false); CancelImageUvWheel(); FinishImageLayerRename(true);FinishInlineImageText(true); marqueeSpaceHeld=false;marqueeSnapHeld=false; RestoreImageSelectionCursor(); holdingToolGroup=false; EndImageShape(); EndImageGradient(); CancelSelectionTrace(); EndImageMarquee(); EndImageTransform(); EndImageBrushAdjustment(); imageShortcutFocus.Release(); }
 
         private void ShieldImageHistory(UnityEngine.UIElements.KeyDownEvent evt)
         {
@@ -58,13 +58,14 @@ namespace MashBoxSDK.AnimationStudio
                 if (!this) return;
                 rootVisualElement.focusController?.focusedElement?.Blur();
                 EditorGUIUtility.editingTextField = false;
-                ImageUndo(redo);
+                if (imageUvMode != ImageUvMode.Paint) ImageUvHistory(redo); else ImageUndo(redo);
                 Repaint();
             };
         }
 
         private void EnableImaging()
         {
+            rootVisualElement.RegisterCallback<UnityEngine.UIElements.KeyDownEvent>(ShieldImageUvTools, UnityEngine.UIElements.TrickleDown.TrickleDown);
             rootVisualElement.RegisterCallback<UnityEngine.UIElements.KeyDownEvent>(ShieldImageHistory, UnityEngine.UIElements.TrickleDown.TrickleDown);
             if (focusedWindow == this) imageShortcutFocus.Acquire();
             AssemblyReloadEvents.beforeAssemblyReload+=RestoreLivePreview;
@@ -79,6 +80,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DisableImaging()
         {
+            rootVisualElement.UnregisterCallback<UnityEngine.UIElements.KeyDownEvent>(ShieldImageUvTools, UnityEngine.UIElements.TrickleDown.TrickleDown);
             FinishImageLayerRename(true);FinishInlineImageText(true);marqueeSpaceHeld=false;marqueeSnapHeld=false;ReleaseImageTextResources();ReleaseImageAdjustmentResources();ReleaseImageChannels();
             rootVisualElement.UnregisterCallback<UnityEngine.UIElements.KeyDownEvent>(ShieldImageHistory, UnityEngine.UIElements.TrickleDown.TrickleDown);
             holdingToolGroup=false;EndImageShape();EndImageGradient();EndImageMarquee();
@@ -97,7 +99,7 @@ namespace MashBoxSDK.AnimationStudio
             RestoreLivePreview();
             if(change==PlayModeStateChange.EnteredEditMode || change==PlayModeStateChange.EnteredPlayMode) compositeDirty=true;
         }
-        public override void SaveChanges(){if(SaveImageDocument()) base.SaveChanges();}
+        public override void SaveChanges(){if(SaveAllImageUvMeshes() && SaveImageDocument()) base.SaveChanges();}
         public override void DiscardChanges(){base.DiscardChanges();}
 
         private void DrawImageMenu(string title, System.Func<StudioMenu> build, ref float x, float y)
@@ -122,13 +124,13 @@ namespace MashBoxSDK.AnimationStudio
         {
             var menu=new StudioMenu();
             AddImageMenuItem(menu,"New",NewDocument);
-            AddImageMenuItem(menu,"Open Layered Imageâ€¦",OpenImageDocument);
+            AddImageMenuItem(menu,"Open Layered Image…",OpenImageDocument);
             AddImageMenuItem(menu,"Save Layers",()=>SaveImageDocument());
             menu.AddSeparator("");
-            AddImageMenuItem(menu,"Import Imageâ€¦",AddExternalFiles);
+            AddImageMenuItem(menu,"Import Image…",AddExternalFiles);
             menu.AddSeparator("");
-            AddImageMenuItem(menu,string.IsNullOrEmpty(outputAssetPath)?"Export PNGâ€¦":"Update PNG",()=>SaveComposite(true));
-            AddImageMenuItem(menu,"Export PNG and Assign to Materialâ€¦",()=>{if(SaveComposite(true))AssignSavedTexture();},CurrentMaterial && CurrentTextureProperty!=null);
+            AddImageMenuItem(menu,string.IsNullOrEmpty(outputAssetPath)?"Export PNG…":"Update PNG",()=>SaveComposite(true));
+            AddImageMenuItem(menu,"Export PNG and Assign to Material…",()=>{if(SaveComposite(true))AssignSavedTexture();},CurrentMaterial && CurrentTextureProperty!=null);
             AddImageMenuItem(menu,"Auto-update PNG",()=>autoSave=!autoSave,true,autoSave);
             return menu;
         }
@@ -172,7 +174,7 @@ namespace MashBoxSDK.AnimationStudio
             AddImageMenuItem(menu,"New Text Layer",()=>CreateImageTextLayer(Vector2.one*(CanvasSize*.5f)));
             AddImageMenuItem(menu,"Rasterize Text",RasterizeImageText,HasSelectedLayer&&layers[selectedLayer].isText&&!layers[selectedLayer].locked);
             AddImageMenuItem(menu,"Duplicate Layer",DuplicateSelectedLayer,HasSelectedLayer);
-            AddImageMenuItem(menu,"Delete Layer",DeleteSelectedLayer,HasSelectedLayer && !layers[selectedLayer].locked);
+            AddImageMenuItem(menu,"Delete Layer\tDelete",DeleteSelectedLayer,HasSelectedLayer && !layers[selectedLayer].locked);
             menu.AddSeparator("");
             AddImageMenuItem(menu,"Move Up",()=>MoveLayer(1),HasSelectedLayer && selectedLayer<layers.Count-1);
             AddImageMenuItem(menu,"Move Down",()=>MoveLayer(-1),HasSelectedLayer && selectedLayer>0);
@@ -237,7 +239,7 @@ namespace MashBoxSDK.AnimationStudio
                 foreach(var tool in new[]{ImageTool.Move,ImageTool.Transform,ImageTool.Marquee,ImageTool.Shape,ImageTool.Text,ImageTool.Gradient,ImageTool.Brush,ImageTool.Eraser,ImageTool.Eyedropper})
                 {
                     var r=new Rect(railRect.x+4,railRect.y+14+slot++*30,28,28);
-                    string tip=tool==ImageTool.Text?"Text (T) — click to add or edit text":tool==ImageTool.Shape?"Shape (U)":tool==ImageTool.Gradient?"Gradient (G) — linear or radial":tool==ImageTool.Marquee?selectionTool==ImageSelectionTool.Rectangle?"Rectangular Selection (M) — Shift: snap; Space while drawing: move; drag inside selection to reposition":selectionTool==ImageSelectionTool.Lasso?"Lasso (L)":"Magnetic Lasso":tool==ImageTool.Move?"Move (V)":tool==ImageTool.Transform?"Transform (Ctrl+T): drag to move; corners scale; Shift+corner distorts; Ctrl+corner skews; circle rotates":tool==ImageTool.Brush?imageBrushMode+" Brush (B)":tool==ImageTool.Eraser?"Erase (E)":"Sample color (I)";
+                    string tip=tool==ImageTool.Text?"Text (T) — click to add or edit text":tool==ImageTool.Shape?"Shape (U)":tool==ImageTool.Gradient?"Gradient (G) — linear or radial":tool==ImageTool.Marquee?selectionTool==ImageSelectionTool.Rectangle?"Rectangular Selection (M) — Shift: snap; Space while drawing: move; drag inside selection to reposition":selectionTool==ImageSelectionTool.Lasso?"Lasso (L)":"Magnetic Lasso":tool==ImageTool.Move?"Move (V)":tool==ImageTool.Transform?"Transform (Ctrl+T): drag to move; corners scale; Shift+corner unlocks aspect ratio; Ctrl+corner distorts; circle rotates":tool==ImageTool.Brush?imageBrushMode+" Brush (B)":tool==ImageTool.Eraser?"Erase (E)":"Sample color (I)";
                     if(!HandleImageToolGroup(r,tool,tip) && GUI.Button(r,new GUIContent("",tip),GUIStyle.none)){imageTool=tool;Repaint();}
                     if(Event.current.type!=EventType.Repaint)continue;
                     bool selected=imageTool==tool;
@@ -325,7 +327,8 @@ namespace MashBoxSDK.AnimationStudio
             if(imageTransformMode==1)imageTransformLayer.position=imageTransformPosition+point-imageTransformStart;
             else if(imageTransformMode==2)
             {
-                if(snap||skew)ApplyImageCornerTransform(point,skew);
+                if(skew)ApplyImageCornerTransform(point,false);
+                else if(snap)ApplyImageAspectTransform(point);
                 else
                 {
                     if(imageTransformOffsets!=null)SetImageCorners(imageTransformLayer,imageTransformOffsets);
@@ -343,7 +346,7 @@ namespace MashBoxSDK.AnimationStudio
             var bar=GUILayoutUtility.GetRect(0,24,GUILayout.ExpandWidth(true));
             EditorGUI.DrawRect(bar,StudioTheme.Current.Button);
             EditorGUI.DrawRect(new Rect(bar.x,bar.yMax-3,bar.width,3),StudioTheme.Current.Header);
-            GUI.Label(new Rect(bar.x+4,bar.y,128,21),new GUIContent(" 2D Imaging",EditorGUIUtility.IconContent("Texture2D Icon").image),StudioTheme.Styles.menuBarButton);
+            GUI.Label(new Rect(bar.x+4,bar.y,128,21),new GUIContent(" 2.5D Imaging",EditorGUIUtility.IconContent("Texture2D Icon").image),StudioTheme.Styles.menuBarButton);
             float menuX=bar.x+152;
             DrawImageMenu("File", BuildImageFileMenu, ref menuX,bar.y);
             DrawImageMenu("Edit", BuildImageEditMenu, ref menuX,bar.y);
@@ -351,9 +354,19 @@ namespace MashBoxSDK.AnimationStudio
             DrawImageMenu("Select", BuildImageSelectMenu, ref menuX,bar.y);
             DrawImageMenu("Layer", BuildImageLayerMenu, ref menuX,bar.y);
             DrawImageMenu("View", BuildImageViewMenu, ref menuX,bar.y);
+            if(GUI.Button(new Rect(bar.xMax-112,bar.y,108,21),"Image Library",StudioTheme.Styles.menuBarButton))
+                StudioImageLibraryWindow.Open(this);
         }
 
-        private bool imageToolSettingsExpanded=true, imageLayerSettingsExpanded=true;
+        internal void AddLibraryImage(Texture2D texture)
+        {
+            if(!texture)return;
+            inputSnapshot=CaptureImage();
+            try { AddLayer(texture,texture.name); }
+            finally { inputSnapshot=null;Repaint(); }
+        }
+
+        private bool imageToolSettingsExpanded=true;
         private bool DrawImageSettingsFoldout(string title,ref bool expanded,string preference)
         {
             bool next=EditorGUILayout.Foldout(expanded,title,true,StudioTheme.Styles.transformHeader);
@@ -385,17 +398,54 @@ namespace MashBoxSDK.AnimationStudio
             }
             else
             {
-                string hint=imageTool==ImageTool.Marquee?"Drag a rectangle to limit painting and image adjustments. You can start outside the image and drag across its edges. Ctrl+D clears the selection.":imageTool==ImageTool.Transform?"Drag to move; corners scale. Shift+corner distorts, Ctrl+corner skews. Round handle rotates; Shift snaps rotation; Esc cancels.":
+                string hint=imageTool==ImageTool.Marquee?"Drag a rectangle to limit painting and image adjustments. You can start outside the image and drag across its edges. Ctrl+D clears the selection.":imageTool==ImageTool.Transform?"Drag to move; corners scale. Shift+corner unlocks aspect ratio; Ctrl+corner distorts. Round handle rotates; Shift snaps rotation; Esc cancels.":
                     imageTool==ImageTool.Move?"Drag a layer to move it. Arrow keys nudge; Shift nudges 10 pixels.":"Click the canvas to sample a color.";
                 EditorGUILayout.LabelField(hint,StudioTheme.Styles.wordWrappedMiniLabel);
             }
             EditorGUILayout.Space(8);
         }
 
+        private void DrawImageCanvasBar()
+        {
+            var bar=GUILayoutUtility.GetRect(0,26,GUILayout.ExpandWidth(true));
+            EditorGUI.DrawRect(bar,StudioTheme.Current.Header);
+            EditorGUI.DrawRect(new Rect(bar.x,bar.yMax-1,bar.width,1),StudioTheme.Current.Border);
+            DrawImageUvToolbar(bar);
+            var resolutionRect=new Rect(bar.x+3,bar.y+1,110,24);
+            var channelRect=new Rect(bar.xMax-146,bar.y+1,60,24);
+            var colorRect=new Rect(bar.xMax-83,bar.y+3,20,20);
+            var visibilityRect=new Rect(bar.xMax-57,bar.y+1,24,24);
+            var materialRect=new Rect(bar.xMax-27,bar.y+1,24,24);
+            var labels=System.Array.ConvertAll(CanvasResolutions,size=>new GUIContent(size+" × "+size,"Canvas resolution"));
+            int resolution=EditorGUI.Popup(resolutionRect,resolutionIndex,labels,StudioTheme.Styles.overlayDropdown);
+            if(resolution!=resolutionIndex)ChangeResolution(resolution);
+            DrawImageUvChannelMenu(channelRect);
+            EditorGUI.BeginChangeCheck();
+            uvOverlayColor=EditorGUI.ColorField(colorRect,new GUIContent("","UV wireframe color"),uvOverlayColor,false,true,false);
+            if(EditorGUI.EndChangeCheck())Repaint();
+            bool visible=GUI.Toggle(visibilityRect,showUvOverlay,new GUIContent("",showUvOverlay?"Hide UV wireframe":"Show UV wireframe"),StudioTheme.Styles.overlayButton);
+            if(visible!=showUvOverlay){showUvOverlay=visible;Repaint();}
+            var materialIcon=new GUIContent(EditorGUIUtility.IconContent("Material Icon"))
+            {
+                tooltip="Material / Live Link — open or close the material panel"
+            };
+            bool materialPanel=GUI.Toggle(materialRect,showImageLiveLink,materialIcon,StudioTheme.Styles.overlayButton);
+            if(materialPanel!=showImageLiveLink){showImageLiveLink=materialPanel;Repaint();}
+            if(Event.current.type==EventType.Repaint)
+            {
+                Vector3 c=visibilityRect.center;
+                Color color=showUvOverlay?StudioTheme.Current.Text:StudioTheme.Current.Muted;
+                DrawImageIconLine(color,1.5f,c+new Vector3(-8,0),c+new Vector3(-4,-4),c+new Vector3(0,-5),c+new Vector3(4,-4),c+new Vector3(8,0),c+new Vector3(4,4),c+new Vector3(0,5),c+new Vector3(-4,4),c+new Vector3(-8,0));
+                DrawImageGuiCircle(c,2,color);
+                if(!showUvOverlay)DrawImageIconLine(color,1.5f,c+new Vector3(-8,7),c+new Vector3(8,-7));
+            }
+        }
+
         private void DrawImageCanvas()
         {
             using(new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true),GUILayout.ExpandHeight(true)))
             {
+                DrawImageCanvasBar();
                 Rect available=GUILayoutUtility.GetRect(280,280,GUILayout.ExpandWidth(true),GUILayout.ExpandHeight(true));
                 canvasArea=available;
                 EditorGUI.DrawRect(available,StudioTheme.Current.Canvas);
@@ -414,34 +464,28 @@ namespace MashBoxSDK.AnimationStudio
                     EnsureComposite();
                     if(Event.current.type==EventType.Repaint)RefreshImageAdjustmentPreview();
                     if(compositeDirty && Event.current.type==EventType.Repaint) RenderComposite();
-                    if(composite)GUI.DrawTexture(rect,ImageCanvasDisplay(),ScaleMode.StretchToFill,true);
-                    DrawUvOverlay(rect);DrawSelectedLayerOutline(rect);
+                    if(composite)GUI.DrawTexture(rect,ImageCanvasDisplay(),ScaleMode.StretchToFill,CurrentTextureProperty != "_MaskMap");
+                    if(imageUvMode==ImageUvMode.Paint){DrawUvOverlay(rect);DrawSelectedLayerOutline(rect);}
                     bool insideView=new Rect(0,0,available.width,available.height).Contains(Event.current.mousePosition);
-                    bool inlineOwnsCanvas=HandleInlineImageTextActivation(rect)||inlineTextLayer!=null;
+                    bool uvOwnsCanvas=HandleImageUvCanvas(rect,insideView);
+                    bool inlineOwnsCanvas=uvOwnsCanvas||HandleInlineImageTextActivation(rect)||inlineTextLayer!=null;
                     if(!inlineOwnsCanvas && !(choosingColorRange && HandleImageColorRange(rect)) && !(tracingSelection && HandleImageLasso(rect)) && !(drawingImageShape && HandleImageShape(rect)) && !(drawingImageGradient && HandleImageGradient(rect)) && !((drawingImageSelection||movingImageSelection) && HandleImageMarquee(rect)) && !HandleImageTransform(rect) && !HandleImageBrushAdjustment(rect) && (insideView || painting || panning || draggingLayer)) HandleCanvasInput(rect);
-                    if(insideView&&inlineTextLayer==null) HandleCanvasDragAndDrop(rect);
+                    if(!uvOwnsCanvas&&insideView&&inlineTextLayer==null) HandleCanvasDragAndDrop(rect);
                     DrawImageMarquee(rect);
                     DrawImageGradient(rect);
                     DrawImageShapePreview(rect);
-                    DrawImageTransformHandles(rect);
+                    if(imageUvMode==ImageUvMode.Paint)DrawImageTransformHandles(rect);
                     DrawImageBrushAdjustment(rect);
                     UpdateImageSelectionCursor(insideView);
                     DrawInlineImageText(rect);
-                    if(layers.Count==0)GUI.Label(new Rect(18,available.height*.45f,available.width-36,70),"Drop an image to begin\nOr add a paint layer",new GUIStyle(StudioTheme.Styles.centeredGreyMiniLabel){fontSize=16});
-                    if(!adjustingImageBrush && (imageTool==ImageTool.Brush || imageTool==ImageTool.Eraser)&&rect.Contains(Event.current.mousePosition)&&Event.current.type==EventType.Repaint)
+                    if(layers.Count==0 && imageUvMode==ImageUvMode.Paint)GUI.Label(new Rect(18,available.height*.45f,available.width-36,70),"Drop an image to begin\nOr add a paint layer",new GUIStyle(StudioTheme.Styles.centeredGreyMiniLabel){fontSize=16});
+                    DrawImageUvEditing(rect);
+                    if(!uvOwnsCanvas && !adjustingImageBrush && (imageTool==ImageTool.Brush || imageTool==ImageTool.Eraser)&&rect.Contains(Event.current.mousePosition)&&Event.current.type==EventType.Repaint)
                     {
                         DrawImageGuiCircle(Event.current.mousePosition,brushRadius*rect.width/CanvasSize,Color.white);
                     }
                 }
                 finally {GUI.EndGroup();}
-                using(new EditorGUILayout.HorizontalScope())
-                {
-                    var labels=System.Array.ConvertAll(CanvasResolutions,size=>new GUIContent(size+" × "+size,"Canvas resolution"));
-                    int resolution=EditorGUILayout.Popup(resolutionIndex,labels,EditorStyles.toolbarPopup,GUILayout.Width(110));
-                    if(resolution!=resolutionIndex)ChangeResolution(resolution);
-                    GUILayout.Label(layers.Count+" layers  ·  Wheel zoom / Middle-drag pan",StudioTheme.Styles.miniLabel);
-                    GUILayout.FlexibleSpace();
-                }
             }
         }
 
@@ -506,15 +550,36 @@ namespace MashBoxSDK.AnimationStudio
 
         private void BeginImageInput()
         {
+            if(HandleImageUvKeys())return;
             if(HandleImageLayerRenameInput())return;
             if(HandleInlineImageTextInput())return;
             HandleMarqueeSpaceKey();HandleMarqueeSnapKey();
             var e=Event.current;
+            if(imageTool==ImageTool.Transform && !EditorGUIUtility.editingTextField && e.type==EventType.KeyDown &&
+                !e.control && !e.command && !e.alt && (e.keyCode==KeyCode.Return || e.keyCode==KeyCode.KeypadEnter))
+            {
+                EndImageTransform();
+                imageTool=ImageTool.Move;
+                GUIUtility.keyboardControl=0;
+                e.Use(); Repaint(); return;
+            }
             if(imageTool==ImageTool.Text&&e.type==EventType.KeyDown&&(e.control||e.command)&&e.keyCode==KeyCode.T)
             {GUIUtility.keyboardControl=0;EditorGUIUtility.editingTextField=false;imageTool=ImageTool.Transform;e.Use();Repaint();}
             // Hover changes only the cursor; repaint without invalidating the image composite.
             if(e.type==EventType.MouseMove || e.type==EventType.MouseEnterWindow || e.type==EventType.MouseLeaveWindow)
                 Repaint();
+            if(!EditorGUIUtility.editingTextField && GUIUtility.hotControl==0 && e.type==EventType.KeyDown &&
+                !e.control && !e.command && !e.alt && (e.keyCode==KeyCode.Delete || e.keyCode==KeyCode.Backspace))
+            {
+                if(HasSelectedLayer && !layers[selectedLayer].locked)
+                {
+                    inputSnapshot=CaptureImage();
+                    DeleteSelectedLayer();
+                    Repaint();
+                }
+                e.Use();
+                return;
+            }
             if(!EditorGUIUtility.editingTextField && e.type==EventType.KeyDown && (e.control||e.command))
             {
                 if(e.keyCode==KeyCode.Z){ImageUndo(e.shift);e.Use();}
@@ -785,19 +850,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawDirectMaterial()
         {
-            var material=(Material)EditorGUILayout.ObjectField(new GUIContent("Material","Link all loaded scene renderers using this material, including Studio previews"),directMaterial,typeof(Material),true);
-            if(material!=directMaterial){RestoreLivePreview();directMaterial=material;RefreshTextureProperties();TryAutoOpenCurrentStickerMap();MarkCompositeDirty();}
-            if(directMaterial) DrawShaderImagePicker();
-            if(GUILayout.Button("Link selected object / material"))
-            {
-                RestoreLivePreview();directMaterial=Selection.activeObject as Material;
-                if(!directMaterial && Selection.activeGameObject)SetTargetRoot(Selection.activeGameObject,null);
-                RefreshTextureProperties();TryAutoOpenCurrentStickerMap();MarkCompositeDirty();
-            }
+            var material=(Material)EditorGUILayout.ObjectField(new GUIContent("Material","The linked material. Choose a material asset to link all scene renderers using it."),CurrentMaterial,typeof(Material),false);
+            if(material!=CurrentMaterial){RestoreLivePreview();directMaterial=material;if(!material){targetRoot=null;targetRenderer=null;}RefreshTextureProperties();TryAutoOpenCurrentStickerMap();MarkCompositeDirty();}
         }
         private void DrawShaderImagePicker()
         {
-            EditorGUILayout.LabelField(new GUIContent("Shader image","Choose which 2D texture slot to edit and preview"),StudioTheme.Styles.boldLabel);
+            EditorGUILayout.LabelField(new GUIContent("Shader image","Edit this texture slot. Live preview uses its normal shader role, leaving the other maps unchanged."),StudioTheme.Styles.boldLabel);
             using(new EditorGUI.DisabledScope(texturePropertyNames.Length==0))
             {
                 int selected=EditorGUILayout.Popup(texturePropertyIndex,texturePropertyLabels,GUILayout.Height(22));
@@ -810,7 +868,10 @@ namespace MashBoxSDK.AnimationStudio
             if(selected<0 || selected>=texturePropertyNames.Length)return;
             if(hasUnsavedChanges && layers.Count>0 && !EditorUtility.DisplayDialog("Switch shader image",
                 "Replace the current canvas with this shader image? Save Layers first if you want to keep these edits.","Switch image","Cancel"))return;
+            // Remove the old slot override before previewing the newly selected map.
+            // Preserve the user's live-preview setting and the material's normal shader.
             RestoreLivePreview();texturePropertyIndex=selected;
+            RememberShaderImageSelection();
             outputAssetPath=null;savedTexture=null;documentPath=null;
             if(GetCurrentStickerTexture())OpenCurrentStickerMap(true,true);
             else
@@ -840,7 +901,10 @@ namespace MashBoxSDK.AnimationStudio
                     compositeMaterial.SetFloat("_Rotation",layer.rotation*Mathf.Deg2Rad);
                     compositeMaterial.SetFloat("_Warped",ImageIsWarped(layer)?1:0);
                     for(int corner=0;corner<4;corner++){var q=ImageCorner(layer,corner);compositeMaterial.SetVector("_Corner"+corner,new Vector4(q.x,q.y,0,0));}
-                    compositeMaterial.SetColor("_Tint",raw?Color.white:new Color(layer.tint.r,layer.tint.g,layer.tint.b,layer.tint.a*layer.opacity));
+                    bool dataMap = CurrentTextureProperty == "_MaskMap";
+                    compositeMaterial.SetFloat("_DataMap", dataMap ? 1 : 0);
+                    compositeMaterial.SetFloat("_LayerOpacity", raw ? 1 : layer.opacity);
+                    compositeMaterial.SetColor("_Tint",raw?Color.white:new Color(layer.tint.r,layer.tint.g,layer.tint.b,layer.tint.a*(dataMap ? 1 : layer.opacity)));
                     compositeMaterial.SetFloat("_BlackToAlpha",!raw&&layer.blackToAlpha?1:0);
                     compositeMaterial.SetFloat("_Blend",raw?0:layer.blendMode);compositeMaterial.SetFloat("_Exposure",raw?0:layer.exposure);compositeMaterial.SetFloat("_Saturation",raw?1:layer.saturation);
                     Graphics.Blit(output,temp,compositeMaterial);Graphics.Blit(temp,output);

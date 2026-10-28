@@ -1,0 +1,30 @@
+using System;
+using UnityEngine;
+
+namespace MashBoxSDK.ContentTools
+{
+    // Isolated test stand-in. Save as ContentPackDefinition.cs; never install alongside the SDK.
+    public class ContentPackDefinition : ScriptableObject
+    {
+        [Serializable]
+        public class GameModMapping
+        {
+            public string GameName;
+            public string ModId;
+            public bool IsPublishTarget;
+        }
+
+        public static string ResolveMashBoxSdkVersion() => "fixture";
+    }
+}
+
+namespace MashBoxSDK.ContentTools.Editor
+{
+    public static class ModIoAuth
+    {
+        public static string CurrentToken => "";
+        public static string CurrentEmail => "";
+        public static string CurrentUserId => "";
+        public static string CurrentUsername => "";
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "MashBoxSDK.Cloth",
+  "rootNamespace": "MashBoxSDK.Cloth",
+  "references": ["Unity.Burst", "Unity.Collections", "Unity.Mathematics"],
+  "autoReferenced": true
+}

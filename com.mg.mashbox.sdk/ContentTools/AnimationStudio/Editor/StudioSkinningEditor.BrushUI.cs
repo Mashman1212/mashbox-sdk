@@ -24,7 +24,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,32,view.position.width,view.position.height-32);
             float left = view is MashBoxStudioViewport skinView ? skinView.SkinToolbarLeft : canvas.x;
-            return new Rect(left + 44, canvas.y, 108, 32);
+            return new Rect(left + 44, canvas.y, 146, 32);
         }
         private bool ShowMaterialExposure => showTextured && !sameShading;
         private Rect DisplayToolbarRect(SceneView view)
@@ -51,10 +51,11 @@ namespace MashBoxSDK.AnimationStudio
         private void ChooseBrush(Brush brush)
         {
             if ((brush == Brush.Paint || brush == Brush.SmoothWeights) && !RequirePaintableSkin()) return;
+            FinishCullingStroke();
             FinishObjectGesture();
             FinishPoseGesture();
             EndStroke(); Tool = brush;
-            if (brush == Brush.Pose || brush == Brush.Object)
+            if (brush == Brush.Pose || brush == Brush.Object || brush == Brush.Culling)
             {
                 GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
                 PausePreviewAnimation();
@@ -62,13 +63,13 @@ namespace MashBoxSDK.AnimationStudio
                 if (previewAnimator) previewAnimator.enabled = false;
             }
             if (brush == Brush.Paint || brush == Brush.SmoothWeights) lastSkinBrush = brush;
-            else if (brush != Brush.Select && brush != Brush.Pose && brush != Brush.Object) lastSculptBrush = brush;
-            repaint();
+            else if (brush != Brush.Select && brush != Brush.Pose && brush != Brush.Object && brush != Brush.Culling) lastSculptBrush = brush;
+            UpdateDisplay();
         }
         private void SetSculptMode(bool sculpt)
         {
             if (!sculpt && !RequirePaintableSkin()) return;
-            if (sculptMode == sculpt && Tool != Brush.Pose && Tool != Brush.Object) return;
+            if (sculptMode == sculpt && Tool != Brush.Pose && Tool != Brush.Object && Tool != Brush.Culling) return;
             CancelBrushInteraction(); sculptMode = sculpt;
             ChooseBrush(sculpt ? lastSculptBrush : lastSkinBrush);
             heatmap = !sculpt; UpdateDisplay();
@@ -97,6 +98,8 @@ namespace MashBoxSDK.AnimationStudio
         internal void BeforeSkinSceneGUI(SceneView view)
         {
             var e = Event.current;
+            if (Tool == Brush.Culling && (e.type == EventType.KeyDown || e.type == EventType.KeyUp))
+                repaint();
             // Claim material drops before native SceneView drag handling, also
             // while the skinning preview animation is playing.
             if (StudioMeshMaterialPreview.IsMaterialDrag)
@@ -131,10 +134,10 @@ namespace MashBoxSDK.AnimationStudio
                     var drag = e.mousePosition - adjustmentAnchor;
                     // Ignore initial hand jitter, then hold one axis until release.
                     if (adjustmentAxis == BrushAdjustmentAxis.Pending && Mathf.Max(Mathf.Abs(drag.x), Mathf.Abs(drag.y)) >= 4)
-                        adjustmentAxis = Mathf.Abs(drag.x) >= Mathf.Abs(drag.y) ? BrushAdjustmentAxis.Radius : BrushAdjustmentAxis.Strength;
+                        adjustmentAxis = Tool == Brush.Culling || Mathf.Abs(drag.x) >= Mathf.Abs(drag.y) ? BrushAdjustmentAxis.Radius : BrushAdjustmentAxis.Strength;
                     if (adjustmentAxis == BrushAdjustmentAxis.Radius)
                     {
-                        radius = Mathf.Clamp(initialRadius * Mathf.Exp(drag.x*.01f), .005f, .75f);
+                        radius = Mathf.Clamp(initialRadius * Mathf.Exp(drag.x*.01f), .005f, Tool == Brush.Culling ? .5f : .75f);
                         adjustmentPointer = adjustmentAnchor + new Vector2(drag.x, 0);
                     }
                     else if (adjustmentAxis == BrushAdjustmentAxis.Strength)
@@ -179,7 +182,9 @@ namespace MashBoxSDK.AnimationStudio
                 return;
             }
             if (e.type != EventType.MouseDown || e.alt || GUIUtility.hotControl != 0 || stroke) return;
-            if ((Tool == Brush.Pose || Tool == Brush.Object)) return;
+            if (Tool == Brush.Pose || Tool == Brush.Object) return;
+            // Culling has a binary brush: allow radius adjustment, not the weight/sculpt menu.
+            if (Tool == Brush.Culling && (!CanCull || !Part.customCulling || e.button != 2 || !e.control)) return;
             if (ModeRect(view).Contains(e.mousePosition) || DisplayToolbarRect(view).Contains(e.mousePosition)) return;
             if (OverSymmetry(view,e.mousePosition)) return;
             if (view is MashBoxStudioViewport viewport && (!viewport.ModelCanvasRect.Contains(e.mousePosition) || viewport.IsOverSkinningPanels(e.mousePosition))) return;
@@ -236,13 +241,14 @@ namespace MashBoxSDK.AnimationStudio
                 DrawModeIcon(new Rect(rect.x, rect.y, 32, 32), false);
                 DrawModeIcon(new Rect(rect.x + 38, rect.y, 32, 32), true);
                 DrawObjectModeIcon(new Rect(rect.x + 76, rect.y, 32, 32));
+                DrawCullingModeIcon(new Rect(rect.x + 114, rect.y, 32, 32));
                 var display = DisplayToolbarRect(view);
                 DrawUVCheckerButton(new Rect(display.x, display.y, 32, 32));
                 DrawTexturedButton(new Rect(display.x + 38, display.y, 32, 32));
                 DrawWireframeButton(new Rect(display.x + 76, display.y, 32, 32));
                 DrawSameShadingButton(new Rect(display.x + 114, display.y, 32, 32));
                 if(ShowMaterialExposure) DrawMaterialExposure(DisplayToolbarRect(view));
-                if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object)
+                if (sculptMode && Tool != Brush.Pose && Tool != Brush.Object && Tool != Brush.Culling)
                 {
                     var labelRect = new Rect(rect.xMax + 12, rect.y + 6, 160, 20);
                     GUI.Label(labelRect, new GUIContent("Sculpt · " + BrushLabel(Tool), "Active sculpt brush — hold right-click to change"),
@@ -278,7 +284,8 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     DrawBrushDragLine(adjustmentAnchor, adjustmentPointer);
                     string adjustmentText = adjustmentAxis == BrushAdjustmentAxis.Radius ? $"Radius {radius:F3}" :
-                        adjustmentAxis == BrushAdjustmentAxis.Strength ? $"Strength {strength:P0}" : "Drag sideways: radius · up/down: strength";
+                        adjustmentAxis == BrushAdjustmentAxis.Strength ? $"Strength {strength:P0}" :
+                        Tool == Brush.Culling ? "Drag sideways: radius" : "Drag sideways: radius · up/down: strength";
                     GUI.Box(new Rect(Mathf.Clamp(adjustmentAnchor.x+18,0,view.position.width-270),Mathf.Clamp(adjustmentAnchor.y+18,40,view.position.height-36),260,28), adjustmentText);
                 }
                 if(!brushMenuOpen && !adjustingBrush)DrawSkinToolbarTooltip(view);
@@ -377,7 +384,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawModeIcon(Rect rect, bool sculpt)
         {
-            bool active = Tool != Brush.Pose && Tool != Brush.Object && sculptMode == sculpt;
+            bool active = Tool != Brush.Pose && Tool != Brush.Object && Tool != Brush.Culling && sculptMode == sculpt;
             if (DrawSkinModeButton(rect, active, sculpt ? "Sculpt — shape the mesh" : "Skin Weight Paint — edit bone influences"))
                 SetSculptMode(sculpt);
             if (Event.current.type != EventType.Repaint) return;

@@ -351,6 +351,14 @@ namespace MashBoxSDK.ContentTools
             }
 
             ValidateNormalMapTextureImports(go, issues);
+            foreach (var clipping in go.GetComponentsInChildren<MashBoxSDK.Clothing.ClothingClipSettings>(true))
+            {
+                if (clipping.clipType != MashBoxSDK.Clothing.ClothingClipType.Custom) continue;
+                var culling = clipping.GetComponentInChildren<MashBoxSDK.Culling.ClothingCullingSettings>(true);
+                if (!culling || !culling.profile)
+                    issues.Add(new Issue { severity = Severity.Error,
+                        message = $"{go.name}: Custom Clipping Type requires a Culling Data asset. Assign it in Clothing Settings.", context = go });
+            }
             
             if (!go.transform.localScale.Equals(Vector3.one))
             {

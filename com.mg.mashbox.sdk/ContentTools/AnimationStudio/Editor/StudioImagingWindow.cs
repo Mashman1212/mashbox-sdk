@@ -74,6 +74,13 @@ namespace MashBoxSDK.AnimationStudio
 
         private static readonly int[] CanvasResolutions = { 512, 1024, 2048, 4096 };
         private static readonly string[] CanvasResolutionLabels = { "512", "1024", "2048", "4096" };
+        private static readonly GUIContent[] ImageUvChannelLabels =
+        {
+            new GUIContent("UV0", "UV channel 0 (mesh.uv)"),
+            new GUIContent("UV1", "UV channel 1 (mesh.uv2)"),
+            new GUIContent("UV2", "UV channel 2 (mesh.uv3)"),
+            new GUIContent("UV3", "UV channel 3 (mesh.uv4)")
+        };
         private const string CompositeShaderName = "Hidden/MashBox/ImagingComposite";
         private const string DefaultOutputName = "StickerMap.png";
         private const string MashBoxSdkPackageRoot = "Packages/com.mg.mashbox.sdk";
@@ -87,10 +94,12 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private RendererScope rendererScope = RendererScope.MatchingMaterial;
         [SerializeField] private int materialIndex;
         [SerializeField] private int texturePropertyIndex;
+        [SerializeField] private string selectedShaderImageProperty;
+        [SerializeField] private Material selectedShaderImageMaterial;
         [SerializeField] private MeshUvChannel uvChannel = MeshUvChannel.UV0;
         [SerializeField] private bool showUvOverlay = true;
         [SerializeField] private Color uvOverlayColor = new Color(0f, 1f, 1f, 0.75f);
-        [SerializeField] private bool liveMaterialPreview = true;
+
         [SerializeField] private bool autoOpenCurrentMap = true;
         [SerializeField] private bool autoSave;
         [SerializeField] private string outputAssetPath;
@@ -110,15 +119,12 @@ namespace MashBoxSDK.AnimationStudio
         [NonSerialized] private readonly List<PreviewBinding> previewBindings = new List<PreviewBinding>();
         [NonSerialized] private Vector2 layerScroll;
         [NonSerialized] private Vector2 inspectorScroll;
-        [NonSerialized] private bool showCropEditor;
-        [NonSerialized] private bool draggingCrop;
-        [NonSerialized] private Vector2 cropDragStart;
 
-        [MenuItem("MashBox/2D Imager", false, 120)]
+        [MenuItem("MashBox/MashBox Studio/2.5D Imaging", false, 124)]
         internal static void Open()
         {
             StudioImagingWindow window = GetWindow<StudioImagingWindow>();
-            window.titleContent = new GUIContent("MashBox 2D Imaging");
+            window.titleContent = new GUIContent("MashBox 2.5D Imaging");
             window.minSize = new Vector2(940f, 620f);
             window.Show();
         }
@@ -127,9 +133,10 @@ namespace MashBoxSDK.AnimationStudio
 
         private void OnEnable()
         {
+            titleContent = new GUIContent("MashBox 2.5D Imaging");
+            ResumeImageUvMeshes();
             imageSettingsRatio=Mathf.Clamp(StudioPreferenceStore.GetFloat("Imaging.SettingsSplit",.55f),.15f,.85f);
             imageToolSettingsExpanded=StudioPreferenceStore.GetFloat("Imaging.ToolSettingsExpanded",1)>.5f;
-            imageLayerSettingsExpanded=StudioPreferenceStore.GetFloat("Imaging.LayerSettingsExpanded",1)>.5f;
             imagePanelWidth=StudioPreferenceStore.GetFloat("Imaging.PanelWidth",340);
             wantsMouseMove = true;
             wantsMouseEnterLeaveWindow = true;
@@ -148,6 +155,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void OnDisable()
         {
+            RestoreImageUvMeshes();
             DisableImaging();
             EditorApplication.update -= EditorUpdate;
             RestoreLivePreview();
@@ -171,6 +179,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 DrawImageToolRail();
                 DrawCanvasPanel();
+                DrawImageMaterialDock();
                 DrawImagePanelWidthDivider();
                 using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel, GUILayout.Width(ImagePanelWidth), GUILayout.ExpandHeight(true)))
                 {
@@ -249,6 +258,17 @@ namespace MashBoxSDK.AnimationStudio
                 if(imageChannelsTab){DrawImageChannelsPanel();return;}
                 DrawImageLayerBlendControls();
                 layerScroll = EditorGUILayout.BeginScrollView(layerScroll, GUIStyle.none, GUILayout.ExpandHeight(true));
+                if (layers.Count == 0)
+                {
+                    GUILayout.Space(24);
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        GUILayout.FlexibleSpace();
+                        if (GUILayout.Button(new GUIContent("Add Layer", "Add a paint layer"), StudioTheme.Styles.overlayButton, GUILayout.Width(120), GUILayout.Height(30)))
+                            AddPaintLayer();
+                        GUILayout.FlexibleSpace();
+                    }
+                }
                 for (int index = layers.Count - 1; index >= 0; index--)
                 {
                     StickerLayer layer = layers[index];
@@ -261,6 +281,8 @@ namespace MashBoxSDK.AnimationStudio
                     {
                         selectedLayer=index;
                         var menu=new StudioMenu();
+                        AddImageMenuItem(menu,"New Layer",AddPaintLayer);
+                        menu.AddSeparator("");
                         AddImageMenuItem(menu,"Move Up",()=>MoveLayer(1),index<layers.Count-1);
                         AddImageMenuItem(menu,"Move Down",()=>MoveLayer(-1),index>0);
                         menu.AddSeparator("");
@@ -291,16 +313,150 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUILayout.EndScrollView();
 
                 DrawImageLayerBottomBar();
+                if((Event.current.type==EventType.ContextClick || (Event.current.type==EventType.MouseDown && Event.current.button==1)) && panel.rect.Contains(Event.current.mousePosition))
+                {
+                    var menu=new StudioMenu();
+                    AddImageMenuItem(menu,"New Layer",AddPaintLayer);
+                    var anchor=new Rect(GUIUtility.GUIToScreenPoint(Event.current.mousePosition),Vector2.one);
+                    Event.current.Use();Repaint();
+                    EditorApplication.delayCall+=()=>{if(this)StudioMenuPopup.Open(menu,anchor);};
+                }
             }
         }
 
         private void DrawCanvasPanel() => DrawImageCanvas();
 
         [SerializeField] private bool showImageLiveLink;
+        [SerializeField] private bool imageSelectionLocked;
+        private Vector2 imageMaterialScroll;
+
+        private void DrawImageMaterialDock()
+        {
+            if(!showImageLiveLink)return;
+
+            using(var panel=new EditorGUILayout.VerticalScope(GUILayout.Width(300),GUILayout.ExpandHeight(true)))
+            {
+                if(Event.current.type==EventType.Repaint)
+                {
+                    EditorGUI.DrawRect(panel.rect,StudioTheme.Current.Panel);
+                    EditorGUI.DrawRect(new Rect(panel.rect.x,panel.rect.y,1,panel.rect.height),StudioTheme.Current.Border);
+                }
+                var header=GUILayoutUtility.GetRect(0,26,GUILayout.ExpandWidth(true));
+                EditorGUI.DrawRect(header,StudioTheme.Current.Header);
+                EditorGUI.DrawRect(new Rect(header.x,header.yMax-1,header.width,1),StudioTheme.Current.Border);
+                GUI.Label(new Rect(header.x+8,header.y+1,header.width-38,24),"MATERIAL / LIVE LINK",StudioTheme.Styles.boldLabel);
+                if(GUI.Button(new Rect(header.xMax-27,header.y+1,24,24),new GUIContent("×","Close material panel"),StudioTheme.Styles.overlayButton))
+                    showImageLiveLink=false;
+                using(new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel,GUILayout.ExpandHeight(true)))
+                {
+                    imageMaterialScroll=EditorGUILayout.BeginScrollView(imageMaterialScroll);
+                    float previousLabelWidth=EditorGUIUtility.labelWidth;
+                    EditorGUIUtility.labelWidth=120;
+                    try { DrawMeshAndMaterialInspector(); }
+                    finally
+                    {
+                        EditorGUIUtility.labelWidth=previousLabelWidth;
+                        EditorGUILayout.EndScrollView();
+                    }
+                }
+            }
+        }
+
+        private void OnSelectionChange()
+        {
+            Repaint();
+        }
+
+        private static Renderer SelectedImageRenderer()
+        {
+            var root=Selection.activeGameObject;
+            if(!root)return null;
+            var selected=Selection.activeObject as Renderer;
+            if(selected && selected.sharedMaterials.Any(material=>material))return selected;
+            return root.GetComponentsInChildren<Renderer>(true)
+                .FirstOrDefault(renderer=>renderer.sharedMaterials.Any(material=>material));
+        }
+
+        private void LinkImageSelection()
+        {
+            if(surfaceRenderers!=null)return;
+            var material=Selection.activeObject as Material;
+            var renderer=material?null:SelectedImageRenderer();
+            if(!material && !renderer)return;
+            if(material)
+            {
+                if(directMaterial!=material)
+                {
+                    RestoreLivePreview();
+                    directMaterial=material;
+                    RefreshTextureProperties();
+                    TryAutoOpenCurrentStickerMap();
+                    MarkCompositeDirty();
+                }
+            }
+            else SetTargetRoot(Selection.activeGameObject,renderer);
+            imageSelectionLocked=true;
+
+            MarkCompositeDirty();
+            Repaint();
+        }
+
+        private void UnlinkImageMaterial()
+        {
+            RestoreImageUvMeshes(); imageUvMode = ImageUvMode.Paint; imageUvTarget = null;
+            EndSurfaceInput();
+            RestoreLivePreview();
+            directMaterial=null;
+            targetRoot=null;
+            targetRenderer=null;
+            surfaceRenderers=null;
+            surfaceSuspended=false;
+            SurfaceChanged=null;
+            materialIndex=0;
+            imageSelectionLocked=false;
+
+            observedBaseMaterial=null;
+            observedBaseProperty=null;
+            observedBaseTexture=null;
+            RefreshTextureProperties();
+            compositeDirty=true;
+            Repaint();
+        }
+
+        private void DrawImageSelectionLink()
+        {
+            bool linked = CurrentMaterial;
+            using(new EditorGUI.DisabledScope(!linked && !(Selection.activeObject is Material) && !SelectedImageRenderer()))
+            {
+                if(GUILayout.Button(new GUIContent(linked ? "Unlink" : "Link Selection", linked
+                    ? "Disconnect this material and restore its normal preview"
+                    : "Capture the selected object's material and keep this target when scene selection changes"),GUILayout.Height(28)))
+                {
+                    if (linked) UnlinkImageMaterial(); else LinkImageSelection();
+                }
+            }
+            linked = CurrentMaterial;
+            using(new EditorGUILayout.HorizontalScope())
+            {
+                if (linked)
+                {
+                    var dot = GUILayoutUtility.GetRect(10, 14, GUILayout.Width(10));
+                    var previous = Handles.color;
+                    Handles.color = new Color(.3f, .9f, .5f);
+                    Handles.DrawSolidDisc(new Vector3(dot.center.x, dot.center.y, 0), Vector3.forward, 3);
+                    Handles.color = previous;
+                }
+                GUILayout.Label(linked ? (imageSelectionLocked ? "Selection linked" : "Material linked")
+                    : "Select an object, then click Link Selection",StudioTheme.Styles.miniLabel);
+            }
+            EditorGUILayout.Space(6);
+        }
+
         private float imagePanelWidth=340, imageWidthStartX, imageWidthStart, imageWidthOriginal;
         private bool resizingImageWidth;
         private int imageWidthControl;
-        private float ImagePanelWidth => Mathf.Clamp(imagePanelWidth,240,Mathf.Max(240,position.width-380));
+        private float ImagePanelWidthLimit => Mathf.Max(240,position.width-380-(showImageLiveLink?300:0));
+        private float ImagePanelWidth => Mathf.Clamp(imagePanelWidth,240,ImagePanelWidthLimit);
         private void DrawImagePanelWidthDivider()
         {
             var rect=GUILayoutUtility.GetRect(6,0,GUILayout.Width(6),GUILayout.ExpandHeight(true));
@@ -322,7 +478,7 @@ namespace MashBoxSDK.AnimationStudio
             if(GUIUtility.hotControl!=imageWidthControl){resizingImageWidth=false;return;}
             if(e.type==EventType.MouseDrag)
             {
-                imagePanelWidth=Mathf.Clamp(imageWidthStart+imageWidthStartX-GUIUtility.GUIToScreenPoint(e.mousePosition).x,240,Mathf.Max(240,position.width-380));
+                imagePanelWidth=Mathf.Clamp(imageWidthStart+imageWidthStartX-GUIUtility.GUIToScreenPoint(e.mousePosition).x,240,ImagePanelWidthLimit);
                 e.Use();Repaint();
             }
             else if(e.rawType==EventType.MouseUp && e.button==0)
@@ -388,148 +544,8 @@ namespace MashBoxSDK.AnimationStudio
                 inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll);
                 DrawImageColorRangeSettings();DrawImageAdjustment();
                 DrawImageToolSettings();
-                DrawSelectedLayerInspector();
-                EditorGUILayout.Space(6f);
-                showImageLiveLink = EditorGUILayout.Foldout(showImageLiveLink, "Material / Live Link", true);
-                if (showImageLiveLink) DrawMeshAndMaterialInspector();
                 EditorGUILayout.EndScrollView();
             }
-        }
-
-        private void DrawSelectedLayerInspector()
-        {
-            if(!DrawImageSettingsFoldout("LAYER SETTINGS",ref imageLayerSettingsExpanded,"Imaging.LayerSettingsExpanded"))return;
-            if (!HasSelectedLayer)
-            {
-                EditorGUILayout.HelpBox("Select a layer to edit it. Drag it directly on the canvas; use the mouse wheel over the canvas to scale it.", MessageType.None);
-                return;
-            }
-
-            StickerLayer layer = layers[selectedLayer];
-            if(layer.isText&&imageTool!=ImageTool.Text)DrawImageTextSettings();
-            EditorGUI.BeginChangeCheck();
-            layer.name = EditorGUILayout.TextField("Name", layer.name);
-            layer.locked=EditorGUILayout.Toggle("Lock layer",layer.locked);
-            layer.exposure=EditorGUILayout.Slider("Exposure",layer.exposure,-4,4);
-            layer.saturation=EditorGUILayout.Slider("Saturation",layer.saturation,0,2);
-            Texture2D changedTexture=layer.texture;
-            if(!layer.isText)changedTexture=EditorGUILayout.ObjectField("Image",layer.texture,typeof(Texture2D),false) as Texture2D;
-            if (changedTexture != layer.texture)
-            {
-                layer.texture = changedTexture;
-                layer.sourceRect = FullSourceRect;
-            }
-            layer.visible = EditorGUILayout.Toggle("Visible", layer.visible);
-            layer.tint = EditorGUILayout.ColorField("Tint", layer.tint);
-            if (EditorGUI.EndChangeCheck())
-                MarkCompositeDirty();
-
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button("Center"))
-                {
-                    layer.position = Vector2.one * (CanvasSize * 0.5f);
-                    MarkCompositeDirty();
-                }
-                if (GUILayout.Button("Fit"))
-                {
-                    FitLayer(layer);
-                    MarkCompositeDirty();
-                }
-                if (GUILayout.Button("Reset"))
-                {
-                    layer.rotation = 0f;
-                    layer.corner0=layer.corner1=layer.corner2=layer.corner3=Vector2.zero;
-                    layer.opacity = 1f;
-                    layer.tint = Color.white;
-                    FitLayer(layer);
-                    MarkCompositeDirty();
-                }
-            }
-
-            bool cropped = !ApproximatelyFullRect(layer.sourceRect);
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button(showCropEditor ? "Close Decal Picker" : "Pick Decal From Sheet", GUILayout.Height(25f)))
-                    showCropEditor = !showCropEditor;
-                using (new EditorGUI.DisabledScope(!cropped))
-                {
-                    if (GUILayout.Button("Full Image", GUILayout.Width(76f), GUILayout.Height(25f)))
-                    {
-                        layer.sourceRect = FullSourceRect;
-                        MarkCompositeDirty();
-                    }
-                }
-            }
-            if (showCropEditor)
-                DrawCropEditor(layer);
-
-            EditorGUILayout.HelpBox(
-                "Canvas: wheel to zoom, middle-drag to pan. V move, B brush, E erase, I sample, F fit. Ctrl+Z undo; Ctrl+V paste. Duplicate a cropped layer to reuse the same source sheet for another decal.",
-                MessageType.None);
-        }
-
-        private void DrawCropEditor(StickerLayer layer)
-        {
-            if (layer.texture == null)
-                return;
-
-            EditorGUILayout.Space(4f);
-            EditorGUILayout.LabelField("Decal Region", StudioTheme.Styles.boldLabel);
-            float aspect = layer.texture.width / (float)Mathf.Max(1, layer.texture.height);
-            float previewHeight = Mathf.Clamp(270f / Mathf.Max(0.1f, aspect), 70f, 220f);
-            Rect preview = GUILayoutUtility.GetRect(80f, previewHeight, GUILayout.ExpandWidth(true));
-            DrawCheckerboard(preview);
-            GUI.DrawTexture(preview, layer.texture, ScaleMode.StretchToFill, true);
-
-            Rect selection = SourceRectToGui(layer.sourceRect, preview);
-            Color shade = new Color(0f, 0f, 0f, 0.58f);
-            EditorGUI.DrawRect(new Rect(preview.x, preview.y, preview.width, Mathf.Max(0f, selection.y - preview.y)), shade);
-            EditorGUI.DrawRect(new Rect(preview.x, selection.yMax, preview.width, Mathf.Max(0f, preview.yMax - selection.yMax)), shade);
-            EditorGUI.DrawRect(new Rect(preview.x, selection.y, Mathf.Max(0f, selection.x - preview.x), selection.height), shade);
-            EditorGUI.DrawRect(new Rect(selection.xMax, selection.y, Mathf.Max(0f, preview.xMax - selection.xMax), selection.height), shade);
-            Handles.BeginGUI();
-            Handles.color = new Color(1f, 0.82f, 0.08f, 1f);
-            Handles.DrawAAPolyLine(2f,
-                new Vector3(selection.x, selection.y), new Vector3(selection.xMax, selection.y),
-                new Vector3(selection.xMax, selection.yMax), new Vector3(selection.x, selection.yMax),
-                new Vector3(selection.x, selection.y));
-            Handles.EndGUI();
-
-            Event current = Event.current;
-            if (preview.Contains(current.mousePosition) && current.type == EventType.MouseDown && current.button == 0)
-            {
-                cropDragStart = GuiToSourceNormalized(current.mousePosition, preview);
-                layer.sourceRect = new Rect(cropDragStart.x, cropDragStart.y, 0.001f, 0.001f);
-                draggingCrop = true;
-                current.Use();
-            }
-            if (draggingCrop && current.type == EventType.MouseDrag && current.button == 0)
-            {
-                Vector2 end = GuiToSourceNormalized(current.mousePosition, preview);
-                layer.sourceRect = NormalizedRectFromPoints(cropDragStart, end);
-                MarkCompositeDirty();
-                current.Use();
-            }
-            if (draggingCrop && current.rawType == EventType.MouseUp)
-            {
-                draggingCrop = false;
-                layer.sourceRect = ClampSourceRect(layer.sourceRect);
-                MarkCompositeDirty();
-                current.Use();
-            }
-
-            RectInt pixels = SourceRectToPixels(layer.sourceRect, layer.texture);
-            EditorGUI.BeginChangeCheck();
-            pixels = EditorGUILayout.RectIntField(new GUIContent("Crop pixels", "Top-left-origin rectangle within the source sheet."), pixels);
-            if (EditorGUI.EndChangeCheck())
-            {
-                layer.sourceRect = PixelsToSourceRect(pixels, layer.texture);
-                MarkCompositeDirty();
-            }
-            EditorGUILayout.LabelField("Drag a box tightly around one decal. The source image is never modified.", EditorStyles.wordWrappedMiniLabel);
-            if (GUILayout.Button("Duplicate This Decal Layer"))
-                DuplicateSelectedLayer();
         }
 
         private void DrawMeshAndMaterialInspector()
@@ -540,25 +556,15 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUILayout.HelpBox("Choose the mesh and texture slot in Studio's Painting workspace. This canvas edits the same layers.", MessageType.Info);
                 return;
             }
-            EditorGUILayout.LabelField("LIVE LINK", StudioTheme.Styles.boldLabel);
+            DrawImageSelectionLink();
             DrawDirectMaterial();
-            EditorGUI.BeginChangeCheck();
-            GameObject changedRoot = EditorGUILayout.ObjectField(
-                new GUIContent("GameObject / prefab", "A scene object or prefab root. Child renderers can be previewed and assigned together."),
-                targetRoot,
-                typeof(GameObject),
-                true) as GameObject;
-            if (EditorGUI.EndChangeCheck())
-                SetTargetRoot(changedRoot, null);
-
-            EditorGUI.BeginChangeCheck();
-            Renderer changedRenderer = EditorGUILayout.ObjectField(
-                new GUIContent("Primary renderer", "Chooses the material slot and acts as the single-renderer target when that scope is selected."),
-                targetRenderer,
-                typeof(Renderer),
-                true) as Renderer;
-            if (EditorGUI.EndChangeCheck())
-                SetTargetRenderer(changedRenderer);
+            using(new EditorGUI.DisabledScope(true))
+                EditorGUILayout.ObjectField("Shader",CurrentMaterial?CurrentMaterial.shader:null,typeof(Shader),false);
+            if(!directMaterial)
+            {
+                EditorGUILayout.LabelField("Object",targetRoot?targetRoot.name:"None");
+                EditorGUILayout.LabelField("Renderer",targetRenderer?targetRenderer.name:"None");
+            }
 
             EditorGUI.BeginChangeCheck();
             rendererScope = (RendererScope)EditorGUILayout.EnumPopup("Apply scope", rendererScope);
@@ -571,6 +577,7 @@ namespace MashBoxSDK.AnimationStudio
             Material[] materials = targetRenderer != null ? targetRenderer.sharedMaterials : Array.Empty<Material>();
             string[] materialLabels = materials.Select((material, index) =>
                 $"{index}: {(material != null ? material.name : "Missing")}").ToArray();
+            if(!directMaterial)
             using (new EditorGUI.DisabledScope(materialLabels.Length == 0))
             {
                 EditorGUI.BeginChangeCheck();
@@ -586,73 +593,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
 
-            if(!directMaterial) DrawShaderImagePicker();
-
-            EditorGUI.BeginChangeCheck();
-            uvChannel = (MeshUvChannel)EditorGUILayout.EnumPopup("UV overlay/channel", uvChannel);
-            showUvOverlay = EditorGUILayout.Toggle("Show UV wireframe", showUvOverlay);
-            uvOverlayColor = EditorGUILayout.ColorField("UV color", uvOverlayColor);
-            bool changedLivePreview = EditorGUILayout.Toggle(
-                new GUIContent("Live material preview", "Uses a MaterialPropertyBlock on this scene renderer; it does not modify the material asset."),
-                liveMaterialPreview);
-            if (changedLivePreview != liveMaterialPreview)
-            {
-                liveMaterialPreview = changedLivePreview;
-                if (!liveMaterialPreview)
-                    RestoreLivePreview();
-            }
-            if (EditorGUI.EndChangeCheck())
-                MarkCompositeDirty();
-
-            if (CurrentMaterial != null && CurrentTextureProperty == "_StickerMap")
-            {
-                EditorGUILayout.HelpBox(
-                    "MG sticker mode detected. UV0–UV3 drives _StickerUseUV1/_StickerUseUV2/_StickerUseUV3 automatically.",
-                    MessageType.Info);
-            }
-
-            List<TargetBinding> targets = GetTargetBindings();
-            if (targetRoot != null)
-            {
-                int rendererCount = targets.Select(target => target.renderer).Distinct().Count();
-                int materialCount = targets.Select(target => target.material).Where(material => material != null).Distinct().Count();
-                EditorGUILayout.HelpBox(
-                    $"Current scope targets {targets.Count} material slot(s) across {rendererCount} renderer(s) and {materialCount} material asset(s)." +
-                    (EditorUtility.IsPersistent(targetRoot) ? " Prefab assets support UV display and material assignment; live preview requires a scene instance." : string.Empty),
-                    MessageType.None);
-            }
-
-            Texture2D currentStickerMap = GetCurrentStickerTexture();
-            using (new EditorGUI.DisabledScope(currentStickerMap == null))
-            {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    if (GUILayout.Button(new GUIContent("Edit as Base Layer", "Open the selected shader image as your editable base layer"), GUILayout.Height(28f)))
-                        OpenCurrentStickerMap(true, false);
-                    if (GUILayout.Button("Add as Layer", GUILayout.Width(92f), GUILayout.Height(28f)))
-                        OpenCurrentStickerMap(false, false);
-                }
-            }
-            autoOpenCurrentMap = EditorGUILayout.Toggle(
-                new GUIContent("Auto-open current map", "When the canvas is empty, selecting a target loads its existing sticker texture instead of previewing transparency."),
-                autoOpenCurrentMap);
-            if (currentStickerMap != null)
-                EditorGUILayout.ObjectField("Current map", currentStickerMap, typeof(Texture2D), false);
-
-            using (new EditorGUI.DisabledScope(savedTexture == null || CurrentMaterial == null || CurrentTextureProperty == null))
-            {
-                if (GUILayout.Button("Assign Last Saved PNG to Material", GUILayout.Height(28f)))
-                    AssignSavedTexture();
-            }
-
-            EditorGUI.BeginChangeCheck();
-            backgroundColor = EditorGUILayout.ColorField(
-                new GUIContent("Export background", "Use alpha 0 for a normal transparent image document."),
-                backgroundColor);
-            if (EditorGUI.EndChangeCheck())
-                MarkCompositeDirty();
-            if (!string.IsNullOrEmpty(outputAssetPath))
-                EditorGUILayout.LabelField("Output", outputAssetPath, EditorStyles.wordWrappedMiniLabel);
+            DrawShaderImagePicker();
         }
 
         private void DrawStatus()
@@ -759,19 +700,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (uvs.Count != mesh.vertexCount)
                         continue;
                     int subMesh = Mathf.Clamp(target.materialIndex, 0, mesh.subMeshCount - 1);
-                    int[] triangles = mesh.GetTriangles(subMesh);
-                    var lines = new Vector3[triangles.Length * 2];
-                    int line = 0;
-                    for (int index = 0; index + 2 < triangles.Length; index += 3)
-                    {
-                        Vector3 a = UvToGui(uvs[triangles[index]], canvasRect);
-                        Vector3 b = UvToGui(uvs[triangles[index + 1]], canvasRect);
-                        Vector3 c = UvToGui(uvs[triangles[index + 2]], canvasRect);
-                        lines[line++] = a; lines[line++] = b;
-                        lines[line++] = b; lines[line++] = c;
-                        lines[line++] = c; lines[line++] = a;
-                    }
-                    Handles.DrawLines(lines);
+                    Handles.DrawLines(QuadUvShellLines(mesh, subMesh, uvs, canvasRect));
                 }
                 Handles.EndGUI();
             }
@@ -852,11 +781,6 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     layers[selectedLayer].position += movement * (current.shift ? 10f : 1f);
                     MarkCompositeDirty();
-                    current.Use();
-                }
-                else if (current.keyCode == KeyCode.Delete || current.keyCode == KeyCode.Backspace)
-                {
-                    DeleteSelectedLayer();
                     current.Use();
                 }
             }
@@ -1123,13 +1047,20 @@ namespace MashBoxSDK.AnimationStudio
                     "Clear Layers",
                     "Cancel"))
                 return;
-            RestoreLivePreview();
+            UnlinkImageMaterial();
             CancelImageAdjustment();CancelImageColorRange();CancelSelectionTrace();SetImageSelection(null,0,new Rect());imageAdjustment=ImageAdjustment.None;
+            zoom=1;
+            pan=Vector2.zero;
+            uvChannel=MeshUvChannel.UV0;
+            imageChannel=ImageChannel.RGB;
+            imageChannelsTab=false;
             layers.Clear();
             documentPath=null;
             selectedLayer = -1;
             outputAssetPath = null;
             savedTexture = null;
+            status=null;
+            statusType=MessageType.None;
             MarkCompositeDirty();
         }
 
@@ -1268,7 +1199,7 @@ namespace MashBoxSDK.AnimationStudio
                 RestoreLivePreview();
                 return;
             }
-            if (!liveMaterialPreview || composite == null || (targetRenderer == null && !directMaterial) || string.IsNullOrEmpty(property))
+            if (composite == null || (targetRenderer == null && !directMaterial) || string.IsNullOrEmpty(property))
                 return;
             RestoreLivePreview();
             foreach (TargetBinding target in GetTargetBindings())
@@ -1280,6 +1211,9 @@ namespace MashBoxSDK.AnimationStudio
                 target.renderer.GetPropertyBlock(originalBlock, target.materialIndex);
                 var previewBlock = new MaterialPropertyBlock();
                 target.renderer.GetPropertyBlock(previewBlock, target.materialIndex);
+                // An indexed block takes precedence over the renderer-wide block.
+                // Preserve those existing map/tint overrides when introducing a slot block.
+                if (previewBlock.isEmpty) target.renderer.GetPropertyBlock(previewBlock);
                 previewBlock.SetTexture(property, composite);
                 ApplyMgUvFlags(previewBlock, target.material);
                 target.renderer.SetPropertyBlock(previewBlock, target.materialIndex);
@@ -1326,9 +1260,9 @@ namespace MashBoxSDK.AnimationStudio
 
         private static void RestoreMgUvFlags(MaterialPropertyBlock block, Material material)
         {
-            if (material.HasProperty("_StickerUseUV1")) block.SetFloat("_StickerUseUV1", material.GetFloat("_StickerUseUV1"));
-            if (material.HasProperty("_StickerUseUV2")) block.SetFloat("_StickerUseUV2", material.GetFloat("_StickerUseUV2"));
-            if (material.HasProperty("_StickerUseUV3")) block.SetFloat("_StickerUseUV3", material.GetFloat("_StickerUseUV3"));
+            if (material.HasProperty("_StickerUseUV1") && !block.HasFloat("_StickerUseUV1")) block.SetFloat("_StickerUseUV1", material.GetFloat("_StickerUseUV1"));
+            if (material.HasProperty("_StickerUseUV2") && !block.HasFloat("_StickerUseUV2")) block.SetFloat("_StickerUseUV2", material.GetFloat("_StickerUseUV2"));
+            if (material.HasProperty("_StickerUseUV3") && !block.HasFloat("_StickerUseUV3")) block.SetFloat("_StickerUseUV3", material.GetFloat("_StickerUseUV3"));
         }
 
         private static void SetMaterialFloat(Material material, string property, float value)
@@ -1339,8 +1273,10 @@ namespace MashBoxSDK.AnimationStudio
 
         private void SetTargetRenderer(Renderer renderer)
         {
+            bool hadDirectMaterial=directMaterial;
+            if(hadDirectMaterial)RestoreLivePreview();
             directMaterial=null;
-            if (targetRenderer == renderer)
+            if (targetRenderer == renderer && !hadDirectMaterial)
             {
                 TryAutoOpenCurrentStickerMap();
                 return;
@@ -1357,8 +1293,10 @@ namespace MashBoxSDK.AnimationStudio
 
         private void SetTargetRoot(GameObject root, Renderer preferredRenderer)
         {
+            bool hadDirectMaterial=directMaterial;
+            if(hadDirectMaterial)RestoreLivePreview();
             directMaterial=null;
-            if (targetRoot == root && (preferredRenderer == null || preferredRenderer == targetRenderer))
+            if (targetRoot == root && !hadDirectMaterial && (preferredRenderer == null || preferredRenderer == targetRenderer))
             {
                 TryAutoOpenCurrentStickerMap();
                 return;
@@ -1442,6 +1380,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             Material material = CurrentMaterial;
             string previous=material==imageSlotMaterial?CurrentTextureProperty:null;
+            if (string.IsNullOrEmpty(previous) && material == selectedShaderImageMaterial)
+                previous = selectedShaderImageProperty;
             imageSlotMaterial=material;
             if (material == null || material.shader == null)
             {
@@ -1460,17 +1400,28 @@ namespace MashBoxSDK.AnimationStudio
                     continue;
                 string property = shader.GetPropertyName(index);
                 names.Add(property);
-                var texture=material.GetTexture(property);
-                labels.Add(shader.GetPropertyDescription(index) + " (" + property + ") — " + (texture?texture.name:"Empty"));
+                labels.Add(ObjectNames.NicifyVariableName(shader.GetPropertyDescription(index)));
             }
             texturePropertyNames = names.ToArray();
             texturePropertyLabels = labels.ToArray();
             int preferred=Array.IndexOf(texturePropertyNames,previous);
+            // Migrate an already-open canvas from versions that only stored an index.
+            // Its source texture identifies the original slot without replacing edits.
+            if (preferred < 0 && string.IsNullOrEmpty(selectedShaderImageProperty) && layers.Count > 0)
+                preferred = names.FindIndex(property => material.GetTexture(property) &&
+                    layers.Any(layer => layer.texture == material.GetTexture(property)));
             if(preferred<0)
                 foreach(string property in new[]{"_BaseColorMap","_BaseMap","_MainTex"})
                 {int index=names.IndexOf(property);if(index>=0 && material.GetTexture(property)){preferred=index;break;}}
             if(preferred<0)preferred=names.FindIndex(property=>material.GetTexture(property));
             texturePropertyIndex=Mathf.Max(0,preferred);
+            RememberShaderImageSelection();
+        }
+
+        private void RememberShaderImageSelection()
+        {
+            selectedShaderImageMaterial = CurrentMaterial;
+            selectedShaderImageProperty = CurrentTextureProperty;
         }
 
         private void MarkCompositeDirty()

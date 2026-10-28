@@ -19,11 +19,13 @@ namespace MashBoxSDK.AnimationStudio
         private bool previewPlaying;
         private float previewTime;
         private double previewLastTick, nextClipLookup;
+        private bool previewDefaultPosePending;
         private void InitializePreviewAnimation()
         {
             previewHips = Array.FindIndex(bones, b => StudioSkinningDocument.BoneName(b.name) == "Hips");
             previewRestPositions = bones.Select(b => b.localPosition).ToArray();
             previewRestScales = bones.Select(b => b.localScale).ToArray();
+            previewDefaultPosePending = true;
             ResolvePreviewClip();
             EditorApplication.update += TickPreviewAnimation;
         }
@@ -37,7 +39,16 @@ namespace MashBoxSDK.AnimationStudio
                 if (string.IsNullOrEmpty(path)) continue;
                 previewClip = AssetDatabase.LoadAllAssetsAtPath(path).OfType<AnimationClip>()
                     .FirstOrDefault(c => string.Equals(c.name.Trim(), "Skinning Test", StringComparison.OrdinalIgnoreCase));
-                if (previewClip) { repaint(); return; }
+                if (previewClip)
+                {
+                    if (previewDefaultPosePending)
+                    {
+                        previewDefaultPosePending = false;
+                        JumpToPreviewFrame(2);
+                    }
+                    repaint();
+                    return;
+                }
             }
         }
         private void EnsurePreviewGraph()
@@ -166,7 +177,7 @@ namespace MashBoxSDK.AnimationStudio
             label.alignment = TextAnchor.MiddleRight;
             GUI.Label(new Rect(timeX,y,timeWidth,26),$"{previewTime:0.00} / {previewClip.length:0.00}s",label);
         }
-        private static bool DrawPosePresetButton(Rect rect, bool aPose, bool plus = false)
+        internal static bool DrawPosePresetButton(Rect rect, bool aPose, bool plus = false)
         {
             bool clicked = GUI.Button(rect,new GUIContent("",plus ? "A-pose+ — Skinning Test frame 3" : aPose ? "A-pose — Skinning Test frame 2" : "T-pose — Skinning Test frame 0"));
             if (Event.current.type != EventType.Repaint) return clicked;

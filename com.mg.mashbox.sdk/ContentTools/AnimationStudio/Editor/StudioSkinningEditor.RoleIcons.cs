@@ -6,7 +6,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor
     {
-        private static void AssignImportedMeshRole(StudioSkinningDocument.Part part)
+        private static void AssignImportedMeshRole(StudioSkinningDocument.Part part, GameObject source = null)
         {
             if (part.referenceOnly) return;
             bool Matches(string name,string role) => !string.IsNullOrEmpty(name) &&
@@ -15,7 +15,13 @@ namespace MashBoxSDK.AnimationStudio
                  name.IndexOf(role+"_",System.StringComparison.OrdinalIgnoreCase)>=0);
             bool Contains(string role) => Matches(part.name,role) || (part.sourceMesh && Matches(part.sourceMesh.name,role));
             // Run only at import so later manual role changes remain authoritative.
-            if (Contains("Bust")) part.role = StudioSkinningDocument.MeshRole.Bust;
+            if (IsHeadgearName(part.name) || (part.sourceMesh && IsHeadgearName(part.sourceMesh.name)) ||
+                (source && (IsHeadgearName(source.name) || source.GetComponentsInChildren<Transform>(true).Any(t =>
+                    IsHeadgearName(t.name) && t.GetComponentsInChildren<Renderer>(true).Any(r =>
+                        (r is SkinnedMeshRenderer skin && skin.sharedMesh == part.sourceMesh) ||
+                        (r.GetComponent<MeshFilter>() && r.GetComponent<MeshFilter>().sharedMesh == part.sourceMesh))))))
+                part.role = StudioSkinningDocument.MeshRole.Headgear;
+            else if (Contains("Bust")) part.role = StudioSkinningDocument.MeshRole.Bust;
             else if (Contains("Body")) part.role = StudioSkinningDocument.MeshRole.Body;
         }
         private static void AssignDefaultMeshRole(StudioSkinningDocument.Part part)
@@ -29,10 +35,16 @@ namespace MashBoxSDK.AnimationStudio
             else if(Contains(defaults.shirt))
             { part.role=StudioSkinningDocument.MeshRole.Clothing; part.defaultReferenceLabel="Default Shirt"; }
         }
-        private static void DrawMeshRoleRow(Rect row,StudioSkinningDocument.Part part)
+        internal static void DrawMeshRoleRow(Rect row,StudioSkinningDocument.Part part, string skinTooltip = null)
         {
             if(part.referenceOnly)
                 EditorGUI.DrawRect(row,new Color(.12f,.13f,.14f,1));
+            if(Event.current.type==EventType.Repaint && row.Contains(Event.current.mousePosition))
+            {
+                // Overlay the existing selection so both hover and selection stay legible.
+                var hover=StudioTheme.Current.Accent;hover.a=.12f;
+                EditorGUI.DrawRect(row,hover);
+            }
             var icon=new Rect(row.x+4,row.center.y-8,16,16);
             GUI.Label(new Rect(row.x+26,row.y,Mathf.Max(0,row.width-(part.HasStitchWeightLock ? 92 : 70)),row.height),
                 new GUIContent(part.referenceOnly ? (!string.IsNullOrEmpty(part.defaultReferenceLabel) ? part.defaultReferenceLabel : part.role == StudioSkinningDocument.MeshRole.Body ? "Default Body" : part.role == StudioSkinningDocument.MeshRole.Bust ? "Default Bust" : "Default Pants") : part.name,
@@ -48,7 +60,7 @@ namespace MashBoxSDK.AnimationStudio
                 GUI.color = previousColor;
             }
             var skinStatus = new Rect(row.xMax-42,row.center.y-8,16,16);
-            StudioSkinStatusIcon.Draw(skinStatus,part.bound,part.bound ? "Skinned — bound to the SDK skeleton" : "Unskinned — right-click and choose Skin to bind");
+            StudioSkinStatusIcon.Draw(skinStatus,part.bound,skinTooltip ?? (part.role == StudioSkinningDocument.MeshRole.Headgear ? "Rigid headgear — parent and pivot locked to Head. Object mode edits the mesh; export uses Head-local coordinates. Skinning is disabled." : part.bound ? "Skinned — bound to the SDK skeleton" : "Unskinned — right-click and choose Skin to bind"));
             GUI.Label(icon,new GUIContent("",part.role.ToString()));
             if(Event.current.type!=EventType.Repaint) return;
             var previous=Handles.color; var matrix=Handles.matrix;
@@ -58,7 +70,12 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 Handles.color=new Color(.5f,1,.87f);
-                if(part.role==StudioSkinningDocument.MeshRole.Clothing)
+                if(part.role==StudioSkinningDocument.MeshRole.Headgear)
+                {
+                    Line(P(1,10),P(3,5),P(6,3),P(10,3),P(13,5),P(14,10),P(1,10),P(15,12));
+                    Line(P(6,3),P(6,8));
+                }
+                else if(part.role==StudioSkinningDocument.MeshRole.Clothing)
                 {
                     Line(P(5,2),P(1,5),P(3,8),P(5,7),P(5,14),P(11,14),P(11,7),P(13,8),P(15,5),P(11,2));
                     Line(P(5,2),P(6,4),P(10,4),P(11,2));

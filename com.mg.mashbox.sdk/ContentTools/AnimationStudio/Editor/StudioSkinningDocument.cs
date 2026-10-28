@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed class StudioSkinningDocument : ScriptableObject
     {
-        public enum MeshRole { Clothing, Bust, Body }
+        public enum MeshRole { Clothing, Bust, Body, Headgear }
         [Serializable] public sealed class StitchWeights
         {
             public int vertex;
@@ -17,6 +17,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         [Serializable] public sealed class Part
         {
+            public MashBoxSDK.Culling.ClothingCullingProfile cullingPreset;
+            public bool customCulling, cullingAssigned;
+            public MashBoxSDK.Culling.CullingMask[] cullingMasks = Array.Empty<MashBoxSDK.Culling.CullingMask>();
             public string name;
             public Mesh mesh;
             public Material[] materials;
@@ -137,6 +140,25 @@ namespace MashBoxSDK.AnimationStudio
                     var copy = CreateEditableCopy(original);
                     var part = new Part { name = renderer.name, mesh = copy, materials = renderer.sharedMaterials };
                     additions.Add(part);
+                    var culling = renderer.GetComponentInParent<MashBoxSDK.Culling.ClothingCullingSettings>(true);
+                    if(culling)
+                    {
+                        part.cullingPreset=culling.profile;part.cullingAssigned=true;
+                        var registry=AssetDatabase.LoadAssetAtPath<MashBoxSDK.Culling.ClothingCullingRegistry>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Culling/Default Clothing Culling.asset");
+                        if(culling.profile && (culling.profile.legacyClipType==0 || registry && !registry.presets.Contains(culling.profile)))
+                        {
+                            part.customCulling=true;
+                            part.cullingMasks=culling.profile.masks.Select(mask=>mask.Copy()).ToArray();
+                        }
+                    }
+                    else
+                    {
+                        // Legacy metadata is optional; the SDK editor has no game assembly dependency.
+                        var legacy=renderer.GetComponentsInParent<Component>(true).FirstOrDefault(c=>c && c.GetType().FullName=="MashBoxSDK.Clothing.ClothingClipSettings");
+                        var field=legacy?legacy.GetType().GetField("clipType"):null;
+                        var registry=AssetDatabase.LoadAssetAtPath<MashBoxSDK.Culling.ClothingCullingRegistry>("Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Defaults/Culling/Default Clothing Culling.asset");
+                        if(field!=null && registry)part.cullingPreset=registry.Get(Convert.ToInt32(field.GetValue(legacy)));
+                    }
                     var matrix = source.transform.worldToLocalMatrix * renderer.transform.localToWorldMatrix;
                     part.sourceMesh = original;
                     part.sourceToWorkspace = matrix;
