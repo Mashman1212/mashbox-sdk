@@ -58,7 +58,7 @@ namespace MashBoxSDK.AnimationStudio
             Undo.CollapseUndoOperations(group);
             CancelMarkingMenu(); EndPivotSnap(); StopCutTool(); pivot = false; marquee = false; gestureUndo = -1;
             objects.Clear(); Components.Clear(); Active = -1; GUIUtility.hotControl = 0;
-            Rebuild(); Changed();
+            Rebuild(); Changed(); RememberAction(RepeatKind.Delete);
         }
         internal bool HandleObjectDelete()
         {

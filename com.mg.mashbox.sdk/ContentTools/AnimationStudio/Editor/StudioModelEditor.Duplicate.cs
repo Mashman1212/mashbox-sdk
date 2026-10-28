@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach (int index in copies) objects.Add(index);
             Active = copies.Length > 0 ? copies[copies.Length - 1] : -1;
             search = ""; GUIUtility.hotControl = 0;
-            Rebuild(); Changed();
+            Rebuild(); Changed(); RememberAction(RepeatKind.Duplicate);
         }
         internal bool HandleObjectDuplicate()
         {

@@ -83,6 +83,8 @@ namespace MashBoxSDK.AnimationStudio
             if(componentLiveTargets==null)return false;
             if(componentLiveTargets.Any(t=>!t.state.liveValid))throw new InvalidOperationException("Correct the tool values or cancel the preview.");
             var targets=componentLiveTargets;var kind=targets[0].state.liveTool;
+            bool changed=targets.Any(t=>t.state.livePreview!=null&&t.state.livePreview.HasChanges);
+            var repeatedParameters=targets[0].state.liveParameters;var repeatedFlow=targets[0].state.liveFlowParameters;
             Undo.IncrementCurrentGroup();int group=Undo.GetCurrentGroup();dispatchingComponentTool=true;
             try
             {
@@ -94,6 +96,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             catch{Undo.RevertAllDownToGroup(group);throw;}
             finally{dispatchingComponentTool=false;componentLiveTargets=null;componentLiveBefore=null;ClearLiveToolState();}
+            if(changed)RememberLiveAction(kind,repeatedParameters,repeatedFlow);
             if(closePane)CloseLiveToolPane(kind);repaint();return true;
         }
         private bool CancelComponentLiveTools(bool afterUndo)
@@ -138,6 +141,7 @@ namespace MashBoxSDK.AnimationStudio
                     foreach(int other in shared)ComponentTargetAt(other).selection.Clear();
                 }
                 Rebuild();Changed();RecordSelectionChange(before,false,"Delete model components");Undo.CollapseUndoOperations(group);
+                RememberAction(RepeatKind.Delete);
             }
             catch{Undo.RevertAllDownToGroup(group);RestoreComponentTargets(before.targets);Rebuild();throw;}
         }

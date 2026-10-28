@@ -69,7 +69,7 @@ namespace MashBoxSDK.AnimationStudio
             if (softenToolPane) { QueueLiveTool(LiveTool.Soften); softenToolPane.Repaint(); softenToolPane.Focus(); return; }
             softenToolPane = ToolChannelPane.Open("Soften Edges", DrawSoftenTool, () => softenToolPane = null,
                 execute: () => ApplyLiveTool(LiveTool.Soften), canExecute: () => CanRunLiveTool(LiveTool.Soften), failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
-                preview: () => QueueLiveTool(LiveTool.Soften), cancelPreview: () => CancelLiveTool(LiveTool.Soften), history: PerformWorkspaceHistory);
+                preview: () => QueueLiveTool(LiveTool.Soften), cancelPreview: () => CancelLiveTool(LiveTool.Soften), history: PerformWorkspaceHistory, repeat: PerformRepeatLastAction);
             QueueLiveTool(LiveTool.Soften);
         }
         private void DrawSoftenTool()
@@ -115,7 +115,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!CanAdjustEdgeNormals) throw new InvalidOperationException("Select editable static mesh objects or mesh components.");
             if (GUIUtility.hotControl != 0) return;
             FinishChannelEdit(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
-            float angle = Mathf.Clamp(ToolChannelPane.GetFloatDefault(SoftenTool, "Angle", 45), 0, 180);
+            float angle = repeatingAction != null && (repeatingAction.kind == RepeatKind.Soften || repeatingAction.kind == RepeatKind.Harden) ? repeatingAction.parameters.x : Mathf.Clamp(ToolChannelPane.GetFloatDefault(SoftenTool, "Angle", 45), 0, 180);
             var oldMode = mode; var oldComponents = Components.ToArray();
             var selectedPoints = new HashSet<Vector3>(); var selectedEdges = new HashSet<(Vector3, Vector3)>();
             if (mode == ComponentMode.Vertex) { var v = ActiveMesh.vertices; foreach (int i in Components) if (i >= 0 && i < v.Length) selectedPoints.Add(v[i]); }
@@ -147,6 +147,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if (mode == ComponentMode.Edge)
                 { var v = ActiveMesh.vertices; var edges = Edges(); for (int i = 0; i < edges.Count; i++) if (selectedEdges.Contains(NormalEdgePositionKey(v[edges[i].a], v[edges[i].b]))) Components.Add(i); }
                 error = harden ? "Edges hardened." : "Edges softened up to " + angle.ToString("0.####") + " degrees.";
+                RememberAction(harden ? RepeatKind.Harden : RepeatKind.Soften,new Vector4(angle,0,0,0));
                 repaint(); softenToolPane?.Repaint();
             }
             catch { Undo.RevertAllDownToGroup(group); throw; }

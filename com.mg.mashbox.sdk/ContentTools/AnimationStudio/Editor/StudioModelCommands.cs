@@ -50,7 +50,7 @@ namespace MashBoxSDK.AnimationStudio
                 return (StudioShortcut)(int)(hash | 0x80000000u);
             }
         }
-        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection" };
+        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection", "Select/Grow Selection", "Select/Shrink Selection", "Edit/Repeat Last Action" };
         internal static StudioShortcut StableId(string key) => Hash(key);
         internal static StudioShortcuts.Binding[] StandardBindings(string key)
         {
@@ -61,6 +61,9 @@ namespace MashBoxSDK.AnimationStudio
             if (key == "Mesh Tools/Insert Edge Loop") return new[] { new StudioShortcuts.Binding(KeyCode.X, StudioModifiers.Action | StudioModifiers.Shift) };
             if (key == "Select/Isolate Selected") return new[] { new StudioShortcuts.Binding(KeyCode.W, StudioModifiers.Shift) };
             if (key == "Select/Invert Selection") return new[] { new StudioShortcuts.Binding(KeyCode.I, StudioModifiers.Action) };
+            if (key == "Select/Grow Selection") return new[] { new StudioShortcuts.Binding(KeyCode.Period) };
+            if (key == "Edit/Repeat Last Action") return new[] { new StudioShortcuts.Binding(KeyCode.G) };
+            if (key == "Select/Shrink Selection") return new[] { new StudioShortcuts.Binding(KeyCode.Comma) };
             return Array.Empty<StudioShortcuts.Binding>();
         }
         internal static bool ValidKey(StudioShortcut id, string key) => (int)id < 0 && !string.IsNullOrEmpty(key) && key.Length <= 512 && key.IndexOf('/') > 0 && Hash(key) == id;

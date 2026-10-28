@@ -65,7 +65,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (cutTool == CutTool.EdgeLoop) DrawLoopCountOptions();
                 EditorGUILayout.HelpBox(cutTool == CutTool.EdgeLoop
                     ? "Drag to position the loops; release to apply. Ctrl/Cmd + wheel changes the loop count. Middle-click places evenly spaced centered loops. Shift snaps in 10% steps. Blue lines are an unapplied preview. Loops follow quad strips and stop at triangles, boundaries or non-manifold edges."
-                    : "Click edges or vertices to build cuts across adjacent faces. "+StudioShortcuts.Label(StudioShortcut.CommitCut)+" or "+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+" applies the path. "+StudioShortcuts.Label(StudioShortcut.RemoveCut)+" removes the last segment. Ctrl/Cmd inserts edge loops; Shift snaps in 10% steps.", MessageType.Info);
+                    : "Start on an edge or vertex, then place straight segments on faces. Finish on a perimeter edge or vertex; W applies and returns to Move. Drag from outside the mesh bounds to outside the bounds to slice through only this mesh. "+StudioShortcuts.Label(StudioShortcut.CommitCut)+" or "+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+" applies the path. "+StudioShortcuts.Label(StudioShortcut.RemoveCut)+" removes the last segment. Ctrl/Cmd temporarily inserts edge loops.", MessageType.Info);
                 GUILayout.Label(StudioShortcuts.Label(StudioShortcut.Cancel)+" cancels a pending cut; press again to exit, or choose a transform tool.", StudioTheme.Styles.wordWrappedMiniLabel);
                 return;
             }

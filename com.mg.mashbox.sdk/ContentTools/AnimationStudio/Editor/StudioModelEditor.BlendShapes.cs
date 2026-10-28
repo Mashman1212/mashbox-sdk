@@ -12,11 +12,11 @@ namespace MashBoxSDK.AnimationStudio
         {
             int index=Document.CreateBlendShape(SelectedBlendMeshes);
             StopCutTool();mode=ComponentMode.Object;pivot=false;Components.Clear();
-            Rebuild();SelectObject(index);Changed();
+            Rebuild();SelectObject(index);Changed();RememberAction(RepeatKind.Blend);
         }
         private void BakeSelectedBlendShape()
         {
-            Document.BakeBlendShape(Active);Changed();
+            Document.BakeBlendShape(Active);Changed();RememberAction(RepeatKind.Bake);
         }
         private void DrawBlendShapeChannels()
         {

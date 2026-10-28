@@ -268,36 +268,8 @@ namespace MashBoxSDK.AnimationStudio
         private readonly HashSet<(int, int)> bevelChartEdges = new HashSet<(int, int)>();
         internal List<int>[] BevelSourceTriangles(Mesh mesh)
         {
-            if (bevelSourceTriangles != null) return bevelSourceTriangles;
-            var originalTriangles = new List<int>[Faces.Count];
-            var memberships = new List<int>[Positions.Length];
-            for (int f = 0; f < Faces.Count; f++)
-            {
-                originalTriangles[f] = new List<int>();
-                foreach (int vertex in Faces[f].Vertices)
-                {
-                    if (memberships[vertex] == null) memberships[vertex] = new List<int>();
-                    memberships[vertex].Add(f);
-                }
-            }
-            for (int sub = 0; sub < mesh.subMeshCount; sub++)
-            {
-                var triangles = mesh.GetTriangles(sub);
-                for (int i = 0; i < triangles.Length; i += 3)
-                {
-                    var candidates = memberships[triangles[i]];
-                    if (candidates == null) continue;
-                    foreach (int f in candidates)
-                    {
-                        var face = Faces[f];
-                        if (face.Submesh != sub || originalTriangles[f].Count >= (face.Vertices.Count - 2) * 3 ||
-                            !face.Vertices.Contains(triangles[i + 1]) || !face.Vertices.Contains(triangles[i + 2])) continue;
-                        originalTriangles[f].Add(triangles[i]); originalTriangles[f].Add(triangles[i + 1]); originalTriangles[f].Add(triangles[i + 2]);
-                        break;
-                    }
-                }
-            }
-            return bevelSourceTriangles = originalTriangles;
+            if (bevelSourceTriangles == null) bevelSourceTriangles = MapSourceFaceTriangles(mesh,Faces,Positions);
+            return bevelSourceTriangles;
         }
         private void PrepareBevelSurfaceCharts(Mesh mesh, IEnumerable<(int a, int b)> selected)
         {

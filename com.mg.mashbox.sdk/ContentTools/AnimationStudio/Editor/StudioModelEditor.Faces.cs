@@ -25,35 +25,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         private void CacheFaceTriangles(Mesh mesh)
-        {
-            cachedFaceTriangles = new List<int>[cachedFaces.Count];
-            var memberships = new Dictionary<int, List<int>>();
-            for (int f = 0; f < cachedFaces.Count; f++)
-            {
-                cachedFaceTriangles[f] = new List<int>();
-                foreach (int vertex in cachedFaces[f].Vertices)
-                {
-                    if (!memberships.TryGetValue(vertex, out var faces)) memberships[vertex] = faces = new List<int>();
-                    faces.Add(f);
-                }
-            }
-            // Use the mesh's actual diagonal for hit tests and fill, including warped quads.
-            for (int sub = 0; sub < mesh.subMeshCount; sub++)
-            {
-                var triangles = mesh.GetTriangles(sub);
-                for (int i = 0; i < triangles.Length; i += 3)
-                {
-                    if (!memberships.TryGetValue(triangles[i], out var candidates)) continue;
-                    foreach (int f in candidates)
-                    {
-                        var face = cachedFaces[f];
-                        if (face.Submesh != sub || !face.Vertices.Contains(triangles[i + 1]) || !face.Vertices.Contains(triangles[i + 2])) continue;
-                        cachedFaceTriangles[f].Add(triangles[i]); cachedFaceTriangles[f].Add(triangles[i + 1]); cachedFaceTriangles[f].Add(triangles[i + 2]);
-                        break;
-                    }
-                }
-            }
-        }
+        { cachedFaceTriangles = StudioMeshCuts.MapSourceFaceTriangles(mesh,cachedFaces); }
 
         private void PreserveFaceTopology()
         {

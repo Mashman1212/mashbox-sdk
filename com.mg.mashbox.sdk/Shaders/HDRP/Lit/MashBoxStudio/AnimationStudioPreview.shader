@@ -2,6 +2,7 @@ Shader "MashBox/Studio/Preview"
 {
     Properties
     {
+        [HideInInspector] _StudioCheckerLabels ("UV tile labels", Float) = 0
         _MainTex ("Base texture", 2D) = "white" {}
         _BaseArray ("Base texture array", 2DArray) = "" {}
         _NormalArray ("Normal texture array", 2DArray) = "" {}
@@ -28,6 +29,7 @@ Shader "MashBox/Studio/Preview"
     }
         HLSLINCLUDE
             #include "UnityCG.cginc"
+            #include "StudioCheckerLabels.hlsl"
             sampler2D _MainTex, _NormalTex;
             UNITY_DECLARE_TEX2DARRAY(_BaseArray);
             UNITY_DECLARE_TEX2DARRAY(_NormalArray);
@@ -79,6 +81,9 @@ Shader "MashBox/Studio/Preview"
                 float4 albedo;
                 if (_UseArray > 0.5) albedo = UNITY_SAMPLE_TEX2DARRAY(_BaseArray,float3(input.uv,_ArraySlice));
                 else albedo = tex2D(_MainTex, input.uv);
+                #if defined(_STUDIO_CHECKER_LABELS)
+                StudioCheckerLabels_float(input.uv, albedo.rgb, albedo.rgb);
+                #endif
                 albedo *= _Color;
                 float luminance = dot(albedo.rgb,float3(.2126,.7152,.0722));
                 albedo.rgb = (lerp(luminance.xxx,albedo.rgb,_Saturation)-.5)*_Contrast+.5;
@@ -102,6 +107,7 @@ Shader "MashBox/Studio/Preview"
             #pragma vertex Vert
             #pragma fragment Frag
             #pragma target 3.5
+            #pragma shader_feature_local_fragment _STUDIO_CHECKER_LABELS
             ENDHLSL
         }
     }
@@ -120,6 +126,7 @@ Shader "MashBox/Studio/Preview"
             #pragma vertex Vert
             #pragma fragment Frag
             #pragma target 3.5
+            #pragma shader_feature_local_fragment _STUDIO_CHECKER_LABELS
             ENDHLSL
         }
     }

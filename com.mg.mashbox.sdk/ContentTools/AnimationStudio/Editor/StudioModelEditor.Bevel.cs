@@ -50,7 +50,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 execute: () => ApplyLiveTool(LiveTool.Bevel), canExecute: () => CanRunLiveTool(LiveTool.Bevel), failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
 
-                preview: () => QueueLiveTool(LiveTool.Bevel), cancelPreview: () => CancelLiveTool(LiveTool.Bevel), history: PerformWorkspaceHistory);
+                preview: () => QueueLiveTool(LiveTool.Bevel), cancelPreview: () => CancelLiveTool(LiveTool.Bevel), history: PerformWorkspaceHistory, repeat: PerformRepeatLastAction);
 
             QueueLiveTool(LiveTool.Bevel);
 

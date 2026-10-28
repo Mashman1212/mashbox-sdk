@@ -123,7 +123,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 }
             catch { RestoreTargetWeldSelection(before); throw; }
-            error = null; repaint();
+            RememberAction(RepeatKind.TargetWeld); error = null; repaint();
         }
         private bool TargetWeldSceneGUI(SceneView view)
         {

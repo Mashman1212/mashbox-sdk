@@ -25,7 +25,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (targetWeldActive) { if (targetWeldSource >= 0) ResetTargetWeldGesture(); else StopTargetWeld(); evt.Use(); repaint(); return true; }
                 if (cutTool != CutTool.None)
                 {
-                    if (pendingCuts.Count > 0 || cutStart.HasValue || cutDragging) ResetCutGesture(); else StopCutTool();
+                    if (pendingCuts.Count > 0 || cutStart.HasValue || cutDragging || HasMultiCutGesture) ResetCutGesture(); else StopCutTool();
                 }
                 else
                 {
@@ -42,10 +42,12 @@ namespace MashBoxSDK.AnimationStudio
             if (Is(StudioShortcut.XRay)) { SetXRayMode(!displayXray); evt.Use(); return true; }
             if (cutTool != CutTool.None)
             {
+                if (MultiCutKey(evt)) return true;
                 if (Is(StudioShortcut.CommitCut))
-                { Run(() => CommitCuts(new List<StudioMeshCuts.Cut>(pendingCuts))); ResetCutGesture(); evt.Use(); return true; }
+                { CommitPendingCutGesture(); evt.Use(); return true; }
                 if (Is(StudioShortcut.RemoveCut))
                 {
+                    if (cutTool==CutTool.MultiCut && HasMultiCutGesture) { RemoveMultiPoint(); evt.Use(); return true; }
                     if (pendingCuts.Count > 0) { var last = pendingCuts[pendingCuts.Count-1]; pendingCuts.RemoveAt(pendingCuts.Count-1); cutStart = last.A; }
                     else cutStart = null;
                     evt.Use(); repaint(); return true;
@@ -71,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ReleaseShortcutHolds()
         {
-            ResetTargetWeldGesture(); FinishSelectionPaint();
+            ResetTargetWeldGesture(); ReleaseMultiCutPointer(); FinishSelectionPaint();
             if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
             EndPivotSnap(); ClearGridSnap();
         }

@@ -177,7 +177,7 @@ namespace MashBoxSDK.AnimationStudio
         static StudioShortcuts() { Reload(); }
         internal static StudioModifiers Modifiers(Event evt) => (evt.shift ? StudioModifiers.Shift : 0) |
             (evt.control || evt.command ? StudioModifiers.Action : 0) | (evt.alt ? StudioModifiers.Alt : 0);
-        internal static string KeyName(KeyCode key) => key >= KeyCode.Alpha0 && key <= KeyCode.Alpha9 ? ((int)key-(int)KeyCode.Alpha0).ToString() :
+        internal static string KeyName(KeyCode key) => key==KeyCode.Comma ? "," : key==KeyCode.Period ? "." : key >= KeyCode.Alpha0 && key <= KeyCode.Alpha9 ? ((int)key-(int)KeyCode.Alpha0).ToString() :
             key == KeyCode.Mouse0 ? "Left mouse" : key == KeyCode.Mouse1 ? "Right mouse" : key == KeyCode.Mouse2 ? "Middle mouse" : key.ToString();
         internal static Definition Find(StudioShortcut action) => action == StudioShortcut.Preferences ? null : StudioModelCommands.Find(action) ?? Array.Find(BuiltinDefinitions, d => d.id == action);
         internal static Binding[] Bindings(StudioShortcut action)

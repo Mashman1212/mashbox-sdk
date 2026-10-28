@@ -122,13 +122,20 @@ namespace MashBoxSDK.AnimationStudio
             bool textEdit = !evt.altKey && (evt.keyCode == KeyCode.A || evt.keyCode == KeyCode.C || evt.keyCode == KeyCode.V || evt.keyCode == KeyCode.X);
             if (textEdit) return;
             var key = new Event { type = EventType.KeyDown, keyCode = evt.keyCode, modifiers = evt.modifiers };
-            HandlePaneHistory(key);
+            if (!HandlePaneHistory(key)) HandlePaneRepeat(key);
             evt.imguiEvent?.Use();
             evt.StopImmediatePropagation();
         }
         private void OnFocus() => shortcutFocus.Acquire();
         private void OnLostFocus() { EndIntegerScrub(); shortcutFocus.Release(); FlushDefaults(); SaveBounds(); }
         private Action<bool> history;
+        private Action repeat; private bool repeatQueued;
+        private void ApplyQueuedRepeat() { repeatQueued = false; if (this && repeat != null) repeat(); }
+        private bool HandlePaneRepeat(Event evt)
+        {
+            if (repeat == null || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0 || !StudioShortcuts.Pressed(StudioModelEditor.RepeatActionShortcut,evt)) return false;
+            evt.Use(); if (!repeatQueued) { repeatQueued = true; EditorApplication.delayCall += ApplyQueuedRepeat; } return true;
+        }
         private bool historyQueued, redoQueued;
         private void ApplyQueuedHistory()
         {
@@ -164,7 +171,7 @@ namespace MashBoxSDK.AnimationStudio
         private string sensitivityKey;
         internal static ToolChannelPane Open(string title, Action draw, Action closed = null,
             Vector2? initialSize = null, Vector2? minimumSize = null,
-            Action execute = null, Func<bool> canExecute = null, Action<Exception> failed = null, EditorWindow owner = null, Action preview = null, Action cancelPreview = null, Action<bool> history = null)
+            Action execute = null, Func<bool> canExecute = null, Action<Exception> failed = null, EditorWindow owner = null, Action preview = null, Action cancelPreview = null, Action<bool> history = null, Action repeat = null)
         {
             foreach (var pane in Resources.FindObjectsOfTypeAll<ToolChannelPane>()) pane.Close();
             var window = CreateInstance<ToolChannelPane>();
@@ -174,7 +181,7 @@ namespace MashBoxSDK.AnimationStudio
             window.minSize = minimumSize ?? new Vector2(200, 116);
             var size = Vector2.Max(initialSize ?? new Vector2(240, 124), window.minSize);
             window.draw = draw; window.closed = closed; window.preview = preview; window.cancelPreview = cancelPreview;
-            window.history = history;
+            window.history = history; window.repeat = repeat;
             window.execute = execute; window.canExecute = canExecute; window.failed = failed;
             // Native ownership keeps the compact borderless pane above its Studio
             // host without focus-stealing callbacks or a repaint/polling loop.
@@ -188,7 +195,7 @@ namespace MashBoxSDK.AnimationStudio
         private void OnGUI()
         {
             if (draw == null) { Close(); return; }
-            if (HandlePaneHistory(Event.current)) return;
+            if (HandlePaneHistory(Event.current) || HandlePaneRepeat(Event.current)) return;
             bool finishEdit = Event.current.type == EventType.MouseUp || Event.current.type == EventType.KeyUp;
             using (StudioTheme.Scope())
             {
@@ -294,6 +301,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EndIntegerScrub(); shortcutFocus.Release();
             EditorApplication.delayCall -= ApplyQueuedHistory; historyQueued = false; history = null;
+            EditorApplication.delayCall -= ApplyQueuedRepeat; repeatQueued = false; repeat = null;
             SaveBounds(); FlushDefaults(); StudioPreferenceStore.Flush();
             if (chromeControl != 0 && GUIUtility.hotControl == chromeControl) GUIUtility.hotControl = 0;
             chromeControl = 0;

@@ -239,7 +239,17 @@ namespace MashBoxSDK.AnimationStudio
                     if(source.HasColor(property)) { color=source.GetColor(property); break; }
                 // Vehicle tint alpha is not its surface alpha; the graph clips the base map.
                 if(source.shader && source.shader.name=="MGShaders/HDRP/Lit/MG_Vehicle") color.a=1;
-                if(source.HasFloat("_Checkerboard") && source.GetFloat("_Checkerboard")>=.5f && source.HasTexture("_CheckerboardMap"))
+                bool checker=source.shader && source.shader.name=="MGShaders/HDRP/Lit/MashBoxStudio_Default_Modeling_CheckerMap_Shader";
+                if(checker)
+                {
+                    // Share the graph label function and sample its checker texture
+                    // without applying an unrelated source tint.
+                    material.EnableKeyword("_STUDIO_CHECKER_LABELS");
+                    material.SetTexture("_MainTex",source.GetTexture("_CheckerboardMap") ?? Texture2D.whiteTexture);
+                    material.SetTextureScale("_MainTex",Vector2.one);material.SetTextureOffset("_MainTex",Vector2.zero);
+                    color=Color.white;
+                }
+                else if(source.HasFloat("_Checkerboard") && source.GetFloat("_Checkerboard")>=.5f && source.HasTexture("_CheckerboardMap"))
                 {
                     color=Color.white;
                     material.SetTexture("_MainTex",source.GetTexture("_CheckerboardMap"));

@@ -80,7 +80,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void CenterEditingPivot()
         {
-            if (CanAdjustPivot) MoveEditingPivot(mode == ComponentMode.Object ? BoundsFor(Active).center : ComponentSelectionCenter());
+            if (CanAdjustPivot) { MoveEditingPivot(mode == ComponentMode.Object ? BoundsFor(Active).center : ComponentSelectionCenter()); RememberAction(RepeatKind.CenterPivot); }
         }
         private void UpdateComponentPivotAfterTransform(Vector3 position, Vector3 center, Quaternion rotation, Quaternion orientation)
         {
