@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b10c6143c9c2448e9f4b8c68d1ae89d2, type: 3}
+  m_Name: Default Clothing Culling
+  m_EditorClassIdentifier: MashBoxSDK.Culling::MashBoxSDK.Culling.ClothingCullingRegistry
+  surfaces:
+  - {fileID: 11400000, guid: b65b0dbab1c1abd469f1c47023bac23b, type: 2}
+  - {fileID: 11400000, guid: d375c32596f3be0458ed12fc489adfb2, type: 2}
+  presets:
+  - {fileID: 11400000, guid: c3a047b5008de7643a0760b0f833efbc, type: 2}
+  - {fileID: 11400000, guid: 4783e55ca6424b746a9f13f75adbfda5, type: 2}
+  - {fileID: 11400000, guid: 70afe192f00d9474db4bab59316e51d9, type: 2}
+  - {fileID: 11400000, guid: aff13ef105a02e940aa7971c776a0a79, type: 2}
+  - {fileID: 11400000, guid: 11a87f1edc964d547bab598ca0d2f270, type: 2}
+  - {fileID: 11400000, guid: 05ca1bfe0957c554f94d945f7b18b757, type: 2}
+  - {fileID: 11400000, guid: bc0a2ce4f727b81409eb3b9f24210c62, type: 2}
+  - {fileID: 11400000, guid: ae806ca286729e543bc1d425955f33cc, type: 2}
+  - {fileID: 11400000, guid: 447188ce0fc95b24e97e1a3a78a7b35e, type: 2}
+  - {fileID: 11400000, guid: 1805d354048986446a5f4290087a3c61, type: 2}
+  - {fileID: 11400000, guid: 0040820ac530a79489e295f86a733102, type: 2}

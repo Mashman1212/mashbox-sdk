@@ -7,7 +7,9 @@
         "GUID:84651a3751eca9349aac36a66bba901b",
         "GUID:78bd2ddd6e276394a9615c203e574844",
         "GUID:457756d89b35d2941b3e7b37b4ece6f1",
-        "GUID:982c2b0bc58fb57498c119e2b1f0b90a"
+        "GUID:982c2b0bc58fb57498c119e2b1f0b90a",
+        "MashBoxSDK.Culling",
+        "MashBoxSDK"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

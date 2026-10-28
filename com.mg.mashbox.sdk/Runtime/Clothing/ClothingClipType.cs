@@ -23,6 +23,9 @@ namespace MashBoxSDK.Clothing
         TallSocks,
         
         OpenFlannel,
-        ClothShortSleeve
+        ClothShortSleeve,
+
+        // Append new values so existing prefab preset numbers stay stable.
+        Custom = 14
     }
 }

@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioSkinningEditor : IDisposable
     {
-        internal enum Brush { Select, Paint, SmoothWeights, Inflate, Bulge, Grab, SmoothShape, Pose, Object, FitBody }
+        internal enum Brush { Select, Paint, SmoothWeights, Inflate, Bulge, Grab, SmoothShape, Pose, Object, FitBody, Culling }
         internal readonly StudioSkinningDocument Document;
         internal readonly Scene Scene;
         internal Brush Tool;
@@ -124,7 +124,7 @@ namespace MashBoxSDK.AnimationStudio
         private void Changed()
         { Document.dirty = true; EditorUtility.SetDirty(Document); if (Part?.mesh) EditorUtility.SetDirty(Part.mesh); repaint(); }
         private void OnUndo()
-        { objectUndoGroup = -1; poseUndoGroup = -1; CancelBrushInteraction(); stroke = false; GUIUtility.hotControl = 0; Run(Rebuild); }
+        { cullingUndo = -1; objectUndoGroup = -1; poseUndoGroup = -1; CancelBrushInteraction(); stroke = false; GUIUtility.hotControl = 0; Run(Rebuild); }
         private static void ApplyPreviewWeights(Mesh source,Mesh preview)
         {
             var previewWeights=new StudioSkinWeights(source);
@@ -132,6 +132,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Rebuild()
         {
+            DisposeCullingPicks();
             foreach (var go in objects) if (go) Object.DestroyImmediate(go); objects.Clear();
             foreach (var mesh in displayMeshes) if (mesh) Object.DestroyImmediate(mesh); displayMeshes.Clear();
             foreach (var part in Document.parts)
@@ -269,6 +270,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DrawHierarchy()
         {
+            if(Event.current.type==EventType.MouseMove || Event.current.type==EventType.MouseLeaveWindow)
+                repaint();
             if (Event.current.type == EventType.DragUpdated || Event.current.type == EventType.DragPerform)
                 HandleModelDrop(Event.current);
             GUILayout.Label("Drop clothing or objects into the viewport.", StudioTheme.Styles.wordWrappedMiniLabel);
@@ -400,6 +403,14 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUIUtility.labelWidth = Mathf.Min(126, width * .46f); EditorGUIUtility.fieldWidth = 42;
             if(scroll)inspectorScroll = EditorGUILayout.BeginScrollView(inspectorScroll, GUILayout.MinWidth(0));
             EditorGUILayout.BeginVertical(GUILayout.Width(width), GUILayout.MaxWidth(width));
+            if(Tool==Brush.Culling)
+            {
+                DrawCullingInspector();
+                EditorGUILayout.EndVertical();
+                if(scroll)EditorGUILayout.EndScrollView();
+                EditorGUIUtility.labelWidth=oldLabelWidth;EditorGUIUtility.fieldWidth=oldFieldWidth;
+                return;
+            }
             GUILayout.Label(sculptMode ? "SCULPT" : "SKIN WEIGHT PAINT", StudioTheme.Styles.boldLabel);
             var choices = ModeBrushes;
             int chosen = GUILayout.SelectionGrid(Array.IndexOf(choices, Tool), choices.Select(BrushLabel).ToArray(), 2, GUILayout.Width(width));
@@ -495,6 +506,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UpdateDisplay()
         {
+            UpdateCullingDisplay();
             wirePoseDirty = true;
             if (referenceShaded) referenceShaded.SetColor("_Color",ReferencePreviewTint);
             for (int i = 0; i < objects.Count; i++)
@@ -532,14 +544,24 @@ namespace MashBoxSDK.AnimationStudio
                 !influenceHoverScreenRect.Contains(GUIUtility.GUIToScreenPoint(Event.current.mousePosition))))
                 SetInfluencePreview(-1);
             DrawBrushOverlay(view);
-            DrawSelectedMeshWireframe();
+            if(Tool!=Brush.Culling || previewPlaying)DrawSelectedMeshWireframe();
             if (adjustingBrush)
             {
+                if (Tool == Brush.Culling)
+                {
+                    if (!cullingCutouts && Event.current.type == EventType.Repaint) DrawCullingFill();
+                    DrawSelectedMeshWireframe();
+                    var pick = PickCullingSurface(HandleUtility.GUIPointToWorldRay(adjustmentAnchor), out var cullingHit);
+                    DrawCullingCursor(view, adjustmentAnchor, pick != null, cullingHit, false);
+                }
+                else
+                {
                 bool valid=Part!=null&&Part.visible&&!IsBrushLocked&&
                     ((Tool!=Brush.Paint&&Tool!=Brush.SmoothWeights)||Part.bound);
                 RaycastHit adjustmentHit=default;
                 valid=valid&&picker.Raycast(HandleUtility.GUIPointToWorldRay(adjustmentAnchor),out adjustmentHit,10000);
                 StudioBrushCursor.Draw(view,adjustmentAnchor,radius,valid,adjustmentHit.point,adjustmentHit.normal,new Color(1,.7f,.2f,.85f),ref brushCursorDepth);
+                }
             }
             if (brushMenuOpen || adjustingBrush) return;
             var evt = Event.current;
@@ -557,6 +579,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (evt.type == EventType.KeyDown && (evt.control || evt.command) && evt.keyCode == KeyCode.S)
             { Run(() => { EndStroke(); Document.SaveDocument(); }); evt.Use(); }
+            if (Tool == Brush.Culling) { DrawCullingScene(view); DrawSelectedMeshWireframe(); return; }
             if (Tool == Brush.Object) { DrawObjectTransform(view); return; }
             if (Part != null && Part.role == StudioSkinningDocument.MeshRole.Headgear)
             { Handles.Label(Part.mesh.bounds.center, "Headgear is rigid. Use Object mode (W / E / R) to position it."); return; }
@@ -799,6 +822,7 @@ namespace MashBoxSDK.AnimationStudio
                     var skin = go.AddComponent<SkinnedMeshRenderer>(); skin.sharedMesh = mesh; skin.bones = rigBones; skin.rootBone = root.transform;
                     skin.probeAnchor = root.transform;
                     skin.sharedMaterials = part.materials; skin.localBounds = new Bounds(Vector3.up,Vector3.one*4);
+                    AttachExportCulling(go,part,System.IO.Path.ChangeExtension(meshPath,null)+"."+Document.parts.IndexOf(part)+".culling.asset");
                 }
                 var prefab = PrefabUtility.SaveAsPrefabAsset(root,path); if (!prefab) throw new InvalidOperationException("Unity could not save the prefab.");
                 foreach (var mesh in owned) AssetDatabase.SaveAssetIfDirty(mesh);
@@ -808,6 +832,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            FinishCullingStroke();DisposeCullingPicks();
             materialLighting?.Dispose(); materialLighting=null;
             DisposeUVChecker();materialPreview.Dispose();
             DisposeWireframe();

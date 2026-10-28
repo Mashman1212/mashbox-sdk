@@ -5586,7 +5586,9 @@ namespace MashBoxSDK.MapTools
                 if (tempScene == null)
                     throw new Exception("Temporary export scene could not be loaded.");
 
-                var tempPack = ScriptableObject.CreateInstance<MapContentPackDefinition>();
+                var tempPack = PackDefinitionScriptRecovery.CreatePack<MapContentPackDefinition>();
+                if (tempPack == null)
+                    throw new InvalidOperationException("Map pack definition script is unavailable.");
                 tempPack.name = sourcePack.name;
                 tempPack.MapName = sourcePack.MapName;
                 tempPack.Scene = tempScene;
@@ -6832,7 +6834,8 @@ namespace MashBoxSDK.MapTools
             if (db.Packs.Any(pack => pack != null && pack.Scene == scene))
                 return;
 
-            var pack = CreateInstance<MapContentPackDefinition>();
+            var pack = PackDefinitionScriptRecovery.CreatePack<MapContentPackDefinition>();
+            if (pack == null) return;
             pack.name = SanitizeAssetName(scene.name);
             pack.MapName = scene.name;
             pack.Scene = scene;
@@ -6857,7 +6860,8 @@ namespace MashBoxSDK.MapTools
 
         private void CreateEmptyPackAsset()
         {
-            var pack = CreateInstance<MapContentPackDefinition>();
+            var pack = PackDefinitionScriptRecovery.CreatePack<MapContentPackDefinition>();
+            if (pack == null) return;
             pack.name = "NewMapPack";
             pack.MapName = "NewMapPack";
 

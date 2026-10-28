@@ -39,6 +39,12 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(part.referenceOnly)
                 EditorGUI.DrawRect(row,new Color(.12f,.13f,.14f,1));
+            if(Event.current.type==EventType.Repaint && row.Contains(Event.current.mousePosition))
+            {
+                // Overlay the existing selection so both hover and selection stay legible.
+                var hover=StudioTheme.Current.Accent;hover.a=.12f;
+                EditorGUI.DrawRect(row,hover);
+            }
             var icon=new Rect(row.x+4,row.center.y-8,16,16);
             GUI.Label(new Rect(row.x+26,row.y,Mathf.Max(0,row.width-(part.HasStitchWeightLock ? 92 : 70)),row.height),
                 new GUIContent(part.referenceOnly ? (!string.IsNullOrEmpty(part.defaultReferenceLabel) ? part.defaultReferenceLabel : part.role == StudioSkinningDocument.MeshRole.Body ? "Default Body" : part.role == StudioSkinningDocument.MeshRole.Bust ? "Default Bust" : "Default Pants") : part.name,

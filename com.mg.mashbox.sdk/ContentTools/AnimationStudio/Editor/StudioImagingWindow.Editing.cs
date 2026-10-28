@@ -354,6 +354,16 @@ namespace MashBoxSDK.AnimationStudio
             DrawImageMenu("Select", BuildImageSelectMenu, ref menuX,bar.y);
             DrawImageMenu("Layer", BuildImageLayerMenu, ref menuX,bar.y);
             DrawImageMenu("View", BuildImageViewMenu, ref menuX,bar.y);
+            if(GUI.Button(new Rect(bar.xMax-112,bar.y,108,21),"Image Library",StudioTheme.Styles.menuBarButton))
+                StudioImageLibraryWindow.Open(this);
+        }
+
+        internal void AddLibraryImage(Texture2D texture)
+        {
+            if(!texture)return;
+            inputSnapshot=CaptureImage();
+            try { AddLayer(texture,texture.name); }
+            finally { inputSnapshot=null;Repaint(); }
         }
 
         private bool imageToolSettingsExpanded=true;

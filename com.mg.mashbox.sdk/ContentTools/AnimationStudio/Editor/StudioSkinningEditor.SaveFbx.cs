@@ -304,6 +304,13 @@ namespace MashBoxSDK.AnimationStudio
                     }
                 }
                 finally { Object.DestroyImmediate(check); }
+                if (part.role == StudioSkinningDocument.MeshRole.Clothing && part.customCulling &&
+                    EditorUtility.DisplayDialog("Create culling prefab?",
+                        "The FBX has been saved. This clothing has custom culling data, which an FBX cannot store.\n\n" +
+                        "Also create a rigged prefab with its culling data beside the FBX? This saves a prefab and a culling data asset. Equip the prefab in game to use the custom culling.\n\n" +
+                        "FBX Only leaves any existing culling prefab and data unchanged.",
+                        "Create Prefab", "FBX Only"))
+                    ExportCullingCompanion(part,importPath);
                 part.sourceMesh = savedRenderer.sharedMesh;
                 part.sourceRendererPath = AnimationUtility.CalculateTransformPath(savedRenderer.transform,savedModel.transform);
                 part.sourceToWorkspace = savedModel.transform.worldToLocalMatrix * savedRenderer.transform.localToWorldMatrix;

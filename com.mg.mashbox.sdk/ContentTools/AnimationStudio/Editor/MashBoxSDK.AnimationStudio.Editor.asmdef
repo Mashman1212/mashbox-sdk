@@ -11,6 +11,7 @@
   "references": [
     "MashBoxSDK.Tools.Editor",
     "Unity.Mathematics",
-    "MashBoxSDK.Cloth"
+    "MashBoxSDK.Cloth",
+    "MashBoxSDK.Culling"
   ]
 }

@@ -133,14 +133,28 @@ namespace MashBoxSDK.ContentTools.Editor
             // Create or load the pack asset
             EnsureFolder(PacksFolder);
             var assetPathOut = $"{PacksFolder}/{Sanitize(packName)}.asset";
+            // Repair the definition import before loading an existing pack. A failed load must
+            // never turn into CreateAsset overwriting a pack whose data is still on disk.
+            var candidate = PackDefinitionScriptRecovery.CreatePack<ContentPackDefinition>();
+            if (candidate == null) return false;
             var pack = AssetDatabase.LoadAssetAtPath<ContentPackDefinition>(assetPathOut);
             bool created = false;
 
             if (pack == null)
             {
-                pack = ScriptableObject.CreateInstance<ContentPackDefinition>();
+                if (File.Exists(assetPathOut))
+                {
+                    Object.DestroyImmediate(candidate);
+                    Debug.LogError($"[ManifestImporter] Existing pack at '{assetPathOut}' could not be loaded. Import cancelled to preserve its data.");
+                    return false;
+                }
+                pack = candidate;
                 AssetDatabase.CreateAsset(pack, assetPathOut);
                 created = true;
+            }
+            else
+            {
+                Object.DestroyImmediate(candidate);
             }
 
             // Replace items

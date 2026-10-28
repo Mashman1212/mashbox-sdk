@@ -18,19 +18,21 @@ namespace MashBoxSDK.AnimationStudio
         private Vector3[] stitchMarkerLines;
         private void DrawWireframeButton(Rect rect)
         {
-            if(DrawSkinModeButton(rect,false,"Toggle quad-style wireframe on the selected mesh"))
+            bool cullingWire=CullingWireframeOnly;
+            bool showWire=cullingWire || showSelectedWireframe;
+            if(DrawSkinModeButton(rect,false,cullingWire ? "Culling shows the selected clothing as wireframe" : "Toggle quad-style wireframe on the selected mesh") && !cullingWire)
             { showSelectedWireframe=!showSelectedWireframe; repaint(); }
             if(Event.current.type!=EventType.Repaint) return;
             var color=Handles.color; var matrix=Handles.matrix;
             try
             {
                 Handles.matrix=Matrix4x4.identity;
-                Handles.color=showSelectedWireframe ? new Color(.5f,1,.87f) : new Color(.75f,.81f,.81f);
+                Handles.color=showWire ? new Color(.5f,1,.87f) : new Color(.75f,.81f,.81f);
                 Vector3 P(float x,float y)=>new Vector3(rect.center.x+x,rect.center.y+y,0);
                 Handles.DrawAAPolyLine(1.4f,P(-9,-9),P(9,-9),P(9,9),P(-9,9),P(-9,-9));
                 Handles.DrawAAPolyLine(1.4f,P(0,-9),P(0,9));
                 Handles.DrawAAPolyLine(1.4f,P(-9,0),P(9,0));
-                if(showSelectedWireframe) EditorGUI.DrawRect(new Rect(rect.x+5,rect.yMax-3,rect.width-10,2),new Color(.5f,1,.87f));
+                if(showWire) EditorGUI.DrawRect(new Rect(rect.x+5,rect.yMax-3,rect.width-10,2),new Color(.5f,1,.87f));
             }
             finally { Handles.color=color; Handles.matrix=matrix; }
         }
@@ -38,7 +40,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(Event.current.type!=EventType.Repaint || Part==null || !Part.visible || !CanPaintPart(Part) || !Part.mesh) return;
             bool showStitches = !sculptMode && (Tool==Brush.Paint || Tool==Brush.SmoothWeights) && Part.HasStitchWeightLock;
-            if(!showSelectedWireframe && !showStitches) return;
+            bool showWire=CullingWireframeOnly || showSelectedWireframe;
+            if(!showWire && !showStitches) return;
             if(Document.selected<0 || Document.selected>=objects.Count) return;
             if(wireSource!=Part.mesh)
             {
@@ -87,8 +90,8 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 Handles.zTest=CompareFunction.LessEqual;
-                if(showSelectedWireframe)
-                    using(new Handles.DrawingScope(new Color(.06f,.12f,.12f,.8f),go.transform.localToWorldMatrix))
+                if(showWire)
+                    using(new Handles.DrawingScope(CullingWireframeOnly ? new Color(.5f,1,.87f,.85f) : new Color(.06f,.12f,.12f,.8f),go.transform.localToWorldMatrix))
                         Handles.DrawLines(wireLines);
                 if(showStitches) DrawStitchWeightMarkers(go.transform);
             }
