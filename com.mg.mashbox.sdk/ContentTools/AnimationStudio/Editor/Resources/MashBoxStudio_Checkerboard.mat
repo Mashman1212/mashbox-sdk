@@ -24,7 +24,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: MashBoxStudio_Checkerboard
-  m_Shader: {fileID: -6465566751694194690, guid: 409bba92b9fbb904cbfd7cf58b9531a6,
+  m_Shader: {fileID: -6465566751694194690, guid: f495d7739232e7b4b96ac1ee1dbbceb2,
     type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -70,7 +70,6 @@ Material:
     - _AlphaDstBlend: 0
     - _AlphaSrcBlend: 1
     - _BlendMode: 0
-    - _Checkerboard: 1
     - _ConservativeDepthOffsetEnable: 0
     - _CullMode: 2
     - _CullModeForward: 2

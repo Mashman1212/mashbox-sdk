@@ -107,6 +107,8 @@ namespace MashBoxSDK.AnimationStudio
                 case "Select": {
                     AddAction(menu, "All", MarkingAction.SelectAll, view); AddAction(menu, "Deselect", MarkingAction.Clear, view);
                     AddCommand(menu, "Invert Selection", Document && (mode == ComponentMode.Object || ActiveMesh), InvertSelection);
+                    AddCommand(menu, "Grow Selection", CanGrowComponentSelection, () => GrowComponentSelection(false));
+                    AddCommand(menu, "Shrink Selection", CanGrowComponentSelection, () => GrowComponentSelection(true));
                     menu.AddSeparator("");
                     AddAction(menu, "Object Mode", MarkingAction.Object, view); AddAction(menu, "Vertex", MarkingAction.Vertex, view);
                     AddAction(menu, "Edge", MarkingAction.Edge, view); AddAction(menu, "Face", MarkingAction.Face, view);

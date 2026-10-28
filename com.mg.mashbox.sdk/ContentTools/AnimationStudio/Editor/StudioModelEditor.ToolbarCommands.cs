@@ -52,6 +52,8 @@ namespace MashBoxSDK.AnimationStudio
                 case "Edit/Delete": return "Delete the selected objects or mesh components.";
                 case "Select/All": return "Select all eligible objects or mesh components.";
                 case "Select/Deselect": return "Clear the current selection.";
+                case "Select/Grow Selection": return "Add one neighboring ring, including corner-touching faces, to the selection.";
+                case "Select/Shrink Selection": return "Remove the outer neighboring ring, including face corners, from the selection.";
                 case "Select/Invert Selection": return "Select eligible items that are not currently selected.";
                 case "Select/Object Mode": return "Select and edit whole objects.";
                 case "Select/Vertex": return "Select and edit mesh vertices.";
