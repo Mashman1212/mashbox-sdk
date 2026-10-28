@@ -42,6 +42,12 @@ public static class StudioMultiCutValidation
    // Every geometrical cube boundary remains shared by exactly two authored faces.
    var uses=new Dictionary<(Vector3,Vector3),int>();foreach(var f in new StudioMeshCuts(node).Faces)for(int i=0;i<f.Vertices.Count;i++){var p=cube.vertices[f.Vertices[i]];var q=cube.vertices[f.Vertices[(i+1)%f.Vertices.Count]];if(Compare(p,q)>0){var tmp=p;p=q;q=tmp;}var key=(p,q);uses.TryGetValue(key,out int count);uses[key]=count+1;}Check(uses.Values.All(count=>count==2),"Through slice left T junctions or cracks");
    foreach(var n in new[]{b,c,d})UnityEngine.Object.DestroyImmediate(n.mesh);
+   foreach(bool vertex in new[]{false,true})
+   {
+    var joined=Quad();var start=new Vector3(-1,0,0);var pivot=new Vector3(-.2f,.6f,0);var end=vertex?pivot:(start+pivot)*.5f;
+    new StudioMeshCuts(joined).ApplyMultiCut(joined,new[]{Stroke(start,pivot,new Vector3(.4f,0,0),new Vector3(0,-.4f,0),end)});
+    Check(new StudioMeshCuts(joined).Faces.Count==2,"Pending "+(vertex?"vertex":"segment")+" join did not create a cycle");Check(Math.Abs(Area(joined)-4)<1e-5,"Pending join changed face area");UnityEngine.Object.DestroyImmediate(joined.mesh);
+   }
    document=ScriptableObject.CreateInstance<StudioModelDocument>();a.materials=new[]{StudioMeshMaterialPreview.DefaultMaterial};document.nodes.Add(a);document.lighting.studioLights=false;document.lighting.ground=false;
    AnimationStudioWindow.Open();host=Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();typeof(AnimationStudioWindow).GetMethod("SwitchStudioMode",F).Invoke(host,new object[]{true});typeof(AnimationStudioWindow).GetMethod("LoadStudioModel",F).Invoke(host,new object[]{document});editor=host.ToolbarModelEditor;editor.SelectObject(0);
    view=Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().First(v=>v.Studio==host);view.position=new Rect(40,40,1000,720);view.modelGridVisible=false;view.LookAtDirect(Vector3.zero,Quaternion.Euler(0,180,0),2);editor.SetModelDrawMode(view,DrawCameraMode.TexturedWire);editor.SetDisplayMode(false,false);
@@ -104,7 +110,32 @@ public static class StudioMultiCutValidation
     object Point(int f){var t=typeof(StudioModelEditor).GetNestedType("MultiPoint",BindingFlags.NonPublic);var value=Activator.CreateInstance(t);t.GetField("Face",F).SetValue(value,f);t.GetField("Local",F).SetValue(value,(topology.Faces[f].Vertices.Aggregate(Vector3.zero,(sum,v)=>sum+vertices[v])/topology.Faces[f].Vertices.Count+center)*.5f);return value;}
     var traced=(List<StudioMeshCuts.FaceStroke>)typeof(StudioModelEditor).GetMethod("TraceMultiSegment",F).Invoke(editor,new[]{(object)view,Point(fa),Point(fb)});Check(traced.Count==2&&traced[0].Face==fa&&traced[1].Face==fb,"Adjacent visible face continuation failed");Check((traced[0].Points.Last()-traced[1].Points[0]).sqrMagnitude<1e-10f,"Adjacent face crossing has a gap");phase++;
    }
-   var rt=typeof(MashBoxStudioViewport).GetField("cachedScene",F).GetValue(view) as RenderTexture;Check(rt&&rt.IsCreated(),"No native render target");var old=RenderTexture.active;var image=new Texture2D(rt.width,rt.height,TextureFormat.RGBA32,false);try{RenderTexture.active=rt;image.ReadPixels(new Rect(0,0,rt.width,rt.height),0,0);image.Apply();File.WriteAllBytes(Path.GetFullPath(Path.Combine(Application.dataPath,"../../multi-cut-native.png")),image.EncodeToPNG());Check(image.GetPixels32().Count(p=>p.r>70&&Math.Abs(p.r-p.g)<5)>1000,"Cut surface missing in native render");}finally{RenderTexture.active=old;UnityEngine.Object.DestroyImmediate(image);}Finish("PASS "+checks+" multi-cut topology, all UV channels, intersections, through slice, grouped publication, Undo/Redo, native clicks/W/finite-slice drag, adjacent face continuation and rendered preview checks");
+   if(phase==5)
+   {
+    document.nodes[0]=Quad();document.nodes[0].materials=new[]{StudioMeshMaterialPreview.DefaultMaterial};typeof(StudioModelEditor).GetMethod("Rebuild",F).Invoke(editor,null);editor.SelectObject(0);editor.ActivateCutTool(StudioModelEditor.CutTool.MultiCut);view.LookAtDirect(Vector3.zero,Quaternion.Euler(0,180,0),2);phase++;warm=0;ready=EditorApplication.timeSinceStartup+.5;return;
+   }
+   if(phase==6)
+   {
+    var a=new Vector3(-.7f,-1,0);var b=new Vector3(-.4f,0,0);var c=new Vector3(.3f,-.2f,0);
+    Vector2 Screen(Vector3 p)=>Project(editor.Transforms[0].TransformPoint(p))+view.CanvasInputOrigin;
+    System.Collections.IList Points()=>(System.Collections.IList)typeof(StudioModelEditor).GetField("multiPoints",F).GetValue(editor);
+    bool Closed()=>(bool)typeof(StudioModelEditor).GetProperty("MultiLoopClosed",F).GetValue(editor);
+    Vector3 Hover(){var p=typeof(StudioModelEditor).GetField("multiHover",F).GetValue(editor);Check(p!=null,"Missing snapped hover");Check((bool)p.GetType().GetField("Preview",F).GetValue(p),"Hover did not snap to pending topology");return (Vector3)p.GetType().GetField("Local",F).GetValue(p);}
+    Click(Screen(a));Click(Screen(b));Check(Points().Count==2,"Preview snapping setup failed");
+    Click(Screen(a)+new Vector2(3,2));Check(Points().Count==2&&!Closed(),"Two-vertex loop was accepted");
+    Click(Screen(c));Check(Points().Count==3,"Third vertex missing");
+    Send(EventType.MouseMove,Screen(b)+new Vector2(3,2));Check((Hover()-b).sqrMagnitude<1e-8f,"Pending vertex snap drifted");
+    var middle=(b+c)*.5f;var side=Screen(c)-Screen(b);var normal=new Vector2(-side.y,side.x).normalized;
+    Send(EventType.MouseMove,Screen(middle)+normal*3);var onLine=Hover();var delta=c-b;float t=Vector3.Dot(onLine-b,delta)/delta.sqrMagnitude;Check(t>.1f&&t<.9f&&(Vector3.Lerp(b,c,t)-onLine).sqrMagnitude<1e-8f,"Pending segment snap is not on its line");
+    Click(Screen(a)+new Vector2(3,2));Check(Points().Count==4&&Closed(),"Returning near first vertex did not close triangle");Check(new StudioMeshCuts(document.nodes[0]).Faces.Count==1,"Closing loop committed before W");
+    var last=Points()[3];Check(((Vector3)last.GetType().GetField("Local",F).GetValue(last)-a).sqrMagnitude<1e-8f,"Closing endpoint is not the exact first vertex");
+    Click(Screen(middle));Check(Points().Count==4,"Closed loop accepted extra points");
+    Send(EventType.KeyDown,Screen(a),KeyCode.Backspace);Check(Points().Count==3&&!Closed(),"Backspace did not reopen loop");Click(Screen(a)+new Vector2(2,-2));Check(Closed(),"Reopened loop did not close again");
+    capturePreview=true;Send(EventType.Repaint,Screen(a));Check(!capturePreview&&previewFailure==null,"Closed preview render failed");
+    Send(EventType.KeyDown,Screen(a),KeyCode.W);Check(new StudioMeshCuts(document.nodes[0]).Faces.Count==2,"Closed preview W did not create two faces: "+editor.StatusText);Check(Math.Abs(Area(document.nodes[0])-4)<1e-5,"Loop changed surface area");Attributes(document.nodes[0]);
+    UnityEditor.Undo.PerformUndo();Check(new StudioMeshCuts(document.nodes[0]).Faces.Count==1,"Loop Undo failed");UnityEditor.Undo.PerformRedo();Check(new StudioMeshCuts(document.nodes[0]).Faces.Count==2,"Loop Redo failed");phase++;
+   }
+   var rt=typeof(MashBoxStudioViewport).GetField("cachedScene",F).GetValue(view) as RenderTexture;Check(rt&&rt.IsCreated(),"No native render target");var old=RenderTexture.active;var image=new Texture2D(rt.width,rt.height,TextureFormat.RGBA32,false);try{RenderTexture.active=rt;image.ReadPixels(new Rect(0,0,rt.width,rt.height),0,0);image.Apply();File.WriteAllBytes(Path.GetFullPath(Path.Combine(Application.dataPath,"../../multi-cut-native.png")),image.EncodeToPNG());Check(image.GetPixels32().Count(p=>p.r>70&&Math.Abs(p.r-p.g)<5)>1000,"Cut surface missing in native render");}finally{RenderTexture.active=old;UnityEngine.Object.DestroyImmediate(image);}Finish("PASS "+checks+" multi-cut topology, pending vertex/segment snapping, minimum-three loop closure/reopen, all UV channels, intersections, through slice, Undo/Redo, native input and rendered preview checks");
   }catch(Exception e){Finish(e.ToString());}
  }
  static void Finish(string text)

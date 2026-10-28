@@ -108,7 +108,7 @@ namespace MashBoxSDK.AnimationStudio
             extrusionInset = EditorGUILayout.FloatField(new GUIContent("Inset", "Mesh-local boundary offset. Positive moves outward; negative moves inward. Independent of normal distance."), extrusionInset);
             if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
             if (EditorGUI.EndChangeCheck()) StoreExtrusionDefaults();
-            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Cancel or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
         }
 
         private void StoreExtrusionDefaults()

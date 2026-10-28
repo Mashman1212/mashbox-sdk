@@ -94,8 +94,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach(var stroke in strokes)
             {
                 if(stroke.Face<0||stroke.Face>=Faces.Count||stroke.Points.Count<2)throw new InvalidOperationException("Incomplete face path.");
-                if(!OnCutBoundary(stroke.Face,stroke.Points[0],out _)||!OnCutBoundary(stroke.Face,stroke.Points[stroke.Points.Count-1],out _))
-                    throw new InvalidOperationException("Finish the cut on a perimeter edge or vertex before applying.");
+                // Endpoints may join other pending strokes; validate the complete face graph below.
                 foreach(var p in stroke.Points)
                     if(OnCutBoundary(stroke.Face,p,out var q))
                     { var key=Key(q.A,q.B);if(!edgePoints.TryGetValue(key,out var list))edgePoints[key]=list=new List<Vector3>();if(!list.Any(x=>(x-p).sqrMagnitude<=epsilon2))list.Add(p); }

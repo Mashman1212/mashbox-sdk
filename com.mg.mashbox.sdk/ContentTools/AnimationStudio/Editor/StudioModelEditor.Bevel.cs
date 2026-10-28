@@ -72,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
 
             DrawBevelFlowOptions();
 
-            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Cancel or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
 
         }
 

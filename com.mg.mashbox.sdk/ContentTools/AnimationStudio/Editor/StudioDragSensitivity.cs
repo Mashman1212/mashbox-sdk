@@ -27,6 +27,13 @@ namespace MashBoxSDK.AnimationStudio
             return state;
         }
         internal static float Normalize(float multiplier) => Ratios[State(multiplier)];
+        private static readonly GUILayoutOption[] HeaderLayout = { GUILayout.ExpandWidth(true) };
+        internal static Rect DrawPanelHeader(GUIContent title, bool sensitivity = true)
+        {
+            var rect = GUILayoutUtility.GetRect(0, 18, HeaderLayout);
+            GUI.Label(new Rect(rect.x, rect.y, Mathf.Max(0, rect.width - (sensitivity ? 20 : 0)), rect.height), title, StudioTheme.Styles.panelHeader);
+            return new Rect(rect.xMax - 16, rect.center.y - 8, 16, 16);
+        }
         internal static bool DrawButton(Rect rect, float multiplier, out float next)
         {
             int state = State(multiplier); var icon = Icon(state);

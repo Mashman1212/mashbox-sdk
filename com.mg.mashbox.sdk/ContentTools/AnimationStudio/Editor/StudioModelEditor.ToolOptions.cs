@@ -18,7 +18,15 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
-        internal string ToolOptionsTitle => CameraOptionsVisible ? "Camera Settings"
+        private readonly GUIContent toolOptionsHeader = new GUIContent();
+        private ToolChannelPane ActiveChannelTool => bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
+            : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : combineToolPane;
+        internal void PrepareEmbeddedChannelTool()
+        {
+            FinishSelectionPaint(); StopTargetWeld(); StopCutTool();
+            CameraOptionsVisible = LightingOptionsVisible = false; pivot = false;
+        }
+        internal string ToolOptionsTitle => ActiveChannelTool ? ActiveChannelTool.titleContent.text : CameraOptionsVisible ? "Camera Settings"
             : LightingOptionsVisible ? "Viewport Lighting"
             : targetWeldActive ? "Target Weld"
             : cutTool == CutTool.EdgeLoop ? "Insert Edge Loop"
@@ -37,24 +45,31 @@ namespace MashBoxSDK.AnimationStudio
         {
             FinishSelectionPaint();
             FinishLiveTool();
+            CloseLiveToolPanes(); CloseCombineToolWindow();
             StopTargetWeld(); StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; repaint(); toolOptions?.Repaint();
         }
         internal void OpenToolOptions()
         {
-            CloseToolOptions(); FocusToolOptions?.Invoke(); repaint();
+            if (toolOptions) toolOptions.Close(); toolOptions = null;
+            if (CameraOptionsVisible || LightingOptionsVisible) { CloseLiveToolPanes(); CloseCombineToolWindow(); }
+            FocusToolOptions?.Invoke(); repaint();
         }
         internal void DrawEmbeddedToolOptions()
         {
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.modelPanel))
             {
                 EditorGUIUtility.labelWidth = 115;
-                GUILayout.Label(ToolOptionsTitle.ToUpperInvariant(), StudioTheme.Styles.panelHeader);
+                var channel = ActiveChannelTool;
+                if (channel && channel.IsEmbedded) channel.DrawEmbeddedHeader();
+                else { toolOptionsHeader.text = ToolOptionsTitle.ToUpperInvariant(); StudioDragSensitivity.DrawPanelHeader(toolOptionsHeader, false); }
+                GUILayout.Space(6);
                 toolOptionsScroll = EditorGUILayout.BeginScrollView(toolOptionsScroll);
-                try { DrawToolOptions(); }
+                try { if (channel && channel.IsEmbedded) channel.DrawEmbeddedContent(); else if (!channel) DrawToolOptions(); }
                 finally { EditorGUILayout.EndScrollView(); }
+                if (channel && channel.IsEmbedded) channel.DrawEmbeddedCommands();
             }
         }
-        internal void CloseToolOptions() { if (toolOptions) toolOptions.Close(); toolOptions = null; }
+        internal void CloseToolOptions() { if (toolOptions) toolOptions.Close(); toolOptions = null; CloseLiveToolPanes(); CloseCombineToolWindow(); }
         internal void DrawToolOptions()
         {
             if (CameraOptionsVisible) { DrawViewportCameraOptions(); return; }
@@ -65,7 +80,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (cutTool == CutTool.EdgeLoop) DrawLoopCountOptions();
                 EditorGUILayout.HelpBox(cutTool == CutTool.EdgeLoop
                     ? "Drag to position the loops; release to apply. Ctrl/Cmd + wheel changes the loop count. Middle-click places evenly spaced centered loops. Shift snaps in 10% steps. Blue lines are an unapplied preview. Loops follow quad strips and stop at triangles, boundaries or non-manifold edges."
-                    : "Start on an edge or vertex, then place straight segments on faces. Finish on a perimeter edge or vertex; W applies and returns to Move. Drag from outside the mesh bounds to outside the bounds to slice through only this mesh. "+StudioShortcuts.Label(StudioShortcut.CommitCut)+" or "+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+" applies the path. "+StudioShortcuts.Label(StudioShortcut.RemoveCut)+" removes the last segment. Ctrl/Cmd temporarily inserts edge loops.", MessageType.Info);
+                    : "Start on an edge or vertex, then place straight segments on faces. Snap to pending vertices or lines, or finish on a perimeter. Return to the first vertex after at least three distinct vertices to close the loop. W applies and returns to Move. Drag from outside the mesh bounds to outside the bounds to slice through only this mesh. "+StudioShortcuts.Label(StudioShortcut.CommitCut)+" or "+StudioShortcuts.Label(StudioShortcut.MarkingMenu)+" applies the path. "+StudioShortcuts.Label(StudioShortcut.RemoveCut)+" removes the last segment. Ctrl/Cmd temporarily inserts edge loops.", MessageType.Info);
                 GUILayout.Label(StudioShortcuts.Label(StudioShortcut.Cancel)+" cancels a pending cut; press again to exit, or choose a transform tool.", StudioTheme.Styles.wordWrappedMiniLabel);
                 return;
             }
@@ -133,6 +148,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetObjectChannels(Vector3 position, Vector3 rotation, Vector3 scale, bool visible)
         {
             FinishLiveTool();
+            CloseLiveToolPanes(); CloseCombineToolWindow();
             if (!Document || Active < 0) return;
             var node = Document.nodes[Active];
             bool axisScrub = !pivot && (pendingChannelScrub == "Position" || pendingChannelScrub == "Rotation");

@@ -135,6 +135,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Tools": {
                     AddCommand(menu, "Combine Meshes…", CanCombineObjects, OpenCombineTool);
                     AddCommand(menu, "Split Selection", CanSplitSelection, SplitSelectedComponents);
+                    AddCommand(menu, "Bridge Edges", CanBridgeEdges, BridgeSelectedEdges);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected, finishPreview: false);
                     AddCommand(menu, "Bevel…", CanBevelEdges, OpenBevelTool, finishPreview: false);
                     AddCommand(menu, "Merge to Center", CanMergeVertices, MergeToCenter, commandKey: "Merge Vertices");

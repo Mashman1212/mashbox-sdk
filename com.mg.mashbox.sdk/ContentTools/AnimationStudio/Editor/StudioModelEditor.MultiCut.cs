@@ -9,13 +9,22 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        private struct MultiPoint { internal int Face;internal Vector3 Local;internal bool Boundary; }
+        private struct MultiPoint { internal int Face;internal Vector3 Local;internal bool Boundary,Preview; }
         private readonly List<MultiPoint> multiPoints=new List<MultiPoint>();
         private readonly List<List<StudioMeshCuts.FaceStroke>> multiLinks=new List<List<StudioMeshCuts.FaceStroke>>();
         private List<StudioMeshCuts.FaceStroke> multiSlicePreview=new List<StudioMeshCuts.FaceStroke>();
         private MultiPoint? multiHover;
         private Vector2 multiMouse,multiSliceStart;
         private bool multiSlicing;
+        private bool MultiLoopClosed => multiPoints.Count >= 4 && SameMultiPoint(multiPoints[0],multiPoints[multiPoints.Count-1]);
+        private bool SameMultiPoint(MultiPoint a,MultiPoint b)
+        { float tolerance=Mathf.Max(1e-7f,ActiveMesh.bounds.size.magnitude*1e-6f);return (a.Local-b.Local).sqrMagnitude<=tolerance*tolerance; }
+        private bool CanCloseMultiLoop()
+        {
+            var unique=new List<MultiPoint>();
+            foreach(var p in multiPoints)if(!unique.Any(q=>SameMultiPoint(p,q)))unique.Add(p);
+            return unique.Count>=3;
+        }
         private bool HasMultiCutGesture=>multiPoints.Count>0||multiSlicing;
         private void ReleaseMultiCutPointer()
         { if(cutTool!=CutTool.MultiCut)return;if(cutControl!=0&&GUIUtility.hotControl==cutControl)GUIUtility.hotControl=0;multiSlicing=false;multiSlicePreview.Clear(); }
@@ -42,7 +51,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private List<StudioMeshCuts.FaceStroke> CollectMultiStrokes()
         {
-            if(multiPoints.Count<2||!multiPoints[multiPoints.Count-1].Boundary)throw new InvalidOperationException("Finish the path on a perimeter edge or vertex before pressing W.");
+            if(multiPoints.Count<2||(!multiPoints[multiPoints.Count-1].Boundary&&!multiPoints[multiPoints.Count-1].Preview))throw new InvalidOperationException("Finish the path on a perimeter or a pending cut vertex or line before pressing W.");
             var result=new List<StudioMeshCuts.FaceStroke>();
             foreach(var link in multiLinks)foreach(var part in link)
             {
@@ -110,6 +119,34 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             return new MultiPoint{Face=face,Local=local,Boundary=cutTopology.OnCutBoundary(face,local,out _)};
+        }
+        private MultiPoint? SnapMultiPreview(SceneView view,Vector2 mouse,MultiPoint? surface)
+        {
+            if(!surface.HasValue||multiPoints.Count==0)return surface;
+            var transform=Transforms[Active];MultiPoint? nearest=null;float best=7;
+            bool Visible(int face,Vector3 local) => view.camera.WorldToViewportPoint(transform.TransformPoint(local)).z>0 &&
+                (face==surface.Value.Face||cutTopology.OnCutBoundary(surface.Value.Face,local,out _));
+            void Vertex(int face,Vector3 local)
+            {
+                if(!Visible(face,local))return;
+                float distance=Vector2.Distance(mouse,PaintWorldToGUI(view.camera,transform.TransformPoint(local)));
+                if(distance>=best)return;best=distance;
+                nearest=new MultiPoint{Face=face,Local=local,Boundary=cutTopology.OnCutBoundary(face,local,out _),Preview=true};
+            }
+            foreach(var point in multiPoints)Vertex(point.Face,point.Local);
+            foreach(var link in multiLinks)foreach(var part in link)foreach(var point in part.Points)Vertex(part.Face,point);
+            if(nearest.HasValue)return nearest;
+            best=10;
+            foreach(var link in multiLinks)foreach(var part in link)for(int i=0;i+1<part.Points.Count;i++)
+            {
+                var a=part.Points[i];var b=part.Points[i+1];
+                var local=Vector3.Lerp(a,b,MultiSegmentFraction(view,mouse,a,b));
+                if(!Visible(part.Face,local))continue;
+                float distance=Vector2.Distance(mouse,PaintWorldToGUI(view.camera,transform.TransformPoint(local)));
+                if(distance>=best)continue;best=distance;
+                nearest=new MultiPoint{Face=part.Face,Local=local,Boundary=cutTopology.OnCutBoundary(part.Face,local,out _),Preview=true};
+            }
+            return nearest??surface;
         }
         private bool MultiFaceAtMouse(SceneView view,int face,Vector2 mouse,out Vector3 local)
         {
@@ -199,7 +236,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         private float MultiEdgeFraction(SceneView view,Vector2 mouse,int a,int b)
         {
-            var transform=Transforms[Active];var wa=transform.TransformPoint(cutTopology.Positions[a]);var wb=transform.TransformPoint(cutTopology.Positions[b]);
+            return MultiSegmentFraction(view,mouse,cutTopology.Positions[a],cutTopology.Positions[b]);
+        }
+        private float MultiSegmentFraction(SceneView view,Vector2 mouse,Vector3 a,Vector3 b)
+        {
+            var transform=Transforms[Active];var wa=transform.TransformPoint(a);var wb=transform.TransformPoint(b);
             var pa=PaintWorldToGUI(view.camera,wa);var pb=PaintWorldToGUI(view.camera,wb);var delta=pb-pa;
             float t=delta.sqrMagnitude<.001f?.5f:Mathf.Clamp01(Vector2.Dot(mouse-pa,delta)/delta.sqrMagnitude);
             if(!view.orthographic){float za=view.camera.WorldToViewportPoint(wa).z,zb=view.camera.WorldToViewportPoint(wb).z;t=t*za/Mathf.Max(.000001f,(1-t)*zb+t*za);}
@@ -213,7 +254,7 @@ namespace MashBoxSDK.AnimationStudio
             overCanvas=canvas.Contains(rootPointer)&&(!(view is MashBoxStudioViewport overlay)||!overlay.IsOverViewportControls(rootPointer));
             if(overCanvas&&(evt.type==EventType.MouseMove||evt.type==EventType.MouseDrag||evt.type==EventType.MouseDown||evt.type==EventType.MouseUp))
             {
-                multiMouse=PaintInputPosition(view);multiHover=MultiSurface(view,multiMouse);
+                multiMouse=PaintInputPosition(view);multiHover=SnapMultiPreview(view,multiMouse,MultiSurface(view,multiMouse));
                 if(multiSlicing)multiSlicePreview=MultiSlice(view,multiSliceStart,multiMouse);
                 repaint();
             }
@@ -225,7 +266,9 @@ namespace MashBoxSDK.AnimationStudio
                     var point=multiHover.Value;
                     if(multiPoints.Count==0)
                     { if(point.Boundary){multiPoints.Add(point);error=null;}else error="Start a cut on an edge or vertex."; }
-                    else Run(()=>{var link=TraceMultiSegment(view,multiPoints.Last(),point);multiLinks.Add(link);multiPoints.Add(point);error=null;});
+                    else if(MultiLoopClosed)error="Loop is closed. Press W to apply, or Backspace to reopen.";
+                    else if(SameMultiPoint(point,multiPoints[0])&&!CanCloseMultiLoop())error="A closed loop needs at least three distinct vertices.";
+                    else Run(()=>{var link=TraceMultiSegment(view,multiPoints.Last(),point);multiLinks.Add(link);multiPoints.Add(point);error=MultiLoopClosed?"Loop closed. Press W to apply, or Backspace to reopen.":null;});
                 }
                 else if(multiPoints.Count==0&&!MultiProjectedBounds(view).Contains(multiMouse))
                 {multiSlicing=true;multiSliceStart=multiMouse;multiSlicePreview.Clear();error=null;}
@@ -256,11 +299,11 @@ namespace MashBoxSDK.AnimationStudio
                 foreach(var link in multiLinks)foreach(var part in link)Handles.DrawAAPolyLine(3,part.Points.Select(p=>transform.TransformPoint(p)).ToArray());
                 foreach(var part in multiSlicePreview)Handles.DrawAAPolyLine(3,part.Points.Select(p=>transform.TransformPoint(p)).ToArray());
                 foreach(var p in multiPoints){var world=transform.TransformPoint(p.Local);Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*.035f,EventType.Repaint);}
-                if(multiHover.HasValue){var world=transform.TransformPoint(multiHover.Value.Local);Handles.color=CutHoverColor;Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*.035f,EventType.Repaint);}
-                if(multiPoints.Count>0||multiSlicing)
+                if(multiHover.HasValue&&!MultiLoopClosed){var world=transform.TransformPoint(multiHover.Value.Local);Handles.color=CutHoverColor;Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*.035f,EventType.Repaint);}
+                if((multiPoints.Count>0&&!MultiLoopClosed)||multiSlicing)
                 {
                     var start=multiSlicing?multiSliceStart:PaintWorldToGUI(view.camera,transform.TransformPoint(multiPoints.Last().Local));
-                    var offset=HandleUtility.WorldToGUIPoint(transform.position)-PaintWorldToGUI(view.camera,transform.position);start+=offset;var end=multiMouse+offset;Handles.BeginGUI();try{Handles.color=CutPreviewColor;Handles.DrawAAPolyLine(2,new Vector3(start.x,start.y),new Vector3(end.x,end.y));}finally{Handles.EndGUI();}
+                    var offset=HandleUtility.WorldToGUIPoint(transform.position)-PaintWorldToGUI(view.camera,transform.position);start+=offset;var end=(!multiSlicing&&multiHover.HasValue?PaintWorldToGUI(view.camera,transform.TransformPoint(multiHover.Value.Local)):multiMouse)+offset;Handles.BeginGUI();try{Handles.color=CutPreviewColor;Handles.DrawAAPolyLine(2,new Vector3(start.x,start.y),new Vector3(end.x,end.y));}finally{Handles.EndGUI();}
                 }
             }
             finally{Handles.color=color;Handles.zTest=depth;}

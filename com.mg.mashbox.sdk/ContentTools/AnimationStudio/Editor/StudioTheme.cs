@@ -127,6 +127,13 @@ namespace MashBoxSDK.AnimationStudio
         private static GUIStyle Themed(GUIStyle original, string name, Resources resource)
         {
             var style = new GUIStyle(original); var palette = Current;
+            if (name == "button")
+            {
+                style.alignment = TextAnchor.MiddleCenter;
+                style.padding = new RectOffset(4, 4, 0, 0);
+                // Unity's editor font draws its visible glyphs above the line-box center.
+                style.contentOffset = new Vector2(0, 2);
+            }
             foreach (var state in States(style)) state.textColor = name.Contains("MiniLabel") || name == "miniLabel" ? palette.Muted : palette.Text;
             bool button = name.IndexOf("button", StringComparison.OrdinalIgnoreCase) >= 0 || name == "popup" || name == "toolbarDropDown";
             bool field = name.IndexOf("text", StringComparison.OrdinalIgnoreCase) >= 0 && name != "textLabel" || name == "toolbarSearchField" || name == "numberField" || name == "objectField";

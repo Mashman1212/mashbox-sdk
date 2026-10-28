@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge }
         private sealed class RepeatAction
         {
             internal RepeatKind kind; internal LiveTool live; internal Vector4 parameters; internal Vector3 flow; internal bool welded;
@@ -42,6 +42,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (action.live == LiveTool.Extrude) { extrusionDistance = action.parameters.x; extrudeFacesTogether = action.parameters.y >= .5f; extrusionInset = action.parameters.z; }
                         ApplyLiveTool(action.live); break;
                     case RepeatKind.Combine: CombineSelectedObjects(); break;
+                    case RepeatKind.Bridge: BridgeSelectedEdges(); break;
                     case RepeatKind.Split:
                         if (!CanSplitSelection) throw new InvalidOperationException("Select components to repeat Split Selection.");
                         SplitSelectedComponents(); break;

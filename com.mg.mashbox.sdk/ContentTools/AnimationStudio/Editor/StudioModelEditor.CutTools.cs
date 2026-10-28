@@ -21,6 +21,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void ActivateCutTool(CutTool next)
         {
             if (!CanCutMesh) { error = "Select an editable static mesh to use the cut tools."; repaint(); return; }
+            FinishLiveTool(); CloseLiveToolPanes(); CloseCombineToolWindow();
             StopTargetWeld(); CancelMarkingMenu(); ResetCutGesture(); CameraOptionsVisible = false; LightingOptionsVisible = false; cutTool = next; tool = Tool.None; pivot = false;
             mode = ComponentMode.Edge; Components.Clear(); cutTopology = new StudioMeshCuts(Document.nodes[Active]); cutMesh = ActiveMesh;
             error = null; repaint(); toolOptions?.Repaint();
