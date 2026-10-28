@@ -14,9 +14,10 @@ namespace MashBoxSDK.AnimationStudio
             edgeLoopCount = Mathf.Clamp(Mathf.RoundToInt(StudioPreferenceStore.GetFloat("Model.EdgeLoopCount", 1)), 1, MaximumEdgeLoops);
 
             extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .01f);
+            extrusionInset = ToolChannelPane.GetFloatDefault("Extrude", "Inset", 0);
             extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         }
-        private enum LiveTool { Bevel, Merge, Soften, Extrude }
+        private enum LiveTool { Bevel, Merge, Soften, Extrude, EdgeFlow }
         private StudioMeshToolPreview livePreview;
         private LiveTool liveTool, queuedTool;
         private bool previewQueued, liveValid, liveEvaluated;
@@ -42,26 +43,29 @@ namespace MashBoxSDK.AnimationStudio
             if (bevelToolPane) bevelToolPane.Repaint();
             if (softenToolPane) softenToolPane.Repaint();
             if (extrudeToolPane) extrudeToolPane.Repaint();
+            if (edgeFlowToolPane) edgeFlowToolPane.Repaint();
         }
         private void CloseLiveToolPane(LiveTool kind)
         {
             if (kind == LiveTool.Bevel) CloseBevelToolWindow();
             else if (kind == LiveTool.Merge) CloseMergeToolWindow();
             else if (kind == LiveTool.Soften) CloseNormalsToolWindow();
+            else if (kind == LiveTool.EdgeFlow) CloseEdgeFlowToolWindow();
             else CloseExtrudeToolWindow();
         }
         private void CloseLiveToolPanes()
-        { CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); }
+        { CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); }
         private bool HasLiveTool(LiveTool kind) => livePreview != null && liveTool == kind;
         private bool CanRunLiveTool(LiveTool kind) => HasLiveTool(kind) || (kind == LiveTool.Bevel ? CanBevelEdges :
-            kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : CanExtrude);
+            kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : CanExtrude);
         private Vector4 LiveParameters(LiveTool kind)
         {
             if (kind == LiveTool.Bevel) return new Vector4(ToolChannelPane.GetFloatDefault(BevelTool, "Width", .1f),
                 ToolChannelPane.GetFloatDefault(BevelTool, "Subdivisions", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Tension", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Junction", 0));
+            if (kind == LiveTool.EdgeFlow) return new Vector4(ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Influence",.5f),ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Iterations",4),0,0);
             if (kind == LiveTool.Merge) return Vector4.zero;
             if (kind == LiveTool.Soften) return new Vector4(ToolChannelPane.GetFloatDefault(SoftenTool, "Angle", 45), 0, 0, 0);
-            return new Vector4(extrusionDistance, extrudeFacesTogether ? 1 : 0, 0, 0);
+            return new Vector4(extrusionDistance, extrudeFacesTogether ? 1 : 0, extrusionInset, 0);
         }
         private void QueueLiveTool(LiveTool kind)
         {
@@ -86,6 +90,7 @@ namespace MashBoxSDK.AnimationStudio
             if (HasLiveTool(kind)) return;
             FinishLiveTool();
             if (!CanRunLiveTool(kind)) throw new InvalidOperationException("Select editable mesh components for this tool.");
+            PrepareIsolationTopologyEdit();
             FinishChannelEdit(); StopTargetWeld(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
             liveMode = mode; liveSelection = Components.OrderBy(i => i).ToArray();
             liveWorld = Active >= 0 ? Transforms[Active].localToWorldMatrix : Matrix4x4.identity;
@@ -112,12 +117,13 @@ namespace MashBoxSDK.AnimationStudio
             if (!dispatchingComponentTool && EvaluateComponentLiveTools(kind)) return;
             StartLiveTool(kind);
             var parameters = LiveParameters(kind);
-            if (liveEvaluated && liveValid && parameters.Equals(liveParameters)) return;
+            var flowParameters = FlowParameters(kind);
+            if (liveEvaluated && liveValid && parameters.Equals(liveParameters) && flowParameters.Equals(liveFlowParameters)) return;
 #if MASHBOX_STUDIO_TESTS
             LiveProfileStage?.Invoke("live.start");
 #endif
             liveValid = false;
-            foreach (float value in new[] { parameters.x, parameters.y, parameters.z, parameters.w })
+            foreach (float value in new[] { parameters.x, parameters.y, parameters.z, parameters.w, flowParameters.x, flowParameters.y, flowParameters.z })
                 if (float.IsNaN(value) || float.IsInfinity(value)) throw new InvalidOperationException("Tool values must be finite.");
             StudioMeshCuts.BevelResult bevel = null;
             StudioMeshCuts.MergeResult merge = null;
@@ -125,19 +131,20 @@ namespace MashBoxSDK.AnimationStudio
             for (int index = 0; index < livePreview.Targets.Length; index++)
             {
                 var target = livePreview.Targets[index];
-                if (kind == LiveTool.Extrude && liveExtrusion != null && liveExtrusionTogether == extrudeFacesTogether && Mathf.Abs(parameters.x) >= 1e-5f)
+                if (kind == LiveTool.Extrude && liveExtrusion != null && liveExtrusionTogether == extrudeFacesTogether && (Mathf.Abs(parameters.x) >= 1e-5f || Mathf.Abs(parameters.z) >= 1e-5f) && (parameters.z == 0 || liveExtrusion.InsetDirections != null))
                 {
-                    // Distance edits retain the index buffer and expanded topology.
-                    for (int i = 0; i < liveExtrusionPositions.Length; i++) liveExtrusionPositions[i] = liveExtrusion.SourceVertices[i] + liveExtrusionDirections[i] * parameters.x;
+                    // Distance/inset edits retain the index buffer, cached wavefront and expanded topology.
+                    liveExtrusion.ValidateInset(parameters.z);
+                    for (int i = 0; i < liveExtrusionPositions.Length; i++) liveExtrusionPositions[i] = liveExtrusion.SourceVertices[i] + liveExtrusion.NormalDirections[i] * parameters.x + (liveExtrusion.InsetDirections == null ? Vector3.zero : liveExtrusion.InsetDirections[i] * parameters.z);
                     target.Work.mesh.vertices = liveExtrusionPositions;
-                    UpdateExtrusionUV(target.Work.mesh, parameters.x);
+                    UpdateExtrusionUV(target.Work.mesh);
                     target.Work.mesh.RecalculateNormals(); target.Work.mesh.RecalculateTangents(); target.Work.mesh.RecalculateBounds();
                     changed = true; continue;
                 }
                 // Bevel owns an immutable attribute/source cache. Repeated Width
                 // samples update its working result instead of restoring/replacing
                 // the entire source mesh. Zero width still restores the source.
-                bool reset = kind != LiveTool.Bevel || !liveEvaluated || parameters.x <= 0;
+                bool reset = kind != LiveTool.Bevel || !liveEvaluated || parameters.x <= 0 || flowParameters.x>=.5f || liveFlowParameters.x>=.5f;
 #if MASHBOX_STUDIO_TESTS
                 reset |= target.Topology.UseReferenceBevelWriter;
 #endif
@@ -152,21 +159,23 @@ namespace MashBoxSDK.AnimationStudio
                         Junction = (StudioMeshCuts.BevelJunction)Mathf.RoundToInt(parameters.w) });
                     changed |= bevel != null;
                     target.IsBevelPreview=bevel!=null; target.VertexUpdate=bevel?.VertexUpdate; target.Welds=bevel?.Welds; target.VertexUpdateStart = bevel?.VertexUpdateStart ?? 0; target.PublishedPositions = bevel?.PublishedPositions;
+                    if(flowParameters.x>=.5f&&Mathf.RoundToInt(parameters.y)>0)SmoothBevelOutput(target,bevel,flowParameters);
                 }
+                else if (kind == LiveTool.EdgeFlow)
+                { changed |= EvaluateEdgeFlow(target,parameters.x,Mathf.Clamp(Mathf.RoundToInt(parameters.y),1,64)); }
                 else if (kind == LiveTool.Merge)
                 { merge = target.Topology.MergeVertices(target.Work, liveSelection, liveMergePair, parameters.x, liveWorld); changed |= merge != null; }
                 else if (kind == LiveTool.Soften)
                 { target.Topology.SetEdgeNormals(target.Work, liveNormalEdges[index], parameters.x, false); changed = true; }
                 else
                 {
-                    // A zero-distance edit is a reversible no-op, without degenerate walls.
+                    // Zero distance and zero inset together are a reversible no-op.
                     liveExtrusion = null;
-                    if (Mathf.Abs(parameters.x) < 1e-5f) continue;
-                    liveExtrusion = target.Topology.Extrude(target.Work, liveFaces, liveEdges, parameters.x, extrudeFacesTogether, weld);
+                    if (Mathf.Abs(parameters.x) < 1e-5f && Mathf.Abs(parameters.z) < 1e-5f) continue;
+                    liveExtrusion = target.Topology.Extrude(target.Work, liveFaces, liveEdges, parameters.x, extrudeFacesTogether, weld, inset: parameters.z);
                     target.Work.normalGroups = null; liveExtrusionTogether = extrudeFacesTogether;
                     liveExtrusionPositions = target.Work.mesh.vertices;
-                    liveExtrusionDirections = new Vector3[liveExtrusionPositions.Length];
-                    for (int i = 0; i < liveExtrusionPositions.Length; i++) liveExtrusionDirections[i] = (liveExtrusionPositions[i] - liveExtrusion.SourceVertices[i]) / parameters.x;
+                    liveExtrusionDirections = liveExtrusion.NormalDirections;
                     liveUVDimension = target.Work.mesh.GetVertexAttributeDimension(UnityEngine.Rendering.VertexAttribute.TexCoord0);
                     if (liveUVDimension == 2) target.Work.mesh.GetUVs(0, liveExtrusionUV);
                     else if (liveUVDimension == 3) target.Work.mesh.GetUVs(0, liveExtrusionUV3);
@@ -203,12 +212,13 @@ namespace MashBoxSDK.AnimationStudio
 #endif
             }
             else if (kind == LiveTool.Merge) foreach (int i in merge.Selection) Components.Add(i);
+            else if (kind == LiveTool.EdgeFlow) Components.UnionWith(liveSelection);
             else if (kind == LiveTool.Extrude) SelectExtrusionResult(liveExtrusion, liveFaces != null);
             else RestoreLiveComponentSelection();
 #if MASHBOX_STUDIO_TESTS
             LiveProfileStage?.Invoke("live.selection");
 #endif
-            liveParameters = parameters; liveEvaluated = liveValid = true;
+            liveParameters = parameters; liveFlowParameters = flowParameters; liveEvaluated = liveValid = true;
             repaint();
         }
         private StudioMeshToolPreview.Target ActiveBevelPublication()
@@ -227,15 +237,15 @@ namespace MashBoxSDK.AnimationStudio
             var points=new HashSet<Vector3>(selection.Select(i=>positions[i]));
             for (int i=0;i<positions.Count;i++) if (points.Contains(positions[i])) selection.Add(i);
         }
-        private void UpdateExtrusionUV(Mesh mesh, float distance)
+        private void UpdateExtrusionUV(Mesh mesh)
         {
-            float length = Mathf.Abs(distance);
+            float Length(int i) => Vector3.Distance(liveExtrusionPositions[i], liveExtrusion.SourceVertices[i]);
             if (liveUVDimension == 2)
-            { foreach (int i in liveWallTips) { var value = liveExtrusionUV[i]; value.y = length; liveExtrusionUV[i] = value; } mesh.SetUVs(0, liveExtrusionUV); }
+            { foreach (int i in liveWallTips) { var value = liveExtrusionUV[i]; value.y = Length(i); liveExtrusionUV[i] = value; } mesh.SetUVs(0, liveExtrusionUV); }
             else if (liveUVDimension == 3)
-            { foreach (int i in liveWallTips) { var value = liveExtrusionUV3[i]; value.y = length; liveExtrusionUV3[i] = value; } mesh.SetUVs(0, liveExtrusionUV3); }
+            { foreach (int i in liveWallTips) { var value = liveExtrusionUV3[i]; value.y = Length(i); liveExtrusionUV3[i] = value; } mesh.SetUVs(0, liveExtrusionUV3); }
             else
-            { foreach (int i in liveWallTips) { var value = liveExtrusionUV4[i]; value.y = length; liveExtrusionUV4[i] = value; } mesh.SetUVs(0, liveExtrusionUV4); }
+            { foreach (int i in liveWallTips) { var value = liveExtrusionUV4[i]; value.y = Length(i); liveExtrusionUV4[i] = value; } mesh.SetUVs(0, liveExtrusionUV4); }
         }
         private void RestoreLiveComponentSelection()
         {
@@ -302,7 +312,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!dispatchingComponentTool && CommitComponentLiveTools(closePane)) return;
             if (livePreview == null) return;
             if (!liveValid) throw new InvalidOperationException("Correct the tool values or close its pane to cancel the preview.");
-            string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Merge ? "Merge vertices to center" : liveTool == LiveTool.Soften ? "Soften edges" : "Extrude mesh components";
+            string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Merge ? "Merge vertices to center" : liveTool == LiveTool.Soften ? "Soften edges" : liveTool == LiveTool.EdgeFlow ? "Edit edge flow" : "Extrude mesh components";
             var finishedTool = liveTool;
             var selectionBefore = CaptureSelection();
             selectionBefore = dispatchingComponentTool ? componentLiveBefore : SourceLiveSelection(selectionBefore);
@@ -324,6 +334,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ClearLiveToolState()
         {
+            liveFlowParameters = Vector3.zero;
             livePreview = null; liveSelection = liveFaces = liveWallTips = null; liveEdges = null;
             liveNormalEdges = null; livePoints = null; liveEdgePoints = null;
             liveExtrusion = null; liveExtrusionDirections = liveExtrusionPositions = null;

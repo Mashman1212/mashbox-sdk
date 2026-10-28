@@ -103,7 +103,22 @@ namespace MashBoxSDK.AnimationStudio
             var ray=HandleUtility.GUIPointToWorldRay(point);int hit=-1;float nearest=float.PositiveInfinity;
             for(int node=0;node<Transforms.Length;node++)
             {
-                var mesh=Document.nodes[node].mesh;if(!mesh||!Transforms[node].gameObject.activeInHierarchy)continue;
+                var mesh=IsolationPickMesh(node);if(!mesh||!Transforms[node].gameObject.activeInHierarchy||!IsolationNodeVisible(node))continue;
+                if(ComponentIsolation(node)!=null && mode!=ComponentMode.Object)
+                {
+                    using(new ComponentTargetScope(this,node))
+                    {
+                        int component=FindComponentAt(view,point);
+                        if(component>=0)
+                        {
+                            var points=PickVertices(node);
+                            Vector3 center=mode==ComponentMode.Vertex?points[component]:mode==ComponentMode.Edge?(points[Edges()[component].a]+points[Edges()[component].b])*.5f:FaceCenter(Faces()[component],points);
+                            float depth=Vector3.Dot(Transforms[node].TransformPoint(center)-view.camera.transform.position,view.camera.transform.forward);
+                            if(depth<nearest){nearest=depth;hit=node;}
+                        }
+                    }
+                    continue;
+                }
                 var vertices=PickVertices(node);var triangles=mesh.triangles;var matrix=Transforms[node].localToWorldMatrix;
                 for(int i=0;i<triangles.Length;i+=3)
                     if(RayTriangle(ray,matrix.MultiplyPoint3x4(vertices[triangles[i]]),matrix.MultiplyPoint3x4(vertices[triangles[i+1]]),matrix.MultiplyPoint3x4(vertices[triangles[i+2]]),out float distance)&&distance<nearest){nearest=distance;hit=node;}

@@ -13,20 +13,39 @@ namespace MashBoxSDK.AnimationStudio
             internal int[] Faces;
             internal (int a, int b)[] Edges;
             internal int[] MovingVertices;
-            internal Vector3[] SourceVertices;
+            internal Vector3[] SourceVertices, NormalDirections, InsetDirections;
+            internal float PositiveInsetLimit = float.PositiveInfinity, NegativeInsetLimit = float.PositiveInfinity;
+            internal int[] CapTriangles;
+            internal void ValidateInset(float inset)
+            {
+                if(float.IsNaN(inset)||float.IsInfinity(inset))throw new InvalidOperationException("Inset must be finite.");
+                float limit=inset>0?PositiveInsetLimit:NegativeInsetLimit;
+                if(Mathf.Abs(inset)>0 && Mathf.Abs(inset)>=limit-1e-6f)
+                    throw new InvalidOperationException("Inset reaches a boundary collision. Reduce the inset amount.");
+                if(inset==0||InsetDirections==null)return;
+                for(int t=0;t<CapTriangles.Length;t+=3)
+                {
+                    int a=CapTriangles[t],b=CapTriangles[t+1],c=CapTriangles[t+2];
+                    var original=Vector3.Cross(SourceVertices[b]-SourceVertices[a],SourceVertices[c]-SourceVertices[a]);
+                    var ab=SourceVertices[b]-SourceVertices[a]+(InsetDirections[b]-InsetDirections[a])*inset;
+                    var ac=SourceVertices[c]-SourceVertices[a]+(InsetDirections[c]-InsetDirections[a])*inset;
+                    if(original.sqrMagnitude>1e-20f&&Vector3.Dot(Vector3.Cross(ab,ac),original)<=original.sqrMagnitude*1e-6f)
+                        throw new InvalidOperationException("Inset collapses or reverses a cap triangle. Reduce the inset amount.");
+                }
+            }
         }
 
         // Work in temporary lists and validate before touching the owned mesh.
         // Render-vertex splits retain their attributes; coincident seams share displacement.
         internal ExtrusionResult Extrude(StudioModelDocument.Node node, int[] selectedFaces,
             (int a, int b)[] selectedEdges, float distance, bool together, bool keepSeams,
-            Func<Vector3, Vector3> transform = null)
+            Func<Vector3, Vector3> transform = null, float inset = 0)
         {
             var mesh = node.mesh;
             if (node.skinned || node.blendShape != null || mesh.blendShapeCount > 0 || mesh.boneWeights.Length > 0)
                 throw new InvalidOperationException("Bake the blend pose or use a static mesh before extruding.");
-            if (float.IsNaN(distance) || float.IsInfinity(distance) || Mathf.Abs(distance) < .00001f)
-                throw new InvalidOperationException("Extrusion distance must be finite and non-zero.");
+            if (float.IsNaN(distance) || float.IsInfinity(distance) || float.IsNaN(inset) || float.IsInfinity(inset) || Mathf.Abs(distance) < .00001f && Mathf.Abs(inset) < .00001f)
+                throw new InvalidOperationException("Extrude distance and inset must be finite, with at least one non-zero value.");
             bool faceMode = selectedFaces != null;
             var selected = new HashSet<int>(selectedFaces ?? Array.Empty<int>());
             if (faceMode && (selected.Count == 0 || selected.Any(f => f < 0 || f >= Faces.Count)))
@@ -93,6 +112,10 @@ namespace MashBoxSDK.AnimationStudio
                     var key = (Group(f), v); directions.TryGetValue(key, out var sum);
                     directions[key] = sum + faceNormals[f];
                 }
+            var insetPlan = inset != 0 ? PrepareExtrusionInset(boundary, faceNormals, Group, Canonical, faceMode) : null;
+            Vector3 InsetDirection(int f,int v) => insetPlan != null && insetPlan.Directions.TryGetValue((Group(f),Canonical(v)),out var direction) ? direction : Vector3.zero;
+            var normalDirections = Enumerable.Repeat(Vector3.zero,Positions.Length).ToList();
+            var insetDirections = Enumerable.Repeat(Vector3.zero,Positions.Length).ToList();
             var positions = Positions.ToList(); var colors = mesh.colors.ToList();
             var sources = Positions.ToList(); var moving = new HashSet<int>();
             var uvs = new List<Vector4>[8]; var dimensions = new int[8];
@@ -103,9 +126,9 @@ namespace MashBoxSDK.AnimationStudio
             }
             // New walls always receive usable rectangular UV0; all other data is copied.
             if (uvs[0].Count == 0) { uvs[0].AddRange(Enumerable.Repeat(Vector4.zero, positions.Count)); dimensions[0] = 2; }
-            int Copy(int source, Vector3 position, Vector2? wallUV = null)
+            int Copy(int source, Vector3 position, Vector2? wallUV = null, Vector3 normalDirection = default, Vector3 insetDirection = default)
             {
-                int id = positions.Count; positions.Add(position);
+                int id = positions.Count; positions.Add(position); normalDirections.Add(normalDirection); insetDirections.Add(insetDirection);
                 sources.Add(Positions[source]);
                 if (colors.Count > 0) colors.Add(colors[source]);
                 for (int c = 0; c < 8; c++) if (uvs[c].Count > 0)
@@ -123,7 +146,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (top.TryGetValue(key, out int existing)) return existing;
                 var normal = directions[(Group(f), Canonical(v))].normalized;
                 if (normal.sqrMagnitude < .5f) throw new InvalidOperationException("The selected normals cancel out. Extrude the faces individually.");
-                int id = Copy(v, Positions[v] + normal * distance);
+                var offset = InsetDirection(f,v);
+                int id = Copy(v, Positions[v] + normal * distance + offset * inset, normalDirection: normal, insetDirection: offset);
                 moving.Add(id);
                 return top[key] = id;
             }
@@ -139,7 +163,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (length < .00001f) throw new InvalidOperationException("Cannot extrude a zero-length edge.");
                 var wall = new List<int> {
                     Copy(a, Positions[a], new Vector2(0, 0)), Copy(b, Positions[b], new Vector2(length, 0)),
-                    Copy(b, positions[tb], new Vector2(length, Mathf.Abs(distance))), Copy(a, positions[ta], new Vector2(0, Mathf.Abs(distance))) };
+                    Copy(b, positions[tb], new Vector2(length, Vector3.Distance(positions[tb],Positions[b])), normalDirections[tb], insetDirections[tb]), Copy(a, positions[ta], new Vector2(0, Vector3.Distance(positions[ta],Positions[a])), normalDirections[ta], insetDirections[ta]) };
                 result.Add(new Face { Submesh = Faces[edge.face].Submesh, Vertices = wall });
                 moving.Add(wall[2]); moving.Add(wall[3]);
                 if (!faceMode) rim.Add((wall[3], wall[2]));
@@ -154,7 +178,7 @@ namespace MashBoxSDK.AnimationStudio
             // render diagonals on original faces and remap selected caps onto their
             // copied vertices. Retriangulating unrelated imported faces can reject
             // valid small/warped quads and change their piecewise surface.
-            var sourceTriangles = BevelSourceTriangles(mesh);
+            var sourceTriangles = BevelSourceTriangles(mesh); var capTriangles = new List<int>();
             for (int f = 0; f < Faces.Count; f++)
             {
                 var triangles = sourceTriangles[f];
@@ -162,7 +186,10 @@ namespace MashBoxSDK.AnimationStudio
                     throw new InvalidOperationException("An extrusion source face has no matching render triangulation.");
                 bool cap = faceMode && selected.Contains(f);
                 foreach (int vertex in triangles)
-                    indices[Faces[f].Submesh].Add(remap[cap ? top[(Group(f), vertex)] : vertex]);
+                {
+                    int mapped=remap[cap ? top[(Group(f), vertex)] : vertex];
+                    indices[Faces[f].Submesh].Add(mapped); if(cap)capTriangles.Add(mapped);
+                }
             }
             for (int f = Faces.Count; f < result.Count; f++)
                 Triangulate(result[f].Vertices, compact, indices[result[f].Submesh]);
@@ -175,6 +202,12 @@ namespace MashBoxSDK.AnimationStudio
                     throw new InvalidOperationException("The extrusion would create invalid vertex positions.");
                 compact[remap[id]] = point;
             }
+            var extrusion = new ExtrusionResult { Faces = selected.OrderBy(f => f).ToArray(), Edges = rim.Select(e => (remap[e.a], remap[e.b])).ToArray(),
+                MovingVertices = used.Where(moving.Contains).Select(i => remap[i]).ToArray(), SourceVertices = used.Select(i => sources[i]).ToArray(),
+                NormalDirections = used.Select(i => normalDirections[i]).ToArray(),
+                InsetDirections = insetPlan == null ? null : used.Select(i => insetDirections[i]).ToArray(), CapTriangles = capTriangles.ToArray(),
+                PositiveInsetLimit = insetPlan?.PositiveInsetLimit ?? float.PositiveInfinity, NegativeInsetLimit = insetPlan?.NegativeInsetLimit ?? float.PositiveInfinity };
+            extrusion.ValidateInset(inset);
             mesh.Clear(); mesh.indexFormat = compact.Count > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16;
             mesh.SetVertices(compact);
             if (colors.Count > 0) mesh.SetColors(used.Select(i => colors[i]).ToList());
@@ -190,9 +223,7 @@ namespace MashBoxSDK.AnimationStudio
             mesh.RecalculateNormals(); mesh.RecalculateTangents(); mesh.RecalculateBounds(); mesh.UploadMeshData(false);
             node.cutPolygons = result.SelectMany(f => new[] { f.Submesh, f.Vertices.Count }.Concat(f.Vertices)).ToArray();
             node.cutTriangles = mesh.triangles;
-            return new ExtrusionResult { Faces = selected.OrderBy(f => f).ToArray(), Edges = rim.Select(e => (remap[e.a], remap[e.b])).ToArray(),
-                MovingVertices = used.Where(moving.Contains).Select(i => remap[i]).ToArray(),
-                SourceVertices = used.Select(i => sources[i]).ToArray() };
+            return extrusion;
         }
     }
 }

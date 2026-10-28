@@ -132,10 +132,11 @@ namespace MashBoxSDK.AnimationStudio
             if(mode==ComponentMode.Object)return false;
             var nodes=ComponentTargetNodes(true);if(nodes.Count==0||nodes.Count==1&&nodes[0]==Active){multiComponentGesture=null;return false;}
             var evt=Event.current;bool released=evt.rawType==EventType.MouseUp;
+            bool moveEvent=evt.type==EventType.MouseDrag;var movePointer=evt.mousePosition;
             bool shiftDown=(mode==ComponentMode.Edge||mode==ComponentMode.Face)&&evt.type==EventType.MouseDown&&evt.button==0&&evt.shift&&!evt.alt&&!evt.control&&!evt.command;
             if(multiComponentGesture!=null&&(multiComponentGesture.tool!=tool||!released&&multiComponentGesture.control!=GUIUtility.hotControl))multiComponentGesture=null;
             var gesture=multiComponentGesture;
-            var center=gesture?.center??(HasComponentPivot?componentPivot.position:MultiComponentCenter(nodes));
+            var center=gesture?.center??ResolveLockedPivotCenter(HasComponentPivot?componentPivot.position:MultiComponentCenter(nodes));
             var orientation=gesture?.orientation??(local?PivotOrientation:Quaternion.identity);
             var position=gesture?.position??center;var rotation=gesture?.rotation??orientation;var factor=Vector3.one;
             float size=StudioSettings.Current.handleSize;
@@ -151,19 +152,19 @@ namespace MashBoxSDK.AnimationStudio
                     var modifiers=evt.modifiers;if(evt.control||evt.command)evt.modifiers=modifiers&~EventModifiers.Shift;
                     try{rotation=DrawSizedRotationHandle(Handles.RotationHandleIds.@default,rotation,center,size);}finally{evt.modifiers=modifiers;}
                 }
-                else factor=Handles.ScaleHandle(Vector3.one,center,orientation,HandleUtility.GetHandleSize(center)*size);
+                else factor=DrawScaleHandle(center,orientation,size);
                 AntialiasTransformGizmo(center,HandleUtility.GetHandleSize(center)*size*1.35f);
             }
             bool changed=EditorGUI.EndChangeCheck();
             if(gesture==null&&GUIUtility.hotControl!=0){multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl);gesture.pendingExtrude=shiftDown;}
+            if(tool==Tool.Move&&moveEvent&&moveDragControl!=0&&moveDragControl==GUIUtility.hotControl)
+            {
+                position=ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,gesture?.position??center);
+                if(pivotSnapHeld||gridSnapHeld)changed=(position-(gesture?.position??center)).sqrMagnitude>1e-12f;
+            }
             if(changed)
             {
                 if(gesture==null)multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl);
-                if(tool==Tool.Move&&moveDragControl!=0&&moveDragControl==GUIUtility.hotControl)
-                {
-                    if(pivotSnapHeld)position=TryMoveSnapTarget(SceneView.currentDrawingSceneView,evt.mousePosition,out var target)?ConstrainMove(moveDragOrigin,target,moveDragOrientation,moveDragAxes):gesture.position;
-                    else if(gridSnapHeld)position=moveDragAxes==MoveAxes.Free?(TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(evt.mousePosition),StudioSettings.Current.gridSpacing,out var ground)?ground:gesture.position):SnapConstrainedGrid(moveDragOrigin,position,moveDragOrientation,moveDragAxes,StudioSettings.Current.gridSpacing);
-                }
                 Run(()=>ApplyMultiComponentGesture(gesture,position,rotation,factor));
             }
             if(released&&GUIUtility.hotControl==0)multiComponentGesture=null;

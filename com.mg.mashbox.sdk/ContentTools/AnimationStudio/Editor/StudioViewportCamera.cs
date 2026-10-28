@@ -159,7 +159,9 @@ namespace MashBoxSDK.AnimationStudio
             }
         }
         // Viewport Overlay: fixed viewport actions, independent of toolbar overlays.
-        private IMGUIContainer viewportCameraButton, viewportLightingButton;
+        private IMGUIContainer viewportCameraButton, viewportLightingButton, viewportIsolateButton, viewportShowAllButton;
+        private static readonly GUIContent IsolateHint = new GUIContent("", "Isolate selected");
+        private static readonly GUIContent ShowAllHint = new GUIContent("", "Show all");
         private static readonly GUIContent CameraSettingsHint = new GUIContent("", "Camera settings");
         private static readonly GUIContent LightingSettingsHint = new GUIContent("", "Viewport lighting settings");
         private static Color ViewportOverlayBackground(bool hover)
@@ -191,11 +193,15 @@ namespace MashBoxSDK.AnimationStudio
         {
             BindViewportOverlayButton(ref viewportCameraButton, "mashbox-camera-settings-button", DrawCameraSettingsButton);
             BindViewportOverlayButton(ref viewportLightingButton, "mashbox-lighting-settings-button", DrawLightingSettingsButton);
+            BindViewportOverlayButton(ref viewportIsolateButton, "mashbox-isolate-selected-button", DrawIsolateButton);
+            BindViewportOverlayButton(ref viewportShowAllButton, "mashbox-show-all-button", DrawShowAllButton);
         }
         private void LayoutCameraSettingsButton(float left, float top)
         {
             LayoutViewportOverlayButton(viewportCameraButton, left, top);
             LayoutViewportOverlayButton(viewportLightingButton, left + 28, top);
+            LayoutViewportOverlayButton(viewportIsolateButton, left + 56, top);
+            LayoutViewportOverlayButton(viewportShowAllButton, left + 84, top);
         }
         private void LayoutViewportOverlayButton(IMGUIContainer button, float left, float top)
         {
@@ -225,6 +231,17 @@ namespace MashBoxSDK.AnimationStudio
             if (editor == null) return;
             if (DrawViewportOverlayButton(viewportCameraButton, CameraSettingsHint, "Camera Icon"))
                 editor.ShowCameraOptions(this, true);
+        }
+        private void DrawIsolateButton()
+        {
+            var editor=Studio?.ToolbarModelEditor;if(editor==null)return;
+            using(new EditorGUI.DisabledScope(!editor.ViewportIsolationActive && !editor.CanIsolateViewportSelection))
+                if(DrawViewportOverlayButton(viewportIsolateButton,IsolateHint,"SceneViewOrtho")) editor.RunViewportIsolation(false);
+        }
+        private void DrawShowAllButton()
+        {
+            var editor=Studio?.ToolbarModelEditor;if(editor==null)return;
+            if(DrawViewportOverlayButton(viewportShowAllButton,ShowAllHint,"scenevis_visible")) editor.RunViewportIsolation(true);
         }
         private void DrawLightingSettingsButton()
         {

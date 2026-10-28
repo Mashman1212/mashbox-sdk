@@ -46,7 +46,7 @@ namespace MashBoxSDK.AnimationStudio
 
             bevelToolPane = ToolChannelPane.Open("Bevel", DrawBevelTool, () => bevelToolPane = null,
 
-                new Vector2(340, 235), new Vector2(310, 215),
+                new Vector2(340, 285), new Vector2(310, 235),
 
                 execute: () => ApplyLiveTool(LiveTool.Bevel), canExecute: () => CanRunLiveTool(LiveTool.Bevel), failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
 
@@ -69,6 +69,8 @@ namespace MashBoxSDK.AnimationStudio
             ToolChannelPane.FloatParameter(BevelTool, "Tension", BevelTensionContent, 1, -1, 1);
 
             ToolChannelPane.EnumParameter(BevelTool, "Junction", BevelJunctionContent, StudioMeshCuts.BevelJunction.Uniform);
+
+            DrawBevelFlowOptions();
 
             GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
 

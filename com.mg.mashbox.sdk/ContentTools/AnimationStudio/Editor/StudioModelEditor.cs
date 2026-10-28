@@ -60,6 +60,8 @@ namespace MashBoxSDK.AnimationStudio
             LoadDisplayConfiguration();
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
+            ObjectChangeEvents.changesPublished += OnMaterialAssetChanges;
+            EditorApplication.projectChanged += QueueMaterialPreviewRefresh;
         }
         internal void Load(StudioModelDocument document)
         {
@@ -70,6 +72,7 @@ namespace MashBoxSDK.AnimationStudio
             CloseMergeToolWindow();
             CloseNormalsToolWindow();
             CloseBevelToolWindow();
+            CloseEdgeFlowToolWindow();
             CancelHierarchyDrag();
             collapsedHierarchy.Clear();
             EndPivotSnap();
@@ -81,6 +84,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Rebuild()
         {
+            ClearViewportIsolation();
             ResetTargetWeldGesture(false);
             hierarchyRenameNode = null;
             hierarchyRows = null; hierarchyContents.Clear(); hierarchyParents.Clear();
@@ -202,6 +206,7 @@ namespace MashBoxSDK.AnimationStudio
         public void Dispose()
         {
             FinishSelectionPaint();
+            ClearViewportIsolation();
             StopTargetWeld(); StudioModelCommands.Release(this); commandView = null; commandLoaded = null;
             CancelLiveTool(); CloseExtrudeToolWindow();
             FinishChannelEdit();
@@ -221,6 +226,9 @@ namespace MashBoxSDK.AnimationStudio
             if(wireBatchMaterial)UnityEngine.Object.DestroyImmediate(wireBatchMaterial);
             if(componentEdgeStroke)UnityEngine.Object.DestroyImmediate(componentEdgeStroke);
             CancelMarkingMenu();
+            ObjectChangeEvents.changesPublished -= OnMaterialAssetChanges;
+            EditorApplication.projectChanged -= QueueMaterialPreviewRefresh;
+            EditorApplication.delayCall -= RefreshChangedMaterials;
             Undo.undoRedoEvent -= OnUndoEvent; EditorApplication.update -= Tick;
             if (Scene.IsValid()) EditorSceneManager.ClosePreviewScene(Scene);
             Document = null; Transforms = Array.Empty<Transform>(); Active = -1;
@@ -522,7 +530,6 @@ namespace MashBoxSDK.AnimationStudio
             if (!remove && Document && index >= 0 && index < Document.nodes.Count)
                 for (int p = Document.nodes[index].parent; p >= 0; p = Document.nodes[p].parent) collapsedHierarchy.Remove(Document.nodes[p]);
                 hierarchyRows = null;
-            if (componentPivot) componentPivot.custom = false;
             StopTargetWeld(); StopCutTool();
             if (!add && !remove) { objects.Clear(); ClearAllComponentSelections(); }
             if (remove) objects.Remove(index); else objects.Add(index);
@@ -588,6 +595,7 @@ namespace MashBoxSDK.AnimationStudio
             var faces = mode == ComponentMode.Face ? Faces() : null; var edges = mode == ComponentMode.Edge ? Edges() : null;
             foreach (int c in Components)
             {
+                if (!IsolationAllowsComponent(c)) continue;
                 if (mode == ComponentMode.Vertex && c < ActiveMesh.vertexCount) result.Add(c);
                 if (mode == ComponentMode.Edge && c < edges.Count) { result.Add(edges[c].a); result.Add(edges[c].b); }
                 if (mode == ComponentMode.Face && c >= 0 && c < faces.Count) foreach (int vertex in faces[c].Vertices) result.Add(vertex);
@@ -752,6 +760,8 @@ namespace MashBoxSDK.AnimationStudio
             var vertices=readVertices as Vector3[];
             Vector3 center = capturedMove ? moveDrag.position : capturedScale ? scaleDrag.center : indices == null ? t.position : cachedHandleFrame ? frameCenter : ComponentSelectionCenter(readVertices, indices);
             if (indices != null && HasComponentPivot) center = componentPivot.position;
+            center = capturedMove && PivotLocked ? moveDrag.position : ResolveLockedPivotCenter(center);
+            center = LockedObjectMoveHandleCenter(center, GUIUtility.hotControl);
             if (handleExtrudeVertices != null && handleExtrudeControl != 0 && GUIUtility.hotControl == handleExtrudeControl)
                 center = handleExtrudeCenter;
             bool scaling = !pivot && tool == Tool.Scale;
@@ -783,7 +793,7 @@ namespace MashBoxSDK.AnimationStudio
                     try { rotation = DrawSizedRotationHandle(rotationHandleIds, orientation, handleCenter, handleSize); }
                     finally { rotationEvent.modifiers = modifiers; }
                 }
-                else scale = Handles.ScaleHandle(Vector3.one, handleCenter, orientation, HandleUtility.GetHandleSize(handleCenter) * handleSize);
+                else scale = DrawScaleHandle(handleCenter, orientation, handleSize);
                 AntialiasTransformGizmo(handleCenter, HandleUtility.GetHandleSize(handleCenter) * handleSize * 1.35f);
             }
             bool handleChanged = EditorGUI.EndChangeCheck();
@@ -824,23 +834,8 @@ namespace MashBoxSDK.AnimationStudio
             componentHandleRotation = rotation;
             if ((pivot || tool == Tool.Move) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl && moveDragEvent)
             {
-                if (pivotSnapHeld)
-                {
-                    // V temporarily takes priority over X; retain the last position
-                    // when no eligible vertex is beneath the cursor.
-                    position = TryMoveSnapTarget(SceneView.currentDrawingSceneView, movePointer, out var target)
-                        ? ConstrainMove(moveDragOrigin, target, moveDragOrientation, moveDragAxes) : center;
-                    handleChanged = (position - center).sqrMagnitude > 1e-12f;
-                }
-                else if (gridSnapHeld)
-                {
-                    if (moveDragAxes == MoveAxes.Free)
-                        position = TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(movePointer), StudioSettings.Current.gridSpacing, out var ground)
-                            ? ground : center;
-                    else
-                        position = SnapConstrainedGrid(moveDragOrigin, position, moveDragOrientation, moveDragAxes, StudioSettings.Current.gridSpacing);
-                    handleChanged = (position - center).sqrMagnitude > 1e-12f;
-                }
+                position = ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,center);
+                if (pivotSnapHeld || gridSnapHeld) handleChanged = (position - center).sqrMagnitude > 1e-12f;
             }
             if (!handleChanged) return;
             if (indices!=null && vertices==null) vertices=readVertices.ToArray();
@@ -879,6 +874,7 @@ namespace MashBoxSDK.AnimationStudio
                 else
                 {
                     Undo.RegisterCompleteObjectUndo(Document, "Transform model objects");
+                    TrackLockedObjectMove(position, GUIUtility.hotControl);
                     // Children selected with their parents inherit the change only once.
                     foreach (int i in objects.Where(i => !HasSelectedParent(i)))
                     {
@@ -927,7 +923,7 @@ namespace MashBoxSDK.AnimationStudio
                 var ray = HandleUtility.GUIPointToWorldRay(end);
                 for (int i = 0; i < Transforms.Length; i++)
                 {
-                    var mesh = Document.nodes[i].mesh; if (!mesh || !Transforms[i].gameObject.activeInHierarchy) continue;
+                    var mesh = IsolationPickMesh(i); if (!mesh || !Transforms[i].gameObject.activeInHierarchy || !IsolationNodeVisible(i)) continue;
                     if (click)
                     {
                         var v = PickVertices(i); var tr = mesh.triangles;
@@ -973,6 +969,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             for (int i = 0; i < count; i++)
             {
+                if (!IsolationAllowsComponent(i)) continue;
                 if (mode == ComponentMode.Vertex)
                 {
                     var world = worldVertices[i];
@@ -1026,6 +1023,7 @@ namespace MashBoxSDK.AnimationStudio
             for (int candidate = 0; candidate < (candidates == null ? count : candidates.Count); candidate++)
             {
                 int i = candidates == null ? candidate : candidates[candidate];
+                if (!IsolationAllowsComponent(i)) continue;
                 Vector3 world = mode == ComponentMode.Vertex ? t.TransformPoint(vertices[i]) : mode == ComponentMode.Edge ? t.TransformPoint((vertices[edges[i].a] + vertices[edges[i].b]) * .5f) : t.TransformPoint(FaceCenter(Faces()[i], vertices));
                 if (view.camera.WorldToViewportPoint(world).z <= 0) continue;
                 float distance = Vector2.Distance(pointer, Project(world));
@@ -1090,8 +1088,8 @@ namespace MashBoxSDK.AnimationStudio
             var result = new List<OcclusionMesh>();
             for (int n = 0; n < Transforms.Length; n++)
             {
-                var mesh = Document.nodes[n].mesh;
-                if (!mesh || !Transforms[n].gameObject.activeInHierarchy) continue;
+                var mesh = IsolationPickMesh(n);
+                if (!mesh || !Transforms[n].gameObject.activeInHierarchy || !IsolationNodeVisible(n)) continue;
                 int version = EditorUtility.GetDirtyCount(mesh);
                 if (!occlusionIndices.TryGetValue(mesh, out var cached) || cached.Version != version)
                     occlusionIndices[mesh] = cached = new OcclusionIndex { Version = version };

@@ -75,10 +75,16 @@ namespace MashBoxSDK.AnimationStudio
             if (tool == Tool.Scale && mode != ComponentMode.Object)
                 preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges and faces cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
             if (EditorGUI.EndChangeCheck()) { SaveDisplayConfiguration(); repaint(); }
+            if (tool == Tool.Move || tool == Tool.Rotate || tool == Tool.Scale)
+            {
+                EditorGUI.BeginChangeCheck();
+                bool locked = EditorGUILayout.Toggle(new GUIContent("Lock pivot", "Keep the pivot fixed in world space through Undo, selection changes and modeling actions. Edit Pivot can still reposition it."), PivotLocked);
+                if (EditorGUI.EndChangeCheck()) SetPivotLocked(locked);
+            }
             if (tool == Tool.Move)
             {
                 using (new EditorGUI.DisabledScope(!MarkingActionEnabled(MarkingAction.EditPivot)))
-                    if (GUILayout.Button(pivot ? "Lock Pivot" : "Edit Pivot")) { pivot = !pivot; repaint(); }
+                    if (GUILayout.Button(pivot ? "Finish Pivot Edit" : "Edit Pivot")) { pivot = !pivot; repaint(); }
             }
             if (!CanEditComponents()) EditorGUILayout.HelpBox("Component editing requires the skin's bind pose. Object transforms and UVs remain available.", MessageType.Info);
         }
@@ -150,6 +156,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             else { node.position = position; node.RotationChannels = rotation; node.scale = scale; Document.ApplyTransform(Active, Transforms[Active]); }
+            if (pivot && mode == ComponentMode.Object) RememberLockedPivot(Transforms[Active].position, PivotOrientation);
             node.active = visible; Transforms[Active].gameObject.SetActive(visible);
             if (control == 0) FinishChannelEdit();
             Changed(pivot);

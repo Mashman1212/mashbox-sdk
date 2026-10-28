@@ -13,6 +13,7 @@ namespace MashBoxSDK.AnimationStudio
             internal string Text;
             internal Texture Image;
             internal string Shortcut;
+            internal string ToolbarKey;
             internal StudioShortcut? Command;
             internal bool ShortcutEligible;
             internal bool Checked, Enabled = true, Separator;
@@ -35,14 +36,18 @@ namespace MashBoxSDK.AnimationStudio
             shortcutEligible &= commandCategory != "Display";
             StudioShortcut? command = shortcutEligible && commandCategory != null ? StudioModelCommands.Register(commandCategory, labelPath, commandKey) : null;
             if (command.HasValue) shortcut = StudioShortcuts.Label(command.Value);
+            bool modelIcons = commandCategory != null && commandCategory != "Display" && !CatalogOnly;
+            if (commandCategory == "Display") image = null;
+            if (modelIcons && !image) image = StudioCommandIcons.Get(StudioModelCommands.ToolbarKey(commandCategory, labelPath, commandKey));
             var parts = labelPath.Split('/'); var level = Items;
             for (int i = 0; i < parts.Length - 1; i++)
             {
                 var branch = level.Find(item => item.Text == parts[i] && !item.Separator);
                 if (branch == null) { branch = new Item { Text = parts[i] }; level.Add(branch); }
+                if (modelIcons && !branch.Image) branch.Image = StudioCommandIcons.Get("Menu/" + commandCategory + "/" + string.Join("/", parts, 0, i + 1));
                 level = branch.Children;
             }
-            level.Add(new Item { Text = parts[parts.Length - 1], Image = image, Shortcut = shortcut, Command = command, ShortcutEligible = shortcutEligible, Checked = selected, Enabled = enabled, Action = action });
+            level.Add(new Item { Text = parts[parts.Length - 1], Image = image, Shortcut = shortcut, Command = command, ShortcutEligible = shortcutEligible, ToolbarKey = commandCategory == null ? null : StudioModelCommands.ToolbarKey(commandCategory, labelPath, commandKey), Checked = selected, Enabled = enabled, Action = action });
         }
         internal void AddSeparator(string path)
         {

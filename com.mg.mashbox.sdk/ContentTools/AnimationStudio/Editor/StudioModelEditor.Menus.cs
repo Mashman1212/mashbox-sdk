@@ -1,5 +1,6 @@
 using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -7,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "Select", "Create", "Modify", "Window", "Display", "Mesh Tools", "Mesh Display", "UV", "Render" };
+        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "View", "Select", "Create", "Modify", "Window", "Display", "Mesh Tools", "Edit Mesh", "Mesh Display", "UV", "Render" };
         private readonly System.Collections.Generic.Dictionary<string,(GUIContent content,GUILayoutOption[] layout,GUIStyle style)> menuBarContents = new System.Collections.Generic.Dictionary<string,(GUIContent,GUILayoutOption[],GUIStyle)>();
         internal void DrawMenuBar(SceneView view, Action<StudioModelDocument> loaded)
         {
@@ -50,8 +51,20 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddSeparator(""); AddCommand(menu, "Preferences…", true, StudioControlsPreferences.Open, shortcutEligible: false);
                 
                     break; }
+                case "View": {
+                    menu.AddItem(new GUIContent("Wireframe"), ModelDrawMode==DrawCameraMode.Wireframe, () => SetModelDrawModeEnabled(view,DrawCameraMode.Wireframe,ModelDrawMode!=DrawCameraMode.Wireframe));
+                    menu.AddItem(new GUIContent("Shaded Wireframe"), ModelDrawMode==DrawCameraMode.TexturedWire, () => SetModelDrawModeEnabled(view,DrawCameraMode.TexturedWire,ModelDrawMode!=DrawCameraMode.TexturedWire));
+                    menu.AddSeparator("");
+                    menu.AddItem(new GUIContent("Viewport Lighting"), displayLighting, () => SetDisplayMode(!displayLighting,displayTextures));
+                    menu.AddItem(new GUIContent("Material Textures"), displayTextures, () => SetDisplayMode(displayLighting,!displayTextures));
+                    menu.AddItem(new GUIContent("Checker Map"), checkerMap, () => SetCheckerMap(!checkerMap));
+                    menu.AddItem(new GUIContent("Backface Culling"), backfaceCulling, () => SetBackfaceCulling(!backfaceCulling));
+                    menu.AddSeparator("");
+                    menu.AddItem(new GUIContent("X-ray Mode"), displayXray, () => SetXRayMode(!displayXray));
+                    break; }
                 case "Window": {
                     menu.AddItem(new GUIContent("Themes…"), false, StudioSettingsWindow.Open, shortcutEligible: false);
+                    menu.AddItem(new GUIContent("Material Library"), StudioMaterialLibrary.Visible, () => StudioMaterialLibrary.Toggle(view as MashBoxStudioViewport), shortcutEligible: false);
                     break; }
                 case "Display": {
                     menu.AddItem(new GUIContent("Tool Options"), !StudioSettings.Current.hideToolOptions, () => {
@@ -99,15 +112,21 @@ namespace MashBoxSDK.AnimationStudio
                     AddAction(menu, "Edge", MarkingAction.Edge, view); AddAction(menu, "Face", MarkingAction.Face, view);
                     menu.AddSeparator(""); AddAction(menu, "Frame Selection", MarkingAction.Frame, view);
                     menu.AddItem(new GUIContent("Through Selection"), xray, () => { xray = !xray; repaint(); });
+                    if(ViewportIsolationActive || CanIsolateViewportSelection)
+                        menu.AddItem(new GUIContent("Isolate Selected"),ViewportIsolationActive,()=>RunViewportIsolation(false));
+                    else menu.AddDisabledItem(new GUIContent("Isolate Selected"));
                 
                     break; }
                 case "Modify": {
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), !targetWeldActive && cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));
                     AddAction(menu, "Move", MarkingAction.Move, view); AddAction(menu, "Rotate", MarkingAction.Rotate, view); AddAction(menu, "Scale", MarkingAction.Scale, view);
                     menu.AddSeparator("");
-                    AddAction(menu, pivot ? "Lock Pivot" : "Edit Pivot", MarkingAction.EditPivot, view);
+                    AddAction(menu, pivot ? "Finish Pivot Edit" : "Edit Pivot", MarkingAction.EditPivot, view);
                     AddAction(menu, "Center Pivot", MarkingAction.CenterPivot, view); AddAction(menu, "Freeze Transforms", MarkingAction.Freeze, view);
                 
+                    break; }
+                case "Edit Mesh": {
+                    AddCommand(menu, "Edit Edge Flow…", CanEditEdgeFlow, OpenEdgeFlowTool, finishPreview: false);
                     break; }
                 case "Mesh Tools": {
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected, finishPreview: false);
@@ -135,16 +154,8 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Soften", CanAdjustEdgeNormals, () => ApplyEdgeNormals(false));
                     AddCommand(menu, "Harden", CanAdjustEdgeNormals, () => ApplyEdgeNormals(true));
                     AddCommand(menu, "Soften…", CanAdjustEdgeNormals, OpenSoftenTool, finishPreview: false);
-                    menu.AddSeparator("");
-                    menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("X-ray Mode", StudioShortcut.XRay)), displayXray, () => SetXRayMode(!displayXray));
-                    menu.AddSeparator("");
-                    AddCommand(menu, "Recalculate Normals", ActiveMesh && CanEditComponents(), () => {
-                        Undo.RegisterCompleteObjectUndo(ActiveMesh, "Recalculate normals"); RecalculateEditableNormals(ActiveMesh); ActiveMesh.RecalculateTangents(); Changed();
-                    });
-                    menu.AddSeparator("");
-                    AddDisplay(menu, view, "Shaded", DrawCameraMode.Textured);
-                    AddDisplay(menu, view, "Wireframe", DrawCameraMode.Wireframe);
-                    AddDisplay(menu, view, "Shaded Wireframe", DrawCameraMode.TexturedWire);
+
+
                 
                     break; }
                 case "UV": {
@@ -189,10 +200,7 @@ namespace MashBoxSDK.AnimationStudio
             if (MarkingActionEnabled(action)) menu.AddItem(new GUIContent(label), MarkingIsCurrent(action), () => Run(() => ExecuteMarkingAction(action, view)));
             else menu.AddDisabledItem(new GUIContent(label));
         }
-        private void AddDisplay(StudioMenu menu, SceneView view, string label, DrawCameraMode mode)
-        {
-            menu.AddItem(new GUIContent(label), ModelDrawMode == mode, () => SetModelDrawModeEnabled(view, mode, ModelDrawMode != mode));
-        }
+
         internal void CreateEmptyTransform(bool asChild, SceneView view, Action<StudioModelDocument> loaded)
         {
             using var camera = new CreationCameraScope(view);
@@ -242,6 +250,40 @@ namespace MashBoxSDK.AnimationStudio
                 loaded(CreateTemporaryWorkspace());
             }
         }
+        private void InvertComponentSelection()
+        {
+            int count = ComponentCount();
+            // A click stores a render index. With welded editing enabled, its
+            // coincident seam copies represent the same selectable component.
+            // Capture that logical selection before mutating any render indices.
+            if (weld && mode == ComponentMode.Vertex)
+            {
+                var positions = ComponentPositions();
+                var selected = new HashSet<Vector3>();
+                foreach (int i in Components)
+                    if (i >= 0 && i < count && IsolationAllowsComponent(i)) selected.Add(positions[i]);
+                for (int i = 0; i < count; i++)
+                    if (IsolationAllowsComponent(i))
+                    { if (selected.Contains(positions[i])) Components.Remove(i); else Components.Add(i); }
+            }
+            else if (weld && mode == ComponentMode.Edge)
+            {
+                var positions = ComponentPositions(); var edges = Edges();
+                var selected = new HashSet<(Vector3,Vector3)>();
+                foreach (int i in Components)
+                    if (i >= 0 && i < count && IsolationAllowsComponent(i))
+                        selected.Add(StudioMeshCuts.NormalEdgePositionKeyForBevel(positions[edges[i].a], positions[edges[i].b]));
+                for (int i = 0; i < count; i++)
+                    if (IsolationAllowsComponent(i))
+                    {
+                        var key = StudioMeshCuts.NormalEdgePositionKeyForBevel(positions[edges[i].a], positions[edges[i].b]);
+                        if (selected.Contains(key)) Components.Remove(i); else Components.Add(i);
+                    }
+            }
+            else for (int i = 0; i < count; i++)
+                if (IsolationAllowsComponent(i) && !Components.Remove(i)) Components.Add(i);
+        }
+
         private void InvertSelection()
         {
             var before = CaptureSelection();
@@ -250,7 +292,7 @@ namespace MashBoxSDK.AnimationStudio
                 for (int i = 0; i < Transforms.Length; i++) if (!objects.Remove(i)) objects.Add(i);
                 Active = -1; foreach (int i in objects) { Active = i; break; }
             }
-            else foreach(int node in ComponentTargetNodes()) using(new ComponentTargetScope(this,node)) for (int i = 0; i < ComponentCount(); i++) if (!Components.Remove(i)) Components.Add(i);
+            else foreach(int node in ComponentTargetNodes()) using(new ComponentTargetScope(this,node)) InvertComponentSelection();
             RecordSelectionChange(before);
             repaint();
         }

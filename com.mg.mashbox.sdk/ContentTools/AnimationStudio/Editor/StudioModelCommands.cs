@@ -29,14 +29,18 @@ namespace MashBoxSDK.AnimationStudio
         private static string Canonical(string category, string path)
         {
             string key = Normalize(category + "/" + path);
+            // View regroups existing controls without changing saved shortcut IDs.
+            if(key=="View/Wireframe"||key=="View/Shaded Wireframe"||key=="View/X-ray Mode")
+                return "Mesh Display/"+key.Substring("View/".Length);
             // Preserve the AO shortcut identity when Lighting is renamed Render.
             if (key.StartsWith("Render/", StringComparison.Ordinal)) return "Lighting/" + key.Substring("Render/".Length);
             // Keep stored shortcut identities while Deform moves into Mesh Tools.
             if (key.StartsWith("Mesh Tools/Deform/", StringComparison.Ordinal)) return key.Substring("Mesh Tools/".Length);
-            if (key == "Modify/Lock Pivot") return "Modify/Edit Pivot";
+            if (key == "Modify/Lock Pivot" || key == "Modify/Finish Pivot Edit") return "Modify/Edit Pivot";
             if (key == "Mesh/UV Editor") return "UV/UV Editor";
             return key;
         }
+        internal static string ToolbarKey(string category, string label, string explicitKey) => Canonical(category, explicitKey ?? label);
         private static StudioShortcut Hash(string key)
         {
             unchecked
@@ -46,7 +50,7 @@ namespace MashBoxSDK.AnimationStudio
                 return (StudioShortcut)(int)(hash | 0x80000000u);
             }
         }
-        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop" };
+        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection" };
         internal static StudioShortcut StableId(string key) => Hash(key);
         internal static StudioShortcuts.Binding[] StandardBindings(string key)
         {
@@ -55,6 +59,8 @@ namespace MashBoxSDK.AnimationStudio
             if (key == "Mesh Tools/Merge Vertices") return new[] { new StudioShortcuts.Binding(KeyCode.M) };
             if (key == "Mesh Tools/Target Weld") return new[] { new StudioShortcuts.Binding(KeyCode.T) };
             if (key == "Mesh Tools/Insert Edge Loop") return new[] { new StudioShortcuts.Binding(KeyCode.X, StudioModifiers.Action | StudioModifiers.Shift) };
+            if (key == "Select/Isolate Selected") return new[] { new StudioShortcuts.Binding(KeyCode.W, StudioModifiers.Shift) };
+            if (key == "Select/Invert Selection") return new[] { new StudioShortcuts.Binding(KeyCode.I, StudioModifiers.Action) };
             return Array.Empty<StudioShortcuts.Binding>();
         }
         internal static bool ValidKey(StudioShortcut id, string key) => (int)id < 0 && !string.IsNullOrEmpty(key) && key.Length <= 512 && key.IndexOf('/') > 0 && Hash(key) == id;
@@ -73,7 +79,7 @@ namespace MashBoxSDK.AnimationStudio
             var defaults = StudioShortcuts.Find(id)?.defaults ?? StandardBindings(key);
             int slash = key.IndexOf('/');
             bool deform = key.StartsWith("Deform/", StringComparison.Ordinal);
-            definitions[id] = new StudioShortcuts.Definition(id, deform ? "Mesh Tools" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key == "Mesh Tools/Merge Vertices" ? "Merge to Center" : key.Substring(slash + 1), defaults);
+            definitions[id] = new StudioShortcuts.Definition(id, deform ? "Mesh Tools" : key=="Mesh Display/Wireframe"||key=="Mesh Display/Shaded Wireframe"||key=="Mesh Display/X-ray Mode" ? "View" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key == "Mesh Tools/Merge Vertices" ? "Merge to Center" : key.Substring(slash + 1), defaults);
             paths[id] = key; keys[key] = id; ordered = null;
             StudioShortcuts.CatalogChanged();
             return id;
@@ -92,7 +98,7 @@ namespace MashBoxSDK.AnimationStudio
                 case StudioShortcut.Pivot: case StudioShortcut.VertexSnap: case StudioShortcut.GridSnap: case StudioShortcut.AxisMenu: return "Modify";
                 case StudioShortcut.Select: case StudioShortcut.Move: case StudioShortcut.Rotate: case StudioShortcut.Scale: return "Modify";
                 case StudioShortcut.Extrude: case StudioShortcut.CommitCut: case StudioShortcut.RemoveCut: return "Mesh Tools";
-                case StudioShortcut.XRay: return "Mesh Display";
+                case StudioShortcut.XRay: return "View";
                 case StudioShortcut.FrameAllUV: return "UV";
                 case StudioShortcut.Orbit: case StudioShortcut.Pan: case StudioShortcut.Dolly: case StudioShortcut.MarkingMenu: return "Navigation";
                 default: return fallback;

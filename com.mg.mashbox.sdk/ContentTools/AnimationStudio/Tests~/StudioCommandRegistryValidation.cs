@@ -27,7 +27,7 @@ internal static class StudioCommandRegistryValidation {
      Check(StudioShortcuts.Definitions.Any(d=>d.id==item.Command.Value),"Missing Preferences row: "+item.Text);items++;
     }}};inspect(menu.Items);
    }
-   Check(string.Join(",",StudioModelEditor.ModelMenuTitles)=="File,Edit,Select,Create,Modify,Window,Display,Mesh Tools,Mesh Display,UV,Lighting","Requested top menu order");
+   Check(string.Join(",",StudioModelEditor.ModelMenuTitles)=="File,Edit,View,Select,Create,Modify,Window,Display,Mesh Tools,Edit Mesh,Mesh Display,UV,Render","Requested top menu order");
    var legacy=StudioModelCommands.Register("Deform","Blend Shape").Value;var nested=StudioModelCommands.Register("Mesh Tools","Deform/Blend Shape").Value;
    Check(legacy==nested&&StudioModelCommands.Key(nested)=="Deform/Blend Shape","Deform shortcut identity preserved");
    Check(StudioModelCommands.Category(nested)=="Mesh Tools","Nested Deform dispatch category");
@@ -43,7 +43,7 @@ internal static class StudioCommandRegistryValidation {
    Check(StudioShortcuts.Definitions.Select(d=>d.id).Distinct().Count()==StudioShortcuts.Definitions.Length,"Unique command IDs");
    var bevel=StudioShortcuts.Definitions.Single(d=>d.group=="Mesh Tools"&&d.name=="Bevel…");
    Check(bevel.defaults.Any(b=>b.key==KeyCode.B&&b.modifiers==StudioModifiers.Action),"Standard Bevel default");
-   Check(StudioShortcuts.Definitions.Single(d=>d.group=="Mesh Display"&&d.name=="Shaded Wireframe").defaults.Any(b=>b.key==KeyCode.BackQuote&&b.allowShift),"Standard backtick and tilde toggle default");
+   Check(StudioShortcuts.Definitions.Single(d=>d.group=="View"&&d.name=="Shaded Wireframe").defaults.Any(b=>b.key==KeyCode.BackQuote&&b.allowShift),"Standard backtick and tilde toggle default");
    StudioShortcuts.Set(bevel.id,new[]{new StudioShortcuts.Binding(KeyCode.F8)});
    var evt=new Event{type=EventType.KeyDown,keyCode=KeyCode.F8};
    Check(editor.TryExecuteModelCommand(evt,view)&&evt.type==EventType.Used,"Disabled tool consumes shortcut safely");

@@ -27,7 +27,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (!componentPivot || !componentPivot.custom) return false;
                 if (mode != ComponentMode.Object && componentPivot.document == Document && componentPivot.mesh == ActiveMesh &&
                     componentPivot.node == Active && componentPivot.mode == (int)mode && Components.SetEquals(componentPivot.selection)) return true;
-                componentPivot.custom = false;
+                // A query can run while Undo or another component target is being
+                // rebound. Only explicit user actions may invalidate saved state.
                 return false;
             }
         }
@@ -47,8 +48,9 @@ namespace MashBoxSDK.AnimationStudio
             return componentCenterPoints.Count == 0 ? Transforms[Active].position :
                 Transforms[Active].TransformPoint(sum / componentCenterPoints.Count);
         }
-        internal Vector3 EditingPivotPosition => mode == ComponentMode.Object ? Transforms[Active].position :
+        private Vector3 UnlockedEditingPivotPosition => mode == ComponentMode.Object ? Transforms[Active].position :
             HasComponentPivot ? componentPivot.position : ComponentSelectionCenter();
+        internal Vector3 EditingPivotPosition => ResolveLockedPivotCenter(UnlockedEditingPivotPosition);
 
         private void SetComponentPivot(Vector3 position, Quaternion orientation, string undoName)
         {
@@ -67,13 +69,14 @@ namespace MashBoxSDK.AnimationStudio
             Undo.RegisterCompleteObjectUndo(componentPivot, undoName);
             componentPivot.custom = true;
             componentPivot.position = position; componentPivot.orientation = orientation.normalized;
+            RememberLockedPivot(position, orientation);
             pivotHover = null; repaint();
         }
         private void MoveEditingPivot(Vector3 position)
         {
             if (!CanAdjustPivot) return;
             if (mode != ComponentMode.Object) SetComponentPivot(position, PivotOrientation, "Move component pivot");
-            else { Document.Repivot(Active, Transforms, position); Changed(); }
+            else { Document.Repivot(Active, Transforms, position); RememberLockedPivot(position, PivotOrientation); Changed(); }
         }
         private void CenterEditingPivot()
         {
@@ -81,7 +84,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UpdateComponentPivotAfterTransform(Vector3 position, Vector3 center, Quaternion rotation, Quaternion orientation)
         {
-            if (!HasComponentPivot) return;
+            if (HasLockedPivot || !HasComponentPivot) return;
             if (tool == Tool.Move) SetComponentPivot(componentPivot.position + position - center, componentPivot.orientation, "Transform mesh components");
             else if (tool == Tool.Rotate) SetComponentPivot(componentPivot.position,
                 rotation * Quaternion.Inverse(orientation) * componentPivot.orientation, "Transform mesh components");

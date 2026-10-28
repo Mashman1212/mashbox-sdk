@@ -9,6 +9,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private float extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .01f);
+        private float extrusionInset = ToolChannelPane.GetFloatDefault("Extrude", "Inset", 0);
         private bool extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         private bool CanExtrude => CanCutMesh && (mode == ComponentMode.Face || mode == ComponentMode.Edge) && Components.Count > 0;
         private int handleExtrudeControl;
@@ -41,14 +42,26 @@ namespace MashBoxSDK.AnimationStudio
             var topology = new StudioMeshCuts(Document.nodes[Active]);
             int[] faces = mode == ComponentMode.Face ? Components.OrderBy(i => i).ToArray() : null;
             var edges = mode == ComponentMode.Edge ? Components.OrderBy(i => i).Select(i => Edges()[i]).ToArray() : null;
+            bool retainPivot = HasComponentPivot;
             const string label = "Extrude mesh components";
             Undo.SetCurrentGroupName(label);
-            Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, ActiveMesh }, label);
+            Undo.RegisterCompleteObjectUndo(retainPivot
+                ? new UnityEngine.Object[] { Document, ActiveMesh, componentPivot }
+                : new UnityEngine.Object[] { Document, ActiveMesh }, label);
+            PrepareIsolationTopologyEdit();
             var result = topology.Extrude(Document.nodes[Active], faces, edges, .1f, extrudeFacesTogether, weld, TransformPoint);
             // Keep the captured handle and preview transforms alive throughout the drag.
             edgeMesh = null; cachedEdges = null; faceNode = null; cachedFaces = null;
             cutTopology = null; cutMesh = null; ClearComponentDrawing();
             Components.Clear(); SelectExtrusionResult(result, faces != null);
+            if (retainPivot)
+            {
+                // New cap IDs belong to the same gesture and custom tool pivot.
+                componentPivot.selection = Components.ToArray();
+                if (!HasLockedPivot && tool == Tool.Move) componentPivot.position += position - center;
+                else if (!HasLockedPivot && tool == Tool.Rotate) componentPivot.orientation =
+                    (rotation * Quaternion.Inverse(orientation) * componentPivot.orientation).normalized;
+            }
             handleExtrudeVertices = new System.Collections.Generic.HashSet<int>(result.MovingVertices);
             // New caps and wall tips have different vertex multiplicities from the
             // source selection. Keep the native handle's reference point continuous.
@@ -82,7 +95,7 @@ namespace MashBoxSDK.AnimationStudio
             if (extrudeToolPane) { QueueLiveTool(LiveTool.Extrude); extrudeToolPane.Repaint(); extrudeToolPane.Focus(); return; }
             if (!CanExtrude) throw new InvalidOperationException("Select faces or open boundary edges on an editable static mesh.");
             extrudeToolPane = ToolChannelPane.Open("Extrude", DrawLiveExtrudeFields, () => extrudeToolPane = null,
-                new Vector2(300, 160), new Vector2(260, 150),
+                new Vector2(300, 185), new Vector2(260, 175),
                 execute: () => ApplyLiveTool(LiveTool.Extrude), canExecute: () => CanRunLiveTool(LiveTool.Extrude),
                 failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
                 preview: () => QueueLiveTool(LiveTool.Extrude), cancelPreview: () => CancelLiveTool(LiveTool.Extrude), history: PerformWorkspaceHistory);
@@ -92,6 +105,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EditorGUI.BeginChangeCheck();
             extrusionDistance = EditorGUILayout.FloatField(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
+            extrusionInset = EditorGUILayout.FloatField(new GUIContent("Inset", "Mesh-local boundary offset. Positive moves outward; negative moves inward. Independent of normal distance."), extrusionInset);
             if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
             if (EditorGUI.EndChangeCheck()) StoreExtrusionDefaults();
             GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
@@ -100,6 +114,7 @@ namespace MashBoxSDK.AnimationStudio
         private void StoreExtrusionDefaults()
         {
             ToolChannelPane.SetFloatDefault("Extrude", "Distance", extrusionDistance);
+            ToolChannelPane.SetFloatDefault("Extrude", "Inset", extrusionInset);
             ToolChannelPane.SetFloatDefault("Extrude", "Together", extrudeFacesTogether ? 1 : 0);
         }
 

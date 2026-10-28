@@ -72,15 +72,17 @@ namespace MashBoxSDK.AnimationStudio
             int group = Undo.GetCurrentGroup();
             WriteSelection(state, before);
             Undo.RegisterCompleteObjectUndo(state, label);
+            if (componentPivot && componentPivot.custom && !HasComponentPivot)
+                Undo.RegisterCompleteObjectUndo(componentPivot, label);
             WriteSelection(state, after);
             Undo.CollapseUndoOperations(group);
             if (separate) Undo.IncrementCurrentGroup();
             SelectionDisplayChanged();
         }
-        private void SelectionDisplayChanged()
+        private void SelectionDisplayChanged(bool resetPivot = true)
         {
             componentFrameValid = false;
-            if (componentPivot) componentPivot.custom = false;
+            if (resetPivot && componentPivot && !HasComponentPivot) componentPivot.custom = false;
             cachedSelectedStatistics = null; InvalidateHandleComponentFrame();
             drawnMode = hoverMode = (ComponentMode)(-1);
             pivotTargetCache.Clear(); pivotHover = null;
@@ -103,7 +105,8 @@ namespace MashBoxSDK.AnimationStudio
                 int count = ComponentCount();
                 foreach (int i in state.components) if (i >= 0 && i < count) Components.Add(i);
             }
-            SelectionDisplayChanged();
+            // Native Undo has already restored the pivot object at this history step.
+            SelectionDisplayChanged(false);
         }
 
         // One source selection and one history entry per held-key paint stroke.

@@ -112,8 +112,7 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 holder.AddComponent<MeshFilter>().sharedMesh = mesh;
-                var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
-                holder.AddComponent<MeshRenderer>().sharedMaterial = pipeline ? pipeline.defaultMaterial : AssetDatabase.GetBuiltinExtraResource<Material>("Default-Material.mat");
+                holder.AddComponent<MeshRenderer>().sharedMaterial = StudioMeshMaterialPreview.DefaultMaterial;
                 ImportModel(holder, loaded);
             }
             finally { Object.DestroyImmediate(holder); }

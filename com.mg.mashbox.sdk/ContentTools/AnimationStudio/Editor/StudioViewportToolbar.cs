@@ -12,8 +12,8 @@ namespace MashBoxSDK.AnimationStudio
     // Default indices apply only when Unity has no saved placement for an
     // overlay. Stable IDs let Unity restore each toolbar independently.
     [Overlay(typeof(MashBoxStudioViewport), Id, "Selection Modes", true,
-        defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 0, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockZone = DockZone.LeftToolbar, defaultDockPosition = DockPosition.Top,
+        defaultDockIndex = 1, defaultLayout = Layout.VerticalToolbar)]
     internal sealed class StudioSelectionToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/SelectionModes";
@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Grid", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 0, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioGridToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Grid";
@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, DisplayName, true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioViewportToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Viewport";
@@ -42,12 +42,12 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Viewport Shading", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 3, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioDisplayToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Display";
         public StudioDisplayToolbar() : base(StudioToolbarWireOnly.Id,
-            StudioToolbarShadedWire.Id, StudioToolbarLighting.Id, StudioToolbarTextures.Id, StudioToolbarBackfaceCulling.Id) { }
+            StudioToolbarShadedWire.Id, StudioToolbarLighting.Id, StudioToolbarTextures.Id, StudioToolbarCheckerMap.Id, StudioToolbarBackfaceCulling.Id) { }
     }
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Transform Tools", true,
@@ -73,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
         protected StudioToolbarToggle(string elementName, string iconName, string hint)
         {
             name = elementName; tooltip = hint;
-            if (!string.IsNullOrEmpty(iconName)) icon = StudioToolbarIcons.Get(iconName);
+            if (!string.IsNullOrEmpty(iconName)) { var key = StudioCommandIcons.ControlKey(elementName); icon = key == null ? StudioToolbarIcons.Get(iconName) : StudioCommandIcons.Get(key); }
             RegisterCallback<AttachToPanelEvent>(_ => Bind());
             RegisterCallback<DetachFromPanelEvent>(_ => Unbind());
             this.RegisterValueChangedCallback(evt => {
@@ -282,10 +282,11 @@ namespace MashBoxSDK.AnimationStudio
             get => view;
             set { Unbind(); view = value as MashBoxStudioViewport; if (panel != null) Bind(); RefreshState(); }
         }
+        internal bool IconOnly;
         public StudioToolbarOrientation()
         {
             name = "studio-toolbar-orientation"; tooltip = "World, Object or Component transform axes";
-            icon = StudioToolbarIcons.Get("ToolHandleLocal");
+            icon = StudioCommandIcons.Get("Viewport/Orientation");
             clicked += OpenMenu;
             RegisterCallback<AttachToPanelEvent>(_ => Bind());
             RegisterCallback<DetachFromPanelEvent>(_ => Unbind());
@@ -300,7 +301,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             var editor = view ? view.Studio?.ToolbarModelEditor : null;
             SetEnabled(editor != null);
-            text = editor?.ToolbarOrientationLabel ?? "World";
+            text = IconOnly ? string.Empty : editor?.ToolbarOrientationLabel ?? "World";
+            if (IconOnly) tooltip = "Transform orientation: " + (editor?.ToolbarOrientationLabel ?? "World");
         }
         private void OpenMenu()
         {
@@ -355,6 +357,14 @@ namespace MashBoxSDK.AnimationStudio
         protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetDisplayMode(editor.ToolbarLighting, enabled);
     }
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
+    internal sealed class StudioToolbarCheckerMap : StudioToolbarToggle
+    {
+        internal const string Id = "MashBox/Viewport/CheckerMap";
+        public StudioToolbarCheckerMap() : base("studio-toolbar-checker-map", "CheckerMap", "Checker Map") { }
+        protected override bool Read(StudioModelEditor editor) => editor.CheckerMap;
+        protected override void Apply(StudioModelEditor editor, bool enabled) => editor.SetCheckerMap(enabled);
+    }
+    [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
     internal sealed class StudioToolbarBackfaceCulling : StudioToolbarToggle
     {
         internal const string Id = "MashBox/Viewport/BackfaceCulling";
@@ -374,12 +384,21 @@ namespace MashBoxSDK.AnimationStudio
             AssemblyReloadEvents.beforeAssemblyReload += Clear;
             EditorApplication.quitting += Clear;
         }
+        internal static Texture2D TryGet(string name)
+        {
+            string key = (EditorGUIUtility.isProSkin ? "dark:" : "light:") + name;
+            if (icons.TryGetValue(key, out var icon) && icon) return icon;
+            var source = LoadIcon?.Invoke(null, new object[] { name + "@2x" }) as Texture2D;
+            if (!source) source = LoadIcon?.Invoke(null, new object[] { name }) as Texture2D;
+            return source ? Get(name, () => Downsample(source)) : null;
+        }
         internal static Texture2D Get(string name, Func<Texture2D> create = null)
         {
             string key = (EditorGUIUtility.isProSkin ? "dark:" : "light:") + name;
             if (icons.TryGetValue(key, out var icon) && icon) return icon;
             if (create != null) icon = create();
             else if (name == "GridLayoutGroup Icon") icon = CreateGrid();
+            else if (name == "CheckerMap") icon = CreateChecker();
             else
             {
                 var source = LoadIcon?.Invoke(null, new object[] { name + "@2x" }) as Texture2D;
@@ -393,6 +412,13 @@ namespace MashBoxSDK.AnimationStudio
             icon.wrapMode = TextureWrapMode.Clamp;
             icons[key] = icon;
             return icon;
+        }
+        private static Texture2D CreateChecker()
+        {
+            var image=new Texture2D(Size,Size,TextureFormat.RGBA32,false);
+            var pixels=new Color[Size*Size];
+            for(int y=4;y<20;y++)for(int x=4;x<20;x++)pixels[y*Size+x]=(((x-4)/4+(y-4)/4)%2)==0?new Color(.9f,.9f,.9f):new Color(.25f,.25f,.25f);
+            image.SetPixels(pixels);image.Apply();return image;
         }
         private static Texture2D Downsample(Texture2D source)
         {
