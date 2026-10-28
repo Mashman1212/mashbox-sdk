@@ -21,6 +21,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (!skinningDocument.skeleton) throw new System.InvalidOperationException("The SDK Skeleton asset is missing.");
             skinningEditor = new StudioSkinningEditor(skinningDocument, () => { UpdateClipSaveState(); viewport?.Repaint(); });
+            skinningEditor.SendToCloth=SendModelToCloth;
             ConfigureSkinTutorials();
             skinningEditor.RestoreTutorialStartPose();
             skinningEditor.SendToRetopology=(part,names,rest)=>

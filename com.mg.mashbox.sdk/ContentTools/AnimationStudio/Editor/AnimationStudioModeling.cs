@@ -152,6 +152,7 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddItem(StudioModeIcons.Content("Retopology"), retopologyMode, () => Guard(OpenRetopologyMode));
             menu.AddItem(StudioModeIcons.Content("Cloth"), clothMode, () => Guard(OpenClothMode));
             menu.AddItem(StudioModeIcons.Content("Skinning"), skinningMode, () => Guard(OpenSkinningMode));
+            menu.AddItem(new GUIContent("2.5D Imaging", EditorGUIUtility.IconContent("Texture2D Icon").image, "Open 2.5D Imaging in its own window"), false, () => Guard(StudioImagingWindow.Open));
             menu.AddSeparator("");
             menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel(viewport.IsStudioMaximized ? "Restore View" : "Maximize View",StudioShortcut.Maximize)), false, viewport.ToggleMaximized);
             menu.DropDown(rect);

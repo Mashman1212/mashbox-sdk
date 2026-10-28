@@ -75,8 +75,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if(hover>=0)
                 {
-                    if(weldSource<0)weldSource=hover;
-                    else if(weldSource==hover)weldSource=-1;
+                    if(weldSource<0)SetWeldSource(hover);
+                    else if(weldSource==hover)SetWeldSource(-1);
                     else
                     {
                         int source=weldSource,target=hover;

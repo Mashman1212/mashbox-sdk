@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UIElements;
 using System.Reflection;
 
 namespace MashBoxSDK.AnimationStudio
@@ -7,6 +8,33 @@ namespace MashBoxSDK.AnimationStudio
     public sealed partial class MashBoxStudioViewport
     {
         private bool storedConfigurationInitialized;
+        private bool clearCanvasKeyboardFocus;
+        internal void FocusCanvas()
+        {
+            Focus();
+            EditorGUIUtility.editingTextField = false;
+            foreach (var container in StudioChromeRoot.Query<UnityEngine.UIElements.IMGUIContainer>().ToList())
+            {
+                var handler = container.onGUIHandler;
+                if (studioInputHandlers.TryGetValue(container, out var wrapped)) handler = wrapped.original;
+                if (handler != null && ReferenceEquals(handler.Target, this) &&
+                    (handler.Method.DeclaringType == typeof(SceneView) || handler.Method.Name == nameof(OnSceneGUI)))
+                { container.Focus(); break; }
+            }
+            clearCanvasKeyboardFocus = true;
+            Repaint();
+        }
+        private void FocusAfterDrop(UnityEngine.UIElements.DragPerformEvent evt)
+        {
+            // Project-browser drags need not activate the destination window.
+            // Wait until the drop handler and Unity's drag cleanup have finished.
+            EditorApplication.delayCall += () => { if (this && !MenuInputBlocked) FocusCanvas(); };
+        }
+        private void BindCanvasFocus()
+        {
+            rootVisualElement.UnregisterCallback<DragPerformEvent>(FocusAfterDrop, TrickleDown.TrickleDown);
+            rootVisualElement.RegisterCallback<DragPerformEvent>(FocusAfterDrop, TrickleDown.TrickleDown);
+        }
         internal void InitializeStoredConfiguration()
         {
             if (storedConfigurationInitialized) return;

@@ -159,15 +159,16 @@ namespace MashBoxSDK.AnimationStudio
             GUILayout.Label("QUAD STRIP", StudioTheme.Styles.boldLabel);
             stripWidth = Mathf.Max(.001f, EditorGUILayout.FloatField("Width", stripWidth));
             GUILayout.Label("Drag across the reference to draw connected quads. Start near the highlighted end to continue after orbiting. Start elsewhere for a new strip. Ctrl + MMB drag sideways or [ / ] changes width. Escape ends the strip; during a stroke it cancels that stroke.", StudioTheme.Styles.wordWrappedMiniLabel);
-            if (GUILayout.Button("End strip")) ResetStrip();
+            if (GUILayout.Button("End strip")) CancelConstruction();
         }
         private void EndStripStroke(bool cancel = false)
         {
             if (!stripStroke) return;
             stripStroke = false;
             if (GUIUtility.hotControl == stripControl) GUIUtility.hotControl = 0;
-            if (cancel) { Undo.RevertAllDownToGroup(stripUndo); ResetStrip(); }
+            if (cancel) { Undo.RevertAllDownToGroup(stripUndo); }
             else Undo.CollapseUndoOperations(stripUndo);
+            StoreToolState();
             repaint();
         }
         private Vector3 StripProject(Vector3 p, Vector3 normal)
@@ -323,6 +324,7 @@ namespace MashBoxSDK.AnimationStudio
             });
             stripCenter=(a+b)*.5f;stripNormal=normal;stripSide=side;stripFirstRow=false;
             if(closing){stripClosed=true;ResetStrip();status="Strip welded to the existing boundary.";}
+            StoreToolState();
         }
         private bool HandleStrip(Event evt, MashBoxStudioViewport canvas, bool overUI)
         {
@@ -367,7 +369,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if(evt.type==EventType.KeyDown&&!EditorGUIUtility.editingTextField)
                 {
-                    if(evt.keyCode==KeyCode.Escape){ResetStrip();evt.Use();repaint();}
+                    if(evt.keyCode==KeyCode.Escape){CancelConstruction();evt.Use();repaint();}
                     else if(evt.keyCode==KeyCode.LeftBracket||evt.keyCode==KeyCode.RightBracket)
                     {stripWidth=Mathf.Max(.001f,stripWidth*(evt.keyCode==KeyCode.RightBracket?1.15f:1/1.15f));evt.Use();repaint();}
                     else if(evt.keyCode==KeyCode.F){Frame();evt.Use();}
@@ -378,15 +380,16 @@ namespace MashBoxSDK.AnimationStudio
                     bool filled=false;Run(()=>filled=TryFillStripTriangle(hit.point,hit.normal,false));
                     if(filled){evt.Use();repaint();return true;}
                     var boundary=PickStripBoundary(evt.mousePosition,hit.point);
+                    if(boundary.Item1<0&&PickFace(evt.mousePosition)>=0)
+                    {status="Start on an open boundary to extend this mesh, or on an empty area for a new strip.";evt.Use();repaint();return true;}
+                    stripUndo=RecordToolAction("Draw quad strip");
                     if(boundary.Item1>=0)AttachStrip(boundary,hit.normal);
                     else
                     {
-                        if(PickFace(evt.mousePosition)>=0)
-                        {status="Start on an open boundary to extend this mesh, or on an empty area for a new strip.";evt.Use();repaint();return true;}
                         ResetStrip();stripCenter=hit.point;stripNormal=hit.normal;stripMirror=Document.symmetry;stripFirstRow=false;
                     }
                     stripClosed=false;
-                    Undo.IncrementCurrentGroup();stripUndo=Undo.GetCurrentGroup();Undo.SetCurrentGroupName("Draw quad strip");
+                    StoreToolState();
                     stripStroke=true;stripControl=control;GUIUtility.hotControl=control;
                     GUIUtility.keyboardControl=0;evt.Use();repaint();
                 }

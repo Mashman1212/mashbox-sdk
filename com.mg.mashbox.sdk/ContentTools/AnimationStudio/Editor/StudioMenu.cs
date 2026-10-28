@@ -172,8 +172,17 @@ namespace MashBoxSDK.AnimationStudio
             {
                 SelectRow(activeColumn, row, true); activeColumn = columns.Count - 1; Step(1); return;
             }
-            var action = item.Action; Close();
-            if (action != null) EditorApplication.delayCall += () => action();
+            var action = item.Action;
+            var owner = inputOwner;
+            Close();
+            EditorApplication.delayCall += () =>
+            {
+                // Closing a popup can return focus to Unity's main Scene view.
+                // Restore the originating canvas before executing the command;
+                // commands that open another window then retain their own focus.
+                if (owner) owner.FocusCanvas();
+                action?.Invoke();
+            };
         }
         private void Step(int direction)
         {

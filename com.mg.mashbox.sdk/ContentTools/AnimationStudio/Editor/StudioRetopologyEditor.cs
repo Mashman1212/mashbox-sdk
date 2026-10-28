@@ -41,6 +41,7 @@ namespace MashBoxSDK.AnimationStudio
         internal Part Active => Document.selected>=0&&Document.selected<Document.parts.Count?Document.parts[Document.selected]:null;
         internal Action<Mesh,string> EditInModeling;
         internal Action<Part> SendToSkinner;
+        internal Action<Part,bool> SendToCloth;
         internal Action<GameObject> SkinOutput;
 
         internal StudioRetopologyEditor(StudioRetopologyDocument document,Action repaint)
@@ -50,17 +51,23 @@ namespace MashBoxSDK.AnimationStudio
             referenceMaterial.SetColor("_Color",new Color(.36f,.39f,.43f));referenceMaterial.SetFloat("_Cull",0);
             outputMaterial=new Material(referenceMaterial);outputMaterial.SetColor("_Color",new Color(.56f,.74f,.70f));
             lighting=new StudioPreviewLighting(Scene);lighting.ApplyMaterialPreview();
-            Undo.undoRedoPerformed+=OnUndo; Rebuild();CaptureTutorialSettings();
+            Undo.undoRedoPerformed+=OnUndo;EditorApplication.update+=TickAutoTumble; Rebuild();RestorePolygonDraft();CaptureTutorialSettings();
         }
-        internal void SuspendLighting()=>lighting?.RestoreCameras();
+        internal void SuspendLighting(){StopAutoTumble();lighting?.RestoreCameras();}
         internal void ConfigureLightingCamera(SceneView view)=>lighting?.ConfigureCamera(view);
         private void OnUndo()
         {
+            StopAutoTumble();
+            ReleaseQuadDrag();
+            // Stop capture without collapsing or reverting the history being restored.
+            if(stripStroke&&GUIUtility.hotControl==stripControl)GUIUtility.hotControl=0;
+            if(relaxStroke&&GUIUtility.hotControl==relaxControl)GUIUtility.hotControl=0;
+            stripStroke=relaxStroke=false;
             // Visibility is a viewport preference, independent of geometry Undo.
             foreach(var part in Document.parts)
                 if(part.reference&&visibility.TryGetValue(part.reference,out var shown))
                 {part.showReference=shown.reference;part.showOutput=shown.output;}
-            CancelResolution();CancelVertexSelection();ClearComponents();ClearPatchCorners();dragUndo=-1;status=null;error=null;Rebuild();repaint();
+            CancelResolution();CancelVertexSelection();ClearComponents();ClearPatchCorners(true,false);RestorePolygonDraft();dragUndo=-1;status=null;error=null;Rebuild();repaint();
         }
         internal void Run(Action action)
         {
@@ -125,11 +132,13 @@ namespace MashBoxSDK.AnimationStudio
             var faces=part.faces.Select(f=>new StudioRetopologyDocument.Face((int[])f.vertices.Clone(),f.material){cornerUV=f.cornerUV==null?null:(Vector2[])f.cornerUV.Clone()}).ToList();
             var reference=part.reference;var materials=part.materials;bool needsUV=part.needsUV,dirty=Document.dirty;
             int revision=part.Revision;
+            StoreToolState();
+            var toolState=Document.toolState;var draft=Document.polygonPoints.ToArray();int draftPart=Document.polygonPart;var draftNormal=Document.polygonNormal;
             Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,label);
             try { action();
                 bool topologyChanged=vertices.Count!=part.vertices.Count||faces.Count!=part.faces.Count||faces.Where((f,i)=>i<part.faces.Count&&!f.vertices.SequenceEqual(part.faces[i].vertices)).Any();
                 if(topologyChanged&&faces.Any(f=>f.cornerUV!=null)){foreach(var face in part.faces)face.cornerUV=null;part.needsUV=true;}
-                Active.Revision++;Document.dirty=true;EditorUtility.SetDirty(Document);ClearComponents();ClearPatchCorners();Rebuild();
+                Active.Revision++;Document.dirty=true;EditorUtility.SetDirty(Document);ClearComponents();ClearPatchCorners();StoreToolState();Rebuild();
                 if(CurrentLesson!=null && (vertices.Count!=part.vertices.Count || faces.Count!=part.faces.Count || !vertices.SequenceEqual(part.vertices)
                     || faces.Where((f,i)=>i<part.faces.Count&&!f.vertices.SequenceEqual(part.faces[i].vertices)).Any()))
                     RecordTutorialAction(label);
@@ -139,6 +148,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 part.vertices=vertices;part.uv=uv;part.faces=faces;part.reference=reference;part.materials=materials;
                 part.needsUV=needsUV;part.Revision=revision;Document.dirty=dirty;
+                Document.toolState=toolState;Document.polygonPoints=draft.ToList();Document.polygonPart=draftPart;Document.polygonNormal=draftNormal;
+                ClearComponents();ClearPatchCorners(true,false);RestoreToolState();
                 Rebuild();throw;
             }
         }
@@ -182,13 +193,21 @@ namespace MashBoxSDK.AnimationStudio
                 HandleMeshRowContext(row,p);
                 if(GUI.Button(row,new GUIContent("  "+p.name,"Select this mesh"),new GUIStyle(StudioTheme.Styles.label){clipping=TextClipping.Clip}))
                 {Document.selected=i;ClearComponents();ClearPatchCorners();ApplyCheckerDisplay();repaint();}
-                using(new GUILayout.HorizontalScope())
+                var referenceRow=GUILayoutUtility.GetRect(50,22,GUILayout.ExpandWidth(true));
+                if(referenceRow.Contains(Event.current.mousePosition)&&(Event.current.type==EventType.ContextClick||(Event.current.button==1&&(Event.current.type==EventType.MouseDown||Event.current.type==EventType.MouseUp))))
                 {
-                    GUILayout.Space(12);bool visible=GUILayout.Toggle(p.showReference,"Reference",GUILayout.Width(100));
-                    GUILayout.Label(EditorGUIUtility.IconContent("LockIcon-On"),GUILayout.Width(16),GUILayout.Height(16));
-                    if(visible!=p.showReference){p.showReference=visible;if(p.reference)visibility[p.reference]=(p.showReference,p.showOutput);references[index].SetActive(visible);repaint();}
+                    if(Event.current.type==EventType.MouseDown)
+                    {
+                        var menu=new StudioMenu();
+                        if(p.reference&&SendToCloth!=null)menu.AddItem(new GUIContent("Send to Cloth Studio"),false,()=>Run(()=>SendToCloth(p,true)));
+                        else menu.AddDisabledItem(new GUIContent("Send to Cloth Studio"));
+                        menu.DropDown(new Rect(Event.current.mousePosition,Vector2.zero));
+                    }
+                    Event.current.Use();
                 }
-                var referenceRow=GUILayoutUtility.GetLastRect();
+                bool visible=GUI.Toggle(new Rect(referenceRow.x+12,referenceRow.y,100,referenceRow.height),p.showReference,"Reference");
+                GUI.Label(new Rect(referenceRow.x+112,referenceRow.center.y-8,16,16),EditorGUIUtility.IconContent("LockIcon-On"));
+                if(visible!=p.showReference){p.showReference=visible;if(p.reference)visibility[p.reference]=(p.showReference,p.showOutput);references[index].SetActive(visible);repaint();}
                 bool referenceSkinned=StudioSkinStatusIcon.HasWeights(p.reference);
                 StudioSkinStatusIcon.Draw(new Rect(referenceRow.xMax-20,referenceRow.center.y-8,16,16),referenceSkinned,
                     referenceSkinned ? "Skinned reference — contains skin weights" : "Unskinned reference — no skin weights");
@@ -260,6 +279,8 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddSeparator("");
             Item("Export FBX...",()=>Export(false),part.faces.Count>0);
             Item("Export OBJ (quads)...",()=>Export(true),part.faces.Count>0);
+            Item("Send Reference to Cloth Studio",()=>SendToCloth?.Invoke(part,true),part.reference&&SendToCloth!=null);
+            Item("Send to Cloth Studio",()=>SendToCloth?.Invoke(part,false),part.faces.Count>0&&SendToCloth!=null);
             Item("Send to Skinner",()=>SendToSkinner?.Invoke(part),part.faces.Count>0&&SendToSkinner!=null);
             Item("Continue in Modeling",()=>Send(EditInModeling),part.faces.Count>0&&EditInModeling!=null);
             menu.AddSeparator("");
@@ -403,6 +424,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            StopAutoTumble();EditorApplication.update-=TickAutoTumble;
+            autoTumbleNormalMesh=null;autoTumbleNormals=null;autoTumbleTriangles=null;
+            ReleaseQuadDrag();
             ClearTopologyDrawing(); if(topologyOverlayMaterial)Object.DestroyImmediate(topologyOverlayMaterial);
             if(topologyWireMaterial)Object.DestroyImmediate(topologyWireMaterial);
             EndStripStroke();

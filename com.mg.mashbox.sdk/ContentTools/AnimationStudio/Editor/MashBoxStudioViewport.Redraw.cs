@@ -31,6 +31,11 @@ namespace MashBoxSDK.AnimationStudio
 
         protected override void OnSceneGUI()
         {
+            if (clearCanvasKeyboardFocus)
+            {
+                GUIUtility.keyboardControl = 0;
+                clearCanvasKeyboardFocus = false;
+            }
             ApplyViewportVSync();
             bool repaint = Event.current != null && Event.current.type == EventType.Repaint;
             if (repaint && PresentUnchangedViewport()) return;

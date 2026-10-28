@@ -424,6 +424,7 @@ namespace MashBoxSDK.AnimationStudio
 
         internal void Bind(Scene scene)
         {
+            BindCanvasFocus();
             MarkDirty(DirtyState.Scene);
             customScene = scene;
             // Studio draws its own grid, controls and selection handles. Scene-wide

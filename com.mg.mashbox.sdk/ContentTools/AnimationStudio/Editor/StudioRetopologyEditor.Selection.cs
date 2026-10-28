@@ -70,11 +70,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SelectAllComponents()
         {
-            ClearComponents();if(Active==null)return;
+            if(Active==null)return;RecordToolAction("Select all retopology components");ClearComponents();
             if(selectionMode==SelectionMode.Faces)for(int i=0;i<Active.faces.Count;i++)selectedFaces.Add(i);
             else if(selectionMode==SelectionMode.Edges)selectedEdges.UnionWith(StudioRetopologyOperations.Edges(Active).Keys);
             if(selectionMode==SelectionMode.Vertices)for(int i=0;i<Active.vertices.Count;i++)selected.Add(i);
             else SyncComponentVertices();
+            StoreToolState();
         }
         private bool PointInMarquee(Vector3 point, Rect rect)
         {

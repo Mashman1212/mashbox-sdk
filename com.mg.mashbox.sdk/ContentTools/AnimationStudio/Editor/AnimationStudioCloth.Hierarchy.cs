@@ -102,10 +102,12 @@ namespace MashBoxSDK.AnimationStudio
                 .Distinct().Where(g => { var meshes = ClothSourceMeshes(g); return meshes.Count > 0 && !meshes.Overlaps(bodyMeshes) && !meshes.Overlaps(bustMeshes); }).ToArray();
             if (additions.Length == 0) return;
             RememberClothProfile();
+            var previousGarment = clothGarment;var previousOutfit = clothOutfit;
             var garments = new List<GameObject>(clothGarment ? new[] { clothGarment } : clothOutfit ?? Array.Empty<GameObject>());
             garments.AddRange(additions);
             clothGarment = null; clothOutfit = garments.Distinct().ToArray();
-            BuildClothPreview();
+            try { BuildClothPreview(); }
+            catch { clothGarment = previousGarment;clothOutfit = previousOutfit;throw; }
             SelectClothMesh(Array.FindIndex(clothMeshSources, source => source == additions[additions.Length - 1]));
             FrameCloth();
         }

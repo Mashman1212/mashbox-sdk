@@ -23,6 +23,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 EnsureSkinningEditor();EnsureSkinningDefaultReferences();skinningEditor.Import(asset);OpenSkinningMode();
             });
+            retopologyEditor.SendToCloth=(part,reference)=>Guard(()=>SendRetopologyToCloth(part,reference));
             retopologyEditor.SendToSkinner=part=>Guard(()=>
             {
                 EnsureSkinningEditor();EnsureSkinningDefaultReferences();skinningEditor.ImportRetopology(part);OpenSkinningMode();
@@ -93,7 +94,7 @@ namespace MashBoxSDK.AnimationStudio
             if(enabled&&!retopologyPanels){skinLeftTucked=false;skinRightTucked=true;skinInfluencesTucked=true;}
             retopologyPanels=enabled;UpdatePanelLayout();
             if(meshStatistics!=null)meshStatistics.style.width=enabled?420:256;
-            if(viewportOptions!=null){viewportOptions.style.width=enabled?704:202;viewportOptions.style.height=enabled?54:24;}
+            if(viewportOptions!=null){viewportOptions.style.width=enabled?728:202;viewportOptions.style.height=enabled?54:24;}
         }
     }
 }

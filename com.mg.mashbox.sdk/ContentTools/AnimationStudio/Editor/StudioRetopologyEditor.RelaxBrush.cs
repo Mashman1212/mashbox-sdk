@@ -64,7 +64,7 @@ namespace MashBoxSDK.AnimationStudio
                 {relaxRadius=Mathf.Clamp(relaxRadius*(evt.keyCode==KeyCode.RightBracket?1.15f:1/1.15f),12,200);evt.Use();repaint();}
                 if(evt.type==EventType.MouseDown&&evt.button==0&&GUIUtility.hotControl==0&&Active.showOutput&&canvas.ModelCanvasRect.Contains(evt.mousePosition))
                 {
-                    Undo.IncrementCurrentGroup();relaxUndo=Undo.GetCurrentGroup();Undo.SetCurrentGroupName("Relax topology brush");
+                    relaxUndo=RecordToolAction("Relax topology brush");
                     relaxStroke=true;relaxControl=control;GUIUtility.hotControl=control;relaxLast=evt.mousePosition;
                     Run(()=>RelaxDab(relaxLast));evt.Use();repaint();
                 }

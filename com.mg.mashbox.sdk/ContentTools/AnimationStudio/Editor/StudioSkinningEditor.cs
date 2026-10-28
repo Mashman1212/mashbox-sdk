@@ -315,6 +315,7 @@ namespace MashBoxSDK.AnimationStudio
                                 menu.AddItem(new GUIContent("Stitch to Body"),false,()=>Run(()=>StitchBustParts(new[]{part})));
                             if(part.role == StudioSkinningDocument.MeshRole.Body)
                                 menu.AddItem(new GUIContent("Stitch to Bust"),false,()=>Run(()=>StitchBodyParts(new[]{part})));
+                            menu.AddItem(new GUIContent("Send to Cloth Studio"),false,()=>Run(()=>SendPartToCloth(part)));
                             menu.AddItem(new GUIContent("Save FBX"),false,()=>Run(()=>SaveReferenceFbx(part,false)));
                             menu.AddItem(new GUIContent("Save FBX As…"),false,()=>Run(()=>SaveReferenceFbx(part,true)));
                             menu.ShowAsContext(); Event.current.Use();
@@ -323,6 +324,12 @@ namespace MashBoxSDK.AnimationStudio
                         { EndStroke(); Document.selected=i; sculptMode=false; ChooseBrush(Brush.Paint); RefreshSurface(); Event.current.Use(); }
                         if(enabled && Document.selected==i)
                             EditorGUI.DrawRect(new Rect(lockedRow.x,lockedRow.yMax-2,lockedRow.width,2),new Color(.5f,1,.87f));
+#endif
+#if !MashBoxDev
+                        if (((Event.current.type == EventType.MouseDown && Event.current.button == 1) || Event.current.type == EventType.ContextClick) && lockedRow.Contains(Event.current.mousePosition))
+                        {
+                            var menu = new GenericMenu();menu.AddItem(new GUIContent("Send to Cloth Studio"),false,()=>Run(()=>SendPartToCloth(part)));menu.ShowAsContext();Event.current.Use();
+                        }
 #endif
                         return;
                     }
@@ -356,6 +363,7 @@ namespace MashBoxSDK.AnimationStudio
                         else menu.AddDisabledItem(new GUIContent("Stitch to Bust"));
                         if (CanMatchDefaultBody) menu.AddItem(new GUIContent("Match Default Body"), false, () => Run(MatchDefaultBody));
                         else menu.AddDisabledItem(new GUIContent("Match Default Body"));
+                        menu.AddItem(new GUIContent("Send to Cloth Studio"), false, () => Run(() => SendPartToCloth(part)));
                         menu.AddItem(new GUIContent("Send to Retopology"), false, () => Run(SendSelectedToRetopology));
                         menu.AddItem(new GUIContent("Save FBX"), false, () => Run(SaveSelectedFbx));
                         menu.AddItem(new GUIContent("Save FBX As…"), false, () => Run(SaveSelectedFbxAs));

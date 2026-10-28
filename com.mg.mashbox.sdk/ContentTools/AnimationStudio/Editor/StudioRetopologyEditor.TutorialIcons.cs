@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioRetopologyEditor
     {
         // Toolbar and tutorial use the same glyph IDs and the same vector renderer.
-        private static int ToolIconIndex(RetopoTool tool)=>tool==RetopoTool.Strip?14:
+        private static int ToolIconIndex(RetopoTool tool)=>tool==RetopoTool.Polygon?21:tool==RetopoTool.Strip?14:
             tool==RetopoTool.RelaxBrush?13:tool==RetopoTool.Resolution?11:
             tool==RetopoTool.Tube?7:tool==RetopoTool.TargetWeld?15:
             tool==RetopoTool.EdgeBridge?16:(int)tool;

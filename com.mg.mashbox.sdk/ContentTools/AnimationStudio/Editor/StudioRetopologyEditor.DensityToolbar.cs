@@ -19,14 +19,14 @@ namespace MashBoxSDK.AnimationStudio
             {
                 DrawBridgeBands();return;
             }
-            if(activeTool!=RetopoTool.Patch&&activeTool!=RetopoTool.Tube)return;
+            if(activeTool!=RetopoTool.Patch&&activeTool!=RetopoTool.Polygon&&activeTool!=RetopoTool.Tube)return;
             GUILayout.Space(4);
             using(new GUILayout.HorizontalScope())
             using(new EditorGUI.DisabledScope(Active==null||!Active.reference))
             {
                 float oldSize=patchQuadSize;int oldSegments=patchSegments;bool oldAuto=patchAutoDensity;
                 EditorGUI.BeginChangeCheck();
-                if(activeTool==RetopoTool.Patch)
+                if(activeTool==RetopoTool.Patch||activeTool==RetopoTool.Polygon)
                 {
                     if(patchAutoDensity&&Active!=null&&Active.reference)
                     {
@@ -45,8 +45,11 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     GUILayout.Space(10);
                     patchAutoDensity=GUILayout.Toggle(patchAutoDensity,new GUIContent("Auto size","Adapt rows and columns to patch size; shared borders stay welded."),GUILayout.Width(78),GUILayout.Height(24));
-                    bool nextContinuous=GUILayout.Toggle(continuousPatch,new GUIContent("Continuous","Continue with two new corners after the first patch. Escape ends the chain."),GUILayout.Width(96),GUILayout.Height(24));
-                    if(nextContinuous!=continuousPatch)ToggleContinuousPatch();
+                    if(activeTool==RetopoTool.Patch)
+                    {
+                        bool nextContinuous=GUILayout.Toggle(continuousPatch,new GUIContent("Continuous","Continue with two new corners after the first patch. Escape ends the chain."),GUILayout.Width(96),GUILayout.Height(24));
+                        if(nextContinuous!=continuousPatch)ToggleContinuousPatch();
+                    }
                 }
                 else
                 {
@@ -74,6 +77,11 @@ namespace MashBoxSDK.AnimationStudio
                         ?"Last patch: "+(lastDensityPatch.after.faces.Count-lastDensityPatch.before.faces.Count)+" faces"
                         :"Next patch";
                     GUILayout.Label(new GUIContent(feedback,status),StudioTheme.Styles.miniLabel,GUILayout.Height(24));
+                }
+                if(activeTool==RetopoTool.Polygon)
+                {
+                    GUILayout.Space(10);
+                    GUILayout.Label("Outline: "+corners.Count+" points · Enter: create quad patch",StudioTheme.Styles.miniLabel,GUILayout.Height(24));
                 }
                 GUILayout.FlexibleSpace();
             }

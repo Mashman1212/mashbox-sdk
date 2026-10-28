@@ -333,11 +333,31 @@ namespace MashBoxSDK.AnimationStudio
             if (skins.Length == 0) throw new InvalidOperationException("Body must contain a SkinnedMeshRenderer.");
             foreach (var skin in skins)
             {
-                var mapped = new Transform[skin.bones.Length];
+                var sourceBones = skin.bones;
+                var mapped = new Transform[sourceBones.Length];
+                var used = new bool[mapped.Length];
+                int bindCount = skin.sharedMesh ? skin.sharedMesh.bindposes.Length : 0;
+                if (skin.sharedMesh)
+                    using (var weights = skin.sharedMesh.GetAllBoneWeights())
+                        foreach (var weight in weights)
+                        {
+                            if (weight.weight <= 0) continue;
+                            if (weight.boneIndex < 0 || weight.boneIndex >= used.Length || weight.boneIndex >= bindCount)
+                                throw new InvalidOperationException("Outfit '" + body.name + "' has a skin weight referencing an invalid bone or bind-pose slot.");
+                            used[weight.boneIndex] = true;
+                        }
                 for (int i = 0; i < mapped.Length; i++)
                 {
-                    if (!skin.bones[i] || !names.TryGetValue(BoneName(skin.bones[i].name), out var matches) || matches.Length != 1)
-                        throw new InvalidOperationException("Outfit '" + body.name + "' has a bone that cannot be uniquely matched to the character Skeleton: " + (skin.bones[i] ? skin.bones[i].name : "missing bone") + ". Use an outfit bound to the shared Skeleton, or an explicit bone mapping.");
+                    if (!sourceBones[i] || !names.TryGetValue(BoneName(sourceBones[i].name), out var matches) || matches.Length != 1)
+                    {
+                        if (used[i])
+                            throw new InvalidOperationException("Outfit '" + body.name + "' has a weighted bone that cannot be uniquely matched to the character Skeleton: " + (sourceBones[i] ? sourceBones[i].name : "missing bone") + ". Use an outfit bound to the shared Skeleton, or an explicit bone mapping.");
+                        // FBX bone tables can retain unused helper joints. Keep
+                        // slot indices and the source mesh intact; these slots
+                        // cannot affect any vertex and need no rig correspondence.
+                        mapped[i] = Root.transform;
+                        continue;
+                    }
                     mapped[i] = matches[0];
                 }
                 var go = new GameObject("Preview • " + skin.name);

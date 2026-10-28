@@ -71,6 +71,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 patchContinuation=end;mirroredPatchContinuation=mirrorEnd;patchOwner=part;
                 corners.Add(part.vertices[end[0]]);corners.Add(part.vertices[end[end.Length-1]]);
+                StoreToolState();
             }
             RecordTutorialAction("patchDensityApplied");
             status="Updated last patch density. Welded borders preserved. Undo restores the previous grid.";

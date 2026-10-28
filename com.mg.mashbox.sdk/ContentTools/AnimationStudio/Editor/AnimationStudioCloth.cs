@@ -70,20 +70,26 @@ namespace MashBoxSDK.AnimationStudio
             var selectedMesh = ClothEditable ? MashBoxClothSession.GetMesh(ClothRenderer) : null;
             RememberClothProfile();
             var garments = ClothSources(out var bodyMeshes, out var bustMeshes);
-            ReleaseClothPreview();
-            clothRig = new AuthoringRig(clothCharacter ? clothCharacter : ResolveSdkSkeleton(), null,
+            // Validate and build the replacement before releasing a working
+            // preview. An incompatible garment must not blank the workspace.
+            var replacement = new AuthoringRig(clothCharacter ? clothCharacter : ResolveSdkSkeleton(), null,
                 garments.Where(g => g && g.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length > 0).ToArray());
-            foreach (var garment in garments)
-                foreach (var filter in garment.GetComponentsInChildren<MeshFilter>(true))
-                {
-                    var original = filter.GetComponent<MeshRenderer>(); if (!filter.sharedMesh || !original) continue;
-                    var copy = new GameObject("Preview • " + filter.name); copy.transform.SetParent(clothRig.Root.transform, false);
-                    copy.transform.localPosition = garment.transform.InverseTransformPoint(filter.transform.position);
-                    copy.transform.localRotation = Quaternion.Inverse(garment.transform.rotation) * filter.transform.rotation;
-                    copy.transform.localScale = (garment.transform.worldToLocalMatrix * filter.transform.localToWorldMatrix).lossyScale;
-                    copy.AddComponent<MeshFilter>().sharedMesh = filter.sharedMesh; copy.AddComponent<MeshRenderer>().sharedMaterials = original.sharedMaterials;
-                }
-            foreach (var root in clothRig.Scene.GetRootGameObjects()) foreach (var light in root.GetComponentsInChildren<Light>()) light.enabled = false;
+            try
+            {
+                foreach (var garment in garments)
+                    foreach (var filter in garment.GetComponentsInChildren<MeshFilter>(true))
+                    {
+                        var original = filter.GetComponent<MeshRenderer>(); if (!filter.sharedMesh || !original) continue;
+                        var copy = new GameObject("Preview • " + filter.name); copy.transform.SetParent(replacement.Root.transform, false);
+                        copy.transform.localPosition = garment.transform.InverseTransformPoint(filter.transform.position);
+                        copy.transform.localRotation = Quaternion.Inverse(garment.transform.rotation) * filter.transform.rotation;
+                        copy.transform.localScale = (garment.transform.worldToLocalMatrix * filter.transform.localToWorldMatrix).lossyScale;
+                        copy.AddComponent<MeshFilter>().sharedMesh = filter.sharedMesh; copy.AddComponent<MeshRenderer>().sharedMaterials = original.sharedMaterials;
+                    }
+                foreach (var root in replacement.Scene.GetRootGameObjects()) foreach (var light in root.GetComponentsInChildren<Light>()) light.enabled = false;
+            }
+            catch { replacement.Dispose(); throw; }
+            ReleaseClothPreview();clothRig = replacement;
             clothLighting = new StudioPreviewLighting(clothRig.Scene); clothLighting.ApplyMaterialPreview();
             clothRenderers = clothRig.Root.GetComponentsInChildren<Renderer>(true).Where(r => MashBoxClothSession.GetMesh(r)).ToArray();
             BuildClothMeshRows(garments, bodyMeshes, bustMeshes);

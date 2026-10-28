@@ -87,8 +87,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if(hover.Item1>=0)
                 {
-                    if(!bridgeSource.HasValue)bridgeSource=hover;
-                    else if(bridgeSource.Value==hover)bridgeSource=null;
+                    if(!bridgeSource.HasValue)SetBridgeSource(hover);
+                    else if(bridgeSource.Value==hover)SetBridgeSource(null);
                     else if(preview!=null)
                     {var first=bridgeSource.Value;Run(()=>Change("Bridge edges",()=>BridgeEdgePair(Active,first,hover)));status="Edges bridged. Choose the next pair.";}
                     else canvas.ShowNotification(new GUIContent(problem));

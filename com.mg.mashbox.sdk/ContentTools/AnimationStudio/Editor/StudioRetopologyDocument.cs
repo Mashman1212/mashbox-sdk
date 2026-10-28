@@ -33,6 +33,25 @@ namespace MashBoxSDK.AnimationStudio
         public List<Part> parts=new List<Part>();
         public int selected=-1;
         public bool dirty;
+        // All tools share document Undo, including incomplete constructions.
+        // The original polygon field names preserve existing saved drafts.
+        [HideInInspector] public List<Vector3> polygonPoints=new List<Vector3>();
+        [HideInInspector] public Vector3 polygonNormal;
+        [HideInInspector] public int polygonPart=-1;
+        [Serializable] public sealed class ToolState
+        {
+            public int tool,selectionMode,transformTool;
+            public int[] selected,selectedFaces,selectedEdges,continuation,mirrorContinuation;
+            public bool continuousPatch,autoDensity;
+            public int divisions,tubeSides,tubeRows;
+            public float quadSize,stripWidth,relaxRadius,relaxStrength,resolutionRadius;
+            public bool relaxBorders;
+            public int weldSource=-1,bridgeA=-1,bridgeB=-1;
+            public int stripLeft=-1,stripRight=-1,stripMirrorLeft=-1,stripMirrorRight=-1;
+            public Vector3 stripCenter,stripNormal,stripSide;
+            public bool stripMirror,stripClosed,stripFirstRow;
+        }
+        [HideInInspector] public ToolState toolState;
         [HideInInspector] public string tutorialId;
         [HideInInspector] public List<string> tutorialActions=new List<string>();
         public bool project=true, symmetry, preserveBorders=true;

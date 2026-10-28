@@ -204,12 +204,13 @@ namespace MashBoxSDK.AnimationStudio
 
         private void AddQuickVehicle(string kind)
         {
-            var source = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/ProjectX/PJX Vehicles/PJX_" + kind + ".prefab");
             var skeleton = AssetDatabase.LoadAssetAtPath<GameObject>(BikePath);
-            if (!source || !skeleton) throw new InvalidOperationException(kind + " defaults are unavailable in this project. Choose a custom rig or actor preset below.");
-            // Reuse an existing named preview rather than creating duplicates on every click.
+            if (!skeleton) throw new InvalidOperationException("The shared vehicle skeleton is unavailable in this project. Choose a custom rig or actor preset below.");
+            // Vehicle choices add the shared animation skeleton. Meshes are attached explicitly.
+            // Keep previously outfitted actors available under Existing without changing their parts or keys.
             EnsureActors();
-            int existing = actorPreviews.FindIndex(a => a.Take.name == kind && a.Take.character == skeleton);
+            int existing = actorPreviews.FindIndex(a => a.Take.name == kind && a.Take.character == skeleton
+                && (a.Take.vehicleParts == null || a.Take.vehicleParts.Count == 0));
             if (existing >= 0)
             {
                 hiddenAttachments.Remove(actorPreviews[existing].Take);
@@ -221,12 +222,11 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 added.name = kind;
-                ReadVehicleSlots(source);
                 SaveOutfitActor(); viewport?.Repaint();
             }
             catch
             {
-                // A missing outfit must not leave a half-created actor in the take.
+                // A failed save must not leave a half-created actor in the take.
                 take.actors.Remove(added); ReleaseActors(); Undo.DestroyObjectImmediate(added);
                 activeActor = previousActor; EnsureActors(); Save(); throw;
             }
