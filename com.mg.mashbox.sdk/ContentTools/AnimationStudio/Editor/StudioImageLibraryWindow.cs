@@ -16,6 +16,12 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private StudioImagingWindow owner;
         [SerializeField] private string search = "", folder = "";
         [SerializeField] private float thumbnailSize = 100;
+        [SerializeField] private float sidebarWidth = 245;
+        [SerializeField] private List<string> expandedFolders = new List<string>();
+        private Texture2D checker;
+        private int resizeControl;
+        private int visibleCount;
+        private const string VanillaRoot = ProjectFolder + "/Vanilla Graphics/Vehicles_BMX_Brands";
         private readonly List<string> images = new List<string>();
         private readonly List<string> folders = new List<string>();
         private Vector2 scroll, folderScroll, dragStart;
@@ -46,6 +52,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EditorApplication.projectChanged -= ProjectChanged;
             StudioImageLibraryInstaller.Changed -= ProjectChanged;
+            if (checker) DestroyImmediate(checker);
         }
         private void ProjectChanged() { needsRefresh = true; Repaint(); }
 
@@ -97,41 +104,111 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    using (new EditorGUILayout.VerticalScope(GUILayout.Width(165)))
+                    sidebarWidth = Mathf.Clamp(sidebarWidth, 180, Mathf.Max(180, position.width - 280));
+                    using (new EditorGUILayout.VerticalScope(GUILayout.Width(sidebarWidth)))
                     {
+                        GUILayout.Label("FOLDERS", EditorStyles.miniBoldLabel);
                         folderScroll = EditorGUILayout.BeginScrollView(folderScroll);
-                        DrawFolder("All Images", "");
-                        foreach (string path in folders)
-                        {
-                            string label = path.StartsWith(ProjectFolder, StringComparison.OrdinalIgnoreCase)
-                                ? "Project" + path.Substring(ProjectFolder.Length)
-                                : path.Substring((path.StartsWith(SampleImportRoot, StringComparison.OrdinalIgnoreCase) ? SampleImportRoot : LegacySampleImportRoot).Length);
-                            DrawFolder(label, path);
-                        }
+                        DrawFolder("All Images", "", 0, false);
+                        if (folders.Contains(VanillaRoot)) DrawFolderTree(VanillaRoot, "Vanilla Graphics", 0);
+                        if (images.Any(path => path.StartsWith(ProjectFolder + "/", StringComparison.OrdinalIgnoreCase)
+                            && !path.StartsWith(ProjectFolder + "/Vanilla Graphics/", StringComparison.OrdinalIgnoreCase)))
+                            DrawFolderTree(ProjectFolder, "Project Images", 0);
+                        foreach (string root in folders.Where(path => path.EndsWith("/" + SampleName, StringComparison.OrdinalIgnoreCase)
+                            && !path.StartsWith(ProjectFolder, StringComparison.OrdinalIgnoreCase)))
+                            DrawFolderTree(root, "Vanilla Graphics (" + Path.GetFileName(Path.GetDirectoryName(root)) + ")", 0);
                         EditorGUILayout.EndScrollView();
                     }
+                    DrawSidebarDivider();
                     using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true))) DrawGrid();
                 }
                 if (!string.IsNullOrEmpty(StudioImageLibraryInstaller.Status))
                     EditorGUILayout.HelpBox(StudioImageLibraryInstaller.Status, StudioImageLibraryInstaller.HasError ? MessageType.Error : MessageType.Info);
                 using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
                 {
-                    GUILayout.Label(images.Count + " images · Double-click or drag onto canvas", EditorStyles.miniLabel);
+                    GUILayout.Label(visibleCount + " / " + images.Count + " images · Double-click or drag onto canvas", EditorStyles.miniLabel);
                     GUILayout.FlexibleSpace();
                     thumbnailSize = GUILayout.HorizontalSlider(thumbnailSize, 64, 160, GUILayout.Width(90));
                 }
             }
         }
 
-        private void DrawFolder(string label, string path)
+        private void DrawFolderTree(string path, string label, int depth)
         {
-            if (GUILayout.Toggle(folder == path, new GUIContent(label, path), "Button")) folder = path;
+            var children = folders.Where(child => string.Equals(Path.GetDirectoryName(child)?.Replace('\\', '/'), path, StringComparison.OrdinalIgnoreCase)
+                && !(path == ProjectFolder && child == ProjectFolder + "/Vanilla Graphics")).ToArray();
+            // Open collection roots initially; individual brands remain collapsed.
+            if (depth == 0 && !expandedFolders.Contains("@" + path))
+            { expandedFolders.Add("@" + path); expandedFolders.Add(path); }
+            DrawFolder(label, path, depth, children.Length > 0);
+            if (expandedFolders.Contains(path))
+                foreach (var child in children) DrawFolderTree(child, Path.GetFileName(child), depth + 1);
+        }
+
+        private void DrawFolder(string label, string path, int depth, bool hasChildren)
+        {
+            var row = GUILayoutUtility.GetRect(0, 25, GUILayout.ExpandWidth(true));
+            bool selected = folder == path;
+            if (selected) EditorGUI.DrawRect(row, StudioTheme.Current.Selection);
+            else if (row.Contains(Event.current.mousePosition)) EditorGUI.DrawRect(row, StudioTheme.Current.Hover);
+            float left = row.x + 4 + depth * 14;
+            if (hasChildren)
+            {
+                bool expanded = expandedFolders.Contains(path);
+                bool next = EditorGUI.Foldout(new Rect(left, row.y + 4, 14, 18), expanded, GUIContent.none);
+                if (next != expanded) { if (next) expandedFolders.Add(path); else expandedFolders.Remove(path); }
+            }
+            GUI.Label(new Rect(left + 15, row.y + 4, 17, 18), EditorGUIUtility.IconContent(path == "" ? "Texture2D Icon" : "Folder Icon"));
+            int count = path == "" ? images.Count : images.Count(image => image.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase));
+            var textStyle = new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleLeft, clipping = TextClipping.Clip };
+            GUI.Label(new Rect(left + 35, row.y, Mathf.Max(10, row.xMax - left - 69), row.height), new GUIContent(label, path), textStyle);
+            GUI.Label(new Rect(row.xMax - 32, row.y + 3, 30, 20), count.ToString(), EditorStyles.miniLabel);
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && row.Contains(Event.current.mousePosition)
+                && Event.current.mousePosition.x > left + 14)
+            {
+                folder = path; scroll = Vector2.zero;
+                if (Event.current.clickCount == 2 && hasChildren)
+                { if (expandedFolders.Contains(path)) expandedFolders.Remove(path); else expandedFolders.Add(path); }
+                Event.current.Use(); Repaint();
+            }
+        }
+
+        private void DrawSidebarDivider()
+        {
+            var rect = GUILayoutUtility.GetRect(5, 0, GUILayout.Width(5), GUILayout.ExpandHeight(true));
+            EditorGUI.DrawRect(rect, StudioTheme.Current.Border);
+            EditorGUIUtility.AddCursorRect(rect, MouseCursor.ResizeHorizontal);
+            int control = GUIUtility.GetControlID("ImageLibrarySidebar".GetHashCode(), FocusType.Passive);
+            var evt = Event.current;
+            if (evt.type == EventType.MouseDown && evt.button == 0 && rect.Contains(evt.mousePosition))
+            { resizeControl = control; GUIUtility.hotControl = control; evt.Use(); }
+            if (resizeControl != control || GUIUtility.hotControl != control) return;
+            if (evt.type == EventType.MouseDrag)
+            { sidebarWidth = Mathf.Clamp(evt.mousePosition.x, 180, Mathf.Max(180, position.width - 280)); evt.Use(); Repaint(); }
+            if (evt.rawType == EventType.MouseUp)
+            { resizeControl = 0; GUIUtility.hotControl = 0; evt.Use(); }
+        }
+
+        private void DrawChecker(Rect rect)
+        {
+            if (!checker)
+            {
+                checker = new Texture2D(2, 2, TextureFormat.RGBA32, false, true)
+                { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat };
+                var light = new Color(.68f, .68f, .68f, 1);
+                var dark = new Color(.51f, .51f, .51f, 1);
+                checker.SetPixels(new[] { light, dark, dark, light }); checker.Apply();
+            }
+            GUI.DrawTextureWithTexCoords(rect, checker, new Rect(0, 0, rect.width / 16, rect.height / 16));
         }
 
         private void DrawGrid()
         {
             var visible = images.Where(path => (string.IsNullOrEmpty(folder) || path.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase))
                 && (string.IsNullOrEmpty(search) || path.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)).ToArray();
+            visibleCount = visible.Length;
+            GUILayout.Label(string.IsNullOrEmpty(folder) ? "All Images" : folder.Substring(folder.StartsWith(ProjectFolder + "/", StringComparison.OrdinalIgnoreCase)
+                ? (ProjectFolder + "/").Length : "Assets/Samples/".Length).Replace("Vehicles_BMX_Brands", "BMX Brands").Replace("/", "  /  "), EditorStyles.boldLabel);
             scroll = EditorGUILayout.BeginScrollView(scroll);
             if (visible.Length == 0)
             {
@@ -139,7 +216,7 @@ namespace MashBoxSDK.AnimationStudio
                     ? "Your Image Library is empty. Install Vanilla Graphics, or add images to the Project Folder."
                     : "No images match this folder and search.", MessageType.Info);
             }
-            int columns = Mathf.Max(1, Mathf.FloorToInt((position.width - 195) / (thumbnailSize + 12)));
+            int columns = Mathf.Max(1, Mathf.FloorToInt((position.width - sidebarWidth - 36) / (thumbnailSize + 16)));
             for (int i = 0; i < visible.Length;)
             {
                 using (new EditorGUILayout.HorizontalScope())
@@ -148,12 +225,15 @@ namespace MashBoxSDK.AnimationStudio
                     {
                         string path = visible[i];
                         var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                        var cell = GUILayoutUtility.GetRect(thumbnailSize + 8, thumbnailSize + 32, GUILayout.Width(thumbnailSize + 8));
+                        var cell = GUILayoutUtility.GetRect(thumbnailSize + 12, thumbnailSize + 52, GUILayout.Width(thumbnailSize + 12));
                         if (Event.current.type == EventType.Repaint)
                         {
-                            EditorGUI.DrawRect(cell, selectedPath == path ? StudioTheme.Current.Accent * .45f : StudioTheme.Current.Header);
-                            if (texture) GUI.DrawTexture(new Rect(cell.x + 4, cell.y + 4, thumbnailSize, thumbnailSize), texture, ScaleMode.ScaleToFit, true);
-                            GUI.Label(new Rect(cell.x + 2, cell.y + thumbnailSize + 6, cell.width - 4, 22), new GUIContent(Path.GetFileNameWithoutExtension(path), path), EditorStyles.centeredGreyMiniLabel);
+                            EditorGUI.DrawRect(cell, selectedPath == path ? StudioTheme.Current.Selection : StudioTheme.Current.Panel);
+                            var preview = new Rect(cell.x + 6, cell.y + 4, thumbnailSize, thumbnailSize);
+                            DrawChecker(preview);
+                            if (texture) GUI.DrawTexture(preview, texture, ScaleMode.ScaleToFit, true);
+                            var caption = new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.UpperCenter, wordWrap = true, clipping = TextClipping.Clip };
+                            GUI.Label(new Rect(cell.x + 3, cell.y + thumbnailSize + 9, cell.width - 6, 38), new GUIContent(Path.GetFileNameWithoutExtension(path), path), caption);
                         }
                         HandleImageInput(cell, path, texture);
                     }
