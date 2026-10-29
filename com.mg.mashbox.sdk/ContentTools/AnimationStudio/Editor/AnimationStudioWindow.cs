@@ -78,12 +78,26 @@ namespace MashBoxSDK.AnimationStudio
             });
         }
 
+        [MenuItem("Assets/Open in MashBox Modeler", false, 1999)]
+        private static void OpenSelectedModel()
+        {
+            if (!CanOpenSelectedMesh()) return;
+            var asset = Selection.activeObject;
+            OpenWorkspace(window =>
+            {
+                window.SwitchStudioMode(true);
+                window.EnsureModelEditor();
+                window.modelEditor.ImportDroppedSource(asset, window.LoadStudioModel);
+            });
+        }
+
         [MenuItem("Assets/Retopologize in MashBox Studio", false, 2001)]
         private static void RetopologizeSelectedMesh() => OpenSelectedMeshInStudio(false);
 
         [MenuItem("Assets/Skin in MashBox Studio", false, 2002)]
         private static void SkinSelectedMesh() => OpenSelectedMeshInStudio(true);
 
+        [MenuItem("Assets/Open in MashBox Modeler", true)]
         [MenuItem("Assets/Retopologize in MashBox Studio", true)]
         [MenuItem("Assets/Skin in MashBox Studio", true)]
         private static bool CanOpenSelectedMesh()

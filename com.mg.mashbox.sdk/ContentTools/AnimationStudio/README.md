@@ -1,5 +1,7 @@
 # MashBox Studio
 
+Right-click an FBX model or mesh sub-asset in Unity's Project browser and choose **Open in MashBox Modeler**. Studio opens in Modeling mode and imports the selection into the current workspace, preserving existing objects and the viewport camera. Source assets remain unchanged.
+
 
 
 
