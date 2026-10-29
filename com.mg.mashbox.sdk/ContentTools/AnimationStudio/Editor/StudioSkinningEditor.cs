@@ -789,7 +789,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EndStroke();
             if (!Document.parts.Any(p => p.bound || p.role == StudioSkinningDocument.MeshRole.Headgear)) throw new InvalidOperationException("Add a skinned mesh or rigid headgear before exporting.");
-            string path = EditorUtility.SaveFilePanelInProject("Export skinned character", "Skinned Character", "prefab", "Export independent meshes and a skeleton prefab.");
+            string path = StudioFileDialogs.SaveAssetInProject("Export skinned character", "Skinned Character", "prefab", "Export independent meshes and a skeleton prefab.");
             if (string.IsNullOrEmpty(path)) return;
             path = AssetDatabase.GenerateUniqueAssetPath(path);
             string meshPath = AssetDatabase.GenerateUniqueAssetPath(System.IO.Path.ChangeExtension(path,null) + " Meshes.asset");

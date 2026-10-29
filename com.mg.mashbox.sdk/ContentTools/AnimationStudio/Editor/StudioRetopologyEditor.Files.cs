@@ -25,7 +25,7 @@ namespace MashBoxSDK.AnimationStudio
                         var document=StudioRetopologyDocument.OpenWorkspaceFile(path);
                         if(!document)throw new InvalidOperationException("Choose a Retopology workspace asset from this project.");OpenWorkspace?.Invoke(document);
                     }));
-                    menu.AddItem(new GUIContent("Import Reference..."),false,()=>Run(()=>ImportPath(EditorUtility.OpenFilePanel("Import Reference",Application.dataPath,"fbx,obj,blend"))));
+                    menu.AddItem(new GUIContent("Import Reference..."),false,()=>Run(()=>ImportPath(StudioFileDialogs.OpenAsset("Import Reference","fbx,obj,blend"))));
                     menu.AddItem(new GUIContent("Save Workspace\tCtrl+S"),false,()=>Run(Document.SaveWorkspace));
                     menu.AddSeparator("");
                     Command(menu,"Send to Skinner",()=>SendToSkinner?.Invoke(Active));
@@ -106,7 +106,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!obj && !StudioFbxDependency.Require()) return;
             if(Active==null||Active.faces.Count==0)return;
-            string path=EditorUtility.SaveFilePanel("Export Retopology Mesh",Application.dataPath,Active.name+"_Low",obj?"obj":"fbx");if(string.IsNullOrEmpty(path))return;
+            string path=StudioFileDialogs.SaveAsset("Export Retopology Mesh",Active.name+"_Low",obj?"obj":"fbx");if(string.IsNullOrEmpty(path))return;
             if(obj)
             {
                 var culture=CultureInfo.InvariantCulture;var text=new StringBuilder("# MashBox Studio Retopology\n");

@@ -81,7 +81,7 @@ namespace MashBoxSDK.AnimationStudio
             string suggested=AssetDatabase.GenerateUniqueAssetPath("Assets/"+Path.GetFileNameWithoutExtension(part.name)+".fbx");
             while (true)
             {
-                string path=EditorUtility.SaveFilePanelInProject("Save FBX As",Path.GetFileNameWithoutExtension(suggested),"fbx","Save a new FBX, or choose the linked source to update it.");
+                string path=StudioFileDialogs.SaveAssetInProject("Save FBX As",Path.GetFileNameWithoutExtension(suggested),"fbx","Save a new FBX, or choose the linked source to update it.");
                 if (string.IsNullOrEmpty(path)) return;
                 bool exists=File.Exists(Path.GetFullPath(path))||File.Exists(Path.GetFullPath(path)+".meta");
                 if (!exists) { SavePartFbx(part,path); return; }

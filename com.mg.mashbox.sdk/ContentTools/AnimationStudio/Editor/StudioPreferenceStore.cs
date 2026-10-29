@@ -98,6 +98,8 @@ namespace MashBoxSDK.AnimationStudio
             var defaults = new Configuration { format = "MashBoxStudio.Preferences", version = 1 };
             void Add(string key, string value) => defaults.entries.Add(new Entry { key = key, value = value });
             void Number(string key, float value) => Add(key, value.ToString("R", Invariant));
+            Add("Studio.Files.WorkspaceFolder", "");
+            Add("Studio.Files.AssetFolder", "");
             Add(StudioSettings.PreferenceKey, JsonUtility.ToJson(new StudioSettings.Preferences()));
             foreach (var item in new[] { ("Bevel Edges", "Width", .1f), ("Bevel Edges", "Subdivisions", 1f), ("Bevel Edges", "Tension", 1f), ("Bevel Edges", "Junction", 0f), ("Soften Edges", "Angle", 45f), ("Extrude", "Distance", .01f), ("Extrude", "Inset", 0f), ("Extrude", "Together", 1f) })
                 Number(ToolChannelPane.DefaultKey(item.Item1, item.Item2), item.Item3);

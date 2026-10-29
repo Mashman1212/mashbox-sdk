@@ -18,7 +18,7 @@ namespace MashBoxSDK.AnimationStudio
             var source = clothMeshSources[clothRendererIndex];
             if (!source) throw new InvalidOperationException("The garment source is missing. Reload it before exporting.");
             string name = string.Concat(clothMeshRows[clothRendererIndex].name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-            string path = EditorUtility.SaveFilePanelInProject("Export cloth prefab", name + " Cloth", "prefab", "Save the garment and its runtime cloth setup.");
+            string path = StudioFileDialogs.SaveAssetInProject("Export cloth prefab", name + " Cloth", "prefab", "Save the garment and its runtime cloth setup.");
             if (string.IsNullOrEmpty(path)) return;
             // Keep existing prefabs intact; each export is a separate finished garment.
             path = AssetDatabase.GenerateUniqueAssetPath(path);

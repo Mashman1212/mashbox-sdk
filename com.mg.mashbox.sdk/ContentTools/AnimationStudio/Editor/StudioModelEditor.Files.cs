@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         private void OpenWorkspace(Action<StudioModelDocument> loaded)
         {
             System.IO.Directory.CreateDirectory(StudioModelDocument.WorkspaceFolder);
-            string path = EditorUtility.OpenFilePanelWithFilters("Open MashBox Studio workspace", StudioModelDocument.WorkspaceFolder,
+            string path = StudioFileDialogs.OpenWorkspace("Open MashBox Studio workspace",
                 new[] { "MashBox Studio workspace", StudioModelDocument.WorkspaceExtension, "Legacy workspace (convert)", "asset" });
             if (string.IsNullOrEmpty(path)) return;
             OpenWorkspacePath(path, loaded);
@@ -174,7 +174,7 @@ namespace MashBoxSDK.AnimationStudio
             if (WorkspaceSavePathChoice != null) path = WorkspaceSavePathChoice();
             else
 #endif
-            path = EditorUtility.SaveFilePanel("Save Workspace As", StudioModelDocument.WorkspaceFolder,
+            path = StudioFileDialogs.SaveWorkspace("Save Workspace As",
                 Document.HasStorage && !IsTemporaryWorkspace ? Document.name + " Copy" : Document.name, StudioModelDocument.WorkspaceExtension);
             if (string.IsNullOrEmpty(path)) return;
             path = StudioModelDocument.ValidateWorkspacePath(path);

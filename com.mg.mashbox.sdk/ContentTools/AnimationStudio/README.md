@@ -907,3 +907,5 @@ Material Library grid labels are inset within thumbnail cards and use two explic
 Material Library settings include **Hide trailing _Mat**, default off. Enabling it hides the suffix in grid/list labels; asset names and full-name tooltips remain unchanged.
 
 Material Library thumbnails use flat plane previews filling the thumbnail square without the native gray border, via transient material copies; source materials and Inspector previews are not modified.
+
+Workspace file dialogs default to MashBoxStudio/Workspaces; model import/export dialogs default to Assets. Each category remembers its own last chosen folder across open/save dialogs through Studio settings. Cancel preserves the previous location; missing folders fall back to the default.

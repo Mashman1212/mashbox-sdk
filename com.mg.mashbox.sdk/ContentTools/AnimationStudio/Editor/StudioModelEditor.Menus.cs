@@ -26,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("New Workspace"), false, () => Run(() => NewWorkspace(loaded)));
                     menu.AddItem(new GUIContent("Open Workspace…"), false, () => Run(() => OpenWorkspace(loaded)));
                     AddRecentFilesMenu(menu, loaded);
-                    menu.AddItem(new GUIContent("Import FBX…"), false, () => Run(() => ImportPath(EditorUtility.OpenFilePanel("Import FBX into workspace", "", "fbx"), loaded)));
+                    menu.AddItem(new GUIContent("Import FBX…"), false, () => Run(() => ImportPath(StudioFileDialogs.OpenAsset("Import FBX into workspace", "fbx"), loaded)));
                     menu.AddSeparator("");
                     AddCommand(menu, StudioShortcuts.MenuLabel("Save Workspace",StudioShortcut.Save), Document, Save);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Save Workspace As…",StudioShortcut.SaveAs), Document, SaveAs);
