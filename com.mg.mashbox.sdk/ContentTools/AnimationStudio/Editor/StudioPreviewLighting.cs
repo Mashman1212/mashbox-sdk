@@ -183,11 +183,19 @@ namespace MashBoxSDK.AnimationStudio
             if(!view||!view.camera)return;
             if(physicalCamera&&!settings.studioLights&&hdrp)
             {
-                if(!cameraMaterialLighting){ApplyMaterialPreview();cameraMaterialLighting=true;}
+                if(!cameraMaterialLighting)
+                {
+                    ApplyMaterialPreview();cameraMaterialLighting=true;
+                    Key.intensity=Mathf.Clamp(settings.keyIntensity,0,8)*100;
+                    Fill.intensity=Mathf.Clamp(settings.fillIntensity,0,8)*100;
+                    Key.color=settings.keyColor;Fill.color=settings.fillColor;
+                    if(exposure)Parameter(exposure,"fixedExposure",6f-Mathf.Clamp(settings.exposure,-5,5));
+                    if(indirectLighting)Parameter(indirectLighting,"reflectionLightingMultiplier",Mathf.Clamp(settings.cameraReflectionIntensity,0,2));
+                }
                 // A real camera-relative lighting rig lets the authored HDRP shader
                 // evaluate its own metallic, roughness, maps and surface features.
                 var rotation=view.camera.transform.rotation;
-                var keyRotation=rotation*Quaternion.Euler(25,-25,0);var fillRotation=rotation*Quaternion.Euler(-15,35,0);
+                var keyRotation=rotation*Quaternion.Euler(settings.elevation,settings.azimuth,0);var fillRotation=rotation*Quaternion.Euler(-15,35,0);
                 if(Key.transform.rotation!=keyRotation)Key.transform.rotation=keyRotation;
                 if(Fill.transform.rotation!=fillRotation)Fill.transform.rotation=fillRotation;
             }

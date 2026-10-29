@@ -122,7 +122,7 @@ namespace MashBoxSDK.AnimationStudio
             Number(StudioMaterialLibraryIndex.SourcesKey, 3);
             Number("Studio.MaterialLibrary.Thumbnail", 76);
             Number("Studio.MaterialLibrary.FolderWidth", 145);
-            Number("Studio.MaterialLibrary.LockInspector", 0);
+            Number("Studio.MaterialLibrary.HideMaterialSuffix", 0);
             Add("Studio.Mode", "Modeling");
             return defaults;
         }

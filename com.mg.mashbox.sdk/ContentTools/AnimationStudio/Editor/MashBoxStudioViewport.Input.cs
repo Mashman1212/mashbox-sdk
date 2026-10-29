@@ -18,7 +18,9 @@ namespace MashBoxSDK.AnimationStudio
         private Action releaseStudioHolds;
         internal Vector2 CanvasInputOrigin { get; private set; }
         internal Vector2? CanvasMousePosition { get; private set; }
-        private bool navigating;
+        private bool navigating, cameraDragStartedInCanvas, cameraDragStartedInUI;
+        private int cameraPointerGeneration;
+        private IMGUIContainer cameraInputCanvas;
         private StudioShortcut navigation;
         private int navigationControl, navigationButton;
 
@@ -40,6 +42,7 @@ namespace MashBoxSDK.AnimationStudio
                 // SceneView's native camera IMGUI container owns its main OnGUI callback.
                 bool canvas = ReferenceEquals(handler.original.Target,this) &&
                     (handler.original.Method.DeclaringType == typeof(SceneView) || handler.original.Method.Name == nameof(OnSceneGUI));
+                if (canvas) cameraInputCanvas = container;
                 if(!canvas)BindStudioHoverRedraw(container);
                 handler.wrapped = () => {
                     var inputEvent = Event.current;
@@ -65,14 +68,14 @@ namespace MashBoxSDK.AnimationStudio
                         {
                             var evt = Event.current;
                             bool pointer = evt.isMouse || evt.type == EventType.ScrollWheel || evt.type == EventType.ContextClick || evt.type == EventType.DragUpdated || evt.type == EventType.DragPerform;
-                            bool toolbar = IsOverViewportControls(evt.mousePosition);
-                            if (pointer && toolbar) { releaseStudioHolds?.Invoke(); evt.Use(); }
+                            bool toolbar = IsOverCameraUI(evt.mousePosition + CanvasInputOrigin);
+                            if (pointer && toolbar && !navigating && !cameraDragStartedInCanvas) { releaseStudioHolds?.Invoke(); evt.Use(); }
                             else RouteStudioCanvasInput();
                         }
                         else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider)) studioKeyboard?.Invoke();
                     }
                     try { handler.original(); }
-                    finally { if (menuBlocked) inputEvent.mousePosition = mousePosition; if(canvas)UpdateMeshToolCursor(container,menuBlocked); }
+                    finally { if (menuBlocked) inputEvent.mousePosition = mousePosition; if(canvas) { UpdateMeshToolCursor(container,menuBlocked); DrawCameraOwnershipCursor(); } }
                     // Panels get their text-field and rename handling first. Everything else
                     // stays in Studio instead of falling through to Unity's global shortcuts.
                     if (studioInputActive != null && studioInputActive() && Event.current.isKey)
@@ -188,7 +191,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (navigating && GUIUtility.hotControl == navigationControl) GUIUtility.hotControl = 0;
             selectionPaintHeldKey = KeyCode.None; selectionPaintHoldCancelled = false;
-            navigating = false; releaseStudioHolds?.Invoke();
+            navigating = false; cameraDragStartedInCanvas = cameraDragStartedInUI = false; cameraPointerGeneration++; releaseStudioHolds?.Invoke();
         }
         private void TickStudioInput()
         {
@@ -208,6 +211,62 @@ namespace MashBoxSDK.AnimationStudio
             RestoreStudioInput();
             base.OnDisable();
         }
+        private void RecordCameraPointerDown(Vector2 rootPoint)
+        {
+            cameraPointerGeneration++;
+            cameraDragStartedInUI = IsOverCameraUI(rootPoint);
+            cameraDragStartedInCanvas = !cameraDragStartedInUI;
+        }
+        private void TrackCameraPointerDown(PointerDownEvent evt)
+        {
+            RecordCameraPointerDown(rootVisualElement.WorldToLocal((Vector2)evt.position));
+        }
+        private void TrackCameraPointerUp(PointerUpEvent evt)
+        {
+            // Keep ownership while this release is delivered to IMGUI. A release
+            // over a UI control may never reach the camera's own callback.
+            int generation = cameraPointerGeneration;
+            EditorApplication.delayCall += () => {
+                if (this && generation == cameraPointerGeneration)
+                    cameraDragStartedInUI = cameraDragStartedInCanvas = false;
+            };
+        }
+        private void TrackCameraPointerCancel(PointerCancelEvent evt)
+        { cameraPointerGeneration++; cameraDragStartedInUI = cameraDragStartedInCanvas = false; }
+        private void DrawCameraOwnershipCursor()
+        {
+            if (!cameraDragStartedInUI || Event.current == null || Event.current.type != EventType.Repaint) return;
+            EditorGUIUtility.AddCursorRect(new Rect(Vector2.zero, cameraInputCanvas != null ? cameraInputCanvas.contentRect.size : position.size), MouseCursor.Arrow);
+        }
+        private bool IsOverCameraUI(Vector2 point) => IsOverViewportControls(point) ||
+            IsOverControl(inspector, point) || IsOverControl(modelToolOptions, point) || IsOverControl(rigControls, point) ||
+            IsOverControl(timeline, point) || IsOverControl(attachments, point) ||
+            IsOverControl(leftDivider, point) || IsOverControl(rightDivider, point) || IsOverControl(toolOptionsDivider, point) ||
+            IsOverControl(skinInfluencesPanel, point) || IsOverControl(skinInfluencesTab, point) ||
+            IsOverControl(skinLeftTab, point) || IsOverControl(skinRightTab, point) || IsOverControl(skinPracticeTab, point);
+        private bool GuardCameraPanelInput()
+        {
+            // This guard also runs in modes using native SceneView navigation,
+            // where the modeling input wrapper is deliberately not installed.
+            if (cameraInputCanvas == null || !rootVisualElement.Contains(cameraInputCanvas))
+                foreach (var container in StudioChromeRoot.Query<IMGUIContainer>().ToList())
+                {
+                    var callback = studioInputHandlers.TryGetValue(container, out var saved) ? saved.original : container.onGUIHandler;
+                    if (callback != null && ReferenceEquals(callback.Target, this) &&
+                        (callback.Method.DeclaringType == typeof(SceneView) || callback.Method.Name == nameof(OnSceneGUI)))
+                    { cameraInputCanvas = container; break; }
+                }
+            if (cameraInputCanvas != null)
+                CanvasInputOrigin = rootVisualElement.WorldToLocal(cameraInputCanvas.LocalToWorld(Vector2.zero));
+            var evt = Event.current;
+            if (evt == null) return false;
+            if (!evt.isMouse && evt.type != EventType.ScrollWheel && evt.type != EventType.ContextClick) return false;
+            var point = evt.mousePosition + CanvasInputOrigin;
+            if (evt.type == EventType.MouseDown && !cameraDragStartedInUI && !cameraDragStartedInCanvas) RecordCameraPointerDown(point);
+            bool overUI = IsOverCameraUI(point);
+            if (cameraDragStartedInUI || (overUI && !cameraDragStartedInCanvas && !navigating)) { evt.Use(); return true; }
+            return false;
+        }
         private void RouteStudioCanvasInput()
         {
             var evt = Event.current;
@@ -219,6 +278,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (evt.isKey) evt.Use();
                 return;
             }
+            if (cameraDragStartedInUI && (evt.isMouse || evt.type == EventType.ScrollWheel || evt.type == EventType.ContextClick))
+            { evt.Use(); return; }
             if (navigating)
             {
                 if (GUIUtility.hotControl != navigationControl) { ReleaseStudioInput(); return; }
@@ -251,14 +312,24 @@ namespace MashBoxSDK.AnimationStudio
                 !StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt) &&
                 !StudioShortcuts.Matches(StudioShortcut.AxisMenu,evt) && GUIUtility.hotControl == 0) evt.Use();
         }
+        internal void EnsurePerspectiveCamera()
+        {
+            if (!in2DMode && !isRotationLocked && !orthographic && (!camera || !camera.orthographic)) return;
+            var center = pivot; var frame = rotation; float viewSize = size;
+            in2DMode = false; isRotationLocked = false; orthographic = false;
+            if (camera) camera.orthographic = false;
+            LookAtDirect(center, frame, viewSize);
+            MarkDirty(DirtyState.Camera);
+        }
         internal void ApplyStudioNavigation(StudioShortcut action, Vector2 delta)
         {
+            EnsurePerspectiveCamera();
             delta *= NavigationSensitivity;
             if (action == StudioShortcut.Orbit)
             {
                 if (delta.sqrMagnitude == 0) return;
                 var center = pivot; var frame = rotation; float viewSize = size;
-                bool projection = orthographic;
+                bool projection = false;
                 // A deliberate orbit releases native SceneView's axis/2D locks.
                 // Direct placement also stops a pending axis-view animation.
                 in2DMode = false; isRotationLocked = false;

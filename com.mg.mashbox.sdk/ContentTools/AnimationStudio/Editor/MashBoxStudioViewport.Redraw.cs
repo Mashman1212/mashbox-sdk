@@ -31,6 +31,11 @@ namespace MashBoxSDK.AnimationStudio
 
         protected override void OnSceneGUI()
         {
+            if (GuardCameraPanelInput()) {
+                if (Event.current.rawType == EventType.MouseUp) cameraDragStartedInUI = cameraDragStartedInCanvas = false;
+                return;
+            }
+            EnsurePerspectiveCamera();
             if (clearCanvasKeyboardFocus)
             {
                 GUIUtility.keyboardControl = 0;
@@ -38,19 +43,21 @@ namespace MashBoxSDK.AnimationStudio
             }
             ApplyViewportVSync();
             bool repaint = Event.current != null && Event.current.type == EventType.Repaint;
-            if (repaint && PresentUnchangedViewport()) return;
+            if (repaint && PresentUnchangedViewport()) { DrawCameraOwnershipCursor(); return; }
             if (repaint) viewportDirty = DirtyState.None;
             if (repaint) BeginViewportImageCapture();
             try
             {
                 base.OnSceneGUI();
+                DrawCameraOwnershipCursor();
+                EnsurePerspectiveCamera();
                 if (repaint) { 
 #if MASHBOX_STUDIO_TESTS
                 ViewportRenderCount++;
 #endif
  FinishViewportImageCapture(); }
             }
-            finally { capturingViewport = false; }
+            finally { capturingViewport = false; if (Event.current != null && Event.current.rawType == EventType.MouseUp) cameraDragStartedInUI = cameraDragStartedInCanvas = false; }
         }
 
         private void ReleaseViewportRedraw() { ReleaseViewportImageCache(); RestoreViewportVSync(); }
