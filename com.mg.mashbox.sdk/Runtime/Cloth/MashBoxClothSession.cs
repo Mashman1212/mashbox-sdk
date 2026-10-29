@@ -67,6 +67,7 @@ namespace MashBoxSDK.Cloth
 
         public MashBoxClothSession(Renderer source, MashBoxClothProfile profile, Transform collisionRoot)
         {
+            if (profile) profile.ApplyFixedSettings();
             Source = source; Profile = profile; SourceMesh = GetMesh(source); skin = source as SkinnedMeshRenderer;
             if (!source || !profile || !profile.Matches(SourceMesh)) throw new ArgumentException("Assign a profile made for this exact garment mesh.");
             if (!SourceMesh.isReadable) throw new ArgumentException("Enable Read/Write on the garment mesh importer.");
@@ -147,6 +148,7 @@ namespace MashBoxSDK.Cloth
         public void Advance(float deltaTime)
         {
             if (disposed || !Source || !Profile) return;
+            Profile.ApplyFixedSettings();
             float fixedDt = 1f / Mathf.Clamp(Profile.frequency, 15, 120);
             accumulator += Mathf.Clamp(deltaTime, 0, .25f);
             int due = Mathf.FloorToInt(accumulator / fixedDt);
@@ -167,6 +169,7 @@ namespace MashBoxSDK.Cloth
         public void Step(float dt)
         {
             if (disposed || !Source || !Profile) return;
+            Profile.ApplyFixedSettings();
             if (!Profile.Matches(GetMesh(Source))) throw new InvalidOperationException("Garment mesh or profile changed; rebuild the cloth session.");
             totalWatch.Restart(); bakeWatch.Restart();
             ReadPose(); bakeWatch.Stop(); BakeMilliseconds = bakeWatch.Elapsed.TotalMilliseconds;

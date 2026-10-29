@@ -34,7 +34,9 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var collider=references[index].GetComponent<MeshCollider>();
                 float allowance=epsilon;
-                if(workingXray&&Active.reference)
+                // X-ray display depth is only a selection convenience. Snapping must
+                // never inherit it and target an occluded vertex.
+                if(allowThroughSelection&&workingXray&&Active.reference)
                 {
                     var bounds=Active.reference.bounds.size;
                     allowance+=Mathf.Max(bounds.x,Mathf.Max(bounds.y,bounds.z))*xrayDepthPercent*.01f;
@@ -291,7 +293,7 @@ namespace MashBoxSDK.AnimationStudio
                 var mouse=Event.current.mousePosition;
                 if(selectionMode==SelectionMode.Vertices)
                 {
-                    int vertex=PickVertex(mouse);if(vertex<0)return;
+                    int vertex=PickVertex(mouse,allowThroughSelection:true);if(vertex<0)return;
                     Vertex(vertex,selected.Contains(vertex)?selectedColor:hoverColor,.06f);
                     var point=Active.vertices[vertex];Handles.DrawWireDisc(point,view.camera.transform.forward,HandleUtility.GetHandleSize(point)*.055f);
                 }

@@ -21,12 +21,12 @@ namespace MashBoxSDK.Cloth
         [Min(.001f), Tooltip("Radius of the sphere behind each particle, in metres. Larger spheres block a wider area.")]
         public float backstopRadius = .05f;
         [Range(0, 1), Tooltip("Tangential velocity removed on body contact.")] public float collisionFriction;
-        [Range(32, 8192)] public int particleBudget = 1500;
-        [Range(15, 120)] public int frequency = 60;
+        [Range(32, 8192)] [HideInInspector] public int particleBudget = 3000;
+        [Range(15, 120)] [HideInInspector] public int frequency = 30;
         [Tooltip("Blend between physics steps at the display update rate. Adds one physics step of visual latency without additional solver steps.")]
-        public bool interpolateMotion = true;
-        [Range(1, 8)] public int substeps = 2;
-        [Range(1, 16)] public int iterations = 4;
+        [HideInInspector] public bool interpolateMotion = true;
+        [Range(1, 8)] [HideInInspector] public int substeps = 4;
+        [Range(1, 16)] [HideInInspector] public int iterations = 4;
         [Min(0)] public float stretchCompliance = 0.000001f;
         [Min(0)] public float bendCompliance = 0.001f;
         [Range(0, 20)] public float damping = 3;
@@ -42,11 +42,26 @@ namespace MashBoxSDK.Cloth
         public Vector3 wind = new Vector3(0, 0, 4);
         [Range(0, 1)] public float gust = .25f;
         [Range(0.001f, .05f)] public float thickness = .008f;
-        [Min(.1f)] public float teleportDistance = 2;
+        [Min(.1f)] [HideInInspector] public float teleportDistance = 1;
         [Tooltip("Keep imported smooth shading, updated by the character animation. Cloth folds do not rebuild normals from triangles.")]
-        public bool preserveAuthoredShading = true;
+        [HideInInspector] public bool preserveAuthoredShading = false;
         [Tooltip("When preserving authored shading is off, recalculate normals at this physics-step interval. Zero uses animated imported shading.")]
-        [Range(0, 60)] public int normalsEverySteps = 2;
+        [Range(0, 60)] [HideInInspector] public int normalsEverySteps = 0;
+
+        // Fixed quality policy also replaces legacy serialized tuning on load.
+        public void ApplyFixedSettings()
+        {
+            particleBudget = 3000;
+            frequency = 30;
+            interpolateMotion = true;
+            substeps = 4;
+            iterations = 4;
+            teleportDistance = 1;
+            preserveAuthoredShading = false;
+            normalsEverySteps = 0;
+        }
+        private void OnEnable() => ApplyFixedSettings();
+        private void OnValidate() => ApplyFixedSettings();
 
         public bool Matches(Mesh mesh) => mesh && sourceMesh == mesh && motion != null && motion.Length == mesh.vertexCount;
 

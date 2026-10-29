@@ -33,14 +33,9 @@ namespace MashBoxSDK.AnimationStudio
                 if (!GUILayout.Button(label)) return;
                 serialized.FindProperty("bendCompliance").floatValue = bend;
                 serialized.FindProperty("stretchCompliance").floatValue = stretch;
-                // Preserve higher quality settings already chosen by the user.
-                var solveIterations = serialized.FindProperty("iterations");
-                var solveSubsteps = serialized.FindProperty("substeps");
-                solveIterations.intValue = Mathf.Max(solveIterations.intValue, iterations);
-                solveSubsteps.intValue = Mathf.Max(solveSubsteps.intValue, substeps);
                 GUI.changed = true;
             }
-            if (GUILayout.Button(new GUIContent("Flowing", "Soft folds with animation momentum. Sets Follow 0.75, Inertia 0.65, Damping 3, mild wind, and updates solver quality. Painted weights and collision settings are preserved.")))
+            if (GUILayout.Button(new GUIContent("Flowing", "Soft folds with animation momentum. Sets Follow 0.75, Inertia 0.65, Damping 3, mild wind, and preserves solver quality. Painted weights and collision settings are preserved.")))
             {
                 serialized.FindProperty("animationFollow").floatValue = .75f;
                 serialized.FindProperty("animationInertia").floatValue = .65f;
@@ -49,16 +44,13 @@ namespace MashBoxSDK.AnimationStudio
                 serialized.FindProperty("stretchCompliance").floatValue = .000001f;
                 serialized.FindProperty("wind").vector3Value = new Vector3(0,0,1);
                 serialized.FindProperty("gust").floatValue = .2f;
-                serialized.FindProperty("iterations").intValue = Mathf.Max(6,serialized.FindProperty("iterations").intValue);
-                serialized.FindProperty("substeps").intValue = Mathf.Max(4,serialized.FindProperty("substeps").intValue);
-                serialized.FindProperty("normalsEverySteps").intValue = 1;
                 GUI.changed = true;
             }
             Preset("Soft", .001f, .000001f, 4, 2);
             Preset("Firm", .00001f, .0000001f, 8, 3);
             Preset("Stiff", .0000001f, 0, 12, 4);
             GUILayout.EndHorizontal();
-            GUILayout.Label("Presets are starting points; Firm and Stiff also raise solver quality. For blocky particle boundaries, increase Particle Budget and rebuild. A larger grab radius spreads the pull.", EditorStyles.wordWrappedMiniLabel);
+            GUILayout.Label("Presets are starting points. A larger grab radius spreads the pull.", EditorStyles.wordWrappedMiniLabel);
             clothAdvancedStiffness = EditorGUILayout.Foldout(clothAdvancedStiffness, "Advanced compliance values", true);
             if (clothAdvancedStiffness)
             {

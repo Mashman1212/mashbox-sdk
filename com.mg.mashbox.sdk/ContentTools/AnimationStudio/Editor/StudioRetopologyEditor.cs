@@ -356,7 +356,7 @@ namespace MashBoxSDK.AnimationStudio
             view?.ShowNotification(new GUIContent("Mesh cleaned and checked"));
         }
         private void Project()=>Change("Project topology",()=>{for(int i=0;i<Active.vertices.Count;i++)if(selected.Count==0||selected.Contains(i))Active.vertices[i]=Surface.Project(Active.vertices[i],Document.offset);});
-        private void Relax()=>Change("Relax topology",()=>StudioRetopologyOperations.Relax(Active,Document.project?Surface:null,Document.preserveBorders,Document.offset,selected));
+        private void Relax()=>Change("Relax topology",()=>StudioRetopologyOperations.Relax(Active,Document.project?Surface:null,true,Document.offset,selected));
         private void BridgeLoops()
         {
             if(selectionMode==SelectionMode.Faces){status="Switch to Edges and select matching borders on both sides of the gap.";return;}

@@ -60,6 +60,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             Menu("UV",menu=>
             {
+                if(Active!=null&&Active.faces.Count>0)menu.AddItem(new GUIContent("UV Editor..."),false,()=>Run(OpenRetopologyUVEditor));
+                else menu.AddDisabledItem(new GUIContent("UV Editor..."));
                 if(Active?.reference&&Active.faces.Count>0)menu.AddItem(new GUIContent("Transfer UVs from Reference"),false,()=>Run(TransferReferenceUVs));
                 else menu.AddDisabledItem(new GUIContent("Transfer UVs from Reference"));
                 menu.AddSeparator("");

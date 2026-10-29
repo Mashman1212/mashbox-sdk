@@ -38,7 +38,7 @@ namespace MashBoxSDK.AnimationStudio
             var garmentMeshes = new HashSet<Mesh>(garments.Where(g=>g).SelectMany(ClothSourceMeshes));
             // An explicit drop promotes default clothing into an editable target.
             // Do not also instantiate a locked copy of the same garment mesh.
-            foreach(var reference in new[]{defaults.pants,defaults.shirt}.Where(g=>g))
+            foreach(var reference in new[]{defaults.pants,defaults.shirt,defaults.hair,defaults.hat}.Where(g=>g))
                 if(!ClothSourceMeshes(reference).Overlaps(garmentMeshes))sources.Add(reference);
             sources.AddRange(garments);
             return sources.Where(s => s).Distinct().ToArray();
@@ -52,6 +52,8 @@ namespace MashBoxSDK.AnimationStudio
             var defaults = StudioDefaultReferences.LoadSkinning(StudioDefaultReferences.SkinningPath);
             var pantsMeshes = defaults && defaults.pants ? ClothSourceMeshes(defaults.pants) : new HashSet<Mesh>();
             var shirtMeshes = defaults && defaults.shirt ? ClothSourceMeshes(defaults.shirt) : new HashSet<Mesh>();
+            var hairMeshes = defaults && defaults.hair ? ClothSourceMeshes(defaults.hair) : new HashSet<Mesh>();
+            var hatMeshes = defaults && defaults.hat ? ClothSourceMeshes(defaults.hat) : new HashSet<Mesh>();
             var garments=clothGarment?new[]{clothGarment}:clothOutfit??Array.Empty<GameObject>();
             var editableMeshes=new HashSet<Mesh>(garments.Where(g=>g).SelectMany(ClothSourceMeshes));
             var sourceMeshes = sources.Select(ClothSourceMeshes).ToArray();
@@ -74,14 +76,15 @@ namespace MashBoxSDK.AnimationStudio
                 var mesh = MashBoxClothSession.GetMesh(renderer);
                 bool isBody = bodyMeshes.Contains(mesh), isBust = bustMeshes.Contains(mesh);
                 bool isPants = pantsMeshes.Contains(mesh), isShirt = shirtMeshes.Contains(mesh);
-                bool lockedClothing=(isPants||isShirt)&&!editableMeshes.Contains(mesh);
+                bool isHair=hairMeshes.Contains(mesh), isHat=hatMeshes.Contains(mesh);
+                bool lockedClothing=(isPants||isShirt||isHair||isHat)&&!editableMeshes.Contains(mesh);
                 int source = Array.FindIndex(sourceMeshes, set => set.Contains(mesh));
                 clothMeshSources[i] = source >= 0 ? sources[source] : null;
                 clothMeshRows[i] = new StudioSkinningDocument.Part {
                     name = renderer.name.Replace("Preview • ", ""), mesh = mesh, sourceMesh = mesh,
                     referenceOnly = isBody || isBust || lockedClothing, bound = renderer is SkinnedMeshRenderer,
-                    defaultReferenceLabel = lockedClothing ? (isPants ? "Default Pants" : "Default Shirt") : null,
-                    role = isBody ? StudioSkinningDocument.MeshRole.Body : isBust ? StudioSkinningDocument.MeshRole.Bust : StudioSkinningDocument.MeshRole.Clothing,
+                    defaultReferenceLabel = lockedClothing ? (isHair ? "Default Hair" : isHat ? "Default Hat" : isPants ? "Default Pants" : "Default Shirt") : null,
+                    role = isHair || isHat ? StudioSkinningDocument.MeshRole.Headgear : isBody ? StudioSkinningDocument.MeshRole.Body : isBust ? StudioSkinningDocument.MeshRole.Bust : StudioSkinningDocument.MeshRole.Clothing,
                     visible = !clothHiddenMeshes.Contains(mesh)
                 };
                 renderer.gameObject.SetActive(clothMeshRows[i].visible);
@@ -218,6 +221,14 @@ namespace MashBoxSDK.AnimationStudio
                     {
                         var mesh=part.sourceMesh;
                         var menu=new GenericMenu();
+                        if (!part.referenceOnly)
+                            menu.AddItem(new GUIContent("Export cloth prefab…"),false,()=>ClothAction(()=>
+                            {
+                                int index=Array.FindIndex(clothMeshRows,p=>p.sourceMesh==mesh);
+                                if(index<0)return;
+                                if(index!=clothRendererIndex)SelectClothMesh(index);
+                                ExportClothPrefab();
+                            }));
                         menu.AddItem(new GUIContent("Remove mesh from studio"),false,()=>ClothAction(()=>RemoveClothMesh(mesh)));
                         menu.ShowAsContext();Event.current.Use();
                     }
@@ -279,6 +290,9 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddItem(new GUIContent("New Scene"), false, () => ClothAction(NewClothScene));
             menu.AddItem(new GUIContent("Add Animation outfit"), false, () => ClothAction(() => AddClothModels(clothing ?? Array.Empty<GameObject>())));
             if(clothRemovedMeshes.Count>0)menu.AddItem(new GUIContent("Restore removed meshes"),false,()=>ClothAction(RestoreClothMeshes));
+            menu.AddSeparator("");
+            if(ClothEditable) menu.AddItem(new GUIContent("Export cloth prefab…"),false,()=>ClothAction(ExportClothPrefab));
+            else menu.AddDisabledItem(new GUIContent("Export cloth prefab…"));
             menu.DropDown(rect);
         }
     }

@@ -280,6 +280,7 @@ namespace MashBoxSDK.AnimationStudio
             SaveAnimationConfiguration();
             StudioPreferenceStore.Flush();
             ReleaseModelEditor();
+            ReleaseMeshStudioPreviews();
             ReleaseImagePosePreview();
             SceneView.duringSceneGui -= DuringSceneGUI;
             SceneView.beforeSceneGui -= BeforeSceneGUI;
@@ -324,9 +325,21 @@ namespace MashBoxSDK.AnimationStudio
         private void PlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.ExitingPlayMode)
-            { ReleaseClothPreview(); ReleaseRig(); ReleaseModelEditor(); }
+            { ReleaseClothPreview(); ReleaseRig(); ReleaseModelEditor(); ReleaseMeshStudioPreviews(); }
             else if (state == PlayModeStateChange.EnteredEditMode || state == PlayModeStateChange.EnteredPlayMode)
                 MashBoxStudioViewport.RestoreStudioViews();
+        }
+        // Documents survive reloads; their disposable preview scenes must not.
+        // Otherwise each reload leaks scene culling masks until new rigs become invisible.
+        private void ReleaseMeshStudioPreviews()
+        {
+            try { retopologyEditor?.Dispose(); }
+            finally
+            {
+                retopologyEditor = null;
+                try { skinningEditor?.Dispose(); }
+                finally { skinningEditor = null; }
+            }
         }
         private void ReleaseRig()
         {
@@ -975,6 +988,7 @@ namespace MashBoxSDK.AnimationStudio
                 modelEditor.BeforeModelSceneGUI(view);
                 return;
             }
+            if (view == viewport && HandleAnimationClipDrop()) return;
             // HDRP and scene-wide effects must treat this as an asset preview.
             // SceneView resets cameraType during SetupCamera, so set it immediately before rendering.
             if (view == viewport && view.camera)

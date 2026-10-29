@@ -9,6 +9,8 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioUVEditor : EditorWindow
     {
         private StudioModelEditor owner;
+        private Mesh retopologyMesh;
+        private System.Action<Mesh> applyRetopology;
         private Mesh mesh;
         private int channel, destination = 1, tool;
         private float zoom = 1;
@@ -26,20 +28,27 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly string[] Channels = Enumerable.Range(0, 8).Select(i => "UV " + i).ToArray();
         internal static void Open(StudioModelEditor editor, int selectedChannel = -1)
         {
-            var window = GetWindow<StudioUVEditor>("UV Editor"); window.owner = editor; window.minSize = new Vector2(780, 500); StudioWindowOwnership.Show(window, editor.ToolChannelPaneOwner);
+            var window = GetWindow<StudioUVEditor>("UV Editor"); window.ReleaseRetopologyMesh(); window.owner = editor; window.minSize = new Vector2(780, 500); StudioWindowOwnership.Show(window, editor.ToolChannelPaneOwner);
             if (selectedChannel >= 0) { window.channel = Mathf.Clamp(selectedChannel, 0, 7); window.CancelInteraction(); window.selection.Clear(); window.pinned.Clear(); window.Repaint(); }
             window.Repaint();
         }
+        internal static void OpenRetopology(Mesh workingCopy,System.Action<Mesh> apply)
+        {
+            var window=GetWindow<StudioUVEditor>("UV Editor");window.CancelInteraction();window.ReleaseRetopologyMesh();
+            window.owner=null;window.retopologyMesh=workingCopy;window.applyRetopology=apply;window.channel=0;
+            window.minSize=new Vector2(780,500);window.Show();window.Focus();window.Repaint();
+        }
+        private void ReleaseRetopologyMesh(){if(retopologyMesh)DestroyImmediate(retopologyMesh);retopologyMesh=null;applyRetopology=null;}
         private void OnEnable() { Undo.undoRedoPerformed += Refresh; }
-        private void OnDisable() { CancelInteraction(); Undo.undoRedoPerformed -= Refresh; }
+        private void OnDisable() { CancelInteraction(); Undo.undoRedoPerformed -= Refresh; ReleaseRetopologyMesh(); }
         private void Refresh() { CancelInteraction(); selection.Clear(); pinned.Clear(); Repaint(); }
         private void OnInspectorUpdate()
         {
-            var selectedMesh = owner != null && owner.Document ? owner.ActiveMesh : null;
+            var selectedMesh = retopologyMesh ? retopologyMesh : owner != null && owner.Document ? owner.ActiveMesh : null;
             if (mesh != selectedMesh) Repaint();
         }
         private List<Vector2> Read() { var result = new List<Vector2>(); if (mesh) mesh.GetUVs(channel, result); return result; }
-        private void Write(IList<Vector2> uv, string label) { StudioModelDocument.SetUVs(mesh, channel, uv, label); owner.Changed(); Repaint(); }
+        private void Write(IList<Vector2> uv, string label) { StudioModelDocument.SetUVs(mesh, channel, uv, label); owner?.Changed(); Repaint(); }
         private void CancelInteraction()
         {
             if (undoGroup >= 0) Undo.CollapseUndoOperations(undoGroup);
@@ -57,10 +66,19 @@ namespace MashBoxSDK.AnimationStudio
                 else if (StudioShortcuts.Pressed(StudioShortcut.Preferences,Event.current)) { StudioControlsPreferences.Open(); Event.current.Use(); }
             }
             if(owner != null && owner.HasBlendShape) { EditorGUILayout.HelpBox("Bake Current Pose before editing blend shape UVs.",MessageType.Info);return; }
-            var selectedMesh = owner != null && owner.Document ? owner.ActiveMesh : null;
+            var selectedMesh = retopologyMesh ? retopologyMesh : owner != null && owner.Document ? owner.ActiveMesh : null;
             if (mesh != selectedMesh)
             {
                 CancelInteraction(); mesh = selectedMesh; selection.Clear(); pinned.Clear(); feedback = "";
+            }
+            if(retopologyMesh)
+            {
+                using(new EditorGUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Retopology UV0 working copy — Apply writes back; closing discards unapplied edits.",EditorStyles.miniLabel);
+                    if(GUILayout.Button("Apply UV0 to Retopology",GUILayout.Width(180)))
+                    {try{applyRetopology?.Invoke(retopologyMesh);feedback="UV0 applied to retopology.";}catch(System.Exception e){feedback=e.Message;}}
+                }
             }
             var uv = Read();
             selection.RemoveWhere(i => i < 0 || i >= uv.Count);
@@ -161,7 +179,7 @@ namespace MashBoxSDK.AnimationStudio
                     var values = (Vector2[])original.Clone(); var delta = ToUV(end) - ToUV(start);
                     float radians = (end.x - start.x) * .01f; float factor = Mathf.Exp((end.x - start.x) * .01f);
                     foreach (int i in selection) values[i] = tool == 1 ? original[i] + delta : tool == 2 ? center + Rotate(original[i] - center, radians) : center + (original[i] - center) * factor;
-                    mesh.SetUVs(channel, values); EditorUtility.SetDirty(mesh); owner.Changed();
+                    mesh.SetUVs(channel, values); EditorUtility.SetDirty(mesh); owner?.Changed();
                 }
                 e.Use(); Repaint();
             }

@@ -13,6 +13,8 @@ namespace MashBoxSDK.AnimationStudio
         public GameObject pants;
         [Tooltip("Optional shirt reference loaded locked and hidden in new Skinning workspaces. Toggle visibility in the mesh list to check clothing fit.")]
         public GameObject shirt;
+        public GameObject hair;
+        public GameObject hat;
         [SerializeField, HideInInspector] private StudioModelReference bodyReference = new StudioModelReference();
         [SerializeField, HideInInspector] private StudioModelReference bustReference = new StudioModelReference();
         [SerializeField, HideInInspector] private StudioModelReference pantsReference = new StudioModelReference();
@@ -21,6 +23,8 @@ namespace MashBoxSDK.AnimationStudio
         private void OnEnable() => StudioDefaultReferences.Queue();
         internal void ResolveReferences()
         {
+            if (!hair) hair = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Matt_Hair.fbx");
+            if (!hat) hat = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.mg.mashbox.sdk/Runtime/Characters/Human/Matt_Hat.fbx");
             body = (bodyReference ??= new StudioModelReference()).Resolve(body);
             bust = (bustReference ??= new StudioModelReference()).Resolve(bust);
             pants = (pantsReference ??= new StudioModelReference()).Resolve(pants);

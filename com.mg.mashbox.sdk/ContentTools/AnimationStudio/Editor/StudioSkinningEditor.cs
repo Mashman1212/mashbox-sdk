@@ -170,6 +170,7 @@ namespace MashBoxSDK.AnimationStudio
                 Document.parts[i].referenceOnly = referenceOnly || IsDefaultReference(Document.parts[i]);
                 Document.parts[i].visible = visible;
                 AssignImportedMeshRole(Document.parts[i], source);
+                if (Document.parts[i].referenceOnly) AssignDefaultMeshRole(Document.parts[i]);
                 if (Document.parts[i].role == StudioSkinningDocument.MeshRole.Headgear)
                 { AlignImportedHeadgear(Document.parts[i],source); MakeHeadgearRigid(Document.parts[i]); }
             }

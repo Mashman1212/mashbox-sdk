@@ -68,18 +68,21 @@ namespace MashBoxSDK.AnimationStudio
         private void CreatePolygon()
         {
             if(corners.Count<3)throw new InvalidOperationException("Place at least three points, then press Enter to fill the outline.");
-            var points=PreparePolygonOutline(corners.ToArray(),out var fixedEdges,out var requiredSeams,out var layoutCorners);var normal=Vector3.zero;
-            for(int i=0;i<points.Length;i++)normal+=Vector3.Cross(points[i]-points[0],points[(i+1)%points.Length]-points[0]);
-            normal=normal.sqrMagnitude>1e-12f?normal.normalized:cornerNormal;
-            if(Vector3.Dot(normal,cornerNormal)<0)normal=-normal;
-            var grid=BuildPolygonGrid(points,patchAutoDensity?PatchQuadSize:0,patchSegments,fixedEdges,layoutCorners);
-            // Keep the complete draft in the same Undo snapshot as the fill.
+            // Edge splits and filling are one transaction: cancelling a draft
+            // never edits the mesh, and a failed fill rolls all splits back.
             StorePolygonDraft();
             Change("Fill polygon patch",()=>
             {
+                StudioRetopologyQuadCut.InsertBoundaryPoints(Active,corners.ToArray());
+                var points=PreparePolygonOutline(corners.ToArray(),out var fixedEdges,out var requiredSeams,out var layoutCorners);var normal=Vector3.zero;
+                for(int i=0;i<points.Length;i++)normal+=Vector3.Cross(points[i]-points[0],points[(i+1)%points.Length]-points[0]);
+                normal=normal.sqrMagnitude>1e-12f?normal.normalized:cornerNormal;
+                if(Vector3.Dot(normal,cornerNormal)<0)normal=-normal;
+                var grid=BuildPolygonGrid(points,patchAutoDensity?PatchQuadSize:0,patchSegments,fixedEdges,layoutCorners);
                 AppendPolygonGrid(grid,normal,points.Length);
                 if(Document.symmetry&&!points.All(p=>Mathf.Abs(p.x)<.000001f))
                 {
+                    StudioRetopologyQuadCut.InsertBoundaryPoints(Active,corners.Select(p=>new Vector3(-p.x,p.y,p.z)).ToArray());
                     grid.vertices=grid.vertices.Select(p=>new Vector3(-p.x,p.y,p.z)).ToList();
                     foreach(var face in grid.faces)Array.Reverse(face.vertices);
                     AppendPolygonGrid(grid,new Vector3(-normal.x,normal.y,normal.z),points.Length,true);

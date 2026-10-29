@@ -10,7 +10,7 @@ namespace MashBoxSDK.AnimationStudio
     public sealed partial class AnimationStudioWindow
     {
         private const string ClothMotionFolder = "Packages/com.mg.mashbox.sdk/ContentTools/AnimationStudio/Animations/";
-        private static readonly string[] ClothMotionNames = { "Rest Pose", "A-Pose", "Party Kid", "Locking Hip Hop Dance", "Custom…" };
+        private static readonly string[] ClothMotionNames = { "Rest Pose", "A-Pose", "Party Kid", "Locking Hip Hop Dance", "Gangnam Style", "Custom…" };
         [NonSerialized] private AnimationClip[] clothBuiltinClips;
         [SerializeField] private bool clothCustomMotion;
         [SerializeField] private bool clothAPoseMotion;
@@ -18,14 +18,23 @@ namespace MashBoxSDK.AnimationStudio
         private bool HasClothMotion => !clothAPoseMotion && clothClip && !clothClip.legacy && clothClip.length > 0;
         private bool CanSimulateCloth => ClothVisible && clothProfile && clothProfile.Matches(MashBoxSDK.Cloth.MashBoxClothSession.GetMesh(ClothRenderer));
 
+        private static AnimationClip LoadClothBuiltinMotion(string name)
+        {
+            var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(ClothMotionFolder + name + ".anim");
+            if (clip) return clip;
+            return AssetDatabase.LoadAllAssetsAtPath(ClothMotionFolder + name + ".fbx")
+                .OfType<AnimationClip>().FirstOrDefault(c => !c.name.StartsWith("__preview__", StringComparison.Ordinal));
+        }
+
         private void DrawClothMotionSelector(ref float x, float y, float right)
         {
-            if (clothBuiltinClips == null || clothBuiltinClips.Length != 2)
+            if (clothBuiltinClips == null || clothBuiltinClips.Length != 3 || clothBuiltinClips.Any(c => !c))
                 clothBuiltinClips = new[] {
-                    AssetDatabase.LoadAssetAtPath<AnimationClip>(ClothMotionFolder + "Party Kid.anim"),
-                    AssetDatabase.LoadAssetAtPath<AnimationClip>(ClothMotionFolder + "Locking Hip Hop Dance.anim")
+                    LoadClothBuiltinMotion("Party Kid"),
+                    LoadClothBuiltinMotion("Locking Hip Hop Dance"),
+                    LoadClothBuiltinMotion("Gangnam Style")
                 };
-            int current = clothCustomMotion ? 4 : clothAPoseMotion ? 1 : !clothClip ? 0 : clothClip == clothBuiltinClips[0] ? 2 : clothClip == clothBuiltinClips[1] ? 3 : 4;
+            int current = clothCustomMotion ? 5 : clothAPoseMotion ? 1 : !clothClip ? 0 : clothClip == clothBuiltinClips[0] ? 2 : clothClip == clothBuiltinClips[1] ? 3 : clothClip == clothBuiltinClips[2] ? 4 : 5;
             float width = Mathf.Min(180, Mathf.Max(80, (right - x - 8) * .45f));
             var selector = new Rect(x, y + 3, width, 20);
             if (EditorGUI.DropdownButton(selector, new GUIContent(ClothMotionNames[current], "Preview animation"), FocusType.Passive, EditorStyles.popup))
@@ -36,16 +45,16 @@ namespace MashBoxSDK.AnimationStudio
                     int chosen = i;
                     menu.AddItem(new GUIContent(ClothMotionNames[i]), current == i, () => ClothAction(() =>
                     {
-                        if (chosen == 4) { clothCustomMotion = true; return; }
-                        var clip = chosen <= 1 ? null : clothBuiltinClips[chosen - 2];
-                        if (chosen > 1 && !clip) throw new InvalidOperationException("Built-in animation could not be loaded. Refresh the SDK package.");
+                        if (chosen == 5) { clothCustomMotion = true; return; }
+                        var clip = chosen <= 1 ? null : LoadClothBuiltinMotion(ClothMotionNames[chosen]);
+                        if (chosen > 1 && !clip) throw new InvalidOperationException("Could not load " + ClothMotionNames[chosen] + " from " + ClothMotionFolder + ". Expected a .anim clip or an FBX containing animation.");
                         SetClothMotion(clip, chosen == 1); clothCustomMotion = false;
                     }));
                 }
                 menu.DropDown(selector);
             }
             x += width + 8;
-            if (current != 4) return;
+            if (current != 5) return;
             width = Mathf.Min(170, Mathf.Max(60, right - x - 90));
             var custom = (AnimationClip)EditorGUI.ObjectField(new Rect(x, y + 3, width, 20), clothClip, typeof(AnimationClip), false);
             if (custom != clothClip) ClothAction(() => { SetClothMotion(custom); clothCustomMotion = true; });

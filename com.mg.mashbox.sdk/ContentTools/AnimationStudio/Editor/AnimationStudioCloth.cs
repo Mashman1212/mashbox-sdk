@@ -76,11 +76,15 @@ namespace MashBoxSDK.AnimationStudio
             var garments = ClothSources(out var bodyMeshes, out var bustMeshes);
             // Validate and build the replacement before releasing a working
             // preview. An incompatible garment must not blank the workspace.
+            var defaults = StudioDefaultReferences.LoadSkinning(StudioDefaultReferences.SkinningPath);
+            bool Headgear(GameObject model) => defaults && (model == defaults.hair || model == defaults.hat);
+            var rigGarments = garments.Where(g => g && (Headgear(g) || g.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length > 0)).ToArray();
+            var rigOptions = rigGarments.Select(g => new OutfitOptions { role = Headgear(g) ? OutfitRole.Hat : OutfitRole.SkinnedClothing, scale = 1 }).ToArray();
             var replacement = new AuthoringRig(clothCharacter ? clothCharacter : ResolveSdkSkeleton(), null,
-                garments.Where(g => g && g.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length > 0).ToArray());
+                rigGarments, rigOptions);
             try
             {
-                foreach (var garment in garments)
+                foreach (var garment in garments.Where(g => !Headgear(g)))
                     foreach (var filter in garment.GetComponentsInChildren<MeshFilter>(true))
                     {
                         var original = filter.GetComponent<MeshRenderer>(); if (!filter.sharedMesh || !original) continue;
@@ -194,7 +198,7 @@ namespace MashBoxSDK.AnimationStudio
                     StopClothSession(); importer.isReadable = true; importer.SaveAndReimport(); BuildClothPreview();
                 });
             }
-            var profile = (MashBoxClothProfile)EditorGUILayout.ObjectField("Cloth profile", clothProfile, typeof(MashBoxClothProfile), false);
+            var profile = (MashBoxClothProfile)EditorGUILayout.ObjectField("Garment data", clothProfile, typeof(MashBoxClothProfile), false);
             if (profile != clothProfile)
             {
                 StopClothSession(); EndClothStroke();
@@ -202,7 +206,7 @@ namespace MashBoxSDK.AnimationStudio
                 clothProfile = profile; RememberClothProfile();
             }
             using (new EditorGUI.DisabledScope(!ClothEditable))
-                if (GUILayout.Button("Create profile for this mesh…")) ClothAction(() =>
+                if (GUILayout.Button("Create garment data for this mesh…")) ClothAction(() =>
                 {
                     string path = EditorUtility.SaveFilePanelInProject("Cloth profile", ClothRenderer.name + " Cloth", "asset", "Save movement painting and solver settings.");
                     if (string.IsNullOrEmpty(path)) return;
@@ -218,11 +222,13 @@ namespace MashBoxSDK.AnimationStudio
                         float pinHeight = Mathf.Lerp(lowest, highest, .85f);
                         for (int i = 0; i < clothPickVertices.Count; i++)
                             created.motion[i] = ClothRenderer.transform.TransformPoint(clothPickVertices[i]).y >= pinHeight ? 0 : .15f;
+                        if (clothSettingsPreset) clothSettingsPreset.ApplyTo(created);
                         AssetDatabase.CreateAsset(created, path);
                     }
                     catch { if (!AssetDatabase.Contains(created)) DestroyImmediate(created); throw; }
                     StopClothSession(); clothProfile = created; RememberClothProfile(); GenerateClothCapsules(); AssetDatabase.SaveAssetIfDirty(clothProfile);
                 });
+            DrawClothSettingsPresets();
             bool valid = clothProfile && clothProfile.Matches(MashBoxClothSession.GetMesh(ClothRenderer));
             if (clothProfile && !valid) EditorGUILayout.HelpBox("This profile belongs to another mesh. Select the matching garment or create a new profile.", MessageType.Warning);
         }
@@ -279,18 +285,15 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             DrawClothStiffness(serialized);
             GUILayout.Label("WIND + SOLVER", EditorStyles.boldLabel);
-            foreach (string field in new[] { "animationFollow", "animationInertia", "wind", "gust", "gravity", "damping", "thickness", "particleBudget", "frequency", "interpolateMotion", "substeps", "iterations", "teleportDistance" })
+            foreach (string field in new[] { "animationFollow", "animationInertia", "wind", "gust", "gravity", "damping", "thickness" })
                 EditorGUILayout.PropertyField(serialized.FindProperty(field));
-            EditorGUILayout.PropertyField(serialized.FindProperty("preserveAuthoredShading"), new GUIContent("Preserve authored shading"));
-            using (new EditorGUI.DisabledScope(serialized.FindProperty("preserveAuthoredShading").boolValue))
-                EditorGUILayout.PropertyField(serialized.FindProperty("normalsEverySteps"));
             if (EditorGUI.EndChangeCheck())
             {
                 serialized.ApplyModifiedProperties();
                 viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
             }
-            GUILayout.Label("Tuning applies live. Particle Budget applies on Rebuild simulation; all other values preserve the current simulation.", EditorStyles.wordWrappedMiniLabel);
-            if (GUILayout.Button("Rebuild simulation (apply particle budget)")) ClothAction(() => { bool running = clothRunning; StartClothSession(); clothRunning = running; });
+            GUILayout.Label("Tuning applies live and preserves the current simulation.", EditorStyles.wordWrappedMiniLabel);
+            if (GUILayout.Button("Rebuild simulation")) ClothAction(() => { bool running = clothRunning; StartClothSession(); clothRunning = running; });
             GUILayout.Space(8); GUILayout.Label("BODY COLLISIONS", EditorStyles.boldLabel);
             clothShowColliders = EditorGUILayout.Toggle("Show capsules", clothShowColliders);
             if (GUILayout.Button("Generate character capsules")) ClothAction(GenerateClothCapsules);
@@ -315,7 +318,7 @@ namespace MashBoxSDK.AnimationStudio
                 clothGrabRadius = EditorGUILayout.Slider("Grab radius (m)", clothGrabRadius, .005f, .5f);
                 GUILayout.Label("Click and drag to pull particles inside the sphere. Release to let go. Ctrl + middle-drag changes radius; [ / ] also resize. Pinned particles stay pinned.", EditorStyles.wordWrappedMiniLabel);
             }
-            if (GUILayout.Button("Save cloth profile")) { EndClothStroke(); AssetDatabase.SaveAssetIfDirty(clothProfile); }
+            if (GUILayout.Button("Save garment data")) { EndClothStroke(); AssetDatabase.SaveAssetIfDirty(clothProfile); }
             EditorGUILayout.HelpBox("Runtime: add MashBox / Cloth to your garment. Assign this profile, garment renderer and character collision root. Disable the old cloth component on that garment before using the new one.", MessageType.Info);
             EditorGUILayout.EndScrollView();
         }

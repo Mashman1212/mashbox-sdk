@@ -68,31 +68,23 @@ namespace MashBoxSDK.AnimationStudio
         public int selected;
         public string[] bonePaths;
 
-        internal static string EnsureWorkspaceFolder()
-        {
-            const string path = "Assets/Workspaces";
-            if (!AssetDatabase.IsValidFolder(path))
-            {
-                System.IO.Directory.CreateDirectory(System.IO.Path.Combine(Application.dataPath, "Workspaces"));
-                AssetDatabase.Refresh();
-            }
-            return path;
-        }
+        internal static string EnsureWorkspaceFolder() => StudioMeshWorkspaceStorage.Folder;
 
+        [SerializeField, HideInInspector] private string workspaceFile;
+        internal static StudioSkinningDocument OpenWorkspaceFile(string path)
+        {
+            var document = StudioMeshWorkspaceStorage.Open<StudioSkinningDocument>(path);
+            if(document && !AssetDatabase.Contains(document))
+                document.workspaceFile = System.IO.Path.GetFullPath(path).Substring(System.IO.Path.GetDirectoryName(Application.dataPath).Length + 1).Replace('\\', '/');
+            if(document) document.dirty = false;
+            return document;
+        }
         internal bool SaveDocument()
         {
-            string path = AssetDatabase.GetAssetPath(this);
-            if (string.IsNullOrEmpty(path))
-            {
-                path = EditorUtility.SaveFilePanelInProject("Save skinning workspace", "Skinning Workspace", "asset", "Save editable geometry and skin weights inside Assets.", EnsureWorkspaceFolder());
-                if (string.IsNullOrEmpty(path)) return false;
-                path = AssetDatabase.GenerateUniqueAssetPath(path);
-                hideFlags = HideFlags.None; AssetDatabase.CreateAsset(this, path);
-            }
-            foreach (var part in parts)
-                if (part.mesh && !EditorUtility.IsPersistent(part.mesh))
-                { part.mesh.hideFlags = HideFlags.None; AssetDatabase.AddObjectToAsset(part.mesh, this); }
-            dirty = false; EditorUtility.SetDirty(this); AssetDatabase.SaveAssetIfDirty(this);
+            string path = string.IsNullOrEmpty(workspaceFile) ? StudioMeshWorkspaceStorage.Choose("Save Skinning Workspace", "Skinning Workspace") : StudioMeshWorkspaceStorage.Absolute(workspaceFile);
+            if(string.IsNullOrEmpty(path)) return false;
+            workspaceFile = StudioMeshWorkspaceStorage.Save(this, parts.Select(p => (UnityEngine.Object)p.mesh), path);
+            dirty = false; EditorUtility.ClearDirty(this);
             return true;
         }
 

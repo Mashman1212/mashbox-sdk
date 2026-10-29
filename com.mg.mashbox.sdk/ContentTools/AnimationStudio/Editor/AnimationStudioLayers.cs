@@ -64,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
             if(choice < -1 || choice >= take.layers.Count) throw new ArgumentOutOfRangeException(nameof(choice));
             if(choice == take.activeLayer) return;
             FinishSceneEdit(); Undo.RecordObject(take,"Select animation layer"); take.activeLayer=choice; Save(); RefreshLayers();
+            if(choice>=0 && take.layers[choice].correctionPanel) { EndCorrectionGizmo(false); quickCorrectionMode=QuickCorrectionMode.None; OpenLayerSettings(); }
         }
         private void DrawTimelineLayerPicker()
         {
@@ -105,6 +106,7 @@ namespace MashBoxSDK.AnimationStudio
             menu.AddSeparator("");
             if(!take.singleFramePose)
             {
+                menu.AddItem(new GUIContent("New correction layer…"),false,()=>run(CreateCorrectionLayer));
                 menu.AddItem(new GUIContent("New layer…"),false,()=>run(()=>CreateTimelineLayer(false)));
                 menu.AddItem(new GUIContent("New layer from selection…"),false,()=>run(()=>CreateTimelineLayer(true)));
             }
@@ -119,6 +121,19 @@ namespace MashBoxSDK.AnimationStudio
                 { FinishSceneEdit(); Undo.RecordObject(take,"Mute animation layer"); selected.muted=!selected.muted; Save(); RefreshLayers(); }));
                 menu.AddItem(new GUIContent("Solo layer"),selected.solo,()=>run(()=>
                 { FinishSceneEdit(); Undo.RecordObject(take,"Solo animation layer"); selected.solo=!selected.solo; Save(); RefreshLayers(); }));
+            }
+            if(selected!=null)
+            {
+                menu.AddSeparator("");
+                menu.AddItem(new GUIContent("Delete current layer"),false,()=>run(()=>
+                {
+                    if(!take.layers.Contains(selected)) return;
+                    FinishSceneEdit(); EndCorrectionGizmo(false);
+                    Undo.RecordObject(take,"Delete animation layer");
+                    take.layers.Remove(selected); take.activeLayer=-1;
+                    quickCorrectionMode=QuickCorrectionMode.None;
+                    Save(); RefreshLayers();
+                }));
             }
             menu.DropDown(rect);
         }
@@ -186,6 +201,13 @@ namespace MashBoxSDK.AnimationStudio
                 if(GUILayout.Button("Move later") && take.activeLayer<take.layers.Count-1)
                 { Undo.RecordObject(take,"Reorder animation layer"); int i=take.activeLayer; take.layers.RemoveAt(i); take.layers.Insert(i+1,selected); take.activeLayer++; Save(); RefreshLayers(); }
             }
+            if(selected.correctionPanel)
+            {
+                DrawCorrectionLayerPanel(selected);
+                if(GUILayout.Button("Delete correction layer"))
+                { Undo.RecordObject(take,"Delete correction layer"); take.layers.Remove(selected); take.activeLayer=-1; Save(); RefreshLayers(); }
+                return;
+            }
             if(GUILayout.Button("Add selected bone / IK control to layer"))
                 ChangeLayerSelection(selected,false);
             if(GUILayout.Button("Remove selected bone / IK control from layer"))
@@ -215,7 +237,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawHumanOffsets(StudioAnimationLayer layer)
         {
-            EditorGUILayout.Space(6); EditorGUILayout.LabelField("HUMAN · WHOLE-CLIP ROTATION OFFSETS",StudioTheme.Styles.boldLabel);
+            EditorGUILayout.Space(6); EditorGUILayout.LabelField("HUMAN · WHOLE-CLIP OFFSETS",StudioTheme.Styles.boldLabel);
             var mapped=Enumerable.Range(0,(int)HumanBodyBones.LastBone).Select(i=>(HumanBodyBones)i).Where(b=>rig.Animator.GetBoneTransform(b)).ToArray();
             offsetHumanBone=EditorGUILayout.Popup("Human joint",Mathf.Clamp(offsetHumanBone,0,mapped.Length-1),mapped.Select(b=>b.ToString()).ToArray());
             if(GUILayout.Button("Use selected joint"))
@@ -223,16 +245,27 @@ namespace MashBoxSDK.AnimationStudio
                 var selected=ikMode ? rig.Middles[Mathf.Clamp(control,0,3)] : rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)];
                 int found=Array.FindIndex(mapped,b=>rig.Animator.GetBoneTransform(b)==selected); if(found>=0) offsetHumanBone=found;
             }
-            var bone=rig.Animator.GetBoneTransform(mapped[offsetHumanBone]); int index=Array.IndexOf(rig.Bones,bone); string path=rig.Paths[index];
+            DrawJointCorrectionSliders(layer,mapped[offsetHumanBone]);
+        }
+        private void DrawJointCorrectionSliders(StudioAnimationLayer layer,HumanBodyBones joint)
+        {
+            var bone=rig.Animator.GetBoneTransform(joint); int index=Array.IndexOf(rig.Bones,bone); string path=rig.Paths[index];
             var offset=layer.offsets.FirstOrDefault(o=>o.path==path); var angles=offset?.angles ?? Vector3.zero;
-            string jointName=mapped[offsetHumanBone].ToString();
+            string jointName=joint.ToString();
+            var position=offset?.position ?? Vector3.zero;
             bool limb=jointName.Contains("Arm") || jointName.Contains("Shoulder") || jointName.Contains("Leg");
             EditorGUI.BeginChangeCheck();
+            if(joint==HumanBodyBones.Hips)
+            {
+                position.x=EditorGUILayout.Slider("Hips sideways (m)",position.x,-1,1);
+                position.y=EditorGUILayout.Slider("Hips height (m)",position.y,-1,1);
+                position.z=EditorGUILayout.Slider("Hips forward (m)",position.z,-1,1);
+            }
             angles.x=EditorGUILayout.Slider(limb ? "Lift / lower" : "Bend forward / back",angles.x,-90,90);
             angles.y=EditorGUILayout.Slider(limb ? "Forward / back" : "Side bend",angles.y,-90,90);
             angles.z=EditorGUILayout.Slider("Twist",angles.z,-90,90);
             bool changed=EditorGUI.EndChangeCheck();
-            if(GUILayout.Button("Reset this joint offset")) { angles=Vector3.zero; changed=true; }
+            if(GUILayout.Button("Reset this joint offset")) { angles=Vector3.zero; position=Vector3.zero; changed=true; }
             if(!changed) return;
             Undo.RecordObject(take,"Adjust human offset");
             if(offset==null)
@@ -244,7 +277,7 @@ namespace MashBoxSDK.AnimationStudio
                     axisY=inverse*(limb ? Vector3.Cross(direction,forward) : forward),axisZ=inverse*(limb ? direction : up) };
                 layer.offsets.Add(offset);
             }
-            offset.angles=angles; if(!layer.bones.Contains(path)) layer.bones.Add(path);
+            offset.position=position; offset.angles=angles; if(!layer.bones.Contains(path)) layer.bones.Add(path);
             Save(); RefreshLayers();
         }
     }
