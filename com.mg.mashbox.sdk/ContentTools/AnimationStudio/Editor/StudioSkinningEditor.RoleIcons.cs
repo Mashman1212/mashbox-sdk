@@ -32,6 +32,10 @@ namespace MashBoxSDK.AnimationStudio
                 || root.GetComponentsInChildren<MeshFilter>(true).Any(r=>r.sharedMesh==part.sourceMesh));
             if(Contains(defaults.body)) part.role=StudioSkinningDocument.MeshRole.Body;
             else if(Contains(defaults.bust)) part.role=StudioSkinningDocument.MeshRole.Bust;
+            else if(Contains(defaults.hair))
+            { part.role=StudioSkinningDocument.MeshRole.Headgear; part.defaultReferenceLabel="Default Hair"; }
+            else if(Contains(defaults.hat))
+            { part.role=StudioSkinningDocument.MeshRole.Headgear; part.defaultReferenceLabel="Default Hat"; }
             else if(Contains(defaults.shirt))
             { part.role=StudioSkinningDocument.MeshRole.Clothing; part.defaultReferenceLabel="Default Shirt"; }
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -20,6 +21,7 @@ namespace MashBoxSDK.AnimationStudio
             AddConstructionPoint(start,normal);quadDragUndo=Undo.GetCurrentGroup();
             quadDragStart=start;quadDragNormal=normal;quadDragMouse=mouse;
             quadDragRight=view.camera.transform.right;quadDragUp=view.camera.transform.up;
+            PrepareQuadDragWelding();quadDragSnaps=null;quadDragWarning=null;
             quadDragHeld=true;quadDragMoved=false;quadDragPreview=null;quadDragControl=control;
             GUIUtility.hotControl=control;GUIUtility.keyboardControl=0;EditorGUIUtility.editingTextField=false;
         }
@@ -28,6 +30,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(quadDragHeld&&GUIUtility.hotControl==quadDragControl)GUIUtility.hotControl=0;
             quadDragHeld=quadDragMoved=false;quadDragPreview=null;
+            quadDragSnaps=null;quadDragBorderVertices=null;quadDragWarning=null;
         }
 
         internal static Vector3[] DragQuadCorners(Vector3 start,Vector3 opposite,Vector3 normal,Vector3 cameraRight,Vector3 cameraUp)
@@ -47,12 +50,13 @@ namespace MashBoxSDK.AnimationStudio
 
         private void UpdateQuadDrag(Vector2 mouse)
         {
-            quadDragPreview=null;
+            quadDragPreview=null;quadDragSnaps=null;quadDragWarning=null;
             Vector3 opposite;
-            if(DrawingHit(mouse,out var hit))
+            int snap=PickQuadDragBorder(mouse);
+            if(snap>=0)opposite=Active.vertices[snap];
+            else if(DrawingHit(mouse,out var hit))
             {
-                int snap=PickVertex(mouse,24f);
-                opposite=snap>=0?Active.vertices[snap]:hit.point+hit.normal*Document.offset;
+                opposite=hit.point+hit.normal*Document.offset;
             }
             else
             {
@@ -65,8 +69,12 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 var points=DragQuadCorners(quadDragStart,opposite,quadDragNormal,quadDragRight,quadDragUp);
+                bool Visible(int id)=>Active.showOutput&&view.camera.WorldToViewportPoint(Active.vertices[id]).z>0&&IsSelectionPointVisible(Active.vertices[id],false);
+                quadDragSnaps=SnapDraggedQuad(points,Active.vertices,quadDragBorderVertices??Array.Empty<int>(),HandleUtility.WorldToGUIPoint,24,Visible);
                 ProjectQuadDragCorners(points,quadDragNormal);
+                quadDragSnaps=SnapDraggedQuad(points,Active.vertices,quadDragBorderVertices??Array.Empty<int>(),HandleUtility.WorldToGUIPoint,24,Visible);
                 if(!ValidDraggedQuad(points))return;
+                quadDragWarning=DraggedQuadAttachmentWarning(Active,points,quadDragNormal,Mathf.Max(.000001f,Active.reference.bounds.size.magnitude*.00001f));
                 quadDragPreview=points;
             }
             catch(InvalidOperationException){quadDragPreview=null;}
@@ -76,8 +84,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!Document.project)return;
             float span=Vector3.Distance(points[0],points[2]);
-            points[1]=Surface.ProjectAlong(points[1],normal,Document.offset,span);
-            points[3]=Surface.ProjectAlong(points[3],normal,Document.offset,span);
+            if(quadDragSnaps==null||quadDragSnaps[1]<0)points[1]=Surface.ProjectAlong(points[1],normal,Document.offset,span);
+            if(quadDragSnaps==null||quadDragSnaps[3]<0)points[3]=Surface.ProjectAlong(points[3],normal,Document.offset,span);
         }
 
         internal static bool ValidDraggedQuad(Vector3[] points)
@@ -96,10 +104,25 @@ namespace MashBoxSDK.AnimationStudio
         private void CreateDraggedQuad(Vector3[] points,Vector3 normal,int undoGroup)
         {
             if(!ValidDraggedQuad(points))throw new InvalidOperationException("Drag out a non-folded quad with width and height.");
+            var warning=DraggedQuadAttachmentWarning(Active,points,normal,Mathf.Max(.000001f,Active.reference.bounds.size.magnitude*.00001f));
+            if(warning!=null)throw new InvalidOperationException(warning);
             var first=corners[0];var firstNormal=cornerNormal;
             try
             {
-                corners.Clear();corners.AddRange(points);cornerNormal=normal;StoreToolState();CreatePatch();
+                corners.Clear();corners.AddRange(points);cornerNormal=normal;StoreToolState();
+                var grid=new StudioRetopologyDocument.Part{vertices=points.ToList(),uv=new System.Collections.Generic.List<Vector2>{Vector2.zero,Vector2.right,Vector2.one,Vector2.up}};
+                grid.faces.Add(new StudioRetopologyDocument.Face(new[]{0,1,2,3}));
+                Change("Draw projected quad",()=>
+                {
+                    AppendDraggedQuadGrid(grid,normal,false);
+                    if(Document.symmetry&&!points.All(p=>Mathf.Abs(p.x)<.000001f))
+                    {
+                        grid.vertices=grid.vertices.Select(p=>new Vector3(-p.x,p.y,p.z)).ToList();
+                        Array.Reverse(grid.faces[0].vertices);
+                        AppendDraggedQuadGrid(grid,new Vector3(-normal.x,normal.y,normal.z),true);
+                    }
+                    Active.needsUV=true;
+                });
                 status="Quad created from the dragged corner. Undo reverses the whole drag.";
             }
             catch
@@ -129,10 +152,11 @@ namespace MashBoxSDK.AnimationStudio
             {
                 bool dragged=quadDragMoved||(evt.mousePosition-quadDragMouse).sqrMagnitude>=16;
                 if(dragged&&usable)UpdateQuadDrag(evt.mousePosition);
-                var points=dragged&&usable?quadDragPreview:null;var normal=quadDragNormal;int undoGroup=quadDragUndo;
+                var points=dragged&&usable&&quadDragWarning==null?quadDragPreview:null;var normal=quadDragNormal;int undoGroup=quadDragUndo;
+                var warning=quadDragWarning;
                 ReleaseQuadDrag();
                 if(points!=null)Run(()=>CreateDraggedQuad(points,normal,undoGroup));
-                else if(dragged)status="No quad created. The first point is kept; drag diagonally across the reference to give it width and height.";
+                else if(dragged)status=warning??"No quad created. The first point is kept; drag diagonally across the reference to give it width and height.";
                 evt.Use();repaint();return true;
             }
             if(evt.type==EventType.Repaint)
@@ -143,10 +167,10 @@ namespace MashBoxSDK.AnimationStudio
                     Handles.zTest=CompareFunction.Always;
                     if(quadDragPreview!=null)
                     {
-                        Handles.color=new Color(.4f,1f,.8f,.18f);Handles.DrawAAConvexPolygon(quadDragPreview);
+                        Handles.color=quadDragWarning==null?new Color(.4f,1f,.8f,.18f):new Color(1,.25f,.15f,.18f);Handles.DrawAAConvexPolygon(quadDragPreview);
                         Handles.color=new Color(.4f,1f,.8f);var p=quadDragPreview;
                         Handles.DrawAAPolyLine(2,p[0],p[1],p[2],p[3],p[0]);
-                        Handles.Label(p[2],"Release: create quad · Escape: cancel");
+                        DrawQuadDragWeldPreview(p);
                     }
                     else
                     {

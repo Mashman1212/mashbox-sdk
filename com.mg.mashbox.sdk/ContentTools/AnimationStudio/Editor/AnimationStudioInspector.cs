@@ -48,6 +48,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 using (new GUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins))
                 {
+                    if (TryDrawFocusedCorrectionPanel()) return;
                     using (new GUILayout.HorizontalScope())
                     {
                         bool expanded = GUILayout.Toggle(inspectorExpanded, new GUIContent("Animation settings " + (inspectorExpanded ? "▴" : "▾"), EditorGUIUtility.IconContent("SettingsIcon").image, "Expand animation settings"), StudioTheme.Styles.overlayButton, GUILayout.Height(24));

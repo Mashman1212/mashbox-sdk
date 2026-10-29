@@ -8,6 +8,15 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioRetopologyEditor
     {
+        private bool HandlePolygonEscape(Event evt)
+        {
+            if(evt.type!=EventType.KeyDown||evt.keyCode!=KeyCode.Escape||
+                activeTool!=RetopoTool.Polygon||corners.Count==0||
+                EditorGUIUtility.editingTextField||contextHeld)return false;
+            CancelConstruction();
+            status="Polygon outline cancelled.";
+            evt.Use();return true;
+        }
         private void ClearPolygonDraft()
         {Document.polygonPoints.Clear();Document.polygonPart=-1;Document.polygonNormal=Vector3.zero;Document.toolState=null;}
 
@@ -36,25 +45,51 @@ namespace MashBoxSDK.AnimationStudio
             RemoveConstructionPoint();
         }
 
+        internal static bool PolygonClosesOnBorder(StudioRetopologyDocument.Part part,Vector3[] points,float tolerance)
+        {
+            if(part==null||points.Length<3)return false;
+            try
+            {
+                var routes=StudioRetopologyPatchBorders.Find(part,points,tolerance);
+                // Reconnecting to a local open border closes the draft. Merely
+                // tracing an existing perimeter must not fill its faces again.
+                if(routes[points.Length-1]==null||routes.All(route=>route!=null))return false;
+                var outline=new List<Vector3>();
+                for(int i=0;i<points.Length;i++)
+                {
+                    if(routes[i]==null)outline.Add(points[i]);
+                    else outline.AddRange(routes[i].Take(routes[i].Length-1).Select(id=>part.vertices[id]));
+                }
+                TriangulatePolygon(outline.ToArray());
+                return true;
+            }
+            catch(InvalidOperationException){return false;}
+        }
         private void CreatePolygon()
         {
             if(corners.Count<3)throw new InvalidOperationException("Place at least three points, then press Enter to fill the outline.");
-            var points=corners.ToArray();var normal=Vector3.zero;
-            for(int i=0;i<points.Length;i++)normal+=Vector3.Cross(points[i]-points[0],points[(i+1)%points.Length]-points[0]);
-            normal=normal.sqrMagnitude>1e-12f?normal.normalized:cornerNormal;
-            if(Vector3.Dot(normal,cornerNormal)<0)normal=-normal;
-            var grid=BuildPolygonGrid(points,patchAutoDensity?PatchQuadSize:0,patchSegments);
-            // Keep the complete draft in the same Undo snapshot as the fill.
+            // Edge splits and filling are one transaction: cancelling a draft
+            // never edits the mesh, and a failed fill rolls all splits back.
             StorePolygonDraft();
             Change("Fill polygon patch",()=>
             {
+                StudioRetopologyQuadCut.InsertBoundaryPoints(Active,corners.ToArray());
+                var points=PreparePolygonOutline(corners.ToArray(),out var fixedEdges,out var requiredSeams,out var layoutCorners);var normal=Vector3.zero;
+                for(int i=0;i<points.Length;i++)normal+=Vector3.Cross(points[i]-points[0],points[(i+1)%points.Length]-points[0]);
+                normal=normal.sqrMagnitude>1e-12f?normal.normalized:cornerNormal;
+                if(Vector3.Dot(normal,cornerNormal)<0)normal=-normal;
+                var grid=BuildPolygonGrid(points,patchAutoDensity?PatchQuadSize:0,patchSegments,fixedEdges,layoutCorners);
                 AppendPolygonGrid(grid,normal,points.Length);
                 if(Document.symmetry&&!points.All(p=>Mathf.Abs(p.x)<.000001f))
                 {
+                    StudioRetopologyQuadCut.InsertBoundaryPoints(Active,corners.Select(p=>new Vector3(-p.x,p.y,p.z)).ToArray());
                     grid.vertices=grid.vertices.Select(p=>new Vector3(-p.x,p.y,p.z)).ToList();
                     foreach(var face in grid.faces)Array.Reverse(face.vertices);
-                    AppendPolygonGrid(grid,new Vector3(-normal.x,normal.y,normal.z),points.Length);
+                    AppendPolygonGrid(grid,new Vector3(-normal.x,normal.y,normal.z),points.Length,true);
                 }
+                var edges=StudioRetopologyOperations.Edges(Active);
+                if(requiredSeams.Any(edge=>!edges.TryGetValue(edge,out var adjacent)||adjacent.Count!=2))
+                    throw new InvalidOperationException("The polygon could not seal every selected border edge. No patch was kept; adjust the outline and try again.");
                 Active.needsUV=true;
             });
             status="Polygon quad patch created. Undo reopens the outline; keep undoing to remove its points.";

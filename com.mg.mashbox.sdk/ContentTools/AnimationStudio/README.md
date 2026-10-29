@@ -1,5 +1,7 @@
 # MashBox Studio
 
+Right-click an FBX model or mesh sub-asset in Unity's Project browser and choose **Open in MashBox Modeler**. Studio opens in Modeling mode and imports the selection into the current workspace, preserving existing objects and the viewport camera. Source assets remain unchanged.
+
 The current Studio camera viewport is **perspective-only**. Camera Settings no longer offers Orthographic, and native/restored 2D or orthographic states are corrected on camera events/rendering. Separate orthographic views are future work. Camera gesture ownership is fixed at the initial press: a click begun in Lighting, Tool Options, Channels or other panel/toolbar UI stays UI-owned when dragged into the camera canvas, until release/cancel. It cannot start camera movement or take over the camera cursor. A drag begun in the camera canvas may continue over UI until release. Panel controls retain normal editing/scrolling.
 
 

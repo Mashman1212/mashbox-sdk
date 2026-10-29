@@ -10,6 +10,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         public string path;
         public Vector3 angles;
+        public Vector3 position;
         public Vector3 axisX=Vector3.right,axisY=Vector3.up,axisZ=Vector3.forward;
         public Quaternion Rotation => Quaternion.AngleAxis(angles.x,axisX)*Quaternion.AngleAxis(angles.y,axisY)*Quaternion.AngleAxis(angles.z,axisZ);
     }
@@ -20,6 +21,8 @@ namespace MashBoxSDK.AnimationStudio
         public StudioLayerMode mode;
         public float weight=1;
         public bool muted,solo;
+        public bool correctionPanel;
+        public float dualArmCorrection;
         public bool limitRange;
         public int firstFrame,lastFrame;
         public List<string> bones=new List<string>();
@@ -79,7 +82,7 @@ namespace MashBoxSDK.AnimationStudio
                         result.bones[i]=current;
                     }
                     foreach(var offset in layer.offsets)
-                        if(offset.path==bonePaths[i]) result.bones[i].rotation*=RotationPower(offset.Rotation,w);
+                        if(offset.path==bonePaths[i]) { result.bones[i].rotation*=RotationPower(offset.Rotation,w); result.bones[i].position+=offset.position*w; }
                 }
                 for(int i=0;i<result.effectors.Length;i++)
                     for(int bit=1;bit<=8;bit*=2)
@@ -112,7 +115,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(!layer.bones.Contains(bonePaths[i])) continue;
                 int mask=boneMask==null ? 7 : boneMask[i]; if(mask==0) continue; any=true;
                 var value=desired.bones[i]; var baseline=lower.bones[i];
-                foreach(var offset in layer.offsets.AsEnumerable().Reverse()) if(offset.path==bonePaths[i]) value.rotation*=Quaternion.Inverse(RotationPower(offset.Rotation,w));
+                foreach(var offset in layer.offsets.AsEnumerable().Reverse()) if(offset.path==bonePaths[i]) { value.rotation*=Quaternion.Inverse(RotationPower(offset.Rotation,w)); value.position-=offset.position*w; }
                 if((mask&1)!=0) key.bones[i].position=(add ? Vector3.zero : baseline.position)+(value.position-baseline.position)/w;
                 if((mask&2)!=0) key.bones[i].rotation=(add ? Quaternion.identity : baseline.rotation)*RotationPower(Quaternion.Inverse(baseline.rotation)*value.rotation,1/w);
                 if((mask&4)!=0) key.bones[i].scale=(add ? Vector3.zero : baseline.scale)+(value.scale-baseline.scale)/w;

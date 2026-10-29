@@ -224,6 +224,8 @@ namespace MashBoxSDK.AnimationStudio
             Scene = EditorSceneManager.NewPreviewScene();
             try
             {
+                if (EditorSceneManager.GetSceneCullingMask(Scene) == 0)
+                    throw new InvalidOperationException("Unity has exhausted its preview scene rendering slots. Save your work and restart Unity, then create the take again.");
                 var sourceAnimator = source.GetComponent<Animator>();
                 Root = new GameObject(source.name + " • Animation Studio");
                 SceneManager.MoveGameObjectToScene(Root, Scene);

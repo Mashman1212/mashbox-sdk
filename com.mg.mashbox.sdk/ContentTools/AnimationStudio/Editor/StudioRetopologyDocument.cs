@@ -124,17 +124,22 @@ namespace MashBoxSDK.AnimationStudio
             }
             part.Revision++;
         }
+        [SerializeField, HideInInspector] private string workspaceFile;
+        internal static StudioRetopologyDocument OpenWorkspaceFile(string path)
+        {
+            var document = StudioMeshWorkspaceStorage.Open<StudioRetopologyDocument>(path);
+            if(document && !AssetDatabase.Contains(document))
+                document.workspaceFile = System.IO.Path.GetFullPath(path).Substring(System.IO.Path.GetDirectoryName(Application.dataPath).Length + 1).Replace('\\', '/');
+            if(document) document.dirty = false;
+            return document;
+        }
         internal void SaveWorkspace()
         {
-            if(!AssetDatabase.Contains(this))
-            {
-                string path=EditorUtility.SaveFilePanelInProject("Save Retopology Workspace", "Retopology Workspace", "asset", "Save references and editable topology.");
-                if(string.IsNullOrEmpty(path)) return;
-                hideFlags=HideFlags.None; AssetDatabase.CreateAsset(this,path);
-            }
-            foreach(var part in parts) if(part.reference && !AssetDatabase.Contains(part.reference))
-            { part.reference.hideFlags=HideFlags.None; AssetDatabase.AddObjectToAsset(part.reference,this); }
-            dirty=false; EditorUtility.SetDirty(this); AssetDatabase.SaveAssetIfDirty(this);
+            string path = string.IsNullOrEmpty(workspaceFile) ? StudioMeshWorkspaceStorage.Choose("Save Retopology Workspace", "Retopology Workspace") : StudioMeshWorkspaceStorage.Absolute(workspaceFile);
+            if(string.IsNullOrEmpty(path)) return;
+            workspaceFile = StudioMeshWorkspaceStorage.Save(this, parts.Select(p => (UnityEngine.Object)p.reference), path);
+            dirty = false; EditorUtility.ClearDirty(this);
+            
         }
     }
 }

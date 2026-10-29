@@ -122,7 +122,8 @@ namespace MashBoxSDK.AnimationStudio
             var go=new GameObject(name){hideFlags=HideFlags.HideAndDontSave};SceneManager.MoveGameObjectToScene(go,Scene);
             go.AddComponent<MeshFilter>().sharedMesh=mesh;go.AddComponent<MeshRenderer>().sharedMaterials=Enumerable.Repeat(material,mesh?Mathf.Max(1,mesh.subMeshCount):1).ToArray();return go;
         }
-        private void Change(string label,Action action)
+        private void Change(string label,Action action) => ChangeCore(label,action,false);
+        private void ChangeCore(string label,Action action,bool preserveCornerUV)
         {
             if(Active==null)return;
             // Keep Unity object references and Part identity alive. JSON rollback
@@ -137,7 +138,7 @@ namespace MashBoxSDK.AnimationStudio
             Undo.IncrementCurrentGroup();Undo.RegisterCompleteObjectUndo(Document,label);
             try { action();
                 bool topologyChanged=vertices.Count!=part.vertices.Count||faces.Count!=part.faces.Count||faces.Where((f,i)=>i<part.faces.Count&&!f.vertices.SequenceEqual(part.faces[i].vertices)).Any();
-                if(topologyChanged&&faces.Any(f=>f.cornerUV!=null)){foreach(var face in part.faces)face.cornerUV=null;part.needsUV=true;}
+                if(topologyChanged&&!preserveCornerUV&&faces.Any(f=>f.cornerUV!=null)){foreach(var face in part.faces)face.cornerUV=null;part.needsUV=true;}
                 Active.Revision++;Document.dirty=true;EditorUtility.SetDirty(Document);ClearComponents();ClearPatchCorners();StoreToolState();Rebuild();
                 if(CurrentLesson!=null && (vertices.Count!=part.vertices.Count || faces.Count!=part.faces.Count || !vertices.SequenceEqual(part.vertices)
                     || faces.Where((f,i)=>i<part.faces.Count&&!f.vertices.SequenceEqual(part.faces[i].vertices)).Any()))
@@ -319,7 +320,7 @@ namespace MashBoxSDK.AnimationStudio
             Document.project=EditorGUILayout.Toggle("Surface snapping",Document.project);
             Document.offset=EditorGUILayout.FloatField("Surface offset",Document.offset);
             Document.symmetry=EditorGUILayout.Toggle(new GUIContent("Mirror drawing X","New quads and patches are mirrored around the imported model's local X=0 plane."),Document.symmetry);
-            DrawStripSettings();DrawTubeSettings();DrawResolutionSettings();DrawRelaxBrushSettings();
+            DrawStripSettings();DrawTubeSettings();DrawResolutionSettings();DrawRelaxBrushSettings();DrawExtrudeSettings();
             using(new EditorGUI.DisabledScope(Active.faces.Count==0))
             {
                 if(GUILayout.Button(new GUIContent("Bridge selected borders","Edges mode: Shift-click matching boundary chains, or double-click a boundary edge and Shift-double-click another loop. Bridge Bands in the top toolbar controls rows across the gap.")))Run(BridgeLoops);
@@ -355,7 +356,7 @@ namespace MashBoxSDK.AnimationStudio
             view?.ShowNotification(new GUIContent("Mesh cleaned and checked"));
         }
         private void Project()=>Change("Project topology",()=>{for(int i=0;i<Active.vertices.Count;i++)if(selected.Count==0||selected.Contains(i))Active.vertices[i]=Surface.Project(Active.vertices[i],Document.offset);});
-        private void Relax()=>Change("Relax topology",()=>StudioRetopologyOperations.Relax(Active,Document.project?Surface:null,Document.preserveBorders,Document.offset,selected));
+        private void Relax()=>Change("Relax topology",()=>StudioRetopologyOperations.Relax(Active,Document.project?Surface:null,true,Document.offset,selected));
         private void BridgeLoops()
         {
             if(selectionMode==SelectionMode.Faces){status="Switch to Edges and select matching borders on both sides of the gap.";return;}

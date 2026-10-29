@@ -21,8 +21,8 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("New Workspace"),false,()=>NewWorkspace?.Invoke());
                     menu.AddItem(new GUIContent("Open Workspace..."),false,()=>Run(()=>
                     {
-                        string path=EditorUtility.OpenFilePanel("Open Retopology Workspace",Application.dataPath,"asset");if(string.IsNullOrEmpty(path))return;
-                        var document=AssetDatabase.LoadAssetAtPath<StudioRetopologyDocument>(FileUtil.GetProjectRelativePath(path));
+                        string path=StudioMeshWorkspaceStorage.ChooseOpen("Open Retopology Workspace");if(string.IsNullOrEmpty(path))return;
+                        var document=StudioRetopologyDocument.OpenWorkspaceFile(path);
                         if(!document)throw new InvalidOperationException("Choose a Retopology workspace asset from this project.");OpenWorkspace?.Invoke(document);
                     }));
                     menu.AddItem(new GUIContent("Import Reference..."),false,()=>Run(()=>ImportPath(EditorUtility.OpenFilePanel("Import Reference",Application.dataPath,"fbx,obj,blend"))));

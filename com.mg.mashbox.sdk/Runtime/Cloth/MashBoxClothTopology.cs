@@ -35,21 +35,30 @@ namespace MashBoxSDK.Cloth
             foreach (var v in vertices) bounds.Encapsulate(v);
             float cell = Mathf.Max(.000001f, bounds.size.magnitude / Mathf.Pow(budget, 1f / 3f) * .15f);
             vertexParticle = new int[vertices.Length];
-            var groups = new Dictionary<(int, int, int, int), int>();
-            // Coarsen until the hard budget is met, including dense imported garments.
+            var groups = new Dictionary<int, int>();
+            var cells = new Vector3Int[vertices.Length];
+            var clusters = new int[vertices.Length];
+            int Cluster(int i) { while(clusters[i]!=i){clusters[i]=clusters[clusters[i]];i=clusters[i];}return i; }
+            void Join(int a,int b) { if(cells[a]==cells[b])clusters[Cluster(b)]=Cluster(a); }
+            // Only contract actual mesh edges within a cell. Whole-island spatial
+            // buckets incorrectly sew together nearby legs and folded layers.
             for (int attempt = 0; ; attempt++)
             {
                 groups.Clear();
-                for (int i = 0; i < vertices.Length; i++)
-                {
-                    var v = (vertices[i] - bounds.min) / cell;
-                    var key = (parents[i], Mathf.FloorToInt(v.x), Mathf.FloorToInt(v.y), Mathf.FloorToInt(v.z));
-                    if (!groups.TryGetValue(key, out int id)) { id = groups.Count; groups.Add(key, id); }
-                    vertexParticle[i] = id;
+                for(int i=0;i<vertices.Length;i++){
+                    clusters[i]=i;var v=(vertices[i]-bounds.min)/cell;
+                    cells[i]=new Vector3Int(Mathf.FloorToInt(v.x),Mathf.FloorToInt(v.y),Mathf.FloorToInt(v.z));
                 }
-                if (groups.Count <= budget) break;
-                if (attempt == 100) throw new ArgumentException("Unable to reduce this mesh to the requested cloth budget.");
-                cell *= 1.25f;
+                for(int i=0;i<vertices.Length;i++)Join(i,seams[vertices[i]]);
+                for(int i=0;i<triangles.Length;i+=3){Join(triangles[i],triangles[i+1]);Join(triangles[i+1],triangles[i+2]);Join(triangles[i+2],triangles[i]);}
+                for(int i=0;i<vertices.Length;i++){
+                    int root=Cluster(i);
+                    if(!groups.TryGetValue(root,out int id)){id=groups.Count;groups.Add(root,id);}
+                    vertexParticle[i]=id;
+                }
+                if(groups.Count<=budget)break;
+                if(attempt==100)throw new ArgumentException("Unable to reduce this mesh to the requested cloth budget.");
+                cell*=1.25f;
             }
             counts = new int[groups.Count];
             foreach (int p in vertexParticle) counts[p]++;
@@ -63,7 +72,7 @@ namespace MashBoxSDK.Cloth
             void Side(int a, int b, int c)
             {
                 ulong key = Key(a, b);
-                if (opposite.TryGetValue(key, out int other)) Add(other, c, true);
+                if (opposite.TryGetValue(key, out int other)) Add(vertexParticle[other], vertexParticle[c], true);
                 else opposite.Add(key, c);
             }
             for (int i = 0; i < triangles.Length; i += 3)
@@ -75,7 +84,8 @@ namespace MashBoxSDK.Cloth
             {
                 int a = vertexParticle[triangles[i]], b = vertexParticle[triangles[i + 1]], c = vertexParticle[triangles[i + 2]];
                 if (a == b || b == c || c == a) continue;
-                Side(a, b, c); Side(b, c, a); Side(c, a, b);
+                int va=seams[vertices[triangles[i]]],vb=seams[vertices[triangles[i+1]]],vc=seams[vertices[triangles[i+2]]];
+                Side(va, vb, vc); Side(vb, vc, va); Side(vc, va, vb);
             }
             edges = links.ToArray(); bending = bends.ToArray();
         }

@@ -78,12 +78,26 @@ namespace MashBoxSDK.AnimationStudio
             });
         }
 
+        [MenuItem("Assets/Open in MashBox Modeler", false, 1999)]
+        private static void OpenSelectedModel()
+        {
+            if (!CanOpenSelectedMesh()) return;
+            var asset = Selection.activeObject;
+            OpenWorkspace(window =>
+            {
+                window.SwitchStudioMode(true);
+                window.EnsureModelEditor();
+                window.modelEditor.ImportDroppedSource(asset, window.LoadStudioModel);
+            });
+        }
+
         [MenuItem("Assets/Retopologize in MashBox Studio", false, 2001)]
         private static void RetopologizeSelectedMesh() => OpenSelectedMeshInStudio(false);
 
         [MenuItem("Assets/Skin in MashBox Studio", false, 2002)]
         private static void SkinSelectedMesh() => OpenSelectedMeshInStudio(true);
 
+        [MenuItem("Assets/Open in MashBox Modeler", true)]
         [MenuItem("Assets/Retopologize in MashBox Studio", true)]
         [MenuItem("Assets/Skin in MashBox Studio", true)]
         private static bool CanOpenSelectedMesh()
@@ -280,6 +294,7 @@ namespace MashBoxSDK.AnimationStudio
             SaveAnimationConfiguration();
             StudioPreferenceStore.Flush();
             ReleaseModelEditor();
+            ReleaseMeshStudioPreviews();
             ReleaseImagePosePreview();
             SceneView.duringSceneGui -= DuringSceneGUI;
             SceneView.beforeSceneGui -= BeforeSceneGUI;
@@ -324,9 +339,21 @@ namespace MashBoxSDK.AnimationStudio
         private void PlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.ExitingPlayMode)
-            { ReleaseClothPreview(); ReleaseRig(); ReleaseModelEditor(); }
+            { ReleaseClothPreview(); ReleaseRig(); ReleaseModelEditor(); ReleaseMeshStudioPreviews(); }
             else if (state == PlayModeStateChange.EnteredEditMode || state == PlayModeStateChange.EnteredPlayMode)
                 MashBoxStudioViewport.RestoreStudioViews();
+        }
+        // Documents survive reloads; their disposable preview scenes must not.
+        // Otherwise each reload leaks scene culling masks until new rigs become invisible.
+        private void ReleaseMeshStudioPreviews()
+        {
+            try { retopologyEditor?.Dispose(); }
+            finally
+            {
+                retopologyEditor = null;
+                try { skinningEditor?.Dispose(); }
+                finally { skinningEditor = null; }
+            }
         }
         private void ReleaseRig()
         {
@@ -342,7 +369,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UndoRedo()
         {
-            if (clothMode) { StopClothSession(); viewport?.Repaint(); return; }
+            if (clothMode) { EndClothStroke(); RefreshClothPickMesh(); viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene); return; }
             if (skinningMode || retopologyMode) return; // Skinning owns mesh/document Undo and preview rebuilding.
             if (RestoreUnkeyedPoseUndo()) return;
             sceneDraft = false;
@@ -975,6 +1002,7 @@ namespace MashBoxSDK.AnimationStudio
                 modelEditor.BeforeModelSceneGUI(view);
                 return;
             }
+            if (view == viewport && HandleAnimationClipDrop()) return;
             // HDRP and scene-wide effects must treat this as an asset preview.
             // SceneView resets cameraType during SetupCamera, so set it immediately before rendering.
             if (view == viewport && view.camera)

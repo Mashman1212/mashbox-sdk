@@ -121,7 +121,7 @@ namespace MashBoxSDK.AnimationStudio
                     using (new EditorGUI.DisabledScope(!exists || destination == channel))
                         ActionButton("Duplicate to " + Channels[destination], () => DuplicateSet(uv));
                     using (new EditorGUI.DisabledScope(!exists))
-                        ActionButton("Delete Current Set", () => { Undo.RegisterCompleteObjectUndo(mesh, "Delete UV set"); mesh.SetUVs(channel, new List<Vector2>()); selection.Clear(); pinned.Clear(); EditorUtility.SetDirty(mesh); owner.Changed(); });
+                        ActionButton("Delete Current Set", () => { Undo.RegisterCompleteObjectUndo(mesh, "Delete UV set"); mesh.SetUVs(channel, new List<Vector2>()); selection.Clear(); pinned.Clear(); EditorUtility.SetDirty(mesh); owner?.Changed(); });
                 }
                 displaySection = EditorGUILayout.Foldout(displaySection, "Display", true);
                 if (displaySection)
@@ -191,7 +191,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var target = new List<Vector2>(); mesh.GetUVs(destination, target);
             if (target.Count > 0 && !EditorUtility.DisplayDialog("Replace UV set?", "Replace " + Channels[destination] + " with a copy of " + Channels[channel] + "?", "Replace", "Cancel")) return;
-            StudioModelDocument.SetUVs(mesh, destination, uv, "Duplicate UV set"); owner.Changed(); channel = destination; selection.Clear(); pinned.Clear();
+            StudioModelDocument.SetUVs(mesh, destination, uv, "Duplicate UV set"); owner?.Changed(); channel = destination; selection.Clear(); pinned.Clear();
         }
         private void Project(int kind)
         {
@@ -213,7 +213,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (max - min > .5f) for (int j = 0; j < 3; j++) if (corners[i + j].x < .5f) corners[i + j].x += 1;
                 }
                 StudioUVTools.ApplyCornerUVs(mesh, channel, corners);
-                selection.Clear(); pinned.Clear(); owner.MeshTopologyChanged();
+                selection.Clear(); pinned.Clear(); owner?.MeshTopologyChanged();
             }
         }
         private void AutoUnwrap()
@@ -221,7 +221,7 @@ namespace MashBoxSDK.AnimationStudio
             UnwrapParam.SetDefaults(out var parameters); parameters.hardAngle = unwrapAngle; parameters.packMargin = padding;
             var corners = Unwrapping.GeneratePerTriangleUV(mesh, parameters);
             StudioUVTools.ApplyCornerUVs(mesh, channel, corners);
-            selection.Clear(); pinned.Clear(); owner.MeshTopologyChanged();
+            selection.Clear(); pinned.Clear(); owner?.MeshTopologyChanged();
         }
     }
 }

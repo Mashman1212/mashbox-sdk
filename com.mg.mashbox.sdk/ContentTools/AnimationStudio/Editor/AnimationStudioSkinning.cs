@@ -67,6 +67,8 @@ namespace MashBoxSDK.AnimationStudio
             Add(defaults.bust, true);
             Add(defaults.pants, false);
             Add(defaults.shirt, false);
+            Add(defaults.hair, true);
+            Add(defaults.hat, true);
         }
         private void OpenSkinningMode()
         {
@@ -78,6 +80,7 @@ namespace MashBoxSDK.AnimationStudio
             { animationCameraPivot = viewport.pivot; animationCameraRotation = viewport.rotation; animationCameraSize = viewport.size; savedAnimationCamera = true; }
             EnsureSkinningEditor(); modelEditor?.SuspendLighting();
             skinningMode = true; modelingMode = false;
+            EnsureSkinningDefaultReferences();
             BindSkinningMode(); skinningEditor.Frame(viewport);
         }
         private void BindSkinningMode()
@@ -147,9 +150,9 @@ namespace MashBoxSDK.AnimationStudio
             }));
             menu.AddItem(new GUIContent("Open workspace…"),false,()=>Guard(()=>
             {
-                string path = EditorUtility.OpenFilePanel("Open skinning workspace",System.IO.Path.GetFullPath(StudioSkinningDocument.EnsureWorkspaceFolder()),"asset");
+                string path = StudioMeshWorkspaceStorage.ChooseOpen("Open skinning workspace");
                 if (string.IsNullOrEmpty(path)) return;
-                var document = AssetDatabase.LoadAssetAtPath<StudioSkinningDocument>(FileUtil.GetProjectRelativePath(path));
+                var document = StudioSkinningDocument.OpenWorkspaceFile(path);
                 if (!document) throw new System.InvalidOperationException("Choose a saved Skinning workspace asset.");
                 if (skinningTutorialSession) ExitSkinningTutorial();
                 if (!ConfirmSkinningReplacement()) return;
