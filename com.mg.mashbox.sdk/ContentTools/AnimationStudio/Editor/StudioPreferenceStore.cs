@@ -101,7 +101,7 @@ namespace MashBoxSDK.AnimationStudio
             Add(StudioSettings.PreferenceKey, JsonUtility.ToJson(new StudioSettings.Preferences()));
             foreach (var item in new[] { ("Bevel Edges", "Width", .1f), ("Bevel Edges", "Subdivisions", 1f), ("Bevel Edges", "Tension", 1f), ("Bevel Edges", "Junction", 0f), ("Soften Edges", "Angle", 45f), ("Extrude", "Distance", .01f), ("Extrude", "Inset", 0f), ("Extrude", "Together", 1f) })
                 Number(ToolChannelPane.DefaultKey(item.Item1, item.Item2), item.Item3);
-            foreach (string title in new[] { "Bevel", "Soften Edges", "Extrude", "Edit Edge Flow", "Tool Options" }) Number("MashBox.Studio.ToolDragSensitivity." + title, 1);
+            foreach (string title in new[] { "Bevel", "Soften Edges", "Extrude", "Edit Edge Flow", "Bridge Edges", "Tool Options" }) Number("MashBox.Studio.ToolDragSensitivity." + title, 1);
             Number(MashBoxStudioViewport.LeftWidthKey, 260); Number(MashBoxStudioViewport.RightWidthKey, 350); Number(MashBoxStudioViewport.ToolOptionsHeightKey, 220);
             Number(MashBoxStudioViewport.NavigationSensitivityKey, 1);
             Number("Model.BackfaceCulling", 1);
@@ -112,6 +112,8 @@ namespace MashBoxSDK.AnimationStudio
             Number(ToolChannelPane.DefaultKey("Combine Meshes","Pivot"),0);
             Number(ToolChannelPane.DefaultKey("Combine Meshes","KeepFirstName"),0);
             Number("MashBox.Studio.ToolDragSensitivity.Combine Meshes",1);
+            Number(ToolChannelPane.DefaultKey("Bridge Edges","Divisions"),0);
+            Number(ToolChannelPane.DefaultKey("Bridge Edges","Curvature"),0);
             Number(ToolChannelPane.DefaultKey("Edit Edge Flow","Influence"),.5f);
             Number(ToolChannelPane.DefaultKey("Edit Edge Flow","Iterations"),4);
             Number(ToolChannelPane.DefaultKey("Bevel Edges","EdgeFlow"),0);

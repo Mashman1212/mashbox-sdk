@@ -205,12 +205,19 @@ namespace MashBoxSDK.AnimationStudio
         public bool IsBone(int index) => nodes.Any(n => n.skinned && (n.rootBone == index || n.bones.Contains(index)));
 
         // Move the object's origin while holding geometry and children in world space.
-        public void Repivot(int index, Transform[] transforms, Vector3 worldPosition)
+        internal void ValidateRepivot(int index, Transform[] transforms, Vector3 worldPosition)
         {
             if (IsBone(index)) throw new InvalidOperationException("Bone origins define the skin rig. Use Move for bones; pivot editing is available on mesh objects and groups.");
             if(nodes[index].blendShape!=null) throw new InvalidOperationException("Bake Current Pose before editing a blend shape pivot.");
             var t = transforms[index];
             // Translation only: retain the exact linear transform, including any inherited shear.
+            var matrix = t.localToWorldMatrix; matrix.SetColumn(3, new Vector4(worldPosition.x, worldPosition.y, worldPosition.z, 1));
+            ValidateCompensation(index, transforms, matrix);
+        }
+        public void Repivot(int index, Transform[] transforms, Vector3 worldPosition)
+        {
+            ValidateRepivot(index, transforms, worldPosition);
+            var t = transforms[index];
             var matrix = t.localToWorldMatrix; matrix.SetColumn(3, new Vector4(worldPosition.x, worldPosition.y, worldPosition.z, 1));
             Compensate(index, transforms, matrix, () => t.position = worldPosition, "Move object pivot");
         }
@@ -229,15 +236,9 @@ namespace MashBoxSDK.AnimationStudio
         private void Compensate(int index, Transform[] transforms, Matrix4x4 newWorld, Action change, string label)
         {
             var t = transforms[index];
-            if (Mathf.Abs(newWorld.determinant) < 1e-8f) throw new InvalidOperationException("Cannot edit a pivot under a zero scale.");
+            ValidateCompensation(index, transforms, newWorld);
             var childIndices = Enumerable.Range(0, nodes.Count).Where(i => nodes[i].parent == index).ToArray();
             var childMatrices = childIndices.Select(i => newWorld.inverse * transforms[i].localToWorldMatrix).ToArray();
-            foreach (var m in childMatrices)
-            {
-                var x = ((Vector3)m.GetColumn(0)).normalized; var y = ((Vector3)m.GetColumn(1)).normalized; var z = ((Vector3)m.GetColumn(2)).normalized;
-                if (Mathf.Abs(Vector3.Dot(x, y)) + Mathf.Abs(Vector3.Dot(x, z)) + Mathf.Abs(Vector3.Dot(y, z)) > .001f)
-                    throw new InvalidOperationException("Freezing this non-uniform scale would shear children. Freeze the mesh before rotating its children.");
-            }
             Undo.RegisterCompleteObjectUndo(this, label);
             var mesh = nodes[index].mesh;
             if (mesh)
@@ -254,6 +255,18 @@ namespace MashBoxSDK.AnimationStudio
                 if (m.determinant < 0) scale.x = -scale.x;
                 child.localRotation = Quaternion.LookRotation(m.GetColumn(2), m.GetColumn(1));
                 child.localScale = scale; ReadTransform(childIndices[j], child);
+            }
+        }
+        private void ValidateCompensation(int index, Transform[] transforms, Matrix4x4 newWorld)
+        {
+            if (Mathf.Abs(newWorld.determinant) < 1e-8f) throw new InvalidOperationException("Cannot edit a pivot under a zero scale.");
+            var childIndices = Enumerable.Range(0, nodes.Count).Where(i => nodes[i].parent == index).ToArray();
+            var childMatrices = childIndices.Select(i => newWorld.inverse * transforms[i].localToWorldMatrix).ToArray();
+            foreach (var m in childMatrices)
+            {
+                var x = ((Vector3)m.GetColumn(0)).normalized; var y = ((Vector3)m.GetColumn(1)).normalized; var z = ((Vector3)m.GetColumn(2)).normalized;
+                if (Mathf.Abs(Vector3.Dot(x, y)) + Mathf.Abs(Vector3.Dot(x, z)) + Mathf.Abs(Vector3.Dot(y, z)) > .001f)
+                    throw new InvalidOperationException("Freezing this non-uniform scale would shear children. Freeze the mesh before rotating its children.");
             }
         }
         private static void TransformMesh(Mesh mesh, Matrix4x4 matrix)

@@ -16,6 +16,15 @@ namespace MashBoxSDK.AnimationStudio {
    if(mode==ComponentMode.Vertex)return state.topology.SelectVertices(previous,current);
    return state.topology.SelectFaces(previous,current);
   }
+  private void SubtractComponentClick(HashSet<int> hits)
+  {
+   if(!weld||mode==ComponentMode.Face){Components.ExceptWith(hits);return;}
+   var positions=ComponentPositions();
+   if(mode==ComponentMode.Vertex){var points=new HashSet<Vector3>();foreach(int i in hits)if(i>=0&&i<positions.Count)points.Add(positions[i]);Components.RemoveWhere(i=>i>=0&&i<positions.Count&&IsolationAllowsComponent(i)&&points.Contains(positions[i]));return;}
+   var edges=Edges();var keys=new HashSet<(Vector3,Vector3)>();
+   foreach(int i in hits)if(i>=0&&i<edges.Count)keys.Add(StudioMeshCuts.NormalEdgePositionKeyForBevel(positions[edges[i].a],positions[edges[i].b]));
+   Components.RemoveWhere(i=>i>=0&&i<edges.Count&&IsolationAllowsComponent(i)&&keys.Contains(StudioMeshCuts.NormalEdgePositionKeyForBevel(positions[edges[i].a],positions[edges[i].b])));
+  }
   private bool BeginComponentLoopSelection(SceneView view,int id){var evt=Event.current;if(evt.type!=EventType.MouseDown||evt.button!=0||evt.clickCount<2||evt.alt||pivot||pivotSnapHeld||mode==ComponentMode.Object||GUIUtility.hotControl!=0||SelectionPaintInputHeld(view))return false;
    var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);if(!canvas.Contains(evt.mousePosition)||view is MashBoxStudioViewport overlay&&overlay.IsOverViewportControls(evt.mousePosition))return false;
    int node=MeshAtModePointer(view,evt.mousePosition);if(node<0)return false;bool hit;using(new ComponentTargetScope(this,node)){hit=CanEditComponents()&&FindComponentAt(view,evt.mousePosition)>=0;}if(!hit)return false;

@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!view) return;
             const float distance = 10f;
             float size = distance * Mathf.Sin(view.cameraSettings.fieldOfView * .5f * Mathf.Deg2Rad);
-            view.in2DMode = false; view.orthographic = false; view.camera.orthographic = false;
+            view.isRotationLocked = false; view.in2DMode = false; view.orthographic = false; view.camera.orthographic = false;
             view.LookAtDirect(Vector3.zero, Quaternion.Euler(37, 38, 0), size);
             CameraChanged(view);
         }
@@ -47,6 +47,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static bool SetViewportCameraPose(SceneView view, Vector3 position, Vector3 euler)
         {
             if (!view || !Finite(position) || !Finite(euler)) return false;
+            view.isRotationLocked = false;
             var rotation = Quaternion.Euler(euler);
             if (view.in2DMode)
             {
@@ -73,7 +74,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var position = ViewportCameraPosition(view);
             var rotation = view.rotation; float size = view.size;
-            view.in2DMode = false; view.orthographic = orthographic; view.size = size;
+            view.isRotationLocked = false; view.in2DMode = false; view.orthographic = orthographic; view.size = size;
             // SceneView.cameraDistance reads the rendered camera's projection flag.
             // Synchronize it before querying the distance for the new projection.
             view.camera.orthographic = orthographic;

@@ -39,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
             mesh.SetNormals(normalGroupValues);
         }
         private const string SoftenTool = "Soften Edges";
-        private static readonly GUIContent SoftenAngleContent = new GUIContent("Angle (degrees)", "Edges between faces within this angle are softened. This is also the default for Mesh Display > Soften.");
+        private static readonly GUIContent SoftenAngleContent = new GUIContent("Angle (degrees)", "Edges between faces within this angle are softened. Applies only to Soften options; direct Soften ignores the angle.");
         private IEnumerable<int> NormalTargets()
         {
             if (!Document) yield break;
@@ -66,6 +66,8 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseNormalsToolWindow() { if (softenToolPane) softenToolPane.Close(); softenToolPane = null; }
         private void OpenSoftenTool()
         {
+            PrepareMeshSelection(ComponentMode.Object, () => CanAdjustEdgeNormals,
+                "Select editable static mesh objects or components to soften.", ComponentMode.Object, ComponentMode.Vertex, ComponentMode.Edge, ComponentMode.Face);
             if (softenToolPane) { QueueLiveTool(LiveTool.Soften); softenToolPane.Repaint(); softenToolPane.Focus(); return; }
             softenToolPane = ToolChannelPane.Open("Soften Edges", DrawSoftenTool, () => softenToolPane = null,
                 execute: () => ApplyLiveTool(LiveTool.Soften), canExecute: () => CanRunLiveTool(LiveTool.Soften), failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
@@ -112,10 +114,12 @@ namespace MashBoxSDK.AnimationStudio
         private void ApplyEdgeNormalsChecked(bool harden)
         {
             FinishLiveTool();
-            if (!CanAdjustEdgeNormals) throw new InvalidOperationException("Select editable static mesh objects or mesh components.");
+            PrepareMeshSelection(ComponentMode.Object, () => CanAdjustEdgeNormals,
+                harden ? "Select editable static mesh objects or components to harden." : "Select editable static mesh objects or components to soften.",
+                ComponentMode.Object, ComponentMode.Vertex, ComponentMode.Edge, ComponentMode.Face);
             if (GUIUtility.hotControl != 0) return;
             FinishChannelEdit(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
-            float angle = repeatingAction != null && (repeatingAction.kind == RepeatKind.Soften || repeatingAction.kind == RepeatKind.Harden) ? repeatingAction.parameters.x : Mathf.Clamp(ToolChannelPane.GetFloatDefault(SoftenTool, "Angle", 45), 0, 180);
+            const float angle = 180; // Direct Soften/Harden never inherit the angle-limited options.
             var oldMode = mode; var oldComponents = Components.ToArray();
             var selectedPoints = new HashSet<Vector3>(); var selectedEdges = new HashSet<(Vector3, Vector3)>();
             if (mode == ComponentMode.Vertex) { var v = ActiveMesh.vertices; foreach (int i in Components) if (i >= 0 && i < v.Length) selectedPoints.Add(v[i]); }
@@ -146,7 +150,7 @@ namespace MashBoxSDK.AnimationStudio
                 { var v = ActiveMesh.vertices; for (int i = 0; i < v.Length; i++) if (selectedPoints.Contains(v[i])) Components.Add(i); }
                 else if (mode == ComponentMode.Edge)
                 { var v = ActiveMesh.vertices; var edges = Edges(); for (int i = 0; i < edges.Count; i++) if (selectedEdges.Contains(NormalEdgePositionKey(v[edges[i].a], v[edges[i].b]))) Components.Add(i); }
-                error = harden ? "Edges hardened." : "Edges softened up to " + angle.ToString("0.####") + " degrees.";
+                error = harden ? "Edges hardened." : "Edges softened.";
                 RememberAction(harden ? RepeatKind.Harden : RepeatKind.Soften,new Vector4(angle,0,0,0));
                 repaint(); softenToolPane?.Repaint();
             }

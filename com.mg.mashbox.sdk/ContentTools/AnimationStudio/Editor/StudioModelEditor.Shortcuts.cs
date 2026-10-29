@@ -20,6 +20,8 @@ namespace MashBoxSDK.AnimationStudio
             if (HandleSaveShortcut() || HandleGridSnapKey(view) || HandleSizeShortcut(evt) || HandlePivotSnap(view)) return true;
             if (evt.type != EventType.KeyDown) return false;
             bool Is(StudioShortcut action) => StudioShortcuts.Pressed(action,evt);
+            if (Is(StudioShortcut.Cancel) && GUIUtility.hotControl == 0 && ActiveChannelTool)
+            { ActiveChannelTool.Close(); evt.Use(); repaint(); return true; }
             if (Is(StudioShortcut.Cancel))
             {
                 if (targetWeldActive) { if (targetWeldSource >= 0) ResetTargetWeldGesture(); else StopTargetWeld(); evt.Use(); repaint(); return true; }

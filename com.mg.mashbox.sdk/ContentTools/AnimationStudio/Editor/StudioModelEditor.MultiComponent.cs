@@ -100,6 +100,11 @@ namespace MashBoxSDK.AnimationStudio
             if(!view||!Document)return -1;
             var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);
             if(!canvas.Contains(point)||(view is MashBoxStudioViewport overlay&&overlay.IsOverViewportControls(point)))return -1;
+            if(mode==ComponentMode.Vertex||mode==ComponentMode.Edge)
+            {
+                int componentTarget=FindSelectedComponentTarget(view,point,out _);
+                if(componentTarget>=0)return componentTarget;
+            }
             var ray=HandleUtility.GUIPointToWorldRay(point);int hit=-1;float nearest=float.PositiveInfinity;
             for(int node=0;node<Transforms.Length;node++)
             {

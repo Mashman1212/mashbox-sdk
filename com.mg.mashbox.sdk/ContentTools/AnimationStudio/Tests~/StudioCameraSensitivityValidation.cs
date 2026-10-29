@@ -67,7 +67,7 @@ public static class StudioCameraSensitivityValidation
         view.in2DMode = true;
         var lockedRotation = view.rotation;
         view.ApplyStudioNavigation(StudioShortcut.Orbit, new Vector2(30, 20));
-        Check(view.rotation == lockedRotation, "2D orbit restriction changed");
+        Check(!view.in2DMode && !view.isRotationLocked && Quaternion.Angle(view.rotation, lockedRotation) > .01f, "Orbit did not release native 2D/rotation lock");
         view.in2DMode = false;
         File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath, "../../camera-sensitivity-result.txt")), "PASS " + checks + " camera sensitivity assertions");
     }

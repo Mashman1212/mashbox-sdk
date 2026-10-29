@@ -13,12 +13,12 @@ namespace MashBoxSDK.AnimationStudio
         private sealed class MultiTransformTarget
         {
             internal int node;internal Mesh mesh;internal int[] indices;internal Vector3[] source,working;
-            internal Matrix4x4 localToWorld,worldToLocal;
+            internal Matrix4x4 localToWorld,worldToLocal;internal Vector3 center;internal Quaternion orientation;
         }
         private sealed class MultiComponentGesture
         {
             internal int control;internal Tool tool;internal Vector3 center,position,factor=Vector3.one;
-            internal Quaternion orientation,rotation;internal bool registered,pendingExtrude,failed;
+            internal Quaternion orientation,rotation;internal bool registered,pendingExtrude,failed,individualRotation;
             internal readonly List<MultiTransformTarget> targets=new List<MultiTransformTarget>();
         }
         private MultiComponentGesture multiComponentGesture;
@@ -40,16 +40,16 @@ namespace MashBoxSDK.AnimationStudio
         }
         private MultiComponentGesture CaptureMultiComponentGesture(List<int> nodes,Vector3 center,Quaternion orientation,int control)
         {
-            var gesture=new MultiComponentGesture{control=control,tool=tool,center=center,position=center,orientation=orientation,rotation=orientation};
+            var gesture=new MultiComponentGesture{control=control,tool=tool,individualRotation=local,center=center,position=center,orientation=orientation,rotation=orientation};
             var byMesh=new Dictionary<Mesh,MultiTransformTarget>();
             foreach(int node in nodes.OrderBy(i=>i==Active?0:1))using(new ComponentTargetScope(this,node))
             {
                 if(!CanEditComponents())throw new InvalidOperationException("Every selected component target must be editable.");
                 var indices=SelectedVertices();
-                if(byMesh.TryGetValue(ActiveMesh,out var shared)){shared.indices=shared.indices.Concat(indices).Distinct().OrderBy(i=>i).ToArray();continue;}
+                if(!(gesture.individualRotation && gesture.tool==Tool.Rotate) && byMesh.TryGetValue(ActiveMesh,out var shared)){shared.indices=shared.indices.Concat(indices).Distinct().OrderBy(i=>i).ToArray();continue;}
                 var source=ComponentPositions().ToArray();
-                var target=new MultiTransformTarget{node=node,mesh=ActiveMesh,indices=indices.OrderBy(i=>i).ToArray(),source=source,working=(Vector3[])source.Clone(),localToWorld=Transforms[node].localToWorldMatrix,worldToLocal=Transforms[node].worldToLocalMatrix};
-                gesture.targets.Add(target);byMesh.Add(target.mesh,target);
+                var target=new MultiTransformTarget{node=node,center=HasComponentPivot?componentPivot.position:ComponentSelectionCenter(),orientation=UnlockedPivotOrientation,mesh=ActiveMesh,indices=indices.OrderBy(i=>i).ToArray(),source=source,working=(Vector3[])source.Clone(),localToWorld=Transforms[node].localToWorldMatrix,worldToLocal=Transforms[node].worldToLocalMatrix};
+                gesture.targets.Add(target);byMesh[target.mesh]=target;
             }
             return gesture;
         }
@@ -68,14 +68,27 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var world=target.localToWorld.MultiplyPoint3x4(target.source[index]);
                 if(gesture.tool==Tool.Move)world+=position-gesture.center;
-                else if(gesture.tool==Tool.Rotate)world=gesture.center+turn*(world-gesture.center);
+                else if(gesture.tool==Tool.Rotate)world=RotateComponentTarget(gesture,target,world,rotation);
                 else world=gesture.center+gesture.orientation*Vector3.Scale(inverse*(world-gesture.center),factor);
                 var local=target.worldToLocal.MultiplyPoint3x4(world);if(!FiniteScalePoint(local))return false;target.working[index]=local;
             }
             if(!gesture.registered)
             {
                 foreach(var target in gesture.targets)using(new ComponentTargetScope(this,target.node))PreserveFaceTopology();
-                Undo.RegisterCompleteObjectUndo(gesture.targets.Select(t=>(UnityEngine.Object)t.mesh).ToArray(),"Transform mesh components");gesture.registered=true;
+                bool independent = gesture.individualRotation && gesture.tool==Tool.Rotate;
+                if (independent)
+                    foreach (var target in gesture.targets)
+                        if (EditorUtility.IsPersistent(target.mesh) || Document.nodes.Count(n=>n.mesh==target.mesh)>1)
+                        { var copy=UnityEngine.Object.Instantiate(target.mesh);copy.name=target.mesh.name;target.mesh=copy; }
+                var records=gesture.targets.Select(t=>(UnityEngine.Object)t.mesh);
+                Undo.RegisterCompleteObjectUndo(independent?new UnityEngine.Object[]{Document}.Concat(records).ToArray():records.ToArray(),"Transform mesh components");
+                if (independent)
+                    foreach (var target in gesture.targets)
+                    {
+                        Document.nodes[target.node].mesh=target.mesh;
+                        var filter=Transforms[target.node].GetComponent<MeshFilter>();if(filter)filter.sharedMesh=target.mesh;
+                    }
+                gesture.registered=true;
             }
             foreach(var target in gesture.targets)using(new ComponentTargetScope(this,target.node))
             {
@@ -100,7 +113,7 @@ namespace MashBoxSDK.AnimationStudio
                     {
                         var world=target.localToWorld.MultiplyPoint3x4(local);
                         if(gesture.tool==Tool.Move)world+=position-gesture.center;
-                        else if(gesture.tool==Tool.Rotate)world=gesture.center+rotation*Quaternion.Inverse(gesture.orientation)*(world-gesture.center);
+                        else if(gesture.tool==Tool.Rotate)world=RotateComponentTarget(gesture,target,world,rotation);
                         else world=gesture.center+gesture.orientation*Vector3.Scale(Quaternion.Inverse(gesture.orientation)*(world-gesture.center),factor);
                         return target.worldToLocal.MultiplyPoint3x4(world);
                     }

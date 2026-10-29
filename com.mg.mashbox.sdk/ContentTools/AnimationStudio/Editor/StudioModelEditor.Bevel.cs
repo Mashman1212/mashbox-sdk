@@ -40,7 +40,8 @@ namespace MashBoxSDK.AnimationStudio
 
         {
 
-            if (!CanBevelEdges) throw new InvalidOperationException("Select edges on an editable static mesh to bevel.");
+            PrepareMeshSelection(ComponentMode.Edge, () => CanBevelEdges,
+                "Select edges on an editable static mesh to bevel.", ComponentMode.Edge);
 
             if (bevelToolPane) { QueueLiveTool(LiveTool.Bevel); bevelToolPane.Repaint(); bevelToolPane.Focus(); return; }
 
@@ -72,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
 
             DrawBevelFlowOptions();
 
-            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Cancel or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
 
         }
 

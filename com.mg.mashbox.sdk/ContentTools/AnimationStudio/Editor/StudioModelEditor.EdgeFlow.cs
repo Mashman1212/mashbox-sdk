@@ -23,7 +23,8 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseEdgeFlowToolWindow(){if(edgeFlowToolPane)edgeFlowToolPane.Close();edgeFlowToolPane=null;}
         private void OpenEdgeFlowTool()
         {
-            if(!CanEditEdgeFlow)throw new InvalidOperationException("Select one or more authored polygon edges on an editable static mesh.");
+            PrepareMeshSelection(ComponentMode.Edge, () => CanEditEdgeFlow,
+                "Select edges on an editable static mesh to edit edge flow.", ComponentMode.Edge);
             if(edgeFlowToolPane){QueueLiveTool(LiveTool.EdgeFlow);edgeFlowToolPane.Focus();return;}
             edgeFlowToolPane=ToolChannelPane.Open(EdgeFlowTool,DrawEdgeFlowTool,()=>edgeFlowToolPane=null,
                 new Vector2(350,235),new Vector2(310,215),
@@ -44,7 +45,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EditorGUIUtility.labelWidth=145;DrawFlowParameters(EdgeFlowTool,false);
             GUILayout.Label("Fits across the selected edges using neighboring surface tangents. Unselected vertices stay fixed; edges do not shrink along their length. Open strip ends and branch junctions stay fixed; a single edge can adjust both ends.",StudioTheme.Styles.wordWrappedMiniLabel);
-            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. X or Escape cancels the unapplied preview.",StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Cancel or Escape cancels the unapplied preview.",StudioTheme.Styles.wordWrappedMiniLabel);
         }
         private void DrawBevelFlowOptions()
         {

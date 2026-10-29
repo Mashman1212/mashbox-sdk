@@ -20,7 +20,8 @@ namespace MashBoxSDK.AnimationStudio
         internal void MergeToCenter()
         {
             StopTargetWeld();
-            if (!CanMergeVertices) throw new InvalidOperationException("Select at least two vertices on an editable static mesh.");
+            PrepareMeshSelection(ComponentMode.Vertex, () => CanMergeVertices,
+                "Select at least two vertices on an editable static mesh to merge.", ComponentMode.Vertex);
             ApplyLiveTool(LiveTool.Merge);
             // The immediate transaction already recorded its source/result
             // selection alongside the meshes; the outer command adds no extra step.

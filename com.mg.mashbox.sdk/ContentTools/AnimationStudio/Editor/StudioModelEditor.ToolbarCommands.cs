@@ -26,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
             switch(key)
             {
                 case "Edit/Repeat Last Action": return "Repeat the last completed modeling action on the current selection using its completed settings.";
-                case "Mesh Display/Soften": return "Blend vertex normals across selected edges up to the soften angle for smoother shading.";
+                case "Mesh Display/Soften": return "Immediately blend vertex normals across selected edges regardless of angle.";
                 case "Mesh Display/Harden": return "Split shading normals along selected edges to create sharp shading breaks.";
                 case "Mesh Display/Soften…": return "Set the angle used to soften edges and preview the shading result.";
                 case "Mesh Display/X-ray Mode": return "Make surfaces transparent and show edges through the mesh.";
@@ -34,6 +34,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Display/Shaded Wireframe": return "Toggle polygon edge outlines over shaded surfaces.";
                 case "Mesh Tools/Extrude": return "Extend selected faces or open boundary edges to create new geometry.";
                 case "Mesh Tools/Bevel…": return "Replace selected edges with a chamfer or rounded profile.";
+                case "Mesh Tools/Bridge Edges": return "Fill the gap between two non-touching boundary chains or loops with equal edge counts.";
                 case "Mesh Tools/Split Selection": return "Cut selected faces, or faces touching selected vertices or edges, into separate mesh objects.";
                 case "Mesh Tools/Combine Meshes…": return "Combine selected mesh objects into one object, preserving polygon faces and materials.";
                 case "Mesh Tools/Merge Vertices": return "Merge selected vertices at their shared center.";
@@ -71,6 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Modify/Scale": return "Resize the selection around its pivot.";
                 case "Modify/Edit Pivot": return "Edit the pivot without moving the mesh, or finish pivot editing.";
                 case "Modify/Center Pivot": return "Move the pivot to the selection center.";
+                case "Modify/Group": return "Group selected objects under a new parent centered on their average centers.";
                 case "Modify/Freeze Transforms": return "Bake transforms into the mesh and reset transform channels.";
                 case "UV/UV Editor": return "Open the editor for viewing and editing mesh UV coordinates.";
                 case "Lighting/Bake Vertex AO (Red)…": return "Bake ambient occlusion into the red vertex color channel.";

@@ -27,7 +27,8 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseCombineToolWindow() { if (combineToolPane) combineToolPane.Close(); combineToolPane = null; }
         private void OpenCombineTool()
         {
-            if (!CanCombineObjects) throw new InvalidOperationException("Select at least two static mesh objects in Object mode.");
+            PrepareMeshSelection(ComponentMode.Object, () => CanCombineObjects,
+                "Select at least two static mesh objects to combine.", ComponentMode.Object);
             if (combineToolPane) { combineToolPane.Focus(); return; }
             combineToolPane = ToolChannelPane.Open(CombineTool, DrawCombineTool, () => combineToolPane = null,
                 new Vector2(365,255), new Vector2(320,235), execute: CombineSelectedObjects, canExecute: () => CanCombineObjects,
@@ -40,7 +41,13 @@ namespace MashBoxSDK.AnimationStudio
             bool channels = EditorGUILayout.Toggle(new GUIContent("Combine UV channels", "Combine matching numbered UV slots. Off assigns each input's populated UV sets to separate output slots, up to eight."), ToolChannelPane.GetFloatDefault(CombineTool,"CombineUVs",1) >= .5f);
             if (EditorGUI.EndChangeCheck()) ToolChannelPane.SetFloatDefault(CombineTool,"CombineUVs",channels ? 1 : 0);
             EditorGUI.BeginChangeCheck();
-            bool keepName = EditorGUILayout.Toggle(new GUIContent("Use first selected name", "Use the first selected mesh name without adding Combined. Existing root names still receive a unique suffix when needed."), ToolChannelPane.GetFloatDefault(CombineTool,"KeepFirstName",0) >= .5f);
+            var nameRect = EditorGUI.PrefixLabel(EditorGUILayout.GetControlRect(), new GUIContent("Use first selected name", "Use the first selected mesh name without adding Combined. Existing root names still receive a unique suffix when needed."));
+            var inputs = SelectedCombineInputs;
+            string firstName = inputs.Length > 0 ? Document.nodes[inputs[0]].name : "";
+            var toggleRect = new Rect(nameRect.xMax - 16, nameRect.y, 16, nameRect.height);
+            nameRect.width = Mathf.Max(0, nameRect.width - 22);
+            GUI.Label(nameRect, new GUIContent(firstName, firstName), EditorStyles.miniLabel);
+            bool keepName = EditorGUI.Toggle(toggleRect, ToolChannelPane.GetFloatDefault(CombineTool,"KeepFirstName",0) >= .5f);
             if (EditorGUI.EndChangeCheck()) ToolChannelPane.SetFloatDefault(CombineTool,"KeepFirstName",keepName ? 1 : 0);
             ToolChannelPane.EnumParameter(CombineTool,"Pivot",new GUIContent("Pivot"),CombinePivot.FirstSelected);
             GUILayout.Label("First Selected uses the first selected mesh origin. Average Center averages the selected meshes' world-space bounds centers. Orientation follows the first selected mesh.",StudioTheme.Styles.wordWrappedMiniLabel);

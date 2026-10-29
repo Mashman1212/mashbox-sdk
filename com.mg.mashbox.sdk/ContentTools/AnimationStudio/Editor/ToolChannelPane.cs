@@ -3,15 +3,15 @@ using UnityEditor;
 using UnityEngine;
 namespace MashBoxSDK.AnimationStudio
 {
-    // Borderless, persistent floating host. Tools supply content; the host owns
-    // compact chrome, dragging, resizing, padding, scrolling and window lifetime.
+    // Shared tool session and parameter controls. Studio hosts these inside its
+    // Tool Options panel; standalone callers retain the legacy utility host.
     [UnityEngine.Scripting.APIUpdating.MovedFrom(true, sourceNamespace: "MashBoxSDK.AnimationStudio", sourceAssembly: "MashBoxSDK.AnimationStudio.Editor", sourceClassName: "StudioToolWindow")]
     internal sealed class ToolChannelPane : EditorWindow
     {
         private static readonly System.Collections.Generic.Dictionary<string, float> FloatDefaults = new System.Collections.Generic.Dictionary<string, float>();
         private static readonly System.Collections.Generic.HashSet<string> DirtyDefaults = new System.Collections.Generic.HashSet<string>();
         private static readonly System.Collections.Generic.Dictionary<(string, string), string> DefaultKeys = new System.Collections.Generic.Dictionary<(string, string), string>();
-        private static readonly GUIContent CloseContent = new GUIContent("\u00d7", "Close tool window");
+        private static readonly GUIContent CloseContent = new GUIContent("\u00d7", "Cancel tool and close options");
         internal static string DefaultKey(string tool, string parameter)
         {
             var pair = (tool, parameter);
@@ -141,7 +141,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             historyQueued = false;
             if (!this || history == null) return;
-            rootVisualElement.focusController?.focusedElement?.Blur();
+            (embeddedOwner ? embeddedOwner.rootVisualElement : rootVisualElement).focusController?.focusedElement?.Blur();
             EditorGUIUtility.editingTextField = false;
             history(redoQueued); Repaint();
         }
@@ -158,7 +158,49 @@ namespace MashBoxSDK.AnimationStudio
             }
             return true;
         }
-        private void SaveBounds() => StudioPreferenceStore.SetBounds("ToolChannelPane.Bounds", position);
+        private MashBoxStudioViewport embeddedOwner;
+        private bool embedded;
+        private GUIContent embeddedHeader;
+        internal bool IsEmbedded => embedded;
+        internal new void Focus()
+        { if (embedded) { if (embeddedOwner) embeddedOwner.FocusModelToolOptions(); } else base.Focus(); }
+        internal new void Repaint()
+        { if (embedded) { if (embeddedOwner) embeddedOwner.RepaintUI(); } else base.Repaint(); }
+        internal new void Close()
+        { if (embedded) DestroyImmediate(this); else base.Close(); }
+        internal void DrawEmbeddedHeader()
+        {
+            var sensitivity = StudioDragSensitivity.DrawPanelHeader(embeddedHeader ?? titleContent);
+            if (StudioDragSensitivity.DrawButton(sensitivity, dragSensitivity, out float next))
+            { dragSensitivity = next; StudioPreferenceStore.SetFloat(sensitivityKey, next); Repaint(); }
+
+        }
+        internal void DrawEmbeddedContent()
+        {
+            if (draw == null) return;
+            HandlePaneHistory(Event.current); HandlePaneRepeat(Event.current);
+            EditorGUI.BeginChangeCheck();
+            var previous = drawingPane; drawingPane = this;
+            try { using (new StudioDragSensitivity.DragScope(dragSensitivity)) draw(); }
+            finally { drawingPane = previous; }
+            if (EditorGUI.EndChangeCheck()) preview?.Invoke();
+            if (embeddedOwner && Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape && GUIUtility.hotControl == 0 && !EditorGUIUtility.editingTextField)
+            { Event.current.Use(); Close(); }
+            if (Event.current.rawType == EventType.MouseUp || Event.current.rawType == EventType.KeyUp) FlushDefaults();
+        }
+        internal void DrawEmbeddedCommands()
+        {
+            if (execute == null) return;
+            var row = EditorGUILayout.GetControlRect(false, 22);
+            float width = Mathf.Max(0, (row.width - 8) / 3);
+            using (new EditorGUI.DisabledScope(canExecute != null && !canExecute()))
+            {
+                if (GUI.Button(new Rect(row.x, row.y, width, row.height), "Execute")) ExecuteCommand(true);
+                if (this && GUI.Button(new Rect(row.x + width + 4, row.y, width, row.height), "Apply")) ExecuteCommand(false);
+            }
+            if (this && GUI.Button(new Rect(row.x + (width + 4) * 2, row.y, width, row.height), new GUIContent("Cancel", "Cancel the unapplied preview and return to tool options."))) Close();
+        }
+        private void SaveBounds() { if (!embedded) StudioPreferenceStore.SetBounds("ToolChannelPane.Bounds", position); }
         private const float HeaderHeight = 20, Padding = 10, GripSize = 10;
         private Action draw, closed, execute, preview, cancelPreview;
         private Func<bool> canExecute;
@@ -176,6 +218,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach (var pane in Resources.FindObjectsOfTypeAll<ToolChannelPane>()) pane.Close();
             var window = CreateInstance<ToolChannelPane>();
             window.titleContent = new GUIContent(title);
+            window.embeddedHeader = new GUIContent(title.ToUpperInvariant());
             window.sensitivityKey = "MashBox.Studio.ToolDragSensitivity." + title;
             window.dragSensitivity = StudioDragSensitivity.Normalize(StudioPreferenceStore.GetFloat(window.sensitivityKey, 1));
             window.minSize = minimumSize ?? new Vector2(200, 116);
@@ -183,6 +226,13 @@ namespace MashBoxSDK.AnimationStudio
             window.draw = draw; window.closed = closed; window.preview = preview; window.cancelPreview = cancelPreview;
             window.history = history; window.repeat = repeat;
             window.execute = execute; window.canExecute = canExecute; window.failed = failed;
+            if (owner is MashBoxStudioViewport viewport)
+            {
+                window.embedded = true; window.embeddedOwner = viewport;
+                viewport.Studio?.ToolbarModelEditor?.PrepareEmbeddedChannelTool();
+                viewport.FocusModelToolOptions();
+                return window;
+            }
             // Native ownership keeps the compact borderless pane above its Studio
             // host without focus-stealing callbacks or a repaint/polling loop.
             StudioWindowOwnership.ShowUtility(window, owner, borderless: Application.platform == RuntimePlatform.WindowsEditor);

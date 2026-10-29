@@ -6,6 +6,12 @@ namespace MashBoxSDK.AnimationStudio
     /// <summary>Vertex-preserving, simultaneous Laplacian smoothing of an ordered 3D path.</summary>
     public static class StudioEdgeFlow
     {
+        // Shared fixed-endpoint interpolation for transverse Edge Flow and bridge profiles.
+        internal static Vector3 Hermite(Vector3 a,Vector3 b,Vector3 m0,Vector3 m1,float t)
+        {
+            float t2=t*t,t3=t2*t;
+            return (2*t3-3*t2+1)*a+(-2*t3+3*t2)*b+(t3-2*t2+t)*m0+(t3-t2)*m1;
+        }
         /// <summary>Returns a new array. Open endpoints stay exact; closed paths wrap around.
         /// Influence is 0..1 and each iteration uses a stable half-step. Source arc-length
         /// weights preserve a straight path even when its samples are unevenly spaced.</summary>

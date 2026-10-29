@@ -92,8 +92,9 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseExtrudeToolWindow() { if (extrudeToolPane) extrudeToolPane.Close(); extrudeToolPane = null; }
         internal void ExtrudeSelected()
         {
+            PrepareMeshSelection(ComponentMode.Face, () => CanExtrude,
+                "Select faces or open boundary edges on an editable static mesh to extrude.", ComponentMode.Face, ComponentMode.Edge);
             if (extrudeToolPane) { QueueLiveTool(LiveTool.Extrude); extrudeToolPane.Repaint(); extrudeToolPane.Focus(); return; }
-            if (!CanExtrude) throw new InvalidOperationException("Select faces or open boundary edges on an editable static mesh.");
             extrudeToolPane = ToolChannelPane.Open("Extrude", DrawLiveExtrudeFields, () => extrudeToolPane = null,
                 new Vector2(300, 185), new Vector2(260, 175),
                 execute: () => ApplyLiveTool(LiveTool.Extrude), canExecute: () => CanRunLiveTool(LiveTool.Extrude),
@@ -108,7 +109,7 @@ namespace MashBoxSDK.AnimationStudio
             extrusionInset = EditorGUILayout.FloatField(new GUIContent("Inset", "Mesh-local boundary offset. Positive moves outward; negative moves inward. Independent of normal distance."), extrusionInset);
             if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
             if (EditorGUI.EndChangeCheck()) StoreExtrusionDefaults();
-            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. The header X or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
+            GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Cancel or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
         }
 
         private void StoreExtrusionDefaults()

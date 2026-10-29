@@ -126,40 +126,42 @@ namespace MashBoxSDK.AnimationStudio
                     AddAction(menu, "Move", MarkingAction.Move, view); AddAction(menu, "Rotate", MarkingAction.Rotate, view); AddAction(menu, "Scale", MarkingAction.Scale, view);
                     menu.AddSeparator("");
                     AddAction(menu, pivot ? "Finish Pivot Edit" : "Edit Pivot", MarkingAction.EditPivot, view);
+                    AddCommand(menu, "Group", true, GroupSelectedObjects);
                     AddAction(menu, "Center Pivot", MarkingAction.CenterPivot, view); AddAction(menu, "Freeze Transforms", MarkingAction.Freeze, view);
                 
                     break; }
                 case "Edit Mesh": {
-                    AddCommand(menu, "Edit Edge Flow…", CanEditEdgeFlow, OpenEdgeFlowTool, finishPreview: false);
+                    AddCommand(menu, "Edit Edge Flow…", true, OpenEdgeFlowTool, finishPreview: false);
                     break; }
                 case "Mesh Tools": {
-                    AddCommand(menu, "Combine Meshes…", CanCombineObjects, OpenCombineTool);
-                    AddCommand(menu, "Split Selection", CanSplitSelection, SplitSelectedComponents);
-                    AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), CanExtrude, ExtrudeSelected, finishPreview: false);
-                    AddCommand(menu, "Bevel…", CanBevelEdges, OpenBevelTool, finishPreview: false);
-                    AddCommand(menu, "Merge to Center", CanMergeVertices, MergeToCenter, commandKey: "Merge Vertices");
-                    if (CanStartTargetWeld) menu.AddItem(new GUIContent("Target Weld"), targetWeldActive, () => Run(ActivateTargetWeld));
-                    else menu.AddDisabledItem(new GUIContent("Target Weld"));
+                    AddCommand(menu, "Combine Meshes…", true, OpenCombineTool);
+                    AddCommand(menu, "Split Selection", true, () => ChooseSelectionAction("Split Selection", SplitSelectedComponents, "Select faces, edges or vertices to cut into a new mesh. Leave at least one face in each source mesh."));
+                    AddCommand(menu, "Bridge Edges", true, OpenBridgeTool);
+                    AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), true, ExtrudeSelected, finishPreview: false);
+                    AddCommand(menu, "Bevel…", true, OpenBevelTool, finishPreview: false);
+                    AddCommand(menu, "Merge to Center", true, MergeToCenter, commandKey: "Merge Vertices");
+                    menu.AddItem(new GUIContent("Target Weld"), targetWeldActive, () => Run(() => {
+                        if (!targetWeldActive) PrepareMeshSelection(ComponentMode.Vertex, () => CanStartTargetWeld, "Select an editable static mesh, then drag a vertex onto another vertex to weld.", ComponentMode.Vertex);
+                        ActivateTargetWeld();
+                    }));
                     menu.AddSeparator("");
-                    if (CanCutMesh)
-                    {
-                        menu.AddItem(new GUIContent("Insert Edge Loop"), cutTool == CutTool.EdgeLoop, () => Run(() => ActivateCutTool(CutTool.EdgeLoop)));
-                        menu.AddItem(new GUIContent("Multi-Cut"), cutTool == CutTool.MultiCut, () => Run(() => ActivateCutTool(CutTool.MultiCut)));
-                    }
-                    else
-                    {
-                        menu.AddDisabledItem(new GUIContent("Insert Edge Loop"));
-                        menu.AddDisabledItem(new GUIContent("Multi-Cut"));
-                    }
+                    menu.AddItem(new GUIContent("Insert Edge Loop"), cutTool == CutTool.EdgeLoop, () => Run(() => {
+                        PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh, then select an edge to insert an edge loop.", ComponentMode.Edge);
+                        ActivateCutTool(CutTool.EdgeLoop);
+                    }));
+                    menu.AddItem(new GUIContent("Multi-Cut"), cutTool == CutTool.MultiCut, () => Run(() => {
+                        PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh to use Multi-Cut.", ComponentMode.Edge);
+                        ActivateCutTool(CutTool.MultiCut);
+                    }));
                     menu.AddSeparator("");
                     AddCommand(menu, "Deform/Blend Shape", Document && SelectedBlendMeshes.Length >= 2, CreateSelectedBlendShape);
                     AddCommand(menu, "Deform/Bake Current Pose", HasBlendShape, BakeSelectedBlendShape);
                 
                     break; }
                 case "Mesh Display": {
-                    AddCommand(menu, "Soften", CanAdjustEdgeNormals, () => ApplyEdgeNormals(false));
-                    AddCommand(menu, "Harden", CanAdjustEdgeNormals, () => ApplyEdgeNormals(true));
-                    AddCommand(menu, "Soften…", CanAdjustEdgeNormals, OpenSoftenTool, finishPreview: false);
+                    AddCommand(menu, "Soften", true, () => ApplyEdgeNormals(false));
+                    AddCommand(menu, "Harden", true, () => ApplyEdgeNormals(true));
+                    AddCommand(menu, "Soften…", true, OpenSoftenTool, finishPreview: false);
 
 
                 

@@ -10,13 +10,9 @@ namespace MashBoxSDK.AnimationStudio
     {
         private static readonly GUIContent ChannelHeaderContent = new GUIContent("CHANNELS");
         private static readonly GUIContent ChannelVisibilityContent = new GUIContent("", "Show or hide this object");
-        private static readonly GUILayoutOption[] ChannelHeaderLayout = { GUILayout.ExpandWidth(true) };
         private void DrawChannelHeader()
         {
-            var style = StudioTheme.Styles.panelHeader;
-            var rect = GUILayoutUtility.GetRect(0, 18, ChannelHeaderLayout);
-            var button = new Rect(rect.xMax - 16, rect.center.y - 8, 16, 16);
-            GUI.Label(new Rect(rect.x, rect.y, Mathf.Max(0, rect.width - 20), rect.height), ChannelHeaderContent, style);
+            var button = StudioDragSensitivity.DrawPanelHeader(ChannelHeaderContent);
             if (StudioDragSensitivity.DrawButton(button, StudioSettings.Current.channelDragSensitivity, out float next))
             {
                 StudioSettings.Current.channelDragSensitivity = next;
