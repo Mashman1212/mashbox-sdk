@@ -65,6 +65,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void Load(StudioModelDocument document)
         {
+            CloseSelectionActionPane();
             if (Document != document) lastRepeatAction = null;
             StopTargetWeld(); FinishSelectionPaint();
             CancelLiveTool(); CloseExtrudeToolWindow();
@@ -73,7 +74,7 @@ namespace MashBoxSDK.AnimationStudio
             CloseMergeToolWindow();
             CloseNormalsToolWindow();
             CloseBevelToolWindow();
-            CloseEdgeFlowToolWindow(); CloseCombineToolWindow();
+            CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); CloseCombineToolWindow();
             CancelHierarchyDrag();
             collapsedHierarchy.Clear();
             EndPivotSnap();
@@ -685,7 +686,10 @@ namespace MashBoxSDK.AnimationStudio
             if(BeginComponentLoopSelection(view,id))return;
             if (evt.rawType == EventType.MouseDown && evt.button == 0 && !evt.alt && gestureUndo < 0)
             { Undo.IncrementCurrentGroup(); gestureUndo = Undo.GetCurrentGroup(); }
+            var handleClickEvent=evt.type;var handleClickPointer=evt.mousePosition;
+            BeginHandleComponentClick(view,handleClickEvent,handleClickPointer);
             DrawHandle();
+            FinishHandleComponentClick(view,id,handleClickEvent,handleClickPointer);
 #if MASHBOX_STUDIO_TESTS
             ProfileScene("scene.handle");
 #endif
@@ -800,6 +804,7 @@ namespace MashBoxSDK.AnimationStudio
                 AntialiasTransformGizmo(handleCenter, HandleUtility.GetHandleSize(handleCenter) * handleSize * 1.35f);
             }
             bool handleChanged = EditorGUI.EndChangeCheck();
+            if(handleChanged) handleComponentClickMoved=true;
             if (rotatingWorldObjects)
             {
                 if (worldObjectRotationControl != previousHotControl) worldObjectRotationControl = 0;
@@ -878,7 +883,8 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     Undo.RegisterCompleteObjectUndo(Document, "Transform model objects");
                     TrackLockedObjectMove(position, GUIUtility.hotControl);
-                    // Children selected with their parents inherit the change only once.
+                    if (tool == Tool.Rotate) { RotateSelectedObjects(rotation, orientation, center); Changed(false); return; }
+                    // Move/Scale children selected with their parents inherit the change only once.
                     foreach (int i in objects.Where(i => !HasSelectedParent(i)))
                     {
                         var target = Transforms[i];
@@ -954,7 +960,7 @@ namespace MashBoxSDK.AnimationStudio
             if (click)
             {
                 int best = FindComponentAt(view, end);
-                if (best >= 0) { var hits=ComponentClickSelection(best,selectionClickCount>=2);if(subtract)Components.ExceptWith(hits);else Components.UnionWith(hits); }
+                if (best >= 0) { var hits=ComponentClickSelection(best,selectionClickCount>=2);if(subtract)SubtractComponentClick(hits);else Components.UnionWith(hits); }
                 return;
             }
             var vertices = ActiveMesh.vertices; var edges = Edges(); var t = Transforms[Active];

@@ -40,7 +40,8 @@ namespace MashBoxSDK.AnimationStudio
 
         {
 
-            if (!CanBevelEdges) throw new InvalidOperationException("Select edges on an editable static mesh to bevel.");
+            PrepareMeshSelection(ComponentMode.Edge, () => CanBevelEdges,
+                "Select edges on an editable static mesh to bevel.", ComponentMode.Edge);
 
             if (bevelToolPane) { QueueLiveTool(LiveTool.Bevel); bevelToolPane.Repaint(); bevelToolPane.Focus(); return; }
 

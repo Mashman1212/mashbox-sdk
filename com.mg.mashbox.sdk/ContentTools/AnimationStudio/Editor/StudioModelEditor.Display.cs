@@ -109,6 +109,10 @@ namespace MashBoxSDK.AnimationStudio
             if (!culledSourceMaterials.TryGetValue(source, out var material))
             {
                 material = new Material(source) { name = source.name + " (Studio preview)", hideFlags = HideFlags.HideAndDontSave };
+                if(AssetDatabase.Contains(source))
+                {
+                    material.parent=source;material.RevertAllPropertyOverrides();
+                }
                 ConfigureDisplayCulling(material);
                 culledSourceMaterials.Add(source, material);
             }
@@ -213,7 +217,7 @@ namespace MashBoxSDK.AnimationStudio
             bool textures=displayTextures || checkerMap;
             if (checkerMap) source=StudioMeshMaterialPreview.CheckerMaterial;
             // Editable geometry already contains its pose; terrain deformation must not run again.
-            if (!displayXray && !wireframeOnly && LightingSettings.studioLights && displayLighting && textures && !IsGodGrass(source) && source) return CulledSourceMaterial(source);
+            if (!displayXray && !wireframeOnly && (LightingSettings.studioLights || previewLighting?.SupportsPhysicalMaterials==true) && displayLighting && textures && !IsGodGrass(source) && source) return CulledSourceMaterial(source);
             if (!textures || !source)
             {
                 if (!neutralPreview) neutralPreview = NewPreviewMaterial(null);
@@ -222,6 +226,21 @@ namespace MashBoxSDK.AnimationStudio
             if (!previewMaterials.TryGetValue((source,slice),out var material))
             { material = NewPreviewMaterial(source,slice); previewMaterials.Add((source,slice),material); }
             return material;
+        }
+        private static string PreviewBaseTextureProperty(Material source)
+        {
+            if(!source||!source.shader)return null;
+            // Honor Shader Graph's Main Texture designation before legacy aliases.
+            // Inspect only while constructing the cached preview material.
+            var shader=source.shader;
+            for(int i=0;i<shader.GetPropertyCount();i++)
+                if(shader.GetPropertyType(i)==ShaderPropertyType.Texture&&
+                   (shader.GetPropertyFlags(i)&ShaderPropertyFlags.MainTexture)!=0&&
+                   shader.GetPropertyTextureDimension(i)==TextureDimension.Tex2D)
+                {var name=shader.GetPropertyName(i);if(source.GetTexture(name))return name;}
+            foreach(var name in new[]{"_BaseColorMap","_BaseMap","_UnlitColorMap","_MainTex","_GridTexture"})
+                if(source.HasTexture(name)&&source.GetTexture(name))return name;
+            return null;
         }
         private Material NewPreviewMaterial(Material source, int slice = 0)
         {
@@ -256,12 +275,16 @@ namespace MashBoxSDK.AnimationStudio
                     material.SetTextureScale("_MainTex",source.GetTextureScale("_CheckerboardMap"));
                     material.SetTextureOffset("_MainTex",source.GetTextureOffset("_CheckerboardMap"));
                 }
-                else foreach(var property in new[] {"_BaseColorMap","_BaseMap","_UnlitColorMap","_MainTex"})
-                    if(source.HasTexture(property) && source.GetTexture(property)) {
+                else
+                {
+                    var property=PreviewBaseTextureProperty(source);
+                    if(property!=null)
+                    {
                         material.SetTexture("_MainTex",source.GetTexture(property));
                         material.SetTextureScale("_MainTex",source.GetTextureScale(property));
-                        material.SetTextureOffset("_MainTex",source.GetTextureOffset(property)); break;
+                        material.SetTextureOffset("_MainTex",source.GetTextureOffset(property));
                     }
+                }
                 if(source.HasProperty("_Cull")) material.SetFloat("_Cull",source.GetFloat("_Cull"));
                 else if(source.HasProperty("_CullMode")) material.SetFloat("_Cull",source.GetFloat("_CullMode"));
             }

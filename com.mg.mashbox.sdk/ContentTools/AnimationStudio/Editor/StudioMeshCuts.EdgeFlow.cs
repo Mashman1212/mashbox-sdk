@@ -82,8 +82,8 @@ namespace MashBoxSDK.AnimationStudio
                         Vector3 m0=before.HasValue?Project(a-before.Value).normalized:chord.normalized;
                         Vector3 m1=after.HasValue?Project(after.Value-b).normalized:chord.normalized;
                         if(m0.sqrMagnitude<1e-10f)m0=chord.normalized;if(m1.sqrMagnitude<1e-10f)m1=chord.normalized;
-                        float t=la/(la+lb),t2=t*t,t3=t2*t;
-                        Vector3 target=(2*t3-3*t2+1)*a+(-2*t3+3*t2)*b+(t3-2*t2+t)*span*m0+(t3-t2)*span*m1;
+                        float t=la/(la+lb);
+                        Vector3 target=StudioEdgeFlow.Hermite(a,b,span*m0,span*m1,t);
                         sum+=Project(target-center);count++;
                     }
                     if(count>0)displacement[at]=sum/count;

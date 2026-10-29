@@ -33,7 +33,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SplitSelectedComponents()
         {
-            if (!CanSplitSelection) return;
+            PrepareMeshSelection(ComponentMode.Face, () => CanSplitSelection,
+                "Select faces, edges or vertices to split into a new mesh.", ComponentMode.Vertex, ComponentMode.Edge, ComponentMode.Face);
             var selection = new Dictionary<int,HashSet<int>>();
             foreach (int node in ComponentTargetNodes(true)) using (new ComponentTargetScope(this,node))
             {

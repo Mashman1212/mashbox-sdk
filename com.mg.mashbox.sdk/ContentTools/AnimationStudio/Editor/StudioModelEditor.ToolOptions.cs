@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         private Vector2 toolOptionsScroll;
         private readonly GUIContent toolOptionsHeader = new GUIContent();
         private ToolChannelPane ActiveChannelTool => bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
-            : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : combineToolPane;
+            : bridgeToolPane ? bridgeToolPane : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : selectionActionPane ? selectionActionPane : combineToolPane;
         internal void PrepareEmbeddedChannelTool()
         {
             FinishSelectionPaint(); StopTargetWeld(); StopCutTool();
@@ -160,7 +160,8 @@ namespace MashBoxSDK.AnimationStudio
                 Undo.IncrementCurrentGroup(); channelUndoGroup = Undo.GetCurrentGroup();
                 channelUndoControl = control; channelUndoText = text; channelUndoNode = Active;
                 Undo.SetCurrentGroupName("Edit object channels");
-                Undo.RegisterCompleteObjectUndo(Document, "Edit object channels");
+                if (!(pivot && mode == ComponentMode.Object && position != node.position))
+                    Undo.RegisterCompleteObjectUndo(Document, "Edit object channels");
             }
             if (axisScrub) ApplyChannelScrub();
             else if (pivot && mode == ComponentMode.Object)
@@ -168,7 +169,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (position != node.position)
                 {
                     var localPosition = node.positionOffset + position;
-                    Document.Repivot(Active, Transforms, Transforms[Active].parent ? Transforms[Active].parent.TransformPoint(localPosition) : localPosition);
+                    MoveObjectPivots(Transforms[Active].parent ? Transforms[Active].parent.TransformPoint(localPosition) : localPosition);
                 }
             }
             else { node.position = position; node.RotationChannels = rotation; node.scale = scale; Document.ApplyTransform(Active, Transforms[Active]); }

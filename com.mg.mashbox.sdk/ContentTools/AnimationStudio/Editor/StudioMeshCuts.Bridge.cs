@@ -53,8 +53,11 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("Each bridge group must be one continuous chain or loop.");
             return result;
         }
-        internal int BridgeEdges(StudioModelDocument.Node node,IEnumerable<(int a,int b)> selection)
+        internal int BridgeEdges(StudioModelDocument.Node node,IEnumerable<(int a,int b)> selection,int divisions=0,float curvature=0)
         {
+            if(divisions<0||divisions>64)throw new ArgumentOutOfRangeException(nameof(divisions),"Bridge divisions must be between 0 and 64.");
+            if(float.IsNaN(curvature)||float.IsInfinity(curvature)||curvature < -1||curvature > 1)throw new ArgumentOutOfRangeException(nameof(curvature));
+            LastBridgeProfile=null;
             var mesh=node.mesh;
             if(!mesh||!mesh.isReadable||node.skinned||node.blendShape!=null||mesh.blendShapeCount>0||mesh.bindposes.Length>0||mesh.boneWeights.Length>0)
                 throw new InvalidOperationException("Bridge Edges requires a readable static mesh without skinning or blend shapes.");
@@ -146,6 +149,7 @@ namespace MashBoxSDK.AnimationStudio
                     throw new InvalidOperationException("The gap is already filled by a coplanar face; the bridge would overlap it.");
             }
             var lengths=new double[count+1];for(int i=0;i<count;i++){int next=first.Closed?(i+1)%count:i+1;lengths[i+1]=lengths[i]+Math.Sqrt((new ClipVector(originals[first.Vertices[i]])-new ClipVector(originals[first.Vertices[next]])).Squared);}
+            var patchSides=new List<(int first,int second)>();
             for(int i=0;i<count;i++)
             {
                 int next=first.Closed?(i+1)%count:i+1;var edge=first.Edges[i];int b0=paired[i],b1=paired[next];
@@ -183,9 +187,15 @@ namespace MashBoxSDK.AnimationStudio
                     if(tangents.Count>0)tangents.Add(new Vector4(tangent.x,tangent.y,tangent.z,handedness));if(colors.Count>0)colors.Add(source.Colors[v]);
                     for(int channel=0;channel<8;channel++)if(uv[channel].Count>0){var value=source.UV[channel]!=null?source.UV[channel][v]:Vector4.zero;if(channel==0){value.x=tex[c].x;value.y=tex[c].y;}uv[channel].Add(value);}
                 }
+                patchSides.Add((edge.Face,other.Face));
                 nextGroup++;int material=Faces[edge.Face].Submesh;var newLoop=Enumerable.Range(start,4).ToArray();
                 polygons.Add(material);polygons.Add(4);polygons.AddRange(newLoop);
                 foreach(int v in triangles)indices[material].Add(start+Array.IndexOf(from,v));
+            }
+            if(divisions>0)
+            {
+                LastBridgeProfile=SubdivideBridge(node,divisions,patchSides,positions,normals,tangents,colors,uv,normalGroups,indices,polygons);
+                LastBridgeProfile.ApplyToBuffers(curvature,positions,normals,tangents);
             }
             // The caller evaluates this on its captured transaction mesh. Everything
             // above validates before publishing any live mesh or Undo registration.
@@ -199,7 +209,7 @@ namespace MashBoxSDK.AnimationStudio
                 else mesh.SetUVs(c,uv[c]);
             }
             mesh.subMeshCount=indices.Length;for(int sub=0;sub<indices.Length;sub++)mesh.SetTriangles(indices[sub],sub,false);mesh.RecalculateBounds();
-            node.cutPolygons=polygons.ToArray();node.cutTriangles=mesh.triangles;node.normalGroups=normalGroups.ToArray();return count;
+            node.cutPolygons=polygons.ToArray();node.cutTriangles=mesh.triangles;node.normalGroups=normalGroups.ToArray();return count*(divisions+1);
         }
     }
 }

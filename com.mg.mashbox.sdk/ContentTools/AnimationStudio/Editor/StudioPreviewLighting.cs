@@ -29,6 +29,8 @@ namespace MashBoxSDK.AnimationStudio
         private readonly List<Object> volumeComponents = new List<Object>();
         private readonly bool hdrp;
         private bool studioLights;
+        private bool cameraMaterialLighting;
+        internal bool SupportsPhysicalMaterials=>hdrp;
         private readonly Dictionary<SceneView,(Color background, CameraClearFlags clearFlags)> cameraColors = new Dictionary<SceneView,(Color,CameraClearFlags)>();
         private readonly Dictionary<SceneView,(Component data, bool preview, LayerMask mask, bool effects, Color background, object clearMode, object aa, object aaQuality)> cameras = new Dictionary<SceneView,(Component,bool,LayerMask,bool,Color,object,object,object)>();
         private readonly Dictionary<Component,(bool custom,object frames,object mask)> cameraFrameSettings = new Dictionary<Component,(bool,object,object)>();
@@ -89,6 +91,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void Apply(StudioLightingSettings s)
         {
+            if(cameraMaterialLighting||materialPreview)configuredCameras.Clear();
+            cameraMaterialLighting=false;materialPreview=false;
+            if(indirectLighting)Parameter(indirectLighting,"reflectionLightingMultiplier",0f);
             studioLights = s.studioLights;
             Key.enabled = Fill.enabled = studioLights;
             float ev = Mathf.Clamp(s.exposure,-5,5);
@@ -172,6 +177,25 @@ namespace MashBoxSDK.AnimationStudio
                 Key.intensity=1.3f*gain;Fill.intensity=.6f*gain;
                 if(materialProbe)materialProbe.intensity=gain;
             }
+        }
+        internal void ConfigureModelCamera(SceneView view,StudioLightingSettings settings,bool physicalCamera)
+        {
+            if(!view||!view.camera)return;
+            if(physicalCamera&&!settings.studioLights&&hdrp)
+            {
+                if(!cameraMaterialLighting){ApplyMaterialPreview();cameraMaterialLighting=true;}
+                // A real camera-relative lighting rig lets the authored HDRP shader
+                // evaluate its own metallic, roughness, maps and surface features.
+                var rotation=view.camera.transform.rotation;
+                var keyRotation=rotation*Quaternion.Euler(25,-25,0);var fillRotation=rotation*Quaternion.Euler(-15,35,0);
+                if(Key.transform.rotation!=keyRotation)Key.transform.rotation=keyRotation;
+                if(Fill.transform.rotation!=fillRotation)Fill.transform.rotation=fillRotation;
+            }
+            else if(cameraMaterialLighting)
+            {
+                cameraMaterialLighting=false;materialPreview=false;Apply(settings);configuredCameras.Clear();
+            }
+            ConfigureCamera(view);
         }
         internal void ConfigureCamera(SceneView view)
         {

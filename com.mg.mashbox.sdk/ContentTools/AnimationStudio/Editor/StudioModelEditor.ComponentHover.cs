@@ -19,10 +19,12 @@ namespace MashBoxSDK.AnimationStudio
             float padding=mode==ComponentMode.Face?0:ComponentPickRadius;
             return pointer.x>=min.x-padding&&pointer.x<=max.x+padding&&pointer.y>=min.y-padding&&pointer.y<=max.y+padding;
         }
-        private void UpdateSelectedComponentHover(SceneView view,Vector2 pointer)
+        // A selected component's padded hit area is valid on either side of
+        // the silhouette; acquiring it must not require a face under the cursor.
+        private int FindSelectedComponentTarget(SceneView view,Vector2 pointer,out int componentHit)
         {
             OcclusionMesh[] occluders=null;float bestScreen=float.PositiveInfinity,bestDepth=float.PositiveInfinity;
-            int nodeHit=-1,componentHit=-1;var ray=HandleUtility.GUIPointToWorldRay(pointer);
+            int nodeHit=-1;componentHit=-1;var ray=HandleUtility.GUIPointToWorldRay(pointer);
             foreach(int node in ComponentTargetNodes())using(new ComponentTargetScope(this,node))
             {
                 if(!CanEditComponents()||!HoverBoundsContain(view,node,pointer))continue;
@@ -45,6 +47,11 @@ namespace MashBoxSDK.AnimationStudio
                 if(screen>bestScreen+.001f || Mathf.Abs(screen-bestScreen)<=.001f&&depth>=bestDepth)continue;
                 bestScreen=screen;bestDepth=depth;nodeHit=node;componentHit=hit;
             }
+            return nodeHit;
+        }
+        private void UpdateSelectedComponentHover(SceneView view,Vector2 pointer)
+        {
+            int nodeHit=FindSelectedComponentTarget(view,pointer,out int componentHit);
             if(nodeHit<0)return;
             using(new ComponentTargetScope(this,nodeHit))
             {

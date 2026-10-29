@@ -19,9 +19,10 @@ namespace MashBoxSDK.AnimationStudio
             if(selection.targets!=null)foreach(var record in selection.targets)if(record.node==Active){record.mode=(int)liveMode;record.components=(int[])liveSelection.Clone();}
             return selection;
         }
-        private bool EligibleComponentTool(LiveTool kind) => kind==LiveTool.Bevel?CanBevelEdges:kind==LiveTool.Extrude?CanExtrude:kind==LiveTool.Merge?CanMergeVertices:kind==LiveTool.EdgeFlow?CanEditEdgeFlow:CanAdjustEdgeNormals;
+        private bool EligibleComponentTool(LiveTool kind) => kind==LiveTool.Bevel?CanBevelEdges:kind==LiveTool.Extrude?CanExtrude:kind==LiveTool.Merge?CanMergeVertices:kind==LiveTool.EdgeFlow?CanEditEdgeFlow:kind==LiveTool.Bridge?CanBridgeEdges:CanAdjustEdgeNormals;
         private bool EvaluateComponentLiveTools(LiveTool kind)
         {
+            if(kind==LiveTool.Bridge){if(ComponentTargetNodes(true).Count>1)throw new InvalidOperationException("Bridge Edges requires two boundary groups on one mesh, not multiple objects.");return false;}
             if(componentLiveTargets==null)
             {
                 if(mode==ComponentMode.Object)return false;

@@ -66,6 +66,8 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseNormalsToolWindow() { if (softenToolPane) softenToolPane.Close(); softenToolPane = null; }
         private void OpenSoftenTool()
         {
+            PrepareMeshSelection(ComponentMode.Object, () => CanAdjustEdgeNormals,
+                "Select editable static mesh objects or components to soften.", ComponentMode.Object, ComponentMode.Vertex, ComponentMode.Edge, ComponentMode.Face);
             if (softenToolPane) { QueueLiveTool(LiveTool.Soften); softenToolPane.Repaint(); softenToolPane.Focus(); return; }
             softenToolPane = ToolChannelPane.Open("Soften Edges", DrawSoftenTool, () => softenToolPane = null,
                 execute: () => ApplyLiveTool(LiveTool.Soften), canExecute: () => CanRunLiveTool(LiveTool.Soften), failed: ex => { error = ex.Message; repaint(); }, owner: ToolChannelPaneOwner,
@@ -112,7 +114,9 @@ namespace MashBoxSDK.AnimationStudio
         private void ApplyEdgeNormalsChecked(bool harden)
         {
             FinishLiveTool();
-            if (!CanAdjustEdgeNormals) throw new InvalidOperationException("Select editable static mesh objects or mesh components.");
+            PrepareMeshSelection(ComponentMode.Object, () => CanAdjustEdgeNormals,
+                harden ? "Select editable static mesh objects or components to harden." : "Select editable static mesh objects or components to soften.",
+                ComponentMode.Object, ComponentMode.Vertex, ComponentMode.Edge, ComponentMode.Face);
             if (GUIUtility.hotControl != 0) return;
             FinishChannelEdit(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
             const float angle = 180; // Direct Soften/Harden never inherit the angle-limited options.

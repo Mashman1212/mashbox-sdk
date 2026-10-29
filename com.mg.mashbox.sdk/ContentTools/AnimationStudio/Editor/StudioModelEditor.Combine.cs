@@ -27,7 +27,8 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseCombineToolWindow() { if (combineToolPane) combineToolPane.Close(); combineToolPane = null; }
         private void OpenCombineTool()
         {
-            if (!CanCombineObjects) throw new InvalidOperationException("Select at least two static mesh objects in Object mode.");
+            PrepareMeshSelection(ComponentMode.Object, () => CanCombineObjects,
+                "Select at least two static mesh objects to combine.", ComponentMode.Object);
             if (combineToolPane) { combineToolPane.Focus(); return; }
             combineToolPane = ToolChannelPane.Open(CombineTool, DrawCombineTool, () => combineToolPane = null,
                 new Vector2(365,255), new Vector2(320,235), execute: CombineSelectedObjects, canExecute: () => CanCombineObjects,

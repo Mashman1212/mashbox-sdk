@@ -10,7 +10,8 @@ namespace MashBoxSDK.AnimationStudio
         private StudioPreviewLighting previewLighting;
         private readonly StudioLightingSettings emptyLighting = new StudioLightingSettings();
         internal StudioLightingSettings LightingSettings => Document ? Document.lighting ?? (Document.lighting = new StudioLightingSettings()) : emptyLighting;
-        internal void ConfigureLightingCamera(SceneView view) => previewLighting?.ConfigureCamera(view);
+        internal void ConfigureLightingCamera(SceneView view) => previewLighting?.ConfigureModelCamera(view,LightingSettings,
+            displayLighting&&(displayTextures||checkerMap)&&!displayXray&&!wireframeOnly);
         internal void SuspendLighting() => previewLighting?.RestoreCameras();
         internal void EditLighting(Action<StudioLightingSettings> change)
         {

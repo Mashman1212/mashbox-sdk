@@ -72,6 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Modify/Scale": return "Resize the selection around its pivot.";
                 case "Modify/Edit Pivot": return "Edit the pivot without moving the mesh, or finish pivot editing.";
                 case "Modify/Center Pivot": return "Move the pivot to the selection center.";
+                case "Modify/Group": return "Group selected objects under a new parent centered on their average centers.";
                 case "Modify/Freeze Transforms": return "Bake transforms into the mesh and reset transform channels.";
                 case "UV/UV Editor": return "Open the editor for viewing and editing mesh UV coordinates.";
                 case "Lighting/Bake Vertex AO (Red)…": return "Bake ambient occlusion into the red vertex color channel.";

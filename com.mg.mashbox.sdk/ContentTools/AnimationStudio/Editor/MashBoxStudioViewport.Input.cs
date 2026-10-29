@@ -72,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
                         else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider)) studioKeyboard?.Invoke();
                     }
                     try { handler.original(); }
-                    finally { if (menuBlocked) inputEvent.mousePosition = mousePosition; }
+                    finally { if (menuBlocked) inputEvent.mousePosition = mousePosition; if(canvas)UpdateMeshToolCursor(container,menuBlocked); }
                     // Panels get their text-field and rename handling first. Everything else
                     // stays in Studio instead of falling through to Unity's global shortcuts.
                     if (studioInputActive != null && studioInputActive() && Event.current.isKey)
@@ -154,6 +154,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void RestoreStudioInput()
         {
+            ResetMeshToolCursor();
             UnbindSelectionPaintInput();
             ReleaseStudioInput();
             foreach (var pair in studioInputHandlers)
@@ -255,8 +256,15 @@ namespace MashBoxSDK.AnimationStudio
             delta *= NavigationSensitivity;
             if (action == StudioShortcut.Orbit)
             {
-                if (in2DMode || isRotationLocked) return;
-                rotation = Quaternion.AngleAxis(delta.x*.25f,Vector3.up)*rotation*Quaternion.AngleAxis(delta.y*.25f,Vector3.right);
+                if (delta.sqrMagnitude == 0) return;
+                var center = pivot; var frame = rotation; float viewSize = size;
+                bool projection = orthographic;
+                // A deliberate orbit releases native SceneView's axis/2D locks.
+                // Direct placement also stops a pending axis-view animation.
+                in2DMode = false; isRotationLocked = false;
+                orthographic = projection;
+                camera.orthographic = projection;
+                LookAtDirect(center, Quaternion.AngleAxis(delta.x*.25f,Vector3.up)*frame*Quaternion.AngleAxis(delta.y*.25f,Vector3.right), viewSize);
             }
             else if (action == StudioShortcut.Pan)
             {

@@ -110,7 +110,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (!TryQuickPivotSnapTarget(view, mouse, out target)) return;
             }
             else if (!TryPivotSnapVertex(view.camera, PivotCameraPoint(view, mouse), EditorGUIUtility.pixelsPerPoint, out target)) return;
-            if ((EditingPivotPosition - target).sqrMagnitude < 1e-12f) return;
+            if (mode != ComponentMode.Object && (EditingPivotPosition - target).sqrMagnitude < 1e-12f) return;
             Run(() => MoveEditingPivot(target));
         }
         private bool TryQuickPivotSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)

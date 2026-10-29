@@ -92,8 +92,9 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseExtrudeToolWindow() { if (extrudeToolPane) extrudeToolPane.Close(); extrudeToolPane = null; }
         internal void ExtrudeSelected()
         {
+            PrepareMeshSelection(ComponentMode.Face, () => CanExtrude,
+                "Select faces or open boundary edges on an editable static mesh to extrude.", ComponentMode.Face, ComponentMode.Edge);
             if (extrudeToolPane) { QueueLiveTool(LiveTool.Extrude); extrudeToolPane.Repaint(); extrudeToolPane.Focus(); return; }
-            if (!CanExtrude) throw new InvalidOperationException("Select faces or open boundary edges on an editable static mesh.");
             extrudeToolPane = ToolChannelPane.Open("Extrude", DrawLiveExtrudeFields, () => extrudeToolPane = null,
                 new Vector2(300, 185), new Vector2(260, 175),
                 execute: () => ApplyLiveTool(LiveTool.Extrude), canExecute: () => CanRunLiveTool(LiveTool.Extrude),

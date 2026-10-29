@@ -76,11 +76,67 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!CanAdjustPivot) return;
             if (mode != ComponentMode.Object) SetComponentPivot(position, PivotOrientation, "Move component pivot");
-            else { Document.Repivot(Active, Transforms, position); RememberLockedPivot(position, PivotOrientation); Changed(); }
+            else { MoveObjectPivots(position); RememberLockedPivot(position, PivotOrientation); Changed(); }
+        }
+        // Repivot compensates children, so selected descendants must also be
+        // visited. Every selected origin receives the exact same world destination.
+        private int[] ObjectPivotTargets() => objects.Contains(Active)
+            ? objects.OrderBy(i => i).ToArray() : new[] { Active };
+        private void MoveObjectPivots(Vector3 position)
+        {
+            var targets = ObjectPivotTargets();
+            MoveObjectPivots(targets, targets.Select(i => position).ToArray());
+        }
+        private void MoveObjectPivots(int[] targets, Vector3[] destinations)
+        {
+            if (targets.Select((node, k) => (Transforms[node].position - destinations[k]).sqrMagnitude < 1e-12f).All(same => same)) return;
+            for (int k = 0; k < targets.Length; k++) Document.ValidateRepivot(targets[k], Transforms, destinations[k]);
+            var meshes = targets.Select(i => Document.nodes[i].mesh).ToArray();
+            for (int k = 0; k < targets.Length; k++)
+            {
+                int i = targets[k]; var node = Document.nodes[i];
+                // Different local frames need independent compensation. Never
+                // move another instance's surface or write through a source asset.
+                if (node.mesh && (EditorUtility.IsPersistent(node.mesh) || Document.nodes.Count(n => n.mesh == node.mesh) > 1))
+                {
+                    var mesh = Object.Instantiate(node.mesh); mesh.name = node.mesh.name;
+                    meshes[k] = mesh;
+                }
+            }
+            // One native snapshot owns document references and all compensated
+            // meshes; separate registrations can restore references out of order.
+            Undo.RegisterCompleteObjectUndo(new Object[] { Document }.Concat(meshes.Where(m => m).Cast<Object>()).ToArray(), "Move object pivots");
+            for (int k = 0; k < targets.Length; k++)
+            {
+                int i = targets[k]; var node = Document.nodes[i];
+                if (node.mesh != meshes[k])
+                {
+                    var mesh = meshes[k]; node.mesh = mesh;
+                    var filter = Transforms[i].GetComponent<MeshFilter>();
+                    if (filter) filter.sharedMesh = mesh;
+                    var skin = Transforms[i].GetComponent<SkinnedMeshRenderer>();
+                    if (skin) skin.sharedMesh = mesh;
+                }
+                Document.Repivot(i, Transforms, destinations[k]);
+            }
         }
         private void CenterEditingPivot()
         {
-            if (CanAdjustPivot) { MoveEditingPivot(mode == ComponentMode.Object ? BoundsFor(Active).center : ComponentSelectionCenter()); RememberAction(RepeatKind.CenterPivot); }
+            if (!CanAdjustPivot) return;
+            if (mode == ComponentMode.Object)
+            {
+                var targets = ObjectPivotTargets();
+                // Capture each item's own geometry center before compensating
+                // any selected ancestor. Empty groups retain hierarchy bounds.
+                var centers = targets.Select(node => {
+                    var renderer = Transforms[node].GetComponent<Renderer>();
+                    return renderer ? renderer.bounds.center : BoundsFor(node).center;
+                }).ToArray();
+                MoveObjectPivots(targets, centers);
+                RememberLockedPivot(Transforms[Active].position, PivotOrientation); Changed();
+            }
+            else MoveEditingPivot(ComponentSelectionCenter());
+            RememberAction(RepeatKind.CenterPivot);
         }
         private void UpdateComponentPivotAfterTransform(Vector3 position, Vector3 center, Quaternion rotation, Quaternion orientation)
         {

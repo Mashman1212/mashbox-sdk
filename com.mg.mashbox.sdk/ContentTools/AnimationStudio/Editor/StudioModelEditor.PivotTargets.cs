@@ -1,6 +1,7 @@
 using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -91,9 +92,16 @@ namespace MashBoxSDK.AnimationStudio
                     orientation, action + " component pivot");
                 return;
             }
+            var targets = ObjectPivotTargets();
+            // Validate the whole cohort even for orientation-only changes.
+            foreach (int i in targets) Document.ValidateRepivot(i, Transforms, Transforms[i].position);
+            var turn = orientation * Quaternion.Inverse(PivotOrientation);
+            var orientations = targets.Select(i => Transforms[i].rotation * Document.nodes[i].pivotRotation).ToArray();
+            if (action == PivotAction.Align || action == PivotAction.Position) MoveObjectPivots(target.position);
             Undo.RegisterCompleteObjectUndo(Document, action + " pivot");
-            if (action == PivotAction.Align || action == PivotAction.Position) Document.Repivot(Active, Transforms, target.position);
-            if (action != PivotAction.Position) Document.nodes[Active].pivotRotation = Quaternion.Inverse(transform.rotation) * orientation;
+            if (action != PivotAction.Position)
+                for (int k = 0; k < targets.Length; k++)
+                    Document.nodes[targets[k]].pivotRotation = Quaternion.Inverse(Transforms[targets[k]].rotation) * turn * orientations[k];
             RememberLockedPivot(Transforms[Active].position, orientation);
             EditorUtility.SetDirty(Document); Changed();
         }
