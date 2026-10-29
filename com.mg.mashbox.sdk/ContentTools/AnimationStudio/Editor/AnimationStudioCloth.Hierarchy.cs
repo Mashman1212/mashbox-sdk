@@ -9,6 +9,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class AnimationStudioWindow
     {
+        [SerializeField] private List<Mesh> clothRemovedMeshes = new List<Mesh>();
         [SerializeField] private List<Mesh> clothHiddenMeshes = new List<Mesh>();
         [SerializeField] private bool clothDefaultClothingInitialized;
         [SerializeField] private List<MashBoxClothProfile> clothProfiles = new List<MashBoxClothProfile>();
@@ -57,6 +58,7 @@ namespace MashBoxSDK.AnimationStudio
             // A skeleton prefab may contain its own preview geometry. Only explicitly
             // imported models belong to this workspace; keep bone transforms active.
             var included = new HashSet<Mesh>(sourceMeshes.SelectMany(meshes => meshes));
+            included.ExceptWith(clothRemovedMeshes);
             foreach (var renderer in clothRenderers)
                 if (!included.Contains(MashBoxClothSession.GetMesh(renderer))) renderer.enabled = false;
             clothRenderers = clothRenderers.Where(r => included.Contains(MashBoxClothSession.GetMesh(r))).ToArray();
@@ -146,8 +148,9 @@ namespace MashBoxSDK.AnimationStudio
             var previousHidden=clothHiddenMeshes.ToArray();
             var requestedMeshes=new HashSet<Mesh>(requested.SelectMany(ClothSourceMeshes));
             clothHiddenMeshes.RemoveAll(mesh=>requestedMeshes.Contains(mesh));
+            bool restoring=clothRemovedMeshes.RemoveAll(mesh=>requestedMeshes.Contains(mesh))>0;
             garments.AddRange(additions);
-            if(additions.Length>0 || readabilityChanged)
+            if(additions.Length>0 || readabilityChanged || restoring)
             {
                 clothGarment = null; clothOutfit = garments.Distinct().ToArray();
                 try { BuildClothPreview(); }
@@ -209,19 +212,38 @@ namespace MashBoxSDK.AnimationStudio
                         viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
                     }
                     var row = GUILayoutUtility.GetRect(GUIContent.none, GUI.skin.button, GUILayout.ExpandWidth(true));
+                    // Handle the context click before GUI.Toggle can consume right-button input.
+                    if (row.Contains(Event.current.mousePosition) &&
+                        (Event.current.type == EventType.ContextClick || (Event.current.type == EventType.MouseDown && Event.current.button == 1)))
+                    {
+                        var mesh=part.sourceMesh;
+                        var menu=new GenericMenu();
+                        menu.AddItem(new GUIContent("Remove mesh from studio"),false,()=>ClothAction(()=>RemoveClothMesh(mesh)));
+                        menu.ShowAsContext();Event.current.Use();
+                    }
                     if (!part.referenceOnly && GUI.Toggle(row, i == clothRendererIndex, GUIContent.none, "Button") && i != clothRendererIndex) SelectClothMesh(i);
                     StudioSkinningEditor.DrawMeshRoleRow(row, part, part.bound ? "Skinned mesh" : "Static mesh");
-                    if (!part.referenceOnly && Event.current.type == EventType.ContextClick && row.Contains(Event.current.mousePosition))
-                    {
-                        int index = i;
-                        var menu = new GenericMenu();
-                        if (clothMeshSources[index]) menu.AddItem(new GUIContent("Remove model"), false, () => ClothAction(() => RemoveClothModel(index)));
-                        menu.ShowAsContext(); Event.current.Use();
-                    }
                 }
                 DrawClothMeshReferences(i);
             }
             EditorGUILayout.EndScrollView();
+        }
+
+        private void RemoveClothMesh(Mesh mesh)
+        {
+            if(!mesh || clothRemovedMeshes.Contains(mesh))return;
+            EndClothStroke();RememberClothProfile();
+            clothRemovedMeshes.Add(mesh);
+            try { BuildClothPreview(); }
+            catch { clothRemovedMeshes.Remove(mesh);throw; }
+            viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
+        }
+        private void RestoreClothMeshes()
+        {
+            var removed=clothRemovedMeshes.ToArray();clothRemovedMeshes.Clear();
+            try { BuildClothPreview(); }
+            catch {clothRemovedMeshes.AddRange(removed);throw;}
+            viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
         }
 
         private void RemoveClothModel(int index)
@@ -242,7 +264,7 @@ namespace MashBoxSDK.AnimationStudio
             clothCharacter = ResolveSdkSkeleton();
             clothGarment = null; clothOutfit = Array.Empty<GameObject>(); clothProfile = null; clothProfiles.Clear();
             clothMaterialAssignments.Clear(); clothClippingAssignments.Clear(); clothClippingPreview = 0; clothPreviewClipping = null;
-            clothClip = null; clothCustomMotion = false; clothHiddenMeshes.Clear(); clothRendererIndex = -1;
+            clothClip = null; clothCustomMotion = false; clothHiddenMeshes.Clear(); clothRemovedMeshes.Clear(); clothRendererIndex = -1;
             // A new Cloth scene starts with all four default references visible.
             clothDefaultClothingInitialized = true;
             clothSimulationTime = 0; clothTool = 0;
@@ -256,6 +278,7 @@ namespace MashBoxSDK.AnimationStudio
             var menu = new StudioMenu();
             menu.AddItem(new GUIContent("New Scene"), false, () => ClothAction(NewClothScene));
             menu.AddItem(new GUIContent("Add Animation outfit"), false, () => ClothAction(() => AddClothModels(clothing ?? Array.Empty<GameObject>())));
+            if(clothRemovedMeshes.Count>0)menu.AddItem(new GUIContent("Restore removed meshes"),false,()=>ClothAction(RestoreClothMeshes));
             menu.DropDown(rect);
         }
     }
