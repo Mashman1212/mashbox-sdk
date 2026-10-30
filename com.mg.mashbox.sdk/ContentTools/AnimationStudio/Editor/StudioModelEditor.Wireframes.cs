@@ -69,7 +69,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void PositionsChanged(bool deferStatistics = false, IList<Vector3> markerPositions = null, int[] markerIndices = null)
         {
-            var mesh=ActiveMesh;
+            var mesh=ActiveMesh;DirtySubdivision(mesh);
             RefreshIsolatedPositions(markerPositions);
             // Separating UV/normal seams can change position-based edge deduplication.
             // Rebuild only that mesh in this case, never every object in the scene.
@@ -157,8 +157,12 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.lighting=false;
                 foreach(int i in VisibleWireframeNodes())
                 {
+                    // node.mesh already contains the evaluated modifier result.
+                    // Draw its real edges normally; subdivision must not force an
+                    // extra cage overlay or bypass the user's depth/X-ray mode.
                     bool selected=objects.Contains(i)||HasSelectedParent(i);
                     bool highlight=selected&&SelectionOutlineEnabled&&mode==ComponentMode.Object;
+                    Handles.zTest=displayXray?UnityEngine.Rendering.CompareFunction.Always:UnityEngine.Rendering.CompareFunction.LessEqual;
                     bool drawWire=wireframeOnly || !StudioSettings.Current.hideObjectWireframe || (mode!=ComponentMode.Object&&i==Active);
                     if(!drawWire&&!highlight)continue;
                     SelectionWireframeLines(i, false);

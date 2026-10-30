@@ -64,6 +64,44 @@ namespace MashBoxSDK.AnimationStudio
             if (Math.Abs(remainder)<1e-7) remainder=0;
             return (int)next;
         }
+        internal sealed class IntegerScrubber
+        {
+            private int integerControl, integerStart;
+            private double integerRemainder;
+            internal void End()
+            {
+                if (integerControl == 0) return;
+                if (GUIUtility.hotControl == integerControl) GUIUtility.hotControl = 0;
+                integerControl = 0; integerRemainder = 0; EditorGUIUtility.SetWantsMouseJumping(0);
+            }
+            internal int Draw(Rect rect, GUIContent label, int value, int minimum, int maximum, float dragSensitivity)
+            {
+                int id = GUIUtility.GetControlID("StudioIntegerScrub".GetHashCode(), FocusType.Passive, rect);
+                var evt = Event.current;
+                var drag = new Rect(rect.x, rect.y, Mathf.Min(EditorGUIUtility.labelWidth, rect.width), rect.height);
+                EditorGUIUtility.AddCursorRect(drag, MouseCursor.SlideArrow);
+                if (integerControl != 0 && GUIUtility.hotControl != integerControl) End();
+                if (GUI.enabled && evt.type == EventType.MouseDown && evt.button == 0 && !evt.alt && drag.Contains(evt.mousePosition) && GUIUtility.hotControl == 0)
+                {
+                    integerControl = id; integerStart = value; integerRemainder = 0;
+                    GUIUtility.hotControl = id; GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
+                    EditorGUIUtility.SetWantsMouseJumping(1); evt.Use();
+                }
+                if (integerControl == id && GUIUtility.hotControl == id)
+                {
+                    if (evt.type == EventType.MouseDrag)
+                    {
+                        int edited = StudioDragSensitivity.StepInteger(ref integerRemainder, value, StudioDragSensitivity.UnscaledDragDelta.x, dragSensitivity, minimum, maximum);
+                        if (edited != value) { value = edited; GUI.changed = true; }
+                        evt.Use();
+                    }
+                    else if (evt.rawType == EventType.MouseUp && evt.button == 0) { End(); evt.Use(); }
+                    else if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
+                    { if (value != integerStart) { value = integerStart; GUI.changed = true; } End(); evt.Use(); }
+                }
+                return EditorGUI.IntField(rect, label, value);
+            }
+        }
         internal static Vector2 UnscaledDragDelta { get; private set; }
         internal readonly struct DragScope : IDisposable
         {

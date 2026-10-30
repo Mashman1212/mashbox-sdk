@@ -61,7 +61,10 @@ namespace MashBoxSDK.AnimationStudio
                 try
                 {
                     transaction.Publish(true);RefreshLiveMeshes();ComponentTargetAt(targetNode).selection.Clear();
-                    transaction.Commit("Bridge edges",()=>RecordSelectionChange(before,false,"Bridge edges"));RefreshLiveMeshes();
+                    transaction.Commit("Bridge edges",()=>{
+                        var operation=new StudioModifierOperation{kind="Bridge",name="Bridge",parameters=parameters,edges=selected.SelectMany(e=>new[]{e.a,e.b}).ToArray()};
+                        var source=target.ModifierSourceNode();operation.Bind(source);AppendModifier(Document.nodes[targetNode],operation,StudioModifierSource.Capture(source));
+                        RecordSelectionChange(before,false,"Bridge edges");});RefreshLiveMeshes();
                 }
                 catch{transaction.Restore();var selection=ComponentTargetAt(targetNode).selection;selection.Clear();selection.UnionWith(targetSelection);RefreshLiveMeshes(false);throw;}
                 finally{livePreview=previous;}

@@ -133,7 +133,7 @@ namespace MashBoxSDK.AnimationStudio
                     RefreshLiveMeshes();Components.Clear();SelectExtrusionResult(results[i],mode==ComponentMode.Face);
                     var target=gesture.targets[i];target.indices=results[i].MovingVertices.ToArray();target.source=results[i].SourceVertices;target.working=target.mesh.vertices;
                 }
-                preview.Commit("Extrude mesh components",()=>RecordSelectionChange(before,false,"Extrude mesh components"));
+                preview.Commit("Extrude mesh components",()=>{RecordDirectPreviewModifiers(preview,"Extrude mesh components");RecordSelectionChange(before,false,"Extrude mesh components");});
                 foreach(var target in gesture.targets)using(new ComponentTargetScope(this,target.node))RefreshLiveMeshes();
             }
             catch{preview.Restore();RestoreComponentTargets(before.targets);throw;}

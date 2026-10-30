@@ -99,10 +99,10 @@ namespace MashBoxSDK.AnimationStudio
                     if(OnCutBoundary(stroke.Face,p,out var q))
                     { var key=Key(q.A,q.B);if(!edgePoints.TryGetValue(key,out var list))edgePoints[key]=list=new List<Vector3>();if(!list.Any(x=>(x-p).sqrMagnitude<=epsilon2))list.Add(p); }
             }
-            var vertexCache=new Dictionary<(int,int,float),int>();
+            var vertexCache=new Dictionary<(int,int,float),int>();var geometry=welded.ToList();int nextGeo=sourceGeometry.Length;var edgeGeometry=new Dictionary<(int,int,Vector3),int>();
             int Add(int a,int b,int c,Vector3 weight,Vector3 p)
             {
-                int id=positions.Count;positions.Add(p);
+                int id=positions.Count;positions.Add(p);geometry.Add(nextGeo++);
                 if(normals.Count>0)normals.Add((normals[a]*weight.x+normals[b]*weight.y+normals[c]*weight.z).normalized);
                 if(tangents.Count>0){var t=tangents[a]*weight.x+tangents[b]*weight.y+tangents[c]*weight.z;var d=new Vector3(t.x,t.y,t.z).normalized;tangents.Add(new Vector4(d.x,d.y,d.z,tangents[a].w));}
                 if(colors.Count>0)colors.Add(colors[a]*weight.x+colors[b]*weight.y+colors[c]*weight.z);
@@ -115,7 +115,7 @@ namespace MashBoxSDK.AnimationStudio
                 if((Positions[q.A]-p).sqrMagnitude<=epsilon2)return q.A;if((Positions[q.B]-p).sqrMagnitude<=epsilon2)return q.B;
                 var key=q.A<q.B?(q.A,q.B,q.T):(q.B,q.A,1-q.T);
                 if(vertexCache.TryGetValue(key,out int id))return id;
-                return vertexCache[key]=Add(q.A,q.B,q.B,new Vector3(1-q.T,q.T,0),p);
+                id=Add(q.A,q.B,q.B,new Vector3(1-q.T,q.T,0),p);var e=Key(q.A,q.B);var g=(e.Item1,e.Item2,p);if(edgeGeometry.TryGetValue(g,out int geo))geometry[id]=geo;else edgeGeometry.Add(g,geometry[id]);return vertexCache[key]=id;
             }
             int InteriorVertex(int f,Vector3 p)
             {
@@ -219,10 +219,10 @@ namespace MashBoxSDK.AnimationStudio
             beforeWrite?.Invoke();
             mesh.Clear();mesh.indexFormat=positions.Count>65535?IndexFormat.UInt32:IndexFormat.UInt16;mesh.SetVertices(positions);
             if(normals.Count>0)mesh.SetNormals(normals);if(tangents.Count>0)mesh.SetTangents(tangents);if(colors.Count>0)mesh.SetColors(colors);
-            for(int c=0;c<8;c++)if(uv[c].Count>0){if(dimensions[c]==2)mesh.SetUVs(c,uv[c].Select(v=>new Vector2(v.x,v.y)).ToList());else if(dimensions[c]==3)mesh.SetUVs(c,uv[c].Select(v=>new Vector3(v.x,v.y,v.z)).ToList());else mesh.SetUVs(c,uv[c]);}
+            for(int c=0;c<8;c++)if(uv[c].Count>0){if(dimensions[c]==1)StudioSubdivisionData.SetUV1(mesh,c,uv[c]);else if(dimensions[c]==2)mesh.SetUVs(c,uv[c].Select(v=>new Vector2(v.x,v.y)).ToList());else if(dimensions[c]==3)mesh.SetUVs(c,uv[c].Select(v=>new Vector3(v.x,v.y,v.z)).ToList());else mesh.SetUVs(c,uv[c]);}
             int submeshes=sourceSubmeshes;mesh.subMeshCount=submeshes;
             for(int sub=0;sub<submeshes;sub++){var indices=new List<int>();for(int f=0;f<result.Count;f++)if(result[f].Submesh==sub)indices.AddRange(resultIndices[f]);mesh.SetTriangles(indices,sub);}
-            mesh.RecalculateBounds();mesh.UploadMeshData(false);node.cutPolygons=result.SelectMany(f=>new[]{f.Submesh,f.Vertices.Count}.Concat(f.Vertices)).ToArray();node.cutTriangles=mesh.triangles;node.normalGroups=groups?.ToArray();
+            mesh.RecalculateBounds();mesh.UploadMeshData(false);node.cutPolygons=result.SelectMany(f=>new[]{f.Submesh,f.Vertices.Count}.Concat(f.Vertices)).ToArray();node.cutTriangles=mesh.triangles;node.normalGroups=groups?.ToArray();node.geometryVertices=GeometricIds(geometry);
         }
     }
 }

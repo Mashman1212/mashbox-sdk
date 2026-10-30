@@ -36,7 +36,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             return cuts;
         }
-        internal bool WantsLoopCountWheel(Event evt) => cutTool != CutTool.None && evt.type == EventType.ScrollWheel &&
+        internal bool WantsLoopCountWheel(Event evt) => (cutTool == CutTool.EdgeLoop || cutTool == CutTool.MultiCut) && evt.type == EventType.ScrollWheel &&
             (evt.control || evt.command) && !evt.alt && evt.delta.y != 0 &&
             (GUIUtility.hotControl == 0 || GUIUtility.hotControl == cutControl);
         private bool HandleLoopCountWheel(SceneView view, Event evt)

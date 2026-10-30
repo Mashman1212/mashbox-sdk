@@ -31,8 +31,10 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, StudioShortcuts.MenuLabel("Save Workspace",StudioShortcut.Save), Document, Save);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Save Workspace As…",StudioShortcut.SaveAs), Document, SaveAs);
                     menu.AddSeparator("");
-                    AddCommand(menu, "Export All… (FBX)", Document && Document.nodes.Count > 0, Export);
-                    AddCommand(menu, "Export Selection… (FBX)", CanExportSelection, () => Export(true));
+                    AddCommand(menu, "Export Cage All… (FBX)", Document && Document.nodes.Count > 0, Export, commandKey: "Export All… (FBX)");
+                    AddCommand(menu, "Export Cage Selection… (FBX)", CanExportSelection, () => Export(true), commandKey: "Export Selection… (FBX)");
+                    AddCommand(menu, "Export Evaluated All… (FBX)", Document && Document.nodes.Count > 0, () => Export(false,true));
+                    AddCommand(menu, "Export Evaluated Selection… (FBX)", CanExportSelection, () => Export(true,true));
                 
                     break; }
                 case "Edit": {
@@ -127,6 +129,7 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddSeparator("");
                     AddAction(menu, pivot ? "Finish Pivot Edit" : "Edit Pivot", MarkingAction.EditPivot, view);
                     AddCommand(menu, "Group", true, GroupSelectedObjects);
+                    AddCommand(menu, "Clear History", true, ClearModifierHistory);
                     AddAction(menu, "Center Pivot", MarkingAction.CenterPivot, view); AddAction(menu, "Freeze Transforms", MarkingAction.Freeze, view);
                 
                     break; }
@@ -149,6 +152,7 @@ namespace MashBoxSDK.AnimationStudio
                         PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh, then select an edge to insert an edge loop.", ComponentMode.Edge);
                         ActivateCutTool(CutTool.EdgeLoop);
                     }));
+                    menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool));
                     menu.AddItem(new GUIContent("Multi-Cut"), cutTool == CutTool.MultiCut, () => Run(() => {
                         PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh to use Multi-Cut.", ComponentMode.Edge);
                         ActivateCutTool(CutTool.MultiCut);
@@ -159,6 +163,8 @@ namespace MashBoxSDK.AnimationStudio
                 
                     break; }
                 case "Mesh Display": {
+                    AddCommand(menu, "Subdivision Preview", true, ToggleSubdivision);
+                    AddCommand(menu, "Add Subdivision", true, AddSubdivisionModifier);
                     AddCommand(menu, "Soften", true, () => ApplyEdgeNormals(false));
                     AddCommand(menu, "Harden", true, () => ApplyEdgeNormals(true));
                     AddCommand(menu, "Soften…", true, OpenSoftenTool, finishPreview: false);

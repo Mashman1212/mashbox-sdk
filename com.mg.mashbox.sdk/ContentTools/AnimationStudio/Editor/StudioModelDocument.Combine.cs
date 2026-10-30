@@ -115,13 +115,14 @@ namespace MashBoxSDK.AnimationStudio
         private Mesh BuildCombinedMesh(int[] inputs, Transform[] transforms, Matrix4x4 destination, bool combineUVs, Node result)
         {
             var vertices = new List<Vector3>(); var normals = new List<Vector3>(); var tangents = new List<Vector4>(); var colors = new List<Color>();
-            var groups = new List<int>(); var polygons = new List<int>(); var materials = new List<Material>(); var triangles = new List<List<int>>();
+            var groups = new List<int>();var geometry=new List<int>();int nextGeometryId=0; var polygons = new List<int>(); var materials = new List<Material>(); var triangles = new List<List<int>>();
             var uv = Enumerable.Range(0, 8).Select(_ => new List<Vector4>()).ToArray(); var dimensions = new int[8];
             bool hasNormals = inputs.Any(i => nodes[i].mesh.normals.Length > 0), hasTangents = inputs.Any(i => nodes[i].mesh.tangents.Length > 0), hasColors = inputs.Any(i => nodes[i].mesh.colors.Length > 0);
             int nextUV = 0, nextGroup = 0;
             foreach (int i in inputs)
             {
                 var node = nodes[i]; var source = node.mesh; int offset = vertices.Count, count = source.vertexCount;
+                var inputGeometry=StudioSubdivisionData.Geometry(node);var geometryMap=new Dictionary<int,int>();foreach(int id in inputGeometry){if(!geometryMap.TryGetValue(id,out int mapped)){mapped=nextGeometryId++;geometryMap.Add(id,mapped);}geometry.Add(mapped);}
                 var matrix = destination * transforms[i].localToWorldMatrix;
                 if (Enumerable.Range(0,4).Any(c => !FiniteHierarchyVector(matrix.GetColumn(c))) || Mathf.Abs(matrix.determinant) < 1e-12f)
                     throw new InvalidOperationException("Cannot combine a mesh with zero or invalid scale.");
@@ -203,14 +204,15 @@ namespace MashBoxSDK.AnimationStudio
                 output.SetVertices(vertices); if (hasNormals) output.SetNormals(normals); if (hasTangents) output.SetTangents(tangents); if (hasColors) output.SetColors(colors);
                 for (int c = 0; c < 8; c++)
                 {
-                    if (dimensions[c] == 2) output.SetUVs(c, uv[c].Select(v => new Vector2(v.x,v.y)).ToList());
+                    if (dimensions[c] == 1) StudioSubdivisionData.SetUV1(output,c,uv[c]);
+                    else if (dimensions[c] == 2) output.SetUVs(c, uv[c].Select(v => new Vector2(v.x,v.y)).ToList());
                     else if (dimensions[c] == 3) output.SetUVs(c, uv[c].Select(v => new Vector3(v.x,v.y,v.z)).ToList());
                     else if (dimensions[c] > 0) output.SetUVs(c, uv[c]);
                 }
                 output.subMeshCount = materials.Count;
                 for (int s = 0; s < triangles.Count; s++) output.SetTriangles(triangles[s], s, false);
                 if (!hasNormals) output.RecalculateNormals(); output.RecalculateBounds();
-                result.materials = materials.ToArray(); result.normalGroups = groups.ToArray(); result.cutPolygons = polygons.ToArray(); result.cutTriangles = output.triangles;
+                result.materials = materials.ToArray(); result.normalGroups = groups.ToArray();result.geometryVertices=geometry.ToArray(); result.cutPolygons = polygons.ToArray(); result.cutTriangles = output.triangles;
                 return output;
             }
             catch { DestroyImmediate(output); throw; }

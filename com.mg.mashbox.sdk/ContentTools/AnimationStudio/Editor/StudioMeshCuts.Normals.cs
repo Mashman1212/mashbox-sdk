@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -139,13 +139,14 @@ namespace MashBoxSDK.AnimationStudio
             if(colors.Length>0)mesh.SetColors(sources.Select(i=>colors[i]).ToList());
             for(int c=0;c<8;c++)if(uv[c].Count>0)
             {
-                if(dimensions[c]==2)mesh.SetUVs(c,sources.Select(i=>new Vector2(uv[c][i].x,uv[c][i].y)).ToList());
+                if(dimensions[c]==1)StudioSubdivisionData.SetUV1(mesh,c,sources.Select(i=>uv[c][i]));
+                else if(dimensions[c]==2)mesh.SetUVs(c,sources.Select(i=>new Vector2(uv[c][i].x,uv[c][i].y)).ToList());
                 else if(dimensions[c]==3)mesh.SetUVs(c,sources.Select(i=>new Vector3(uv[c][i].x,uv[c][i].y,uv[c][i].z)).ToList());
                 else mesh.SetUVs(c,sources.Select(i=>uv[c][i]).ToList());
             }
             mesh.subMeshCount=triangles.Length;for(int s=0;s<triangles.Length;s++)mesh.SetTriangles(triangles[s],s);
             if(uv[0].Count>0)mesh.RecalculateTangents();else if(sourceTangents.Length==Positions.Length)mesh.SetTangents(sources.Select(i=>sourceTangents[i]).ToList());
-            mesh.RecalculateBounds();mesh.UploadMeshData(false);node.cutPolygons=polygons;node.cutTriangles=mesh.triangles;node.normalGroups=outputGroups.ToArray();
+            mesh.RecalculateBounds();mesh.UploadMeshData(false);node.cutPolygons=polygons;node.cutTriangles=mesh.triangles;node.normalGroups=outputGroups.ToArray();node.geometryVertices=GeometricIds(sources.Select(i=>welded[i]));
         }
     }
 }

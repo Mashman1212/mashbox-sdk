@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect }
         private sealed class RepeatAction
         {
             internal RepeatKind kind; internal LiveTool live; internal Vector4 parameters; internal Vector3 flow; internal bool welded;
@@ -28,6 +28,7 @@ namespace MashBoxSDK.AnimationStudio
         private void RepeatLastAction()
         {
             // G finishes an existing preview once, without doubling that operation.
+            if(bisectPreview!=null){ApplyBisect();return;}
             if (livePreview != null || componentLiveTargets != null || previewQueued) { FinishLiveTool(); return; }
             if (!CanRepeatLastAction) throw new InvalidOperationException("There is no completed modeling action to repeat in this workspace.");
             var action = lastRepeatAction; var oldWeld = weld;
@@ -41,6 +42,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (!EligibleComponentTool(action.live)) throw new InvalidOperationException("The last action is unavailable for the current component selection.");
                         if (action.live == LiveTool.Extrude) { extrusionDistance = action.parameters.x; extrudeFacesTogether = action.parameters.y >= .5f; extrusionInset = action.parameters.z; }
                         ApplyLiveTool(action.live); break;
+                    case RepeatKind.Bisect: OpenBisectTool(); break;
                     case RepeatKind.Group: GroupSelectedObjects(); break;
                     case RepeatKind.Combine: CombineSelectedObjects(); break;
                     case RepeatKind.Bridge: ChooseSelectionAction("Bridge Edges", BridgeSelectedEdges, "Select two non-touching boundary edge groups on one mesh, with equal edge counts."); break;

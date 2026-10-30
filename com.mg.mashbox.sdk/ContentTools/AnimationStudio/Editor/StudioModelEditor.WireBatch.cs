@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
             wire.adjacentBuffer?.Dispose();wire.adjacentBuffer=null;
             wire.positionBuffer=wire.edgeBuffer=null;
         }
-        private bool DrawWireBatch(SelectionWireframe wire,Matrix4x4 matrix,Color color,float width,Camera camera,GraphicsBuffer subset=null,int subsetCount=0)
+        private bool DrawWireBatch(SelectionWireframe wire,Matrix4x4 matrix,Color color,float width,Camera camera,GraphicsBuffer subset=null,int subsetCount=0,bool forceXray=false)
         {
             if(!camera || SystemInfo.graphicsShaderLevel<45 || wire.vertices.Count==0 || wire.indices.Length==0)return false;
             if(!wireBatchMaterial)
@@ -49,8 +49,8 @@ namespace MashBoxSDK.AnimationStudio
             // native Handles colors. Do not linearize these a second time.
             wireBatchMaterial.SetColor(WireColor,color);
             wireBatchMaterial.SetFloat(WireWidth,width*EditorGUIUtility.pixelsPerPoint);
-            wireBatchMaterial.SetFloat(WireDepth,(float)(displayXray?CompareFunction.Always:CompareFunction.LessEqual));
-            wireBatchMaterial.SetFloat(WireXRay,displayXray?1:0);
+            wireBatchMaterial.SetFloat(WireDepth,(float)(displayXray||forceXray?CompareFunction.Always:CompareFunction.LessEqual));
+            wireBatchMaterial.SetFloat(WireXRay,displayXray||forceXray?1:0);
             if(!wireBatchMaterial.SetPass(0))return false;
             Graphics.DrawProceduralNow(MeshTopology.Triangles,6,subset!=null?subsetCount:wire.indices.Length/2);
             return true;

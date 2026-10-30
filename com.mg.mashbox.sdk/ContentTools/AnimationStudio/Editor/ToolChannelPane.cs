@@ -46,41 +46,10 @@ namespace MashBoxSDK.AnimationStudio
             return value;
         }
         private static ToolChannelPane drawingPane;
-        private int integerControl, integerStart;
-        private double integerRemainder;
-        private void EndIntegerScrub()
-        {
-            if (integerControl == 0) return;
-            if (GUIUtility.hotControl == integerControl) GUIUtility.hotControl = 0;
-            integerControl = 0; integerRemainder = 0; EditorGUIUtility.SetWantsMouseJumping(0);
-        }
-        private int IntegerField(Rect rect, GUIContent label, int value, int minimum, int maximum)
-        {
-            int id = GUIUtility.GetControlID("StudioIntegerScrub".GetHashCode(), FocusType.Passive, rect);
-            var evt = Event.current;
-            var drag = new Rect(rect.x, rect.y, Mathf.Min(EditorGUIUtility.labelWidth, rect.width), rect.height);
-            EditorGUIUtility.AddCursorRect(drag, MouseCursor.SlideArrow);
-            if (integerControl != 0 && GUIUtility.hotControl != integerControl) EndIntegerScrub();
-            if (GUI.enabled && evt.type == EventType.MouseDown && evt.button == 0 && !evt.alt && drag.Contains(evt.mousePosition) && GUIUtility.hotControl == 0)
-            {
-                integerControl = id; integerStart = value; integerRemainder = 0;
-                GUIUtility.hotControl = id; GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
-                EditorGUIUtility.SetWantsMouseJumping(1); evt.Use();
-            }
-            if (integerControl == id && GUIUtility.hotControl == id)
-            {
-                if (evt.type == EventType.MouseDrag)
-                {
-                    int edited = StudioDragSensitivity.StepInteger(ref integerRemainder, value, StudioDragSensitivity.UnscaledDragDelta.x, dragSensitivity, minimum, maximum);
-                    if (edited != value) { value = edited; GUI.changed = true; }
-                    evt.Use();
-                }
-                else if (evt.rawType == EventType.MouseUp && evt.button == 0) { EndIntegerScrub(); evt.Use(); }
-                else if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
-                { if (value != integerStart) { value = integerStart; GUI.changed = true; } EndIntegerScrub(); evt.Use(); }
-            }
-            return EditorGUI.IntField(rect, label, value);
-        }
+        private readonly StudioDragSensitivity.IntegerScrubber integerScrubber = new StudioDragSensitivity.IntegerScrubber();
+        private void EndIntegerScrub() => integerScrubber.End();
+        private int IntegerField(Rect rect, GUIContent label, int value, int minimum, int maximum) =>
+            integerScrubber.Draw(rect,label,value,minimum,maximum,dragSensitivity);
         internal static int IntParameter(string tool, string parameter, GUIContent label, int fallback, int minimum, int maximum)
         {
             int value = Mathf.Clamp(Mathf.RoundToInt(GetFloatDefault(tool, parameter, fallback)), minimum, maximum);

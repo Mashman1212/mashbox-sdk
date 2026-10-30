@@ -105,6 +105,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void PerformWorkspaceHistory(bool redo)
         {
+            if (bisectPreview != null || bisectDragging || bisectQueued) { CancelBisectPreview(); return; }
             if (livePreview != null || previewQueued) { CancelLiveTool(); return; }
             FinishChannelEdit(); resetChannelFocus = true;
             if (redo) Undo.PerformRedo(); else Undo.PerformUndo();

@@ -50,6 +50,7 @@ namespace MashBoxSDK.AnimationStudio
             private readonly List<int> ids=new List<int>(),next=new List<int>();
             private readonly Dictionary<int,int> staticHeads=new Dictionary<int,int>(),dynamicHeads=new Dictionary<int,int>();
             private int prefix;
+            internal int[] CopyGeometry()=>ids.ToArray();
             internal void AddStatic(int geo)
             { int index=ids.Count; next.Add(staticHeads.TryGetValue(geo,out int head) ? head : -1); ids.Add(geo); staticHeads[geo]=index; prefix=ids.Count; }
             internal void ResetDynamic()
@@ -115,7 +116,7 @@ namespace MashBoxSDK.AnimationStudio
             internal Color[] StaticColors;
             internal Vector4[] StaticTangents;
             internal readonly Vector4[][] StaticUV = new Vector4[8][];
-            internal int[] StaticGroups, StaticMetadata;
+            internal int[] StaticGroups, StaticMetadata, CachedGeometry;
             internal int[][] StaticTriangles;
             internal readonly Dictionary<(int, Vector3), int> StaticSmoothing = new Dictionary<(int, Vector3), int>();
             internal readonly List<Vector3> Positions = new List<Vector3>(), Normals = new List<Vector3>();
@@ -383,7 +384,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (source.Colors.Length > 0) mesh.SetColors(output.Colors);
                 for (int c = 0; c < 8; c++) if (output.UV[c] != null)
                 {
-                    if (source.Dimensions[c] == 2)
+                    if(source.Dimensions[c]==1)StudioSubdivisionData.SetUV1(mesh,c,output.UV[c]);
+                    else if (source.Dimensions[c] == 2)
                     { var values = output.UV2[c]; values.Clear(); foreach (var value in output.UV[c]) values.Add(new Vector2(value.x, value.y)); mesh.SetUVs(c, values); }
                     else if (source.Dimensions[c] == 3)
                     { var values = output.UV3[c]; values.Clear(); foreach (var value in output.UV[c]) values.Add(new Vector3(value.x, value.y, value.z)); mesh.SetUVs(c, values); }
@@ -396,6 +398,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if (source.Tangents.Length > 0) mesh.SetTangents(output.Tangents);
                 mesh.bounds=BevelOutputBounds(output);
             }
+            if(!sameTopology || output.CachedGeometry==null)output.CachedGeometry=GeometricIds(output.Welds.CopyGeometry());node.geometryVertices=output.CachedGeometry;
             node.cutPolygons = output.CachedMetadata; node.cutTriangles = output.CachedIndices; node.normalGroups = output.CachedGroups;
             var result = new BevelResult { VertexUpdate=suffixPublished ? output.Update : null, Welds = output.Welds, VertexUpdateStart = output.StaticPositions.Length, PublishedPositions = output.Positions, AppliedWidth = draft.Width, Edges = edgeCount, AddedFaces = draft.Polygons.Count + draft.Plan.StaticFaces.Count - (bevelInputFaceCount > 0 ? bevelInputFaceCount : Faces.Count) };
             foreach (var edge in draft.Selection) result.Selection.Add(NormalEdgePositionKeyForBevel(draft.Positions[edge.Item1], draft.Positions[edge.Item2]));

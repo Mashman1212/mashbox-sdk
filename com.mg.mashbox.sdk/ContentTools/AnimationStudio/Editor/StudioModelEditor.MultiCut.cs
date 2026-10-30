@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
         private List<StudioMeshCuts.FaceStroke> multiSlicePreview=new List<StudioMeshCuts.FaceStroke>();
         private MultiPoint? multiHover;
         private Vector2 multiMouse,multiSliceStart;
+        private Plane multiSlicePlane;
         private bool multiSlicing;
         private bool MultiLoopClosed => multiPoints.Count >= 4 && SameMultiPoint(multiPoints[0],multiPoints[multiPoints.Count-1]);
         private bool SameMultiPoint(MultiPoint a,MultiPoint b)
@@ -46,6 +47,7 @@ namespace MashBoxSDK.AnimationStudio
         { if(multiPoints.Count>0)multiPoints.RemoveAt(multiPoints.Count-1);if(multiLinks.Count>=multiPoints.Count&&multiLinks.Count>0)multiLinks.RemoveAt(multiLinks.Count-1);repaint(); }
         private void CommitPendingCutGesture()
         {
+            if(cutTool==CutTool.Bisect){Run(ApplyBisect);return;}
             if(cutTool==CutTool.MultiCut&&multiPoints.Count>0)Run(()=>CommitMultiCut(CollectMultiStrokes()));
             else Run(()=>CommitCuts(new List<StudioMeshCuts.Cut>(pendingCuts)));
         }
@@ -214,25 +216,63 @@ namespace MashBoxSDK.AnimationStudio
         }
         private Rect MultiProjectedBounds(SceneView view)
         {
-            var bounds=ActiveMesh.bounds;var transform=Transforms[Active];var min=new Vector2(float.PositiveInfinity,float.PositiveInfinity);var max=-min;
-            for(int i=0;i<8;i++)
-            {
-                var corner=bounds.center+Vector3.Scale(bounds.extents,new Vector3((i&1)==0?-1:1,(i&2)==0?-1:1,(i&4)==0?-1:1));
-                var p=PaintWorldToGUI(view.camera,transform.TransformPoint(corner));min=Vector2.Min(min,p);max=Vector2.Max(max,p);
-            }
+            var transform=Transforms[Active];var min=new Vector2(float.PositiveInfinity,float.PositiveInfinity);var max=-min;
+            // The projected local bounding box can extend far beyond a rotated
+            // object's visible extent. Use the actual source vertices instead.
+            var vertices=bisectPreview!=null?bisectPreview.Targets[0].Source.vertices:cutTopology?.Positions??ActiveMesh.vertices;
+            foreach(var vertex in vertices)
+            {var p=PaintWorldToGUI(view.camera,transform.TransformPoint(vertex));min=Vector2.Min(min,p);max=Vector2.Max(max,p);}
             return Rect.MinMaxRect(min.x,min.y,max.x,max.y);
         }
-        private List<StudioMeshCuts.FaceStroke> MultiSlice(SceneView view,Vector2 a,Vector2 b)
+        // Exact triangle hits, without the edge/vertex snap radius. Empty space
+        // inside the projected bounds is a valid through-slice endpoint.
+        private bool SlicePointerOnMesh(SceneView view,Vector2 pointer)
         {
+            var mesh=bisectPreview!=null?bisectPreview.Targets[0].Source:ActiveMesh;
+            var vertices=mesh.vertices;var triangles=mesh.triangles;var transform=Transforms[Active];
+            var ray=PaintPointerRay(view.camera,pointer);
+            for(int i=0;i<triangles.Length;i+=3)
+                if(RayTriangle(ray,transform.TransformPoint(vertices[triangles[i]]),transform.TransformPoint(vertices[triangles[i+1]]),transform.TransformPoint(vertices[triangles[i+2]]),out _))return true;
+            return false;
+        }
+        private List<StudioMeshCuts.FaceStroke> MultiSlice(SceneView view,Vector2 a,Vector2 b)
+            =>SliceSurfaceStrokes(view,a,b,cutTopology,out multiSlicePlane);
+        private bool SliceSegmentCrossesMesh(SceneView view,Vector2 a,Vector2 b)
+        {
+            var source=bisectPreview!=null?bisectPreview.Targets[0].ModifierSourceNode():Document.nodes[Active];
+            return SliceSurfaceStrokes(view,a,b,new StudioMeshCuts(source),out _).Count>0;
+        }
+        private List<StudioMeshCuts.FaceStroke> SliceSurfaceStrokes(SceneView view,Vector2 a,Vector2 b,StudioMeshCuts topology,out Plane localPlane)
+        {
+            localPlane=default;
             if((a-b).sqrMagnitude<9)return new List<StudioMeshCuts.FaceStroke>();
-            var ra=PaintPointerRay(view.camera,a);var rb=PaintPointerRay(view.camera,b);var transform=Transforms[Active];
-            Vector3 p=transform.InverseTransformPoint(view.orthographic?ra.origin:view.camera.transform.position);
-            Vector3 q=transform.InverseTransformPoint(view.orthographic?rb.origin:ra.GetPoint(1));
-            Vector3 r=transform.InverseTransformPoint(view.orthographic?ra.GetPoint(1):rb.GetPoint(1));
-            var plane=new Plane(p,q,r);if(plane.normal.sqrMagnitude<.5f)return new List<StudioMeshCuts.FaceStroke>();
+            var transform=Transforms[Active];
+            if(!TryCameraSlicePlane(view,a,b,out var worldPlane))return new List<StudioMeshCuts.FaceStroke>();
+            var matrix=transform.localToWorldMatrix;var normal=matrix.transpose.MultiplyVector(worldPlane.normal);float length=normal.magnitude;
+            if(length<1e-12f)return new List<StudioMeshCuts.FaceStroke>();
+            localPlane=new Plane(normal/length,(Vector3.Dot(worldPlane.normal,matrix.MultiplyPoint3x4(Vector3.zero))+worldPlane.distance)/length);
             var delta=b-a;
-            return cutTopology.SliceCut(plane).Where(stroke=>stroke.Points.All(point=>
+            return topology.SurfaceSlice(localPlane).Where(stroke=>stroke.Points.All(point=>
             {var projected=PaintWorldToGUI(view.camera,transform.TransformPoint(point));float t=Vector2.Dot(projected-a,delta)/delta.sqrMagnitude;return t>=-1e-5f&&t<=1+1e-5f;})).ToList();
+        }
+        private static bool TryCameraSlicePlane(SceneView view,Vector2 a,Vector2 b,out Plane plane)
+        {
+            var ra=PaintPointerRay(view.camera,a);var rb=PaintPointerRay(view.camera,b);
+            var normal=view.orthographic?Vector3.Cross(rb.origin-ra.origin,ra.direction):Vector3.Cross(ra.direction,rb.direction);
+            plane=new Plane(normal.normalized,view.orthographic?ra.origin:view.camera.transform.position);return normal.sqrMagnitude>1e-12f;
+        }
+        private void CommitMultiSlice(Plane plane)
+        {
+            if(!CanCutMesh)throw new InvalidOperationException("Select an editable static mesh before slicing.");
+            var topology=new StudioMeshCuts(Document.nodes[Active]);int group=-1;
+            try
+            {
+                bool changed=topology.ApplyPlaneSlice(Document.nodes[Active],plane,()=>{Undo.IncrementCurrentGroup();group=Undo.GetCurrentGroup();Undo.SetCurrentGroupName("Multi-Cut");Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[]{Document,ActiveMesh},"Multi-Cut");});
+                if(!changed)throw new InvalidOperationException("The cutting plane does not cross the active mesh.");
+                EditorUtility.SetDirty(ActiveMesh);EditorUtility.SetDirty(Document);ResetCutGesture();MeshTopologyChanged();cutTopology=new StudioMeshCuts(Document.nodes[Active]);cutMesh=ActiveMesh;error=null;
+            }
+            catch{if(group>=0)Undo.RevertAllDownToGroup(group);throw;}
+            finally{if(group>=0)Undo.CollapseUndoOperations(group);}
         }
         private float MultiEdgeFraction(SceneView view,Vector2 mouse,int a,int b)
         {
@@ -252,7 +292,7 @@ namespace MashBoxSDK.AnimationStudio
             var pointer=PaintInputPosition(view);var rootPointer=view is MashBoxStudioViewport viewport?pointer+viewport.CanvasInputOrigin:pointer;
             var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);
             overCanvas=canvas.Contains(rootPointer)&&(!(view is MashBoxStudioViewport overlay)||!overlay.IsOverViewportControls(rootPointer));
-            if(overCanvas&&(evt.type==EventType.MouseMove||evt.type==EventType.MouseDrag||evt.type==EventType.MouseDown||evt.type==EventType.MouseUp))
+            if((overCanvas||multiSlicing)&&(evt.type==EventType.MouseMove||evt.type==EventType.MouseDrag||evt.type==EventType.MouseDown||evt.type==EventType.MouseUp))
             {
                 multiMouse=PaintInputPosition(view);multiHover=SnapMultiPreview(view,multiMouse,MultiSurface(view,multiMouse));
                 if(multiSlicing)multiSlicePreview=MultiSlice(view,multiSliceStart,multiMouse);
@@ -261,7 +301,9 @@ namespace MashBoxSDK.AnimationStudio
             if(overCanvas&&evt.type==EventType.MouseDown&&evt.button==0&&GUIUtility.hotControl==0)
             {
                 GUIUtility.hotControl=cutControl;
-                if(multiHover.HasValue)
+                if(multiPoints.Count==0&&!SlicePointerOnMesh(view,multiMouse))
+                {multiSlicing=true;multiSliceStart=multiMouse;multiSlicePreview.Clear();error=null;}
+                else if(multiHover.HasValue)
                 {
                     var point=multiHover.Value;
                     if(multiPoints.Count==0)
@@ -270,8 +312,7 @@ namespace MashBoxSDK.AnimationStudio
                     else if(SameMultiPoint(point,multiPoints[0])&&!CanCloseMultiLoop())error="A closed loop needs at least three distinct vertices.";
                     else Run(()=>{var link=TraceMultiSegment(view,multiPoints.Last(),point);multiLinks.Add(link);multiPoints.Add(point);error=MultiLoopClosed?"Loop closed. Press W to apply, or Backspace to reopen.":null;});
                 }
-                else if(multiPoints.Count==0&&!MultiProjectedBounds(view).Contains(multiMouse))
-                {multiSlicing=true;multiSliceStart=multiMouse;multiSlicePreview.Clear();error=null;}
+
                 evt.Use();return true;
             }
             if(evt.type==EventType.MouseDrag&&GUIUtility.hotControl==cutControl){evt.Use();return true;}
@@ -280,8 +321,9 @@ namespace MashBoxSDK.AnimationStudio
                 GUIUtility.hotControl=0;
                 if(multiSlicing)
                 {
-                    if(overCanvas&&!MultiProjectedBounds(view).Contains(PaintInputPosition(view))&&multiSlicePreview.Count>0)Run(()=>CommitMultiCut(multiSlicePreview));
-                    else error="A slice must start and end outside the active mesh bounds.";
+                    if(SlicePointerOnMesh(view,PaintInputPosition(view)))error="Release in empty space off the active mesh to finish the slice.";
+                    else if(multiSlicePreview.Count==0)error="The drawn segment does not cross the active mesh.";
+                    else Run(()=>CommitMultiSlice(multiSlicePlane));
                     multiSlicing=false;multiSlicePreview.Clear();
                 }
                 evt.Use();repaint();return true;

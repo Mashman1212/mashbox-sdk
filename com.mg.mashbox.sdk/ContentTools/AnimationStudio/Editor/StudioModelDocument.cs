@@ -50,6 +50,9 @@ namespace MashBoxSDK.AnimationStudio
             [SerializeReference] public StudioBlendShape blendShape;
             public int[] cutPolygons, cutTriangles;
             public int[] normalGroups;
+            public int[] geometryVertices;
+            public StudioSubdivisionSettings subdivision = new StudioSubdivisionSettings();
+            public StudioModifierHistory modifiers;
             public Material[] materials = Array.Empty<Material>();
             public int previewTextureSlice;
             public bool vertexAOBaked;
@@ -117,6 +120,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!source) throw new ArgumentException("Choose a model first.");
             var captured = new List<Node>();
             var transforms = source.GetComponentsInChildren<Transform>(true);
+            var sourceTopologies = new Dictionary<string, List<StudioFbxTopology.SourceMesh>>();
             try
             {
                 foreach (var t in transforms)
@@ -137,6 +141,10 @@ namespace MashBoxSDK.AnimationStudio
                         // Fail before saving if an importer cannot supply CPU geometry.
                         var vertices = node.mesh.vertices;
                         CaptureMeshTopology(node, autoQuad: true);
+                        var topologyPath = AssetDatabase.GetAssetPath(mesh);
+                        if (!sourceTopologies.TryGetValue(topologyPath, out var sourceTopology))
+                            sourceTopologies.Add(topologyPath, sourceTopology = StudioFbxTopology.Read(topologyPath));
+                        StudioFbxTopology.Apply(node, sourceTopology, t.name);
                     }
                     if (skin)
                     {

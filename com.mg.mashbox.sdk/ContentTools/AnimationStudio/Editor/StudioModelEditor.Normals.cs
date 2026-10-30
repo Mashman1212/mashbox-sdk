@@ -141,7 +141,7 @@ namespace MashBoxSDK.AnimationStudio
                     topology.SetEdgeNormals(node, edges, angle, harden,
                         () => Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, node.mesh }, label));
                     foreach (var other in Document.nodes) if (other != node && other.mesh == node.mesh)
-                    { other.cutPolygons = node.cutPolygons?.ToArray(); other.cutTriangles = node.cutTriangles?.ToArray(); other.normalGroups = node.normalGroups?.ToArray(); }
+                    { other.cutPolygons = node.cutPolygons?.ToArray(); other.cutTriangles = node.cutTriangles?.ToArray(); other.normalGroups = node.normalGroups?.ToArray();other.geometryVertices=node.geometryVertices; }
                     EditorUtility.SetDirty(node.mesh);
                 }
                 MeshTopologyChanged(); mode = oldMode;

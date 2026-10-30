@@ -42,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
             // Undo removes the node, while its owned mesh stays available for Redo.
             // Destroying a persistent subasset through creation undo loses its asset reference.
             var material = StudioMeshMaterialPreview.DefaultMaterial;
-            nodes.Add(new Node { name = name, mesh = mesh, materials = new[] { material }, cutPolygons = polygons, cutTriangles = mesh.triangles });
+            nodes.Add(new Node { name = name, mesh = mesh, materials = new[] { material }, cutPolygons = polygons, cutTriangles = mesh.triangles, geometryVertices = StudioSubdivisionData.Primitive(mesh) });
             EditorUtility.SetDirty(this); EditorUtility.SetDirty(mesh);
             Undo.CollapseUndoOperations(group);
             return nodes.Count - 1;

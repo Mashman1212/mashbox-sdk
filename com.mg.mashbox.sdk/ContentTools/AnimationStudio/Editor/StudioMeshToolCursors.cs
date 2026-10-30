@@ -193,6 +193,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(CameraOptionsVisible||LightingOptionsVisible)return StudioMeshToolCursors.Kind.None;
             if(GUIUtility.hotControl!=0&&GUIUtility.hotControl!=cutControl&&GUIUtility.hotControl!=targetWeldControl)return StudioMeshToolCursors.Kind.None;
+            if(cutTool==CutTool.Bisect)return StudioMeshToolCursors.Kind.MultiCut;
             if(cutTool==CutTool.MultiCut)
                 return !HasMultiCutGesture&&(modifiers&(EventModifiers.Control|EventModifiers.Command))!=0?StudioMeshToolCursors.Kind.EdgeLoop:StudioMeshToolCursors.Kind.MultiCut;
             if(cutTool==CutTool.EdgeLoop)return StudioMeshToolCursors.Kind.EdgeLoop;

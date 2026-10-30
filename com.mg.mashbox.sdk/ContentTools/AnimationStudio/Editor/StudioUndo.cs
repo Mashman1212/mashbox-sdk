@@ -50,8 +50,10 @@ namespace MashBoxSDK.AnimationStudio
         internal static void IncrementCurrentGroup() => NativeUndo.IncrementCurrentGroup();
         internal static void RecordObject(Object target, string name) => RegisterCompleteObjectUndo(target, name);
         internal static void RegisterCompleteObjectUndo(Object target, string name) => RegisterCompleteObjectUndo(new[] { target }, name);
+        internal static event Func<Object[],string,Object[]> PreparingObjects;
         internal static void RegisterCompleteObjectUndo(Object[] targets, string name)
         {
+            if(PreparingObjects!=null)foreach(Func<Object[],string,Object[]> prepare in PreparingObjects.GetInvocationList())targets=prepare(targets,name);
             var objects = targets.Where(o => o).Distinct().ToArray();
             if (objects.Length == 0) return;
             // Native recording also abandons the redo branch when a new edit starts.

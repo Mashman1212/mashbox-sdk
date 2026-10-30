@@ -44,6 +44,7 @@ namespace MashBoxSDK.AnimationStudio
             if (Is(StudioShortcut.XRay)) { SetXRayMode(!displayXray); evt.Use(); return true; }
             if (cutTool != CutTool.None)
             {
+                if(cutTool==CutTool.Bisect && Is(StudioShortcut.CommitCut)){Run(ApplyBisect);evt.Use();return true;}
                 if (MultiCutKey(evt)) return true;
                 if (Is(StudioShortcut.CommitCut))
                 { CommitPendingCutGesture(); evt.Use(); return true; }
@@ -75,7 +76,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ReleaseShortcutHolds()
         {
-            ResetTargetWeldGesture(); ReleaseMultiCutPointer(); FinishSelectionPaint();
+            ResetTargetWeldGesture(); ReleaseMultiCutPointer(); ReleaseBisectPointer(); FinishSelectionPaint();
             if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
             EndPivotSnap(); ClearGridSnap();
         }

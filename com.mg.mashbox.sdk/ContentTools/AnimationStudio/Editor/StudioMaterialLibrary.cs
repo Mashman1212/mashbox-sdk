@@ -26,6 +26,10 @@ namespace MashBoxSDK.AnimationStudio
         private readonly HashSet<string> foldersWithChildren=new HashSet<string>();
         private readonly Dictionary<string,Material> loaded=new Dictionary<string,Material>();
         private readonly Dictionary<Material,(Material preview,int version)> planePreviews=new Dictionary<Material,(Material,int)>();
+        private readonly Dictionary<Material,(Texture2D image,int version,long use)> planeThumbnails=new Dictionary<Material,(Texture2D,int,long)>();
+        private long thumbnailUse;
+        private readonly Dictionary<Material,(Texture2D image,int version,long use)> baseMapThumbnails=new Dictionary<Material,(Texture2D,int,long)>();
+        private string prototypingRoot;
         private readonly Dictionary<(string,int),string> tileTitles=new Dictionary<(string,int),string>();
         private readonly HashSet<int> pendingPreviews=new HashSet<int>();
         private readonly HashSet<int> timedOutPreviews=new HashSet<int>();
@@ -57,7 +61,7 @@ namespace MashBoxSDK.AnimationStudio
             rootVisualElement.RegisterCallback<GeometryChangedEvent>(_=>SavePlacement());
         }
         private void OnLostFocus(){pressed=null;SavePlacement();}
-        private void OnBecameInvisible(){ClearPlanePreviews();}
+        private void OnBecameInvisible(){EditorApplication.update-=PollPreviews;pendingPreviews.Clear();}
         private void OnBecameVisible()=>Repaint();
         private void OnDisable(){StudioMaterialLibraryIndex.Changed-=IndexChanged;ClearPlanePreviews();}
         private void OnDestroy(){SavePlacement();StudioWindowOwnership.CloseOwnedWindows(this);}
@@ -70,7 +74,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             indexRevision=StudioMaterialLibraryIndex.Revision;
             if(!StudioMaterialLibraryIndex.Scanning&&indexRevision>0&&folder.Length>0&&!StudioMaterialLibraryIndex.IsPinned(folder)&&!StudioMaterialLibraryIndex.Folders.Contains(folder))folder="";
-            filtered=StudioMaterialLibraryIndex.Query(folder,search);listContentWidth=0;loaded.Clear();ClearPlanePreviews();timedOutPreviews.Clear();BuildFolderRows();
+            filtered=StudioMaterialLibraryIndex.Query(folder,search);listContentWidth=0;prototypingRoot=AssetDatabase.GUIDToAssetPath(StudioMaterialLibraryIndex.PrototypingFolderGuid);BuildFolderRows();
         }
         private void BuildFolderRows()
         {
@@ -176,6 +180,52 @@ namespace MashBoxSDK.AnimationStudio
             GUI.EndScrollView();
             if(Event.current.rawType==EventType.MouseUp&&GUIUtility.hotControl==tileControl){GUIUtility.hotControl=0;pressed=null;}
         }
+        private static readonly string[] BaseMapProperties={"_BaseMap","_BaseColorMap","_MainTex","_GridTexture","BaseMap"};
+        private bool DrawPrototypeBaseMap(Rect rect,StudioMaterialLibraryIndex.Entry entry,Material material)
+        {
+            if(!material)return false;
+            if(string.IsNullOrEmpty(prototypingRoot)||!entry.path.StartsWith(prototypingRoot+"/",StringComparison.OrdinalIgnoreCase))return false;
+            foreach(string property in BaseMapProperties)
+            {
+                if(!material.HasProperty(property))continue;
+                var texture=material.GetTexture(property);if(!texture)continue;
+                var scale=material.GetTextureScale(property);var offset=material.GetTextureOffset(property);
+                var color=GUI.color;
+                try
+                {
+                    GUI.color=color*(material.HasProperty("_BaseColor")?material.GetColor("_BaseColor"):material.HasProperty("_Color")?material.GetColor("_Color"):Color.white);
+                    GUI.DrawTexture(rect,CachedBaseMap(material,texture,scale,offset),ScaleMode.StretchToFill,true);
+                }
+                finally {GUI.color=color;}
+                return true;
+            }
+            return false;
+        }
+        private Texture2D CachedBaseMap(Material material,Texture texture,Vector2 scale,Vector2 offset)
+        {
+            int version=unchecked(EditorUtility.GetDirtyCount(material)*397^EditorUtility.GetDirtyCount(texture)^texture.GetInstanceID()^scale.GetHashCode()^offset.GetHashCode());
+            if(baseMapThumbnails.TryGetValue(material,out var cached)&&cached.image&&cached.version==version)
+            {baseMapThumbnails[material]=(cached.image,version,++thumbnailUse);return cached.image;}
+            if(cached.image)DestroyImmediate(cached.image);
+            if(baseMapThumbnails.Count>=128&&!baseMapThumbnails.ContainsKey(material))
+            {
+                var oldest=baseMapThumbnails.OrderBy(pair=>pair.Value.use).First();
+                if(oldest.Value.image)DestroyImmediate(oldest.Value.image);baseMapThumbnails.Remove(oldest.Key);
+            }
+            var target=RenderTexture.GetTemporary(256,256,0,RenderTextureFormat.ARGB32,RenderTextureReadWrite.sRGB);
+            var previous=RenderTexture.active;bool write=GL.sRGBWrite;
+            Texture2D image=null;
+            try
+            {
+                GL.sRGBWrite=QualitySettings.activeColorSpace==ColorSpace.Linear;
+                Graphics.Blit(texture,target,scale,offset);RenderTexture.active=target;
+                image=new Texture2D(256,256,TextureFormat.RGBA32,true,false){hideFlags=HideFlags.HideAndDontSave,filterMode=FilterMode.Trilinear};
+                image.ReadPixels(new Rect(0,0,256,256),0,0,false);image.Apply(true,false);
+            }
+            catch {if(image)DestroyImmediate(image);throw;}
+            finally {RenderTexture.active=previous;GL.sRGBWrite=write;RenderTexture.ReleaseTemporary(target);}
+            baseMapThumbnails[material]=(image,version,++thumbnailUse);return image;
+        }
         private Material PlanePreview(Material source)
         {
             int version=EditorUtility.GetDirtyCount(source);
@@ -188,8 +238,34 @@ namespace MashBoxSDK.AnimationStudio
             preview.SetOverrideTag("PreviewType","Plane");
             planePreviews[source]=(preview,version);return preview;
         }
+        private Texture2D HighQualityPlanePreview(Material source)
+        {
+            int version=EditorUtility.GetDirtyCount(source);
+            if(planeThumbnails.TryGetValue(source,out var cached)&&cached.version==version)
+            {planeThumbnails[source]=(cached.image,version,++thumbnailUse);return cached.image;}
+            if(cached.image)DestroyImmediate(cached.image);
+            if(planeThumbnails.Count>=128&&!planeThumbnails.ContainsKey(source))
+            {
+                var oldest=planeThumbnails.OrderBy(pair=>pair.Value.use).First();
+                if(oldest.Value.image)DestroyImmediate(oldest.Value.image);planeThumbnails.Remove(oldest.Key);
+                if(planePreviews.TryGetValue(oldest.Key,out var materialPreview)){if(materialPreview.preview)DestroyImmediate(materialPreview.preview);planePreviews.Remove(oldest.Key);}
+            }
+            Texture2D image=null;
+            var materialEditor=Editor.CreateEditor(PlanePreview(source),typeof(MaterialEditor));
+            try
+            {
+                image=materialEditor.RenderStaticPreview("",Array.Empty<UnityEngine.Object>(),256,256);
+                if(image){image.hideFlags=HideFlags.HideAndDontSave;image.filterMode=FilterMode.Bilinear;}
+            }
+            finally {DestroyImmediate(materialEditor);}
+            planeThumbnails[source]=(image,version,++thumbnailUse);return image;
+        }
         private void ClearPlanePreviews()
         {
+            foreach(var cached in baseMapThumbnails.Values)if(cached.image)DestroyImmediate(cached.image);
+            baseMapThumbnails.Clear();
+            foreach(var cached in planeThumbnails.Values)if(cached.image)DestroyImmediate(cached.image);
+            planeThumbnails.Clear();
             foreach(var cached in planePreviews.Values)if(cached.preview)DestroyImmediate(cached.preview);
             planePreviews.Clear();pendingPreviews.Clear();EditorApplication.update-=PollPreviews;
         }
@@ -242,10 +318,13 @@ namespace MashBoxSDK.AnimationStudio
             else if(Event.current.type==EventType.Repaint)
             {
                 var material=MaterialFor(entry);Texture preview=null;
-                if(material){var plane=PlanePreview(material);preview=AssetPreview.GetAssetPreview(plane);if(!preview&&AssetPreview.IsLoadingAssetPreview(plane.GetInstanceID()))QueuePreview(plane.GetInstanceID());}
-                EditorGUI.DrawRect(image,new Color(.25f,.25f,.25f,1));
-                if(preview)GUI.DrawTextureWithTexCoords(image,preview,new Rect(.125f,.125f,.75f,.75f),true);
-                else GUI.DrawTexture(image,StudioToolbarIcons.Get("Material Icon"),ScaleMode.ScaleToFit,true);
+                if(!DrawPrototypeBaseMap(image,entry,material))
+                {
+                    if(material){preview=HighQualityPlanePreview(material);if(!preview){var plane=PlanePreview(material);preview=AssetPreview.GetAssetPreview(plane);if(!preview&&AssetPreview.IsLoadingAssetPreview(plane.GetInstanceID()))QueuePreview(plane.GetInstanceID());}}
+                    EditorGUI.DrawRect(image,new Color(.25f,.25f,.25f,1));
+                    if(preview)GUI.DrawTextureWithTexCoords(image,preview,new Rect(.125f,.125f,.75f,.75f),true);
+                    else GUI.DrawTexture(image,StudioToolbarIcons.Get("Material Icon"),ScaleMode.ScaleToFit,true);
+                }
             }
             if(tileLabel==null)tileLabel=new GUIStyle(EditorStyles.label){alignment=TextAnchor.UpperCenter,clipping=TextClipping.Clip,wordWrap=false};
             var titleRect=list?new Rect(cell.x+24,cell.y,Mathf.Max(1,cell.width-24),cell.height):new Rect(tile.x+6,image.yMax+5,Mathf.Max(1,tile.width-12),Mathf.Max(1,tile.yMax-image.yMax-9));
@@ -270,10 +349,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawFooter(Rect area)
         {
-            GUI.Box(area,GUIContent.none,EditorStyles.toolbar);
+            EditorGUI.DrawRect(area,StudioTheme.Current.Button);
             string status=StudioMaterialLibraryIndex.Error!=null?"Scan failed · Rescan available":StudioMaterialLibraryIndex.Scanning?"Scanning… "+Mathf.RoundToInt(StudioMaterialLibraryIndex.Progress*100)+"%":filtered.Count+" materials"+(StudioMaterialLibraryIndex.Stale?" · Rescan available":"");
             GUI.Label(new Rect(7,area.y+3,Mathf.Max(1,area.width-130),18),new GUIContent(status,StudioMaterialLibraryIndex.Error),EditorStyles.miniLabel);
-            float size=GUI.HorizontalSlider(new Rect(area.xMax-115,area.y+6,105,16),thumbnail,40,130);
+            float size=GUI.HorizontalSlider(new Rect(area.xMax-115,area.center.y-9.5f,105,16),thumbnail,40,130);
             if(size!=thumbnail)
             {
                 bool wasList=ListMode;thumbnail=size;

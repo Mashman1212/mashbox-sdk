@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal enum CutTool { None, EdgeLoop, MultiCut }
+        internal enum CutTool { None, EdgeLoop, MultiCut, Bisect }
         private CutTool cutTool;
         private StudioMeshCuts cutTopology;
         private Mesh cutMesh;
@@ -31,7 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             if (cutDragging && GUIUtility.hotControl == cutControl) GUIUtility.hotControl = 0;
             ResetMultiCutGesture(); cutDragging = false; pendingCuts.Clear(); cutPreview.Clear(); cutStart = cutHover = loopSeed = null;
         }
-        private void StopCutTool() { ResetCutGesture(); cutTool = CutTool.None; cutTopology = null; cutMesh = null; }
+        private void StopCutTool() { CloseBisectTool(); ResetCutGesture(); cutTool = CutTool.None; cutTopology = null; cutMesh = null; }
         private void CommitCuts(IList<StudioMeshCuts.Cut> cuts)
         {
             if (cuts.Count == 0) return;
@@ -53,16 +53,17 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (cutTool == CutTool.None) return false;
             var evt = Event.current;
-            if (!CanCutMesh) { StopCutTool(); return false; }
-            if (cutMesh != ActiveMesh || cutTopology == null)
+            if (!CanCutMesh && cutTool != CutTool.Bisect) { StopCutTool(); return false; }
+            if (cutTool != CutTool.Bisect && (cutMesh != ActiveMesh || cutTopology == null))
             { ResetCutGesture(); cutTopology = new StudioMeshCuts(Document.nodes[Active]); cutMesh = ActiveMesh; }
             cutControl = GUIUtility.GetControlID("MashBoxStudioCutTool".GetHashCode(), FocusType.Passive);
             if (HandleModelKeyboard(view)) return true;
             if (HandleLoopCountWheel(view, evt)) return true;
-            if (evt.alt) { if(cutTool==CutTool.MultiCut)ReleaseMultiCutPointer(); return true; }
+            if (evt.alt && cutTool != CutTool.Bisect) { if(cutTool==CutTool.MultiCut)ReleaseMultiCutPointer(); return true; }
             if (evt.type == EventType.Layout || evt.type == EventType.MouseMove) HandleUtility.AddDefaultControl(cutControl);
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(0,0,view.position.width,view.position.height);
             bool overCanvas = canvas.Contains(evt.mousePosition) && (!(view is MashBoxStudioViewport overlay) || !overlay.IsOverViewportControls(evt.mousePosition));
+            if(cutTool==CutTool.Bisect)return BisectSceneGUI(view,overCanvas);
             if(cutTool==CutTool.MultiCut && ((!evt.control && !evt.command) || HasMultiCutGesture)) return MultiCutSceneGUI(view,overCanvas);
             bool loop = cutTool == CutTool.EdgeLoop || evt.control || evt.command || cutDragging;
             if (overCanvas && (evt.type == EventType.MouseMove || evt.type == EventType.MouseDrag || evt.type == EventType.MouseDown || evt.type == EventType.Repaint))

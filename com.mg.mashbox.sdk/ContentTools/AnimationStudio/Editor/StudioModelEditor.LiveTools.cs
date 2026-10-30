@@ -57,7 +57,7 @@ namespace MashBoxSDK.AnimationStudio
             else CloseExtrudeToolWindow();
         }
         private void CloseLiveToolPanes()
-        { CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
+        { CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
         private bool HasLiveTool(LiveTool kind) => livePreview != null && liveTool == kind;
         private bool CanRunLiveTool(LiveTool kind) => HasLiveTool(kind) || (kind == LiveTool.Bevel ? CanBevelEdges :
             kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : kind == LiveTool.Bridge ? CanBridgeEdges : CanExtrude);
@@ -92,10 +92,13 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void StartLiveTool(LiveTool kind)
         {
+            FlushModifierEdits();
             if (HasLiveTool(kind)) return;
             FinishLiveTool();
             if (!CanRunLiveTool(kind)) throw new InvalidOperationException("Select editable mesh components for this tool.");
             if(kind==LiveTool.Bridge)ActivateComponentTarget(ComponentTargetNodes(true).Single(),ComponentMode.Edge);
+            if(Document&&Active>=0&&Document.nodes[Active].modifiers?.operations.Any(o=>!string.IsNullOrEmpty(o.failure))==true)
+                throw new InvalidOperationException("Repair or delete the broken modifier, or Clear History, before applying another tool.");
             PrepareIsolationTopologyEdit();
             FinishChannelEdit(); StopTargetWeld(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
             liveMode = mode; liveSelection = Components.OrderBy(i => i).ToArray();
@@ -301,6 +304,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (target.StructureChanged) statisticsCache.Remove(node);
                 undoMeshVersions[node.mesh] = EditorUtility.GetDirtyCount(node.mesh);
             }
+            foreach(var target in livePreview.Targets)DirtySubdivision(target.Live);
+            UpdateSubdivision();
             if (markDirty) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint();
         }
         private void ApplyLiveTool(LiveTool kind)
@@ -327,14 +332,14 @@ namespace MashBoxSDK.AnimationStudio
             if (changed)
             {
                 if (liveTool == LiveTool.Bevel||liveTool == LiveTool.Bridge) Components.Clear();
-                livePreview.Commit(label, () => RecordSelectionChange(selectionBefore, false, label));
+                livePreview.Commit(label, () => { RecordLiveModifiers(); RecordSelectionChange(selectionBefore, false, label); });
             }
             else livePreview.Restore();
             // Completion keeps the object and component mode active, but a bevel
             // must not leave generated edges armed for an accidental second bevel.
             bool clearBevelSelection = changed && (liveTool == LiveTool.Bevel||liveTool == LiveTool.Bridge);
             if (changed && !dispatchingComponentTool) RememberLiveAction(finishedTool,liveParameters,liveFlowParameters);
-            RefreshLiveMeshes(changed); livePreview.Dispose(); ClearLiveToolState();
+            RefreshLiveMeshes(changed); livePreview.Dispose(); ClearLiveToolState(); UpdateSubdivision();
             if (clearBevelSelection) { Components.Clear(); ClearComponentDrawing(); }
             error = changed ? label + " applied." : "No mesh changes to apply.";
             if (closePane) CloseLiveToolPane(finishedTool);
@@ -370,7 +375,7 @@ namespace MashBoxSDK.AnimationStudio
                     RefreshLiveMeshes(false);
                 }
             }
-            finally { transaction.Dispose(); ClearLiveToolState(); repaint(); }
+            finally { transaction.Dispose(); ClearLiveToolState(); if(!afterUndo)UpdateSubdivision(); repaint(); }
         }
     }
 }

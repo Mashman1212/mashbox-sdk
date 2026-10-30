@@ -1,0 +1,82 @@
+#pragma kernel EvaluatePositions
+#pragma kernel FaceNormals
+#pragma kernel WriteSurface
+#pragma kernel EvaluateAttributes
+
+StructuredBuffer<float3> Cage;
+StructuredBuffer<int> Offsets;
+StructuredBuffer<int> Indices;
+StructuredBuffer<float> Weights;
+RWStructuredBuffer<float3> Evaluated;
+StructuredBuffer<int> Corners;
+RWStructuredBuffer<float3> Normals;
+StructuredBuffer<int> NormalOffsets;
+StructuredBuffer<int> NormalFaces;
+RWByteAddressBuffer Surface;
+int VertexCount, FaceCount, CornerCount, Stride, PositionOffset, NormalOffset;
+StructuredBuffer<float4> SourceAttributes;
+StructuredBuffer<int> AttributeOffsets, AttributeIndices, Values;
+StructuredBuffer<float> AttributeWeights;
+StructuredBuffer<int2> AttributeLayout;
+RWStructuredBuffer<float4> Attributes;
+int AttributeCount, TangentOffset;
+
+[numthreads(64,1,1)]
+void EvaluateAttributes(uint id : SV_DispatchThreadID)
+{
+    if(id >= (uint)AttributeCount) return;
+    for(int channel=0;channel<9;channel++)
+    {
+        if(AttributeLayout[channel].y==0)continue;
+        float4 value=0;
+        for(int j=AttributeOffsets[id];j<AttributeOffsets[id+1];j++)
+            value+=SourceAttributes[AttributeIndices[j]*9+channel]*AttributeWeights[j];
+        Attributes[id*9+channel]=value;
+    }
+}
+
+[numthreads(64,1,1)]
+void EvaluatePositions(uint id : SV_DispatchThreadID)
+{
+    if(id >= (uint)VertexCount) return;
+    float3 p=0;
+    for(int j=Offsets[id];j<Offsets[id+1];++j) p+=Cage[Indices[j]]*Weights[j];
+    Evaluated[id]=p;
+}
+[numthreads(64,1,1)]
+void FaceNormals(uint id : SV_DispatchThreadID)
+{
+    if(id >= (uint)FaceCount) return;
+    uint c=id*4;
+    float3 a=Evaluated[Corners[c]], b=Evaluated[Corners[c+1]];
+    float3 d=Evaluated[Corners[c+3]], e=Evaluated[Corners[c+2]];
+    Normals[id]=cross(b-a,e-a)+cross(e-a,d-a);
+}
+[numthreads(64,1,1)]
+void WriteSurface(uint id : SV_DispatchThreadID)
+{
+    if(id >= (uint)CornerCount) return;
+    float3 n=0;
+    for(int j=NormalOffsets[id];j<NormalOffsets[id+1];++j) n+=Normals[NormalFaces[j]];
+    float length2=dot(n,n); n=length2>1e-24?n*rsqrt(length2):float3(0,1,0);
+    Surface.Store3(id*Stride+PositionOffset,asuint(Evaluated[Corners[id]]));
+    Surface.Store3(id*Stride+NormalOffset,asuint(n));
+    for(int channel=0;channel<9;channel++)
+    {
+        int2 layout=AttributeLayout[channel];
+        float4 v=Attributes[Values[id]*9+channel];
+        for(int c=0;c<layout.y;c++)Surface.Store(id*Stride+layout.x+c*4,asuint(v[c]));
+    }
+    if(TangentOffset>=0)
+    {
+        uint first=(id/4)*4;
+        float3 a=Evaluated[Corners[first]],b=Evaluated[Corners[first+1]],c=Evaluated[Corners[first+2]];
+        float2 ua=Attributes[Values[first]*9].xy,ub=Attributes[Values[first+1]*9].xy,uc=Attributes[Values[first+2]*9].xy;
+        float2 u=ub-ua,v=uc-ua;float determinant=u.x*v.y-u.y*v.x;
+        float3 t=abs(determinant)>1e-20?((b-a)*v.y-(c-a)*u.y)/determinant:float3(1,0,0);
+        float3 bit=abs(determinant)>1e-20?((c-a)*u.x-(b-a)*v.x)/determinant:float3(0,0,1);
+        t-=n*dot(n,t);float len=dot(t,t);
+        t=len>1e-24?t*rsqrt(len):normalize(abs(n.y)<.9?cross(float3(0,1,0),n):cross(float3(1,0,0),n));
+        Surface.Store4(id*Stride+TangentOffset,asuint(float4(t,dot(cross(n,t),bit)<0?-1:1)));
+    }
+}

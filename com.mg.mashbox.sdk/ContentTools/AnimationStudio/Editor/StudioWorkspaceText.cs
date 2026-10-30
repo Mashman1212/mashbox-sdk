@@ -14,7 +14,7 @@ namespace MashBoxSDK.AnimationStudio
     internal static partial class StudioWorkspaceText
     {
         private const string Format = "MashBoxStudio.Workspace";
-        private const int Version = 1;
+        private const int Version = 2;
         [Serializable] private sealed class FileData
         {
             public string format;
@@ -38,6 +38,9 @@ namespace MashBoxSDK.AnimationStudio
             public bool active, skinned, ao;
             public int slice, rootBone;
             public int[] bones, materials, polygons, topologyTriangles, normalGroups;
+            public int[] geometryVertices;
+            public StudioSubdivisionSettings subdivision;
+            public StudioModifierHistory modifiers;
             public BlendData blend;
         }
         [Serializable] private sealed class BlendData
@@ -90,7 +93,7 @@ namespace MashBoxSDK.AnimationStudio
                     rotationChannels = new[] { node.RotationChannels.x, node.RotationChannels.y, node.RotationChannels.z },
                     active = node.active, skinned = node.skinned, ao = node.vertexAOBaked, slice = node.previewTextureSlice,
                     bones = node.bones, rootBone = node.rootBone, mesh = MeshId(node.mesh),
-                    materials = (node.materials ?? Array.Empty<Material>()).Select(MaterialId).ToArray(), polygons = node.cutPolygons, normalGroups = node.normalGroups,
+                    materials = (node.materials ?? Array.Empty<Material>()).Select(MaterialId).ToArray(), polygons = node.cutPolygons, normalGroups = node.normalGroups, geometryVertices = node.geometryVertices, subdivision = node.subdivision, modifiers = node.modifiers,
                     // A matching triangle cache is reconstructed from the saved mesh instead of written twice.
                     topologyTriangles = node.cutTriangles != null && node.mesh && node.cutTriangles.SequenceEqual(MeshTriangles(node.mesh)) ? null : node.cutTriangles,
                     blend = CaptureBlend(node.blendShape)
@@ -169,6 +172,12 @@ namespace MashBoxSDK.AnimationStudio
                     var polygons = node.polygons != null && node.polygons.Length > 0 ? node.polygons : null;
                     var triangles = node.topologyTriangles != null && node.topologyTriangles.Length > 0 ? node.topologyTriangles : polygons != null && mesh ? mesh.triangles : null;
                     ValidatePolygons(polygons, mesh);
+                    if(node.geometryVertices!=null&&node.geometryVertices.Length>0&&(!mesh||node.geometryVertices.Length!=mesh.vertexCount||node.geometryVertices.Any(g=>g<0||g>1000000000)))throw new InvalidDataException("Invalid geometric vertex identities.");
+                    if(node.subdivision!=null)
+                    {
+                        var s=node.subdivision;
+                        if(s.level<0||s.level>6||s.boundary<1||s.boundary>2)throw new InvalidDataException("Invalid subdivision settings.");
+                    }
                     // JsonUtility restores an absent optional array as empty.
                     var groups = node.normalGroups != null && node.normalGroups.Length > 0 ? node.normalGroups : null;
                     if (groups != null && (!mesh || groups.Length != mesh.vertexCount || groups.Any(g => g < 0 || g >= mesh.vertexCount)))
@@ -179,7 +188,7 @@ namespace MashBoxSDK.AnimationStudio
                         active = node.active, skinned = node.skinned, vertexAOBaked = node.ao, previewTextureSlice = node.slice,
                         bones = node.bones ?? Array.Empty<int>(), rootBone = node.rootBone, mesh = mesh,
                         materials = (node.materials ?? Array.Empty<int>()).Select(MaterialAt).ToArray(),
-                        cutPolygons = polygons, cutTriangles = triangles, normalGroups = groups, blendShape = RestoreBlend(node.blend)
+                        cutPolygons = polygons, cutTriangles = triangles, normalGroups = groups, geometryVertices = node.geometryVertices!=null&&node.geometryVertices.Length>0?node.geometryVertices:mesh?StudioSubdivisionData.Identity(mesh.vertexCount):null, subdivision = node.subdivision ?? new StudioSubdivisionSettings(), modifiers = node.modifiers, blendShape = RestoreBlend(node.blend)
                     });
                     if (node.rotationChannels != null && node.rotationChannels.Length > 0)
                     {

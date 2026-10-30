@@ -1,5 +1,22 @@
 # MashBox Studio
 
+Subdivision preview retains evaluated mesh edges in Shaded Wireframe, ordinary selection highlighting and component overlays. Subdivision does not force an additional cage overlay or force X-ray depth.
+
+## Through-slice correction
+
+Multi-Cut and Bisect share a surface-plane cutter that supports warped authored quads/n-gons. Start and release off the actual active mesh surface at any line angle. Empty space inside projected bounds is valid, including close-up views; the finite drawn segment must cross the mesh. Clipped render cells merge back into authored boundaries, keeping render diagonals hidden by actual topology rather than wire suppression. Placed point/path Multi-Cut retains its separate planar-interior validation. Bounds and input use common canvas coordinates; no-intersection messages no longer masquerade as bounds failures. Bisect prefers structured, relaxed quad cap grids while preserving exact section boundaries; irregular sections retain a conforming quad fallback. See Bisect below for layout limits.
+
+Verified on fighterJetCutTest.fbx with four geometric plane directions and six native horizontal/diagonal outside drags, plus actual before/after bound-renderer output. See Tests~/README.md for scope.
+
+## Bisect
+
+Mesh Tools > Bisect: drag a viewport line starting and ending off the actual active static mesh surface (empty space inside its bounds is allowed), then adjust **Bisect Distance** (full world-space gap, default **0.01 m**) and **Fill** (default on). Apply/Execute separates the halves into independent mesh objects; retained geometry stays fixed. Both half pivots center on their own cut surfaces, including with Fill off; world geometry and source children stay fixed. With a gap, each pivot lies on its own section plane. Shared instances keep the original source. Zero separates without a gap. Apply keeps the pane open, Execute finishes, and Cancel restores the captured source. Fill first fits a structured quad grid to four boundary arcs, compares aspect/corner layouts, relaxes interior spacing and optimizes quad shape while rejecting folded cells. Even section loops keep their boundary vertices and edges; odd loops add one shared midpoint when a grid is possible. Flat UV0 projects along each cap normal. Sections that cannot form a valid grid use the existing conforming quad matching/refinement with interior quality relaxation. Cap faces remain genuine quads, not n-gons with hidden triangulation. Side attributes/seams and conforming boundaries remain intact. Open/branched, nested-hole or invalid sections reject Fill. Highly uneven boundary spacing and concave features can still produce tapered/thin quads; this is not global optimal retopology or boundary decimation. The grid search is bounded to 512 section vertices and 16,384 cells per candidate; larger loops use the fallback. Boundary midpoint propagation can still add corners to adjacent side faces, especially on fallback fills. G reopens the completed tool settings for a new line. Uses grouped StudioUndo; evaluates the current strict-order result and starts independent generated history bases for the two halves. Output normal-group IDs are compacted. New cuts are blocked by broken history. No default shortcut; automatic shortcut/custom-toolbar registration applies.
+
+
+Fresh FBX subdivision imports now preserve source connectivity across UV/normal splits and restore original polygons when unambiguously matched through the installed Autodesk FBX SDK. Reimport existing Studio models to obtain the correction. No automatic position welding; unmatched inputs retain the conservative fallback. See SUBDIVISION_ENGINE.md.
+
+Modifier history (2026-10-29): Channels has a collapsible Modifiers group with a Transform-style icon header, Clear History first, and applied operations displayed newest first. Fields use Channels sensitivity; there are no generic Enabled toggles or explanatory mini descriptions. Bevel/Extrude/Bridge/Soften/Edge Flow parameters remain editable; delete operations and replay later ones. Strict creation order means tools after Subdivision edit its denser result. Modify > Clear History commits the current result and removes records; no visible Bake Subdivision command. F3 adds the first Subdivision or toggles the last; Add Subdivision explicitly appends another. Other mesh edits have conservative direct records; invalid downstream inputs show failures. Workspaces use v2, with no legacy compatibility requirement. See [MODIFIER_HISTORY.md](MODIFIER_HISTORY.md) and [SUBDIVISION_ENGINE.md](SUBDIVISION_ENGINE.md).
+
 Right-click an FBX model or mesh sub-asset in Unity's Project browser and choose **Open in MashBox Modeler**. Studio opens in Modeling mode and imports the selection into the current workspace, preserving existing objects and the viewport camera. Source assets remain unchanged.
 
 The current Studio camera viewport is **perspective-only**. Camera Settings no longer offers Orthographic, and native/restored 2D or orthographic states are corrected on camera events/rendering. Separate orthographic views are future work. Camera gesture ownership is fixed at the initial press: a click begun in Lighting, Tool Options, Channels or other panel/toolbar UI stays UI-owned when dragged into the camera canvas, until release/cancel. It cannot start camera movement or take over the camera cursor. A drag begun in the camera canvas may continue over UI until release. Panel controls retain normal editing/scrolling.
@@ -909,3 +926,11 @@ Material Library settings include **Hide trailing _Mat**, default off. Enabling 
 Material Library thumbnails use flat plane previews filling the thumbnail square without the native gray border, via transient material copies; source materials and Inspector previews are not modified.
 
 Workspace file dialogs default to MashBoxStudio/Workspaces; model import/export dialogs default to Assets. Each category remembers its own last chosen folder across open/save dialogs through Studio settings. Cancel preserves the previous location; missing folders fall back to the default.
+
+Material Library plane thumbnails render at 256×256 and cache results until the source changes, avoiding enlargement of the small native thumbnail. The cache is bounded and released with the library preview resources.
+
+Prototyping library thumbnails use unlit 256×256 BaseMap thumbnails with mipmaps/trilinear filtering and the material tint/tiling. Both these thumbnails and other material-plane previews remain cached across category switches; only source changes or bounded LRU eviction regenerate them.
+
+New Subdivision modifiers default to level 1; existing modifier levels are preserved.
+
+Subdivision crease support is removed from Studio: UI, stored settings, workspace validation, edge remapping and native descriptor input. The upstream OpenSubdiv library retains its required boundary-sharpness internals.

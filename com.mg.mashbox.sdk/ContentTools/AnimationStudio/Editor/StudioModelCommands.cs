@@ -38,6 +38,7 @@ namespace MashBoxSDK.AnimationStudio
             if (key.StartsWith("Mesh Tools/Deform/", StringComparison.Ordinal)) return key.Substring("Mesh Tools/".Length);
             if (key == "Modify/Lock Pivot" || key == "Modify/Finish Pivot Edit") return "Modify/Edit Pivot";
             if (key == "Mesh/UV Editor") return "UV/UV Editor";
+            if (key == "Modify/Clear History") return "Mesh Display/Bake Subdivision";
             return key;
         }
         internal static string ToolbarKey(string category, string label, string explicitKey) => Canonical(category, explicitKey ?? label);
@@ -50,7 +51,7 @@ namespace MashBoxSDK.AnimationStudio
                 return (StudioShortcut)(int)(hash | 0x80000000u);
             }
         }
-        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection", "Select/Grow Selection", "Select/Shrink Selection", "Edit/Repeat Last Action", "Mesh Tools/Bridge Edges", "Modify/Group" };
+        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection", "Select/Grow Selection", "Select/Shrink Selection", "Edit/Repeat Last Action", "Mesh Tools/Bridge Edges", "Modify/Group", "Mesh Display/Subdivision Preview" };
         internal static StudioShortcut StableId(string key) => Hash(key);
         internal static StudioShortcuts.Binding[] StandardBindings(string key)
         {
@@ -63,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
             if (key == "Select/Isolate Selected") return new[] { new StudioShortcuts.Binding(KeyCode.W, StudioModifiers.Shift) };
             if (key == "Select/Invert Selection") return new[] { new StudioShortcuts.Binding(KeyCode.I, StudioModifiers.Action) };
             if (key == "Select/Grow Selection") return new[] { new StudioShortcuts.Binding(KeyCode.Period) };
+            if (key == "Mesh Display/Subdivision Preview") return new[] { new StudioShortcuts.Binding(KeyCode.F3) };
             if (key == "Modify/Group") return new[] { new StudioShortcuts.Binding(KeyCode.G, StudioModifiers.Action) };
             if (key == "Edit/Repeat Last Action") return new[] { new StudioShortcuts.Binding(KeyCode.G) };
             if (key == "Select/Shrink Selection") return new[] { new StudioShortcuts.Binding(KeyCode.Comma) };
@@ -85,6 +87,7 @@ namespace MashBoxSDK.AnimationStudio
             int slash = key.IndexOf('/');
             bool deform = key.StartsWith("Deform/", StringComparison.Ordinal);
             definitions[id] = new StudioShortcuts.Definition(id, deform ? "Mesh Tools" : key=="Mesh Display/Wireframe"||key=="Mesh Display/Shaded Wireframe"||key=="Mesh Display/X-ray Mode" ? "View" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key == "Mesh Tools/Merge Vertices" ? "Merge to Center" : key.Substring(slash + 1), defaults);
+            if(key=="Mesh Display/Bake Subdivision")definitions[id]=new StudioShortcuts.Definition(id,"Modify","Clear History",defaults);
             paths[id] = key; keys[key] = id; ordered = null;
             StudioShortcuts.CatalogChanged();
             return id;

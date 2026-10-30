@@ -57,7 +57,7 @@ namespace MashBoxSDK.AnimationStudio
         internal StudioModelEditor(Action repaint)
         {
             this.repaint = () => { repaint(); RepaintLiveToolPanes(); }; Scene = EditorSceneManager.NewPreviewScene();
-            LoadDisplayConfiguration();
+            LoadDisplayConfiguration(); InitializeModifiers();
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
             ObjectChangeEvents.changesPublished += OnMaterialAssetChanges;
@@ -81,7 +81,7 @@ namespace MashBoxSDK.AnimationStudio
             if (componentPivot) componentPivot.custom = false;
             ClearGridSnap();
             CancelMarkingMenu();
-            StopCutTool(); ResetComponentTargets(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild(); RestoreSelectionHistory();
+            FlushModifierEdits(); StopCutTool(); ResetComponentTargets(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild(); RestoreSelectionHistory();
             WorkspaceSaveStateChanged?.Invoke();
         }
         private void Rebuild()
@@ -98,6 +98,7 @@ namespace MashBoxSDK.AnimationStudio
             moveDragControl = 0;
             gestureUndo = -1;moveDrag=null;
             componentRotationControl = worldObjectRotationControl = 0;
+            ClearSubdivision();
             ClearDisplayMaterials();
             previewLighting?.Dispose(); previewLighting = null;
             ClearSelectionWireframes();
@@ -126,7 +127,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnUndoEvent(in UndoRedoInfo info)
         {
-            bool hadPreview = livePreview != null || previewQueued;
+            pendingModifiers.Clear(); EditorApplication.update-=FinishPendingModifiers; ClearSubdivision();
+            bool hadPreview = livePreview != null || previewQueued || bisectPreview != null;
+            CancelBisectPreview(true);
             CancelLiveTool(true);
             if (hadPreview) { OnUndo(); RestoreSelectionHistory(); return; }
             if (info.undoName == "Select model components" || info.undoName == "Paint selection" || info.undoName == "Unpaint selection") { RestoreSelectionHistory(); return; }
@@ -193,7 +196,7 @@ namespace MashBoxSDK.AnimationStudio
             if (markingOpen && (!markingView || EditorWindow.focusedWindow != markingView)) CancelMarkingMenu();
             TickMarkingMenu();
         }
-        internal void Changed(bool geometryChanged = true) { componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
+        internal void Changed(bool geometryChanged = true) { if(geometryChanged)DirtySubdivision(); componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
         internal void MeshTopologyChanged() { if (Document) foreach (var node in Document.nodes) if (node.normalGroups != null && (!node.mesh || node.normalGroups.Length != node.mesh.vertexCount)) node.normalGroups = null; if (componentPivot) componentPivot.custom = false; Components.Clear(); Rebuild(); Changed(); }
         internal void Save()
         {
@@ -201,7 +204,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!Document) return;
             FinishChannelEdit();
             if (!Document.HasStorage || IsTemporaryWorkspace) { SaveAs(); return; }
-            Document.Save(); RememberRecentFile(Document.WorkspacePath);
+            FlushModifierEdits(); Document.Save(); RememberRecentFile(Document.WorkspacePath);
             NotifyFile(Document.WorkspacePath, "saved");
             WorkspaceSaveStateChanged?.Invoke();
         }
@@ -221,6 +224,7 @@ namespace MashBoxSDK.AnimationStudio
             CancelHierarchyDrag();
             EndPivotSnap();
             if (componentPivot) UnityEngine.Object.DestroyImmediate(componentPivot);
+            ClearSubdivision();
             ClearDisplayMaterials();
             previewLighting?.Dispose(); previewLighting = null;
             ClearSelectionWireframes();
@@ -235,7 +239,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorApplication.delayCall -= RefreshChangedMaterials;
             Undo.undoRedoEvent -= OnUndoEvent; EditorApplication.update -= Tick;
             if (Scene.IsValid()) EditorSceneManager.ClosePreviewScene(Scene);
-            Document = null; Transforms = Array.Empty<Transform>(); Active = -1;
+            DisposeModifiers(); Document = null; Transforms = Array.Empty<Transform>(); Active = -1;
         }
         private void Run(Action action, bool finishPreview = true)
         {
@@ -424,6 +428,7 @@ namespace MashBoxSDK.AnimationStudio
                 DrawMaterialChannels();
                 DrawBlendShapeChannels();
             }
+            DrawModifierChannels();
             FinishInactiveChannelEdit();
 
             EditorGUILayout.EndScrollView();
@@ -472,18 +477,19 @@ namespace MashBoxSDK.AnimationStudio
         {
             Export(false);
         }
-        private void Export(bool selectionOnly)
+        private void Export(bool selectionOnly, bool evaluated = false)
         {
             if (!StudioFbxDependency.Require()) return;
             if (!Document || (selectionOnly && !CanExportSelection)) return;
             string filename = selectionOnly && Active >= 0 ? Document.nodes[Active].name : Document.name;
             string path = StudioFileDialogs.SaveAsset(selectionOnly ? "Export selection as FBX" : "Export workspace as FBX", filename, "fbx");
             if (string.IsNullOrEmpty(path)) return;
-            ExportFile(path, selectionOnly);
+            ExportFile(path, selectionOnly, evaluated);
             AssetDatabase.Refresh();
         }
-        internal void ExportFile(string path, bool selectionOnly)
+        internal void ExportFile(string path, bool selectionOnly, bool evaluated = false)
         {
+            FlushModifierEdits();
             StudioFbxDependency.EnsureAvailable();
             if (!Document || (selectionOnly && !CanExportSelection)) throw new InvalidOperationException("Select an object before exporting.");
             // A separate, temporary hierarchy avoids exporter changes affecting the live editor.
@@ -497,7 +503,16 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     if (!nodes[i] || !nodes[i].GetComponent<Renderer>()) continue;
                     var source = Document.nodes[i].mesh; if (!source) continue;
-                    var copy = UnityEngine.Object.Instantiate(source); exportMeshes.Add(copy);
+                    var node=Document.nodes[i];
+                    var copy = !evaluated && node.modifiers?.HasHistory==true ? node.modifiers.source.Restore().mesh : UnityEngine.Object.Instantiate(source); exportMeshes.Add(copy);
+                    // History already evaluates subdivision. Do not subdivide a second time on export.
+                    var polygons=evaluated?node.cutPolygons:(node.modifiers?.HasHistory==true?node.modifiers.source.polygons:node.cutPolygons);
+                    if(polygons!=null)
+                    {
+                        var quads=Enumerable.Range(0,copy.subMeshCount).Select(_=>new List<int>()).ToArray();bool allQuads=true;
+                        for(int c=0;c<polygons.Length;){int material=polygons[c++],count=polygons[c++];if(count!=4){allQuads=false;break;}quads[material].AddRange(polygons.Skip(c).Take(count));c+=count;}
+                        if(allQuads)for(int sub=0;sub<quads.Length;sub++)copy.SetIndices(quads[sub].ToArray(),UnityEngine.MeshTopology.Quads,sub,false);
+                    }
                     PadUVChannels(copy);
                     if (Document.nodes[i].skinned) nodes[i].GetComponent<SkinnedMeshRenderer>().sharedMesh = copy;
                     else nodes[i].GetComponent<MeshFilter>().sharedMesh = copy;
@@ -615,6 +630,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SceneGUI(SceneView view, Action<StudioModelDocument> loaded)
         {
             var evt = Event.current;
+            if(evt.type==EventType.Repaint)UpdateSubdivision();
 #if MASHBOX_STUDIO_TESTS
             ProfileScene("scene.start");
 #endif

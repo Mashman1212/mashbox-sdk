@@ -116,7 +116,7 @@ namespace MashBoxSDK.AnimationStudio
                     {
                         preview.Publish(true); RefreshLiveMeshes();
                         Components.Clear(); Components.UnionWith(result.Selection); MirrorComponentLiveSelection(node);
-                        preview.Commit("Target weld vertices", () => RecordSelectionChange(before, false, "Target weld vertices"));
+                        preview.Commit("Target weld vertices", ()=>{RecordDirectPreviewModifiers(preview,"Target weld vertices");RecordSelectionChange(before,false,"Target weld vertices");});
                         RefreshLiveMeshes();
                     }
                     catch { preview.Restore(); RefreshLiveMeshes(false); throw; }
