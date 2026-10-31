@@ -192,6 +192,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         public void NotifySurfaceMeshChanged(bool topologyChanged, bool geometryOnly)
         {
+            InvalidateDetailColliders();
 #if UNITY_EDITOR
             m_EditorPickDirty = true;
 #endif

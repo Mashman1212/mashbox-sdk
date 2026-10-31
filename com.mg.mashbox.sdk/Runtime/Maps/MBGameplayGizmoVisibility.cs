@@ -18,6 +18,10 @@ namespace MashBoxSDK.Maps
         public static bool ChairliftsVisible => Visible && ChairliftsEnabled;
 #endif
 
+        private static readonly VisibilityPreference propCells = new VisibilityPreference("MashBoxSDK.ShowPropCells");
+        public static bool PropCellsEnabled { get => propCells.Value; set => propCells.Value = value; }
+        public static bool PropCellsVisible => Visible && PropCellsEnabled;
+
         public static event Action Changed;
 
         public static bool Visible { get => gameplay.Value; set => gameplay.Value = value; }

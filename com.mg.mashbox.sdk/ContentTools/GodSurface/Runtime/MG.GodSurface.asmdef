@@ -1,0 +1,7 @@
+{
+  "name": "MG.GodSurface",
+  "rootNamespace": "MG.GodSurface",
+  "references": ["Unity.Collections", "Unity.Burst"],
+  "allowUnsafeCode": true,
+  "autoReferenced": true
+}

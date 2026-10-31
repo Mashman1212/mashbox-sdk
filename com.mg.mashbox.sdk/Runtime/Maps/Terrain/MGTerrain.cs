@@ -397,6 +397,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnDisable()
         {
+            ReleaseDetailColliders();
             RefreshWorldOwnership();
 #if UNITY_EDITOR
             s_EditorActiveTerrains.Remove(this);

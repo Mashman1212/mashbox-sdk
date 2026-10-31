@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 
 using System.Collections.Generic;
 using System.IO;
@@ -87,6 +87,7 @@ namespace MashBoxSDK.Exporting
         }
         private void BuildBundles()
         {
+            MGBundleBuildPreparation.PrepareAssignedBundles();
             buildTarget = GetEffectiveBuildTarget();
             string buildTargetName = buildTarget.ToString();
             string platformSpecificOutputPath = Path.Combine(outputPath, buildTargetName);

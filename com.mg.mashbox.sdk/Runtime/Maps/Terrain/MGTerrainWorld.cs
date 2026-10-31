@@ -218,8 +218,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (GraphicsSettings.currentRenderPipeline == null) Render(Camera.current);
         }
 
+        static readonly Unity.Profiling.ProfilerMarker s_WorldRenderMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.WorldRender");
         void Render(Camera camera)
         {
+            using var profile = s_WorldRenderMarker.Auto();
             if (m_Rendering || camera == null || camera.cameraType == CameraType.Preview) return;
             m_Rendering = true;
             ApplySharedQuality();
@@ -251,7 +253,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 // Only tiles with granted cells need another selection pass. The grants
                 // are world-wide: no per-tile/per-layer build cap changes their priority.
                 foreach (var tile in m_CellBuildTiles)
-                    tile.PrepareWorldCamera(camera, DetailDistance + Mathf.Max(0f, m_UnloadMargin));
+                    tile.PrepareWorldGrantedDetails(camera);
                 LastSubmittedDetailInstances = 0;
                 foreach (var chunk in m_RenderChunks)
                 {

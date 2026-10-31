@@ -93,13 +93,13 @@ namespace MashBoxSDK.AnimationStudio
                 var next=(Material)EditorGUILayout.ObjectField("Slot "+slot,material,typeof(Material),false);
                 int target=slot;
                 if(EditorGUI.EndChangeCheck())Run(()=>AssignMaterial(Active,target,next));
-                if(IsGodGrass(material) && material.GetTexture("_GrassBaseArray") is Texture2DArray array)depth=Math.Max(depth,array.depth);
+                if(IsGodGrass(material) && material.GetTexture("_GrassBaseArray") is Texture2DArray array)depth=Math.Max(depth,material.HasProperty("_GrassTextureSlices03") ? 8 : array.depth);
             }
             if(depth>0)
             {
                 EditorGUI.BeginChangeCheck();int slice=EditorGUILayout.IntSlider("Preview Sub-ID",node.previewTextureSlice,0,depth-1);
                 if(EditorGUI.EndChangeCheck()) { Undo.RecordObject(Document,"Preview material sub-ID");node.previewTextureSlice=slice;ApplyDisplayMaterials();Changed(false); }
-                EditorGUILayout.HelpBox("Previews the selected texture-array layer on the authored mesh. Terrain wind and shape deformation are disabled in this modeling preview.",MessageType.None);
+                EditorGUILayout.HelpBox("Previews the selected Sub-ID on the authored mesh, including shared artwork and per-ID shading. Terrain wind and shape deformation are disabled in this modeling preview.",MessageType.None);
             }
             if(GUILayout.Button("Refresh Material Preview")) { displayTextures=true;ApplyDisplayMaterials();repaint(); }
         }
@@ -112,8 +112,17 @@ namespace MashBoxSDK.AnimationStudio
             bool arrays=grass && Get("_GrassUseArrays",0)>.5f && source.GetTexture("_GrassBaseArray") is Texture2DArray;
             if(arrays)
             {
-                var array=(Texture2DArray)source.GetTexture("_GrassBaseArray");slice=Mathf.Clamp(slice,0,array.depth-1);
-                preview.SetTexture("_BaseArray",array);preview.SetFloat("_UseArray",1);preview.SetFloat("_ArraySlice",slice);
+                var array=(Texture2DArray)source.GetTexture("_GrassBaseArray");
+                // Keep the authored ID for per-ID shading; remap only the artwork lookup.
+                slice=Mathf.Clamp(slice,0,7);
+                int artworkSlice=slice;
+                if(source.HasProperty("_GrassTextureSlices03") && source.HasProperty("_GrassTextureSlices47"))
+                {
+                    var mapping=source.GetVector(slice<4 ? "_GrassTextureSlices03" : "_GrassTextureSlices47");
+                    artworkSlice=Mathf.RoundToInt(mapping[slice%4]);
+                }
+                artworkSlice=Mathf.Clamp(artworkSlice,0,array.depth-1);
+                preview.SetTexture("_BaseArray",array);preview.SetFloat("_UseArray",1);preview.SetFloat("_ArraySlice",artworkSlice);
                 // Array sampling in GodGrass uses the authored UV, without legacy MainTex tiling.
                 preview.SetTextureScale("_MainTex",Vector2.one);preview.SetTextureOffset("_MainTex",Vector2.zero);
             }

@@ -26,7 +26,8 @@ namespace MashBoxSDK.SDKMain
             VertexAO,
             PhotoBooth,
             MachEquipManager,
-            GrassShapes
+            GrassShapes,
+            GodSurface
         }
 
         private CreatorAccountPanel creatorAccountPanel;
@@ -351,7 +352,8 @@ namespace MashBoxSDK.SDKMain
                 "Vertex AO",
                 "Photo Booth",
                 "Mach Equip Manager",
-                "Grass Shapes"
+                "Grass Shapes",
+                "God Surface"
             }, MashBoxTabDrawer.TabVisualStyle.Secondary, minTabWidth: 110f);
 
             if (newTab != _contentToolTab)
@@ -368,6 +370,10 @@ namespace MashBoxSDK.SDKMain
                     DrawContentTab();
                     break;
                 case ContentToolTab.TextureReducer:
+                    // Optional project-side GodGrass array tooling; keep the SDK usable without it.
+                    if (System.Type.GetType("MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui.MGTextureArrayWindow, Assembly-CSharp-Editor") != null
+                        && GUILayout.Button("Open Texture Array Producer and Reducer", GUILayout.Height(28)))
+                        EditorApplication.ExecuteMenuItem("MashBox/Content Tools/Texture Array Producer and Reducer");
                     EnsureTextureSizeReducerTool().Draw();
                     break;
                 case ContentToolTab.UVInspector:
@@ -381,6 +387,13 @@ namespace MashBoxSDK.SDKMain
                     break;
                 case ContentToolTab.GrassShapes:
                     EnsureHiddenToolWindow(ref grassShapeTool).Draw();
+                    break;
+                case ContentToolTab.GodSurface:
+                    EditorGUILayout.HelpBox("Share prop textures and render repeated meshes through automatic spatial cells. Keep placing props and colliders normally.", MessageType.Info);
+                    if (GUILayout.Button("Open God Surface Cells", GUILayout.Height(28)))
+                        EditorApplication.ExecuteMenuItem("MashBox/Content Tools/God Surface Cells");
+                    if (GUILayout.Button("Open God Surface Library Baker", GUILayout.Height(28)))
+                        EditorApplication.ExecuteMenuItem("MashBox/Content Tools/God Surface Library Baker");
                     break;
                 case ContentToolTab.MachEquipManager:
                     DrawMachEquipManager();

@@ -11,6 +11,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [NonSerialized] MGTerrainWorld m_BrgWorld;
         bool m_WorldDefersDraw, m_WorldPendingDraw, m_WorldDetailsSleeping;
         bool m_WorldReuseSelection;
+        bool m_WorldDetailSubmissionRequired;
+        int m_WorldLastSubmittedBudget = -1;
+        public int WorldDetailSubmissionCount { get; private set; }
+        public int WorldDetailReuseCount { get; private set; }
         int m_WorldDrawBudget = int.MaxValue;
         public MGTerrainWorld World => m_World;
         internal int WorldPendingBuilds => CountPendingDetailBuilds();
@@ -67,8 +71,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
             return Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale);
         }
 
+        static readonly Unity.Profiling.ProfilerMarker s_WorldPrepareMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.WorldPrepare");
+        static readonly Unity.Profiling.ProfilerMarker s_WorldSubmitMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.WorldSubmit");
         internal void PrepareWorldCamera(Camera camera, float unloadDistance)
         {
+            using var profile = s_WorldPrepareMarker.Auto();
             m_WorldPendingDraw = false;
             // Captures consume resident data, never the streaming or world budgets.
             if (camera != null && camera.cameraType == CameraType.Reflection)
@@ -112,15 +119,44 @@ namespace MashBoxSDK.Maps.TerrainSystem
             finally { m_WorldDefersDraw = false; }
         }
 
+        // The grant pass builds only details. Surface and ordinary tree draws already ran
+        // in PrepareWorldCamera; repeating those draws can double-submit the same geometry.
+        internal void PrepareWorldGrantedDetails(Camera camera)
+        {
+            using var profile = s_WorldPrepareMarker.Auto();
+            m_WorldDefersDraw = UsesWorldBudget;
+            m_WorldReuseSelection = false;
+            try { RenderDensityDetails(camera, m_InstanceFrustumPlanes); }
+            finally { m_WorldDefersDraw = false; }
+        }
+
         internal void SubmitWorldDetails(Camera camera, int budget)
         {
+            using var profile = s_WorldSubmitMarker.Auto();
             if (!m_WorldPendingDraw) return;
             if (UseResidentDetailStreaming && !IsDensityDetailStreamingCamera(camera)) return;
+#if UNITY_6000_0_OR_NEWER
+            // BRG commands persist. A reused selection does not need sorting, population
+            // scans or GPU command comparison again, but live shadow/occlusion updates do.
+            if (!m_WorldDetailSubmissionRequired && !m_DetailRenderCacheDirty
+                && m_WorldLastSubmittedBudget == budget && HasCurrentGpuDetailCells
+                && m_DetailBrgHasSignature && (!m_UseIndirectDetailDraws || m_IndirectDetailDrawsReady))
+            {
+                WorldDetailReuseCount++;
+                LastRegeneratedDetailInstances = 0;
+                UpdateDetailShadowSelection(camera);
+                UpdateTerrainOcclusion(camera);
+                return;
+            }
+#endif
             SortVisibleDensityDetails();
             m_WorldDrawBudget = budget;
             try
             {
                 DrawVisibleDensityDetails(camera);
+                m_WorldDetailSubmissionRequired = false;
+                m_WorldLastSubmittedBudget = budget;
+                WorldDetailSubmissionCount++;
 #if UNITY_6000_0_OR_NEWER
                 UpdateTerrainOcclusion(camera);
 #endif

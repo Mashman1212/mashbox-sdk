@@ -1759,6 +1759,7 @@ namespace MashBoxSDK.MapTools
                     if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassPaintSubId = id; }
                 }
             }
+            DrawDetailCapsuleSettings(terrain, m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex));
             m_SelectedPrototype = selectedDetail.PrototypeIndex;
             long totalDensity = selectedDetail.RepresentedInstanceCount;
             if (m_WorldDetailControls && terrain.World != null)

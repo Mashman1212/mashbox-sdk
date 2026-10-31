@@ -18,6 +18,7 @@ namespace MashBoxSDK.MapTools
         // ===========================
         public static void BuildSelectedBundles(string outputPath, BuildTarget buildTarget, BuildAssetBundleOptions options)
         {
+            MashBoxSDK.Exporting.MGBundleBuildPreparation.PrepareAssignedBundles();
             
             
             // Ensure root folder exists

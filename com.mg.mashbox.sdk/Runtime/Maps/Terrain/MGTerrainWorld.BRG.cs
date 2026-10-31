@@ -78,9 +78,11 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_BrgChunks.Clear(); m_ChunkBounds.Clear(); m_Meshes.Clear(); m_Materials.Clear();
         }
 
+        static readonly Unity.Profiling.ProfilerMarker s_WorldCullMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.WorldCulling");
         unsafe JobHandle Cull(BatchRendererGroup renderer, BatchCullingContext context,
             BatchCullingOutput cullingOutput, IntPtr userContext)
         {
+            using var profile = s_WorldCullMarker.Auto();
             var output = (BatchCullingOutputDrawCommands*)cullingOutput.drawCommands.GetUnsafePtr();
             *output = default;
             int direct = 0, indirect = 0, visible = 0;

@@ -251,6 +251,13 @@ namespace MashBoxSDK.MapTools
             terrainDetailsContent.Add(new MBTerrainDetailsToggle());
             displaySettings.Add(terrainDetailsRow);
 
+            var propCellsRow = CreateRow("Prop Cells", out VisualElement propCellsContent);
+            propCellsContent.Add(new MBGameplayGizmoLayerToggle(
+                () => MBGameplayGizmoVisibility.PropCellsEnabled,
+                enabled => MBGameplayGizmoVisibility.PropCellsEnabled = enabled,
+                "Show God Surface prop cell outlines and culling colours for registries with Draw Cell Bounds enabled. Prop rendering and culling stay active."));
+            displaySettings.Add(propCellsRow);
+
             var calibrationRow = CreateRow("Calibration", out VisualElement calibrationContent);
             calibrationContent.Add(MBMonitorCalibration.CreateToggle());
             displaySettings.Add(calibrationRow);

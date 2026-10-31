@@ -1,0 +1,4 @@
+<linker>
+  <!-- Bundle-loaded map components must survive stripping in the SDK host player. -->
+  <assembly fullname="MG.GodSurface" preserve="all" />
+</linker>

@@ -3758,6 +3758,7 @@ namespace MashBoxSDK.MapTools
         // -------------------------------
         private void BuildBundles()
         {
+            MashBoxSDK.Exporting.MGBundleBuildPreparation.PrepareAssignedBundles();
             BuildTarget target = EditorUserBuildSettings.activeBuildTarget;
 
             string targetName = target.ToString();
@@ -4687,6 +4688,8 @@ namespace MashBoxSDK.MapTools
             var scenePath = AssetDatabase.GetAssetPath(pack.Scene);
             if (string.IsNullOrWhiteSpace(scenePath))
                 throw new Exception("Could not resolve the selected scene asset.");
+
+            MashBoxSDK.Exporting.MGBundleBuildPreparation.Prepare(new[] { scenePath });
 
             var bundleName = SanitizeBundleName(pack.PackName);
             var tempRoot = Path.Combine(Path.GetTempPath(), "MashBoxSDK", "MapBuild", bundleName, EditorUserBuildSettings.activeBuildTarget.ToString());

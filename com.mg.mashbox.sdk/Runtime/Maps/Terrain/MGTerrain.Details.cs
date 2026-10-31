@@ -80,6 +80,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             [SerializeField, HideInInspector] string m_WorldDetailId;
             public string WorldDetailId => m_WorldDetailId;
+            [SerializeField] DetailCapsuleSettings m_CapsuleCollision = new DetailCapsuleSettings();
+            public DetailCapsuleSettings CapsuleCollision => m_CapsuleCollision;
             [SerializeField, HideInInspector] bool m_RenderDisabled;
             public bool RenderingEnabled => !m_RenderDisabled;
             [SerializeField] int m_PrototypeIndex;
@@ -559,7 +561,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         readonly Dictionary<Prototype, bool> m_DetailFadeEligibility = new Dictionary<Prototype, bool>();
         bool CanFadeDetail(Prototype prototype)
         {
-            if (prototype == null || prototype.Kind == InstanceKind.Tree) return false;
+            if (prototype == null || prototype.Kind == InstanceKind.Tree || PrototypeHasCapsules(prototype)) return false;
             if (m_DetailFadeEligibility.TryGetValue(prototype, out bool eligible)) return eligible;
             eligible = EvaluateDetailFadeEligibility(prototype);
             m_DetailFadeEligibility.Add(prototype, eligible);
@@ -1263,6 +1265,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 MarkDetailFoliagePaletteSourcesDirty(layer.DensityMap);
             }
             if (normalizedRegion.width <= 0 || normalizedRegion.height <= 0) return;
+            InvalidateDetailColliders();
             // Include neighboring samples used by bilinear size interpolation.
             normalizedRegion.xMin -= 1f / width; normalizedRegion.xMax += 1f / width;
             normalizedRegion.yMin -= 1f / height; normalizedRegion.yMax += 1f / height;
@@ -1311,6 +1314,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void InvalidateDetailRenderCache()
         {
+            InvalidateDetailColliders();
             m_DetailRenderCacheDirty = true;
             ResetFullDetailResidency();
             m_DetailStreamingSettled = false;
@@ -1321,6 +1325,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void ReleaseDetailRenderCache()
         {
+            m_WorldDetailSubmissionRequired = false;
+            m_WorldLastSubmittedBudget = -1;
             ReleaseDensityDetailBrg();
             m_FixedCandidateCaches.Clear();
             m_ResidentDensityDetails.Clear();
@@ -1674,7 +1680,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void DrawVisibleDensityDetails(Camera camera)
         {
-            if (m_WorldDefersDraw) { m_WorldPendingDraw = true; return; }
+            if (m_WorldDefersDraw) { m_WorldPendingDraw = true; m_WorldDetailSubmissionRequired = true; return; }
             if (UsesWorldBudget && m_WorldDrawBudget == 0)
             {
                 ClearDensityDetailBrgVisibility();
@@ -1836,6 +1842,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         int GetVisibleDensityDetailInstanceCount(VisibleDensityDetail visible)
         {
+            if (LayerHasCapsules(visible.chunk.layerIndex)) return visible.chunk.instanceCount;
             if (visible.prototype.Kind == InstanceKind.Tree)
             {
                 // Retain full resident transforms; submit a stable prefix shared by
@@ -2320,6 +2327,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             float distance)
         {
             Prototype prototype = m_Prototypes[m_DensityDetailLayers[layerIndex].PrototypeIndex];
+            if (prototype.Kind != InstanceKind.Tree && LayerHasCapsules(layerIndex)) return 0;
             bool tree = prototype.Kind == InstanceKind.Tree;
             if (tree && prototype.TreeLodCount == 1) return 0;
             if (!tree && !m_UseDetailDensityLod) return 0;
@@ -2640,15 +2648,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
             int firstX,
             int firstZ,
             int densityLod,
-            float densityScale)
+            float densityScale, bool collisionOnly = false)
         {
             using var profile = s_DetailCellBuildMarker.Auto();
-            if (prototype.Kind == InstanceKind.Tree) densityScale = 1f;
+            if (prototype.Kind == InstanceKind.Tree || collisionOnly || layer.CapsuleCollision?.enabled == true) densityScale = 1f;
             var chunk = new DensityDetailChunk
             {
                 densityLod = densityLod,
                 layerIndex = layerIndex,
-                gpuProcedural = ShouldBuildGpuProceduralDetailCells()
+                gpuProcedural = collisionOnly || ShouldBuildGpuProceduralDetailCells()
             };
             chunk.worldBounds = CalculateDetailChunkBounds(surfaceBounds, layer.DensityMap.width, layer.DensityMap.height, chunkCells, firstX, firstZ, layer.MaximumPaintedHeight, layer.YOffset, null, layer);
             if (layer.MaxInstancesPerSquareMetre <= 0f) return chunk;
