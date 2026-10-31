@@ -235,7 +235,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt=Event.current;var editor=Studio?.ToolbarModelEditor;
             var pointer=(CanvasMousePosition??Vector2.zero)+CanvasInputOrigin;
-            bool allowed=!blocked&&editor!=null&&studioInputActive!=null&&studioInputActive()&&!navigating&&!evt.alt&&!SelectionPaintHoldActive&&
+            bool allowed=!blocked&&editor!=null&&studioInputActive!=null&&studioInputActive()&&!navigating&&!cameraDragStartedInUI&&!evt.alt&&!SelectionPaintHoldActive&&
                 evt.type!=EventType.MouseLeaveWindow&&ModelCanvasRect.Contains(pointer)&&!IsOverViewportControls(pointer);
             var kind=allowed?editor.MeshToolCursor(evt.modifiers):StudioMeshToolCursors.Kind.None;
             if(kind==StudioMeshToolCursors.Kind.None){ResetMeshToolCursor(true);return;}

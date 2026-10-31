@@ -37,7 +37,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!saveAs && CanOverwriteClip(take.outputClip)) SaveToReferencedClip();
             else
             {
-                string path = EditorUtility.SaveFilePanelInProject("Save animation", take.name, "anim", "Save the edited animation as a standalone clip.");
+                string path = StudioFileDialogs.SaveAssetInProject("Save animation", take.name, "anim", "Save the edited animation as a standalone clip.");
                 if (string.IsNullOrEmpty(path)) return false;
                 // Save As never silently replaces another animation.
                 BakeToClip(null, AssetDatabase.GenerateUniqueAssetPath(path));
@@ -59,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!EditingClip) return false;
             FlushEdits();
-            string path = EditorUtility.SaveFilePanelInProject("Save editable take", take.name, "asset", "Save the take, actor tracks, constraints and editable keys.");
+            string path = StudioFileDialogs.SaveAssetInProject("Save editable take", take.name, "asset", "Save the take, actor tracks, constraints and editable keys.");
             if (string.IsNullOrEmpty(path)) return false;
             path = AssetDatabase.GenerateUniqueAssetPath(path);
             // Persist the same object graph so actor/constraint references and Undo

@@ -58,7 +58,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!HasEditableMesh || !Part.mesh) return;
             if (!StudioFbxDependency.Require()) return;
             EndStroke();
-            string path = EditorUtility.SaveFilePanelInProject("Export rigid headgear",Part.name,"fbx","Save head-local headgear with its pivot locked to Head, without skin weights or a skeleton.");
+            string path = StudioFileDialogs.SaveAssetInProject("Export rigid headgear",Part.name,"fbx","Save head-local headgear with its pivot locked to Head, without skin weights or a skeleton.");
             if (string.IsNullOrEmpty(path)) return;
             // Keep the existing source and its subasset references intact.
             path = AssetDatabase.GenerateUniqueAssetPath(path);

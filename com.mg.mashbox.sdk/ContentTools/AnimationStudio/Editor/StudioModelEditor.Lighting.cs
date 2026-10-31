@@ -34,7 +34,7 @@ namespace MashBoxSDK.AnimationStudio
             var s = LightingSettings;
             EditorGUI.BeginChangeCheck();
             bool studioLights = EditorGUILayout.Popup("Lighting mode", s.studioLights ? 1 : 0, ViewportLightingModes) == 1;
-            using (new EditorGUI.DisabledScope(!studioLights))
+            using (new EditorGUI.DisabledScope(!studioLights && !(previewLighting?.SupportsPhysicalMaterials??false)))
             {
                 float exposure = EditorGUILayout.Slider("Exposure (EV)",s.exposure,-5,5);
                 GUILayout.Space(8); GUILayout.Label("Key Light",StudioTheme.Styles.boldLabel);
@@ -45,18 +45,26 @@ namespace MashBoxSDK.AnimationStudio
                 GUILayout.Space(8); GUILayout.Label("Fill Light",StudioTheme.Styles.boldLabel);
                 float fill = EditorGUILayout.Slider("Intensity",s.fillIntensity,0,8);
                 Color fillColor = EditorGUILayout.ColorField("Color",s.fillColor);
-                GUILayout.Space(8); GUILayout.Label("Shadows",StudioTheme.Styles.boldLabel);
-                bool shadows = EditorGUILayout.Toggle("Draw shadows",s.shadows);
-                float strength = EditorGUILayout.Slider("Strength",s.shadowStrength,0,1);
-                GUILayout.Space(8); GUILayout.Label("Ground",StudioTheme.Styles.boldLabel);
-                bool ground = EditorGUILayout.Toggle("Ground plane",s.ground);
-                float height = EditorGUILayout.FloatField("Height",s.groundHeight);
-                float size = EditorGUILayout.Slider("Size",s.groundSize,1,200);
-                Color groundColor = EditorGUILayout.ColorField("Color",s.groundColor);
+                float reflection=s.cameraReflectionIntensity;
+                if(!studioLights)reflection=EditorGUILayout.Slider(new GUIContent("Reflections","Strength of the neutral reflection environment. Lower values keep dark and rough surfaces from looking washed out."),reflection,0,2);
+                bool shadows=s.shadows, ground=s.ground;
+                float strength=s.shadowStrength, height=s.groundHeight, size=s.groundSize;
+                Color groundColor=s.groundColor;
+                if(studioLights)
+                {
+                    GUILayout.Space(8); GUILayout.Label("Shadows",StudioTheme.Styles.boldLabel);
+                    shadows=EditorGUILayout.Toggle("Draw shadows",shadows);
+                    strength=EditorGUILayout.Slider("Strength",strength,0,1);
+                    GUILayout.Space(8); GUILayout.Label("Ground",StudioTheme.Styles.boldLabel);
+                    ground=EditorGUILayout.Toggle("Ground plane",ground);
+                    height=EditorGUILayout.FloatField("Height",height);
+                    size=EditorGUILayout.Slider("Size",size,1,200);
+                    groundColor=EditorGUILayout.ColorField("Color",groundColor);
+                }
                 if (EditorGUI.EndChangeCheck()) EditLighting(v => {
                     v.studioLights=studioLights;
                     v.exposure=exposure; v.keyIntensity=key; v.keyColor=keyColor; v.elevation=elevation; v.azimuth=azimuth;
-                    v.fillIntensity=fill; v.fillColor=fillColor; v.shadows=shadows; v.shadowStrength=strength;
+                    v.fillIntensity=fill; v.fillColor=fillColor; v.cameraReflectionIntensity=reflection; v.shadows=shadows; v.shadowStrength=strength;
                     v.ground=ground; v.groundHeight=height; v.groundSize=size; v.groundColor=groundColor;
                 });
             }

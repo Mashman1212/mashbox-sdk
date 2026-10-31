@@ -12,8 +12,8 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal static string Folder { get { Directory.CreateDirectory(StudioModelDocument.WorkspaceFolder); return StudioModelDocument.WorkspaceFolder; } }
         internal static string Absolute(string relative) => Path.Combine(Path.GetDirectoryName(Application.dataPath), relative);
-        internal static string Choose(string title, string name) => EditorUtility.SaveFilePanel(title, Folder, name, "workspace");
-        internal static string ChooseOpen(string title) => EditorUtility.OpenFilePanelWithFilters(title, Folder, new[] { "Studio workspace", "workspace", "Legacy Unity asset", "asset" });
+        internal static string Choose(string title, string name) => StudioFileDialogs.SaveWorkspace(title, name);
+        internal static string ChooseOpen(string title) => StudioFileDialogs.OpenWorkspace(title, new[] { "Studio workspace", "workspace", "Legacy Unity asset", "asset" });
         internal static string Save(ScriptableObject document, IEnumerable<Object> resources, string path)
         {
             path = StudioModelDocument.ValidateWorkspacePath(path);

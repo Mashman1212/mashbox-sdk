@@ -524,7 +524,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ImportPaintingModel(Action<StudioModelDocument> loaded)
         {
-            var path = EditorUtility.OpenFilePanel("Import FBX for Painting", "", "fbx");
+            var path = StudioFileDialogs.OpenAsset("Import FBX for Painting", "fbx");
             if (!string.IsNullOrEmpty(path)) ImportPath(path, loaded);
         }
         internal void ConfigurePaintingLighting(Camera camera, float exposure)

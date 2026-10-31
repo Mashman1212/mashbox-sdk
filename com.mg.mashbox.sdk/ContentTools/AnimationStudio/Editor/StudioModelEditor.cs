@@ -477,7 +477,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!StudioFbxDependency.Require()) return;
             if (!Document || (selectionOnly && !CanExportSelection)) return;
             string filename = selectionOnly && Active >= 0 ? Document.nodes[Active].name : Document.name;
-            string path = EditorUtility.SaveFilePanel(selectionOnly ? "Export selection as FBX" : "Export workspace as FBX", "", filename, "fbx");
+            string path = StudioFileDialogs.SaveAsset(selectionOnly ? "Export selection as FBX" : "Export workspace as FBX", filename, "fbx");
             if (string.IsNullOrEmpty(path)) return;
             ExportFile(path, selectionOnly);
             AssetDatabase.Refresh();
