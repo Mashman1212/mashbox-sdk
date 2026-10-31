@@ -27,9 +27,11 @@ namespace MashBoxSDK.AnimationStudio
         public float shapeRetention;
         [Range(0, 2), Tooltip("Damping of shape recovery. Around 0.7 settles gently; lower values allow more bounce.")]
         public float shapeDamping = .7f;
+        [Min(0)] public float windResponse=1;
+        [Min(0)] public float flutterAmplitude=.03f;
         public Vector3 gravity = new Vector3(0, -9.81f, 0);
-        public Vector3 wind = new Vector3(0, 0, 4);
-        [Range(0, 1)] public float gust = .25f;
+        [HideInInspector] public Vector3 wind = new Vector3(0, 0, 4);
+        [HideInInspector, Range(0, 1)] public float gust = .25f;
         [Range(0.001f, .05f)] public float thickness = .008f;
 
 
@@ -50,6 +52,7 @@ namespace MashBoxSDK.AnimationStudio
             shapeRetention = profile.shapeRetention;
             shapeDamping = profile.shapeDamping;
             gravity = profile.gravity;
+            windResponse=profile.windResponse; flutterAmplitude=profile.flutterAmplitude;
             wind = profile.wind;
             gust = profile.gust;
             thickness = profile.thickness;
@@ -72,6 +75,7 @@ namespace MashBoxSDK.AnimationStudio
             profile.shapeRetention = shapeRetention;
             profile.shapeDamping = shapeDamping;
             profile.gravity = gravity;
+            profile.windResponse=windResponse; profile.flutterAmplitude=flutterAmplitude;
             profile.wind = wind;
             profile.gust = gust;
             profile.thickness = thickness;

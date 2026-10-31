@@ -17,6 +17,8 @@ namespace MashBoxSDK.Cloth
         public readonly MashBoxClothProfile Profile;
         public MashBoxClothSolver Solver { get; private set; }
         public Mesh Output { get; private set; }
+        public Vector3? WindVelocity { get; set; }
+        public Renderer OutputRenderer { get; private set; }
         public double SolveMilliseconds { get; private set; }
         public double TotalMilliseconds { get; private set; }
         public double BakeMilliseconds { get; private set; }
@@ -100,6 +102,7 @@ namespace MashBoxSDK.Cloth
                 particleCollisionMasks=new ulong[Solver.ParticleCount];
                 sourceWeights=SourceMesh.boneWeights;sourceBones=skin?skin.bones:Array.Empty<Transform>();
                 Output = Object.Instantiate(SourceMesh); Output.name = source.name + " • Cloth output";
+                Profile.ApplyFlutter(Output);
                 Output.hideFlags = HideFlags.HideAndDontSave; Output.MarkDynamic();
                 outputObject = new GameObject("MashBox Cloth Output") { hideFlags = HideFlags.HideAndDontSave, layer = source.gameObject.layer };
                 // Explicit scene ownership is required for SceneView preview culling.
@@ -107,10 +110,11 @@ namespace MashBoxSDK.Cloth
                 outputObject.transform.SetParent(source.transform, false);
                 outputObject.AddComponent<MeshFilter>().sharedMesh = Output;
                 var renderer = outputObject.AddComponent<MeshRenderer>();
+                OutputRenderer = renderer;
                 renderer.sharedMaterials = source.sharedMaterials;
                 renderer.shadowCastingMode = source.shadowCastingMode; renderer.receiveShadows = source.receiveShadows;
                 renderer.renderingLayerMask = source.renderingLayerMask;
-                var properties = new MaterialPropertyBlock(); source.GetPropertyBlock(properties); renderer.SetPropertyBlock(properties);
+                var properties = new MaterialPropertyBlock(); source.GetPropertyBlock(properties); properties.SetFloat("_MGFlutterAmplitude", profile.flutterAmplitude); renderer.SetPropertyBlock(properties);
                 if (skin) skin.updateWhenOffscreen = true;
                 source.forceRenderingOff = true;
                 lastPosition = source.transform.position; lastScale = source.transform.lossyScale;
@@ -201,7 +205,7 @@ namespace MashBoxSDK.Cloth
         {
             Array.Copy(currentDisplacement, previousDisplacement, currentDisplacement.Length);
             int count = RefreshCapsules();
-            solveWatch.Restart(); Solver.Step(dt, time, Profile, capsules, count, particleCollisionMasks); solveWatch.Stop();
+            solveWatch.Restart(); Solver.Step(dt, time, Profile, capsules, count, particleCollisionMasks, WindVelocity ?? MashBoxWind.Current.Sample(Time.time)); solveWatch.Stop();
             SolveMilliseconds = solveWatch.Elapsed.TotalMilliseconds;
             for (int i = 0; i < currentDisplacement.Length; i++) currentDisplacement[i] = Solver.Displacement(i);
             time += dt; Steps++;
@@ -265,6 +269,10 @@ namespace MashBoxSDK.Cloth
             for(int i=0;i<renderCopy.Length;i++)renderCopy[i]=renderCopy[seamVertices[i]];
             outputVertices.AddRange(renderCopy);
             Output.SetVertices(outputVertices); Output.RecalculateBounds();
+            // Shader flutter may extend beyond CPU geometry; include its maximum envelope.
+            var bounds=Output.bounds;var scale=Source.transform.lossyScale;
+            float smallest=Mathf.Max(.0001f,Mathf.Min(Mathf.Abs(scale.x),Mathf.Abs(scale.y),Mathf.Abs(scale.z)));
+            bounds.Expand(Mathf.Max(0,Profile.flutterAmplitude)*18/smallest);Output.bounds=bounds;
             if ((Profile.preserveAuthoredShading || Profile.normalsEverySteps <= 0) && bakedNormals.Count == bakedVertices.Count)
             {
                 // Preserve authored split/smooth normals while following skinning.

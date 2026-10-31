@@ -50,6 +50,16 @@ namespace MashBoxSDK.AnimationStudio
                 if (export.Animator) export.Animator.enabled = true;
                 savedProfile = Instantiate(clothProfile); savedProfile.name = name + " Cloth Data"; savedProfile.hideFlags = HideFlags.None;
                 AssetDatabase.CreateAsset(savedProfile, profilePath);
+                // Bake vertex-red paint into an independent mesh subasset; never mutate an imported FBX.
+                var paintedMesh=StudioSkinningDocument.CreateEditableCopy(mesh);
+                paintedMesh.name=mesh.name;paintedMesh.hideFlags=HideFlags.None;
+                savedProfile.ApplyFlutter(paintedMesh);
+                AssetDatabase.AddObjectToAsset(paintedMesh,savedProfile);
+                savedProfile.sourceMesh=paintedMesh;
+                if(garment is SkinnedMeshRenderer paintedSkin)paintedSkin.sharedMesh=paintedMesh;
+                else garment.GetComponent<MeshFilter>().sharedMesh=paintedMesh;
+                var flutterProperties=new MaterialPropertyBlock();garment.GetPropertyBlock(flutterProperties);
+                flutterProperties.SetFloat("_MGFlutterAmplitude",savedProfile.flutterAmplitude);garment.SetPropertyBlock(flutterProperties);
                 var clipping = ClothAssignedClipping(clothRendererIndex);
                 if(clipping) garment.gameObject.AddComponent<MashBoxSDK.Culling.ClothingCullingSettings>().profile = clipping;
                 var cloth = garment.gameObject.AddComponent<MashBoxCloth>();

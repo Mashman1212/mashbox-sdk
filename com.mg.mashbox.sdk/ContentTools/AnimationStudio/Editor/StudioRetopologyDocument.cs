@@ -20,6 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             public string name;
             public Mesh reference;
+            public Mesh sourceMesh;
             public Material[] materials;
             public string[] skinBoneNames;
             public Matrix4x4[] skinBindCorrections;

@@ -164,7 +164,7 @@ namespace MashBoxSDK.AnimationStudio
                     var skin=renderer as SkinnedMeshRenderer;var filter=renderer.GetComponent<MeshFilter>();var original=skin?skin.sharedMesh:filter?filter.sharedMesh:null;
                     if(!original)continue;
                     var mesh=StudioSkinningDocument.CreateEditableCopy(original);
-                    var part=new Part { name=renderer.name,reference=mesh,materials=renderer.sharedMaterials };added.Add(part);
+                    var part=new Part { name=renderer.name,reference=mesh,sourceMesh=original,materials=renderer.sharedMaterials };added.Add(part);
                     // Imported local bind geometry remains the reference; no posing or source edits.
                     var matrix=source.transform.worldToLocalMatrix*renderer.transform.localToWorldMatrix;
                     if(skin) CaptureReferenceSkin(part,skin,source.transform,matrix);
@@ -192,7 +192,7 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUI.DrawRect(row,Document.selected==i?new Color(.18f,.31f,.29f):new Color(.12f,.13f,.14f));
                 if(row.Contains(Event.current.mousePosition)&&StudioMeshMaterialPreview.IsMaterialDrag)StudioMeshMaterialPreview.Drop(m=>SetMaterial(p,0,m));
                 HandleMeshRowContext(row,p);
-                if(GUI.Button(row,new GUIContent("  "+p.name,"Select this mesh"),new GUIStyle(StudioTheme.Styles.label){clipping=TextClipping.Clip}))
+                if(GUI.Button(row,new GUIContent("  "+StudioImportedMeshLabel.Get(p.name,p.sourceMesh),"Select this mesh"),new GUIStyle(StudioTheme.Styles.label){clipping=TextClipping.Clip}))
                 {Document.selected=i;ClearComponents();ClearPatchCorners();ApplyCheckerDisplay();repaint();}
                 var referenceRow=GUILayoutUtility.GetRect(50,22,GUILayout.ExpandWidth(true));
                 if(referenceRow.Contains(Event.current.mousePosition)&&(Event.current.type==EventType.ContextClick||(Event.current.button==1&&(Event.current.type==EventType.MouseDown||Event.current.type==EventType.MouseUp))))

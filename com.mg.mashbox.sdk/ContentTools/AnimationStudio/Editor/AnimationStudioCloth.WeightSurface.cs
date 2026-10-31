@@ -31,7 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             if (clothWeightColors == null || clothWeightColors.Length != vertices.Count) clothWeightColors = new Color[vertices.Count];
             for (int i = 0; i < vertices.Count; i++)
             {
-                float weight = Mathf.Clamp01(clothProfile.motion[i] / .3f);
+                float weight = Mathf.Clamp01(clothFlutterPaint ? ClothPaintValues[i] : clothProfile.motion[i] / .3f);
                 clothWeightColors[i] = weight < .5f ? Color.Lerp(new Color(.05f,.2f,1),Color.yellow,weight*2) : Color.Lerp(Color.yellow,new Color(1,.12f,.02f),weight*2-1);
             }
             clothWeightSurface.SetVertices(clothWeightPositions);

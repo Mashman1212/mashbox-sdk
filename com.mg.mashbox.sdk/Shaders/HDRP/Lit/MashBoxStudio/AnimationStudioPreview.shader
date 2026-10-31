@@ -3,6 +3,9 @@ Shader "MashBox/Studio/Preview"
     Properties
     {
         [HideInInspector] _StudioCheckerLabels ("UV tile labels", Float) = 0
+        _MGFlutterAmplitude ("Flutter amplitude", Float) = 0
+        [HideInInspector] _MGWindPreview ("Preview wind", Vector) = (0,0,0,0)
+        [HideInInspector] _MGWindPreviewParams ("Preview wind parameters", Vector) = (0,0,0,0)
         _MainTex ("Base texture", 2D) = "white" {}
         _BaseArray ("Base texture array", 2DArray) = "" {}
         _NormalArray ("Normal texture array", 2DArray) = "" {}
@@ -30,6 +33,10 @@ Shader "MashBox/Studio/Preview"
         HLSLINCLUDE
             #include "UnityCG.cginc"
             #include "StudioCheckerLabels.hlsl"
+            #define MG_FLUTTER_BUILTIN
+            #include "../Clothing/MGClothingFlutter.hlsl"
+            float _MGFlutterAmplitude;
+            float4 _MGWindPreview, _MGWindPreviewParams;
             sampler2D _MainTex, _NormalTex;
             UNITY_DECLARE_TEX2DARRAY(_BaseArray);
             UNITY_DECLARE_TEX2DARRAY(_NormalArray);
@@ -46,6 +53,9 @@ Shader "MashBox/Studio/Preview"
             Varyings Vert(Attributes input)
             {
                 Varyings output;
+                float3 world=mul(unity_ObjectToWorld,input.vertex).xyz;
+                float3 delta=MGFlutterOffset(world,UnityObjectToWorldNormal(input.normal),input.color.r,_MGFlutterAmplitude,_MGWindPreview,_MGWindPreviewParams);
+                input.vertex.xyz+=mul((float3x3)unity_WorldToObject,delta);
                 output.position = UnityObjectToClipPos(input.vertex);
                 output.normal = UnityObjectToWorldNormal(input.normal);
                 output.tangent = float4(UnityObjectToWorldDir(input.tangent.xyz), input.tangent.w * unity_WorldTransformParams.w);

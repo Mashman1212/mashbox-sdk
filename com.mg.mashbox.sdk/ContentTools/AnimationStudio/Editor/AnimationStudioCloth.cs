@@ -150,6 +150,7 @@ namespace MashBoxSDK.AnimationStudio
             clothSession?.Dispose(); clothSession = null;
             clothSession = new MashBoxClothSession(ClothRenderer, clothProfile, clothRig.Root.transform);
             clothSimulationTime = 0;
+            UpdateClothWindPreview();
             clothGrabParticle = -1; clothLastTime = EditorApplication.timeSinceStartup;
         }
         private void StopClothSession()
@@ -169,6 +170,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (clothSession != null)
                 {
                     int steps = clothSession.Steps;
+                    clothWindTime += delta; UpdateClothWindPreview();
                     clothSession.Advance(delta);
                     clothSimulationTime += (clothSession.Steps - steps) / (float)Mathf.Clamp(clothProfile.frequency, 15, 120);
                     if (clothSession.Steps != steps || clothProfile.interpolateMotion) viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
@@ -264,28 +266,30 @@ namespace MashBoxSDK.AnimationStudio
             DrawClothProfileControls();
             if (!clothProfile) { EditorGUILayout.HelpBox("Create or select a cloth profile to paint and tune it.", MessageType.Info); EditorGUILayout.EndScrollView(); return; }
             bool valid = ClothVisible && clothProfile.Matches(MashBoxClothSession.GetMesh(ClothRenderer));
-            GUILayout.Label("MOVEMENT PAINT", EditorStyles.boldLabel);
+            GUILayout.Label(clothFlutterPaint?"FLUTTER PAINT":"MOVEMENT PAINT", EditorStyles.boldLabel);
             using (new EditorGUI.DisabledScope(!valid))
             {
                 clothBrushRadius = EditorGUILayout.Slider("Radius (m)", clothBrushRadius, .005f, .5f);
-                clothBrushValue = EditorGUILayout.Slider("Movement (m)", clothBrushValue, 0, 1);
+                if(clothFlutterPaint)clothFlutterValue=EditorGUILayout.Slider("Flutter (vertex red)",clothFlutterValue,0,1);
+                else clothBrushValue = EditorGUILayout.Slider("Movement (m)", clothBrushValue, 0, 1);
                 clothBrushStrength = EditorGUILayout.Slider("Strength", clothBrushStrength, .01f, 1);
                 EditorGUI.BeginChangeCheck();
                 clothShowWeights = EditorGUILayout.Toggle("Show weight colors", clothShowWeights);
                 clothPaintThrough = EditorGUILayout.Toggle(new GUIContent("Pass-through", "Paint through all layers of the selected garment along the view direction."), clothPaintThrough);
                 if (EditorGUI.EndChangeCheck()) viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);
-                EditorGUILayout.HelpBox("Blue = pinned; yellow/red = free. Paint with LMB; Hold Shift to smooth movement distances. Paint Movement = 0 to pin. Alt orbits. Ctrl + middle-drag or [ / ] changes radius. Pass-through paints all layers; otherwise the brush uses a shallow surface depth band. Ctrl+Z undoes a stroke.", MessageType.None);
+                EditorGUILayout.HelpBox(clothFlutterPaint ? "Paint vertex red: blue = zero flutter, red = full flutter. Shift smooths. Other color channels are preserved. Exit painting and press Play to preview." : "Blue = pinned; yellow/red = free. Paint with LMB; Hold Shift to smooth movement distances. Paint Movement = 0 to pin. Alt orbits. Ctrl + middle-drag or [ / ] changes radius. Pass-through paints all layers; otherwise the brush uses a shallow surface depth band. Ctrl+Z undoes a stroke.", MessageType.None);
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Pin all")) FillCloth(0);
-                if (GUILayout.Button("Fill movement")) FillCloth(clothBrushValue);
+                if (GUILayout.Button(clothFlutterPaint?"Clear flutter":"Pin all")) FillCloth(0);
+                if (GUILayout.Button(clothFlutterPaint?"Fill flutter":"Fill movement")) FillCloth(clothFlutterPaint?clothFlutterValue:clothBrushValue);
                 GUILayout.EndHorizontal();
             }
             GUILayout.Space(8);
             var serialized = new SerializedObject(clothProfile); serialized.Update();
             EditorGUI.BeginChangeCheck();
             DrawClothStiffness(serialized);
-            GUILayout.Label("WIND + SOLVER", EditorStyles.boldLabel);
-            foreach (string field in new[] { "animationFollow", "animationInertia", "wind", "gust", "gravity", "damping", "thickness" })
+            DrawClothWindInspector();
+            GUILayout.Label("WIND RESPONSE + SOLVER", EditorStyles.boldLabel);
+            foreach (string field in new[] { "animationFollow", "animationInertia", "windResponse", "flutterAmplitude", "gravity", "damping", "thickness" })
                 EditorGUILayout.PropertyField(serialized.FindProperty(field));
             if (EditorGUI.EndChangeCheck())
             {
@@ -295,6 +299,9 @@ namespace MashBoxSDK.AnimationStudio
             GUILayout.Label("Tuning applies live and preserves the current simulation.", EditorStyles.wordWrappedMiniLabel);
             if (GUILayout.Button("Rebuild simulation")) ClothAction(() => { bool running = clothRunning; StartClothSession(); clothRunning = running; });
             GUILayout.Space(8); GUILayout.Label("BODY COLLISIONS", EditorStyles.boldLabel);
+#if MashBoxDev
+            DrawClothColliderDeveloperPanel();
+#endif
             clothShowColliders = EditorGUILayout.Toggle("Show capsules", clothShowColliders);
             if (GUILayout.Button("Generate character capsules")) ClothAction(GenerateClothCapsules);
             if (GUILayout.Button(new GUIContent("Fit knee & ankle ends", "Widen ankles and move larger knee spheres backward for calf coverage. Keeps hip and arm colliders unchanged."))) ClothAction(FitClothAnkleEnds);
@@ -339,7 +346,7 @@ namespace MashBoxSDK.AnimationStudio
                 });
                 x += 32;
                 if (GUI.Button(new Rect(x, y, 26, 26), new GUIContent("■", "Stop and return to the animated mesh"))) ClothAction(() =>
-                { StopClothSession(); SampleClothMotion(0); RefreshClothPickMesh(); clothSimulationTime = 0; });
+                { StopClothSession(); SampleClothMotion(0); RefreshClothPickMesh(); clothSimulationTime = 0; clothWindTime=0; });
                 x += 32;
                 if (GUI.Button(new Rect(x, y, 26, 26), new GUIContent("›", "Pause and advance one simulation step"))) ClothAction(() =>
                 {
@@ -348,12 +355,12 @@ namespace MashBoxSDK.AnimationStudio
                     if (clothSession == null && CanSimulateCloth) StartClothSession();
                     float dt = clothSession != null ? 1f / Mathf.Clamp(clothProfile.frequency, 15, 120) : 1f / Mathf.Max(1, clothClip.frameRate);
                     SampleClothMotion(clothAnimationTime + dt);
-                    if (clothSession != null) { clothSession.Step(dt); clothSimulationTime += dt; }
+                    if (clothSession != null) { clothWindTime+=dt;UpdateClothWindPreview();clothSession.Step(dt); clothSimulationTime += dt; }
                 });
                 x += 32;
                 if (GUI.Button(new Rect(x, y, 26, 26), new GUIContent("↺", "Reset cloth and motion to the beginning"))) ClothAction(() =>
                 {
-                    clothRunning = false; SampleClothMotion(0); clothSimulationTime = 0;
+                    clothRunning = false; SampleClothMotion(0); clothSimulationTime = 0; clothWindTime=0;
                     clothSession?.Reset(); clothGrabParticle = -1; RefreshClothPickMesh();
                 });
             }
@@ -415,13 +422,17 @@ namespace MashBoxSDK.AnimationStudio
         private void FillCloth(float value)
         {
             EndClothStroke(); Undo.RecordObject(clothProfile, "Fill cloth movement");
-            for (int i = 0; i < clothProfile.motion.Length; i++) clothProfile.motion[i] = value;
+            var values=ClothPaintValues;
+            for (int i = 0; i < values.Length; i++) values[i] = value;
+            UpdateClothWindPreview();
             EditorUtility.SetDirty(clothProfile); viewport?.Repaint();
         }
         private void GenerateClothCapsules()
         {
             if (!clothProfile || clothRig == null) return;
             Undo.RecordObject(clothProfile, "Generate cloth body capsules");
+            if (ApplySharedClothColliderDefaults()) return;
+            StopClothSession();
             var result = new List<ClothBoneCapsule>();
             Transform Bone(HumanBodyBones bone)
             {
@@ -564,6 +575,7 @@ namespace MashBoxSDK.AnimationStudio
         private void BeforeClothScene(SceneView view)
         {
             HandleClothMaterialDrop(view);
+            UpdateClothWindPreview();
             if (view.camera) view.camera.cameraType = CameraType.Preview;
             clothLighting?.ConfigureCamera(view); StudioPreviewLighting.ConfigureStudioBackground(view);
             if (clothLighting != null && view.camera)
@@ -591,6 +603,9 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape) { EndClothStroke(); clothPainting = false; clothTool = 0; viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay); evt.Use(); }
             if (evt.rawType == EventType.MouseUp || evt.type == EventType.Ignore) EndClothStroke();
             if (clothProfile && clothShowColliders && evt.type == EventType.Repaint) DrawClothCapsules();
+#if MashBoxDev
+            if (DrawClothColliderEditorHandles()) return;
+#endif
             bool valid = clothProfile && clothProfile.Matches(MashBoxClothSession.GetMesh(ClothRenderer));
             if (!valid) return;
             var matrix = ClothRenderer.transform.localToWorldMatrix;
@@ -615,18 +630,20 @@ namespace MashBoxSDK.AnimationStudio
                         if (evt.button == 0 && ((evt.type == EventType.MouseDown && HandleUtility.nearestControl == id) || (evt.type == EventType.MouseDrag && GUIUtility.hotControl == id)))
                         {
                             if (!clothStroke) { Undo.IncrementCurrentGroup(); Undo.RegisterCompleteObjectUndo(clothProfile, evt.shift ? "Smooth cloth movement" : "Paint cloth movement"); clothStroke = true; clothControl = id; GUIUtility.hotControl = id; }
-                            if (evt.shift) ClothSmoothTargets(clothProfile.motion, clothPaintNeighbors, clothSmoothTargets);
+                            var values=ClothPaintValues;
+                            if (evt.shift) ClothSmoothTargets(values, clothPaintNeighbors, clothSmoothTargets);
                             // Restrict brush to the hit surface's depth band to avoid painting through the garment.
                             for (int i = 0; i < vertices.Count; i++)
                             {
                                 var offset = matrix.MultiplyPoint3x4(vertices[i]) - point;
                                 float falloff = ClothPaintFalloff(offset, normal, ray.direction, clothBrushRadius, clothPaintThrough);
                                 if (falloff <= 0) continue;
-                                float value = evt.shift ? clothSmoothTargets[i] : clothBrushValue;
-                                float next = Mathf.Lerp(clothProfile.motion[i], value, clothBrushStrength * falloff);
-                                clothProfile.motion[i] = !evt.shift && next < .0005f ? 0 : next;
+                                float value = evt.shift ? clothSmoothTargets[i] : clothFlutterPaint ? clothFlutterValue : clothBrushValue;
+                                float next = Mathf.Lerp(values[i], value, clothBrushStrength * falloff);
+                                values[i] = !evt.shift && next < .0005f ? 0 : next;
                             }
-                            MashBoxClothSeams.Synchronize(clothProfile.motion,clothSeamVertices);
+                            MashBoxClothSeams.Synchronize(values,clothSeamVertices);
+                            if(clothFlutterPaint)UpdateClothWindPreview();
                             EditorUtility.SetDirty(clothProfile); viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay); evt.Use();
                         }
                     }

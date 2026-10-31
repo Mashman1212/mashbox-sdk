@@ -35,14 +35,14 @@ namespace MashBoxSDK.AnimationStudio
                 serialized.FindProperty("stretchCompliance").floatValue = stretch;
                 GUI.changed = true;
             }
-            if (GUILayout.Button(new GUIContent("Flowing", "Soft folds with animation momentum. Sets Follow 0.75, Inertia 0.65, Damping 3, mild wind, and preserves solver quality. Painted weights and collision settings are preserved.")))
+            if (GUILayout.Button(new GUIContent("Flowing", "Soft folds with animation momentum. Sets Follow 0.75, Inertia 0.65, Damping 3, mild wind response, and preserves solver quality. Painted weights and collision settings are preserved.")))
             {
                 serialized.FindProperty("animationFollow").floatValue = .75f;
                 serialized.FindProperty("animationInertia").floatValue = .65f;
                 serialized.FindProperty("damping").floatValue = 3;
                 serialized.FindProperty("bendCompliance").floatValue = .001f;
                 serialized.FindProperty("stretchCompliance").floatValue = .000001f;
-                serialized.FindProperty("wind").vector3Value = new Vector3(0,0,1);
+                serialized.FindProperty("windResponse").floatValue = .25f;
                 serialized.FindProperty("gust").floatValue = .2f;
                 GUI.changed = true;
             }

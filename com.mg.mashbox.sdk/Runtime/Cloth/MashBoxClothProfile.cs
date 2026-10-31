@@ -38,9 +38,12 @@ namespace MashBoxSDK.Cloth
         public float shapeRetention;
         [Range(0, 2), Tooltip("Damping of shape recovery. Around 0.7 settles gently; lower values allow more bounce.")]
         public float shapeDamping = .7f;
+        [Min(0), Tooltip("Response to the shared wind environment. Zero ignores wind.")] public float windResponse = 1;
+        [Min(0), Tooltip("Maximum shader flutter displacement in metres at reference wind speed.")] public float flutterAmplitude = .03f;
+        public float[] flutter = Array.Empty<float>();
         public Vector3 gravity = new Vector3(0, -9.81f, 0);
-        public Vector3 wind = new Vector3(0, 0, 4);
-        [Range(0, 1)] public float gust = .25f;
+        [HideInInspector] public Vector3 wind = new Vector3(0, 0, 4);
+        [HideInInspector, Range(0, 1)] public float gust = .25f;
         [Range(0.001f, .05f)] public float thickness = .008f;
         [Min(.1f)] [HideInInspector] public float teleportDistance = 1;
         [Tooltip("Keep imported smooth shading, updated by the character animation. Cloth folds do not rebuild normals from triangles.")]
@@ -63,6 +66,22 @@ namespace MashBoxSDK.Cloth
         private void OnEnable() => ApplyFixedSettings();
         private void OnValidate() => ApplyFixedSettings();
 
+        public void EnsureFlutter()
+        {
+            if(!sourceMesh || (flutter != null && flutter.Length == sourceMesh.vertexCount))return;
+            var colors=sourceMesh.colors;
+            flutter=new float[sourceMesh.vertexCount];
+            for(int i=0;i<flutter.Length;i++)flutter[i]=colors.Length==flutter.Length?Mathf.Clamp01(colors[i].r):0;
+        }
+        public void ApplyFlutter(Mesh mesh)
+        {
+            EnsureFlutter();
+            if(!mesh || flutter.Length!=mesh.vertexCount)return;
+            var colors=mesh.colors;
+            if(colors.Length!=mesh.vertexCount){colors=new Color[mesh.vertexCount];for(int i=0;i<colors.Length;i++)colors[i]=Color.white;}
+            for(int i=0;i<colors.Length;i++)colors[i].r=Mathf.Clamp01(flutter[i]);
+            mesh.colors=colors;
+        }
         public bool Matches(Mesh mesh) => mesh && sourceMesh == mesh && motion != null && motion.Length == mesh.vertexCount;
 
         public void Initialize(Mesh mesh)
@@ -71,6 +90,7 @@ namespace MashBoxSDK.Cloth
             sourceMesh = mesh;
             var vertices = mesh.vertices;
             motion = new float[vertices.Length];
+            EnsureFlutter();
             // A usable starting point; users paint garment-specific attachment regions.
             float pinHeight = mesh.bounds.max.y - mesh.bounds.size.y * .15f;
             for (int i = 0; i < motion.Length; i++) motion[i] = vertices[i].y >= pinHeight ? 0 : .15f;

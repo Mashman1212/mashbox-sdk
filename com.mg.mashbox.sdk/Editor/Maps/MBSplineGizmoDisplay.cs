@@ -34,6 +34,8 @@ namespace MashBoxSDK.MapTools
         private struct CurveBounds
         {
             public Vector3[] Positions;
+            public Vector3[] DisplayPositions;
+            public float Tolerance;
             public Bounds Bounds;
         }
 
@@ -141,9 +143,6 @@ namespace MashBoxSDK.MapTools
             if (!ownsDrawing || !sceneView.drawGizmos || sceneView.camera == null || current == null) return;
             // Respect the user handing drawing back to Unity's Gizmos menu.
             if (GizmoUtility.TryGetGizmoInfo(typeof(SplineContainer), out var info) && info.gizmoEnabled) return;
-            bool processCurves = current.type == EventType.Repaint || current.type == EventType.Layout
-                || current.type == EventType.MouseMove;
-
             using var drawSample = DrawMarker.Auto();
             RefreshSources();
             GeometryUtility.CalculateFrustumPlanes(sceneView.camera, Frustum);
@@ -153,6 +152,10 @@ namespace MashBoxSDK.MapTools
             // not convert a Shift-click on a knot into GameObject selection.
             bool authoringOwnsPicking = MBEditorToolState.ActiveEditing
                 && (SplineToolWindow.HasActiveSceneTool || MultiSplineLoftWindow.HasActiveSceneTool);
+            bool canPick = !authoringOwnsPicking && !current.alt && !Tools.viewToolActive
+                && GUIUtility.hotControl == 0 && current.button == 0;
+            bool processCurves = current.type == EventType.Repaint
+                || canPick && (current.type == EventType.Layout || current.type == EventType.MouseMove);
             Color splineColor = UnityColorValue?.GetValue(UnityColorSetting) is Color color ? color : Color.blue;
             var previousZTest = Handles.zTest;
             try
@@ -184,7 +187,10 @@ namespace MashBoxSDK.MapTools
                         {
                             if (spline == null || spline.Count < 2) continue;
                             GetCachedPositions(spline, out var positions);
-                            if (!IntersectsView(spline, positions, matrix)) continue;
+                            if (positions.Length < 2) continue;
+                            var curve = GetDisplayCurve(spline, positions, matrix);
+                            if (!IntersectsView(curve.Bounds, matrix)) continue;
+                            positions = curve.DisplayPositions;
                             if (current.type == EventType.Repaint)
                             {
                                 // Trail guides often lie on/below displaced ground.
@@ -194,7 +200,8 @@ namespace MashBoxSDK.MapTools
                                 else Handles.DrawPolyLine(positions);
                             }
                             else if ((current.type == EventType.Layout || current.type == EventType.MouseMove)
-                                && !authoringOwnsPicking && !SceneVisibilityManager.instance.IsPickingDisabled(go))
+                                && canPick && !SceneVisibilityManager.instance.IsPickingDisabled(go)
+                                && IsNearCurveBounds(curve.Bounds, matrix, sceneView.camera, current.mousePosition))
                             {
                                 float distance = float.MaxValue;
                                 for (int i = 1; i < positions.Length; i++)
@@ -222,24 +229,61 @@ namespace MashBoxSDK.MapTools
             finally { Handles.zTest = previousZTest; }
         }
 
-        private static bool IntersectsView(Spline spline, Vector3[] positions, Matrix4x4 matrix)
+        private static CurveBounds GetDisplayCurve(Spline spline, Vector3[] positions, Matrix4x4 matrix)
         {
-            if (positions.Length == 0) return false;
-            if (!BoundsCache.TryGetValue(spline, out var cached) || cached.Positions != positions)
+            // Keep the display within 2.5 cm of Unity's sampled curve in world
+            // space, without submitting and hit-testing every native curve sample.
+            // Scale changes must invalidate this local-space simplification too.
+            // The Frobenius norm also bounds stretch from sheared parent transforms.
+            float scale = Mathf.Sqrt(matrix.MultiplyVector(Vector3.right).sqrMagnitude
+                + matrix.MultiplyVector(Vector3.up).sqrMagnitude + matrix.MultiplyVector(Vector3.forward).sqrMagnitude);
+            float tolerance = 0.025f / Mathf.Max(scale, 0.0001f);
+            if (!BoundsCache.TryGetValue(spline, out var cached) || cached.Positions != positions
+                || !Mathf.Approximately(cached.Tolerance, tolerance))
             {
-                var bounds = new Bounds(positions[0], Vector3.zero);
+                var bounds = new Bounds(positions.Length > 0 ? positions[0] : Vector3.zero, Vector3.zero);
                 for (int i = 1; i < positions.Length; i++) bounds.Encapsulate(positions[i]);
-                cached = new CurveBounds { Positions = positions, Bounds = bounds };
+                var simplified = new List<Vector3>();
+                if (positions.Length > 1)
+                    LineUtility.Simplify(new List<Vector3>(positions), tolerance, simplified);
+                cached = new CurveBounds { Positions = positions, Bounds = bounds,
+                    DisplayPositions = simplified.ToArray(), Tolerance = tolerance };
                 BoundsCache[spline] = cached;
             }
-            var extents = cached.Bounds.extents;
+            return cached;
+        }
+
+        private static bool IsNearCurveBounds(Bounds bounds, Matrix4x4 matrix, Camera camera, Vector2 mouse)
+        {
+            Vector2 min = new Vector2(float.MaxValue, float.MaxValue);
+            Vector2 max = new Vector2(float.MinValue, float.MinValue);
+            // Depth uses world space; GUI projection uses the caller's Handles matrix.
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = bounds.center + Vector3.Scale(bounds.extents,
+                    new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                Vector3 world = matrix.MultiplyPoint3x4(corner);
+                // A box crossing the near plane cannot be rejected by its projection.
+                if (camera.WorldToViewportPoint(world).z <= camera.nearClipPlane) return true;
+                Vector2 point = HandleUtility.WorldToGUIPoint(corner);
+                min = Vector2.Min(min, point);
+                max = Vector2.Max(max, point);
+            }
+            const float padding = 10f;
+            return mouse.x >= min.x - padding && mouse.x <= max.x + padding
+                && mouse.y >= min.y - padding && mouse.y <= max.y + padding;
+        }
+
+        private static bool IntersectsView(Bounds bounds, Matrix4x4 matrix)
+        {
+            var extents = bounds.extents;
             var x = matrix.MultiplyVector(new Vector3(extents.x, 0, 0));
             var y = matrix.MultiplyVector(new Vector3(0, extents.y, 0));
             var z = matrix.MultiplyVector(new Vector3(0, 0, extents.z));
             var worldExtents = new Vector3(Mathf.Abs(x.x) + Mathf.Abs(y.x) + Mathf.Abs(z.x),
                 Mathf.Abs(x.y) + Mathf.Abs(y.y) + Mathf.Abs(z.y), Mathf.Abs(x.z) + Mathf.Abs(y.z) + Mathf.Abs(z.z));
             return GeometryUtility.TestPlanesAABB(Frustum,
-                new Bounds(matrix.MultiplyPoint3x4(cached.Bounds.center), worldExtents * 2f));
+                new Bounds(matrix.MultiplyPoint3x4(bounds.center), worldExtents * 2f));
         }
     }
 }

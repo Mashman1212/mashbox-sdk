@@ -78,10 +78,11 @@ namespace MashBoxSDK.AnimationStudio
         private void SavePartFbxAs(StudioSkinningDocument.Part part)
         {
             string sourceAsset=AssetDatabase.GetAssetPath(part.sourceMesh);
-            string suggested=AssetDatabase.GenerateUniqueAssetPath("Assets/"+Path.GetFileNameWithoutExtension(part.name)+".fbx");
+            string rootName=string.IsNullOrEmpty(sourceAsset)?part.name:Path.GetFileNameWithoutExtension(sourceAsset);
+            string suggested=rootName+".fbx";
             while (true)
             {
-                string path=EditorUtility.SaveFilePanelInProject("Save FBX As",Path.GetFileNameWithoutExtension(suggested),"fbx","Save a new FBX, or choose the linked source to update it.");
+                string path=EditorUtility.SaveFilePanelInProject("Save FBX As",Path.GetFileNameWithoutExtension(suggested),"fbx","Save an FBX, or choose an existing FBX to overwrite it.");
                 if (string.IsNullOrEmpty(path)) return;
                 bool exists=File.Exists(Path.GetFullPath(path))||File.Exists(Path.GetFullPath(path)+".meta");
                 if (!exists) { SavePartFbx(part,path); return; }
@@ -93,15 +94,19 @@ namespace MashBoxSDK.AnimationStudio
                     SavePartFbx(part);return;
                 }
                 string copy=AssetDatabase.GenerateUniqueAssetPath(path);
-                int choice=EditorUtility.DisplayDialogComplex("FBX filename already exists",
-                    "This filename is already in use. Save your edited mesh as "+Path.GetFileName(copy)+" instead? The existing file will stay unchanged.",
-                    "Save New Copy","Cancel","Choose Another Name");
+                if(HasTutorial)
+                {
+                    if(EditorUtility.DisplayDialog("Practice export", "Save a new copy as "+Path.GetFileName(copy)+"?", "Save New Copy", "Cancel")) SavePartFbx(part,copy);
+                    return;
+                }
+                int choice=EditorUtility.DisplayDialogComplex("Overwrite FBX?",
+                    "Replace "+Path.GetFileName(path)+" with this edited mesh and rig? A backup is kept and restored if validation fails. References to parts absent from the replacement may no longer resolve.",
+                    "Overwrite","Cancel","Save New Copy");
                 if(choice==1)return;
-                if(choice==0){SavePartFbx(part,copy);return;}
-                suggested=copy;
+                SavePartFbx(part,choice==0?path:copy,choice==0);return;
             }
         }
-        private void SavePartFbx(StudioSkinningDocument.Part part, string saveAsPath = null)
+        private void SavePartFbx(StudioSkinningDocument.Part part, string saveAsPath = null, bool overwrite = false)
         {
             if(HasTutorial && string.IsNullOrEmpty(saveAsPath))
                 throw new InvalidOperationException("Practice keeps source assets unchanged. Select the editable garment and use Save FBX As.");
@@ -113,7 +118,10 @@ namespace MashBoxSDK.AnimationStudio
             string sourcePath = saveAs ? null : PhysicalFbxPath(assetPath);
             string destination = saveAs ? Path.GetFullPath(saveAsPath) : sourcePath;
             string importPath = saveAs ? saveAsPath : assetPath;
-            if (!saveAs && AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<AnimationClip>().Any(c => !c.name.StartsWith("__preview__", StringComparison.Ordinal)))
+            bool replacingExisting = !saveAs || overwrite;
+            if (overwrite && (!File.Exists(destination) || !string.Equals(Path.GetExtension(importPath), ".fbx", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("Choose an existing FBX to overwrite.");
+            if (replacingExisting && AssetDatabase.LoadAllAssetsAtPath(importPath).OfType<AnimationClip>().Any(c => !c.name.StartsWith("__preview__", StringComparison.Ordinal)))
                 throw new InvalidOperationException("This FBX contains animation clips. Saving clothing over an animated FBX is not supported; no file was changed.");
             var source = saveAs ? null : AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
             var sourceIds = (saveAs ? Array.Empty<Object>() : AssetDatabase.LoadAllAssetsAtPath(assetPath)).Where(a => a && !a.name.StartsWith("__preview__", StringComparison.Ordinal)).Select(AssetIdentity).ToArray();
@@ -250,7 +258,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 ExportClothingFbx(staged, exportRoot, !exportRoot.GetComponent<Renderer>());
                 if (!File.Exists(staged) || new FileInfo(staged).Length == 0) throw new IOException("FBX export produced no data.");
-                if (saveAs)
+                if (!replacingExisting)
                 {
                     File.Copy(staged,destination,false); replaced=true;
 
@@ -304,12 +312,12 @@ namespace MashBoxSDK.AnimationStudio
                     }
                 }
                 finally { Object.DestroyImmediate(check); }
-                if (part.role == StudioSkinningDocument.MeshRole.Clothing && part.customCulling &&
-                    EditorUtility.DisplayDialog("Create culling prefab?",
-                        "The FBX has been saved. This clothing has custom culling data, which an FBX cannot store.\n\n" +
-                        "Also create a rigged prefab with its culling data beside the FBX? This saves a prefab and a culling data asset. Equip the prefab in game to use the custom culling.\n\n" +
+                if (part.role == StudioSkinningDocument.MeshRole.Clothing && (part.customCulling || part.cullingAssigned || part.cullingPreset) &&
+                    EditorUtility.DisplayDialog("Save clothing prefab?",
+                        "The FBX has been saved. Its culling settings need a prefab.\n\n" +
+                        "Save " + Path.GetFileNameWithoutExtension(importPath) + ".prefab beside the FBX? Custom masks use a separate .culling.asset; preset settings keep their existing asset reference. Equip the prefab in game to use culling.\n\n" +
                         "FBX Only leaves any existing culling prefab and data unchanged.",
-                        "Create Prefab", "FBX Only"))
+                        "Save Prefab", "FBX Only"))
                     ExportCullingCompanion(part,importPath);
                 part.sourceMesh = savedRenderer.sharedMesh;
                 part.sourceRendererPath = AnimationUtility.CalculateTransformPath(savedRenderer.transform,savedModel.transform);
@@ -317,13 +325,13 @@ namespace MashBoxSDK.AnimationStudio
                 EditorUtility.SetDirty(Document);
                 EditorGUIUtility.PingObject(savedModel);
                 lastView?.ShowNotification(new GUIContent("Saved " + Path.GetFileName(destination)));
-                Debug.Log(saveAs ? "Saved clothing copy to " + importPath + ". Future Save FBX uses this copy; original unchanged." : "Saved selected clothing to " + assetPath + ". Original FBX backup: " + backup);
+                Debug.Log(overwrite ? "Replaced " + importPath + ". Original FBX backup: " + backup : saveAs ? "Saved clothing copy to " + importPath + ". Future Save FBX uses this copy; original unchanged." : "Saved selected clothing to " + assetPath + ". Original FBX backup: " + backup);
             }
             catch (Exception e)
             {
                 if (replaced)
                 {
-                    if(saveAs)
+                    if(!replacingExisting)
                     {
                         AssetDatabase.DeleteAsset(importPath);
                         if(File.Exists(destination)) File.Delete(destination);
@@ -332,7 +340,7 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     File.Copy(backup, swap, true); File.Replace(swap, destination, null);
                     if (File.Exists(metaBackup)) File.Copy(metaBackup, destination + ".meta", true);
-                    AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                    AssetDatabase.ImportAsset(importPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                     throw new InvalidOperationException(e.GetBaseException().Message + " The original FBX was restored; your Studio edits are still open.", e);
                 }
                 throw;

@@ -33,6 +33,13 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
             EditorGUI.BeginChangeCheck();
             
             base.OnMaterialGUI(materialEditor, props);
+            var flutter=FindProperty("_MGFlutterAmplitude",props,false);
+            if(flutter!=null)
+            {
+                GUILayout.Label("WIND FLUTTER",EditorStyles.boldLabel);
+                materialEditor.ShaderProperty(flutter,"Flutter amplitude (m)");
+                EditorGUILayout.HelpBox("Vertex red controls flutter: 0 = still, 1 = full. Uses MashBox Global Wind. Paint the mask in Cloth Studio.",MessageType.None);
+            }
             
             if (EditorGUI.EndChangeCheck())
             {

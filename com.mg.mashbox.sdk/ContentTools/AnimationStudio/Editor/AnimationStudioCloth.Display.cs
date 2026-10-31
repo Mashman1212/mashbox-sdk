@@ -82,7 +82,8 @@ namespace MashBoxSDK.AnimationStudio
                 using (new EditorGUI.DisabledScope(!CanSimulateCloth))
                     if (ClothToolbarButton(2, clothPainting, "Paint movement limits — toggle painting. Ctrl + middle-drag or [ / ] changes brush size."))
                     {
-                        EndClothStroke(); clothPainting = !clothPainting;
+                        bool wasMovement=clothPainting&&!clothFlutterPaint;
+                        EndClothStroke(); clothFlutterPaint=false; clothPainting = !wasMovement;
                         if (clothPainting) clothTool = 0;
                         viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);
                     }
@@ -94,6 +95,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (clothTool == 1) clothPainting = false;
                         viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Overlay);
                     }
+                DrawClothWindToolbar();
                 GUILayout.FlexibleSpace();
             }
         }

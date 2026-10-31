@@ -260,7 +260,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(part.role!=StudioSkinningDocument.MeshRole.Clothing || (!part.cullingAssigned && !part.customCulling && !part.cullingPreset))return;
             string stem=Path.ChangeExtension(fbxPath,null);
-            string prefabPath=stem+".culling.prefab",profilePath=stem+".culling.asset";
+            string prefabPath=stem+".prefab",profilePath=stem+".culling.asset";
             var existing=AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if(AssetDatabase.LoadMainAssetAtPath(prefabPath) && (!existing || !existing.GetComponent<ClothingCullingSettings>()))
                 throw new InvalidOperationException("Another prefab already occupies the culling export path: "+prefabPath);
@@ -270,6 +270,7 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 instance=(GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath),scene);
+                instance.name=Path.GetFileNameWithoutExtension(fbxPath);
                 AttachExportCulling(instance,part,profilePath);
                 if(!PrefabUtility.SaveAsPrefabAsset(instance,prefabPath))throw new InvalidOperationException("Unity could not save the culling companion prefab.");
             }

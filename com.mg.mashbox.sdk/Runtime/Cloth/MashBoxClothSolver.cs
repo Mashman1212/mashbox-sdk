@@ -105,7 +105,7 @@ namespace MashBoxSDK.Cloth
             GrabbedParticle = -1;
         }
 
-        public void Step(float dt, float time, MashBoxClothProfile settings, ClothCapsule[] colliders, int count, ulong[] masks = null)
+        public void Step(float dt, float time, MashBoxClothProfile settings, ClothCapsule[] colliders, int count, ulong[] masks = null, Vector3? windVelocity = null)
         {
             for(int i=0;i<ParticleCount;i++)collisionMasks[i]=masks!=null&&masks.Length==ParticleCount?masks[i]:ulong.MaxValue;
             float stepTime = math.clamp(dt, .0001f, .066667f);
@@ -158,8 +158,8 @@ namespace MashBoxSDK.Cloth
                 stretch = math.max(0, settings.stretchCompliance), bend = math.max(0, settings.bendCompliance),
                 follow = math.saturate(settings.animationFollow),
                 shapeRetention = math.saturate(settings.shapeRetention), shapeDamping = math.clamp(settings.shapeDamping, 0, 2),
-                damping = math.max(0, settings.damping), gravity = settings.gravity, wind = settings.wind,
-                gust = math.saturate(settings.gust), thickness = math.max(0, settings.thickness),
+                damping = math.max(0, settings.damping), gravity = settings.gravity, wind = (windVelocity ?? MashBoxWind.Current.Sample(time)) * math.max(0, settings.windResponse),
+                gust = 0, thickness = math.max(0, settings.thickness),
                 grab = GrabbedParticle, grabPosition = GrabPosition,
                 grabStart = grabStart, grabWeight = grabWeight, grabDelta = GrabPosition - grabOrigin,
                 friction = math.saturate(settings.collisionFriction)

@@ -51,7 +51,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             var icon=new Rect(row.x+4,row.center.y-8,16,16);
             GUI.Label(new Rect(row.x+26,row.y,Mathf.Max(0,row.width-(part.HasStitchWeightLock ? 92 : 70)),row.height),
-                new GUIContent(part.referenceOnly ? (!string.IsNullOrEmpty(part.defaultReferenceLabel) ? part.defaultReferenceLabel : part.role == StudioSkinningDocument.MeshRole.Body ? "Default Body" : part.role == StudioSkinningDocument.MeshRole.Bust ? "Default Bust" : "Default Pants") : part.name,
+                new GUIContent(part.referenceOnly ? (!string.IsNullOrEmpty(part.defaultReferenceLabel) ? part.defaultReferenceLabel : part.role == StudioSkinningDocument.MeshRole.Body ? "Default Body" : part.role == StudioSkinningDocument.MeshRole.Bust ? "Default Bust" : "Default Pants") : StudioImportedMeshLabel.Get(part.name, part.sourceMesh),
                     part.role + (part.referenceOnly ? " — locked default reference: " + part.name : "")),StudioTheme.Styles.label);
             if(part.referenceOnly) GUI.Label(new Rect(row.xMax-20,row.center.y-8,16,16),new GUIContent(EditorGUIUtility.IconContent("LockIcon-On").image,"Locked default reference"));
             if (part.HasStitchWeightLock)
