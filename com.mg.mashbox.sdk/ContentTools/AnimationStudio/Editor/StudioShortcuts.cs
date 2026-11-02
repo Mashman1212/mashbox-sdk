@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -10,7 +10,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         Select, Move, Rotate, Scale, Pivot, Frame, Object, Vertex, Edge, Face,
         Save, SaveAs, Duplicate, Delete, Extrude, Undo, Redo, Cancel, CommitCut, RemoveCut,
-        VertexSnap, GridSnap, LargerHandles, SmallerHandles, Maximize, Preferences,
+        VertexSnap, EdgeSnap, GridSnap, LargerHandles, SmallerHandles, Maximize, Preferences,
         Orbit, Pan, Dolly, MarkingMenu, FrameAllUV, SelectAll, AxisMenu, XRay, PaintSelection, UnpaintSelection
     }
     [Flags] internal enum StudioModifiers { None = 0, Shift = 1, Action = 2, Alt = 4 }
@@ -125,6 +125,7 @@ namespace MashBoxSDK.AnimationStudio
             new Definition(StudioShortcut.CommitCut,"Cut tool","Apply cut path",Key(KeyCode.Return,any:true),Key(KeyCode.KeypadEnter,any:true)),
             new Definition(StudioShortcut.RemoveCut,"Cut tool","Remove last cut segment",Key(KeyCode.Backspace,any:true)),
             new Definition(StudioShortcut.VertexSnap,"Snapping (hold)","Vertex snap",Key(KeyCode.V,shift:true)),
+            new Definition(StudioShortcut.EdgeSnap,"Snapping (hold)","Edge snap",Key(KeyCode.C,shift:true)),
             new Definition(StudioShortcut.GridSnap,"Snapping (hold)","Grid snap",Key(KeyCode.X,shift:true)),
             new Definition(StudioShortcut.Orbit,"Mouse navigation","Orbit",Key(KeyCode.Mouse0,StudioModifiers.Alt,shift:true)),
             new Definition(StudioShortcut.Pan,"Mouse navigation","Pan",Key(KeyCode.Mouse2,StudioModifiers.Alt,shift:true)),

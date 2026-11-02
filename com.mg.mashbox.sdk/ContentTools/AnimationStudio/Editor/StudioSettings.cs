@@ -60,7 +60,7 @@ namespace MashBoxSDK.AnimationStudio
             value.sceneBackground = CleanColor(value.sceneBackground, new Color32(71,71,71,255));
             value.customPrimary = CleanColor(value.customPrimary,new Color(.18f,.22f,.25f,1));
             value.customSecondary = CleanColor(value.customSecondary,new Color(.85f,.70f,.47f,1));
-            value.gridSpacing = Clamp(value.gridSpacing, .01f, 10, .25f);
+            value.gridSpacing = Clamp(value.gridSpacing, .000001f, 1000000, .25f);
             value.gridOpacity = Clamp(value.gridOpacity, 0, 1, 1);
             value.uvPointSize = Clamp(value.uvPointSize, 2, 8, 4);
             value.toolbarIconSize = value.toolbarIconSize == 16 ? 16 : 24;
@@ -95,23 +95,9 @@ namespace MashBoxSDK.AnimationStudio
 
     internal sealed class StudioSettingsWindow : EditorWindow
     {
-        private Vector2 scroll;
-        internal static void Open()
+        internal static void Open() => StudioControlsPreferences.OpenThemes();
+        private static void DrawThemes()
         {
-            var window = GetWindow<StudioSettingsWindow>(true, "MashBox Studio Themes", true);
-            window.minSize = new Vector2(440, 320); StudioWindowOwnership.ShowUtility(window);
-        }
-        private void OnGUI()
-        {
-            using (StudioTheme.Scope()) DrawSettings();
-        }
-        private void DrawSettings()
-        {
-            EditorGUI.DrawRect(new Rect(Vector2.zero, position.size), StudioTheme.Current.Panel);
-            scroll = EditorGUILayout.BeginScrollView(scroll);
-            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.inspectorDefaultMargins))
-            {
-                GUILayout.Label("Themes", StudioTheme.Styles.boldLabel);
                 GUILayout.Label("Choose a palette. Changes apply immediately to MashBox Studio and its tool windows.", StudioTheme.Styles.wordWrappedMiniLabel);
                 GUILayout.Space(8);
                 for (int i = 0; i < StudioTheme.Palettes.Length; i += 2)
@@ -147,14 +133,12 @@ namespace MashBoxSDK.AnimationStudio
                     settings.sceneBackground = defaults.sceneBackground;
                     StudioSettings.Save();
                 }
-            }
-            EditorGUILayout.EndScrollView();
         }
         internal static void DrawGeneralSettings()=>DrawPreferencePage(0);
         private static GUIStyle preferenceSectionStyle;
         private static void PreferenceSection(string title,Action draw)
         {
-            GUILayout.Label(title,EditorStyles.boldLabel);
+            if(!string.IsNullOrEmpty(title))GUILayout.Label(title,StudioControlsPreferences.SectionTitleStyle);
             if(preferenceSectionStyle==null)preferenceSectionStyle=new GUIStyle(EditorStyles.helpBox)
             {
                 // Native dropdown/button art extends 2px below its layout rect.
@@ -176,6 +160,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 case 0:
                     PreferenceSection("Window and toolbars",()=>{DrawWindowMode();DrawToolbarIconSize();});
+                    PreferenceSection("Scene Units",StudioSceneUnits.DrawPreference);
                     PreferenceSection("Editing",()=>{
                         EditorGUI.BeginChangeCheck();
                         int undoLimit=EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions","Studio actions retained across Undo and Redo. One complete drag or tool operation counts as one action."),settings.undoLimit);
@@ -188,7 +173,8 @@ namespace MashBoxSDK.AnimationStudio
                     PreferenceSection("Image quality",()=>{DrawViewportAntialiasing();DrawViewportVSync();});
                     PreferenceSection("Grid",()=>{
                         EditorGUI.BeginChangeCheck();
-                        settings.gridSpacing=EditorGUILayout.FloatField(new GUIContent("Grid spacing","Distance between minor grid lines, in world units."),settings.gridSpacing);
+                        float gridSpacing=StudioSceneUnits.Field("Grid spacing",StudioSceneUnits.GridSpacing);
+                        if(gridSpacing!=StudioSceneUnits.GridSpacing)StudioSceneUnits.SetGrid(gridSpacing);
                         settings.gridOpacity=EditorGUILayout.Slider("Grid opacity",settings.gridOpacity,0,1);
                         if(EditorGUI.EndChangeCheck())StudioSettings.Save();
                     });
@@ -201,12 +187,7 @@ namespace MashBoxSDK.AnimationStudio
                     });
                     break;
                 case 3:
-                    PreferenceSection("Color theme",()=>{
-                        EditorGUILayout.LabelField("Current theme",StudioTheme.Current.Name);
-                        GUILayout.Label("Themes apply to Studio and its tool windows. The custom theme derives the remaining colors from your primary and secondary choices.",EditorStyles.wordWrappedMiniLabel);
-                        GUILayout.Space(8);
-                        if(GUILayout.Button("Open Themes…",GUILayout.Width(150)))StudioSettingsWindow.Open();
-                    });
+                    PreferenceSection(null,DrawThemes);
                     break;
                 case 5:
                     PreferenceSection("Settings and hotkey files",StudioPreferenceStore.DrawTransferButtons);
@@ -218,7 +199,7 @@ namespace MashBoxSDK.AnimationStudio
                     break;
             }
         }
-        private void DrawPalette(StudioTheme.Palette palette)
+        private static void DrawPalette(StudioTheme.Palette palette)
         {
             bool active = StudioSettings.Current.theme == palette.Id;
             var rect = GUILayoutUtility.GetRect(170, 39, GUILayout.ExpandWidth(true));

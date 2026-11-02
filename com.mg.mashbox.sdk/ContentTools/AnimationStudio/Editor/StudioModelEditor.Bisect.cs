@@ -41,7 +41,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EditorGUIUtility.labelWidth=145;
             EditorGUI.BeginChangeCheck();
-            float distance=EditorGUILayout.FloatField(new GUIContent("Bisect Distance","Full world-space gap in meters. 0.01 is one centimeter; zero separates without a gap."),BisectDistance);
+            float distance=StudioSceneUnits.Field(new GUIContent("Bisect Distance","Full world-space gap in the selected scene units; zero separates without a gap."),BisectDistance);
             bool fill=EditorGUILayout.Toggle("Fill",BisectFill);
             if(EditorGUI.EndChangeCheck()&&!float.IsNaN(distance)&&!float.IsInfinity(distance))
             {

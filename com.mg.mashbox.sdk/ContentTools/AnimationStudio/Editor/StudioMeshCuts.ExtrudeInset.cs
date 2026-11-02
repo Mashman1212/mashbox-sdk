@@ -75,6 +75,65 @@ namespace MashBoxSDK.AnimationStudio
                 }while(current!=seed);
                 loops.Add(loop);
             }
+            // Curved connected regions have no single valid projection plane.
+            // Offset their boundary in the local surface tangent plane instead;
+            // retain shared canonical trajectories across render seams.
+            var curvedEdges=new HashSet<int>();
+            foreach(var loop in loops)
+            {
+                var region=loop.Select(i=>boundary[i]).ToArray();
+                var first=region[0];var normal=normals[first.face];var origin=Positions[first.a];
+                float extent=region.Max(e=>(Positions[e.a]-origin).magnitude);
+                if(region.Any(e=>Vector3.Dot(normal,normals[e.face])<.99999f||Mathf.Abs(Vector3.Dot(Positions[e.a]-origin,normal))>Mathf.Max(1e-5f,extent*1e-5f)))
+                    foreach(int id in loop)curvedEdges.Add(id);
+            }
+            if(curvedEdges.Count>0)
+            {
+                var constraints=new Dictionary<(int,int),List<(Vector3 inward,Vector3 normal)>>();
+                foreach(var edge in curvedEdges.Select(i=>boundary[i]))
+                {
+                    var normal=normals[edge.face];
+                    var inward=Vector3.Cross(normal,(Positions[edge.b]-Positions[edge.a]).normalized).normalized;
+                    foreach(int v in new[]{edge.a,edge.b})
+                    {
+                        var key=(group(edge.face),canonical(v));
+                        if(!constraints.TryGetValue(key,out var list))constraints[key]=list=new List<(Vector3,Vector3)>();
+                        list.Add((inward,normal));
+                    }
+                }
+                foreach(var pair in constraints)
+                {
+                    var c=pair.Value;
+                    if(c.Count!=2)throw new InvalidOperationException("Inset needs an unbranched surface boundary.");
+                    var normal=(c[0].normal+c[1].normal).normalized;
+                    if(normal.sqrMagnitude<.5f)throw new InvalidOperationException("Inset surface normals cancel at a boundary corner.");
+                    var a=Vector3.ProjectOnPlane(c[0].inward,normal);
+                    var b=Vector3.ProjectOnPlane(c[1].inward,normal);
+                    float aa=Vector3.Dot(a,a),bb=Vector3.Dot(b,b),ab=Vector3.Dot(a,b);
+                    float determinant=aa*bb-ab*ab;
+                    Vector3 direction;
+                    if(determinant>1e-6f*aa*bb)
+                        direction=(a*(ab-bb)+b*(ab-aa))/determinant;
+                    else
+                    {
+                        var average=(a+b)*.5f;float denominator=Vector3.Dot(average,a);
+                        if(denominator<1e-6f)throw new InvalidOperationException("Inset boundary directions cancel at a surface corner.");
+                        direction=-average/denominator;
+                    }
+                    if(float.IsNaN(direction.sqrMagnitude)||float.IsInfinity(direction.sqrMagnitude))
+                        throw new InvalidOperationException("Inset produced an unstable surface corner.");
+                    plan.Directions[pair.Key]=direction;
+                }
+                foreach(var edge in curvedEdges.Select(i=>boundary[i]))
+                {
+                    var delta=Positions[edge.b]-Positions[edge.a];
+                    var velocity=plan.Directions[(group(edge.face),canonical(edge.b))]-plan.Directions[(group(edge.face),canonical(edge.a))];
+                    float rate=Vector3.Dot(delta.normalized,velocity);
+                    if(rate< -1e-6f)plan.PositiveInsetLimit=Mathf.Min(plan.PositiveInsetLimit,-delta.magnitude/rate);
+                    if(rate>1e-6f)plan.NegativeInsetLimit=Mathf.Min(plan.NegativeInsetLimit,delta.magnitude/rate);
+                }
+                loops.RemoveAll(loop=>curvedEdges.Contains(loop[0]));
+            }
             // Separate planar charts; holes and disjoint contours on one chart
             // enter one graph, preserving their winding and mutual collisions.
             while(loops.Count>0)

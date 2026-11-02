@@ -106,7 +106,9 @@ namespace MashBoxSDK.AnimationStudio
             label.style.whiteSpace = WhiteSpace.Normal;
             label.style.unityTextAlign = TextAnchor.MiddleCenter;
             label.style.fontSize = 13;
-            label.style.backgroundColor = StudioTheme.Current.Header;
+            var background = Color.Lerp(StudioTheme.Current.Header, Color.white, .18f);
+            background.a = .8f;
+            label.style.backgroundColor = background;
             label.style.color = StudioTheme.Current.Text;
             label.style.borderTopLeftRadius = label.style.borderTopRightRadius = 4;
             label.style.borderBottomLeftRadius = label.style.borderBottomRightRadius = 4;
@@ -493,7 +495,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Handles.matrix = Matrix4x4.identity;
                 Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
-                float spacing = StudioSettings.Current.gridSpacing;
+                float spacing = StudioSceneUnits.GridSpacing;
                 const int steps = 40;
                 float extent = steps * spacing;
                 // Fixed, bounded geometry: no scene objects, asset writes, or picking controls.

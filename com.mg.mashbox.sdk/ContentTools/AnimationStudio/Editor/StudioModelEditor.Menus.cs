@@ -55,7 +55,8 @@ namespace MashBoxSDK.AnimationStudio
                     break; }
                 case "View": {
                     if (view is MashBoxStudioViewport gridView)
-                        menu.AddItem(new GUIContent("Grid"), gridView.modelGridVisible, () => gridView.SetModelGridVisible(!gridView.modelGridVisible));
+                        menu.AddItem(new GUIContent("Grid/Toggle"), gridView.modelGridVisible, () => gridView.SetModelGridVisible(!gridView.modelGridVisible), commandKey: "Grid");
+                    menu.AddItem(new GUIContent("Grid/Reset"), false, StudioSceneUnits.ResetGrid);
                     menu.AddItem(new GUIContent("Wireframe"), ModelDrawMode==DrawCameraMode.Wireframe, () => SetModelDrawModeEnabled(view,DrawCameraMode.Wireframe,ModelDrawMode!=DrawCameraMode.Wireframe));
                     menu.AddItem(new GUIContent("Shaded Wireframe"), ModelDrawMode==DrawCameraMode.TexturedWire, () => SetModelDrawModeEnabled(view,DrawCameraMode.TexturedWire,ModelDrawMode!=DrawCameraMode.TexturedWire));
                     menu.AddSeparator("");
@@ -67,7 +68,6 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("X-ray Mode"), displayXray, () => SetXRayMode(!displayXray));
                     break; }
                 case "Window": {
-                    menu.AddItem(new GUIContent("Themes…"), false, StudioSettingsWindow.Open, shortcutEligible: false);
                     menu.AddItem(new GUIContent("Material Library"), StudioMaterialLibrary.Visible, () => StudioMaterialLibrary.Toggle(view as MashBoxStudioViewport), shortcutEligible: false);
                     break; }
                 case "Display": {
@@ -111,6 +111,13 @@ namespace MashBoxSDK.AnimationStudio
                 case "Select": {
                     AddAction(menu, "All", MarkingAction.SelectAll, view); AddAction(menu, "Deselect", MarkingAction.Clear, view);
                     AddCommand(menu, "Invert Selection", Document && (mode == ComponentMode.Object || ActiveMesh), InvertSelection);
+                    AddCommand(menu, "Convert Selection/To Vertices/To Vertices", true, () => ConvertSelection(ComponentMode.Vertex), commandKey: "Convert Selection/Vertices");
+                    AddCommand(menu, "Convert Selection/To Vertices/To Perimeter Vertices", true, () => ConvertSelection(ComponentMode.Vertex,true), commandKey: "Convert Selection/To Perimeter Vertices");
+                    AddCommand(menu, "Convert Selection/To Edges/To Edges", true, () => ConvertSelection(ComponentMode.Edge), commandKey: "Convert Selection/Edges");
+                    AddCommand(menu, "Convert Selection/To Edges/To Perimeter Edges", true, () => ConvertSelection(ComponentMode.Edge,true), commandKey: "Convert Selection/To Perimeter Edges");
+                    AddCommand(menu, "Convert Selection/To Faces/To Faces", true, () => ConvertSelection(ComponentMode.Face), commandKey: "Convert Selection/Faces");
+                    AddCommand(menu, "Convert Selection/To Faces/To Perimeter Faces", true, () => ConvertSelection(ComponentMode.Face,true), commandKey: "Convert Selection/To Perimeter Faces");
+                    AddCommand(menu, "Convert Selection/To Objects", true, () => ConvertSelection(ComponentMode.Object), commandKey: "Convert Selection/Objects");
                     AddCommand(menu, "Grow Selection", CanGrowComponentSelection, () => GrowComponentSelection(false));
                     AddCommand(menu, "Shrink Selection", CanGrowComponentSelection, () => GrowComponentSelection(true));
                     menu.AddSeparator("");
@@ -168,6 +175,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Soften", true, () => ApplyEdgeNormals(false));
                     AddCommand(menu, "Harden", true, () => ApplyEdgeNormals(true));
                     AddCommand(menu, "Soften…", true, OpenSoftenTool, finishPreview: false);
+                    AddCommand(menu, "Recalculate Normals", true, RecalculateNormals);
 
 
                 

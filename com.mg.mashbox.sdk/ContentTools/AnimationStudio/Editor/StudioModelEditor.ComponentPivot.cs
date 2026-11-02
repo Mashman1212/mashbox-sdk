@@ -46,12 +46,10 @@ namespace MashBoxSDK.AnimationStudio
             if (CenterMode)
             {
                 const string message = "Cannot edit pivot in CENTER mode";
-                var target = view ? view : commandView;
-                if (target) target.ShowNotification(new GUIContent(message));
-                else error = message;
+                error = message;
                 repaint(); return;
             }
-            if (CanAdjustPivot) { pivot = !pivot; repaint(); }
+            if (CanAdjustPivot) { pivot = !pivot; EndPivotSnap(); repaint(); toolOptions?.Repaint(); }
         }
         private Vector3 SelectionGeometryCenter(bool average)
         {
@@ -108,6 +106,17 @@ namespace MashBoxSDK.AnimationStudio
             componentPivot.position = position; componentPivot.orientation = orientation.normalized;
             RememberLockedPivot(position, orientation);
             pivotHover = null; repaint();
+        }
+        private static bool FinitePivotOrientation(Quaternion value)
+        {
+            float norm = value.x*value.x + value.y*value.y + value.z*value.z + value.w*value.w;
+            return !float.IsNaN(norm) && !float.IsInfinity(norm) && norm > 1e-12f;
+        }
+        private void FreezeEditingObject()
+        {
+            Document.Freeze(Active, Transforms);
+            RememberLockedPivot(EditingPivotPosition, Quaternion.identity);
+            Changed();
         }
         private void MoveEditingPivot(Vector3 position)
         {

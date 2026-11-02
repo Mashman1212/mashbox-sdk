@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -122,6 +122,22 @@ namespace MashBoxSDK.AnimationStudio
             var key = (Current, EditorGUIUtility.isProSkin, HoverSuppressed);
             if (!Cache.TryGetValue(key, out var resource)) Cache[key] = resource = new Resources();
             return resource;
+        }
+        internal static void DrawRadialButtonBackground(Rect rect, bool hovered)
+        {
+            var resources=GetResources();
+            GUIStyle Rounded(string key,Color fill)
+            {
+                if(resources.Styles.TryGetValue(key,out var cached))return cached;
+                var style=new GUIStyle { border=new RectOffset(4,4,4,4) };
+                style.normal.background=resources.FieldTexture(fill);
+                resources.Styles.Add(key,style);return style;
+            }
+            var fill=Color.Lerp(new Color(.12f,.13f,.145f,1),Current.Button,.16f);
+            if(hovered)fill=Color.Lerp(fill,Current.Accent,.3f);
+            Rounded("Radial/Outline",new Color(.018f,.02f,.024f,1)).Draw(rect,GUIContent.none,false,false,false,false);
+            var inside=new Rect(rect.x+1,rect.y+1,rect.width-2,rect.height-2);
+            Rounded(hovered?"Radial/Hover":"Radial/Fill",fill).Draw(inside,GUIContent.none,false,false,false,false);
         }
         private static GUIStyleState[] States(GUIStyle style) => new[] { style.normal, style.hover, style.active, style.focused, style.onNormal, style.onHover, style.onActive, style.onFocused };
         private static GUIStyle Themed(GUIStyle original, string name, Resources resource)

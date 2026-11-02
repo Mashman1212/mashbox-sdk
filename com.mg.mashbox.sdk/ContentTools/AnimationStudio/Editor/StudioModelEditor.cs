@@ -423,9 +423,9 @@ namespace MashBoxSDK.AnimationStudio
                 else if (visibilityChanged) Run(() => SetObjectChannels(n.position,n.RotationChannels,n.scale,visible));
             }
             else GUILayout.Label("No selection", StudioTheme.Styles.miniLabel);
+            DrawMaterialChannels();
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelInset))
             {
-                DrawMaterialChannels();
                 DrawBlendShapeChannels();
             }
             DrawModifierChannels();
@@ -792,7 +792,7 @@ namespace MashBoxSDK.AnimationStudio
             var t = Transforms[Active];
             if (moveDrag != null && (tool != Tool.Move || pivot || moveDrag.control != GUIUtility.hotControl || moveDrag.mesh != ActiveMesh || moveDrag.node != Active || moveDrag.mode != mode)) moveDrag = null;
             bool capturedMove = moveDrag != null;
-            var orientation = capturedMove ? moveDrag.orientation : local ? PivotOrientation : Quaternion.identity;
+            var orientation = capturedMove ? moveDrag.orientation : (pivot || local) ? PivotOrientation : Quaternion.identity;
             bool capturedScale = !pivot && tool == Tool.Scale && scaleDrag != null && scaleDrag.control == GUIUtility.hotControl;
             bool cachedHandleFrame = mode != ComponentMode.Object && !capturedMove && !capturedScale && handleExtrudeVertices == null;
             HashSet<int> frameIndices = null; IList<Vector3> framePositions = null; Vector3 frameCenter = default;
@@ -825,6 +825,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             int previousHotControl = GUIUtility.hotControl;
             var position = center; var rotation = orientation; var scale = Vector3.one;
+            bool pivotRotationChanged = false, pivotPositionChanged = false;
             // Resize native handle geometry and picking without scaling its drawing
             // matrix: Unity expands line strokes in that space as well.
             float handleSize = StudioSettings.Current.handleSize * (pivot ? 1.25f : 1f);
@@ -834,7 +835,17 @@ namespace MashBoxSDK.AnimationStudio
 #if MASHBOX_STUDIO_TESTS
                 TransformHandleProbe?.Invoke(tool,handleCenter,orientation,HandleUtility.GetHandleSize(handleCenter)*handleSize);
 #endif
-                if (pivot) position = DrawPivotHandle(handleCenter, orientation, handleSize);
+                if (pivot)
+                {
+                    // Rings and translation controls coexist. The native hot control
+                    // owns the gesture; only the changed channel is published.
+                    EditorGUI.BeginChangeCheck();
+                    rotation = DrawPivotRotationRings(handleCenter, orientation, handleSize);
+                    pivotRotationChanged = EditorGUI.EndChangeCheck();
+                    EditorGUI.BeginChangeCheck();
+                    position = DrawPivotHandle(handleCenter, orientation, handleSize);
+                    pivotPositionChanged = EditorGUI.EndChangeCheck();
+                }
                 else if (tool == Tool.Move) position = DrawMoveHandle(handleCenter, orientation, handleSize);
                 else if (tool == Tool.Rotate)
                 {
@@ -908,7 +919,15 @@ namespace MashBoxSDK.AnimationStudio
             Run(() => {
                 if (scaling) { if (scaleDrag != null) ApplyScaleDrag(scale); return; }
                 if (!pivot && tool == Tool.Move && moveDrag != null) { ApplyMoveDrag(position); return; }
-                if (pivot) { MoveEditingPivot(position); return; }
+                if (pivot)
+                {
+                    if (pivotRotationChanged && !IsMoveHandle(GUIUtility.hotControl) &&
+                        FinitePivotOrientation(rotation) && Quaternion.Angle(rotation, orientation) > .00001f)
+                        ApplyPivotTarget(new PivotTarget { orientation = rotation }, PivotAction.Orient);
+                    else if (pivotPositionChanged && IsMoveHandle(GUIUtility.hotControl) && FiniteScalePoint(position))
+                        MoveEditingPivot(position);
+                    return;
+                }
                 else if (indices != null)
                 {
                     PreserveFaceTopology();

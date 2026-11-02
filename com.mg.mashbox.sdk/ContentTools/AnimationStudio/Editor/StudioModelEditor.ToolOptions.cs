@@ -46,7 +46,7 @@ namespace MashBoxSDK.AnimationStudio
             FinishSelectionPaint();
             FinishLiveTool();
             CloseLiveToolPanes(); CloseCombineToolWindow();
-            StopTargetWeld(); StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; repaint(); toolOptions?.Repaint();
+            StopTargetWeld(); StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; EndPivotSnap(); repaint(); toolOptions?.Repaint();
         }
         internal void OpenToolOptions()
         {
@@ -96,11 +96,12 @@ namespace MashBoxSDK.AnimationStudio
                 bool locked = EditorGUILayout.Toggle(new GUIContent("Lock pivot", "Keep the pivot fixed in world space through Undo, selection changes and modeling actions. Edit Pivot can still reposition it."), PivotLocked);
                 if (EditorGUI.EndChangeCheck()) SetPivotLocked(locked);
             }
-            if (tool == Tool.Move)
+            if (tool == Tool.Move || tool == Tool.Rotate || pivot)
             {
                 using (new EditorGUI.DisabledScope(!MarkingActionEnabled(MarkingAction.EditPivot)))
                     if (GUILayout.Button(pivot ? "Finish Pivot Edit" : "Edit Pivot")) { TogglePivotEdit(); }
             }
+            if (pivot) EditorGUILayout.HelpBox("Drag the arrows or plane squares to move the pivot; drag the colored rings to rotate its orientation. Geometry and children stay fixed. Choose any transform tool or press "+StudioShortcuts.Label(StudioShortcut.Pivot)+" to finish pivot editing.", MessageType.Info);
             if (!CanEditComponents()) EditorGUILayout.HelpBox("Component editing requires the skin's bind pose. Object transforms and UVs remain available.", MessageType.Info);
         }
         private void DrawOrientationPopup(bool labelled)
@@ -120,7 +121,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             var row = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
             float titleWidth = Mathf.Clamp(row.width * .4f, 100, 150);
-            EditorGUI.LabelField(new Rect(row.x, row.y, titleWidth, row.height), label);
+            bool distance = label == "Position" || label == "World Position";
+            EditorGUI.LabelField(new Rect(row.x, row.y, titleWidth, row.height), distance ? label+" ("+StudioSceneUnits.Symbol+")" : label);
             float axisWidth = (row.width - titleWidth - 8) / 3;
             float previousLabelWidth = EditorGUIUtility.labelWidth;
             int previousIndent = EditorGUI.indentLevel;
@@ -134,12 +136,12 @@ namespace MashBoxSDK.AnimationStudio
                     GUI.SetNextControlName(ChannelNames[label][axis]);
                     // Limit the readout, not the stored transform. Merely painting
                     // or focusing a field must not round the document's values.
-                    float displayed = (float)System.Math.Round(value[axis], 4, System.MidpointRounding.AwayFromZero);
+                    float displayed = (float)System.Math.Round(distance ? StudioSceneUnits.Display(value[axis]) : value[axis], 4, System.MidpointRounding.AwayFromZero);
                     EditorGUI.BeginChangeCheck();
                     bool scrubbing = Event.current.type == EventType.MouseDrag && GUIUtility.hotControl != 0;
                     float edited = EditorGUI.FloatField(field, ChannelAxes[axis], displayed);
                     if (EditorGUI.EndChangeCheck())
-                        value[axis] = scrubbing ? value[axis] + (edited - displayed) * StudioSettings.Current.channelDragSensitivity : edited;
+                        value[axis] = scrubbing ? value[axis] + (distance ? StudioSceneUnits.Internal(edited - displayed) : edited - displayed) * StudioSettings.Current.channelDragSensitivity : distance ? StudioSceneUnits.Internal(edited) : edited;
                 }
             }
             finally { EditorGUIUtility.labelWidth = previousLabelWidth; EditorGUI.indentLevel = previousIndent; }

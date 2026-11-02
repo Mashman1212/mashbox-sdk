@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
@@ -420,6 +420,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void AddStudioToolbarMenu(StudioMenu menu)
         {
             menu.AddItem(new GUIContent("Toolbars/Customize Toolbars…"), false, () => StudioToolbarCustomization.Open(this), commandKey: "Toolbars/Customize", shortcutEligible: false);
+            menu.AddItem(new GUIContent("Radial Menus/Customize Radial Menus…"), false, () => StudioToolbarCustomization.OpenRadial(this), commandKey: "RadialMenus/Customize", shortcutEligible: false);
             menu.AddItem(new GUIContent("Toolbars/Restore Default Layout"), false, RestoreDefaultToolbarLayout, commandKey: "Toolbars/RestoreDefaultLayout", shortcutEligible: false);
             menu.AddSeparator("Toolbars");
             // Unity's canvas is the registry. Query it when opening the menu so

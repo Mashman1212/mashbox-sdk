@@ -1,4 +1,4 @@
-using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
+﻿using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -11,11 +11,13 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             if (evt == null || !evt.isKey || EditorGUIUtility.editingTextField || hierarchyRenameNode != null) return false;
+            UpdatePivotTargetModifiers(evt);
+            if (!markingOpen && evt.type == EventType.KeyDown && TryOpenRadial(view,evt,GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(),FocusType.Passive))) return true;
             if (HandleSelectionPaintKey(view)) return true;
             if (markingOpen)
             {
-                if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt)) CancelMarkingMenu();
-                evt.Use(); return true;
+                HandleModelMarkingEvent(view,evt,markingControl);
+                if(evt.type!=EventType.Used)evt.Use(); return true;
             }
             if (HandleSaveShortcut() || HandleGridSnapKey(view) || HandleSizeShortcut(evt) || HandlePivotSnap(view)) return true;
             if (evt.type != EventType.KeyDown) return false;

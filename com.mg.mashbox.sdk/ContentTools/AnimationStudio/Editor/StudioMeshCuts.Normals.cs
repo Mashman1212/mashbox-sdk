@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal (int, int) NormalEdgeKey(int a, int b) => Key(a, b);
         private struct NormalEdgeUse { internal int Face, Edge; internal NormalEdgeUse(int face, int edge) { Face = face; Edge = edge; } }
-        internal void SetEdgeNormals(StudioModelDocument.Node node, HashSet<(int,int)> selection, float angle, bool harden, Action beforeWrite = null)
+        internal void SetEdgeNormals(StudioModelDocument.Node node, HashSet<(int,int)> selection, float angle, bool harden, Action beforeWrite = null, bool recalculate = false)
         {
             var mesh = node.mesh;
             if (node.skinned || node.blendShape != null || mesh.blendShapeCount > 0 || mesh.bindposes.Length > 0)
@@ -57,13 +57,18 @@ namespace MashBoxSDK.AnimationStudio
             float cosine = Mathf.Cos(angle*Mathf.Deg2Rad);
             foreach(var pair in adjacency)
             {
-                var uses=pair.Value;if(uses.Count!=2)continue;
+                var uses=pair.Value;
+                // Boundary-only selections also need their custom normals rebuilt.
+                if(recalculate&&(selection==null||selection.Contains(pair.Key)))
+                    foreach(var use in uses)
+                    {int start=offset[use.Face],count=Faces[use.Face].Vertices.Count;affected[start+use.Edge]=affected[start+(use.Edge+1)%count]=true;}
+                if(uses.Count!=2)continue;
                 var a=uses[0];var b=uses[1];var av=Faces[a.Face].Vertices;var bv=Faces[b.Face].Vertices;
                 int ai=a.Edge,aj=(a.Edge+1)%av.Count,bi=b.Edge,bj=(b.Edge+1)%bv.Count;
                 if(welded[av[ai]]!=welded[bv[bi]]) { int swap=bi;bi=bj;bj=swap; }
                 bool targeted=selection==null||selection.Contains(pair.Key);
                 bool soft;
-                if(targeted)soft=!harden&&Vector3.Dot(faceNormals[a.Face],faceNormals[b.Face])>=cosine-1e-6f;
+                if(targeted&&!recalculate)soft=!harden&&Vector3.Dot(faceNormals[a.Face],faceNormals[b.Face])>=cosine-1e-6f;
                 else if(node.normalGroups!=null&&node.normalGroups.Length==Positions.Length)
                     soft=node.normalGroups[av[ai]]==node.normalGroups[bv[bi]]&&node.normalGroups[av[aj]]==node.normalGroups[bv[bj]];
                 else if(sourceNormals.Length==Positions.Length)

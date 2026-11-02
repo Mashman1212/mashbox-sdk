@@ -26,8 +26,35 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static string CanonicalIconKey(string key)
         {
+            if(key.StartsWith("Legacy/UV",StringComparison.Ordinal))return "UV/UV Sets/UV "+key.Substring("Legacy/UV".Length);
+            if(key.StartsWith("RadialPreset/",StringComparison.Ordinal))
+            {
+                switch(key.Substring("RadialPreset/".Length))
+                {
+                    case "convert-vertices": return "Select/Convert Selection/Vertices";
+                    case "convert-edges": return "Select/Convert Selection/Edges";
+                    case "convert-faces": return "Select/Convert Selection/Faces";
+                    case "uv": return "UV/UV Editor";
+                    case "uvsets": return "Menu/UV Sets";
+                    case "pivot": return "Modify/Edit Pivot";
+                    case "transform": return "Modify/Move";
+                    case "selection": return "Select/All";
+                    case "components": return "Select/Object Mode";
+                    case "axes": return "Viewport/Orientation";
+                    default: return "Menu/Modify";
+                }
+            }
             switch(key)
             {
+                case "Menu/Select/Convert Selection/To Vertices": return "Select/Convert Selection/Vertices";
+                case "Menu/Select/Convert Selection/To Edges": return "Select/Convert Selection/Edges";
+                case "Menu/Select/Convert Selection/To Faces": return "Select/Convert Selection/Faces";
+                case "Select/Convert Selection/Objects": return "Select/Object Mode";
+                case "UV/Select UVs": return "UV/UV Editor";
+                case "UV/Select UV Shells": return "Menu/UV Sets";
+                case "Legacy/Clear": return "Select/Deselect";
+                case "Legacy/Through": return "Select/Through Selection";
+                case "Legacy/Axes": case "Legacy/ObjectAxes": case "Legacy/WorldAxes": case "Legacy/ComponentAxes": return "Viewport/Orientation";
                 case "Control/MashBox/Selection/Object": return "Select/Object Mode";
                 case "Control/MashBox/Selection/Vertex": return "Select/Vertex";
                 case "Control/MashBox/Selection/Edge": return "Select/Edge";
@@ -149,6 +176,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static IEnumerable<string> Candidates(string key)
         {
+            if (key == "Radial/Back" || key == "Radial/Previous") return new[] { "back", "tab_prev", "Animation.PrevKey" };
+            if (key == "Radial/Next") return new[] { "forward", "tab_next", "Animation.NextKey" };
             if (key == "Viewport/Textures") return new[] { "Material Icon", "Texture2D Icon" };
             if (key == "Window/Material Library") return new[] { "Material Icon" };
             if (key == "Customize/Add") return new[] { "Toolbar Plus", "CreateAddNew", "SettingsIcon" };

@@ -159,12 +159,36 @@ namespace MashBoxSDK.AnimationStudio
             }
             finally{writingModifiers=false;}
         }
+        private void DrawPrimitiveModifier(PrimitiveType type, ref Vector4 p, ref Vector3Int cubeDivisions)
+        {
+            float Size(string label, float value) => Mathf.Max(.0001f, StudioSceneUnits.Field(label, value));
+            switch (type)
+            {
+                case PrimitiveType.Cube:
+                    p.x=Size("Width",p.x);p.y=Size("Height",p.y);p.z=Size("Depth",p.z);
+                    cubeDivisions=StudioModelDocument.ResolveCubeDivisions(cubeDivisions,p.w);
+                    cubeDivisions.x=ModifierIntegerField("Width subdivisions",cubeDivisions.x,1,64);
+                    cubeDivisions.y=ModifierIntegerField("Height subdivisions",cubeDivisions.y,1,64);
+                    cubeDivisions.z=ModifierIntegerField("Depth subdivisions",cubeDivisions.z,1,64);break;
+                case PrimitiveType.Sphere:
+                    p.x=Size("Radius",p.x);p.y=ModifierIntegerField("Segments",Mathf.RoundToInt(p.y),3,128);
+                    p.z=ModifierIntegerField("Rings",Mathf.RoundToInt(p.z),2,128);break;
+                case PrimitiveType.Plane:
+                case PrimitiveType.Quad:
+                    p.x=Size("Width",p.x);p.y=Size(type==PrimitiveType.Plane?"Length":"Height",p.y);
+                    p.z=ModifierIntegerField("Width divisions",Mathf.RoundToInt(p.z),1,128);
+                    p.w=ModifierIntegerField(type==PrimitiveType.Plane?"Length divisions":"Height divisions",Mathf.RoundToInt(p.w),1,128);break;
+                case PrimitiveType.Cylinder:
+                    p.x=Size("Radius",p.x);p.y=Size("Height",p.y);p.z=ModifierIntegerField("Sides",Mathf.RoundToInt(p.z),3,128);
+                    p.w=ModifierIntegerField("Cap rings",Mathf.RoundToInt(p.w),1,64);break;
+            }
+        }
         private void DrawModifierChannels()
         {
             if(!Document||Active<0||!ActiveMesh)return;var node=Document.nodes[Active];var history=node.modifiers;
             GUILayout.Space(4);var rect=EditorGUILayout.GetControlRect(false,20);
             EditorGUI.DrawRect(new Rect(rect.x-4,rect.y,rect.width+8,rect.height),Color.Lerp(StudioTheme.Current.Panel,StudioTheme.Current.Button,.5f));
-            bool expanded=EditorGUI.Foldout(rect,modifiersExpanded,ModifiersChannelHeader,true,StudioTheme.Styles.transformHeader);
+            bool expanded=DrawChannelCategoryFoldout(rect, modifiersExpanded, ModifiersChannelHeader);
             if(expanded!=modifiersExpanded){modifiersExpanded=expanded;StudioPreferenceStore.SetFloat("Model.ModifiersExpanded",expanded?1:0);repaint();}
             if(!expanded)return;
             using(new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelTransformInset))
@@ -175,7 +199,7 @@ namespace MashBoxSDK.AnimationStudio
                 using var sensitivity=new StudioDragSensitivity.DragScope(StudioSettings.Current.channelDragSensitivity);
                 foreach(var operation in history.operations.AsEnumerable().Reverse().ToArray())
                 {
-                    bool hasFields=operation.kind is "Bevel" or "Extrude" or "Bridge" or "Soften" or "EdgeFlow" or "Subdivision";
+                    bool hasFields=operation.kind is "Primitive" or "Bevel" or "Extrude" or "Bridge" or "Soften" or "EdgeFlow" or "Subdivision";
                     bool open=hasFields&&!closedModifiers.Contains(operation.id);
                     using(new EditorGUILayout.HorizontalScope())
                     {
@@ -192,23 +216,25 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     if(!string.IsNullOrEmpty(operation.failure))EditorGUILayout.HelpBox(operation.failure,MessageType.Warning);
                     if(!open)continue;
-                    EditorGUI.BeginChangeCheck();var p=operation.parameters;var flow=operation.flow;
+                    EditorGUI.BeginChangeCheck();var p=operation.parameters;var flow=operation.flow;var cubeDivisions=operation.cubeDivisions;
                     int level=operation.subdivision?.level??1,boundary=operation.subdivision?.boundary??2;
                     switch(operation.kind)
                     {
+                        case "Primitive":
+                            DrawPrimitiveModifier(operation.primitiveType, ref p, ref cubeDivisions); break;
                         case "Bevel":
-                            p.x=Mathf.Max(0,EditorGUILayout.FloatField("Width",p.x));p.y=ModifierIntegerField("Segments",Mathf.RoundToInt(p.y),0,32);
+                            p.x=Mathf.Max(0,StudioSceneUnits.Field("Width",p.x));p.y=ModifierIntegerField("Segments",Mathf.RoundToInt(p.y),0,32);
                             p.z=Mathf.Clamp(EditorGUILayout.FloatField("Profile",p.z),-1,1);p.w=EditorGUILayout.Popup("Junction",Mathf.RoundToInt(p.w),new[]{"Grid","Cap"});
                             flow.x=EditorGUILayout.Toggle("Edge Flow",flow.x>=.5f)?1:0;
                             if(flow.x>=.5f){flow.y=EditorGUILayout.FloatField("Flow influence",flow.y);flow.z=ModifierIntegerField("Flow iterations",Mathf.RoundToInt(flow.z),1,64);}break;
-                        case "Extrude":p.x=EditorGUILayout.FloatField("Distance",p.x);p.z=EditorGUILayout.FloatField("Inset",p.z);p.y=EditorGUILayout.Toggle("Together",p.y>=.5f)?1:0;break;
+                        case "Extrude":p.x=StudioSceneUnits.Field("Distance",p.x);p.z=StudioSceneUnits.Field("Inset",p.z);p.y=EditorGUILayout.Toggle("Together",p.y>=.5f)?1:0;break;
                         case "Bridge":p.x=ModifierIntegerField("Divisions",Mathf.RoundToInt(p.x),0,64);p.y=Mathf.Clamp(EditorGUILayout.FloatField("Curvature",p.y),-1,1);break;
                         case "Soften":p.x=Mathf.Clamp(EditorGUILayout.FloatField("Angle",p.x),0,180);break;
                         case "EdgeFlow":p.x=EditorGUILayout.FloatField("Influence",p.x);p.y=ModifierIntegerField("Iterations",Mathf.RoundToInt(p.y),1,64);break;
                         case "Subdivision":level=ModifierIntegerField("Level",level,0,6);boundary=EditorGUILayout.Popup("Boundary",boundary-1,new[]{"Smooth corners","Keep corners"})+1;break;
                     }
                     if(EditorGUI.EndChangeCheck())
-                    {Run(()=>ChangeModifier(node,operation.id,o=>{o.parameters=p;o.flow=flow;if(o.subdivision!=null){o.subdivision.level=level;o.subdivision.boundary=boundary;}}));return;}
+                    {Run(()=>ChangeModifier(node,operation.id,o=>{o.parameters=p;o.flow=flow;o.cubeDivisions=cubeDivisions;if(o.subdivision!=null){o.subdivision.level=level;o.subdivision.boundary=boundary;}}));return;}
                     GUILayout.Space(3);
                 }
             }

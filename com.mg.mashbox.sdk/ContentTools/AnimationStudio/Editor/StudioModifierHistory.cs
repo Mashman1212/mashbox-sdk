@@ -25,6 +25,8 @@ namespace MashBoxSDK.AnimationStudio
         public string id=Guid.NewGuid().ToString("N"),kind,name;
         public bool enabled=true,weld=true;
         public Vector4 parameters;
+        public PrimitiveType primitiveType;
+        public Vector3Int cubeDivisions;
         public Vector3 flow;
         public Matrix4x4 world=Matrix4x4.identity;
         public int[] faces,edges,vertices,inputPolygons,inputGeometry;
@@ -74,7 +76,7 @@ namespace MashBoxSDK.AnimationStudio
                     cutTriangles=work.cutTriangles,geometryVertices=work.geometryVertices,normalGroups=work.normalGroups};
                 try
                 {
-                    if(operation.kind!="Subdivision"&&!operation.Matches(work))
+                    if(operation.kind!="Subdivision"&&operation.kind!="Primitive"&&!operation.Matches(work))
                         throw new InvalidOperationException("The input topology changed. Delete this operation or restore the earlier topology.");
                     Apply(trial,operation);
                     history.displaySource=operation.kind=="Subdivision"?StudioModifierSource.Capture(work):null;
@@ -95,6 +97,18 @@ namespace MashBoxSDK.AnimationStudio
             var p=operation.parameters;
             foreach(float value in new[]{p.x,p.y,p.z,p.w,operation.flow.x,operation.flow.y,operation.flow.z})
                 if(float.IsNaN(value)||float.IsInfinity(value))throw new InvalidOperationException("Modifier values must be finite.");
+            if (operation.kind == "Primitive")
+            {
+                var generated = StudioModelDocument.BuildPrimitive(operation.primitiveType, p, out var polygons, operation.cubeDivisions);
+                try
+                {
+                    var result = new StudioModelDocument.Node { mesh = generated, cutPolygons = polygons, cutTriangles = generated.triangles,
+                        geometryVertices = StudioSubdivisionData.Primitive(generated) };
+                    Publish(result, node);
+                }
+                finally { UnityEngine.Object.DestroyImmediate(generated); }
+                return;
+            }
             var topology=new StudioMeshCuts(node);
             var edges=new List<(int,int)>();
             if(operation.edges!=null)for(int i=0;i+1<operation.edges.Length;i+=2)edges.Add((operation.edges[i],operation.edges[i+1]));

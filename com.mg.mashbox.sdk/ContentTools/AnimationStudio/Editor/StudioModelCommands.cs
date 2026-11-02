@@ -103,7 +103,7 @@ namespace MashBoxSDK.AnimationStudio
                 case StudioShortcut.LargerHandles: case StudioShortcut.SmallerHandles: return "View";
                 case StudioShortcut.Frame: case StudioShortcut.SelectAll: case StudioShortcut.Object: case StudioShortcut.Vertex:
                 case StudioShortcut.Edge: case StudioShortcut.Face: case StudioShortcut.PaintSelection: case StudioShortcut.UnpaintSelection: return "Select";
-                case StudioShortcut.Pivot: case StudioShortcut.VertexSnap: case StudioShortcut.GridSnap: case StudioShortcut.AxisMenu: return "Modify";
+                case StudioShortcut.Pivot: case StudioShortcut.VertexSnap: case StudioShortcut.EdgeSnap: case StudioShortcut.GridSnap: case StudioShortcut.AxisMenu: return "Modify";
                 case StudioShortcut.Select: case StudioShortcut.Move: case StudioShortcut.Rotate: case StudioShortcut.Scale: return "Modify";
                 case StudioShortcut.Extrude: case StudioShortcut.CommitCut: case StudioShortcut.RemoveCut: return "Mesh Tools";
                 case StudioShortcut.XRay: return "View";
@@ -112,14 +112,35 @@ namespace MashBoxSDK.AnimationStudio
                 default: return fallback;
             }
         }
+        internal static void SyncRadialMenus(List<StudioCustomToolbarDefinition> menus)
+        {
+            var live=new HashSet<StudioShortcut>(menus.Select(x=>StudioRadialMenus.Shortcut(x.id)));
+            bool changed=false;
+            foreach(var id in definitions.Where(x=>x.Value.group=="Radial Menus"&&!live.Contains(x.Key)).Select(x=>x.Key).ToArray())
+            { if(paths.TryGetValue(id,out var old))keys.Remove(old);paths.Remove(id);definitions.Remove(id);changed=true; }
+            foreach(var menu in menus)
+            {
+                var id=StudioRadialMenus.Shortcut(menu.id);
+                if(definitions.TryGetValue(id,out var old)&&old.group=="Radial Menus"&&old.name==menu.name)continue;
+                var defaults=id==StudioShortcut.MarkingMenu?new[]{new StudioShortcuts.Binding(KeyCode.Mouse1,allowShift:true),new StudioShortcuts.Binding(KeyCode.Mouse1,StudioModifiers.Action)}:
+                    id==StudioShortcut.AxisMenu?new[]{new StudioShortcuts.Binding(KeyCode.Mouse1,StudioModifiers.Action|StudioModifiers.Shift)}:Array.Empty<StudioShortcuts.Binding>();
+                string key="Radial Menus/"+menu.id;
+                definitions[id]=new StudioShortcuts.Definition(id,"Radial Menus",menu.name,defaults);
+                if((int)id<0){keys[key]=id;paths[id]=key;}
+                changed=true;
+            }
+            if(changed){ordered=null;StudioShortcuts.CatalogChanged();}
+        }
         internal static StudioShortcuts.Definition[] Definitions(StudioShortcuts.Definition[] builtins)
         {
+            StudioRadialMenus.EnsureRegistered();
             if (ordered != null) return ordered;
             var combined = builtins.Where(d => d.id != StudioShortcut.Preferences).Select(d => Find(d.id) ?? new StudioShortcuts.Definition(d.id, BuiltinGroup(d.id, d.group), d.name, d.defaults))
                 .Concat(definitions.Values.Where(d => (int)d.id < 0));
             int Order(string group) { int i = Array.IndexOf(StudioModelEditor.ModelMenuTitles, group); return i < 0 ? int.MaxValue : i; }
             return ordered = combined.OrderBy(d => Order(d.group)).ThenBy(d => d.group, StringComparer.Ordinal).ThenBy(d => d.name, StringComparer.Ordinal).ToArray();
         }
+        internal static StudioModelDocument ActiveDocument => active != null && active.TryGetTarget(out var editor) ? editor.Document : null;
         internal static void SetActive(StudioModelEditor editor) => active = new WeakReference<StudioModelEditor>(editor);
         internal static void RefreshActiveCatalog() { if (active != null && active.TryGetTarget(out var editor)) editor.RefreshModelCommandCatalog(); }
         internal static void Release(StudioModelEditor editor)

@@ -20,6 +20,8 @@ namespace MashBoxSDK.AnimationStudio
             public string format;
             public int version;
             public string source;
+            public StudioLengthUnit sceneUnits;
+            public float gridSpacing;
             public StudioLightingSettings lighting;
             public NodeData[] nodes;
             public MeshData[] meshes;
@@ -86,7 +88,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (materialIds.TryGetValue(material, out int id)) return id;
                 id = materials.Count; materials.Add(material); materialIds.Add(material, id); return id;
             }
-            var data = new FileData { format = Format, version = Version, source = document.sourcePath, lighting = document.lighting,
+            var data = new FileData { format = Format, version = Version, source = document.sourcePath, lighting = document.lighting, sceneUnits = document.sceneUnits, gridSpacing = document.gridSpacing,
                 nodes = document.nodes.Select(node => new NodeData {
                     name = node.name, anchor = node.anchorType, source = node.sourcePath, parent = node.parent, siblingOrder = node.siblingOrder,
                     position = node.position, rotation = node.rotation, scale = node.scale, origin = node.positionOffset, axes = node.pivotRotation,
@@ -153,6 +155,7 @@ namespace MashBoxSDK.AnimationStudio
                     var mesh = RestoreMesh(data.meshes[instance.data]); owned.Add(mesh); mesh.name = instance.name; return mesh;
                 }).ToArray();
                 var document = ScriptableObject.CreateInstance<StudioModelDocument>(); owned.Add(document);
+                document.sceneUnits = StudioSceneUnits.Valid(data.sceneUnits); document.gridSpacing = data.gridSpacing > 0 ? data.gridSpacing : StudioSceneUnits.DefaultGrid(document.sceneUnits);
                 document.sourcePath = data.source; document.lighting = data.lighting ?? new StudioLightingSettings();
                 for (int i = 0; i < data.nodes.Length; i++)
                 {

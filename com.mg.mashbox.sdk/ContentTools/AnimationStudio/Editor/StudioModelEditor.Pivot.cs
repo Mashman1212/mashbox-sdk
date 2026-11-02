@@ -6,7 +6,8 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        private bool pivotSnapHeld;
+        private bool pivotSnapHeld, edgeSnapHeld, edgeSnapLatched;
+        private Vector3 edgeSnapStart, edgeSnapEnd;
         private KeyCode pivotSnapKey;
         private int pivotSnapControl, pivotSnapUndo = -1;
         private int pivotSnapButton;
@@ -15,10 +16,21 @@ namespace MashBoxSDK.AnimationStudio
         private Vector3 objectSnapOffset;
         private SceneView vertexSnapView;
 
+        private Quaternion DrawPivotRotationRings(Vector3 center, Quaternion orientation, float sizeMultiplier)
+        {
+            // Use the established native rotation control set, including its stable
+            // ring identities and drag handling, alongside the translation controls.
+            rotationHandleIds = Handles.RotationHandleIds.@default;
+            var evt = Event.current; var modifiers = evt.modifiers;
+            if (evt.control || evt.command) evt.modifiers = modifiers & ~EventModifiers.Shift;
+            try { return DrawSizedRotationHandle(rotationHandleIds, orientation, center, sizeMultiplier * .8f); }
+            finally { evt.modifiers = modifiers; }
+        }
+
         private Vector3 DrawPivotHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
             var next = DrawMoveHandle(center, orientation, sizeMultiplier);
-            DrawPivotMarker(next, orientation, sizeMultiplier);
+            // The interactive rotation rings provide the pivot orientation marker.
             return next;
         }
         private static void DrawPivotMarker(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
@@ -42,7 +54,7 @@ namespace MashBoxSDK.AnimationStudio
             var evt = Event.current;
             if (evt.type == EventType.KeyUp && evt.keyCode == pivotSnapKey)
             {
-                bool held = pivotSnapHeld; pivotSnapHeld = false;
+                bool held = pivotSnapHeld; pivotSnapHeld = false; edgeSnapHeld = false; edgeSnapLatched = false;
                 if (held) { evt.Use(); repaint(); return true; }
             }
             bool objectMove = !pivot && mode == ComponentMode.Object && tool == Tool.Move && Document && Active >= 0;
@@ -50,8 +62,8 @@ namespace MashBoxSDK.AnimationStudio
             if (!(pivot && CanAdjustPivot) && !objectMove && !componentMove)
             { EndPivotSnap(); return false; }
             int id = GUIUtility.GetControlID("MashBoxStudioPivotSnap".GetHashCode(), FocusType.Passive);
-            if (StudioShortcuts.Pressed(StudioShortcut.VertexSnap,evt) && !EditorGUIUtility.editingTextField)
-            { pivotSnapHeld = true; pivotSnapKey = evt.keyCode; vertexSnapView = view; evt.Use(); repaint(); return true; }
+            if ((StudioShortcuts.Pressed(StudioShortcut.VertexSnap,evt) || StudioShortcuts.Pressed(StudioShortcut.EdgeSnap,evt)) && !EditorGUIUtility.editingTextField)
+            { bool edge = StudioShortcuts.Pressed(StudioShortcut.EdgeSnap,evt); if (!pivotSnapHeld || edgeSnapHeld != edge) edgeSnapLatched = false; edgeSnapHeld = edge; pivotSnapHeld = true; pivotSnapKey = evt.keyCode; vertexSnapView = view; evt.Use(); repaint(); return true; }
             if (pivotSnapControl != 0)
             {
                 if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt))
@@ -90,9 +102,9 @@ namespace MashBoxSDK.AnimationStudio
         private void EndPivotSnap(bool releaseKey = true)
         {
             if (pivotSnapControl != 0 && GUIUtility.hotControl == pivotSnapControl) GUIUtility.hotControl = 0;
-            pivotSnapControl = 0; pivotSnapUndo = -1;
+            pivotSnapControl = 0; pivotSnapUndo = -1; edgeSnapLatched = false;
             snapMovesObjects = snapMovesComponents = false; quickPivotSnap = false;
-            if (releaseKey) { pivotSnapHeld = false; vertexSnapView = null; }
+            if (releaseKey) { pivotSnapHeld = false; edgeSnapHeld = false; edgeSnapLatched = false; vertexSnapView = null; }
         }
         private void SnapPivotAt(SceneView view, Vector2 mouse)
         {
@@ -100,7 +112,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Vector3 destination = default;
                 bool found = pivotSnapHeld ? TryMoveSnapTarget(view, mouse, out destination) :
-                    quickPivotSnap && gridSnapHeld && TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(mouse), StudioSettings.Current.gridSpacing, out destination);
+                    quickPivotSnap && gridSnapHeld && TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(mouse), StudioSceneUnits.GridSpacing, out destination);
                 if (found) Run(() => { if (snapMovesObjects) SnapObjectsTo(destination); else SnapComponentsTo(destination); });
                 return;
             }
@@ -109,7 +121,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if (!TryQuickPivotSnapTarget(view, mouse, out target)) return;
             }
-            else if (!TryPivotSnapVertex(view.camera, PivotCameraPoint(view, mouse), EditorGUIUtility.pixelsPerPoint, out target)) return;
+            else if (!(edgeSnapHeld ? TryEdgeSnapTarget(view, mouse, out target) : TryPivotSnapVertex(view.camera, PivotCameraPoint(view, mouse), EditorGUIUtility.pixelsPerPoint, out target))) return;
             if (mode != ComponentMode.Object && (EditingPivotPosition - target).sqrMagnitude < 1e-12f) return;
             Run(() => MoveEditingPivot(target));
         }
@@ -117,10 +129,11 @@ namespace MashBoxSDK.AnimationStudio
         {
             // V is strictly vertex snapping, including when grid snap is also held.
             // No eligible vertex means no movement; never fall back to an edge or grid.
+            if (edgeSnapHeld) return TryEdgeSnapTarget(view, mouse, out target);
             if (pivotSnapHeld)
                 return TryPivotSnapVertex(view.camera, PivotCameraPoint(view, mouse), EditorGUIUtility.pixelsPerPoint, out target);
             target = default;
-            return gridSnapHeld && TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(mouse), StudioSettings.Current.gridSpacing, out target);
+            return gridSnapHeld && TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(mouse), StudioSceneUnits.GridSpacing, out target);
         }
         private void SnapComponentsTo(Vector3 target)
         {

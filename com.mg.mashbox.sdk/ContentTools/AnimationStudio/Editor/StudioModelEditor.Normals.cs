@@ -111,13 +111,14 @@ namespace MashBoxSDK.AnimationStudio
             return selected;
         }
         internal void ApplyEdgeNormals(bool harden) => ApplyEdgeNormalsChecked(harden);
-        private void ApplyEdgeNormalsChecked(bool harden)
+        private void RecalculateNormals() => ApplyEdgeNormalsChecked(false, true);
+        private void ApplyEdgeNormalsChecked(bool harden, bool recalculate = false)
         {
             FinishLiveTool();
             PrepareMeshSelection(ComponentMode.Object, () => CanAdjustEdgeNormals,
-                harden ? "Select editable static mesh objects or components to harden." : "Select editable static mesh objects or components to soften.",
+                recalculate ? "Select editable static mesh objects or components to recalculate normals." : harden ? "Select editable static mesh objects or components to harden." : "Select editable static mesh objects or components to soften.",
                 ComponentMode.Object, ComponentMode.Vertex, ComponentMode.Edge, ComponentMode.Face);
-            if (GUIUtility.hotControl != 0) return;
+            if (GUIUtility.hotControl != 0 || !CanAdjustEdgeNormals) return;
             FinishChannelEdit(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
             const float angle = 180; // Direct Soften/Harden never inherit the angle-limited options.
             var oldMode = mode; var oldComponents = Components.ToArray();
@@ -130,7 +131,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             var targets = NormalTargets().ToArray(); var seen = new HashSet<Mesh>();
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
-            string label = harden ? "Harden edges" : "Soften edges"; Undo.SetCurrentGroupName(label);
+            string label = recalculate ? "Recalculate normals" : harden ? "Harden edges" : "Soften edges"; Undo.SetCurrentGroupName(label);
             try
             {
                 foreach (int i in targets)
@@ -139,7 +140,7 @@ namespace MashBoxSDK.AnimationStudio
                     var topology = new StudioMeshCuts(node); var edges = SelectedNormalEdges(topology);
                     if (edges != null && edges.Count == 0) throw new InvalidOperationException("Select mesh components before adjusting edge normals.");
                     topology.SetEdgeNormals(node, edges, angle, harden,
-                        () => Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, node.mesh }, label));
+                        () => Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, node.mesh }, label), recalculate);
                     foreach (var other in Document.nodes) if (other != node && other.mesh == node.mesh)
                     { other.cutPolygons = node.cutPolygons?.ToArray(); other.cutTriangles = node.cutTriangles?.ToArray(); other.normalGroups = node.normalGroups?.ToArray();other.geometryVertices=node.geometryVertices; }
                     EditorUtility.SetDirty(node.mesh);
@@ -150,8 +151,8 @@ namespace MashBoxSDK.AnimationStudio
                 { var v = ActiveMesh.vertices; for (int i = 0; i < v.Length; i++) if (selectedPoints.Contains(v[i])) Components.Add(i); }
                 else if (mode == ComponentMode.Edge)
                 { var v = ActiveMesh.vertices; var edges = Edges(); for (int i = 0; i < edges.Count; i++) if (selectedEdges.Contains(NormalEdgePositionKey(v[edges[i].a], v[edges[i].b]))) Components.Add(i); }
-                error = harden ? "Edges hardened." : "Edges softened.";
-                RememberAction(harden ? RepeatKind.Harden : RepeatKind.Soften,new Vector4(angle,0,0,0));
+                error = recalculate ? "Normals recalculated." : harden ? "Edges hardened." : "Edges softened.";
+                RememberAction(recalculate ? RepeatKind.RecalculateNormals : harden ? RepeatKind.Harden : RepeatKind.Soften,new Vector4(angle,0,0,0));
                 repaint(); softenToolPane?.Repaint();
             }
             catch { Undo.RevertAllDownToGroup(group); throw; }

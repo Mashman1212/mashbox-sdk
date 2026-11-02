@@ -40,7 +40,7 @@ namespace MashBoxSDK.AnimationStudio
             float minimum = float.NegativeInfinity, float maximum = float.PositiveInfinity)
         {
             float value = GetFloatDefault(tool, parameter, fallback);
-            EditorGUI.BeginChangeCheck(); float edited = EditorGUILayout.FloatField(label, value);
+            EditorGUI.BeginChangeCheck(); float edited = parameter == "Width" && tool == "Bevel Edges" ? StudioSceneUnits.Field(label, value) : EditorGUILayout.FloatField(label, value);
             if (EditorGUI.EndChangeCheck() && !float.IsNaN(edited) && !float.IsInfinity(edited))
             { value = Mathf.Clamp(edited, minimum, maximum); SetFloatDefault(tool, parameter, value); }
             return value;
