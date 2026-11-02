@@ -31,10 +31,8 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, StudioShortcuts.MenuLabel("Save Workspace",StudioShortcut.Save), Document, Save);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Save Workspace As…",StudioShortcut.SaveAs), Document, SaveAs);
                     menu.AddSeparator("");
-                    AddCommand(menu, "Export Cage All… (FBX)", Document && Document.nodes.Count > 0, Export, commandKey: "Export All… (FBX)");
-                    AddCommand(menu, "Export Cage Selection… (FBX)", CanExportSelection, () => Export(true), commandKey: "Export Selection… (FBX)");
-                    AddCommand(menu, "Export Evaluated All… (FBX)", Document && Document.nodes.Count > 0, () => Export(false,true));
-                    AddCommand(menu, "Export Evaluated Selection… (FBX)", CanExportSelection, () => Export(true,true));
+                    AddCommand(menu, "Export All… (FBX)", Document && Document.nodes.Count > 0, Export);
+                    AddCommand(menu, "Export Selected… (FBX)", CanExportSelection, () => Export(true), commandKey: "Export Selection… (FBX)");
                 
                     break; }
                 case "Edit": {
@@ -56,6 +54,8 @@ namespace MashBoxSDK.AnimationStudio
                 
                     break; }
                 case "View": {
+                    if (view is MashBoxStudioViewport gridView)
+                        menu.AddItem(new GUIContent("Grid"), gridView.modelGridVisible, () => gridView.SetModelGridVisible(!gridView.modelGridVisible));
                     menu.AddItem(new GUIContent("Wireframe"), ModelDrawMode==DrawCameraMode.Wireframe, () => SetModelDrawModeEnabled(view,DrawCameraMode.Wireframe,ModelDrawMode!=DrawCameraMode.Wireframe));
                     menu.AddItem(new GUIContent("Shaded Wireframe"), ModelDrawMode==DrawCameraMode.TexturedWire, () => SetModelDrawModeEnabled(view,DrawCameraMode.TexturedWire,ModelDrawMode!=DrawCameraMode.TexturedWire));
                     menu.AddSeparator("");

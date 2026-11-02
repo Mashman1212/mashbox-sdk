@@ -1,5 +1,18 @@
 # MashBox Studio
 
+## Center/Pivot and framing
+
+Center/Pivot mode and focus (2026-11-02): the native **Center & Pivot** toolbar defaults to **Pivot** and sits immediately after Grid at the top left, before World & Local. Its checked Center/Pivot dropdown uses Unity handle icons and the shared overlay theme, layout persistence, visibility discovery and dirty state. Center uses combined object geometry bounds (components use their geometric average), ignores edited/locked pivot anchors and rotates/scales about the shared center. Pivot retains existing editable origins and individual Object/Component rotation semantics. Switching to Center finishes pivot editing without changing geometry; invoking Edit Pivot through D, menu, marking menu or Tool Options warns exactly "Cannot edit pivot in CENTER mode". Explicit Center Pivot remains a separate geometry-preserving command. Stored custom/locked pivot state remains available after returning to Pivot.
+
+General > Editing > **Frame selection style** has side-by-side, mutually exclusive **Pivot** and **Selection Average** toggles; exactly one remains enabled. Pivot is the default. F / Frame Selection first frames the selected mesh geometry, then focuses the exact editing pivot at the current zoom and rotation; repeated presses alternate mesh → pivot → mesh. A different selection or viewport restarts at the mesh. Choosing Selection Average retains regular selection-average framing on every press: equal average of selected object geometry centers, or geometric component average across selected meshes. This preference remains independent of Center/Pivot transform mode. The style row reuses the existing `focusSelectionAverage` field through StudioPreferenceStore, preserving saved choices without migration or personal-profile writes; `centerTransformMode` remains separate. Empty-workspace camera reset and custom shortcut bindings are preserved. Alternation state is session-only, outside settings and Undo.
+
+View > **Grid** toggles the same saved modeling grid state as the Grid toolbar button, with a synchronized checkmark, event-driven redraw and automatic shortcut/custom-toolbar registration (initially unassigned).
+
+Sources: Editor/StudioModelEditor.Menus.cs; Editor/StudioSettings.cs; StudioViewportToolbar.cs; MashBoxStudioViewport.Toolbars.cs; StudioModelEditor.cs, .ComponentPivot.cs, .PivotLock.cs, .IndividualRotation.cs, .MultiComponentTransform.cs, .Display.cs, .Shortcuts.cs, .MarkingMenus.cs and .ToolOptions.cs.
+
+Validation for this addition: current-source compilation only; no new Unity session, native capture or physical gesture test. Existing pivot/rotation test results predate this mode.
+
+
 Subdivision preview retains evaluated mesh edges in Shaded Wireframe, ordinary selection highlighting and component overlays. Subdivision does not force an additional cage overlay or force X-ray depth.
 
 ## Through-slice correction
@@ -186,7 +199,7 @@ In Object mode, **D** toggles pivot editing. Move the pivot handle to place ever
 
 **Open UV Editor** opens a separate window for the selected mesh. Choose **UV 0â€“7**, create an empty set, duplicate to another channel, or initialize using **Planar XZ**. Select points with click/marquee, use **All** or expand to connected **Shell**, then move, rotate or scale by dragging a selected point or using numeric fields. Shift adds and Ctrl/Command subtracts. Middle mouse pans and the wheel zooms. An optional texture can be shown behind the UV wireframe. UV edits and set duplication support Undo. This editor manipulates existing UV topology; automatic unwrap, seam cutting/sewing and packing are not included.
 
-**Export FBXâ€¦** writes the edited model through Unity's `com.unity.formats.fbx` package. Hierarchy, mesh geometry and UV sets are exported; missing lower UV channels are padded on the temporary export copy to preserve channel numbers. Modeling export does not carry the original FBX animation clips or Maya construction history. Animation export remains available in the Animation tab.
+**Export All… (FBX)** and **Export Selected… (FBX)** write the current edited geometry, including modifier results, without changing Studio history. There are no Cage/Evaluated export variants. Export writes the model through Unity's `com.unity.formats.fbx` package. Hierarchy, mesh geometry and UV sets are exported; missing lower UV channels are padded on the temporary export copy to preserve channel numbers. Modeling export does not carry the original FBX animation clips or Maya construction history. Animation export remains available in the Animation tab.
 
 ## Animation
 

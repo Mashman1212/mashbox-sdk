@@ -64,7 +64,7 @@ namespace MashBoxSDK.AnimationStudio
             else if (Is(StudioShortcut.Move)) ActivateTool(Tool.Move);
             else if (Is(StudioShortcut.Rotate)) ActivateTool(Tool.Rotate);
             else if (Is(StudioShortcut.Scale)) ActivateTool(Tool.Scale);
-            else if (Is(StudioShortcut.Pivot)) { if (CanAdjustPivot) pivot = !pivot; }
+            else if (Is(StudioShortcut.Pivot)) { TogglePivotEdit(view); }
             else if (Is(StudioShortcut.Frame)) Frame(view);
             else if (Is(StudioShortcut.SelectAll)) { if (Document) ExecuteMarkingAction(MarkingAction.SelectAll,view); }
             else if (Is(StudioShortcut.Object)) { SetComponentMode(ComponentMode.Object,view); }

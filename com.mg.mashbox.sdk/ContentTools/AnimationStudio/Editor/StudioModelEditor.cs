@@ -477,17 +477,17 @@ namespace MashBoxSDK.AnimationStudio
         {
             Export(false);
         }
-        private void Export(bool selectionOnly, bool evaluated = false)
+        private void Export(bool selectionOnly)
         {
             if (!StudioFbxDependency.Require()) return;
             if (!Document || (selectionOnly && !CanExportSelection)) return;
             string filename = selectionOnly && Active >= 0 ? Document.nodes[Active].name : Document.name;
             string path = StudioFileDialogs.SaveAsset(selectionOnly ? "Export selection as FBX" : "Export workspace as FBX", filename, "fbx");
             if (string.IsNullOrEmpty(path)) return;
-            ExportFile(path, selectionOnly, evaluated);
+            ExportFile(path, selectionOnly);
             AssetDatabase.Refresh();
         }
-        internal void ExportFile(string path, bool selectionOnly, bool evaluated = false)
+        internal void ExportFile(string path, bool selectionOnly)
         {
             FlushModifierEdits();
             StudioFbxDependency.EnsureAvailable();
@@ -504,9 +504,9 @@ namespace MashBoxSDK.AnimationStudio
                     if (!nodes[i] || !nodes[i].GetComponent<Renderer>()) continue;
                     var source = Document.nodes[i].mesh; if (!source) continue;
                     var node=Document.nodes[i];
-                    var copy = !evaluated && node.modifiers?.HasHistory==true ? node.modifiers.source.Restore().mesh : UnityEngine.Object.Instantiate(source); exportMeshes.Add(copy);
+                    var copy = UnityEngine.Object.Instantiate(source); exportMeshes.Add(copy);
                     // History already evaluates subdivision. Do not subdivide a second time on export.
-                    var polygons=evaluated?node.cutPolygons:(node.modifiers?.HasHistory==true?node.modifiers.source.polygons:node.cutPolygons);
+                    var polygons=node.cutPolygons;
                     if(polygons!=null)
                     {
                         var quads=Enumerable.Range(0,copy.subMeshCount).Select(_=>new List<int>()).ToArray();bool allQuads=true;
@@ -564,15 +564,39 @@ namespace MashBoxSDK.AnimationStudio
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
             return b;
         }
+        private SelectionSnapshot frameSelection;
+        private SceneView frameView;
+        private bool framePivotNext;
         internal void Frame(SceneView view)
         {
             if (Transforms.Length == 0)
             {
                 if (!view) return;
                 // Share the standard pose with Camera Settings reset, retaining the current lens.
+                frameSelection = null; framePivotNext = false;
                 SetDefaultViewportCameraPose(view);
                 return;
             }
+            if (!view) return;
+            bool average = StudioSettings.Current.focusSelectionAverage;
+            if (!average && Active >= 0 && Active < Transforms.Length)
+            {
+                if (frameSelection == null || frameView != view || !SelectionMatches(frameSelection))
+                {
+                    frameSelection = CaptureSelection(); frameView = view; framePivotNext = false;
+                }
+                bool focusPivot = framePivotNext;
+                framePivotNext = !framePivotNext;
+                if (focusPivot)
+                {
+                    // Alternate from geometry framing to the exact pivot, retaining
+                    // the mesh-framing zoom and current viewing direction.
+                    view.LookAtDirect(FocusPivotPosition, view.rotation, view.size);
+                    CameraChanged(view);
+                    return;
+                }
+            }
+            else { frameSelection = null; framePivotNext = false; }
             var bounds = BoundsFor(Active >= 0 ? Active : 0);
             if (mode == ComponentMode.Object)
             {
@@ -585,6 +609,13 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             else if (TrySelectedComponentBounds(out var componentBounds)) bounds=componentBounds;
+            if (view == null) return;
+            if (average && Active >= 0 && Active < Transforms.Length)
+            {
+                var destination = SelectionGeometryCenter(true);
+                var extent = bounds.extents + new Vector3(Mathf.Abs(bounds.center.x - destination.x), Mathf.Abs(bounds.center.y - destination.y), Mathf.Abs(bounds.center.z - destination.z));
+                bounds = new Bounds(destination, extent * 2);
+            }
             view.Frame(bounds, true);
             // Account for the hierarchy and inspector covering the sides of the SceneView.
             float canvasWidth = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect.width : view.position.width - 680;
@@ -769,7 +800,7 @@ namespace MashBoxSDK.AnimationStudio
             var indices = mode == ComponentMode.Object ? null : capturedMove ? moveDrag.componentIndices : capturedScale ? scaleDrag.componentIndices : handleExtrudeVertices ?? frameIndices;
             if (indices != null && indices.Count == 0) return;
             bool rotatingComponents = indices != null && !pivot && tool == Tool.Rotate;
-            bool rotatingWorldObjects = indices == null && !pivot && tool == Tool.Rotate && !local;
+            bool rotatingWorldObjects = indices == null && !pivot && tool == Tool.Rotate && (!local || CenterMode);
             // Keep a component's movement axes fixed for the duration of the drag,
             // even when the edit changes the surrounding surface normals.
             if ((pivot || (indices != null && tool == Tool.Move)) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
@@ -782,7 +813,8 @@ namespace MashBoxSDK.AnimationStudio
             IList<Vector3> readVertices = indices != null ? capturedMove ? moveDrag.workingVertices : capturedScale ? scaleDrag.meshVertices : cachedHandleFrame ? framePositions : ComponentPositions() : null;
             var vertices=readVertices as Vector3[];
             Vector3 center = capturedMove ? moveDrag.position : capturedScale ? scaleDrag.center : indices == null ? t.position : cachedHandleFrame ? frameCenter : ComponentSelectionCenter(readVertices, indices);
-            if (indices != null && HasComponentPivot) center = componentPivot.position;
+            if (CenterMode && indices == null && !capturedMove && !capturedScale) center = SelectionGeometryCenter(false);
+            if (!CenterMode && indices != null && HasComponentPivot) center = componentPivot.position;
             center = capturedMove && PivotLocked ? moveDrag.position : ResolveLockedPivotCenter(center);
             center = LockedObjectMoveHandleCenter(center, GUIUtility.hotControl);
             if (handleExtrudeVertices != null && handleExtrudeControl != 0 && GUIUtility.hotControl == handleExtrudeControl)

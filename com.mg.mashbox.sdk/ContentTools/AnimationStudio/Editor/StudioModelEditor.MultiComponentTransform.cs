@@ -40,7 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private MultiComponentGesture CaptureMultiComponentGesture(List<int> nodes,Vector3 center,Quaternion orientation,int control)
         {
-            var gesture=new MultiComponentGesture{control=control,tool=tool,individualRotation=local,center=center,position=center,orientation=orientation,rotation=orientation};
+            var gesture=new MultiComponentGesture{control=control,tool=tool,individualRotation=local && !CenterMode,center=center,position=center,orientation=orientation,rotation=orientation};
             var byMesh=new Dictionary<Mesh,MultiTransformTarget>();
             foreach(int node in nodes.OrderBy(i=>i==Active?0:1))using(new ComponentTargetScope(this,node))
             {
@@ -48,7 +48,7 @@ namespace MashBoxSDK.AnimationStudio
                 var indices=SelectedVertices();
                 if(!(gesture.individualRotation && gesture.tool==Tool.Rotate) && byMesh.TryGetValue(ActiveMesh,out var shared)){shared.indices=shared.indices.Concat(indices).Distinct().OrderBy(i=>i).ToArray();continue;}
                 var source=ComponentPositions().ToArray();
-                var target=new MultiTransformTarget{node=node,center=HasComponentPivot?componentPivot.position:ComponentSelectionCenter(),orientation=UnlockedPivotOrientation,mesh=ActiveMesh,indices=indices.OrderBy(i=>i).ToArray(),source=source,working=(Vector3[])source.Clone(),localToWorld=Transforms[node].localToWorldMatrix,worldToLocal=Transforms[node].worldToLocalMatrix};
+                var target=new MultiTransformTarget{node=node,center=!CenterMode && HasComponentPivot?componentPivot.position:ComponentSelectionCenter(),orientation=UnlockedPivotOrientation,mesh=ActiveMesh,indices=indices.OrderBy(i=>i).ToArray(),source=source,working=(Vector3[])source.Clone(),localToWorld=Transforms[node].localToWorldMatrix,worldToLocal=Transforms[node].worldToLocalMatrix};
                 gesture.targets.Add(target);byMesh[target.mesh]=target;
             }
             return gesture;
@@ -149,7 +149,7 @@ namespace MashBoxSDK.AnimationStudio
             bool shiftDown=(mode==ComponentMode.Edge||mode==ComponentMode.Face)&&evt.type==EventType.MouseDown&&evt.button==0&&evt.shift&&!evt.alt&&!evt.control&&!evt.command;
             if(multiComponentGesture!=null&&(multiComponentGesture.tool!=tool||!released&&multiComponentGesture.control!=GUIUtility.hotControl))multiComponentGesture=null;
             var gesture=multiComponentGesture;
-            var center=gesture?.center??ResolveLockedPivotCenter(HasComponentPivot?componentPivot.position:MultiComponentCenter(nodes));
+            var center=gesture?.center??ResolveLockedPivotCenter(!CenterMode && HasComponentPivot?componentPivot.position:MultiComponentCenter(nodes));
             var orientation=gesture?.orientation??(local?PivotOrientation:Quaternion.identity);
             var position=gesture?.position??center;var rotation=gesture?.rotation??orientation;var factor=Vector3.one;
             float size=StudioSettings.Current.handleSize;

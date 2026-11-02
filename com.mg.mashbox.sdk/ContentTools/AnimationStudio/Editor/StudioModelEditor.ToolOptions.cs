@@ -99,7 +99,7 @@ namespace MashBoxSDK.AnimationStudio
             if (tool == Tool.Move)
             {
                 using (new EditorGUI.DisabledScope(!MarkingActionEnabled(MarkingAction.EditPivot)))
-                    if (GUILayout.Button(pivot ? "Finish Pivot Edit" : "Edit Pivot")) { pivot = !pivot; repaint(); }
+                    if (GUILayout.Button(pivot ? "Finish Pivot Edit" : "Edit Pivot")) { TogglePivotEdit(); }
             }
             if (!CanEditComponents()) EditorGUILayout.HelpBox("Component editing requires the skin's bind pose. Object transforms and UVs remain available.", MessageType.Info);
         }

@@ -78,6 +78,7 @@ namespace MashBoxSDK.AnimationStudio
                 return true;
             if (action == MarkingAction.UVMenu || action == MarkingAction.UVSetsMenu || action == MarkingAction.OpenUV || (action >= MarkingAction.UV0 && action <= MarkingAction.UV7))
                 return true;
+            if (action == MarkingAction.EditPivot && CenterMode) return true;
             if (action == MarkingAction.PivotMenu || action == MarkingAction.EditPivot || action == MarkingAction.CenterPivot)
                 return CanAdjustPivot;
             if (action == MarkingAction.Freeze)
@@ -325,7 +326,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.ObjectAxes: SetToolbarLocalAxes(true); break;
                 case MarkingAction.ComponentAxes: SetToolbarComponentAxes(); break;
                 case MarkingAction.WorldAxes: SetToolbarLocalAxes(false); break;
-                case MarkingAction.EditPivot: pivot = !pivot; break;
+                case MarkingAction.EditPivot: TogglePivotEdit(view); break;
                 case MarkingAction.CenterPivot: CenterEditingPivot(); break;
                 case MarkingAction.Freeze: Document.Freeze(Active, Transforms); Changed(); RememberAction(RepeatKind.Freeze); break;
                 case MarkingAction.OpenUV: StudioUVEditor.Open(this); break;

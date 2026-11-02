@@ -32,6 +32,41 @@ namespace MashBoxSDK.AnimationStudio
                 return false;
             }
         }
+        internal bool CenterMode => StudioSettings.Current.centerTransformMode;
+        internal void SetCenterMode(bool enabled)
+        {
+            if (CenterMode == enabled || GUIUtility.hotControl != 0) return;
+            if (enabled) { pivot = false; EndPivotSnap(); }
+            StudioSettings.Current.centerTransformMode = enabled;
+            StudioSettings.Save(); InvalidateHandleComponentFrame(); pivotHover = null;
+            repaint(); toolOptions?.Repaint();
+        }
+        private void TogglePivotEdit(SceneView view = null)
+        {
+            if (CenterMode)
+            {
+                const string message = "Cannot edit pivot in CENTER mode";
+                var target = view ? view : commandView;
+                if (target) target.ShowNotification(new GUIContent(message));
+                else error = message;
+                repaint(); return;
+            }
+            if (CanAdjustPivot) { pivot = !pivot; repaint(); }
+        }
+        private Vector3 SelectionGeometryCenter(bool average)
+        {
+            if (mode != ComponentMode.Object)
+            {
+                var nodes = ComponentTargetNodes(true);
+                return nodes.Count > 1 ? MultiComponentCenter(nodes) : ComponentSelectionCenter();
+            }
+            var selected = objects.Where(i => i >= 0 && i < Transforms.Length).ToArray();
+            if (selected.Length == 0) return BoundsFor(Active).center;
+            if (average) return selected.Aggregate(Vector3.zero, (sum, i) => sum + BoundsFor(i).center) / selected.Length;
+            var bounds = BoundsFor(selected[0]);
+            foreach (int i in selected.Skip(1)) bounds.Encapsulate(BoundsFor(i));
+            return bounds.center;
+        }
         private bool CanAdjustPivot => Document && Active >= 0 && !Document.IsBone(Active) &&
             (mode == ComponentMode.Object || (ActiveMesh && CanEditComponents() && SelectedVertices().Count > 0));
 
@@ -50,6 +85,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private Vector3 UnlockedEditingPivotPosition => mode == ComponentMode.Object ? Transforms[Active].position :
             HasComponentPivot ? componentPivot.position : ComponentSelectionCenter();
+        private Vector3 FocusPivotPosition => pivotLocked && lockedPivotValid && lockedPivotDocument == Document
+            ? lockedPivotPosition : UnlockedEditingPivotPosition;
         internal Vector3 EditingPivotPosition => ResolveLockedPivotCenter(UnlockedEditingPivotPosition);
 
         private void SetComponentPivot(Vector3 position, Quaternion orientation, string undoName)

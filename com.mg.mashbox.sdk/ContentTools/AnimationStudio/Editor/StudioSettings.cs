@@ -31,6 +31,8 @@ namespace MashBoxSDK.AnimationStudio
             // a project's collector; apply it only after an explicit toggle edit.
             public bool incrementalGarbageCollection;
             public bool disableViewportImageCache;
+            public bool focusSelectionAverage;
+            public bool centerTransformMode;
             public float gridSpacing = .25f, gridOpacity = 1, uvPointSize = 4;
             public float handleSize = 1;
             public float channelDragSensitivity = 1;
@@ -177,6 +179,7 @@ namespace MashBoxSDK.AnimationStudio
                     PreferenceSection("Editing",()=>{
                         EditorGUI.BeginChangeCheck();
                         int undoLimit=EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions","Studio actions retained across Undo and Redo. One complete drag or tool operation counts as one action."),settings.undoLimit);
+                        DrawFrameSelectionStyle();
                         settings.handleSize=EditorGUILayout.Slider(new GUIContent("Handle size","Resize modelling handles and anchor gizmos."),settings.handleSize,.25f,3);
                         if(EditorGUI.EndChangeCheck()){settings.undoLimit=Math.Max(1,undoLimit);StudioSettings.Save();}
                     });
@@ -226,6 +229,21 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.DrawRect(chip, palette.Canvas);
             EditorGUI.DrawRect(new Rect(chip.x, chip.yMax - 6, chip.width, 6), palette.Accent);
             GUI.Label(new Rect(rect.x + 40, rect.y, rect.width - 44, rect.height), (active ? "✓ " : "") + palette.Name, StudioTheme.Styles.label);
+        }
+        private static void DrawFrameSelectionStyle()
+        {
+            var settings = StudioSettings.Current;
+            var row = EditorGUI.PrefixLabel(EditorGUILayout.GetControlRect(), new GUIContent("Frame selection style"));
+            float width = Mathf.Max(0, (row.width - 6) * .5f);
+            var pivot = new Rect(row.x, row.y, width, row.height);
+            var average = new Rect(row.x + width + 6, row.y, width, row.height);
+            bool useAverage = settings.focusSelectionAverage;
+            // Treat the two checkboxes as a radio group: clicking the selected
+            // choice cannot leave the group without an enabled style.
+            if (EditorGUI.ToggleLeft(pivot, new GUIContent("Pivot", "Alternate mesh framing and exact pivot focus, starting with the mesh."), !useAverage) && useAverage)
+                settings.focusSelectionAverage = false;
+            if (EditorGUI.ToggleLeft(average, new GUIContent("Selection Average", "Always frame the selection's average geometry center."), useAverage) && !useAverage)
+                settings.focusSelectionAverage = true;
         }
         internal static void DrawWindowMode()
         {

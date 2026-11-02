@@ -1,5 +1,18 @@
 ## Jet through-slice regression (2026-10-29)
 
+## Center/Pivot and framing
+
+Center/Pivot mode and focus (2026-11-02): the native **Center & Pivot** toolbar defaults to **Pivot** and sits immediately after Grid at the top left, before World & Local. Its checked Center/Pivot dropdown uses Unity handle icons and the shared overlay theme, layout persistence, visibility discovery and dirty state. Center uses combined object geometry bounds (components use their geometric average), ignores edited/locked pivot anchors and rotates/scales about the shared center. Pivot retains existing editable origins and individual Object/Component rotation semantics. Switching to Center finishes pivot editing without changing geometry; invoking Edit Pivot through D, menu, marking menu or Tool Options warns exactly "Cannot edit pivot in CENTER mode". Explicit Center Pivot remains a separate geometry-preserving command. Stored custom/locked pivot state remains available after returning to Pivot.
+
+General > Editing > **Frame selection style** has side-by-side, mutually exclusive **Pivot** and **Selection Average** toggles; exactly one remains enabled. Pivot is the default. F / Frame Selection first frames the selected mesh geometry, then focuses the exact editing pivot at the current zoom and rotation; repeated presses alternate mesh → pivot → mesh. A different selection or viewport restarts at the mesh. Choosing Selection Average retains regular selection-average framing on every press: equal average of selected object geometry centers, or geometric component average across selected meshes. This preference remains independent of Center/Pivot transform mode. The style row reuses the existing `focusSelectionAverage` field through StudioPreferenceStore, preserving saved choices without migration or personal-profile writes; `centerTransformMode` remains separate. Empty-workspace camera reset and custom shortcut bindings are preserved. Alternation state is session-only, outside settings and Undo.
+
+View > **Grid** toggles the same saved modeling grid state as the Grid toolbar button, with a synchronized checkmark, event-driven redraw and automatic shortcut/custom-toolbar registration (initially unassigned).
+
+Sources: Editor/StudioModelEditor.Menus.cs; Editor/StudioSettings.cs; StudioViewportToolbar.cs; MashBoxStudioViewport.Toolbars.cs; StudioModelEditor.cs, .ComponentPivot.cs, .PivotLock.cs, .IndividualRotation.cs, .MultiComponentTransform.cs, .Display.cs, .Shortcuts.cs, .MarkingMenus.cs and .ToolOptions.cs.
+
+Validation for this addition: current-source compilation only; no new Unity session, native capture or physical gesture test. Existing pivot/rotation test results predate this mode.
+
+
 ## Off-surface cut endpoints and section-centered pivots (2026-10-29)
 
 `StudioSliceEndpointValidation.cs`: **7 native checks passed** using a close-up perspective view of a long diagonal cube. Its projected bounds exceed the viewport, but two endpoints inside those bounds miss the actual surface and the finite segment crosses it. Confirms on-surface hits, extension-only rejection and shared Multi-Cut preview. `slice-endpoints-request.txt` queues the fixture on reload in disposable SelectionUndoProject; output `slice-endpoints-result.txt`. This exercises the actual shared helpers, not physical mouse events.
@@ -767,3 +780,5 @@ Bisect object separation (2026-10-29): `StudioBisectSplitValidation.cs` now pass
 Subdivision edge correction (2026-10-29): the previous no-overlay acceptance criterion was wrong. Shaded Wireframe and selection feedback must draw evaluated mesh edges; only subdivision-forced visibility/X-ray is removed. StudioSubdivisionCageValidation.cs is superseded and must not be used to assert zero overlay pixels. Current-source compilation passes; no new rendered pass for this immediate correction.
 
 Crease runtime removal (2026-10-29): removed Studio crease settings, serialization validation, remapping and native descriptor input, plus the obsolete frame fixture assertion. Managed and native builds pass; deployed native DLL hash F1303E6A9EC58FE97D11BECA504F40B65BB860F56E5EEE54149C58E21062AA0F. No Unity test session. ABI slots remain zero/unused so existing loaded native images remain callable. Upstream OpenSubdiv boundary processing is retained.
+
+Export menu simplification (2026-11-02): only Export All and Export Selected remain, sharing the current-geometry export path. Original All/Selection command IDs are preserved. Source compilation checked; no new FBX roundtrip or Unity fixture run. Existing file-export test results predate this change.
