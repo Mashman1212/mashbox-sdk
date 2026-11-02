@@ -57,7 +57,9 @@ namespace MashBoxSDK.Maps.Roads.Editor
         string message;
         UnityEditor.Editor inspector;
 
-        [MenuItem("MashBox/Map Tools/Road Tool")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Map Tools/Road Tool")]
+#endif
         public static void Open()
         {
             var window = GetWindow<MGRoadTool>("Road Tool");

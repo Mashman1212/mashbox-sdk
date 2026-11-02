@@ -58,7 +58,9 @@ namespace MashBoxSDK.Maps.Roads.Editor
             }
             finally { Object.DestroyImmediate(go); }
         }
-        [MenuItem("MashBox/Validation/Validate Roads")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Roads")]
+#endif
         public static void Run()
         {
             checks = 0;

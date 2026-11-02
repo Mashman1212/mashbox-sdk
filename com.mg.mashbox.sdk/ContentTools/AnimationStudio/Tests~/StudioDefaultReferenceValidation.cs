@@ -60,9 +60,19 @@ public static class StudioDefaultReferenceValidation
             Check(!roundTrip.body, "Explicit None survives serialization");
             AnimationStudioWindow.Open();
             var window = Resources.FindObjectsOfTypeAll<AnimationStudioWindow>().First();
-            Call(window, "NewTake");
+            Call(window, "SwitchStudioMode", false);
             var take = (AnimationTake)Get(window, "take");
+            Check(take && !EditorUtility.IsPersistent(take) && take.name == "Untitled Take" && (int)Get(window, "frame") == 0,
+                "Entering Animation immediately creates an unsaved take at frame zero");
             Check(take.body == body && take.clothing.Contains(bust), "New animation includes the intended body and bust");
+            Call(window, "SwitchStudioMode", false);
+            Check((AnimationTake)Get(window, "take") == take, "Selecting Animation again preserves the open take");
+            Call(window, "DiscardClipChanges");
+            window.GetType().GetField("automaticSessionFailed", Flags).SetValue(window, true);
+            Call(window, "SwitchStudioMode", false);
+            var retried = (AnimationTake)Get(window, "take");
+            Check(retried && retried.body == body && retried.clothing.Contains(bust) && !(bool)Get(window, "automaticSessionFailed"),
+                "Selecting Animation with no take retries failed startup using the default character");
             Call(window, "OpenSkinningMode");
             var doc = (StudioSkinningDocument)Get(window, "skinningDocument");
             var bodyMeshes = body.GetComponentsInChildren<SkinnedMeshRenderer>(true).Select(r => r.sharedMesh).ToArray();

@@ -164,7 +164,13 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SwitchStudioMode(bool modeling)
         {
-            if (modelingMode == modeling && !skinningMode && !retopologyMode && !paintingMode && !clothMode) return;
+            // An explicit Animation request also retries a failed startup session.
+            if (!modeling) automaticSessionFailed = false;
+            if (modelingMode == modeling && !skinningMode && !retopologyMode && !paintingMode && !clothMode)
+            {
+                if (!modeling && !take) NewTake();
+                return;
+            }
             LeaveClothMode();
             LeavePaintingMode();
             retopologyMode=false; retopologyEditor?.SuspendLighting(); viewport.SetRetopologyPanels(false);
@@ -180,7 +186,8 @@ namespace MashBoxSDK.AnimationStudio
             }
             else
             {
-                modelingMode = false; OpenViewport();
+                modelingMode = false;
+                if (!take) NewTake(); else OpenViewport();
                 if (savedAnimationCamera) { viewport.pivot = animationCameraPivot; viewport.rotation = animationCameraRotation; viewport.size = animationCameraSize; }
             }
             viewport.Repaint();

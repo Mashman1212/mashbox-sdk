@@ -9,7 +9,9 @@ namespace MashBoxSDK.MapTools
 {
     public sealed partial class MeshSculptWindow
     {
-        [MenuItem("MashBox/Validation/Validate Sculptable Selection")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Sculptable Selection")]
+#endif
         public static void ValidateSculptableSelection()
         {
             var previous = new List<MeshFilter>(s_SculptableSurfaces);
@@ -54,7 +56,9 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        [MenuItem("MashBox/Validation/Validate Sculpt Terrain Activation")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Sculpt Terrain Activation")]
+#endif
         public static void ValidateTerrainActivation()
         {
             var previous = new List<MeshFilter>(s_SculptableSurfaces);
@@ -104,7 +108,9 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        [MenuItem("MashBox/Validation/Validate Terrain Smoothing Equivalence")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Terrain Smoothing Equivalence")]
+#endif
         public static void ValidateTerrainSmoothing()
         {
             var owner = new GameObject("Terrain smoothing validation") { hideFlags = HideFlags.HideAndDontSave };

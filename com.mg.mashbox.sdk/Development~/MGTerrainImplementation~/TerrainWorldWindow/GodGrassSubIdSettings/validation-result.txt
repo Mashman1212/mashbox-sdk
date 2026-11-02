@@ -1,0 +1,1 @@
+PASS: hidden controls exposed for all 8 Sub-IDs; width/height editing isolated; opening preserves material; first activation copies shared defaults; reactivation preserves edits; shadow mode restored.

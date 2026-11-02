@@ -18,14 +18,20 @@ namespace MashBoxSDK.MapTools
     [CanEditMultipleObjects]
     public sealed partial class MGTerrainEditor : Editor
     {
-        int m_FloodDensity = ushort.MaxValue;
+        int m_FloodDensity = 1;
+        bool m_AdvancedFloodDensity;
         readonly List<Material> m_DetailSourceMaterials = new List<Material>();
         bool m_DetailPainting, m_AdjustDetailBrush, m_PreviousEditing;
+        bool m_WorldAutoDetailBrush;
+        bool m_IgnoreDetailSubIdSelection;
         bool m_HasDetailAdjustSurface;
         Vector2 m_DetailAdjustMouse;
+        enum DetailBrushAdjustmentAxis { Pending, Radius, Strength }
+        DetailBrushAdjustmentAxis m_DetailAdjustmentAxis;
+        Vector2 m_DetailAdjustmentTravel;
         Vector3 m_DetailAdjustPoint, m_DetailAdjustNormal;
         int m_PaintDetailIndex, m_PaintChannel;
-        float m_PaintDensity = 32f;
+        float m_PaintDensity = 1f;
         bool m_GrassIdOnly;
         float m_PaintSize = 1f;
         float m_PaintHealth = 1f;
@@ -327,7 +333,6 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.PropertyField(m_ControlMap1);
                 EditorGUILayout.PropertyField(m_ControlMap2);
 
-                DrawDetailFoliagePalettes(terrain);
                 if (terrain.World != null) EditorGUILayout.HelpBox("Quality is controlled by the parent MG Terrain World.", MessageType.Info);
                 using (new EditorGUI.DisabledScope(terrain.World != null))
                 {
@@ -337,14 +342,14 @@ namespace MashBoxSDK.MapTools
                     new GUIContent("Overall Detail Density", "Main density multiplier: 0 hides density details, 1 uses full available density. Distance LOD multiplies this value. Cell capacity and the visible instance budget remain upper limits; the combined-mesh vertex limit does not affect density."));
                 EditorGUILayout.PropertyField(
                     m_MaxDensityDetailDistance,
-                    new GUIContent("Max Detail Distance", "Global maximum rendering distance for density-map grass/details. A prototype can use a shorter distance; 0 removes this global ceiling."));
+                    new GUIContent("Max Detail Distance", "Global maximum rendering distance for density-mapped details. A prototype can use a shorter distance; 0 removes this global ceiling."));
                 EditorGUILayout.PropertyField(
                     m_DetailChunkCells,
                     new GUIContent("Near Cell Size (Texels)", "Streaming cell width in density-map texels. The density ceiling is fixed per world area: 32,768 instances per 50 Ã— 50 metres per layer, independent of this cell size."));
                 EditorGUILayout.PropertyField(m_MaxCachedDetailChunks);
                 EditorGUILayout.PropertyField(m_MaxDetailChunksBuiltPerLayerPerFrame);
                 var transitionWidth = serializedObject.FindProperty("m_DensityTransitionWidth");
-                EditorGUILayout.PropertyField(transitionWidth, new GUIContent("Density Transition Width", "GodGrass dither-fade width in metres. A positive width keeps cells fixed and reserves the denser population during transitions. Zero disables fading. The visible instance budget still applies."));
+                EditorGUILayout.PropertyField(transitionWidth, new GUIContent("Density Transition Width", "Detail dither-fade width in metres. A positive width keeps cells fixed and reserves the denser population during transitions. Zero disables fading. The visible instance budget still applies."));
                 EditorGUILayout.PropertyField(
                     m_UseDetailDensityLod,
                     new GUIContent("Distance Density LOD", "Keep nearby cells dense while deterministically thinning farther cells."));
@@ -394,7 +399,7 @@ namespace MashBoxSDK.MapTools
                     0.75f,
                     new GUIContent(
                         "Distance Budget Reserve",
-                        "Fraction of the visible budget guaranteed to middle/far HLOD cells when nearby grass alone exceeds the cap. Unused reserve is automatically returned to the near field."));
+                        "Fraction of the visible budget guaranteed to middle/far HLOD cells when nearby details alone exceeds the cap. Unused reserve is automatically returned to the near field."));
                 EditorGUILayout.PropertyField(
                     m_UseBatchRendererGroup,
                     new GUIContent(
@@ -618,7 +623,7 @@ namespace MashBoxSDK.MapTools
                     return 0;
                 }
             if (!confirmed && !EditorUtility.DisplayDialog("Clear Density Under Lofts?",
-                $"Clear the projected footprints of active Multi Spline Lofts in this scene, including raised lofts, from this terrain's {maps.Count} density/source maps?\n\nThe edge feathers {(m_LoftEdgeWidth < 0f ? "inward" : "outward")} over up to {Mathf.Abs(m_LoftEdgeWidth)} metres with seeded variation. Individual Decor instances and trees are unchanged. New maps preserve the original painting; Undo restores assignments but keeps the created assets. This only removes density; use the original map to restore grass.", "Clear Under Lofts", "Cancel")) return 0;
+                $"Clear the projected footprints of active Multi Spline Lofts in this scene, including raised lofts, from this terrain's {maps.Count} density/source maps?\n\nThe edge feathers {(m_LoftEdgeWidth < 0f ? "inward" : "outward")} over up to {Mathf.Abs(m_LoftEdgeWidth)} metres with seeded variation. Individual Decor instances and trees are unchanged. New maps preserve the original painting; Undo restores assignments but keeps the created assets. This only removes density; use the original map to restore details.", "Clear Under Lofts", "Cancel")) return 0;
             var results = new Dictionary<Texture2D, ushort[]>();
             var replacements = new Dictionary<Texture2D, Texture2D>();
             var counts = new Dictionary<Texture2D, long>();
@@ -997,10 +1002,17 @@ namespace MashBoxSDK.MapTools
             SceneView.RepaintAll();
         }
 
-        void DrawDetailLayerVisibility(MGTerrain terrain)
+        void DrawDetailLayerVisibility(MGTerrain terrain, bool popup = false)
         {
             if (m_DensityDetailLayers.arraySize == 0) return;
-            EditorGUILayout.LabelField("Detail Layer Visibility", EditorStyles.boldLabel);
+            if (!popup)
+            {
+                const string preference = "MashBox.MGTerrain.LayerVisibility";
+                bool expanded = SessionState.GetBool(preference, true);
+                bool next = EditorGUILayout.Foldout(expanded, "Layer Visibility", true);
+                if (next != expanded) SessionState.SetBool(preference, next);
+                if (!next) return;
+            }
             for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
             {
                 var layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
@@ -1049,28 +1061,57 @@ namespace MashBoxSDK.MapTools
             }
             EditorGUILayout.Space();
         }
-        void DrawDensityLayersWithFlood(MGTerrain terrain)
+        int DetailTuningLayer(MGTerrain terrain, bool grassArrayMaterial)
         {
-            using (new EditorGUI.IndentLevelScope())
+            int tuningLayer = grassArrayMaterial
+                ? MGGrassDetailLayers.SharedIndex(terrain, m_SelectedPrototype, m_GrassPaintPopulation) : -1;
+            // Legacy/non-array details use the active matching layer, then the first match.
+            if (tuningLayer < 0)
+                for (int i = 0; i < m_DensityDetailLayers.arraySize; i++)
+                {
+                    var candidate = m_DensityDetailLayers.GetArrayElementAtIndex(i);
+                    if (candidate.FindPropertyRelative("m_PrototypeIndex").intValue != m_SelectedPrototype
+                        || candidate.FindPropertyRelative("m_PaletteSourceOnly").boolValue) continue;
+                    if (grassArrayMaterial && candidate.FindPropertyRelative("m_GrassPopulation").intValue != m_GrassPaintPopulation) continue;
+                    if (tuningLayer < 0) tuningLayer = i;
+                    if (i == m_PaintDetailIndex) { tuningLayer = i; break; }
+                }
+            return tuningLayer;
+        }
+
+        void DrawDensityLayersWithFlood(MGTerrain terrain, bool grassArrayMaterial)
+        {
+            int tuningLayer = DetailTuningLayer(terrain, grassArrayMaterial);
+            if (tuningLayer < 0)
+            {
+                EditorGUILayout.HelpBox(grassArrayMaterial ? "Select a detail Sub-ID to create this population." : "Select a detail layer to tune it.", MessageType.Info);
+                return;
+            }
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 for (int index = 0; index < m_DensityDetailLayers.arraySize; index++)
                 {
 
             SerializedProperty layer = m_DensityDetailLayers.GetArrayElementAtIndex(index);
                     if (layer.FindPropertyRelative("m_PrototypeIndex").intValue != m_SelectedPrototype) continue;
-                    EditorGUILayout.LabelField("Density Layer " + (index + 1), EditorStyles.boldLabel);
+                    if (index != tuningLayer) continue;
+                    EditorGUILayout.LabelField(new GUIContent(grassArrayMaterial ? "Population " + (m_GrassPaintPopulation == 0 ? "A" : "B") + " Settings" : "Population Settings", "Applies only to this population of this detail, including its existing instances. All Sub-IDs within it share these values; other populations and prototypes keep their own settings."), EditorStyles.boldLabel);
+                    var definition = terrain.Prototypes[m_SelectedPrototype];
+                    string detailName = definition.Prefab != null ? definition.Prefab.name : definition.Mesh != null ? definition.Mesh.name : "Detail";
+                    EditorGUILayout.LabelField("ID " + m_SelectedPrototype + " · " + detailName + (grassArrayMaterial ? " · All Sub-IDs in Population " + (m_GrassPaintPopulation == 0 ? "A" : "B") : ""), EditorStyles.wordWrappedMiniLabel);
                     EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_MaxInstancesPerSquareMetre"), new GUIContent("Max Instances / m²"));
-                    EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_UseGrassArray"), new GUIContent("Grass Array Sub-ID"));
+                    EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_UseGrassArray"), new GUIContent("Detail Array Sub-ID"));
                     if (layer.FindPropertyRelative("m_UseGrassArray").boolValue && layer.FindPropertyRelative("m_GrassIdMap").objectReferenceValue == null)
                     {
                         var subId = layer.FindPropertyRelative("m_TextureSlice");
                         subId.intValue = EditorGUILayout.IntSlider("Painted Sub-ID", subId.intValue, 0, 7);
                         EditorGUILayout.HelpBox("This entire density layer uses the selected array slice. Add another Sub-ID layer to paint a different look with the same mesh and material.", MessageType.None);
                     }
+                    DrawDetailCapsuleSettings(terrain, layer);
                     if (!m_ShowPrototypeAdvanced) continue;
                     if (m_WorldDetailControls)
-                        DrawPrototypeFields(layer, "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_DensityMap", "m_SizeMap", "m_HealthMap", "m_GrassIdMap");
-                    else DrawPrototypeFields(layer, "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice");
+                        DrawPrototypeFields(layer, "m_CapsuleCollision", "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_FarBakeColor", "m_ShaderTint", "m_GrassPopulation", "m_DensityMap", "m_SizeMap", "m_HealthMap", "m_GrassIdMap");
+                    else DrawPrototypeFields(layer, "m_CapsuleCollision", "m_PrototypeIndex", "m_MaxInstancesPerSquareMetre", "m_RepresentedInstanceCount", "m_UseGrassArray", "m_TextureSlice", "m_FarBakeColor", "m_ShaderTint", "m_GrassPopulation");
                     using (new EditorGUI.IndentLevelScope())
                     {
                         using (new EditorGUI.DisabledScope(Application.isPlaying))
@@ -1105,7 +1146,21 @@ namespace MashBoxSDK.MapTools
                                     Selection.activeObject = material;
                             }
                         }
-                        m_FloodDensity = EditorGUILayout.IntSlider(new GUIContent("Flood Density", "Instances per density texel. 65,535 is the maximum R16 value. Rendering still respects distance and instance budgets."), m_FloodDensity, 1, ushort.MaxValue);
+                        m_AdvancedFloodDensity = EditorGUILayout.Foldout(m_AdvancedFloodDensity, "Advanced flood density", true);
+                        if (m_AdvancedFloodDensity)
+                        {
+                            m_FloodDensity = Mathf.Clamp(EditorGUILayout.IntField(new GUIContent("Instances / Texel", "Full R16 range for unusually coarse density maps. Ordinary flood fills usually need only 1–10 instances per texel."), m_FloodDensity), 1, ushort.MaxValue);
+                        }
+                        else
+                        {
+                            // Closing Advanced must not silently change an explicitly entered high target.
+                            if (m_FloodDensity > 10)
+                            {
+                                EditorGUILayout.LabelField("Flood Density", m_FloodDensity.ToString("N0") + " / texel (advanced)");
+                                if (GUILayout.Button("Use Standard Flood Range")) m_FloodDensity = 1;
+                            }
+                            else m_FloodDensity = EditorGUILayout.IntSlider(new GUIContent("Flood Density / Texel", "Whole instances per density texel. Use Advanced for coarse maps that need more than ten."), m_FloodDensity, 1, 10);
+                        }
                         using (new EditorGUI.DisabledScope(Application.isPlaying))
                         using (new EditorGUILayout.HorizontalScope())
                         {
@@ -1653,11 +1708,15 @@ namespace MashBoxSDK.MapTools
 
         void DrawLoftDetailOperations(MGTerrain terrain)
         {
-                EditorGUILayout.LabelField("Clear Details Under Lofts", EditorStyles.boldLabel);
-                m_LoftEdgeWidth = EditorGUILayout.Slider(new GUIContent("Edge Feather (Metres)", "Positive feathers outside the loft; negative feathers inside, preserving grass near its edge. Reapply from the original map to restore previously removed grass."), m_LoftEdgeWidth, -10f, 10f);
+                const string preference = "MashBox.MGTerrain.LoftDetails";
+                bool expanded = SessionState.GetBool(preference, false);
+                bool next = EditorGUILayout.Foldout(expanded, "Clear Details Under Lofts", true);
+                if (next != expanded) SessionState.SetBool(preference, next);
+                if (!next) return;
+                m_LoftEdgeWidth = EditorGUILayout.Slider(new GUIContent("Edge Feather (Metres)", "Positive feathers outside the loft; negative feathers inside, preserving details near its edge. Reapply from the original map to restore previously removed details."), m_LoftEdgeWidth, -10f, 10f);
                 m_LoftEdgeVariation = EditorGUILayout.Slider("Edge Variation", m_LoftEdgeVariation, 0f, 1f);
                 m_LoftNoiseScale = Mathf.Max(0.01f, EditorGUILayout.FloatField("Edge Patch Size (Metres)", m_LoftNoiseScale));
-                m_LoftEdgeSeed = EditorGUILayout.IntField("Edge Seed", m_LoftEdgeSeed);
+
                 using (new EditorGUI.DisabledScope(Application.isPlaying))
                     if (GUILayout.Button(terrain.World != null ? "Remove World Details Under Lofts..." : "Remove Density Details Under Lofts..."))
                     {
@@ -1714,7 +1773,8 @@ namespace MashBoxSDK.MapTools
         void DrawDetailPainter(MGTerrain terrain)
         {
             EditorGUILayout.Space();
-            if (!m_DetailPainting) return;
+            if (!m_DetailPainting && !m_WorldAutoDetailBrush) return;
+            if (m_WorldAutoDetailBrush && (uint)m_PaintDetailIndex >= terrain.DensityDetailLayerCount) { DrawDetailBrushHeader(); return; }
             var labels = new string[terrain.DensityDetailLayerCount];
             for (int i = 0; i < labels.Length; i++)
             {
@@ -1725,53 +1785,26 @@ namespace MashBoxSDK.MapTools
                 labels[i] = i + ": " + name + (detail.GrassIdMap != null ? " / Population " + (detail.GrassPopulation == 0 ? "A" : "B") : detail.UsesGrassArray ? " / Sub-ID " + detail.TextureSlice : "");
             }
             if (labels.Length == 0) { SetDetailPainting(false); return; }
-            int activeDetail = EditorGUILayout.Popup("Active Detail", Mathf.Clamp(m_PaintDetailIndex, 0, labels.Length - 1), labels);
-            if (activeDetail != m_PaintDetailIndex) SelectPaintDetail(activeDetail);
-            DrawPaintTogether(terrain, labels);
-            int channel = GUILayout.Toolbar(m_PaintChannel, new[] { "Density", "Size", "Health", "Multi" });
-            if (channel != m_PaintChannel) { FinishDetailStroke(); m_PaintChannel = channel; }
-            if (m_PaintChannel == 3)
+            DrawDetailBrushHeader();
+            if (m_WorldAutoDetailBrush)
+                DrawDetailPaintSelection(terrain);
+            else
             {
-                EditorGUI.BeginChangeCheck();
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    m_MultiDensity = EditorGUILayout.ToggleLeft("Density", m_MultiDensity);
-                    m_MultiSize = EditorGUILayout.ToggleLeft("Size", m_MultiSize);
-                    m_MultiHealth = EditorGUILayout.ToggleLeft("Health", m_MultiHealth);
-                }
-                if (EditorGUI.EndChangeCheck()) FinishDetailStroke();
-                if (!m_MultiDensity && !m_MultiSize && !m_MultiHealth)
-                    EditorGUILayout.HelpBox("Enable at least one channel to paint.", MessageType.Info);
+                int activeDetail = EditorGUILayout.Popup("Active Detail", Mathf.Clamp(m_PaintDetailIndex, 0, labels.Length - 1), labels);
+                if (activeDetail != m_PaintDetailIndex) SelectPaintDetail(activeDetail);
             }
+            DrawDetailBrushModes();
+            using var inactiveBrush = new EditorGUI.DisabledScope(!m_DetailPainting);
             var selectedDetail = terrain.DensityDetailLayers[m_PaintDetailIndex];
             if (selectedDetail.GrassIdMap != null && PaintsChannel(0))
             {
-                m_GrassPaintPopulation = selectedDetail.GrassPopulation;
+                if (!m_WorldAutoDetailBrush) m_GrassPaintPopulation = selectedDetail.GrassPopulation;
                 EditorGUI.BeginChangeCheck();
-                bool idOnly = EditorGUILayout.Toggle(new GUIContent("Replace ID Only", "Change the grass type without changing density. Leave off to paint towards Target Density / Texel."), m_GrassIdOnly);
+                bool idOnly = EditorGUILayout.Toggle(new GUIContent("Replace ID Only", "Change the detail type without changing density. Leave off to paint towards Target Density / Texel."), m_GrassIdOnly);
                 if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassIdOnly = idOnly; }
-                if (m_RandomGrassSubIds)
-                    EditorGUILayout.LabelField("Paint Grass Sub-IDs", "Random mix — choose IDs below");
-                else
-                {
-                    EditorGUI.BeginChangeCheck();
-                    int id = EditorGUILayout.IntSlider("Paint Grass Sub-ID", m_GrassPaintSubId, 0, 7);
-                    if (EditorGUI.EndChangeCheck()) { FinishDetailStroke(); m_GrassPaintSubId = id; }
-                }
+
             }
-            DrawDetailCapsuleSettings(terrain, m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex));
-            m_SelectedPrototype = selectedDetail.PrototypeIndex;
-            long totalDensity = selectedDetail.RepresentedInstanceCount;
-            if (m_WorldDetailControls && terrain.World != null)
-            {
-                totalDensity = 0;
-                foreach (var tile in SharedTiles(terrain))
-                {
-                    int match = FindWorldPaintLayer(terrain, m_PaintDetailIndex, tile);
-                    if (match >= 0) totalDensity += tile.DensityDetailLayers[match].RepresentedInstanceCount;
-                }
-            }
-            EditorGUILayout.LabelField(m_WorldDetailControls ? "World Detail Density" : "Selected Detail Density", totalDensity.ToString("N0"));
+            if (!m_WorldAutoDetailBrush) m_SelectedPrototype = selectedDetail.PrototypeIndex;
             terrain.GetDetailSourceMaterials(selectedDetail.PrototypeIndex, m_DetailSourceMaterials);
             if (m_DetailSourceMaterials.Count == 0)
                 EditorGUILayout.HelpBox("This prototype has no renderable mesh/material. Check its Prefab, enabled MeshRenderer and MeshFilter (including LOD0), or assign Mesh and Material directly. Painting cannot display this detail until that is fixed.", MessageType.Warning);
@@ -1781,33 +1814,33 @@ namespace MashBoxSDK.MapTools
             MBEditorToolState.BrushStrength = EditorGUILayout.Slider("Brush Strength", MBEditorToolState.BrushStrength, .01f, 1f);
             if (PaintsChannel(0))
             {
-                m_PaintDensity = EditorGUILayout.FloatField(new GUIContent("Target Density / Texel", "Supports fractional density: 0.1 paints approximately one tree per ten texels. Repeated strokes keep the same sparse pattern."), m_PaintDensity);
-                m_PaintDensity = float.IsFinite(m_PaintDensity) ? Mathf.Clamp(m_PaintDensity, 0f, 2000f) : 1f;
+                m_PaintDensity = float.IsFinite(m_PaintDensity) ? Mathf.Clamp(m_PaintDensity, .01f, 10f) : 1f;
+                m_PaintDensity = EditorGUILayout.Slider(new GUIContent("Target Density / Texel", "Instances per density-map texel, from 0.01 to 10. 0.01 targets about one instance per hundred texels; 0.1 targets one per ten. Repeated strokes keep the same sparse pattern. Hold Shift to erase."), m_PaintDensity, .01f, 10f);
                 if (m_PaintDensity <= 1f)
                 {
-                    m_PaintDensity = EditorGUILayout.Slider("Sparse Coverage", m_PaintDensity, 0f, 1f);
                     EditorGUILayout.HelpBox($"{m_PaintDensity:P1} of texels targeted for one instance. Paint over an existing dense area to thin it toward this target. Brush strength controls how quickly it reaches the target.", MessageType.None);
                 }
-                var layer = m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex);
-                EditorGUILayout.Space(4f);
-                EditorGUILayout.LabelField("Random Size", EditorStyles.boldLabel);
-                DrawDensitySizeRange(layer, "Width", "m_MinWidth", "m_MaxWidth");
-                DrawDensitySizeRange(layer, "Height", "m_MinHeight", "m_MaxHeight");
-                EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_SizeMultiplier"),
-                    new GUIContent("Overall Size", "Multiplies both the random width and height."));
-                EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_Seed"),
-                    new GUIContent("Variation Seed", "Controls the repeatable random placement, rotation and size of this detail layer."));
-                EditorGUILayout.HelpBox("Each instance gets a random width and height within these ranges. Equal minimum and maximum values give a fixed size. These settings affect all foliage in this detail layer, including existing painting. The Size brush adds a local multiplier.", MessageType.None);
+                if (!m_WorldAutoDetailBrush)
+                {
+                    var layer = m_DensityDetailLayers.GetArrayElementAtIndex(m_PaintDetailIndex);
+                    EditorGUILayout.Space(4f);
+                    EditorGUILayout.LabelField("Random Size", EditorStyles.boldLabel);
+                    DrawDensitySizeRange(layer, "Width", "m_MinWidth", "m_MaxWidth");
+                    DrawDensitySizeRange(layer, "Height", "m_MinHeight", "m_MaxHeight");
+                    EditorGUILayout.PropertyField(layer.FindPropertyRelative("m_SizeMultiplier"),
+                        new GUIContent("Overall Size", "Multiplies both the random width and height."));
+
+                    EditorGUILayout.HelpBox("Each instance gets a random width and height within these ranges. Equal minimum and maximum values give a fixed size. These settings affect all foliage in this detail layer, including existing painting. The Size brush adds a local multiplier.", MessageType.None);
+                }
             }
             if (PaintsChannel(1))
             {
                 m_RandomPaintSize = EditorGUILayout.Toggle("Random Size", m_RandomPaintSize);
                 if (m_RandomPaintSize)
                 {
-                    m_PaintSizeMin = EditorGUILayout.Slider("Minimum Size Multiplier", m_PaintSizeMin, .05f, 4f);
-                    m_PaintSizeMax = EditorGUILayout.Slider("Maximum Size Multiplier", Mathf.Max(m_PaintSizeMin, m_PaintSizeMax), m_PaintSizeMin, 4f);
-                    m_PaintSizeSeed = EditorGUILayout.IntField("Size Random Seed", m_PaintSizeSeed);
-                    EditorGUILayout.HelpBox("Paints a repeatable random size per size-map texel. Overlapping dabs keep the same targets; change the seed for a different pattern. Brush strength and falloff blend toward those sizes. Shift restores size to 1.", MessageType.None);
+                    DrawDetailRange(new GUIContent("Size Range", "Minimum and maximum painted size multiplier."), ref m_PaintSizeMin, ref m_PaintSizeMax, .05f, 4f);
+
+                    EditorGUILayout.HelpBox("Paints a repeatable random size per size-map texel. Overlapping dabs keep the same targets. Brush strength and falloff blend toward those sizes. Shift restores size to 1.", MessageType.None);
                 }
                 else
                     m_PaintSize = EditorGUILayout.Slider("Target Size Multiplier", m_PaintSize, .05f, 4f);
@@ -1815,9 +1848,8 @@ namespace MashBoxSDK.MapTools
             if (PaintsChannel(2))
             {
                 m_PaintHealth = EditorGUILayout.Slider("Target Health", m_PaintHealth, 0f, 1f);
-                EditorGUILayout.HelpBox("0 = low health; 1 = full health. GodGrass's Painted Health controls set the appearance per index. Health does not change density or size. Shift restores health to 1.", MessageType.None);
+                EditorGUILayout.HelpBox("0 = low health; 1 = full health. The detail material's Painted Health controls set the appearance per index. Health does not change density or size. Shift restores health to 1.", MessageType.None);
             }
-            EditorGUILayout.HelpBox("Drag to paint selected details with soft falloff. Shift erases enabled density and restores enabled size and health to 1. Ctrl + Shift erases density for all detail types under the brush, in every mode. Ctrl + middle-drag: horizontal = radius, vertical = strength. Alt navigates; Esc stops. Multi applies enabled channels in one undoable stroke. Size multiplies existing width and height; health changes shader appearance. Painted cells refresh live during the stroke. The first stroke makes a working copy; original maps are preserved.", MessageType.Info);
             if (terrain.DensityDetailLayers[m_PaintDetailIndex].GeneratedByPalette != null)
                 EditorGUILayout.HelpBox("This is a palette-generated layer. Baking the palette again can replace this layer and its painting.", MessageType.Warning);
             if (terrain.NeedsCollision && !terrain.HasSurfaceCollider)
@@ -1852,6 +1884,7 @@ namespace MashBoxSDK.MapTools
 
         void OnDisable()
         {
+            ClearDetailPrototypeThumbnails();
             SetHolePainting(false);
             SetDetailPainting(false);
             Undo.undoRedoPerformed -= RefreshPaintUndo;
@@ -1895,14 +1928,27 @@ namespace MashBoxSDK.MapTools
             { SetDetailPainting(false); return; }
             Event e = Event.current;
             int control = GUIUtility.GetControlID("MGDetailPaint".GetHashCode(), FocusType.Passive);
+            if (e.rawType == EventType.MouseUp || e.type == EventType.Ignore)
+            {
+                FinishDetailStroke();
+                EndDetailBrushAdjustment();
+                if (GUIUtility.hotControl == control) { GUIUtility.hotControl = 0; e.Use(); }
+                SceneView.RepaintAll();
+            }
+            // A floating tool window leaves the Scene view's last mouse position behind.
+            // Keep the brush armed, but neither draw nor paint outside the hovered Scene view.
+            // Release handling stays above this guard so captured strokes can always finish.
+            if (m_WorldAutoDetailBrush && EditorWindow.mouseOverWindow != SceneView.currentDrawingSceneView) return;
             MBEditorToolVisuals.RepaintBrushModifiers(e, SceneView.currentDrawingSceneView);
             if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
-            { SetDetailPainting(false); e.Use(); return; }
+            { FinishDetailStroke(); if (!m_WorldAutoDetailBrush) SetDetailPainting(false); e.Use(); return; }
             if (e.type == EventType.Layout && !e.alt) HandleUtility.AddDefaultControl(control);
             if (e.type == EventType.MouseDown && e.button == 2 && e.control && !e.alt)
             {
                 FinishDetailStroke();
                 m_AdjustDetailBrush = true;
+                m_DetailAdjustmentAxis = DetailBrushAdjustmentAxis.Pending;
+                m_DetailAdjustmentTravel = Vector2.zero;
                 m_DetailAdjustMouse = e.mousePosition;
                 Physics.SyncTransforms();
                 var surface = terrain.MeshCollider;
@@ -1920,16 +1966,8 @@ namespace MashBoxSDK.MapTools
             }
             if (m_AdjustDetailBrush && e.type == EventType.MouseDrag && e.button == 2)
             {
-                MBEditorToolState.BrushRadius *= Mathf.Exp(e.delta.x * .01f);
-                MBEditorToolState.BrushStrength -= e.delta.y * .005f;
+                ApplyDetailBrushAdjustmentDelta(e.delta);
                 e.Use(); Repaint(); SceneView.RepaintAll();
-            }
-            if (e.rawType == EventType.MouseUp || e.type == EventType.Ignore)
-            {
-                FinishDetailStroke();
-                EndDetailBrushAdjustment();
-                if (GUIUtility.hotControl == control) { GUIUtility.hotControl = 0; e.Use(); }
-                SceneView.RepaintAll();
             }
             if (m_AdjustDetailBrush)
             {
@@ -1976,10 +2014,30 @@ namespace MashBoxSDK.MapTools
             e.Use();
         }
 
+        void ApplyDetailBrushAdjustmentDelta(Vector2 delta)
+        {
+            if (m_DetailAdjustmentAxis == DetailBrushAdjustmentAxis.Pending)
+            {
+                m_DetailAdjustmentTravel += delta;
+                float horizontal = Mathf.Abs(m_DetailAdjustmentTravel.x);
+                float vertical = Mathf.Abs(m_DetailAdjustmentTravel.y);
+                // Match sculpt brushes: ignore jitter, then lock the dominant axis for this drag.
+                if (Mathf.Max(horizontal, vertical) < 4f || Mathf.Max(horizontal, vertical) < Mathf.Min(horizontal, vertical) * 1.2f) return;
+                m_DetailAdjustmentAxis = horizontal > vertical ? DetailBrushAdjustmentAxis.Radius : DetailBrushAdjustmentAxis.Strength;
+                delta = m_DetailAdjustmentTravel;
+            }
+            if (m_DetailAdjustmentAxis == DetailBrushAdjustmentAxis.Radius)
+                MBEditorToolState.BrushRadius *= Mathf.Exp(delta.x * .01f);
+            else
+                MBEditorToolState.BrushStrength -= delta.y * .005f;
+        }
+
         void EndDetailBrushAdjustment()
         {
             if (!m_AdjustDetailBrush) return;
             m_AdjustDetailBrush = false;
+            m_DetailAdjustmentAxis = DetailBrushAdjustmentAxis.Pending;
+            m_DetailAdjustmentTravel = Vector2.zero;
             m_HasDetailAdjustSurface = false;
             EditorGUIUtility.SetWantsMouseJumping(0);
         }
@@ -2009,9 +2067,9 @@ namespace MashBoxSDK.MapTools
             }
             GUI.Box(panel, GUIContent.none, EditorStyles.helpBox);
             GUI.Label(new Rect(panel.x + 8f, panel.y + 4f, panel.width - 16f, 18f),
-                $"Radius  {radius:0.00}   (drag horizontally)", EditorStyles.miniBoldLabel);
+                $"Radius  {radius:0.00}" + (m_DetailAdjustmentAxis == DetailBrushAdjustmentAxis.Radius ? "  [adjusting]" : "  [horizontal]"), EditorStyles.miniBoldLabel);
             EditorGUI.ProgressBar(new Rect(panel.x + 8f, panel.y + 27f, panel.width - 16f, 16f),
-                strength, $"Strength  {strength:0.00}   (drag vertically)");
+                strength, $"Strength  {strength:0.00}" + (m_DetailAdjustmentAxis == DetailBrushAdjustmentAxis.Strength ? "  [adjusting]" : "  [vertical]"));
             Handles.EndGUI();
         }
 
@@ -2019,22 +2077,59 @@ namespace MashBoxSDK.MapTools
         {
             var minimum = layer.FindPropertyRelative(minimumName);
             var maximum = layer.FindPropertyRelative(maximumName);
-            Rect row = EditorGUILayout.GetControlRect();
-            Rect fields = EditorGUI.PrefixLabel(row, new GUIContent(label + " Range"));
-            float gap = 6f;
-            float width = (fields.width - gap) * .5f;
-            float oldLabelWidth = EditorGUIUtility.labelWidth;
-            EditorGUIUtility.labelWidth = 30f;
-            EditorGUI.BeginChangeCheck();
-            float min = EditorGUI.FloatField(new Rect(fields.x, fields.y, width, fields.height), "Min", minimum.floatValue);
-            float max = EditorGUI.FloatField(new Rect(fields.x + width + gap, fields.y, width, fields.height), "Max", maximum.floatValue);
-            if (EditorGUI.EndChangeCheck())
+            float min = minimum.floatValue, max = maximum.floatValue;
+            bool mixed = EditorGUI.showMixedValue;
+            EditorGUI.showMixedValue = minimum.hasMultipleDifferentValues || maximum.hasMultipleDifferentValues;
+            try
             {
-                minimum.floatValue = Mathf.Max(.001f, min);
-                maximum.floatValue = Mathf.Max(minimum.floatValue, max);
+                EditorGUI.BeginChangeCheck();
+                DrawDetailRange(new GUIContent(label + " Range", "Minimum and maximum random " + label.ToLowerInvariant() + ". Drag either handle or enter exact values at the ends."),
+                    ref min, ref max, .001f, 10f, true);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    minimum.floatValue = min;
+                    maximum.floatValue = max;
+                }
             }
-            EditorGUIUtility.labelWidth = oldLabelWidth;
+            finally { EditorGUI.showMixedValue = mixed; }
         }
+
+        static void DrawDetailRange(GUIContent label, ref float minimum, ref float maximum,
+            float lower, float upper, bool allowLargerValues = false)
+        {
+            Rect row = EditorGUILayout.GetControlRect();
+            Rect content = EditorGUI.PrefixLabel(row, label);
+            float fieldWidth = Mathf.Clamp(content.width * .2f, 38, 64);
+            const float gap = 6;
+            var left = new Rect(content.x, content.y, fieldWidth, content.height);
+            var right = new Rect(content.xMax - fieldWidth, content.y, fieldWidth, content.height);
+            var slider = new Rect(left.xMax + gap, content.y, Mathf.Max(10, content.width - fieldWidth * 2 - gap * 2), content.height);
+            int indent = EditorGUI.indentLevel;
+            EditorGUI.indentLevel = 0;
+            try
+            {
+                float min = float.IsFinite(minimum) ? minimum : lower;
+                float max = float.IsFinite(maximum) ? maximum : min;
+                float limit = allowLargerValues ? Mathf.Max(upper, min, max) : upper;
+                min = Mathf.Clamp(min, lower, limit);
+                max = Mathf.Clamp(max, min, limit);
+                EditorGUI.BeginChangeCheck();
+                min = EditorGUI.DelayedFloatField(left, min);
+                max = EditorGUI.DelayedFloatField(right, max);
+                min = float.IsFinite(min) ? min : lower;
+                max = float.IsFinite(max) ? max : min;
+                // Preserve exact typed values above the usual slider range for existing large details.
+                limit = allowLargerValues ? Mathf.Max(upper, min, max) : upper;
+                min = Mathf.Clamp(float.IsFinite(min) ? min : lower, lower, limit);
+                max = Mathf.Clamp(float.IsFinite(max) ? max : min, min, limit);
+                EditorGUI.MinMaxSlider(slider, ref min, ref max, lower, limit);
+                if (EditorGUI.EndChangeCheck()) { minimum = min; maximum = max; }
+                GUI.Label(left, new GUIContent("", "Minimum"));
+                GUI.Label(right, new GUIContent("", "Maximum"));
+            }
+            finally { EditorGUI.indentLevel = indent; }
+        }
+
 
         bool BeginDetailStroke(MGTerrain terrain)
         {
@@ -2042,10 +2137,10 @@ namespace MashBoxSDK.MapTools
             var detail = terrain.DensityDetailLayers[m_PaintDetailIndex];
             if (detail.PaletteSourceOnly || detail.PrototypeIndex < 0 || detail.PrototypeIndex >= terrain.Prototypes.Count)
             { EditorUtility.DisplayDialog("Cannot Paint Detail", "Select a rendered detail layer with a valid prototype, not a palette source-only layer.", "OK"); return false; }
-            m_GrassStrokeSubIdMask = m_RandomGrassSubIds && m_PaintChannel == 0 && detail.GrassIdMap != null
+            m_GrassStrokeSubIdMask = m_RandomGrassSubIds && detail.GrassIdMap != null
                 ? m_GrassSubIdMask & AvailableGrassSubIds(terrain, detail.PrototypeIndex) : 0;
-            if (m_RandomGrassSubIds && m_PaintChannel == 0 && detail.GrassIdMap != null && m_GrassStrokeSubIdMask == 0)
-            { Debug.LogWarning("Include at least one available grass sub-ID before painting a random mix.", terrain); return false; }
+            if (!m_IgnoreDetailSubIdSelection && m_RandomGrassSubIds && detail.GrassIdMap != null && m_GrassStrokeSubIdMask == 0)
+            { Debug.LogWarning("Check at least one available detail Sub-ID before painting.", terrain); return false; }
             Texture2D source = m_PaintChannel == 0 ? detail.DensityMap : m_PaintChannel == 1 ? detail.SizeMap : detail.HealthMap;
             TextureFormat format = m_PaintChannel == 0 ? TextureFormat.R16 : TextureFormat.RHalf;
             if (source != null && (!source.isReadable || source.format != format))
@@ -2094,7 +2189,7 @@ namespace MashBoxSDK.MapTools
                     m_PaintCopies.Add(ids);
                 }
                 m_GrassStrokeIds = ids;
-                Undo.RegisterCompleteObjectUndo(ids, "Paint Grass IDs");
+                Undo.RegisterCompleteObjectUndo(ids, "Paint Detail IDs");
             }
             m_StrokeMap = source;
             m_HasPendingPaint = false;
@@ -2147,6 +2242,11 @@ namespace MashBoxSDK.MapTools
             int z0 = Mathf.Clamp(Mathf.FloorToInt((center.z - rz - bounds.min.z) / bounds.size.z * h), 0, h - 1);
             int z1 = Mathf.Clamp(Mathf.CeilToInt((center.z + rz - bounds.min.z) / bounds.size.z * h), 0, h - 1);
             var pixels = m_StrokeMap.GetPixelData<ushort>(0);
+            var filterMap = terrain.DensityDetailLayers[m_PaintDetailIndex].GrassIdMap;
+            bool filter = !m_IgnoreDetailSubIdSelection && m_RandomGrassSubIds && filterMap != null && (m_PaintChannel != 0 || erase);
+            if (!m_IgnoreDetailSubIdSelection && m_RandomGrassSubIds && filterMap != null && m_GrassStrokeSubIdMask == 0) return;
+            if (filter && (!filterMap.isReadable || filterMap.format != TextureFormat.R8)) return;
+            var filterIds = filter ? filterMap.GetPixelData<byte>(0) : default;
             bool changed = false;
             for (int z = z0; z <= z1; z++) for (int x = x0; x <= x1; x++)
             {
@@ -2155,6 +2255,12 @@ namespace MashBoxSDK.MapTools
                 if (d >= 1) continue;
                 float influence = Mathf.SmoothStep(1, 0, d) * MBEditorToolState.BrushStrength;
                 int index = z * w + x;
+                if (filter)
+                {
+                    int ix = Mathf.Clamp(x * filterMap.width / w, 0, filterMap.width - 1);
+                    int iz = Mathf.Clamp(z * filterMap.height / h, 0, filterMap.height - 1);
+                    if ((m_GrassStrokeSubIdMask & (1 << filterIds[iz * filterMap.width + ix])) == 0) continue;
+                }
                 float previous = m_PaintChannel == 0 ? pixels[index] : Mathf.HalfToFloat(pixels[index]);
                 float goal = m_PaintChannel == 0 ? (erase ? 0 : SparseDensityTarget(m_PaintDensity, x, z, terrain.DensityDetailLayers[m_PaintDetailIndex].Seed)) : (erase ? 1 : m_PaintChannel == 1 ? GetPaintSizeTarget(x, z) : Mathf.Clamp01(m_PaintHealth));
                 if (m_GrassStrokeIds != null && !erase && influence > 0)
@@ -2433,7 +2539,7 @@ namespace MashBoxSDK.MapTools
         {
             var label = new GUIContent(
                 "Max Instances Per Cell",
-                "Hard safety cap for one streamed HLOD cell. Larger values preserve very dense grass in larger cells, but require more build time, upload bandwidth, GPU memory, and rendering work.");
+                "Hard safety cap for one streamed HLOD cell. Larger values preserve very dense details in larger cells, but require more build time, upload bandwidth, GPU memory, and rendering work.");
             int selectedIndex = FindNearestDetailInstanceCapIndex(property.intValue);
             Rect row = EditorGUILayout.GetControlRect();
             Rect controls = EditorGUI.PrefixLabel(row, label);
@@ -2494,9 +2600,9 @@ namespace MashBoxSDK.MapTools
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button(new GUIContent("Low", "60 m, 25k visible details, aggressively thinned distance grass, no detail shadows.")))
+                if (GUILayout.Button(new GUIContent("Low", "60 m, 25k visible details, aggressively thinned distant details, no detail shadows.")))
                     ApplyDetailQualityPreset(terrain, DetailQualityPreset.Low);
-                if (GUILayout.Button(new GUIContent("Medium", "90 m, 50k visible details, dense foreground and economical distance grass, no detail shadows.")))
+                if (GUILayout.Button(new GUIContent("Medium", "90 m, 50k visible details, dense foreground and economical distant details, no detail shadows.")))
                     ApplyDetailQualityPreset(terrain, DetailQualityPreset.Medium);
                 if (GUILayout.Button(new GUIContent("High", "130 m, 100k visible details, dense foreground with smoother middle-distance coverage, no detail shadows.")))
                     ApplyDetailQualityPreset(terrain, DetailQualityPreset.High);

@@ -28,7 +28,7 @@ namespace MashBoxSDK.AnimationStudio
         private StudioPreviewLighting materialLighting;
         internal void ConfigureLightingCamera(SceneView view) => materialLighting?.ConfigureCamera(view);
         internal void SuspendLighting() => materialLighting?.RestoreCameras();
-        private static readonly Color ReferencePreviewTint = new Color(.42f,.44f,.46f,1);
+        internal static readonly Color ReferencePreviewTint = new Color(.42f,.44f,.46f,1);
         private MeshCollider picker;
         private Mesh pickMesh;
         private Vector2 listScroll, boneScroll, inspectorScroll;

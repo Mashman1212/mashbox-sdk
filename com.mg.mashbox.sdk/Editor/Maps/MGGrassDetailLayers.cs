@@ -11,7 +11,42 @@ namespace MashBoxSDK.MapTools
         [Serializable] sealed class ArraySources { public SourceLayer[] layers; }
         [Serializable] sealed class SourceLayer { public string name; public string[] textures; }
 
+        sealed class CachedSlots
+        {
+            internal readonly string[] Names = new string[8];
+            internal readonly Texture2D[] Textures = new Texture2D[8];
+        }
+        static readonly System.Collections.Generic.Dictionary<Material, CachedSlots> s_Slots =
+            new System.Collections.Generic.Dictionary<Material, CachedSlots>();
+
+        static MGGrassDetailLayers()
+        {
+            EditorApplication.projectChanged += ClearSlotInfoCache;
+            Undo.undoRedoPerformed += ClearSlotInfoCache;
+        }
+
+        internal static void ClearSlotInfoCache() => s_Slots.Clear();
+
         internal static bool SlotInfo(Material material, int id, out string name, out Texture2D texture)
+        {
+            name = "Sub-ID " + id;
+            texture = null;
+            if (material == null || (uint)id >= 8) return false;
+            if (!s_Slots.TryGetValue(material, out var slots))
+            {
+                slots = new CachedSlots();
+                // Importer metadata and source assets are shared by all rows and brush checks.
+                // Read once, then invalidate when the project changes, on Undo, or on refresh.
+                for (int slot = 0; slot < 8; slot++)
+                    LoadSlotInfo(material, slot, out slots.Names[slot], out slots.Textures[slot]);
+                s_Slots[material] = slots;
+            }
+            name = slots.Names[id];
+            texture = slots.Textures[id];
+            return texture != null;
+        }
+
+        static bool LoadSlotInfo(Material material, int id, out string name, out Texture2D texture)
         {
             name = "Sub-ID " + id;
             texture = null;
@@ -87,7 +122,7 @@ namespace MashBoxSDK.MapTools
             int sourceIndex = -1;
             for (int i = 0; i < layers.arraySize; i++)
                 if (layers.GetArrayElementAtIndex(i).FindPropertyRelative("m_PrototypeIndex").intValue == prototype) { sourceIndex = i; break; }
-            Undo.RegisterCompleteObjectUndo(terrain, "Add Grass Sub-ID");
+            Undo.RegisterCompleteObjectUndo(terrain, "Add Detail Sub-ID");
             int index = layers.arraySize++;
             var layer = layers.GetArrayElementAtIndex(index);
             if (sourceIndex >= 0) MGTerrainSettingsCopy.CopyValue(layers.GetArrayElementAtIndex(sourceIndex), layer);
@@ -119,7 +154,7 @@ namespace MashBoxSDK.MapTools
             map.name = System.IO.Path.GetFileNameWithoutExtension(path);
             try { AssetDatabase.CreateAsset(map, path); }
             catch { UnityEngine.Object.DestroyImmediate(map); throw; }
-            Undo.RegisterCreatedObjectUndo(map, "Create Grass Sub-ID Density Map");
+            Undo.RegisterCreatedObjectUndo(map, "Create Detail Sub-ID Density Map");
             layer.FindPropertyRelative("m_DensityMap").objectReferenceValue = map;
             serialized.ApplyModifiedProperties();
             terrain.InvalidateRenderCache();

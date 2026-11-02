@@ -143,10 +143,47 @@ namespace MashBoxSDK.AnimationStudio
             catch (Exception e) { clothRunning = false; clothStatus = e.GetBaseException().Message; }
             viewport?.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
         }
+        [SerializeField] private List<MashBoxClothProfile> temporaryClothProfiles = new List<MashBoxClothProfile>();
+
+        private void ReleaseTemporaryClothProfiles()
+        {
+            foreach (var profile in temporaryClothProfiles)
+                if (profile && !EditorUtility.IsPersistent(profile)) { Undo.ClearUndo(profile); DestroyImmediate(profile); }
+            temporaryClothProfiles.Clear();
+        }
+
+        private MashBoxClothProfile CreateClothProfile()
+        {
+            var created = CreateInstance<MashBoxClothProfile>();
+            created.name = ClothRenderer.name + " Cloth";
+            try
+            {
+                created.Initialize(MashBoxClothSession.GetMesh(ClothRenderer));
+                RefreshClothPickMesh();
+                // Seed attachment points in character space, including Z-up imports.
+                float lowest = float.PositiveInfinity, highest = float.NegativeInfinity;
+                foreach (var vertex in clothPickVertices)
+                { float y = ClothRenderer.transform.TransformPoint(vertex).y; lowest = Mathf.Min(lowest, y); highest = Mathf.Max(highest, y); }
+                float pinHeight = Mathf.Lerp(lowest, highest, .85f);
+                for (int i = 0; i < clothPickVertices.Count; i++)
+                    created.motion[i] = ClothRenderer.transform.TransformPoint(clothPickVertices[i]).y >= pinHeight ? 0 : .15f;
+                if (clothSettingsPreset) clothSettingsPreset.ApplyTo(created);
+                return created;
+            }
+            catch { DestroyImmediate(created); throw; }
+        }
+
         private void StartClothSession()
         {
             if (!ClothVisible) throw new InvalidOperationException("Select a visible garment to simulate. Default references are locked.");
             EndClothStroke(); clothPainting = false;
+            if (!clothProfile)
+            {
+                clothProfile = CreateClothProfile();
+                clothProfile.hideFlags = HideFlags.HideAndDontSave;
+                temporaryClothProfiles.Add(clothProfile);
+                RememberClothProfile(); GenerateClothCapsules();
+            }
             clothSession?.Dispose(); clothSession = null;
             clothSession = new MashBoxClothSession(ClothRenderer, clothProfile, clothRig.Root.transform);
             clothSimulationTime = 0;
@@ -208,27 +245,26 @@ namespace MashBoxSDK.AnimationStudio
                 clothProfile = profile; RememberClothProfile();
             }
             using (new EditorGUI.DisabledScope(!ClothEditable))
-                if (GUILayout.Button("Create garment data for this mesh…")) ClothAction(() =>
+                if (GUILayout.Button(clothProfile && !EditorUtility.IsPersistent(clothProfile) ? "Save garment data…" : "Create garment data for this mesh…")) ClothAction(() =>
                 {
                     string path = EditorUtility.SaveFilePanelInProject("Cloth profile", ClothRenderer.name + " Cloth", "asset", "Save movement painting and solver settings.");
                     if (string.IsNullOrEmpty(path)) return;
-                    var created = CreateInstance<MashBoxClothProfile>();
+                    bool savePreview = CanSimulateCloth && !EditorUtility.IsPersistent(clothProfile);
+                    var created = savePreview ? clothProfile : CreateClothProfile();
                     try
                     {
-                        created.Initialize(MashBoxClothSession.GetMesh(ClothRenderer));
-                        RefreshClothPickMesh();
-                        // Imported garments often use Z-up mesh coordinates. Seed pins in the visible character pose.
-                        float lowest = float.PositiveInfinity, highest = float.NegativeInfinity;
-                        foreach (var vertex in clothPickVertices)
-                        { float y = ClothRenderer.transform.TransformPoint(vertex).y; lowest = Mathf.Min(lowest, y); highest = Mathf.Max(highest, y); }
-                        float pinHeight = Mathf.Lerp(lowest, highest, .85f);
-                        for (int i = 0; i < clothPickVertices.Count; i++)
-                            created.motion[i] = ClothRenderer.transform.TransformPoint(clothPickVertices[i]).y >= pinHeight ? 0 : .15f;
-                        if (clothSettingsPreset) clothSettingsPreset.ApplyTo(created);
+                        created.hideFlags = HideFlags.None;
                         AssetDatabase.CreateAsset(created, path);
                     }
-                    catch { if (!AssetDatabase.Contains(created)) DestroyImmediate(created); throw; }
-                    StopClothSession(); clothProfile = created; RememberClothProfile(); GenerateClothCapsules(); AssetDatabase.SaveAssetIfDirty(clothProfile);
+                    catch
+                    {
+                        if (!AssetDatabase.Contains(created))
+                        { if (savePreview) created.hideFlags = HideFlags.HideAndDontSave; else DestroyImmediate(created); }
+                        throw;
+                    }
+                    StopClothSession(); clothProfile = created; RememberClothProfile();
+                    if (!savePreview) GenerateClothCapsules();
+                    AssetDatabase.SaveAssetIfDirty(clothProfile);
                 });
             DrawClothSettingsPresets();
             bool valid = clothProfile && clothProfile.Matches(MashBoxClothSession.GetMesh(ClothRenderer));
@@ -334,14 +370,14 @@ namespace MashBoxSDK.AnimationStudio
         {
             var row = GUILayoutUtility.GetRect(0, 36, GUILayout.ExpandWidth(true));
             float x = row.x + 6, y = row.y + 5;
-            bool valid = CanSimulateCloth || HasClothMotion;
+            bool valid = CanStartClothSimulation || HasClothMotion;
             using (new EditorGUI.DisabledScope(!valid))
             {
                 if (GUI.Button(new Rect(x, y, 26, 26), new GUIContent(clothRunning ? "Ⅱ" : "▶", "Play / pause cloth simulation"))) ClothAction(() =>
                 {
                     EndClothStroke(); clothPainting = false;
                     ResumeClothMotionFromPose();
-                    if (clothSession == null && CanSimulateCloth) StartClothSession();
+                    if (clothSession == null && CanStartClothSimulation) StartClothSession();
                     clothRunning = !clothRunning; clothLastTime = EditorApplication.timeSinceStartup;
                 });
                 x += 32;
@@ -352,9 +388,9 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     EndClothStroke(); clothPainting = false; clothRunning = false;
                     ResumeClothMotionFromPose();
-                    if (clothSession == null && CanSimulateCloth) StartClothSession();
+                    if (clothSession == null && CanStartClothSimulation) StartClothSession();
                     float dt = clothSession != null ? 1f / Mathf.Clamp(clothProfile.frequency, 15, 120) : 1f / Mathf.Max(1, clothClip.frameRate);
-                    SampleClothMotion(clothAnimationTime + dt);
+                    if (HasClothMotion) SampleClothMotion(clothAnimationTime + dt);
                     if (clothSession != null) { clothWindTime+=dt;UpdateClothWindPreview();clothSession.Step(dt); clothSimulationTime += dt; }
                 });
                 x += 32;

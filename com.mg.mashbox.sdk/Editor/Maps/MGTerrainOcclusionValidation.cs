@@ -15,7 +15,9 @@ namespace MashBoxSDK.MapTools
         [StructLayout(LayoutKind.Sequential)]
         struct Draw { public Vector3 center; public uint offset; public Vector3 extents; public float pad; }
 
-        [MenuItem("MashBox/Validation/Validate Terrain GPU Occlusion")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Terrain GPU Occlusion")]
+#endif
         public static void Run()
         {
             var go = new GameObject("Occlusion test"); go.SetActive(false);

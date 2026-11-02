@@ -272,6 +272,8 @@ namespace MashBoxSDK.AnimationStudio
 
         private void OnEnable()
         {
+            // Native Unity resources cannot be created by ScriptableObject field initializers.
+            if (clothWindBlock == null) clothWindBlock = new MaterialPropertyBlock();
             audioPreview.ReportError = text => message = text;
             LoadAnimationConfiguration();
             string storedMode = StudioPreferenceStore.GetString("Studio.Mode", "Modeling");

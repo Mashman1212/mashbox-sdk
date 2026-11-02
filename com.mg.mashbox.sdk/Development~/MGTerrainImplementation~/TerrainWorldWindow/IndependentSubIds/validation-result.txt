@@ -1,0 +1,7 @@
+Multi-detail selection regression
+PASS: Restoring active row does not copy last row selection
+PASS: Checkbox toggles only clicked row, even with stale current mask
+PASS: Plain click replaces only clicked row selection
+PASS: Row selection survives repeated synchronization and population remains independent
+PASS: Both prototype layers stay selected
+ALL PASSED

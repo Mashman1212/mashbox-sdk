@@ -14,7 +14,9 @@ namespace MashBoxSDK.SDKMain
         private double nextRefresh;
         private Vector2 scroll;
 
-        [MenuItem("MashBox/My Publishes")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/My Publishes")]
+#endif
         public static void Open() => GetWindow<PublishHistoryWindow>("My Publishes");
         private void OnEnable() { Reload(); EditorApplication.update += Tick; }
         private void OnDisable() { EditorApplication.update -= Tick; }

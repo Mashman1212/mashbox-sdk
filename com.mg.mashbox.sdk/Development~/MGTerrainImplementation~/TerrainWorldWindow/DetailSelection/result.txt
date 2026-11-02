@@ -1,0 +1,6 @@
+Checked Sub-ID brush regression
+PASS: Size strokes affect checked types only
+PASS: Health strokes affect checked types only
+PASS: No checked types paints nothing
+PASS: Mix uses only checked types and remains repeatable
+ALL PASSED

@@ -14,7 +14,9 @@ namespace MG.GodSurface.Editor
         [SerializeField] MGSurfaceVertexAO.Settings ao = new MGSurfaceVertexAO.Settings();
         string status;
         Vector2 scroll;
-        [MenuItem("MashBox/Content Tools/God Surface Library Baker")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Content Tools/God Surface Library Baker")]
+#endif
         public static void Open() => GetWindow<MGSurfaceBakeWindow>("God Surface Baker");
         void OnEnable() { minSize = new Vector2(580, 500); world = FindFirstObjectByType<MGSurfaceWorld>(); if (world) library = world.surfaceLibrary; }
         void OnGUI()

@@ -10,7 +10,9 @@ namespace MashBoxSDK.MapTools
 {
     public static class LoftMeshStampValidation
     {
-        [MenuItem("MashBox/Validation/Validate Loft Mesh Stamp")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Loft Mesh Stamp")]
+#endif
         public static void Run()
         {
             var scene = UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();

@@ -7,7 +7,9 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal static class SingleFramePoseChecks
     {
+#if MashBoxDev
         [MenuItem("MashBox/Dev/Studio Checks/Animation/Validate Single Frame Pose")]
+#endif
         public static void Run()
         {
             var take = ScriptableObject.CreateInstance<AnimationTake>();

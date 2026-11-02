@@ -6,7 +6,9 @@ namespace MashBoxSDK.Maps.Roads.Editor
 {
     public static class MGRoadSmoothingValidation
     {
-        [MenuItem("MashBox/Validation/Validate Road Falloff Smoothing")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Road Falloff Smoothing")]
+#endif
         public static void Run()
         {
             var go = new GameObject("Smoothing validation") { hideFlags = HideFlags.HideAndDontSave };

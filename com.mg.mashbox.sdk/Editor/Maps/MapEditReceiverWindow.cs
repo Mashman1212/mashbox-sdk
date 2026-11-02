@@ -152,7 +152,9 @@ namespace MashBoxSDK.MapTools
             return panel;
         }
 
-        [MenuItem("MashBox/Map Tools/Prepare Active Scene for Runtime Editing")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Map Tools/Prepare Active Scene for Runtime Editing")]
+#endif
         public static void Prepare()
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode) throw new InvalidOperationException("Prepare the source scene in Edit Mode.");

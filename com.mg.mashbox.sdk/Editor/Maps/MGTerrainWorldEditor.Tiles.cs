@@ -74,7 +74,8 @@ namespace MashBoxSDK.MapTools
                     SceneView.lastActiveSceneView?.Frame(MGTerrainTileAuthoring.BoundsOf(tile), false);
                 });
             }
-            DrawCreationDensity(world);
+            m_ShowCreationDensity = EditorGUILayout.Foldout(m_ShowCreationDensity, "Mesh and texture density readout", true);
+            if (m_ShowCreationDensity) DrawCreationDensity(world);
             using (new EditorGUI.DisabledScope(Application.isPlaying || empty))
             {
                 EditorGUI.BeginChangeCheck();
@@ -271,7 +272,9 @@ namespace MashBoxSDK.MapTools
 
     public static class MGTerrainWorldCreationValidation
     {
-        [MenuItem("MashBox/Validation/Validate World Tile Creation")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate World Tile Creation")]
+#endif
         public static void Run()
         {
             var scene = EditorSceneManager.NewPreviewScene();

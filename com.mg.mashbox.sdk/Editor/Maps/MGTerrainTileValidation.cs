@@ -14,7 +14,9 @@ namespace MashBoxSDK.MapTools
     public static class MGTerrainTileValidation
     {
         static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
-        [MenuItem("MashBox/Validation/Validate Terrain Tile Authoring")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Terrain Tile Authoring")]
+#endif
         public static void Run()
         {
             var scene = EditorSceneManager.NewPreviewScene();

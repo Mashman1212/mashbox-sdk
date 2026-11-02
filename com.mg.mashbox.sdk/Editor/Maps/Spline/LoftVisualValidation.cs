@@ -24,7 +24,9 @@ namespace MashBoxSDK.MapTools
             s_Checks++;
         }
 
-        [MenuItem("MashBox/Validation/Validate Loft Visual Chunks")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Loft Visual Chunks")]
+#endif
         public static void Run()
         {
             try
@@ -44,7 +46,9 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        [MenuItem("MashBox/Validation/Validate Loft Build Mesh Reset")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Loft Build Mesh Reset")]
+#endif
         public static void ValidateBuildMeshReset()
         {
             var go = new GameObject("Loft build mesh reset validation");

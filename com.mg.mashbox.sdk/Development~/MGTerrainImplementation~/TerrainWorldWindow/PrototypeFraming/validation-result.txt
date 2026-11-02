@@ -1,0 +1,5 @@
+Transparent prototype preview regression
+PASS: visible object with transparent corners/background.
+PASS: repeated draws reuse the cached texture.
+PASS: editor disposal releases generated previews.
+ALL PASSED

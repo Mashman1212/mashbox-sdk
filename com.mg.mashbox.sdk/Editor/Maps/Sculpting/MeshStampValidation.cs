@@ -7,7 +7,9 @@ namespace MashBoxSDK.MapTools
 {
     public static class MeshStampValidation
     {
-        [MenuItem("MashBox/Validation/Validate Mesh Stamp Sampling")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Mesh Stamp Sampling")]
+#endif
         public static void Run()
         {
             var source = new Mesh();

@@ -10,7 +10,9 @@ class VDSaveVertexColoredMeshes : EditorWindow {
 	private string path = "MashBox/VertexColors";
 	static  VDSaveVertexColoredMeshes window;
 
-	[MenuItem ("MashBox/Content Tools/Vertex AO Diagnostics/Export mesh assets", false, 20)]
+#if MashBoxDev
+	[MenuItem ("MashBox/Dev/Content Tools/Vertex AO Diagnostics/Export mesh assets", false, 20)]
+#endif
 
 	public static void Init() {
 		if (!window){

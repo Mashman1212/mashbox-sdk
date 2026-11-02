@@ -64,7 +64,9 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
             }
         }
 
-        [MenuItem("MashBox/Terrain/Conform Terrain to Selected Loft…")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Terrain/Conform Terrain to Selected Loft…")]
+#endif
         public static void OpenSelection() { Open(Selection.activeGameObject); }
 
         static void Open(GameObject go)

@@ -216,11 +216,9 @@ namespace MashBoxSDK.MapTools
         void DrawWorldTools(MGTerrainWorld world)
         {
             m_PaintWorld = true;
-            EditorGUILayout.LabelField("Paint Details", EditorStyles.boldLabel);
             if (m_EditChunk == null || m_EditChunk.World != world) m_EditChunk = world.Chunks.FirstOrDefault();
             if (m_PaintWorld && m_EditChunk != null)
             {
-                EditorGUILayout.HelpBox("Paint and edit shared details across the entire world. Visibility applies everywhere; painted density and size remain local to each area.", MessageType.None);
                 CreateCachedEditor(m_EditChunk, typeof(MGTerrainEditor), ref m_ChunkEditor);
                 ((MGTerrainEditor)m_ChunkEditor).DrawWorldDetailControls();
             }
@@ -228,8 +226,11 @@ namespace MashBoxSDK.MapTools
 
         void DrawWorldBakes(MGTerrainWorld world)
         {
-            DrawWorldCollision(world);
-            DrawWorldFarRangeMaterials(world);
+            if (!m_Workspace)
+            {
+                DrawWorldCollision(world);
+                DrawWorldFarRangeMaterials(world);
+            }
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Bake All World Tiles", EditorStyles.boldLabel);
             serializedObject.Update();
@@ -338,6 +339,19 @@ namespace MashBoxSDK.MapTools
 
     public sealed partial class MGTerrainEditor
     {
+        void UpdateWorldDetailBrush(MGTerrain terrain)
+        {
+            m_WorldAutoDetailBrush = true;
+            EnsureDetailBrushChannels();
+            if (Application.isPlaying || serializedObject.isEditingMultipleObjects || !terrain.isActiveAndEnabled
+                || terrain.World == null || !terrain.World.isActiveAndEnabled)
+            {
+                SetDetailPainting(false);
+                return;
+            }
+            SetDetailPainting(RefreshDetailPaintTargets(terrain) && HasDetailBrushChannels);
+        }
+
         internal void DrawWorldDetailControls()
         {
             var terrain = (MGTerrain)target;
@@ -346,12 +360,11 @@ namespace MashBoxSDK.MapTools
             m_WorldDetailControls = true;
             try
             {
-                DrawDetailFoliagePalettes(terrain);
-                DrawDetailLayerVisibility(terrain);
-                DrawPaintModeToggle(terrain);
+
+                DrawPrototypeCards(terrain);
+                DrawSelectedPrototypeSubIds(terrain);
+                UpdateWorldDetailBrush(terrain);
                 DrawDetailPainter(terrain);
-                DrawPrototypeGrid(terrain);
-                DrawWorldDetailMapBrowser(terrain);
                 DrawLoftDetailOperations(terrain);
             }
             finally
@@ -397,7 +410,7 @@ namespace MashBoxSDK.MapTools
                     var layer = area.DensityDetailLayers[match];
                     Add(layer.DensityMap, "Density", index, area);
                     Add(layer.SizeMap, "Size", index, area);
-                    Add(layer.GrassIdMap, "Grass IDs", index, area);
+                    Add(layer.GrassIdMap, "Detail IDs", index, area);
                     Add(layer.PaletteSourceMap, "Palette Source", index, area);
                 }
             EditorGUILayout.Space();
@@ -405,7 +418,7 @@ namespace MashBoxSDK.MapTools
             EditorGUILayout.LabelField($"{maps.Count} unique assets for this detail across the world.", EditorStyles.miniLabel);
             if (!roles.Contains("Density")) EditorGUILayout.LabelField("Density: created when painted.", EditorStyles.miniLabel);
             if (!roles.Contains("Size")) EditorGUILayout.LabelField("Size: no map yet; default multiplier is 1.", EditorStyles.miniLabel);
-            if (!roles.Contains("Grass IDs")) EditorGUILayout.LabelField("Grass IDs: no per-pixel ID maps.", EditorStyles.miniLabel);
+            if (!roles.Contains("Detail IDs")) EditorGUILayout.LabelField("Detail IDs: no per-pixel ID maps.", EditorStyles.miniLabel);
             const int pageSize = 8;
             int pages = Mathf.Max(1, (maps.Count + pageSize - 1) / pageSize);
             m_MapBrowserPage = Mathf.Clamp(m_MapBrowserPage, 0, pages - 1);

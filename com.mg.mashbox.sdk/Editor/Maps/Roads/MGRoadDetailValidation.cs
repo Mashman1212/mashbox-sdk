@@ -14,7 +14,9 @@ namespace MashBoxSDK.Maps.Roads.Editor
 {
     public static class MGRoadDetailValidation
     {
-        [MenuItem("MashBox/Validation/Validate Road Detail Clearing")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Road Detail Clearing")]
+#endif
         public static void Run()
         {
             int checks = 0;

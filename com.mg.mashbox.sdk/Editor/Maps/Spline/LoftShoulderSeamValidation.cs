@@ -18,7 +18,9 @@ namespace MashBoxSDK.MapTools
     {
         static int checks;
 
-        [MenuItem("MashBox/Validation/Validate Loft Shoulder Seams")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Loft Shoulder Seams")]
+#endif
         public static void Run()
         {
             try

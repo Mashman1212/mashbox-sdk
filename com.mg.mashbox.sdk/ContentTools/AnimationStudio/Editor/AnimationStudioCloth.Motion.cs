@@ -17,6 +17,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private bool HasClothMotion => !clothAPoseMotion && clothClip && !clothClip.legacy && clothClip.length > 0;
         private bool CanSimulateCloth => ClothVisible && clothProfile && clothProfile.Matches(MashBoxSDK.Cloth.MashBoxClothSession.GetMesh(ClothRenderer));
+        private bool CanStartClothSimulation => ClothVisible && (!clothProfile || CanSimulateCloth);
 
         private static AnimationClip LoadClothBuiltinMotion(string name)
         {
@@ -120,7 +121,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void ResumeClothMotionFromPose()
         {
-            if (clothPoseOverride) SampleClothMotion(clothAnimationTime);
+            if (clothPoseOverride && HasClothMotion) SampleClothMotion(clothAnimationTime);
         }
 
         private void SetClothMotion(AnimationClip clip, bool aPose = false)

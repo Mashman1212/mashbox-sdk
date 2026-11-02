@@ -1,0 +1,13 @@
+Multi-detail selection regression
+PASS: Restoring active row does not copy last row selection
+PASS: Checkbox toggles only clicked row, even with stale current mask
+PASS: Plain click replaces only clicked row selection
+PASS: Row selection survives repeated synchronization and population remains independent
+PASS: Both prototype layers stay selected
+PASS: Cached slot preserves name and source texture
+10,000 warmed slot lookups: 9.9 ms (includes reflection)
+PASS: Cache invalidation reloads edited slot metadata
+PASS: Repeated selection does not dirty terrain
+1,000 unchanged world commits: 2.5 ms (includes reflection)
+PASS: Real population settings still propagate to other tiles
+ALL PASSED

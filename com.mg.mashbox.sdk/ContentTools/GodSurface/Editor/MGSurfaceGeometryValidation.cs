@@ -18,7 +18,9 @@ public static class MGSurfaceGeometryValidation
     static Color[] Capture(Camera camera,RenderTexture target){RenderPipeline.SubmitRenderRequest(camera,new RenderPipeline.StandardRequest{destination=target});var old=RenderTexture.active;RenderTexture.active=target;var t=new Texture2D(target.width,target.height,TextureFormat.RGBAFloat,false,true);try{t.ReadPixels(new Rect(0,0,target.width,target.height),0,0);t.Apply();return t.GetPixels();}finally{RenderTexture.active=old;UnityEngine.Object.DestroyImmediate(t);}}
     static double Difference(Color[] a,Color[] b){return a.Zip(b,(x,y)=>(double)(Math.Abs(x.r-y.r)+Math.Abs(x.g-y.g)+Math.Abs(x.b-y.b))).Average()/3;}
     static void Save(Color[] pixels,string name){var t=new Texture2D(128,128,TextureFormat.RGBA32,false,true);t.SetPixels(pixels);t.Apply();File.WriteAllBytes(Path.Combine(Path.GetTempPath(),name),t.EncodeToPNG());UnityEngine.Object.DestroyImmediate(t);}
-    [MenuItem("MashBox/Content Tools/Validate God Surface Geometry")]
+#if MashBoxDev
+    [MenuItem("MashBox/Dev/Content Tools/Validate God Surface Geometry")]
+#endif
     public static void Run()
     {
         if(EditorApplication.isPlayingOrWillChangePlaymode)return;

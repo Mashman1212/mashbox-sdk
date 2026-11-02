@@ -96,7 +96,9 @@ namespace MashBoxSDK.MapTools
             return true;
         }
 
-        [MenuItem("MashBox/Validation/Validate World Mesh Stamp")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate World Mesh Stamp")]
+#endif
         public static void ValidateWorldMeshStamp()
         {
             var selection = Selection.activeObject;

@@ -1,0 +1,9 @@
+Multi-detail selection regression
+PASS: Ctrl-click selects both prototype layers
+PASS: Both selected layers remain paint targets after refresh
+PASS: One stroke paints both layers using each layer's own checked Sub-ID
+PASS: Unselected layer remains unchanged
+PASS: Shift-click selects the prototype range
+PASS: Ctrl-click toggles a selected prototype off
+PASS: Different per-layer width settings are preserved
+ALL PASSED

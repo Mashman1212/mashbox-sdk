@@ -49,12 +49,16 @@ namespace MashBoxSDK.MapTools
         private static MonoBehaviour SelectedLift() => Selection.activeGameObject == null ? null :
             Selection.activeGameObject.GetComponentsInParent<MonoBehaviour>(true).FirstOrDefault(c => c != null && c.GetType().FullName == "ChairliftBehaviour");
 
-        [MenuItem("MashBox/Maps/Chairlifts/Convert Selected Legacy Lift to SDK Proxy", true)]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Maps/Chairlifts/Convert Selected Legacy Lift to SDK Proxy", true)]
+#endif
         public static bool CanConvert() => !Application.isPlaying && SelectedLift() != null && !EditorUtility.IsPersistent(SelectedLift());
 
         // Uses serialized data so the SDK never takes a dependency on Assembly-CSharp.
         // A single Undo restores the original lift, including all authored physical objects.
-        [MenuItem("MashBox/Maps/Chairlifts/Convert Selected Legacy Lift to SDK Proxy")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Maps/Chairlifts/Convert Selected Legacy Lift to SDK Proxy")]
+#endif
         public static void ConvertSelected()
         {
             var source = SelectedLift();

@@ -127,6 +127,19 @@ namespace MashBoxSDK.MapTools
         }
     }
 
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    public sealed class MBTerrainWorldButton : EditorToolbarButton
+    {
+        public const string Id = "MashBox/TerrainWorld";
+        public MBTerrainWorldButton()
+        {
+            text = "Terrain World";
+            tooltip = "Open the MG Terrain World workspace.";
+            icon = EditorGUIUtility.IconContent("Terrain Icon").image as Texture2D;
+            clicked += MGTerrainWorldWindow.Open;
+        }
+    }
+
     [Overlay(typeof(SceneView), "MashBox Mappy", true)]
     public sealed class MBGameplayGizmoOverlay : ToolbarOverlay
     {
@@ -136,6 +149,7 @@ namespace MashBoxSDK.MapTools
         static Texture2D s_CollapsedIcon;
 
         public MBGameplayGizmoOverlay() : base(
+            MBTerrainWorldButton.Id,
             MBActiveEditingToggle.Id,
             MBGameplayGizmoToggle.Id,
             MBBrushModeToggle.Id,
@@ -261,6 +275,12 @@ namespace MashBoxSDK.MapTools
             var calibrationRow = CreateRow("Calibration", out VisualElement calibrationContent);
             calibrationContent.Add(MBMonitorCalibration.CreateToggle());
             displaySettings.Add(calibrationRow);
+
+            var worldRow = CreateRow("Terrain", out VisualElement worldContent);
+            var worldButton = new Button(MGTerrainWorldWindow.Open) { text = "Terrain World", tooltip = "Open the terrain world workspace: tiles, painting, rendering, collision and baking." };
+            worldButton.style.flexGrow = 1;
+            worldContent.Add(worldButton);
+            root.Add(worldRow);
 
             var editingRow = CreateRow("Editing", out VisualElement editingContent);
             editingContent.Add(new MBActiveEditingToggle());

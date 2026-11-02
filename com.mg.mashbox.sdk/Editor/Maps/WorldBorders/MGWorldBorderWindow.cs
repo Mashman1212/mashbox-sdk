@@ -15,7 +15,9 @@ namespace MashBoxSDK.MapTools.WorldBorders
         MBWorldBorderWall[] walls = Array.Empty<MBWorldBorderWall>();
         UnityEditor.Editor inspector;
         string message;
-        [MenuItem("MashBox/Map Tools/World Border Tool")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Map Tools/World Border Tool")]
+#endif
         [MenuItem("Tools/MashBox/World Border Tool")]
         public static void Open() => MashBoxSDKWindow.OpenWorldBorders();
 

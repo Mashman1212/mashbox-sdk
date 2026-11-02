@@ -1,0 +1,6 @@
+Starting isolated scene-reload regression.
+PASS: locked target survives selecting another world.
+PASS: EnteredPlayMode rebinds to the recreated target with multiple worlds and lock enabled.
+PASS: EnteredEditMode rebinds to the recreated target with multiple worlds and lock enabled.
+PASS: detail distance applies to the rebound world.
+ALL PASSED

@@ -1,0 +1,1 @@
+PASS: initial jitter ignored, horizontal changes radius only, vertical changes strength only, both axes remain locked during cross-axis movement.

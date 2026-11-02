@@ -1,0 +1,11 @@
+Brush channel toggle regression
+PASS: channel combination 0 changes only enabled maps.
+PASS: channel combination 1 changes only enabled maps.
+PASS: channel combination 2 changes only enabled maps.
+PASS: channel combination 3 changes only enabled maps.
+PASS: channel combination 4 changes only enabled maps.
+PASS: channel combination 5 changes only enabled maps.
+PASS: channel combination 6 changes only enabled maps.
+PASS: channel combination 7 changes only enabled maps.
+PASS: all-off releases the brush; clicking Size reactivates it.
+ALL PASSED

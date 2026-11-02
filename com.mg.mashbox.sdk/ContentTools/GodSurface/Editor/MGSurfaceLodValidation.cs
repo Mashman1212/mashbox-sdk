@@ -11,7 +11,9 @@ namespace MG.GodSurface.Editor
 {
     public static class MGSurfaceLodValidation
     {
-        [MenuItem("MashBox/Content Tools/Validate God Surface Cell LOD")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Content Tools/Validate God Surface Cell LOD")]
+#endif
         public static void Run()
         {
             var log = new StringBuilder(); var original = SceneManager.GetActiveScene(); Scene scene = default;

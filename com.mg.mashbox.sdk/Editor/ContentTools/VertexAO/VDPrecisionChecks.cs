@@ -11,7 +11,9 @@ using Object = UnityEngine.Object;
 // Deliberately runs against a temporary copy. Never overwrites the selected source model.
 internal static class VDPrecisionChecks
 {
-    [MenuItem("MashBox/Content Tools/Vertex AO Diagnostics/Validate baker", false, 90)]
+#if MashBoxDev
+    [MenuItem("MashBox/Dev/Content Tools/Vertex AO Diagnostics/Validate baker", false, 90)]
+#endif
     static void MenuRun()
     {
         try { Debug.Log(Run(Selection.activeGameObject)); }

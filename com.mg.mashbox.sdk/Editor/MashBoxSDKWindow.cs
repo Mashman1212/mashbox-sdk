@@ -373,7 +373,7 @@ namespace MashBoxSDK.SDKMain
                     // Optional project-side GodGrass array tooling; keep the SDK usable without it.
                     if (System.Type.GetType("MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui.MGTextureArrayWindow, Assembly-CSharp-Editor") != null
                         && GUILayout.Button("Open Texture Array Producer and Reducer", GUILayout.Height(28)))
-                        EditorApplication.ExecuteMenuItem("MashBox/Content Tools/Texture Array Producer and Reducer");
+                        EditorApplication.ExecuteMenuItem("MashBox/Dev/Content Tools/Texture Array Producer and Reducer");
                     EnsureTextureSizeReducerTool().Draw();
                     break;
                 case ContentToolTab.UVInspector:
@@ -391,9 +391,9 @@ namespace MashBoxSDK.SDKMain
                 case ContentToolTab.GodSurface:
                     EditorGUILayout.HelpBox("Share prop textures and render repeated meshes through automatic spatial cells. Keep placing props and colliders normally.", MessageType.Info);
                     if (GUILayout.Button("Open God Surface Cells", GUILayout.Height(28)))
-                        EditorApplication.ExecuteMenuItem("MashBox/Content Tools/God Surface Cells");
+                        System.Type.GetType("MG.GodSurface.Editor.MGSurfaceWindow, MG.GodSurface.Editor", true).GetMethod("Open").Invoke(null, null);
                     if (GUILayout.Button("Open God Surface Library Baker", GUILayout.Height(28)))
-                        EditorApplication.ExecuteMenuItem("MashBox/Content Tools/God Surface Library Baker");
+                        System.Type.GetType("MG.GodSurface.Editor.MGSurfaceBakeWindow, MG.GodSurface.Editor", true).GetMethod("Open").Invoke(null, null);
                     break;
                 case ContentToolTab.MachEquipManager:
                     DrawMachEquipManager();

@@ -1,0 +1,6 @@
+Details workspace regression
+PASS: Population A resolves to its own tuning layer
+PASS: Population B resolves to its own tuning layer
+PASS: Details activates the brush without a Paint button
+PASS: Leaving Details disposes its brush and restores the previous scene tool
+ALL PASSED

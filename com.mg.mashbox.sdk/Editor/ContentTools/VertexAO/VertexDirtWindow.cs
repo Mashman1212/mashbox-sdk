@@ -26,7 +26,9 @@ internal class VertexDirtWindow : EditorWindow
     double bakeSeconds;
     string error;
 
-    [MenuItem("MashBox/Content Tools/Vertex AO", false, 10)]
+#if MashBoxDev
+    [MenuItem("MashBox/Dev/Content Tools/Vertex AO", false, 10)]
+#endif
     internal static void ShowWindow() => MashBoxSDK.SDKMain.MashBoxSDKWindow.OpenVertexAO();
     Action repaintHost;
     new void Repaint() { base.Repaint(); repaintHost?.Invoke(); }

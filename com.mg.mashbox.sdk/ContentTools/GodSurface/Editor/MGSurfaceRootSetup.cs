@@ -21,7 +21,9 @@ namespace MG.GodSurface.Editor
                 (conflicts.Count == 0 ? "\nNo known combiner/instancer conflicts." : $"\n{conflicts.Count} competing combiner/instancer components. Resolve these before cooking.");
         }
 
-        [MenuItem("MashBox/Content Tools/God Props/Create or Select Prop Cell Manager")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Content Tools/God Props/Create or Select Prop Cell Manager")]
+#endif
         public static void AddSelected()
         {
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
@@ -36,7 +38,9 @@ namespace MG.GodSurface.Editor
             Selection.activeGameObject = world.gameObject;
             EditorGUIUtility.PingObject(world);
         }
-        [MenuItem("MashBox/Content Tools/God Props/Create or Select Prop Cell Manager", true)]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Content Tools/God Props/Create or Select Prop Cell Manager", true)]
+#endif
         static bool CanAdd() => !EditorApplication.isPlayingOrWillChangePlaymode;
 
         public static Check Inspect(MGSurfaceWorld world)

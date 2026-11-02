@@ -99,7 +99,7 @@ namespace MashBoxSDK.MapTools
     {
         readonly MGTerrainMeasurements m_CurrentMeasurements = new MGTerrainMeasurements();
 
-        bool m_ShowDataEstimator = true, m_ShowEstimatorMaps;
+        bool m_ShowEstimatorMaps;
         float m_EstimateKilometres = 10;
         int m_EstimateTileCount, m_EstimateMapCount, m_EstimateUniqueCount;
         double m_EstimateGpuPerTile, m_EstimateDiskPerTile, m_EstimateMeshPerTile;
@@ -119,39 +119,45 @@ namespace MashBoxSDK.MapTools
         double DrawSurfaceMapEstimate(long projectedTiles)
         {
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("MG Lit Trail Surface Maps", EditorStyles.boldLabel);
+            float[] columns = { .29f, .17f, .20f, .15f, .19f };
+            MGTerrainDiagnosticTable.Row(0, columns, new[] { "Surface map", "Assigned / slots", "Projected buffers", "Plan missing", "Resolution" }, heading: true);
             double plannedPerTile = 0;
+            int row = 0;
             for (int i = 0; i < SurfaceMapLabels.Length; i++)
             {
-                if (i == 1) continue; // The two control maps share one planning entry.
+                if (i == 1) continue;
                 bool controls = i == 0;
                 double divisor = Math.Max(1, m_EstimateTileCount);
                 string label = controls ? "Control Maps 1 & 2" : SurfaceMapLabels[i];
                 int assigned = controls ? m_SurfaceAssigned[0] + m_SurfaceAssigned[1] : m_SurfaceAssigned[i];
                 double bytes = controls ? m_SurfaceBytes[0] + m_SurfaceBytes[1] : m_SurfaceBytes[i];
-                string coverage = controls ? $"{assigned} / {m_EstimateTileCount * 2} maps" : $"{assigned} / {m_EstimateTileCount} tiles";
-                EditorGUILayout.LabelField(label, $"{coverage} · {EstimateBytes(bytes / divisor * projectedTiles)}");
-                m_PlanSurfaceMap[i] = EditorGUILayout.ToggleLeft("Include missing " + label, m_PlanSurfaceMap[i]);
+                int slots = m_EstimateTileCount * (controls ? 2 : 1);
+                var cells = MGTerrainDiagnosticTable.Row(++row, columns, new[] { label, $"{assigned:N0} / {slots:N0}", EstimateBytes(bytes / divisor * projectedTiles), "", "" });
+                var toggle = new Rect(cells[3].center.x - 8, cells[3].center.y - 9, 18, 18);
+                m_PlanSurfaceMap[i] = EditorGUI.Toggle(toggle, new GUIContent("", "Include missing " + label + " in the projection. No textures are created."), m_PlanSurfaceMap[i]);
+                using (new EditorGUI.DisabledScope(!m_PlanSurfaceMap[i]))
+                    m_PlannedSurfaceResolution[i] = EditorGUI.IntPopup(cells[4], m_PlannedSurfaceResolution[i],
+                        new[] { "256", "512", "1K", "2K", "4K", "8K" }, new[] { 256, 512, 1024, 2048, 4096, 8192 });
                 if (!m_PlanSurfaceMap[i]) continue;
-                m_PlannedSurfaceResolution[i] = EditorGUILayout.IntPopup("Planned Resolution", m_PlannedSurfaceResolution[i],
-                    new[] { "256", "512", "1K", "2K", "4K", "8K" }, new[] { 256, 512, 1024, 2048, 4096, 8192 });
-                // Count missing slots individually, including partially assigned pairs.
                 int mapsPerTile = controls ? 2 : 1;
                 double missingFraction = m_EstimateTileCount > 0 ? mapsPerTile - assigned / divisor : mapsPerTile;
                 long pixels = 0;
                 for (int n = m_PlannedSurfaceResolution[i]; n > 0; n /= 2) pixels += (long)n * n;
-                // Planning is explicit and conservative; assigned maps use their real formats.
                 plannedPerTile += missingFraction * pixels * (i == 4 ? 2 : 4);
             }
-            EditorGUILayout.HelpBox("Assigned maps use their actual resolutions, formats and mip levels. Missing-map planning assumes RGBA32 for controls/RGB/world normals and R16 for height, with a full mip chain. These are estimates only; no textures are created. Planned file sizes are unknown until saved.", MessageType.None);
             return plannedPerTile;
         }
+
 
         void DrawWorldDataEstimator(MGTerrainWorld world)
         {
             EditorGUILayout.Space();
-            m_ShowDataEstimator = EditorGUILayout.Foldout(m_ShowDataEstimator, "World Data Estimator", true);
-            if (!m_ShowDataEstimator) return;
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField("World Data Estimator", EditorStyles.boldLabel);
+                GUILayout.Label(new GUIContent(EditorGUIUtility.IconContent("console.infoicon.sml").image,
+                    "Assigned maps use their actual resolutions, formats and mip levels. Missing-map planning assumes RGBA32 for controls/RGB/world normals and R16 for height, with a full mip chain. These are estimates only; no textures are created. Planned file sizes are unknown until saved.\n\nProjection repeats the average current tile configuration across a square world using the configured tile size. It assumes independent maps per tile, but preserves sharing within a tile. Empty tiles reduce the average. Refresh after painting or changing maps.\n\nThe total includes mesh and texture buffers. Disk files are a separate measurement. CPU-readable copies, detail instances, colliders, other material textures, shared grass arrays and engine overhead are excluded. Streaming can reduce loaded memory; it does not reduce stored data. This is not a build-size or frame-rate estimate."), GUILayout.Width(20), GUILayout.Height(18));
+            }
             if (!m_EstimateScanned) RefreshDataEstimate(world);
             using (new EditorGUILayout.HorizontalScope())
                 foreach (int km in new[] { 1, 2, 5, 10, 25, 50, 100 })
@@ -163,41 +169,41 @@ namespace MashBoxSDK.MapTools
             double tileSize = Math.Max(1, world.TileSize);
             long side = (long)Math.Ceiling(m_EstimateKilometres * 1000.0 / tileSize);
             long total = side * side;
-            EditorGUILayout.LabelField("Tile Grid", $"{side:N0} × {side:N0} = {total:N0} tiles");
-            EditorGUILayout.LabelField("Rounded World Coverage", $"{side * tileSize / 1000:0.###} × {side * tileSize / 1000:0.###} km");
-            EditorGUILayout.LabelField("Sampled Tiles", m_EstimateTileCount.ToString("N0"));
-            EditorGUILayout.LabelField("Current Map Slots / Unique Maps", $"{m_EstimateMapCount:N0} / {m_EstimateUniqueCount:N0}");
-            EditorGUILayout.LabelField("Current Unique Map Memory", EstimateBytes(m_EstimateCurrentMemory));
-            EditorGUILayout.LabelField("Current Map Asset Files", EstimateBytes(m_EstimateCurrentDisk));
+            MGTerrainDiagnosticTable.Header("Current sample", "Value");
+            MGTerrainDiagnosticTable.Metric(1, "Tile grid", $"{side:N0} × {side:N0} = {total:N0} tiles");
+            MGTerrainDiagnosticTable.Metric(2, "Rounded world coverage", $"{side * tileSize / 1000:0.###} × {side * tileSize / 1000:0.###} km");
+            MGTerrainDiagnosticTable.Metric(3, "Sampled tiles", m_EstimateTileCount.ToString("N0"));
+            MGTerrainDiagnosticTable.Metric(4, "Current map slots / unique maps", $"{m_EstimateMapCount:N0} / {m_EstimateUniqueCount:N0}");
+            MGTerrainDiagnosticTable.Metric(5, "Current unique map memory", EstimateBytes(m_EstimateCurrentMemory));
+            MGTerrainDiagnosticTable.Metric(6, "Current map asset files", EstimateBytes(m_EstimateCurrentDisk));
             if (m_EstimateTileCount == 0)
                 EditorGUILayout.HelpBox("No tiles are available to sample. Mesh creation settings and any enabled surface-map plans are estimated.", MessageType.Info);
             double mapsPerTile = m_EstimateTileCount > 0 ? m_EstimateDetailSlots / (double)m_EstimateTileCount : 0;
             double plannedSurface = DrawSurfaceMapEstimate(total);
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Projected Full World", EditorStyles.boldLabel);
             double mesh = m_EstimateTileCount > 0 ? m_EstimateMeshPerTile : CreationMeshBytes(world);
-            EditorGUILayout.LabelField("Average Detail Texture / Tile", EstimateBytes(m_EstimateDetailGpuPerTile));
-            EditorGUILayout.LabelField("Detail Map Slots", $"≈ {Math.Ceiling(mapsPerTile * total):N0}");
-            EditorGUILayout.LabelField("Detail Texture Buffers", EstimateBytes(m_EstimateDetailGpuPerTile * total));
-            EditorGUILayout.LabelField("Assigned Surface Map Buffers", EstimateBytes((m_EstimateGpuPerTile - m_EstimateDetailGpuPerTile) * total));
-            EditorGUILayout.LabelField("Planned Missing Surface Maps", EstimateBytes(plannedSurface * total));
-            EditorGUILayout.LabelField("Map Files on Disk (maps only)", "≈ " + EstimateBytes(m_EstimateDiskPerTile * total));
-            EditorGUILayout.LabelField("Surface Mesh Buffers", EstimateBytes(mesh * total));
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-            {
-                EditorGUILayout.LabelField("Total Mesh + Texture Buffers", "≈ " + EstimateBytes((mesh + m_EstimateGpuPerTile + plannedSurface) * total), EditorStyles.boldLabel);
-                EditorGUILayout.LabelField("Sum of detail maps, assigned/planned surface maps and mesh buffers. Excludes CPU copies, other assets and engine overhead.", EditorStyles.wordWrappedMiniLabel);
-                EditorGUILayout.LabelField("Disk files are a separate measurement, not added to this total. Saved texture assets can be larger because of serialization. Complete world disk size is not estimated here.", EditorStyles.wordWrappedMiniLabel);
-            }
+            MGTerrainDiagnosticTable.Header("Projected full world", "Estimate");
+            MGTerrainDiagnosticTable.Metric(1, "Average detail texture / tile", EstimateBytes(m_EstimateDetailGpuPerTile));
+            MGTerrainDiagnosticTable.Metric(2, "Detail map slots", $"≈ {Math.Ceiling(mapsPerTile * total):N0}");
+            MGTerrainDiagnosticTable.Metric(3, "Detail texture buffers", EstimateBytes(m_EstimateDetailGpuPerTile * total));
+            MGTerrainDiagnosticTable.Metric(4, "Assigned surface map buffers", EstimateBytes((m_EstimateGpuPerTile - m_EstimateDetailGpuPerTile) * total));
+            MGTerrainDiagnosticTable.Metric(5, "Planned missing surface maps", EstimateBytes(plannedSurface * total));
+            MGTerrainDiagnosticTable.Metric(6, "Surface mesh buffers", EstimateBytes(mesh * total));
+            MGTerrainDiagnosticTable.Metric(7, "Total mesh + texture buffers", "≈ " + EstimateBytes((mesh + m_EstimateGpuPerTile + plannedSurface) * total), total: true);
+            MGTerrainDiagnosticTable.Metric(8, "Map files on disk (separate from buffer total)", "≈ " + EstimateBytes(m_EstimateDiskPerTile * total));
+            EditorGUILayout.Space();
             m_ShowEstimatorMaps = EditorGUILayout.Foldout(m_ShowEstimatorMaps, "Map Resolutions / Formats", true);
             if (m_ShowEstimatorMaps)
+            {
+                MGTerrainDiagnosticTable.Header("Map / layer / format", "Slots");
+                int row = 0;
                 foreach (var group in m_EstimateMapGroups.OrderBy(p => p.Key))
-                    EditorGUILayout.LabelField(group.Key, group.Value + " slots", EditorStyles.wordWrappedMiniLabel);
-            EditorGUILayout.HelpBox("Projection repeats the average current tile configuration across a square world using the configured tile size. It assumes independent maps per tile, but preserves sharing within a tile. Empty tiles reduce the average. Refresh after painting or changing maps. No assets are generated.", MessageType.None);
-            EditorGUILayout.HelpBox("Payload uses mesh buffers and the current texture formats, including mip levels—not build download size or a frame-rate prediction. Asset-file estimates use current saved files. CPU-readable copies, detail instances, colliders, other material textures, shared grass arrays and engine overhead are excluded from projected totals. Streaming can reduce loaded memory; it does not reduce the full world's stored data.", MessageType.None);
+                    MGTerrainDiagnosticTable.Metric(++row, group.Key, group.Value.ToString("N0"));
+            }
             if (m_EstimateHasUnsavedMaps)
                 EditorGUILayout.HelpBox("Some maps are unsaved or have no accessible asset file. The disk estimate is incomplete until those maps are saved and refreshed.", MessageType.Warning);
         }
+
 
         static string EstimateBytes(double bytes) => EditorUtility.FormatBytes((long)Math.Min(long.MaxValue, Math.Max(0, bytes)));
         static double CreationMeshBytes(MGTerrainWorld world)

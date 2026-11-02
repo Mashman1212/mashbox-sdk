@@ -13,6 +13,7 @@ namespace MashBoxSDK.MapTools
     public sealed partial class MGTerrainEditor
     {
         string m_SharedDefinitionSignature;
+        int m_SharedDefinitionDirtyCount = -1;
         readonly HashSet<string> m_SharedPrototypeIds = new HashSet<string>();
         readonly HashSet<string> m_SharedLayerIds = new HashSet<string>();
         readonly HashSet<MGTerrain> m_SharedTiles = new HashSet<MGTerrain>();
@@ -38,9 +39,16 @@ namespace MashBoxSDK.MapTools
         void CommitSharedWorldDetails(MGTerrain source)
         {
             if (source.World == null) return;
+            // Selection-only GUI events cannot change shared definitions. Avoid serializing
+            // the whole terrain twice unless its data actually changed.
+            if (m_SharedDefinitionSignature != null && EditorUtility.GetDirtyCount(source) == m_SharedDefinitionDirtyCount) return;
             SharedIds(source);
             string signature = SharedSignature(source);
-            if (signature == m_SharedDefinitionSignature) return;
+            if (signature == m_SharedDefinitionSignature)
+            {
+                m_SharedDefinitionDirtyCount = EditorUtility.GetDirtyCount(source);
+                return;
+            }
             var remaining = new HashSet<string>(source.DensityDetailLayers.Select(l => l.WorldDetailId));
             var removed = new HashSet<string>(m_SharedLayerIds.Where(id => !remaining.Contains(id)));
             var remainingPrototypes = new HashSet<string>(source.Prototypes.Select(p => p.WorldDetailId));
@@ -68,6 +76,7 @@ namespace MashBoxSDK.MapTools
         void RememberSharedDefinitions(MGTerrain source)
         {
             m_SharedDefinitionSignature = SharedSignature(source);
+            m_SharedDefinitionDirtyCount = EditorUtility.GetDirtyCount(source);
             m_SharedPrototypeIds.Clear();
             foreach (var prototype in source.Prototypes) m_SharedPrototypeIds.Add(prototype.WorldDetailId);
             m_SharedLayerIds.Clear();

@@ -18,6 +18,7 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private List<ClothMaterialAssignment> clothMaterialAssignments = new List<ClothMaterialAssignment>();
         [SerializeField] private bool clothTextured, clothWireframe;
         private Material clothNeutralMaterial;
+        private Material clothReferenceMaterial;
         private Material[][] clothSourceMaterials;
         private Mesh clothWireSource;
         private int[] clothWireEdges;
@@ -32,6 +33,10 @@ namespace MashBoxSDK.AnimationStudio
             };
             clothNeutralMaterial.SetColor("_Color", new Color(.7f, .74f, .78f));
             clothNeutralMaterial.SetFloat("_Cull", 0);
+            clothReferenceMaterial = new Material(clothNeutralMaterial) {
+                name = "Cloth default reference preview", hideFlags = HideFlags.HideAndDontSave
+            };
+            clothReferenceMaterial.SetColor("_Color", StudioSkinningEditor.ReferencePreviewTint);
             ApplyClothDisplay();
         }
 
@@ -48,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int count = Mathf.Max(1, clothMeshRows[i].sourceMesh.subMeshCount);
                 var assigned = ClothAssignedMaterials(i);
-                var materials = Enumerable.Range(0, count).Select(slot => clothTextured &&
+                var materials = Enumerable.Range(0, count).Select(slot => clothMeshRows[i].referenceOnly ? clothReferenceMaterial : clothTextured &&
                     assigned != null && slot < assigned.Length && assigned[slot] ? assigned[slot] : clothNeutralMaterial).ToArray();
                 clothRenderers[i].sharedMaterials = materials;
                 if (clothSession != null && clothSession.Source == clothRenderers[i])
@@ -123,6 +128,30 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     Handles.DrawAAPolyLine(2,P(-1,1),P(7,-8),P(9,-6),P(1,3));
                     Handles.DrawAAPolyLine(1.5f,P(-1,1),P(-5,2),P(-7,7),P(-2,6),P(1,3));
+                }
+                else if (icon == 6)
+                {
+                    // A rippling fabric swatch, with folds following the waving hem.
+                    Handles.DrawAAPolyLine(1.4f, P(-8,-9), P(-8,9));
+                    for (int row = 0; row < 3; row++)
+                    {
+                        var wave = new Vector3[17];
+                        for (int point = 0; point < wave.Length; point++)
+                        {
+                            float t = point / (float)(wave.Length - 1);
+                            wave[point] = P(-6 + t * 14, -6 + row * 5 + Mathf.Sin(t * Mathf.PI * 2) * 1.7f);
+                        }
+                        Handles.DrawAAPolyLine(1.4f, wave);
+                    }
+                    Handles.DrawAAPolyLine(1.4f, P(-6,-6), P(-6,4));
+                    Handles.DrawAAPolyLine(1.4f, P(8,-6), P(8,4));
+                }
+                else if (icon == 7)
+                {
+                    // Three air streams with curled tips distinguish wind from flutter.
+                    Handles.DrawAAPolyLine(1.5f, P(-9,-4), P(2,-4), P(4,-5), P(5,-7), P(4,-9), P(2,-9), P(1,-8));
+                    Handles.DrawAAPolyLine(1.5f, P(-7,0), P(6,0), P(8,-1), P(9,-3), P(8,-5), P(7,-5));
+                    Handles.DrawAAPolyLine(1.5f, P(-9,4), P(1,4), P(3,5), P(4,7), P(3,9), P(1,9), P(0,8));
                 }
                 else if (icon == 5)
                 {
@@ -229,7 +258,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             DisposeClothWeightSurface();
             if (clothNeutralMaterial) DestroyImmediate(clothNeutralMaterial);
-            clothNeutralMaterial = null; clothSourceMaterials = null;
+            if (clothReferenceMaterial) DestroyImmediate(clothReferenceMaterial);
+            clothNeutralMaterial = null; clothReferenceMaterial = null; clothSourceMaterials = null;
             clothWireSource = null; clothWireEdges = null; clothWireLines = null;
         }
     }

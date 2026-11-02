@@ -33,7 +33,9 @@ namespace MashBoxSDK.AnimationStudio
             character = candidate;
         }
 
+#if MashBoxDev
         [MenuItem("MashBox/Dev/Studio Checks/Animation/Validate Studio character recovery")]
+#endif
         private static void ValidateCharacterRecovery()
         {
             var window = CreateInstance<AnimationStudioWindow>();

@@ -258,7 +258,9 @@ namespace MashBoxSDK.MapTools
         }
 
 
-        [MenuItem("MashBox/Validation/Validate Terrain World")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Terrain World")]
+#endif
         public static void Run()
         {
             if (Application.isPlaying) throw new InvalidOperationException("Run terrain world validation outside Play Mode.");

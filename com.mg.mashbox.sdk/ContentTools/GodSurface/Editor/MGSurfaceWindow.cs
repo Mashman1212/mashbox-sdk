@@ -16,7 +16,9 @@ namespace MG.GodSurface.Editor
         GameObject targetRoot;
         Vector2 scroll;
         string auditSummary;
-        [MenuItem("MashBox/Content Tools/God Surface Cells")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Content Tools/God Surface Cells")]
+#endif
         public static void Open() => GetWindow<MGSurfaceWindow>("God Surface Cells");
         void OnEnable() { minSize = new Vector2(600, 650); FindWorld(); EditorApplication.update += RefreshStats; }
         void OnDisable() => EditorApplication.update -= RefreshStats;

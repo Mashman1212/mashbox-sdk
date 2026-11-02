@@ -43,11 +43,11 @@ namespace MashBoxSDK.MapTools
                     height = resolutionMap.height;
                     continue;
                 }
-                if (layer.GeneratedByPalette != null) throw new InvalidOperationException("Convert palette-generated grass to standalone paint before using shared populations.");
+                if (layer.GeneratedByPalette != null) throw new InvalidOperationException("Convert palette-generated details to standalone paint before using shared populations.");
                 sources.Add(i);
                 if (layer.DensityMap != null)
                 {
-                    if (!layer.DensityMap.isReadable || layer.DensityMap.format != TextureFormat.R16) throw new InvalidOperationException("Shared grass migration requires readable R16 density maps.");
+                    if (!layer.DensityMap.isReadable || layer.DensityMap.format != TextureFormat.R16) throw new InvalidOperationException("Shared detail migration requires readable R16 density maps.");
                     width = Mathf.Max(width, layer.DensityMap.width); height = Mathf.Max(height, layer.DensityMap.height);
                 }
             }
@@ -85,8 +85,8 @@ namespace MashBoxSDK.MapTools
             AssetDatabase.ImportAsset(backup);
             Undo.IncrementCurrentGroup();
             int undo = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Convert to Shared Grass Populations");
-            Undo.RegisterCompleteObjectUndo(terrain, "Convert to Shared Grass Populations");
+            Undo.SetCurrentGroupName("Convert to Shared Detail Populations");
+            Undo.RegisterCompleteObjectUndo(terrain, "Convert to Shared Detail Populations");
             var serialized = new SerializedObject(terrain);
             var layers = serialized.FindProperty("m_DensityDetailLayers");
             int template = sources.Count > 0 ? sources[0] : SharedIndex(terrain, prototype, 0);
@@ -128,7 +128,7 @@ namespace MashBoxSDK.MapTools
             var map = new Texture2D(width, height, format, false, true) { name = name, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Point };
             map.SetPixelData(data, 0); map.Apply(false, false);
             MGTerrainSceneAssets.Create(map, terrain, $"Detail_{prototype}_" + name);
-            Undo.RegisterCreatedObjectUndo(map, "Create Shared Grass Map");
+            Undo.RegisterCreatedObjectUndo(map, "Create Shared Detail Map");
             return map;
         }
     }

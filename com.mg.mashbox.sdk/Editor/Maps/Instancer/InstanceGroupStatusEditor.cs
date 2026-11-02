@@ -105,7 +105,9 @@ public class InstanceGroupStatusEditor : Editor
         return "eligible; waiting for active group/manager rebuild";
     }
 
-    [MenuItem("MashBox/Maps/Rendering/Audit Live Instance Groups")]
+#if MashBoxDev
+    [MenuItem("MashBox/Dev/Maps/Rendering/Audit Live Instance Groups")]
+#endif
     public static void Audit()
     {
         var report = new StringBuilder($"Play Mode: {Application.isPlaying}\n");

@@ -225,7 +225,9 @@ namespace MashBoxSDK.MapTools
             }
             Handles.color = color; Handles.zTest = depth;
         }
-        [MenuItem("MashBox/Brushes/Export Mask Texture Library")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Brushes/Export Mask Texture Library")]
+#endif
         public static void ExportLibrary()
         {
             EnsureLibrary(); Directory.CreateDirectory(Folder);

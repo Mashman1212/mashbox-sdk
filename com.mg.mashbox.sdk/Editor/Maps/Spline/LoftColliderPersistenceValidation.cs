@@ -20,7 +20,9 @@ public static class LoftColliderPersistenceValidation
             throw new Exception(phase + ": collision ray missed");
         Debug.Log(phase + ": 4 meshes present; collision ray hit");
     }
-    [MenuItem("MashBox/Validation/Validate Loft Collider Persistence")]
+#if MashBoxDev
+    [MenuItem("MashBox/Dev/Validation/Validate Loft Collider Persistence")]
+#endif
     public static void Run()
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode) throw new InvalidOperationException("Run in Edit Mode.");

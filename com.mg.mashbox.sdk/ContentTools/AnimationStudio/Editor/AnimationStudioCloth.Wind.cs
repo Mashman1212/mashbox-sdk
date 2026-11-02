@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private float clothWindTime;
         private Mesh clothFlutterOutput;
         private int clothFlutterHash;
-        private readonly MaterialPropertyBlock clothWindBlock=new MaterialPropertyBlock();
+        private MaterialPropertyBlock clothWindBlock;
         private MashBoxWindSettings ClothWindSettings => new MashBoxWindSettings {
             velocity=clothWindTunnel?Quaternion.Euler(-clothWindElevation,clothWindHeading,0)*Vector3.forward*clothWindSpeed:Vector3.zero,
             gust=clothWindGust, frequency=clothWindFrequency };
@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             using(new EditorGUI.DisabledScope(!CanSimulateCloth))
             {
-                if(GUILayout.Button(new GUIContent("Flutter", "Paint the red vertex channel. Zero stays still; one receives full wind flutter."),clothFlutterPaint&&clothPainting?EditorStyles.miniButtonMid:EditorStyles.miniButton))
+                if(ClothToolbarButton(6, clothFlutterPaint&&clothPainting, "Flutter — paint wind flutter. Zero stays still; one receives full flutter."))
                 {
                     bool wasFlutter=clothFlutterPaint&&clothPainting;
                     EndClothStroke();clothFlutterPaint=true;clothPainting=!wasFlutter;clothTool=0;
@@ -32,8 +32,8 @@ namespace MashBoxSDK.AnimationStudio
                     clothRunning=false;viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);
                 }
             }
-            bool tunnel=GUILayout.Toggle(clothWindTunnel,"Wind tunnel",EditorStyles.miniButton);
-            if(tunnel!=clothWindTunnel){clothWindTunnel=tunnel;UpdateClothWindPreview();viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);}
+            if(ClothToolbarButton(7, clothWindTunnel, "Wind tunnel — toggle preview airflow. Adjust speed here or direction and gusts in the inspector."))
+            {clothWindTunnel=!clothWindTunnel;UpdateClothWindPreview();viewport.MarkDirty(MashBoxStudioViewport.DirtyState.Scene);}
             if(clothWindTunnel)
             {
                 EditorGUI.BeginChangeCheck();

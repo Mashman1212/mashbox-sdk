@@ -10,7 +10,9 @@ namespace MashBoxSDK.MapTools
 {
     internal static class PrefabStampValidation
     {
-        [MenuItem("MashBox/Validation/Validate Prefab Stamp")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Prefab Stamp")]
+#endif
         static void Run()
         {
             var scene = EditorSceneManager.NewPreviewScene();

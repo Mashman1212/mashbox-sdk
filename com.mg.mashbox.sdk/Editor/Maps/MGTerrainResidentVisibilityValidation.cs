@@ -20,7 +20,9 @@ namespace MashBoxSDK.MapTools
         static object New(string type, params object[] args) => Activator.CreateInstance(Nested(type), Flags, null, args, null);
         static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 
-        [MenuItem("MashBox/Validation/Validate Terrain Resident Visibility")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Terrain Resident Visibility")]
+#endif
         public static void Run()
         {
             var go = new GameObject("Resident visibility validation");

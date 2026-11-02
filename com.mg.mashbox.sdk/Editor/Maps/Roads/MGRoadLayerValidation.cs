@@ -17,7 +17,9 @@ namespace MashBoxSDK.Maps.Roads.Editor
         static int checks;
         static void Check(bool condition, string label) { checks++; if (!condition) throw new Exception(label); }
         static void Near(float actual, float expected, string label) => Check(Mathf.Abs(actual - expected) < .002f, label + $" ({actual} vs {expected})");
-        [MenuItem("MashBox/Validation/Validate Road Terrain Layers")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Road Terrain Layers")]
+#endif
         public static void Run() => RunInScene(true);
         internal static void RunInScene(bool preview)
         {

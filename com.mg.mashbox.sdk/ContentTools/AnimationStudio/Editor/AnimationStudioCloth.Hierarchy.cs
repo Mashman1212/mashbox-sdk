@@ -270,8 +270,10 @@ namespace MashBoxSDK.AnimationStudio
 
         private void NewClothScene()
         {
+            StopClothSession();
             EndClothStroke(); RememberClothProfile();
             foreach (var profile in clothProfiles) if (profile) AssetDatabase.SaveAssetIfDirty(profile);
+            ReleaseTemporaryClothProfiles();
             clothCharacter = ResolveSdkSkeleton();
             clothGarment = null; clothOutfit = Array.Empty<GameObject>(); clothProfile = null; clothProfiles.Clear();
             clothMaterialAssignments.Clear(); clothClippingAssignments.Clear(); clothClippingPreview = 0; clothPreviewClipping = null;

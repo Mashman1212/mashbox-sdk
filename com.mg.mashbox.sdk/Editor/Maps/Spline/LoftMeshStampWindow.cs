@@ -28,7 +28,9 @@ namespace MashBoxSDK.MapTools
         Mesh ghostMesh;
         double nextPreview;
 
-        [MenuItem("MashBox/Splines/Loft Mesh Stamp")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Splines/Loft Mesh Stamp")]
+#endif
         public static void OpenSelection()
         {
             var selected = Selection.activeGameObject;

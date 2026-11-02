@@ -31,7 +31,24 @@ namespace MashBoxSDK.MapTools
         static bool Labels => EditorPrefs.GetBool(Prefix + "Labels", false);
         static bool Through => EditorPrefs.GetBool(Prefix + "Through", true);
 
-        internal static void DrawSettings()
+        internal static void DrawToolbar()
+        {
+            EditorGUI.BeginChangeCheck();
+            bool outlines = MGTerrainToolbarIcons.Toggle(Outlines, MGTerrainToolbarIcons.Icon.Outline, "Tile outlines (requires Scene view Gizmos and a selected terrain world or tile)");
+            bool colours = MGTerrainToolbarIcons.Toggle(PerTileColors, MGTerrainToolbarIcons.Icon.Colours, "Different colour per tile");
+            bool names = MGTerrainToolbarIcons.Toggle(Labels, MGTerrainToolbarIcons.Icon.Names, "Tile names");
+            bool grid = MGTerrainToolbarIcons.Toggle(Grid, MGTerrainToolbarIcons.Icon.Grid, "Mesh resolution grid (spacing and focus radius are in Diagnostics)");
+            bool through = MGTerrainToolbarIcons.Toggle(Through, MGTerrainToolbarIcons.Icon.Through, "Show gizmos through foliage");
+            if (!EditorGUI.EndChangeCheck()) return;
+            EditorPrefs.SetBool(Prefix + "Outlines", outlines);
+            EditorPrefs.SetBool(Prefix + "PerTileColors", colours);
+            EditorPrefs.SetBool(Prefix + "Labels", names);
+            EditorPrefs.SetBool(Prefix + "Grid", grid);
+            EditorPrefs.SetBool(Prefix + "Through", through);
+            SceneView.RepaintAll();
+        }
+
+        internal static void DrawSettings(bool showToolbar = true)
         {
             bool expanded = SessionState.GetBool(Prefix + "Expanded", false);
             bool next = EditorGUILayout.Foldout(expanded, "Terrain Gizmos", true);
@@ -39,32 +56,24 @@ namespace MashBoxSDK.MapTools
             if (!next) return;
             using (new EditorGUI.IndentLevelScope())
             {
+                if (showToolbar)
+                    using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar)) DrawToolbar();
                 EditorGUI.BeginChangeCheck();
-                bool outlines = EditorGUILayout.Toggle("Tile Outlines", Outlines);
-                bool perTileColors = EditorGUILayout.Toggle("Different Color Per Tile", PerTileColors);
-                bool labels = EditorGUILayout.Toggle("Tile Names", Labels);
-                bool grid = EditorGUILayout.Toggle("Mesh Resolution Grid", Grid);
-                bool through = EditorGUILayout.Toggle("Show Through Foliage", Through);
                 int step = Mathf.Clamp(EditorPrefs.GetInt(Prefix + "Step", 1), 1, 32);
                 float radius = Mathf.Clamp(EditorPrefs.GetFloat(Prefix + "Radius", 100f), 5f, 1000f);
-                if (grid)
+                if (Grid)
                 {
                     step = EditorGUILayout.IntSlider("Every Nth Grid Line", step, 1, 32);
                     radius = EditorGUILayout.Slider("Grid Focus Radius (m)", radius, 5f, 1000f);
                 }
                 if (EditorGUI.EndChangeCheck())
                 {
-                    EditorPrefs.SetBool(Prefix + "Outlines", outlines);
-                    EditorPrefs.SetBool(Prefix + "PerTileColors", perTileColors);
-                    EditorPrefs.SetBool(Prefix + "Labels", labels);
-                    EditorPrefs.SetBool(Prefix + "Grid", grid);
-                    EditorPrefs.SetBool(Prefix + "Through", through);
                     EditorPrefs.SetInt(Prefix + "Step", step);
                     EditorPrefs.SetFloat(Prefix + "Radius", radius);
                     SceneView.RepaintAll();
                 }
                 EditorGUILayout.HelpBox("Select a world to outline its tiles, or select individual tiles to highlight them. Requires Scene view Gizmos. Settings apply to all MG terrains in this editor.", MessageType.Info);
-                if (grid) EditorGUILayout.HelpBox("The grid follows stored mesh vertices near the Scene view focus (orbit pivot), including cut holes. Grid drawing is capped at 40,000 segments; reduce the radius or increase the line interval for dense terrain. Unsupported or unreadable meshes show bounds only.", MessageType.Info);
+                if (Grid) EditorGUILayout.HelpBox("The grid follows stored mesh vertices near the Scene view focus (orbit pivot), including cut holes. Grid drawing is capped at 40,000 segments; reduce the radius or increase the line interval for dense terrain. Unsupported or unreadable meshes show bounds only.", MessageType.Info);
             }
         }
 

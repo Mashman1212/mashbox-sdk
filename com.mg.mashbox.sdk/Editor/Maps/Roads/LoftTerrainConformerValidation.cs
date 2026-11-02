@@ -20,7 +20,9 @@ namespace MashBoxSDK.Maps.TerrainSystem.Editor
         static void Near(float actual, float expected, string message) => Check(Mathf.Abs(actual - expected) < .002f, message + $" ({actual} vs {expected})");
 
         // Run with Unity -executeMethod MashBoxSDK.Maps.TerrainSystem.Editor.LoftTerrainConformerValidation.Run.
-        [MenuItem("MashBox/Validation/Validate Loft Terrain Conform")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Loft Terrain Conform")]
+#endif
         public static void Run()
         {
             var scene = EditorSceneManager.NewPreviewScene();

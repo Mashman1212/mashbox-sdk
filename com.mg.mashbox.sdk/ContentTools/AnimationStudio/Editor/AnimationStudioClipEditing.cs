@@ -116,7 +116,7 @@ namespace MashBoxSDK.AnimationStudio
             UpdateClipSaveState();
         }
 
-        private void OnDestroy() => ReleaseClipSession();
+        private void OnDestroy() { ReleaseClipSession(); ReleaseTemporaryClothProfiles(); }
 
         private void DrawAnimationFileMenu()
         {

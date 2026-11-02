@@ -21,7 +21,9 @@ namespace MashBoxSDK.AnimationStudio
             try { string result = Run(); File.WriteAllText("Temp/StudioSkinning.result",result); Debug.Log(result); }
             catch (Exception e) { File.WriteAllText("Temp/StudioSkinning.result",e.ToString()); Debug.LogException(e); }
         }
+#if MashBoxDev
         [MenuItem("MashBox/Dev/Studio Checks/Skinning/Validate skinning and sculpt")]
+#endif
         private static void Menu() => Debug.Log(Run());
         private static void Require(bool condition,string message) { if (!condition) throw new InvalidOperationException(message); }
         private static object Get(object obj,string field) => obj.GetType().GetField(field,BindingFlags.NonPublic|BindingFlags.Instance).GetValue(obj);

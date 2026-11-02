@@ -13,7 +13,6 @@ namespace MashBoxSDK.MapTools
         readonly HashSet<(MGTerrain, int, int)> m_WorldPaintSkipped = new HashSet<(MGTerrain, int, int)>();
         readonly HashSet<MGTerrain.DensityDetailLayer> m_SelectedPaintLayers = new HashSet<MGTerrain.DensityDetailLayer>();
         int m_WorldStrokeUndo = -1;
-        bool m_ShowPaintTogether;
         bool m_WorldPaintDelegate;
 
         void SelectPaintDetail(int index, bool additive = false)
@@ -35,27 +34,15 @@ namespace MashBoxSDK.MapTools
         }
 
         bool IsPaintLayerSelected(MGTerrain terrain, int index) =>
-            index == m_PaintDetailIndex || m_SelectedPaintLayers.Contains(terrain.DensityDetailLayers[index]);
+            m_DetailTargetsInitialized ? m_SelectedPaintLayers.Contains(terrain.DensityDetailLayers[index])
+                : index == m_PaintDetailIndex || m_SelectedPaintLayers.Contains(terrain.DensityDetailLayers[index]);
 
         bool IsPaintPrototypeSelected(MGTerrain terrain, int prototype)
         {
+            if (m_DetailTargetsInitialized) return m_SelectedDetailPrototypes.Contains(prototype);
             for (int i = 0; i < terrain.DensityDetailLayerCount; i++)
                 if (terrain.DensityDetailLayers[i].PrototypeIndex == prototype && IsPaintLayerSelected(terrain, i)) return true;
             return m_SelectedPrototype == prototype;
-        }
-
-        void DrawPaintTogether(MGTerrain terrain, string[] labels)
-        {
-            m_ShowPaintTogether = EditorGUILayout.Foldout(m_ShowPaintTogether, "Paint Together", true);
-            if (!m_ShowPaintTogether) return;
-            using (new EditorGUI.IndentLevelScope())
-                for (int i = 0; i < labels.Length; i++)
-                {
-                    if (terrain.DensityDetailLayers[i].PaletteSourceOnly) continue;
-                    bool selected = IsPaintLayerSelected(terrain, i);
-                    if (EditorGUILayout.ToggleLeft(labels[i], selected) != selected) SelectPaintDetail(i, true);
-                }
-            EditorGUILayout.HelpBox("Selected details share the enabled brush channels and their target values. Each layer receives the full target. You can also Ctrl-click detail thumbnails to select several types. Per-detail settings below apply to the active detail.", MessageType.None);
         }
 
         bool RaycastDetailWorld(MGTerrain terrain, Ray ray, out RaycastHit hit)
@@ -176,10 +163,14 @@ namespace MashBoxSDK.MapTools
                         {
                             editor = (MGTerrainEditor)CreateEditor(chunk, typeof(MGTerrainEditor));
                             editor.m_WorldPaintDelegate = true;
+                            editor.m_IgnoreDetailSubIdSelection = eraseAll;
                             editor.m_PaintDetailIndex = index;
                             editor.m_GrassPaintSubId = m_GrassPaintSubId;
                             editor.m_RandomGrassSubIds = m_RandomGrassSubIds;
-                            editor.m_GrassSubIdMask = m_GrassSubIdMask;
+                            var sourceDefinition = !eraseAll ? terrain.DensityDetailLayers[sourceIndex] : detail;
+                            editor.m_RandomGrassSubIds = !eraseAll && sourceDefinition.GrassIdMap != null;
+                            editor.m_GrassSubIdMask = !eraseAll && sourceDefinition.GrassIdMap != null
+                                ? DetailSubIdMask(terrain, sourceDefinition.PrototypeIndex, sourceDefinition.GrassPopulation) : m_GrassSubIdMask;
                             editor.m_GrassMixSeed = m_GrassMixSeed;
                             editor.m_GrassIdOnly = m_GrassIdOnly;
                             editor.m_GrassPaintPopulation = m_GrassPaintPopulation;
@@ -191,6 +182,7 @@ namespace MashBoxSDK.MapTools
                             m_WorldPaintEditors.Add(key, editor);
                             if (!editor.BeginDetailStroke(chunk)) { m_WorldPaintSkipped.Add(key); continue; }
                         }
+                        editor.m_IgnoreDetailSubIdSelection = eraseAll;
                         editor.PaintDetailDab(chunk, point, erase || eraseAll);
                     }
                 }

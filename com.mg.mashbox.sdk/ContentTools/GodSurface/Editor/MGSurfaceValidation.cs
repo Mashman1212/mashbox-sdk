@@ -14,7 +14,9 @@ namespace MG.GodSurface.Editor
     {
         static readonly string report = Path.Combine(Path.GetTempPath(), "MGSurfaceValidation.txt");
         static void Check(bool pass, string message, StringBuilder log) { if (!pass) throw new Exception(message); log.AppendLine("PASS " + message); }
-        [MenuItem("MashBox/Content Tools/Validate God Surface Cells")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Content Tools/Validate God Surface Cells")]
+#endif
         public static void Run()
         {
             var log = new StringBuilder(); Scene testScene = default; Scene originalScene = SceneManager.GetActiveScene(); Material material = null; GameObject root = null;

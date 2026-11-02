@@ -15,7 +15,6 @@ namespace MashBoxSDK.MapTools
         MGTerrain m_EditChunk;
         Editor m_ChunkEditor;
         bool m_ShowChunk;
-        bool m_ShowSurfaceLodPreview = true;
         double m_NextSurfaceLodRepaint;
 
         [MenuItem("GameObject/MashBox/MG Terrain World From Selected Chunks", false, 20)]
@@ -102,12 +101,10 @@ namespace MashBoxSDK.MapTools
 #endif
         }
 
-        enum WorldTab { Tiles, Details, Settings, Baking }
+        enum WorldTab { Tiles, Details, Settings, Baking, Collision, Diagnostics }
         WorldTab m_Tab;
-        const string TabPreference = "MashBox.MGTerrainWorld.InspectorTab";
         void OnEnable()
         {
-            m_Tab = (WorldTab)Mathf.Clamp(SessionState.GetInt(TabPreference, 0), 0, 3);
 #if UNITY_6000_0_OR_NEWER
             SceneView.duringSceneGui += DrawScene;
             Undo.undoRedoPerformed += ClearPlacementPreviews;
@@ -122,7 +119,8 @@ namespace MashBoxSDK.MapTools
         }
         void DrawScene(SceneView view)
         {
-            if (m_Tab == WorldTab.Settings && EditorApplication.timeSinceStartup >= m_NextSurfaceLodRepaint)
+            if (!m_Workspace) return;
+            if ((m_Tab == WorldTab.Settings || m_Tab == WorldTab.Diagnostics) && EditorApplication.timeSinceStartup >= m_NextSurfaceLodRepaint)
             {
                 m_NextSurfaceLodRepaint = EditorApplication.timeSinceStartup + .25;
                 Repaint();
@@ -132,88 +130,52 @@ namespace MashBoxSDK.MapTools
         }
         public override void OnInspectorGUI()
         {
-#if !UNITY_6000_0_OR_NEWER
-            EditorGUILayout.HelpBox("MG Terrain World requires Unity 6 or newer. Open this project in Unity 6 to edit terrain worlds.", MessageType.Warning);
-#else
             var world = (MGTerrainWorld)target;
-            serializedObject.Update();
             MashBoxSDK.EditorResources.MashBoxInspectorHeaderUtility.DrawScriptHeader();
             EditorGUILayout.LabelField("MG Terrain World", EditorStyles.boldLabel);
-            DrawTabBar();
-            MGTerrainGizmos.DrawSettings();
-            EditorGUILayout.Space(6);
-            switch (m_Tab)
-            {
-                case WorldTab.Tiles: DrawTilesTab(world); break;
-                case WorldTab.Details:
-                    DrawWorldTools(world);
-                    if (world.Chunks.Count == 0)
-                        EditorGUILayout.HelpBox("Create or adopt a terrain tile in the Tiles tab to begin painting.", MessageType.Info);
-                    break;
-                case WorldTab.Settings: DrawSettingsTab(world); break;
-                case WorldTab.Baking: DrawWorldBakes(world); break;
-            }
-#endif
-        }
-
-        void DrawSettingsTab(MGTerrainWorld world)
-        {
-            DrawWorldCollision(world);
-            EditorGUILayout.HelpBox("One renderer with no visible-instance count cap. Child MG Terrain components retain their painted data and editing tools. Distance culling and density LOD control visible foliage; cell construction and uploads remain spread across frames.", MessageType.Info);
-            DrawPropertiesExcluding(serializedObject, "m_Script", "m_Quality");
-            if (serializedObject.ApplyModifiedProperties())
-            {
-                world.ApplySharedQuality();
-                SceneView.RepaintAll();
-            }
-            DrawSurfaceLodPreview(world);
-            DrawWorldQuality(world);
-            DrawWorldFarRangeMaterials(world);
-            EditorGUILayout.LabelField("Registered Chunks", world.Chunks.Count.ToString());
-#if UNITY_6000_0_OR_NEWER
-            EditorGUILayout.LabelField("Shared Renderers", world.SharedRendererCount.ToString());
-#endif
-            EditorGUILayout.LabelField("Submitted Details", world.LastSubmittedDetailInstances.ToString("N0"));
-            EditorGUILayout.LabelField(new GUIContent("Enabled Surface Renderers", "For the last prepared camera, before frustum and occlusion culling."),
-                new GUIContent(world.Chunks.Sum(chunk => chunk != null ? chunk.ActiveSurfaceRendererCount : 0).ToString("N0")));
+            EditorGUILayout.HelpBox("Manage terrain tiles, paint details, tune rendering and bake your world in the Terrain World window.", MessageType.None);
+            if (GUILayout.Button("Open Terrain World", GUILayout.Height(32))) MGTerrainWorldWindow.Open(world);
+            EditorGUILayout.LabelField("Registered tiles", world.Chunks.Count.ToString("N0"));
         }
 
         void DrawSurfaceLodPreview(MGTerrainWorld world)
         {
-            m_ShowSurfaceLodPreview = EditorGUILayout.Foldout(m_ShowSurfaceLodPreview, "Surface LOD - Scene Camera", true);
-            if (!m_ShowSurfaceLodPreview) return;
+            EditorGUILayout.LabelField("Surface LOD - Scene Camera", EditorStyles.boldLabel);
             var view = SceneView.lastActiveSceneView;
             if (view == null || view.camera == null)
             {
                 EditorGUILayout.HelpBox("Open a Scene view to inspect terrain LOD selection.", MessageType.Info);
                 return;
             }
-            EditorGUILayout.HelpBox("Pixel error chooses among cached meshes; it does not force simplification. Start distance protects nearby tiles. Shader-deformed tiles retain their original mesh. Flat tiles can already be at the coarsest LOD for every pixel-error value. The terrain editing grid shows the original mesh.", MessageType.Info);
+            float[] columns = { .22f, .10f, .17f, .17f, .34f };
+            MGTerrainDiagnosticTable.Row(0, columns, new[] { "Tile", "LOD", "Triangles", "Original", "Selection reason" }, heading: true);
             long original = 0, selected = 0;
+            int row = 0;
             foreach (var tile in world.Chunks)
             {
                 if (tile == null || !tile.isActiveAndEnabled) continue;
                 string reason = tile.GetSurfaceLodPreview(view.camera, out int lod, out long source, out long triangles);
                 original += source; selected += triangles;
-                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-                {
-                    EditorGUILayout.LabelField(tile.name, lod == 0 ? "Original" : "LOD " + lod, EditorStyles.boldLabel);
-                    EditorGUILayout.LabelField(reason, EditorStyles.wordWrappedMiniLabel);
-                    EditorGUILayout.LabelField("Triangles", triangles.ToString("N0") + " / " + source.ToString("N0"));
-                }
+                MGTerrainDiagnosticTable.Row(++row, columns, new[] { tile.name, lod == 0 ? "Original" : lod.ToString(), triangles.ToString("N0"), source.ToString("N0"), reason });
             }
-            EditorGUILayout.LabelField("Selected / original triangles", selected.ToString("N0") + " / " + original.ToString("N0"));
-            EditorGUILayout.LabelField("All registered active tiles, before frustum/occlusion culling. Game cameras select independently.", EditorStyles.wordWrappedMiniLabel);
+            MGTerrainDiagnosticTable.Row(++row, columns, new[] { "Total", "", selected.ToString("N0"), original.ToString("N0"), "Before camera culling" }, total: true);
+            EditorGUILayout.LabelField("Scene camera selection only. Game cameras choose LOD independently.", EditorStyles.wordWrappedMiniLabel);
         }
+
 
         void DrawTilesTab(MGTerrainWorld world)
         {
-            m_CurrentMeasurements.Draw(world.GetComponentsInChildren<MGTerrain>(true)
-                .Where(tile => tile.GetComponentInParent<MGTerrainWorld>(true) == world).ToArray());
+
             DrawTileCreation(world);
-            DrawWorldDataEstimator(world);
+            m_ShowEstimates = EditorGUILayout.Foldout(m_ShowEstimates, "Tile measurements", true);
+            if (m_ShowEstimates)
+            {
+                m_CurrentMeasurements.Draw(OwnedTiles(world));
+            }
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Import Terrain", EditorStyles.boldLabel);
+            m_ShowImport = EditorGUILayout.Foldout(m_ShowImport, "Import existing terrain", true);
+            if (m_ShowImport)
+            {
             using (new EditorGUI.DisabledScope(Application.isPlaying))
             {
                 if (GUILayout.Button("Adopt Selected Converted Chunks"))
@@ -224,8 +186,16 @@ namespace MashBoxSDK.MapTools
                 if (GUILayout.Button("Convert Selected Unity Terrains Into This World")) ConvertSelected(world);
             }
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("World Tiles", EditorStyles.boldLabel);
-            foreach (var chunk in world.GetComponentsInChildren<MGTerrain>(true))
+            }
+            EditorGUILayout.LabelField("World tiles", EditorStyles.boldLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                m_TileSearch = EditorGUILayout.TextField(new GUIContent("Find tile"), m_TileSearch, EditorStyles.toolbarSearchField);
+                if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(45))) { m_TileSearch = ""; GUI.FocusControl(null); }
+            }
+            var visibleTiles = OwnedTiles(world).Where(tile => string.IsNullOrEmpty(m_TileSearch) || tile.name.IndexOf(m_TileSearch, StringComparison.OrdinalIgnoreCase) >= 0).ToArray();
+            if (visibleTiles.Length == 0) EditorGUILayout.HelpBox(string.IsNullOrEmpty(m_TileSearch) ? "Generate your first tile above, or expand Import existing terrain." : "No tiles match your search.", MessageType.Info);
+            foreach (var chunk in visibleTiles)
             {
                 if (chunk.World != null && chunk.World != world) continue;
                 using (new EditorGUILayout.HorizontalScope())
@@ -236,6 +206,7 @@ namespace MashBoxSDK.MapTools
                         if (m_EditChunk != chunk && m_ChunkEditor != null) DestroyImmediate(m_ChunkEditor);
                         m_EditChunk = chunk; m_ShowChunk = true; m_PaintWorld = false;
                     }
+                    if (GUILayout.Button("Frame", GUILayout.Width(50))) SceneView.lastActiveSceneView?.Frame(MGTerrainTileAuthoring.BoundsOf(chunk), false);
                     using (new EditorGUI.DisabledScope(Application.isPlaying))
                         if (GUILayout.Button("Detach", GUILayout.Width(55)))
                         {
@@ -254,82 +225,6 @@ namespace MashBoxSDK.MapTools
                     ((MGTerrainEditor)m_ChunkEditor).DrawWorldTileInspector();
                 }
             }
-        }
-
-        GUIStyle m_WorldTabButtonStyle;
-        void DrawTabBar()
-        {
-            // miniButton's built-in fixed height otherwise paints a short background
-            // inside the taller layout rect, leaving the centered glyph hanging below it.
-            m_WorldTabButtonStyle ??= new GUIStyle(EditorStyles.miniButton)
-            { fixedHeight = 0, stretchHeight = true, alignment = TextAnchor.MiddleCenter };
-            string[] labels = { "Tiles", "Details", "Settings", "Baking" };
-            string[] tips = { "Create tiles, add neighbours and manage this world's terrain.",
-                "Paint detail density, size and grass sub-IDs across the world.",
-                "World quality, rendering budgets and diagnostics.",
-                "Bake world appearance, normal and height maps, and distant terrain meshes." };
-            using (new EditorGUILayout.HorizontalScope())
-                for (int i = 0; i < labels.Length; i++)
-                {
-                    Rect rect = GUILayoutUtility.GetRect(36, 36, GUILayout.Height(36), GUILayout.ExpandWidth(true));
-                    bool selected = (int)m_Tab == i;
-                    if (GUI.Toggle(rect, selected, new GUIContent("", labels[i] + ": " + tips[i]), m_WorldTabButtonStyle) && !selected)
-                    {
-                        m_AddTiles = false;
-                        m_ShowChunk = false;
-                        if (m_ChunkEditor != null) { DestroyImmediate(m_ChunkEditor); m_ChunkEditor = null; }
-                        m_Tab = (WorldTab)i;
-                        SessionState.SetInt(TabPreference, i);
-                        SceneView.RepaintAll();
-                        Repaint();
-                        GUIUtility.ExitGUI();
-                    }
-                    if (Event.current.type == EventType.Repaint)
-                        DrawTabIcon(new Rect(rect.center.x - 8, rect.center.y - 8, 16, 16), i, selected);
-                }
-        }
-
-        // Small vector glyphs stay crisp at editor DPI and adapt to both Unity themes.
-        static void DrawTabIcon(Rect r, int icon, bool selected)
-        {
-            Color previous = Handles.color;
-            Handles.BeginGUI();
-            Handles.color = selected ? new Color(.35f, .75f, 1f)
-                : EditorGUIUtility.isProSkin ? new Color(.85f, .85f, .85f) : new Color(.22f, .22f, .22f);
-            void Line(float x1, float y1, float x2, float y2) => Handles.DrawAAPolyLine(2f,
-                new Vector3(r.x + x1, r.y + y1), new Vector3(r.x + x2, r.y + y2));
-            if (icon == 0)
-            {
-                for (int n = 0; n < 3; n++) { Line(1, 1 + n * 7, 15, 1 + n * 7); Line(1 + n * 7, 1, 1 + n * 7, 15); }
-            }
-            else if (icon == 1)
-            {
-                Line(6, 10, 13, 1); Line(13, 1, 15, 3); Line(15, 3, 8, 12);
-                Line(6, 10, 8, 12); Line(6, 10, 3, 11); Line(3, 11, 1, 15);
-                Line(1, 15, 6, 15); Line(6, 15, 8, 12);
-            }
-            else if (icon == 3)
-            {
-                // Heat rising above a terrain tile: the world's baking tools.
-                Line(1, 11, 8, 8); Line(8, 8, 15, 11);
-                Line(15, 11, 8, 15); Line(8, 15, 1, 11);
-                for (int n = 0; n < 3; n++)
-                {
-                    float x = 4 + n * 4;
-                    Line(x, 6, x - 1, 4); Line(x - 1, 4, x, 1);
-                }
-            }
-            else
-            {
-                for (int n = 0; n < 3; n++)
-                {
-                    float y = 3 + n * 5, x = n == 1 ? 11 : 5;
-                    Line(1, y, 15, y); Line(x, y - 2, x, y + 2);
-                    Line(x + 1, y - 2, x + 1, y + 2);
-                }
-            }
-            Handles.color = previous;
-            Handles.EndGUI();
         }
 
         void DrawWorldQuality(MGTerrainWorld world)

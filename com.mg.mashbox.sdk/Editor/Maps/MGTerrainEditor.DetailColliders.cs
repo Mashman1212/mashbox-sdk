@@ -9,12 +9,12 @@ namespace MashBoxSDK.MapTools
         {
             var settings = layer.FindPropertyRelative("m_CapsuleCollision");
             if (settings == null) return;
-            EditorGUILayout.PropertyField(settings.FindPropertyRelative("enabled"), new GUIContent("Tree Capsule Collision", "Enable trunk collision for this painted detail, including trees marked as Detail. Applies to existing and new painting."));
+            EditorGUILayout.PropertyField(settings.FindPropertyRelative("enabled"), new GUIContent("Capsule Collision", "Enable collision for this detail population. Applies to existing and new instances; use Sub-ID Overrides for individual shapes."));
             if (!settings.FindPropertyRelative("enabled").boolValue) return;
             using (new EditorGUI.IndentLevelScope())
             {
                 EditorGUILayout.PropertyField(settings.FindPropertyRelative("capsule"), new GUIContent("Trunk Capsule"), true);
-                EditorGUILayout.PropertyField(settings.FindPropertyRelative("subIdOverrides"), new GUIContent("Tree Sub-ID Overrides"), true);
+                EditorGUILayout.PropertyField(settings.FindPropertyRelative("subIdOverrides"), new GUIContent("Sub-ID Overrides"), true);
                 EditorGUILayout.PropertyField(settings.FindPropertyRelative("material"), new GUIContent("Physics Material"));
                 var collisionLayer = settings.FindPropertyRelative("layer");
                 collisionLayer.intValue = EditorGUILayout.LayerField("Collision Layer", collisionLayer.intValue);

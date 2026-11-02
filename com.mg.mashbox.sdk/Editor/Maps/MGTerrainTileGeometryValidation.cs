@@ -8,7 +8,9 @@ namespace MashBoxSDK.MapTools
 {
     public static class MGTerrainTileGeometryValidation
     {
-        [MenuItem("MashBox/Validation/Validate Terrain Tile Geometry")]
+#if MashBoxDev
+        [MenuItem("MashBox/Dev/Validation/Validate Terrain Tile Geometry")]
+#endif
         public static void Run()
         {
             var mesh = new Mesh();
