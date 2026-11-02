@@ -19,6 +19,18 @@ namespace MashBoxSDK.AnimationStudio
                 StudioSettings.Save();
             }
         }
+        private static bool DrawChannelCategoryFoldout(Rect rect, bool expanded, GUIContent content)
+        {
+            var previous = EditorGUIUtility.GetIconSize();
+            try
+            {
+                // Keep category icons compact with two pixels of vertical room
+                // on either side in the shared 20px header row.
+                EditorGUIUtility.SetIconSize(new Vector2(16, 16));
+                return EditorGUI.Foldout(rect, expanded, content, true, StudioTheme.Styles.transformHeader);
+            }
+            finally { EditorGUIUtility.SetIconSize(previous); }
+        }
         private bool transformChannelsExpanded = true;
         private static readonly GUIContent TransformChannelHeader = new GUIContent("Transform", EditorGUIUtility.IconContent("Transform Icon").image);
         private bool DrawTransformChannelHeader()
@@ -27,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
             var rect=EditorGUILayout.GetControlRect(false,20);
             var background = new Rect(rect.x-4,rect.y,rect.width+8,rect.height);
             EditorGUI.DrawRect(background,Color.Lerp(StudioTheme.Current.Panel,StudioTheme.Current.Button,.5f));
-            bool expanded=EditorGUI.Foldout(rect,transformChannelsExpanded,TransformChannelHeader,true,StudioTheme.Styles.transformHeader);
+            bool expanded=DrawChannelCategoryFoldout(rect, transformChannelsExpanded, TransformChannelHeader);
             if (expanded != transformChannelsExpanded)
             {
                 transformChannelsExpanded=expanded;
@@ -105,6 +117,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void PerformWorkspaceHistory(bool redo)
         {
+            if (bisectPreview != null || bisectDragging || bisectQueued) { CancelBisectPreview(); return; }
             if (livePreview != null || previewQueued) { CancelLiveTool(); return; }
             FinishChannelEdit(); resetChannelFocus = true;
             if (redo) Undo.PerformRedo(); else Undo.PerformUndo();

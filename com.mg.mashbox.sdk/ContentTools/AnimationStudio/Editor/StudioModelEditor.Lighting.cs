@@ -12,7 +12,7 @@ namespace MashBoxSDK.AnimationStudio
         internal StudioLightingSettings LightingSettings => Document ? Document.lighting ?? (Document.lighting = new StudioLightingSettings()) : emptyLighting;
         internal void ConfigureLightingCamera(SceneView view) => previewLighting?.ConfigureModelCamera(view,LightingSettings,
             displayLighting&&(displayTextures||checkerMap)&&!displayXray&&!wireframeOnly);
-        internal void SuspendLighting() => previewLighting?.RestoreCameras();
+        internal void SuspendLighting() { SetSubdivisionActive(false);previewLighting?.RestoreCameras(); }
         internal void EditLighting(Action<StudioLightingSettings> change)
         {
             if (Document) Undo.RecordObject(Document,"Edit viewport lighting");
@@ -57,8 +57,8 @@ namespace MashBoxSDK.AnimationStudio
                     strength=EditorGUILayout.Slider("Strength",strength,0,1);
                     GUILayout.Space(8); GUILayout.Label("Ground",StudioTheme.Styles.boldLabel);
                     ground=EditorGUILayout.Toggle("Ground plane",ground);
-                    height=EditorGUILayout.FloatField("Height",height);
-                    size=EditorGUILayout.Slider("Size",size,1,200);
+                    height=StudioSceneUnits.Field("Height",height);
+                    size=Mathf.Max(.0001f,StudioSceneUnits.Field("Size",size));
                     groundColor=EditorGUILayout.ColorField("Color",groundColor);
                 }
                 if (EditorGUI.EndChangeCheck()) EditLighting(v => {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using UnityEngine;
 
@@ -16,7 +16,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static Configuration current;
         private static bool dirty, unreadable;
-        internal static string PathName => Path.Combine(StudioPreferenceStore.DirectoryPath, "ToolbarOverlay_Settings.json");
+        internal static string PathName { get { StudioPreferenceStore.EnsureStorageLayout(); return Path.Combine(StudioPreferenceStore.DirectoryPath, "Layouts", "ToolbarOverlays.json"); } }
         internal static bool Owns(string key) => key == "Studio.Toolbars" || key == "Studio.CustomToolbars";
         internal static bool Dirty => dirty;
         private static void Load()

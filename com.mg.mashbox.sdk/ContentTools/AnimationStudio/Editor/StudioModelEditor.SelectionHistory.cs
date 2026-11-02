@@ -81,6 +81,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SelectionDisplayChanged(bool resetPivot = true)
         {
+            frameSelection = null; framePivotNext = false;
             componentFrameValid = false;
             if (resetPivot && componentPivot && !HasComponentPivot) componentPivot.custom = false;
             cachedSelectedStatistics = null; InvalidateHandleComponentFrame();

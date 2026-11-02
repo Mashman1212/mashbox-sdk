@@ -50,6 +50,9 @@ namespace MashBoxSDK.AnimationStudio
             [SerializeReference] public StudioBlendShape blendShape;
             public int[] cutPolygons, cutTriangles;
             public int[] normalGroups;
+            public int[] geometryVertices;
+            public StudioSubdivisionSettings subdivision = new StudioSubdivisionSettings();
+            public StudioModifierHistory modifiers;
             public Material[] materials = Array.Empty<Material>();
             public int previewTextureSlice;
             public bool vertexAOBaked;
@@ -58,6 +61,8 @@ namespace MashBoxSDK.AnimationStudio
             public int rootBone = -1;
         }
         public string sourcePath;
+        public StudioLengthUnit sceneUnits = StudioLengthUnit.Meters;
+        public float gridSpacing = .25f;
         public StudioLightingSettings lighting = new StudioLightingSettings();
         public List<Node> nodes = new List<Node>();
 
@@ -117,6 +122,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!source) throw new ArgumentException("Choose a model first.");
             var captured = new List<Node>();
             var transforms = source.GetComponentsInChildren<Transform>(true);
+            var sourceTopologies = new Dictionary<string, List<StudioFbxTopology.SourceMesh>>();
             try
             {
                 foreach (var t in transforms)
@@ -137,6 +143,10 @@ namespace MashBoxSDK.AnimationStudio
                         // Fail before saving if an importer cannot supply CPU geometry.
                         var vertices = node.mesh.vertices;
                         CaptureMeshTopology(node, autoQuad: true);
+                        var topologyPath = AssetDatabase.GetAssetPath(mesh);
+                        if (!sourceTopologies.TryGetValue(topologyPath, out var sourceTopology))
+                            sourceTopologies.Add(topologyPath, sourceTopology = StudioFbxTopology.Read(topologyPath));
+                        StudioFbxTopology.Apply(node, sourceTopology, t.name);
                     }
                     if (skin)
                     {
@@ -207,6 +217,10 @@ namespace MashBoxSDK.AnimationStudio
         // Move the object's origin while holding geometry and children in world space.
         internal void ValidateRepivot(int index, Transform[] transforms, Vector3 worldPosition)
         {
+            if (float.IsNaN(worldPosition.x) || float.IsInfinity(worldPosition.x) ||
+                float.IsNaN(worldPosition.y) || float.IsInfinity(worldPosition.y) ||
+                float.IsNaN(worldPosition.z) || float.IsInfinity(worldPosition.z))
+                throw new InvalidOperationException("Cannot apply a non-finite pivot position.");
             if (IsBone(index)) throw new InvalidOperationException("Bone origins define the skin rig. Use Move for bones; pivot editing is available on mesh objects and groups.");
             if(nodes[index].blendShape!=null) throw new InvalidOperationException("Bake Current Pose before editing a blend shape pivot.");
             var t = transforms[index];
@@ -231,6 +245,10 @@ namespace MashBoxSDK.AnimationStudio
             Compensate(index, transforms, matrix, () => {
                 nodes[index].positionOffset = placement;
                 t.localRotation = Quaternion.identity; t.localScale = Vector3.one;
+                nodes[index].RotationChannels = Vector3.zero;
+                // Local channels remain zero while a rotated parent is offset so
+                // the effective editing pivot frame is exactly world-aligned.
+                nodes[index].pivotRotation = Quaternion.Inverse(t.rotation);
             }, "Freeze transforms");
         }
         private void Compensate(int index, Transform[] transforms, Matrix4x4 newWorld, Action change, string label)

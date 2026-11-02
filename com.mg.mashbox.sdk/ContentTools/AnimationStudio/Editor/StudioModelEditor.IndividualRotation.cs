@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         private void RotateSelectedObjects(Quaternion rotation, Quaternion orientation, Vector3 center)
         {
-            if (!local)
+            if (!local || CenterMode)
             {
                 var turn = rotation * Quaternion.Inverse(orientation);
                 foreach (int i in objects.Where(i => !HasSelectedParent(i)))

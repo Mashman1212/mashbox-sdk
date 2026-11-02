@@ -57,7 +57,7 @@ namespace MashBoxSDK.AnimationStudio
         internal StudioModelEditor(Action repaint)
         {
             this.repaint = () => { repaint(); RepaintLiveToolPanes(); }; Scene = EditorSceneManager.NewPreviewScene();
-            LoadDisplayConfiguration();
+            LoadDisplayConfiguration(); InitializeModifiers();
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
             ObjectChangeEvents.changesPublished += OnMaterialAssetChanges;
@@ -81,7 +81,7 @@ namespace MashBoxSDK.AnimationStudio
             if (componentPivot) componentPivot.custom = false;
             ClearGridSnap();
             CancelMarkingMenu();
-            StopCutTool(); ResetComponentTargets(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild(); RestoreSelectionHistory();
+            FlushModifierEdits(); StopCutTool(); ResetComponentTargets(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild(); RestoreSelectionHistory();
             WorkspaceSaveStateChanged?.Invoke();
         }
         private void Rebuild()
@@ -98,6 +98,7 @@ namespace MashBoxSDK.AnimationStudio
             moveDragControl = 0;
             gestureUndo = -1;moveDrag=null;
             componentRotationControl = worldObjectRotationControl = 0;
+            ClearSubdivision();
             ClearDisplayMaterials();
             previewLighting?.Dispose(); previewLighting = null;
             ClearSelectionWireframes();
@@ -126,7 +127,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnUndoEvent(in UndoRedoInfo info)
         {
-            bool hadPreview = livePreview != null || previewQueued;
+            pendingModifiers.Clear(); EditorApplication.update-=FinishPendingModifiers; ClearSubdivision();
+            bool hadPreview = livePreview != null || previewQueued || bisectPreview != null;
+            CancelBisectPreview(true);
             CancelLiveTool(true);
             if (hadPreview) { OnUndo(); RestoreSelectionHistory(); return; }
             if (info.undoName == "Select model components" || info.undoName == "Paint selection" || info.undoName == "Unpaint selection") { RestoreSelectionHistory(); return; }
@@ -193,7 +196,7 @@ namespace MashBoxSDK.AnimationStudio
             if (markingOpen && (!markingView || EditorWindow.focusedWindow != markingView)) CancelMarkingMenu();
             TickMarkingMenu();
         }
-        internal void Changed(bool geometryChanged = true) { componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
+        internal void Changed(bool geometryChanged = true) { if(geometryChanged)DirtySubdivision(); componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
         internal void MeshTopologyChanged() { if (Document) foreach (var node in Document.nodes) if (node.normalGroups != null && (!node.mesh || node.normalGroups.Length != node.mesh.vertexCount)) node.normalGroups = null; if (componentPivot) componentPivot.custom = false; Components.Clear(); Rebuild(); Changed(); }
         internal void Save()
         {
@@ -201,7 +204,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!Document) return;
             FinishChannelEdit();
             if (!Document.HasStorage || IsTemporaryWorkspace) { SaveAs(); return; }
-            Document.Save(); RememberRecentFile(Document.WorkspacePath);
+            FlushModifierEdits(); Document.Save(); RememberRecentFile(Document.WorkspacePath);
             NotifyFile(Document.WorkspacePath, "saved");
             WorkspaceSaveStateChanged?.Invoke();
         }
@@ -221,6 +224,7 @@ namespace MashBoxSDK.AnimationStudio
             CancelHierarchyDrag();
             EndPivotSnap();
             if (componentPivot) UnityEngine.Object.DestroyImmediate(componentPivot);
+            ClearSubdivision();
             ClearDisplayMaterials();
             previewLighting?.Dispose(); previewLighting = null;
             ClearSelectionWireframes();
@@ -235,7 +239,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorApplication.delayCall -= RefreshChangedMaterials;
             Undo.undoRedoEvent -= OnUndoEvent; EditorApplication.update -= Tick;
             if (Scene.IsValid()) EditorSceneManager.ClosePreviewScene(Scene);
-            Document = null; Transforms = Array.Empty<Transform>(); Active = -1;
+            DisposeModifiers(); Document = null; Transforms = Array.Empty<Transform>(); Active = -1;
         }
         private void Run(Action action, bool finishPreview = true)
         {
@@ -419,11 +423,12 @@ namespace MashBoxSDK.AnimationStudio
                 else if (visibilityChanged) Run(() => SetObjectChannels(n.position,n.RotationChannels,n.scale,visible));
             }
             else GUILayout.Label("No selection", StudioTheme.Styles.miniLabel);
+            DrawMaterialChannels();
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelInset))
             {
-                DrawMaterialChannels();
                 DrawBlendShapeChannels();
             }
+            DrawModifierChannels();
             FinishInactiveChannelEdit();
 
             EditorGUILayout.EndScrollView();
@@ -484,6 +489,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ExportFile(string path, bool selectionOnly)
         {
+            FlushModifierEdits();
             StudioFbxDependency.EnsureAvailable();
             if (!Document || (selectionOnly && !CanExportSelection)) throw new InvalidOperationException("Select an object before exporting.");
             // A separate, temporary hierarchy avoids exporter changes affecting the live editor.
@@ -497,7 +503,16 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     if (!nodes[i] || !nodes[i].GetComponent<Renderer>()) continue;
                     var source = Document.nodes[i].mesh; if (!source) continue;
+                    var node=Document.nodes[i];
                     var copy = UnityEngine.Object.Instantiate(source); exportMeshes.Add(copy);
+                    // History already evaluates subdivision. Do not subdivide a second time on export.
+                    var polygons=node.cutPolygons;
+                    if(polygons!=null)
+                    {
+                        var quads=Enumerable.Range(0,copy.subMeshCount).Select(_=>new List<int>()).ToArray();bool allQuads=true;
+                        for(int c=0;c<polygons.Length;){int material=polygons[c++],count=polygons[c++];if(count!=4){allQuads=false;break;}quads[material].AddRange(polygons.Skip(c).Take(count));c+=count;}
+                        if(allQuads)for(int sub=0;sub<quads.Length;sub++)copy.SetIndices(quads[sub].ToArray(),UnityEngine.MeshTopology.Quads,sub,false);
+                    }
                     PadUVChannels(copy);
                     if (Document.nodes[i].skinned) nodes[i].GetComponent<SkinnedMeshRenderer>().sharedMesh = copy;
                     else nodes[i].GetComponent<MeshFilter>().sharedMesh = copy;
@@ -549,15 +564,39 @@ namespace MashBoxSDK.AnimationStudio
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
             return b;
         }
+        private SelectionSnapshot frameSelection;
+        private SceneView frameView;
+        private bool framePivotNext;
         internal void Frame(SceneView view)
         {
             if (Transforms.Length == 0)
             {
                 if (!view) return;
                 // Share the standard pose with Camera Settings reset, retaining the current lens.
+                frameSelection = null; framePivotNext = false;
                 SetDefaultViewportCameraPose(view);
                 return;
             }
+            if (!view) return;
+            bool average = StudioSettings.Current.focusSelectionAverage;
+            if (!average && Active >= 0 && Active < Transforms.Length)
+            {
+                if (frameSelection == null || frameView != view || !SelectionMatches(frameSelection))
+                {
+                    frameSelection = CaptureSelection(); frameView = view; framePivotNext = false;
+                }
+                bool focusPivot = framePivotNext;
+                framePivotNext = !framePivotNext;
+                if (focusPivot)
+                {
+                    // Alternate from geometry framing to the exact pivot, retaining
+                    // the mesh-framing zoom and current viewing direction.
+                    view.LookAtDirect(FocusPivotPosition, view.rotation, view.size);
+                    CameraChanged(view);
+                    return;
+                }
+            }
+            else { frameSelection = null; framePivotNext = false; }
             var bounds = BoundsFor(Active >= 0 ? Active : 0);
             if (mode == ComponentMode.Object)
             {
@@ -570,6 +609,13 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             else if (TrySelectedComponentBounds(out var componentBounds)) bounds=componentBounds;
+            if (view == null) return;
+            if (average && Active >= 0 && Active < Transforms.Length)
+            {
+                var destination = SelectionGeometryCenter(true);
+                var extent = bounds.extents + new Vector3(Mathf.Abs(bounds.center.x - destination.x), Mathf.Abs(bounds.center.y - destination.y), Mathf.Abs(bounds.center.z - destination.z));
+                bounds = new Bounds(destination, extent * 2);
+            }
             view.Frame(bounds, true);
             // Account for the hierarchy and inspector covering the sides of the SceneView.
             float canvasWidth = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect.width : view.position.width - 680;
@@ -615,6 +661,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SceneGUI(SceneView view, Action<StudioModelDocument> loaded)
         {
             var evt = Event.current;
+            if(evt.type==EventType.Repaint)UpdateSubdivision();
 #if MASHBOX_STUDIO_TESTS
             ProfileScene("scene.start");
 #endif
@@ -745,7 +792,7 @@ namespace MashBoxSDK.AnimationStudio
             var t = Transforms[Active];
             if (moveDrag != null && (tool != Tool.Move || pivot || moveDrag.control != GUIUtility.hotControl || moveDrag.mesh != ActiveMesh || moveDrag.node != Active || moveDrag.mode != mode)) moveDrag = null;
             bool capturedMove = moveDrag != null;
-            var orientation = capturedMove ? moveDrag.orientation : local ? PivotOrientation : Quaternion.identity;
+            var orientation = capturedMove ? moveDrag.orientation : (pivot || local) ? PivotOrientation : Quaternion.identity;
             bool capturedScale = !pivot && tool == Tool.Scale && scaleDrag != null && scaleDrag.control == GUIUtility.hotControl;
             bool cachedHandleFrame = mode != ComponentMode.Object && !capturedMove && !capturedScale && handleExtrudeVertices == null;
             HashSet<int> frameIndices = null; IList<Vector3> framePositions = null; Vector3 frameCenter = default;
@@ -753,7 +800,7 @@ namespace MashBoxSDK.AnimationStudio
             var indices = mode == ComponentMode.Object ? null : capturedMove ? moveDrag.componentIndices : capturedScale ? scaleDrag.componentIndices : handleExtrudeVertices ?? frameIndices;
             if (indices != null && indices.Count == 0) return;
             bool rotatingComponents = indices != null && !pivot && tool == Tool.Rotate;
-            bool rotatingWorldObjects = indices == null && !pivot && tool == Tool.Rotate && !local;
+            bool rotatingWorldObjects = indices == null && !pivot && tool == Tool.Rotate && (!local || CenterMode);
             // Keep a component's movement axes fixed for the duration of the drag,
             // even when the edit changes the surrounding surface normals.
             if ((pivot || (indices != null && tool == Tool.Move)) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
@@ -766,7 +813,8 @@ namespace MashBoxSDK.AnimationStudio
             IList<Vector3> readVertices = indices != null ? capturedMove ? moveDrag.workingVertices : capturedScale ? scaleDrag.meshVertices : cachedHandleFrame ? framePositions : ComponentPositions() : null;
             var vertices=readVertices as Vector3[];
             Vector3 center = capturedMove ? moveDrag.position : capturedScale ? scaleDrag.center : indices == null ? t.position : cachedHandleFrame ? frameCenter : ComponentSelectionCenter(readVertices, indices);
-            if (indices != null && HasComponentPivot) center = componentPivot.position;
+            if (CenterMode && indices == null && !capturedMove && !capturedScale) center = SelectionGeometryCenter(false);
+            if (!CenterMode && indices != null && HasComponentPivot) center = componentPivot.position;
             center = capturedMove && PivotLocked ? moveDrag.position : ResolveLockedPivotCenter(center);
             center = LockedObjectMoveHandleCenter(center, GUIUtility.hotControl);
             if (handleExtrudeVertices != null && handleExtrudeControl != 0 && GUIUtility.hotControl == handleExtrudeControl)
@@ -777,6 +825,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             int previousHotControl = GUIUtility.hotControl;
             var position = center; var rotation = orientation; var scale = Vector3.one;
+            bool pivotRotationChanged = false, pivotPositionChanged = false;
             // Resize native handle geometry and picking without scaling its drawing
             // matrix: Unity expands line strokes in that space as well.
             float handleSize = StudioSettings.Current.handleSize * (pivot ? 1.25f : 1f);
@@ -786,7 +835,17 @@ namespace MashBoxSDK.AnimationStudio
 #if MASHBOX_STUDIO_TESTS
                 TransformHandleProbe?.Invoke(tool,handleCenter,orientation,HandleUtility.GetHandleSize(handleCenter)*handleSize);
 #endif
-                if (pivot) position = DrawPivotHandle(handleCenter, orientation, handleSize);
+                if (pivot)
+                {
+                    // Rings and translation controls coexist. The native hot control
+                    // owns the gesture; only the changed channel is published.
+                    EditorGUI.BeginChangeCheck();
+                    rotation = DrawPivotRotationRings(handleCenter, orientation, handleSize);
+                    pivotRotationChanged = EditorGUI.EndChangeCheck();
+                    EditorGUI.BeginChangeCheck();
+                    position = DrawPivotHandle(handleCenter, orientation, handleSize);
+                    pivotPositionChanged = EditorGUI.EndChangeCheck();
+                }
                 else if (tool == Tool.Move) position = DrawMoveHandle(handleCenter, orientation, handleSize);
                 else if (tool == Tool.Rotate)
                 {
@@ -860,7 +919,15 @@ namespace MashBoxSDK.AnimationStudio
             Run(() => {
                 if (scaling) { if (scaleDrag != null) ApplyScaleDrag(scale); return; }
                 if (!pivot && tool == Tool.Move && moveDrag != null) { ApplyMoveDrag(position); return; }
-                if (pivot) { MoveEditingPivot(position); return; }
+                if (pivot)
+                {
+                    if (pivotRotationChanged && !IsMoveHandle(GUIUtility.hotControl) &&
+                        FinitePivotOrientation(rotation) && Quaternion.Angle(rotation, orientation) > .00001f)
+                        ApplyPivotTarget(new PivotTarget { orientation = rotation }, PivotAction.Orient);
+                    else if (pivotPositionChanged && IsMoveHandle(GUIUtility.hotControl) && FiniteScalePoint(position))
+                        MoveEditingPivot(position);
+                    return;
+                }
                 else if (indices != null)
                 {
                     PreserveFaceTopology();

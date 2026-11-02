@@ -21,6 +21,12 @@ namespace MashBoxSDK.AnimationStudio
                 case "File/Export All… (FBX)": return "export-all";
                 case "File/Export Selection… (FBX)": return "export-selection";
                 case "File/Import FBX…": return "import";
+                case "Select/Convert Selection/Vertices": return "convert-vertices";
+                case "Select/Convert Selection/To Perimeter Vertices": return "convert-perimeter-vertices";
+                case "Select/Convert Selection/Edges": return "convert-edges";
+                case "Select/Convert Selection/To Perimeter Edges": return "convert-perimeter-edges";
+                case "Select/Convert Selection/Faces": return "convert-faces";
+                case "Select/Convert Selection/To Perimeter Faces": return "convert-perimeter-faces";
                 case "Select/All": return "select-all";
                 case "Select/Deselect": return "deselect";
                 case "Select/Invert Selection": return "invert";
@@ -97,6 +103,19 @@ namespace MashBoxSDK.AnimationStudio
             var c=new Canvas();var w=c.White;var a=c.Accent;var g=c.Gold;
             switch(symbol)
             {
+                case "convert-vertices":case "convert-perimeter-vertices":
+                    c.Rect(4,4,16,16,c.Gray);c.Line(4,12,20,12,c.Gray);c.Line(12,4,12,20,c.Gray);
+                    for(int y=4;y<=20;y+=8)for(int x=4;x<=20;x+=8)
+                        c.Circle(x,y,1.9f,symbol=="convert-perimeter-vertices"&&x==12&&y==12?c.Gray:g,true);
+                    break;
+                case "convert-edges":case "convert-perimeter-edges":
+                    c.Line(4,12,20,12,symbol=="convert-edges"?g:c.Gray,1.7f);c.Line(12,4,12,20,symbol=="convert-edges"?g:c.Gray,1.7f);
+                    c.Path(g,4,4,20,4,20,20,4,20,4,4);break;
+                case "convert-faces":c.Fill(5,5,14,14,g);c.Rect(4,4,16,16,w);break;
+                case "convert-perimeter-faces":
+                    for(int y=0;y<3;y++)for(int x=0;x<3;x++)c.Fill(3+x*6,3+y*6,5,5,x==1&&y==1?c.Gray:g);
+                    break;
+
                 case "extrude":c.Path(w,4,5,15,5,20,9,9,9,4,5);c.Path(c.Gray,4,5,4,12,9,16,20,16,20,9);c.Arrow(12,11,12,22,g);break;
                 case "bevel":c.Path(w,4,3,4,14,10,20,21,20,21,3,4,3);c.Line(4,14,10,20,g,2);c.Line(4,20,4,17,c.Gray);c.Line(4,20,7,20,c.Gray);break;
                 case "merge":foreach(var p in new[]{new Vector2(4,4),new Vector2(20,4),new Vector2(4,20),new Vector2(20,20)}){c.Circle(p.x,p.y,1.7f,w,true);c.Arrow(p.x,p.y,12+(p.x-12)*.3f,12+(p.y-12)*.3f,a);}c.Circle(12,12,2.4f,g,true);break;

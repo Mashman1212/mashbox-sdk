@@ -66,14 +66,15 @@ namespace MashBoxSDK.AnimationStudio
             for (int c = 0; c < 8; c++) if (source.UV[c] != null)
             {
                 var values = used.Select(v => source.UV[c][v]);
-                if (source.Dimensions[c] == 2) mesh.SetUVs(c, values.Select(v => new Vector2(v.x, v.y)).ToList());
+                if (source.Dimensions[c] == 1) StudioSubdivisionData.SetUV1(mesh,c,values);
+                else if (source.Dimensions[c] == 2) mesh.SetUVs(c, values.Select(v => new Vector2(v.x, v.y)).ToList());
                 else if (source.Dimensions[c] == 3) mesh.SetUVs(c, values.Select(v => new Vector3(v.x, v.y, v.z)).ToList());
                 else mesh.SetUVs(c, values.ToList());
             }
             mesh.subMeshCount = triangles.Length;
             for (int s = 0; s < triangles.Length; s++) mesh.SetTriangles(triangles[s], s);
             mesh.RecalculateBounds(); mesh.UploadMeshData(false);
-            node.cutPolygons = polygons; node.cutTriangles = mesh.triangles;
+            node.cutPolygons = polygons; node.cutTriangles = mesh.triangles;node.geometryVertices=GeometricIds(used.Select(i=>welded[i]));
             return used;
         }
     }

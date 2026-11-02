@@ -28,6 +28,8 @@ namespace MashBoxSDK.AnimationStudio
         [Serializable] private sealed class Submesh { public int topology, baseVertex; public int[] indices; }
         [Serializable] private sealed class Morph { public string name; public float weight; public float[] v, n, t; }
 
+        internal static string CaptureModifierMesh(Mesh mesh) => JsonUtility.ToJson(CaptureMesh(mesh));
+        internal static Mesh RestoreModifierMesh(string data) => RestoreMesh(JsonUtility.FromJson<MeshData>(data));
         private static MeshData CaptureMesh(Mesh mesh)
         {
             if (!mesh.isReadable)
@@ -139,9 +141,9 @@ namespace MashBoxSDK.AnimationStudio
                 var seen = new HashSet<int>();
                 foreach (var channel in data.uv ?? Array.Empty<Channel>())
                 {
-                    if (channel == null || channel.channel < 0 || channel.channel > 7 || !seen.Add(channel.channel) || channel.dimensions < 2 || channel.dimensions > 4) throw new InvalidDataException("Invalid mesh UV channel.");
+                    if (channel == null || channel.channel < 0 || channel.channel > 7 || !seen.Add(channel.channel) || channel.dimensions < 1 || channel.dimensions > 4) throw new InvalidDataException("Invalid mesh UV channel.");
                     var values = Expand(Decode(channel.values), channel.map, channel.dimensions); Attribute(values, channel.dimensions);
-                    if (channel.dimensions == 2) mesh.SetUVs(channel.channel, V2(values));
+                    if (channel.dimensions == 1) StudioSubdivisionData.SetUV1(mesh,channel.channel,values.Select(v=>new Vector4(v,0,0,0))); else if (channel.dimensions == 2) mesh.SetUVs(channel.channel, V2(values));
                     else if (channel.dimensions == 3) mesh.SetUVs(channel.channel, V3(values));
                     else mesh.SetUVs(channel.channel, V4(values));
                 }

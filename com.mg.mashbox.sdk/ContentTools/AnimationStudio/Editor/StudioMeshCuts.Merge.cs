@@ -16,15 +16,15 @@ namespace MashBoxSDK.AnimationStudio
             var mesh = node.mesh;
             if (node.skinned || mesh.blendShapeCount != 0 || mesh.bindposes.Length != 0)
                 throw new InvalidOperationException("Bake skinning and blend shapes before merging vertices.");
-            var selected = new Dictionary<Vector3, int>();
+            var selected = new Dictionary<int, int>();var selectedPoints=new List<Vector3>();
             foreach (int i in selection)
             {
                 if (i < 0 || i >= Positions.Length) throw new InvalidOperationException("The vertex selection changed; select the vertices again.");
-                if (!selected.ContainsKey(Positions[i])) selected.Add(Positions[i], selected.Count);
+                if (!selected.ContainsKey(welded[i])) {selected.Add(welded[i], selected.Count);selectedPoints.Add(Positions[i]);}
             }
             if (selected.Count < 2) return null;
-            var points = selected.OrderBy(p => p.Value).Select(p => p.Key).ToArray();
-            if (target >= 0 && (!mergeAll || target >= Positions.Length || !selected.ContainsKey(Positions[target])))
+            var points = selectedPoints.ToArray();
+            if (target >= 0 && (!mergeAll || target >= Positions.Length || !selected.ContainsKey(welded[target])))
                 throw new InvalidOperationException("The weld destination must belong to the selected vertices.");
             var parents = Enumerable.Range(0, points.Length).ToArray();
             int Root(int i) { while (parents[i] != i) { parents[i] = parents[parents[i]]; i = parents[i]; } return i; }
@@ -59,17 +59,18 @@ namespace MashBoxSDK.AnimationStudio
                     bucket.Add(i);
                 }
             }
+            if(!mergeAll && distance==0){var coincident=new Dictionary<Vector3,int>();for(int i=0;i<points.Length;i++){if(coincident.TryGetValue(points[i],out int other))Join(i,other);else coincident.Add(points[i],i);}}
             var centers = new Vector3[points.Length]; var counts = new int[points.Length];
             var sumX = new double[points.Length]; var sumY = new double[points.Length]; var sumZ = new double[points.Length];
             for (int i = 0; i < points.Length; i++) { int root = Root(i); sumX[root] += points[i].x; sumY[root] += points[i].y; sumZ[root] += points[i].z; counts[root]++; }
             int removed = points.Length - counts.Count(c => c > 0);
             if (removed == 0) return null;
             for (int i = 0; i < centers.Length; i++) if (counts[i] > 0) centers[i] = new Vector3((float)(sumX[i] / counts[i]), (float)(sumY[i] / counts[i]), (float)(sumZ[i] / counts[i]));
-            if (target >= 0) centers[Root(selected[Positions[target]])] = Positions[target];
+            if (target >= 0) centers[Root(selected[welded[target]])] = Positions[target];
             var positions = (Vector3[])Positions.Clone(); var geometric = (int[])welded.Clone();
             var cluster = Enumerable.Repeat(-1, Positions.Length).ToArray();
             for (int i = 0; i < positions.Length; i++)
-                if (selected.TryGetValue(Positions[i], out int point))
+                if (selected.TryGetValue(welded[i], out int point))
                 {
                     int root = Root(point);
                     if (counts[root] > 1) { positions[i] = centers[root]; geometric[i] = Positions.Length + root; cluster[i] = root; }
@@ -146,15 +147,16 @@ namespace MashBoxSDK.AnimationStudio
             if (colors.Length > 0) mesh.SetColors(used.Select(i => colors[i]).ToList());
             for (int c = 0; c < 8; c++) if (uvs[c].Count > 0)
             {
-                if (dimensions[c] == 2) mesh.SetUVs(c, used.Select(i => new Vector2(uvs[c][i].x, uvs[c][i].y)).ToList());
+                if (dimensions[c] == 1) StudioSubdivisionData.SetUV1(mesh,c,used.Select(i=>uvs[c][i]));
+                else if (dimensions[c] == 2) mesh.SetUVs(c, used.Select(i => new Vector2(uvs[c][i].x, uvs[c][i].y)).ToList());
                 else if (dimensions[c] == 3) mesh.SetUVs(c, used.Select(i => new Vector3(uvs[c][i].x, uvs[c][i].y, uvs[c][i].z)).ToList());
                 else mesh.SetUVs(c, used.Select(i => uvs[c][i]).ToList());
             }
             mesh.subMeshCount = triangles.Length;
             for (int i = 0; i < triangles.Length; i++) mesh.SetTriangles(triangles[i], i);
             mesh.RecalculateNormals(); if (uvs[0].Count > 0) mesh.RecalculateTangents(); mesh.RecalculateBounds(); mesh.UploadMeshData(false);
-            node.cutPolygons = faces.SelectMany(f => new[] { f.Submesh, f.Vertices.Count }.Concat(f.Vertices)).ToArray(); node.cutTriangles = mesh.triangles; node.normalGroups = null;
-            return new MergeResult { Removed = removed, Selection = used.Select((v, i) => (v, i)).Where(p => selected.ContainsKey(Positions[p.v])).Select(p => p.i).ToArray() };
+            node.cutPolygons = faces.SelectMany(f => new[] { f.Submesh, f.Vertices.Count }.Concat(f.Vertices)).ToArray(); node.cutTriangles = mesh.triangles; node.normalGroups = null;node.geometryVertices=GeometricIds(used.Select(i=>geometric[i]));
+            return new MergeResult { Removed = removed, Selection = used.Select((v, i) => (v, i)).Where(p => selected.ContainsKey(welded[p.v])).Select(p => p.i).ToArray() };
         }
     }
 }

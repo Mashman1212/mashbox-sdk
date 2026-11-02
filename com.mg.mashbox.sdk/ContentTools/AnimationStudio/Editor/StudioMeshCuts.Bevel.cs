@@ -1781,7 +1781,7 @@ namespace MashBoxSDK.AnimationStudio
 
             for (int c = 0; c < 8; c++) { sourceUV[c] = new List<Vector4>(); mesh.GetUVs(c, sourceUV[c]); if (sourceUV[c].Count > 0) { uv[c] = new List<Vector4>(); dimensions[c] = mesh.GetVertexAttributeDimension((VertexAttribute)((int)VertexAttribute.TexCoord0 + c)); } }
 
-            var positions = new List<Vector3>(); var normals = new List<Vector3>(); var outputColors = new List<Color>(); var outputTangents = new List<Vector4>();
+            var positions = new List<Vector3>();var geometry=new List<int>(); var normals = new List<Vector3>(); var outputColors = new List<Color>(); var outputTangents = new List<Vector4>();
 
             var groups = new List<int>(); var smoothing = new Dictionary<(int, Vector3), int>();
 
@@ -1842,7 +1842,7 @@ namespace MashBoxSDK.AnimationStudio
 
                 {
 
-                    match = positions.Count; candidates.Add(match); positions.Add(draft.Positions[vertex.Geo]); normals.Add(normal); groups.Add(group);
+                    match = positions.Count; candidates.Add(match); positions.Add(draft.Positions[vertex.Geo]);geometry.Add(vertex.Geo); normals.Add(normal); groups.Add(group);
 
                     if (colors.Length > 0) outputColors.Add(color); if (tangents.Length > 0) outputTangents.Add(tangent);
 
@@ -1865,7 +1865,7 @@ namespace MashBoxSDK.AnimationStudio
             int OriginalVertex(int source)
             {
                 if (originalRender.TryGetValue(source, out int result)) return result;
-                result = positions.Count; originalRender.Add(source, result); positions.Add(Positions[source]);
+                result = positions.Count; originalRender.Add(source, result); positions.Add(Positions[source]);geometry.Add(welded[source]);
                 var normal = originalNormals.Length == Positions.Length ? originalNormals[source] : Vector3.zero;
                 normals.Add(normal);
                 var key = (welded[source], normal.normalized);
@@ -1913,7 +1913,8 @@ namespace MashBoxSDK.AnimationStudio
 
             {
 
-                if (dimensions[c] == 2) { var data = new List<Vector2>(positions.Count); foreach (var value in uv[c]) data.Add(new Vector2(value.x, value.y)); mesh.SetUVs(c, data); }
+                if (dimensions[c] == 1) StudioSubdivisionData.SetUV1(mesh,c,uv[c]);
+                else if (dimensions[c] == 2) { var data = new List<Vector2>(positions.Count); foreach (var value in uv[c]) data.Add(new Vector2(value.x, value.y)); mesh.SetUVs(c, data); }
 
                 else if (dimensions[c] == 3) { var data = new List<Vector3>(positions.Count); foreach (var value in uv[c]) data.Add(new Vector3(value.x, value.y, value.z)); mesh.SetUVs(c, data); }
 
@@ -1937,7 +1938,7 @@ namespace MashBoxSDK.AnimationStudio
 
             mesh.RecalculateBounds(); mesh.UploadMeshData(false);
 
-            node.cutPolygons = metadata.ToArray(); node.cutTriangles = mesh.triangles; node.normalGroups = groups.ToArray();
+            node.cutPolygons = metadata.ToArray(); node.cutTriangles = mesh.triangles; node.normalGroups = groups.ToArray();node.geometryVertices=GeometricIds(geometry);
 
             var result = new BevelResult { AppliedWidth = draft.Width, Edges = edgeCount, AddedFaces = draft.Polygons.Count + draft.Plan.StaticFaces.Count - (bevelInputFaceCount > 0 ? bevelInputFaceCount : Faces.Count) };
 

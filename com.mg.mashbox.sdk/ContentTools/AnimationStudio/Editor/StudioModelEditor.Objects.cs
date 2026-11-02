@@ -35,6 +35,7 @@ namespace MashBoxSDK.AnimationStudio
                 foreach (var shared in Document.nodes.Where(n => n.mesh == node.mesh))
                     if (shared.normalGroups != null && shared.normalGroups.Length == topology.Positions.Length)
                         shared.normalGroups = used.Select(v => shared.normalGroups[v]).ToArray();
+                foreach(var shared in Document.nodes.Where(n=>n.mesh==node.mesh))shared.geometryVertices=node.geometryVertices;
                 EditorUtility.SetDirty(ActiveMesh);
                 Components.Clear();
             }

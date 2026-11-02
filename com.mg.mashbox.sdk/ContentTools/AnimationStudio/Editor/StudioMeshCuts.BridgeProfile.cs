@@ -63,9 +63,9 @@ namespace MashBoxSDK.AnimationStudio
             }
         }
         private BridgeProfilePlan SubdivideBridge(StudioModelDocument.Node node,int divisions,List<(int first,int second)> sides,
-            List<Vector3> points,List<Vector3> normals,List<Vector4> tangents,List<Color> colors,List<Vector4>[] uv,List<int> groups,List<int>[] indices,List<int> polygons)
+            List<Vector3> points,List<Vector3> normals,List<Vector4> tangents,List<Color> colors,List<Vector4>[] uv,List<int> groups,List<int>[] indices,List<int> polygons,List<int> geometry)
         {
-            int first=Positions.Length,segments=divisions+1;
+            int first=Positions.Length,segments=divisions+1;var oldGeometry=geometry.ToArray();geometry.RemoveRange(first,geometry.Count-first);var gridGeometry=new Dictionary<(int,int,int),int>();int nextGeo=sourceGeometry.Length;
             var oldPoints=points.ToArray();var oldColors=colors.ToArray();var oldUV=uv.Select(x=>x.ToArray()).ToArray();
             var columns=new Dictionary<(Vector3,Vector3),BridgeColumn>();
             BridgeColumn Column(Vector3 a,Vector3 b)
@@ -98,6 +98,7 @@ namespace MashBoxSDK.AnimationStudio
                     // Hermite basis gives an explicit signed arch, with fixed ends.
                     if(Mathf.Abs(Vector3.Dot(middle,n))<span*1e-5f)displacement+=StudioEdgeFlow.Hermite(Vector3.zero,Vector3.zero,n*span,-n*span,t);
                 }
+                int ga=oldGeometry[from],gb=oldGeometry[to];var geoKey=(ga,gb,row);if(!gridGeometry.TryGetValue(geoKey,out int geo)){geo=row==0?ga:row==segments?gb:nextGeo++;gridGeometry.Add(geoKey,geo);}geometry.Add(geo);
                 int index=points.Count;points.Add(flat);delta.Add(displacement);normals.Add(Vector3.zero);
                 var key=(a,b,row);if(!gridGroups.TryGetValue(key,out int group)){group=nextGroup++;gridGroups.Add(key,group);}groups.Add(group);
                 if(tangents.Count>0)tangents.Add(Vector4.zero);if(colors.Count>0)colors.Add(Color.LerpUnclamped(oldColors[from],oldColors[to],t));

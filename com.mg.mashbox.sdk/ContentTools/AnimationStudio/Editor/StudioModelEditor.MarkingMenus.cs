@@ -1,6 +1,7 @@
 using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -15,59 +16,24 @@ namespace MashBoxSDK.AnimationStudio
             Move, Rotate, Scale, Axes, EditPivot, CenterPivot, Freeze, SelectAll, Clear, Frame, Through,
             OpenUV, UV0, UV1, UV2, UV3, UV4, UV5, UV6, UV7, ObjectAxes, WorldAxes, ComponentAxes
         }
-        // Clockwise, starting north. Empty sectors do not perform an action.
-        private static readonly MarkingAction[][] MarkingItems =
-        {
-            new[] { MarkingAction.Edge, MarkingAction.Object, MarkingAction.UVMenu, MarkingAction.None,
-                MarkingAction.Face, MarkingAction.None, MarkingAction.Vertex, MarkingAction.PivotMenu },
-            new[] { MarkingAction.Rotate, MarkingAction.None, MarkingAction.Scale, MarkingAction.None,
-                MarkingAction.Axes, MarkingAction.None, MarkingAction.Move, MarkingAction.None },
-            new[] { MarkingAction.EditPivot, MarkingAction.None, MarkingAction.CenterPivot, MarkingAction.None,
-                MarkingAction.Freeze, MarkingAction.None, MarkingAction.None, MarkingAction.None },
-            new[] { MarkingAction.SelectAll, MarkingAction.None, MarkingAction.Frame, MarkingAction.None,
-                MarkingAction.Clear, MarkingAction.None, MarkingAction.Through, MarkingAction.None },
-            new[] { MarkingAction.OpenUV, MarkingAction.None, MarkingAction.UVSetsMenu, MarkingAction.None,
-                MarkingAction.None, MarkingAction.None, MarkingAction.None, MarkingAction.None },
-            new[] { MarkingAction.UV0, MarkingAction.UV1, MarkingAction.UV2, MarkingAction.UV3,
-                MarkingAction.UV4, MarkingAction.UV5, MarkingAction.UV6, MarkingAction.UV7 },
-            new[] { MarkingAction.ComponentAxes, MarkingAction.None, MarkingAction.WorldAxes, MarkingAction.None,
-                MarkingAction.None, MarkingAction.None, MarkingAction.ObjectAxes, MarkingAction.None }
-        };
-        private static readonly Vector2[] MarkingOffsets =
-        {
-            new Vector2(0, -54), new Vector2(92, -28), new Vector2(106, 0), new Vector2(92, 28),
-            new Vector2(0, 54), new Vector2(-92, 28), new Vector2(-106, 0), new Vector2(-92, -28)
-        };
-        private struct MarkingParent { internal MarkingLevel Level; internal Vector2 Origin; }
-        private readonly List<MarkingParent> markingParents = new List<MarkingParent>(4);
-        private int markingButton;
         private bool markingOpen, suppressModelContext;
         private SceneView markingView;
-        private MarkingLevel markingLevel;
-        private Vector2 markingOrigin, markingPointer, markingAnchor;
-        private int markingControl, markingHover = -1;
-        private double markingHoverSince;
+        private int markingControl, markingButton, markingHover=-1;
+        private KeyCode markingKey;
+        private double radialHoverSince;
+        private const double RadialSubmenuDelay = .25;
+        private Vector2 markingPointer, markingOrigin, markingAnchor, radialLastPointer;
+        private bool radialHasPointer, radialBackArmed;
+        private StudioCustomToolbarDefinition radialPreset;
+        private List<StudioCustomToolbarDefinition> radialDefinitions;
+        private List<ToolbarCommand> radialCommands;
+        private readonly List<string> radialParents=new List<string>();
+        private Rect[] radialRects=Array.Empty<Rect>();
+        private string[] radialVisible=Array.Empty<string>();
         private GUIStyle markingLabel;
-        private readonly bool[] markingEnabled = new bool[8];
-
-        internal static int MarkingSector(Vector2 delta)
-        {
-            if (delta.sqrMagnitude < 24 * 24) return -1;
-            float angle = Mathf.Atan2(delta.x, -delta.y) * Mathf.Rad2Deg;
-            return (Mathf.FloorToInt((angle + 22.5f + 360) / 45)) % 8;
-        }
-        private static bool IsMarkingBranch(MarkingAction action) => action >= MarkingAction.TransformMenu && action <= MarkingAction.UVSetsMenu;
-        private static MarkingLevel BranchLevel(MarkingAction action)
-        {
-            switch (action)
-            {
-                case MarkingAction.TransformMenu: return MarkingLevel.Transform;
-                case MarkingAction.PivotMenu: return MarkingLevel.Pivot;
-                case MarkingAction.SelectionMenu: return MarkingLevel.Selection;
-                case MarkingAction.UVMenu: return MarkingLevel.UV;
-                default: return MarkingLevel.UVSets;
-            }
-        }
+        private Rect radialBack;
+        // Retained as a topology-free compatibility helper; live picking uses Hit only.
+        internal static int MarkingSector(Vector2 delta) => -1;
         private bool MarkingActionEnabled(MarkingAction action)
         {
             if (action == MarkingAction.None) return false;
@@ -78,6 +44,7 @@ namespace MashBoxSDK.AnimationStudio
                 return true;
             if (action == MarkingAction.UVMenu || action == MarkingAction.UVSetsMenu || action == MarkingAction.OpenUV || (action >= MarkingAction.UV0 && action <= MarkingAction.UV7))
                 return true;
+            if (action == MarkingAction.EditPivot && CenterMode) return true;
             if (action == MarkingAction.PivotMenu || action == MarkingAction.EditPivot || action == MarkingAction.CenterPivot)
                 return CanAdjustPivot;
             if (action == MarkingAction.Freeze)
@@ -121,192 +88,207 @@ namespace MashBoxSDK.AnimationStudio
 
         // Called before SceneView gets RMB, so its fly camera and native context menu
         // cannot claim the gesture. Alt navigation and existing handle drags pass through.
+        internal List<ToolbarCommand> RadialCommands(SceneView view)
+        {
+            var result=ToolbarCommands(view as MashBoxStudioViewport);
+            result.Add(new ToolbarCommand{Key=StudioRadialMenus.SpacerKey,Path="Layout/Empty Spacer",Label="Empty Spacer",Enabled=false});
+            result.Add(new ToolbarCommand{Key="UV/Select UVs",Path="UV/Select UVs",Label="Select UVs",Enabled=false});
+            result.Add(new ToolbarCommand{Key="UV/Select UV Shells",Path="UV/Select UV Shells",Label="Select UV Shells",Enabled=false});
+            foreach(MarkingAction action in Enum.GetValues(typeof(MarkingAction)))
+            {
+                if(action!=MarkingAction.Axes&&action!=MarkingAction.Clear&&action!=MarkingAction.Through&&!(action>=MarkingAction.UV0&&action<=MarkingAction.ComponentAxes))continue;
+                var captured=action;
+                result.Add(new ToolbarCommand{Key="Legacy/"+action,Path="Radial Actions/"+MarkingText(action),Label=MarkingText(action),Enabled=MarkingActionEnabled(action),Checked=MarkingIsCurrent(action),Execute=()=>Run(()=>ExecuteMarkingAction(captured,view))});
+            }
+            foreach(var preset in StudioRadialMenus.Read())
+                result.Add(new ToolbarCommand{Key=StudioRadialMenus.Branch(preset.id),Path="Radial Menus/"+preset.name,Label=preset.name+" ›",Enabled=true});
+            return result;
+        }
+        private ToolbarCommand RadialCommand(string key)=>radialCommands?.Find(x=>x.Key==key);
+        private string RadialLabel(string key)=>RadialCommand(key)?.Label??key.Substring(key.LastIndexOf('/')+1);
         internal void BeforeModelSceneGUI(SceneView view)
         {
-            view.wantsMouseEnterLeaveWindow = true;
-            if (HandleLoopCountWheel(view, Event.current)) return;
-            if (BeforeSelectionPaintInput(view)) return;
-            if (CancelMarqueeOutside(view)) return;
-            // Some native handles consume MouseUp before our normal scene callback.
-            // End its Undo group here so the next pivot/transform drag starts fresh.
-            if (Event.current.rawType == EventType.MouseUp && Event.current.button == 0 && gestureUndo >= 0)
-            { Undo.CollapseUndoOperations(gestureUndo); gestureUndo = -1; }
-            if (HandleModelKeyboard(view)) return;
-            int id = GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(), FocusType.Passive);
-            // Space selection remains available in a cut tool without applying its pending path.
-            if (markingOpen || (Event.current.type == EventType.MouseDown && StudioShortcuts.Matches(StudioShortcut.AxisMenu,Event.current)))
+            var evt=Event.current;
+            view.wantsMouseEnterLeaveWindow=true;
+            if(evt.isMouse){radialLastPointer=evt.mousePosition;radialHasPointer=true;}
+            int id=GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(),FocusType.Passive);
+            if(markingOpen){HandleModelMarkingEvent(view,evt,id);return;}
+            if(HandleLoopCountWheel(view,evt)||BeforeSelectionPaintInput(view)||CancelMarqueeOutside(view))return;
+            if(evt.rawType==EventType.MouseUp&&evt.button==0&&gestureUndo>=0){Undo.CollapseUndoOperations(gestureUndo);gestureUndo=-1;}
+            // Preserve RMB Apply Cut; other assigned presets remain available.
+            if(cutTool!=CutTool.None&&evt.type==EventType.MouseDown&&StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt))
+            {CommitPendingCutGesture();suppressModelContext=true;evt.Use();repaint();return;}
+            HandleModelMarkingEvent(view,evt,id);
+            if(evt.type!=EventType.Used)HandleModelKeyboard(view);
+        }
+        private bool TryOpenRadial(SceneView view,Event evt,int id)
+        {
+            if((evt.type!=EventType.MouseDown&&evt.type!=EventType.KeyDown)||GUIUtility.hotControl!=0||EditorGUIUtility.editingTextField)return false;
+            var definitions=StudioRadialMenus.Read();
+            var preset=definitions.Find(x=>StudioShortcuts.Matches(StudioRadialMenus.Shortcut(x.id),evt));
+            if(preset==null)return false;
+            var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);
+            var point=evt.isMouse?evt.mousePosition:radialHasPointer?radialLastPointer:canvas.center;
+            if(!canvas.Contains(point)||(view is MashBoxStudioViewport overlay&&overlay.IsOverViewportControls(point)))return false;
+            radialDefinitions=definitions;radialCommands=RadialCommands(view);radialParents.Clear();radialPreset=preset;radialBackArmed=false;
+            markingView=view;markingControl=id;markingButton=evt.isMouse?evt.button:-1;markingKey=evt.isKey?evt.keyCode:KeyCode.None;
+            markingOpen=true;suppressModelContext=true;GUIUtility.hotControl=id;GUIUtility.keyboardControl=0;
+            markingPointer=GUIUtility.GUIToScreenPoint(point);markingOrigin=markingPointer;markingAnchor=markingPointer;
+            LayoutRadial();evt.Use();repaint();return true;
+        }
+        internal void HandleModelMarkingEvent(SceneView view,Event evt,int id)
+        {
+            if(evt.type==EventType.ContextClick&&(markingOpen||suppressModelContext)){suppressModelContext=false;evt.Use();return;}
+            if(!markingOpen){TryOpenRadial(view,evt,id);return;}
+            if(view!=markingView)return;
+            if(StudioShortcuts.Pressed(StudioShortcut.Cancel,evt)){CancelMarkingMenu();evt.Use();return;}
+            if(evt.type==EventType.MouseLeaveWindow||GUIUtility.hotControl!=markingControl){CancelMarkingMenu();return;}
+            if(evt.isMouse)markingPointer=GUIUtility.GUIToScreenPoint(evt.mousePosition);
+            bool release=evt.type==EventType.MouseUp&&(evt.button==markingButton||evt.button==0)||evt.type==EventType.KeyUp&&evt.keyCode==markingKey;
+            if(evt.isMouse||release)
             {
-                HandleModelMarkingEvent(view,Event.current,id);
-                if (markingOpen || Event.current.type == EventType.Used) return;
-            }
-            if (cutTool != CutTool.None)
-            {
-                var evt = Event.current;
-                if (evt.type == EventType.MouseDown && StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt) &&
-                    (!(view is MashBoxStudioViewport studio) || studio.ModelCanvasRect.Contains(evt.mousePosition)))
+                bool overBack=radialBack.Contains(markingPointer-markingOrigin);
+                // A new context opens underneath the pointer. Back must be left
+                // and deliberately re-entered; tiny movement inside it cannot arm it.
+                if((evt.type==EventType.MouseMove||evt.type==EventType.MouseDrag)&&!overBack)radialBackArmed=true;
+                int hover=radialParents.Count>0&&radialBackArmed&&overBack?-2:StudioRadialMenus.Hit(radialRects,markingPointer-markingOrigin);
+                if(hover>=0&&radialVisible[hover]==StudioRadialMenus.SpacerKey)hover=-1;
+                if(hover!=markingHover){markingHover=hover;radialHoverSince=EditorApplication.timeSinceStartup;}
+                if(release)
                 {
-                    CommitPendingCutGesture();
-                    suppressModelContext = true; evt.Use(); repaint();
+                    try
+                    {
+                    var point=markingPointer-markingOrigin;
+                    if(radialParents.Count>0&&radialBackArmed&&radialBack.Contains(point))
+                    {string parent=radialParents[radialParents.Count-1];radialParents.RemoveAt(radialParents.Count-1);SetRadialPreset(parent);}
+                    else if(markingHover>=0)
+                    {
+                        string key=radialVisible[markingHover];
+                        if(key.StartsWith("RadialPreset/",StringComparison.Ordinal))
+                        {
+                            string target=key.Substring("RadialPreset/".Length);
+                            if(radialDefinitions.Exists(x=>x.id==target)&&!radialParents.Contains(target)&&radialPreset.id!=target)
+                            {radialParents.Add(radialPreset.id);SetRadialPreset(target);}
+                        }
+                        else
+                        {
+                            CancelMarkingMenu();
+                            // Resolve again at release, never execute a stale context closure.
+                            var command=RadialCommands(view).Find(x=>x.Key==key);
+                            if(command!=null&&command.Enabled&&key.StartsWith("Control/",StringComparison.Ordinal))StudioRadialControlWindow.Open(key,view as MashBoxStudioViewport);
+                            else if(command!=null&&command.Enabled)command.Execute?.Invoke();
+                        }
+                    }
+                    else CancelMarkingMenu();
+                    }
+                    finally
+                    {
+                        // Navigation may change the active preset on this event,
+                        // but releasing the initiating gesture always relinquishes
+                        // capture and its tether, including a simultaneous Back hover.
+                        CancelMarkingMenu();
+                    }
                 }
-                else if (evt.type == EventType.ContextClick) evt.Use();
-                return;
+                if(evt.isMouse||release)evt.Use();repaint();return;
             }
-            HandleModelMarkingEvent(view, Event.current, id);
+            if(evt.isKey)evt.Use();
         }
-        internal void HandleModelMarkingEvent(SceneView view, Event evt, int id)
+        private void SetRadialPreset(string id)
         {
-            if (evt.type == EventType.ContextClick && (markingOpen || suppressModelContext))
-            { suppressModelContext = false; evt.Use(); return; }
-            if (!markingOpen)
-            {
-                if (evt.type != EventType.MouseDown) return;
-                suppressModelContext = false;
-                bool axes = StudioShortcuts.Matches(StudioShortcut.AxisMenu,evt);
-                if ((!axes && !StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt)) || GUIUtility.hotControl != 0) return;
-                // Leave floating viewport controls available for their own input.
-                if (view is MashBoxStudioViewport overlayView && overlayView.IsOverViewportControls(evt.mousePosition)) return;
-                var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(276, 68, Mathf.Max(0, view.position.width - 674), Mathf.Max(0, view.position.height - 76));
-                if (!canvas.Contains(evt.mousePosition)) return;
-                markingModeTarget = axes ? -1 : MeshAtModePointer(view,evt.mousePosition);
-                markingView = view; markingButton = evt.button; markingControl = id; GUIUtility.hotControl = id;
-                GUIUtility.keyboardControl = 0; EditorGUIUtility.editingTextField = false;
-                markingOpen = true; suppressModelContext = true; markingParents.Clear();
-                markingPointer = GUIUtility.GUIToScreenPoint(evt.mousePosition);
-                SetMarkingLevel(axes ? MarkingLevel.AxisSpace : MarkingLevel.Components, markingPointer);
-                evt.Use(); repaint(); return;
-            }
-            if (view != markingView) return;
-            if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt))
-            { CancelMarkingMenu(); evt.Use(); return; }
-            if (evt.type == EventType.MouseLeaveWindow || GUIUtility.hotControl != markingControl)
-            { CancelMarkingMenu(); return; }
-            if (evt.type == EventType.MouseDrag || evt.type == EventType.MouseMove || (evt.type == EventType.MouseUp && evt.button == markingButton))
-            {
-                markingPointer = GUIUtility.GUIToScreenPoint(evt.mousePosition);
-                UpdateMarkingHover();
-                if (evt.type == EventType.MouseUp)
-                {
-                    var action = markingHover >= 0 ? MarkingItems[(int)markingLevel][markingHover] : MarkingAction.None;
-                    bool execute = markingHover >= 0 && markingEnabled[markingHover] && !IsMarkingBranch(action);
-                    CancelMarkingMenu(); evt.Use();
-                    if (execute) { int target=markingModeTarget;Run(() => ExecuteModeTargetAction(action, view,target)); }
-                }
-                else
-                {
-                    if (markingParents.Count > 0 && MarkingBackRect(markingOrigin).Contains(markingPointer)) ReturnMarkingParent();
-                    else if (markingHover >= 0 && markingEnabled[markingHover] && IsMarkingBranch(MarkingItems[(int)markingLevel][markingHover]) &&
-                        MarkingItemRect(markingOrigin, markingHover).Contains(markingPointer)) EnterMarkingBranch();
-                    evt.Use();
-                }
-                repaint(); return;
-            }
-            if (evt.isKey || evt.type == EventType.ScrollWheel || evt.type == EventType.MouseDown || evt.type == EventType.MouseUp) evt.Use();
+            var next=radialDefinitions.Find(x=>x.id==id);if(next==null)return;
+            markingOrigin=markingPointer;markingAnchor=markingPointer;
+            radialPreset=next;radialBackArmed=false;LayoutRadial();repaint();
         }
-        private void SetMarkingLevel(MarkingLevel level, Vector2 origin)
+        private void LayoutRadial()
         {
-            markingLevel = level;
-            markingAnchor = markingPointer;
-            // Keep all branches visible even when the gesture starts near a window edge.
-            var bounds = markingView.position;
-            markingOrigin = new Vector2(Mathf.Clamp(origin.x, bounds.xMin + 170, bounds.xMax - 170), Mathf.Clamp(origin.y, bounds.yMin + 112, bounds.yMax - 74));
-            markingHover = -1; markingHoverSince = EditorApplication.timeSinceStartup;
-            for (int i = 0; i < 8; i++) markingEnabled[i] = MarkingActionEnabled(MarkingItems[(int)level][i]);
-        }
-        private Rect MarkingItemRect(Vector2 origin, int sector)
-        {
-            var action = MarkingItems[(int)markingLevel][sector];
-            float width = action == MarkingAction.Freeze || action == MarkingAction.Through ? 112 : 94;
-            return new Rect(origin + MarkingOffsets[sector] - new Vector2(width * .5f, 10), new Vector2(width, 20));
-        }
-        private static Rect MarkingBackRect(Vector2 origin) => new Rect(origin + new Vector2(-36, -94), new Vector2(72, 20));
-        private void UpdateMarkingHover()
-        {
-            int next = -1;
-            bool neutral = (markingPointer - markingAnchor).sqrMagnitude < 24 * 24 ||
-                (markingPointer - markingOrigin).sqrMagnitude < 24 * 24 ||
-                (markingParents.Count > 0 && MarkingBackRect(markingOrigin).Contains(markingPointer));
-            if (!neutral)
-            {
-                for (int i = 0; i < 8; i++) if (MarkingItems[(int)markingLevel][i] != MarkingAction.None && MarkingItemRect(markingOrigin, i).Contains(markingPointer)) { next = i; break; }
-                if (next < 0) next = MarkingSector(markingPointer - markingAnchor);
-            }
-            if (next >= 0 && MarkingItems[(int)markingLevel][next] == MarkingAction.None) next = -1;
-            if (next != markingHover) { markingHover = next; markingHoverSince = EditorApplication.timeSinceStartup; }
-        }
-        private void EnterMarkingBranch()
-        {
-            if (markingHover < 0 || !markingEnabled[markingHover]) return;
-            var action = MarkingItems[(int)markingLevel][markingHover]; if (!IsMarkingBranch(action)) return;
-            markingParents.Add(new MarkingParent { Level = markingLevel, Origin = markingOrigin });
-            SetMarkingLevel(BranchLevel(action), markingPointer); repaint();
-        }
-        private void ReturnMarkingParent()
-        {
-            var previous = markingParents[markingParents.Count - 1]; markingParents.RemoveAt(markingParents.Count - 1);
-            SetMarkingLevel(previous.Level, previous.Origin); repaint();
+            if(markingLabel==null)markingLabel=new GUIStyle(StudioTheme.Styles.label){alignment=TextAnchor.MiddleCenter,fontSize=11,clipping=TextClipping.Clip};
+            float width=80;
+            foreach(string key in radialPreset.commands)
+                if(key!=StudioRadialMenus.SpacerKey)width=Mathf.Max(width,Mathf.Min(128,markingLabel.CalcSize(new GUIContent(RadialLabel(key))).x+30));
+            int count=radialPreset.commands.Count;
+            var sizes=new Vector2[count];
+            for(int i=0;i<count;i++)sizes[i]=new Vector2(width,24);
+            radialRects=StudioRadialMenus.Layout(count,sizes);
+            radialVisible=radialPreset.commands.ToArray();
+            // Every command belongs to this single pie. Never page, cap, hide or
+            // viewport-fit the list; large lists grow the radius as needed.
+            radialBack=new Rect(-24,-10,48,20);
+            if(count==1)radialBack.y=radialRects[0].yMax+8;
+            // The center navigation controls must have the same gaps as commands.
+            markingHover=-1;
         }
         private void TickMarkingMenu()
         {
-            if (markingOpen && markingHover >= 0 && markingEnabled[markingHover] &&
-                IsMarkingBranch(MarkingItems[(int)markingLevel][markingHover]) && EditorApplication.timeSinceStartup - markingHoverSince >= .22)
-                EnterMarkingBranch();
+            if(!markingOpen||EditorApplication.timeSinceStartup-radialHoverSince<RadialSubmenuDelay)return;
+            if(markingHover==-2)
+            {
+                if(radialParents.Count==0||!radialBackArmed||!radialBack.Contains(markingPointer-markingOrigin))return;
+                string parent=radialParents[radialParents.Count-1];radialParents.RemoveAt(radialParents.Count-1);SetRadialPreset(parent);
+                return;
+            }
+            if(markingHover<0||markingHover>=radialVisible.Length)return;
+            string key=radialVisible[markingHover];
+            if(!key.StartsWith("RadialPreset/",StringComparison.Ordinal)||RadialCommand(key)?.Enabled!=true)return;
+            // Only the same visible button held for the full delay can enter.
+            if(StudioRadialMenus.Hit(radialRects,markingPointer-markingOrigin)!=markingHover)return;
+            string target=key.Substring("RadialPreset/".Length);
+            if(target==radialPreset.id||radialParents.Contains(target)||!radialDefinitions.Exists(x=>x.id==target))return;
+            radialParents.Add(radialPreset.id);SetRadialPreset(target);
+            // Layout clears hover: a child requires fresh pointer input and its
+            // own delay, rather than cascading under a stationary pointer.
         }
         internal void CancelMarkingMenu()
         {
-            if (!markingOpen) return;
-            if (GUIUtility.hotControl == markingControl) GUIUtility.hotControl = 0;
-            markingOpen = false; markingView = null; markingHover = -1; markingParents.Clear(); repaint();
+            if(!markingOpen)return;
+            if(GUIUtility.hotControl==markingControl)GUIUtility.hotControl=0;
+            markingOpen=false;markingView=null;markingHover=-1;radialBackArmed=false;radialParents.Clear();radialCommands=null;repaint();
         }
         internal void DrawMarkingMenu()
         {
-            if (!markingOpen || Event.current.type != EventType.Repaint) return;
-            if (markingLabel == null)
-            {
-                markingLabel = new GUIStyle(StudioTheme.Styles.label) { alignment = TextAnchor.MiddleCenter, fontSize = 11 };
-            }
+            if(!markingOpen||Event.current.type!=EventType.Repaint)return;
+            var origin=GUIUtility.ScreenToGUIPoint(markingOrigin);var palette=StudioTheme.Current;
             DrawMarkingDragLine();
-            var origin = GUIUtility.ScreenToGUIPoint(markingOrigin);
-            var palette = StudioTheme.Current;
-            for (int i = 0; i < 8; i++)
+            void Button(Rect relative,string text,bool enabled,bool hovered,string tooltip=null,string iconKey=null,bool isChecked=false)
             {
-                var action = MarkingItems[(int)markingLevel][i]; if (action == MarkingAction.None) continue;
-                var rect = MarkingItemRect(origin, i); bool enabled = markingEnabled[i];
-                EditorGUI.DrawRect(new Rect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2), palette.Header);
-                EditorGUI.DrawRect(rect, markingHover == i && enabled ? palette.Hover : palette.Button);
-                markingLabel.normal.textColor = enabled ? palette.Text : palette.Muted;
-                if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes || action == MarkingAction.ComponentAxes)
+                var rect=new Rect(origin+relative.position,relative.size);
+                StudioTheme.DrawRadialButtonBackground(rect,hovered&&enabled);
+                markingLabel.normal.textColor=enabled?new Color(.9f,.91f,.93f):new Color(.48f,.5f,.53f);
+                // 24px row: 16px icon with uniform 4px insets and a 4px text gap.
+                if(iconKey!=null)
                 {
-                    GUI.Toggle(new Rect(rect.x+6,rect.center.y-8,16,16),MarkingIsCurrent(action),GUIContent.none,EditorStyles.toggle);
-                    GUI.Label(new Rect(rect.x+22,rect.y,rect.width-24,rect.height),MarkingText(action),markingLabel);
+                    var icon=StudioCommandIcons.Get(iconKey);
+                    var previous=GUI.color;
+                    if(!enabled)GUI.color=new Color(previous.r,previous.g,previous.b,previous.a*.45f);
+                    if(icon)GUI.DrawTexture(new Rect(rect.x+4,rect.center.y-8,16,16),icon,ScaleMode.ScaleToFit,true);
+                    GUI.color=previous;
+                    if(isChecked)GUI.Label(new Rect(rect.x+12,rect.center.y,10,10),"✓",markingLabel);
+                    rect=new Rect(rect.x+24,rect.y,Mathf.Max(0,rect.width-28),rect.height);
                 }
-                else GUI.Label(rect, MarkingText(action), markingLabel);
+                markingLabel.alignment=iconKey!=null?TextAnchor.MiddleLeft:TextAnchor.MiddleCenter;
+                GUI.Label(rect,new GUIContent(text,tooltip??text),markingLabel);
             }
-            if (markingParents.Count > 0)
+            for(int i=0;i<radialVisible.Length;i++)
             {
-                var back = MarkingBackRect(origin);
-                EditorGUI.DrawRect(new Rect(back.x - 1, back.y - 1, back.width + 2, back.height + 2), palette.Header);
-                EditorGUI.DrawRect(back, palette.Button);
-                markingLabel.normal.textColor = palette.Text;
-                GUI.Label(back, "‹ Back", markingLabel);
+                string key=radialVisible[i];if(key==StudioRadialMenus.SpacerKey)continue;var command=RadialCommand(key);
+                bool enabled=command!=null&&command.Enabled;
+                Button(radialRects[i],RadialLabel(key),enabled,markingHover==i,command?.Path??key,key,command?.Checked==true);
             }
+            var pointer=markingPointer-markingOrigin;
+            if(radialParents.Count>0)Button(radialBack,"‹ Back",true,radialBackArmed&&radialBack.Contains(pointer));
         }
         private void DrawMarkingDragLine()
         {
-            // Input is captured in the SceneView; this overlay has its own GUI origin.
-            var start = GUIUtility.ScreenToGUIPoint(markingAnchor);
-            var end = GUIUtility.ScreenToGUIPoint(markingPointer);
-            var delta = end - start;
-            if (delta.sqrMagnitude < 1) return;
-            var previousMatrix = GUI.matrix;
+            var start=GUIUtility.ScreenToGUIPoint(markingAnchor);
+            var end=GUIUtility.ScreenToGUIPoint(markingPointer);
+            var delta=end-start;if(delta.sqrMagnitude<1)return;
+            var previous=GUI.matrix;
             try
             {
-                GUIUtility.RotateAroundPivot(Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg, start);
-                // A dark edge keeps the light gesture line visible over both meshes and empty space.
-                EditorGUI.DrawRect(new Rect(start.x, start.y - 2, delta.magnitude, 4), new Color(.08f, .08f, .08f, .9f));
-                EditorGUI.DrawRect(new Rect(start.x, start.y - 1, delta.magnitude, 2), StudioTheme.Current.Text);
+                GUIUtility.RotateAroundPivot(Mathf.Atan2(delta.y,delta.x)*Mathf.Rad2Deg,start);
+                EditorGUI.DrawRect(new Rect(start.x,start.y-1,delta.magnitude,2),new Color(.08f,.08f,.08f,.8f));
+                EditorGUI.DrawRect(new Rect(start.x,start.y-.5f,delta.magnitude,1),StudioTheme.Current.Text);
             }
-            finally { GUI.matrix = previousMatrix; }
-            EditorGUI.DrawRect(new Rect(start.x - 2, start.y - 2, 4, 4), StudioTheme.Current.Text);
+            finally { GUI.matrix=previous; }
         }
         internal void ExecuteMarkingAction(MarkingAction action, SceneView view)
         {
@@ -325,9 +307,9 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.ObjectAxes: SetToolbarLocalAxes(true); break;
                 case MarkingAction.ComponentAxes: SetToolbarComponentAxes(); break;
                 case MarkingAction.WorldAxes: SetToolbarLocalAxes(false); break;
-                case MarkingAction.EditPivot: pivot = !pivot; break;
+                case MarkingAction.EditPivot: TogglePivotEdit(view); break;
                 case MarkingAction.CenterPivot: CenterEditingPivot(); break;
-                case MarkingAction.Freeze: Document.Freeze(Active, Transforms); Changed(); RememberAction(RepeatKind.Freeze); break;
+                case MarkingAction.Freeze: FreezeEditingObject(); RememberAction(RepeatKind.Freeze); break;
                 case MarkingAction.OpenUV: StudioUVEditor.Open(this); break;
                 case MarkingAction.Frame: Frame(view); break;
                 case MarkingAction.Through: xray = !xray; SaveDisplayConfiguration(); break;

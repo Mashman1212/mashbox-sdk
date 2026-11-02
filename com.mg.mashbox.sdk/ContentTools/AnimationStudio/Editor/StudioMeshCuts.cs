@@ -19,13 +19,16 @@ namespace MashBoxSDK.AnimationStudio
         internal readonly List<Face> Faces = new List<Face>();
         internal readonly Vector3[] Positions;
         private readonly int[] welded;
+        private readonly int[] sourceGeometry;
+        private readonly int nextGeometry;
+        private int[] GeometricIds(IEnumerable<int> ids) => ids.Select(i=>i<sourceGeometry.Length?sourceGeometry[i]:nextGeometry+i-sourceGeometry.Length).ToArray();
         private readonly Dictionary<(int, int), List<(int face, int edge)>> neighbours = new Dictionary<(int, int), List<(int, int)>>();
         internal StudioMeshCuts(StudioModelDocument.Node node)
         {
-            var mesh = node.mesh; Positions = mesh.vertices;
-            welded = new int[Positions.Length]; var ids = new Dictionary<Vector3, int>();
-            for (int i = 0; i < Positions.Length; i++)
-            { if (!ids.TryGetValue(Positions[i], out int id)) { id = ids.Count; ids.Add(Positions[i], id); } welded[i] = id; }
+            var mesh = node.mesh; sourceMeshForSlice=mesh; Positions = mesh.vertices;
+            welded=new int[Positions.Length];var ids=new Dictionary<int,int>();var rawGeometry=StudioSubdivisionData.Geometry(node);var originals=new List<int>();
+            for(int i=0;i<Positions.Length;i++){int raw=rawGeometry[i];if(!ids.TryGetValue(raw,out int id)){id=ids.Count;ids.Add(raw,id);originals.Add(raw);}welded[i]=id;}
+            sourceGeometry=originals.ToArray();nextGeometry=rawGeometry.Length>0?rawGeometry.Max()+1:0;
             if (node.cutPolygons != null && node.cutTriangles != null && node.cutTriangles.SequenceEqual(mesh.triangles))
             {
                 var data = node.cutPolygons;
@@ -129,12 +132,12 @@ namespace MashBoxSDK.AnimationStudio
             foreach(var cut in cuts) foreach(var p in new[]{cut.A,cut.B})
             { var key=Key(p.A,p.B); if(!splits.TryGetValue(key,out var list)) splits[key]=list=new List<Point>();
               if(!list.Any(q=>(Position(q)-Position(p)).sqrMagnitude<1e-10f)) list.Add(p); }
-            var created=new Dictionary<(int,int,float),int>();
+            var created=new Dictionary<(int,int,float),int>();var geometry=welded.ToList();var edgeGeometry=new Dictionary<(int,int,Vector3),int>();int nextGeo=sourceGeometry.Length;
             int Insert(int a,int b,float t,Vector3 position)
             {
                 if(t<.00001f)return a; if(t>.99999f)return b;
                 var key=a<b?(a,b,t):(b,a,1-t); if(created.TryGetValue(key,out int existing))return existing;
-                int id=positions.Count; created[key]=id; positions.Add(position);
+                int id=positions.Count; created[key]=id; positions.Add(position);var edgeKey=Key(a,b);var geoKey=(edgeKey.Item1,edgeKey.Item2,position);if(!edgeGeometry.TryGetValue(geoKey,out int geo))edgeGeometry.Add(geoKey,geo=nextGeo++);geometry.Add(geo);
                 if(normals.Count>0)normals.Add(Vector3.Lerp(normals[a],normals[b],t).normalized);
                 if(tangents.Count>0) { var x=Vector4.Lerp(tangents[a],tangents[b],t); var n=new Vector3(x.x,x.y,x.z).normalized; tangents.Add(new Vector4(n.x,n.y,n.z,t<.5f?tangents[a].w:tangents[b].w)); }
                 if(colors.Count>0)colors.Add(Color.Lerp(colors[a],colors[b],t));
@@ -171,10 +174,10 @@ namespace MashBoxSDK.AnimationStudio
             mesh.Clear();mesh.indexFormat=positions.Count>65535?IndexFormat.UInt32:IndexFormat.UInt16;
             mesh.SetVertices(positions);if(normals.Count>0)mesh.SetNormals(normals);if(tangents.Count>0)mesh.SetTangents(tangents);if(colors.Count>0)mesh.SetColors(colors);
             for(int c=0;c<8;c++)if(uvs[c].Count>0)
-            { if(dimensions[c]==2)mesh.SetUVs(c,uvs[c].Select(v=>new Vector2(v.x,v.y)).ToList());else if(dimensions[c]==3)mesh.SetUVs(c,uvs[c].Select(v=>new Vector3(v.x,v.y,v.z)).ToList());else mesh.SetUVs(c,uvs[c]); }
+            { if(dimensions[c]==1)StudioSubdivisionData.SetUV1(mesh,c,uvs[c]);else if(dimensions[c]==2)mesh.SetUVs(c,uvs[c].Select(v=>new Vector2(v.x,v.y)).ToList());else if(dimensions[c]==3)mesh.SetUVs(c,uvs[c].Select(v=>new Vector3(v.x,v.y,v.z)).ToList());else mesh.SetUVs(c,uvs[c]); }
             mesh.subMeshCount=indices.Length;for(int s=0;s<indices.Length;s++)mesh.SetTriangles(indices[s],s);
             mesh.RecalculateBounds();mesh.UploadMeshData(false);
-            node.cutPolygons=result.SelectMany(f=>new[]{f.Submesh,f.Vertices.Count}.Concat(f.Vertices)).ToArray();node.cutTriangles=mesh.triangles;
+            node.cutPolygons=result.SelectMany(f=>new[]{f.Submesh,f.Vertices.Count}.Concat(f.Vertices)).ToArray();node.cutTriangles=mesh.triangles;node.geometryVertices=GeometricIds(geometry);
         }
         private static void Triangulate(List<int> polygon,List<Vector3> positions,List<int> indices)
         {

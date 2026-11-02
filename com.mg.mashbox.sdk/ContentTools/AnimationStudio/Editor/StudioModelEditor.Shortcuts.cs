@@ -1,4 +1,4 @@
-using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
+﻿using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -11,11 +11,13 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             if (evt == null || !evt.isKey || EditorGUIUtility.editingTextField || hierarchyRenameNode != null) return false;
+            UpdatePivotTargetModifiers(evt);
+            if (!markingOpen && evt.type == EventType.KeyDown && TryOpenRadial(view,evt,GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(),FocusType.Passive))) return true;
             if (HandleSelectionPaintKey(view)) return true;
             if (markingOpen)
             {
-                if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt)) CancelMarkingMenu();
-                evt.Use(); return true;
+                HandleModelMarkingEvent(view,evt,markingControl);
+                if(evt.type!=EventType.Used)evt.Use(); return true;
             }
             if (HandleSaveShortcut() || HandleGridSnapKey(view) || HandleSizeShortcut(evt) || HandlePivotSnap(view)) return true;
             if (evt.type != EventType.KeyDown) return false;
@@ -44,6 +46,7 @@ namespace MashBoxSDK.AnimationStudio
             if (Is(StudioShortcut.XRay)) { SetXRayMode(!displayXray); evt.Use(); return true; }
             if (cutTool != CutTool.None)
             {
+                if(cutTool==CutTool.Bisect && Is(StudioShortcut.CommitCut)){Run(ApplyBisect);evt.Use();return true;}
                 if (MultiCutKey(evt)) return true;
                 if (Is(StudioShortcut.CommitCut))
                 { CommitPendingCutGesture(); evt.Use(); return true; }
@@ -63,7 +66,7 @@ namespace MashBoxSDK.AnimationStudio
             else if (Is(StudioShortcut.Move)) ActivateTool(Tool.Move);
             else if (Is(StudioShortcut.Rotate)) ActivateTool(Tool.Rotate);
             else if (Is(StudioShortcut.Scale)) ActivateTool(Tool.Scale);
-            else if (Is(StudioShortcut.Pivot)) { if (CanAdjustPivot) pivot = !pivot; }
+            else if (Is(StudioShortcut.Pivot)) { TogglePivotEdit(view); }
             else if (Is(StudioShortcut.Frame)) Frame(view);
             else if (Is(StudioShortcut.SelectAll)) { if (Document) ExecuteMarkingAction(MarkingAction.SelectAll,view); }
             else if (Is(StudioShortcut.Object)) { SetComponentMode(ComponentMode.Object,view); }
@@ -75,7 +78,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ReleaseShortcutHolds()
         {
-            ResetTargetWeldGesture(); ReleaseMultiCutPointer(); FinishSelectionPaint();
+            ResetTargetWeldGesture(); ReleaseMultiCutPointer(); ReleaseBisectPointer(); FinishSelectionPaint();
             if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
             EndPivotSnap(); ClearGridSnap();
         }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal (int, int) NormalEdgeKey(int a, int b) => Key(a, b);
         private struct NormalEdgeUse { internal int Face, Edge; internal NormalEdgeUse(int face, int edge) { Face = face; Edge = edge; } }
-        internal void SetEdgeNormals(StudioModelDocument.Node node, HashSet<(int,int)> selection, float angle, bool harden, Action beforeWrite = null)
+        internal void SetEdgeNormals(StudioModelDocument.Node node, HashSet<(int,int)> selection, float angle, bool harden, Action beforeWrite = null, bool recalculate = false)
         {
             var mesh = node.mesh;
             if (node.skinned || node.blendShape != null || mesh.blendShapeCount > 0 || mesh.bindposes.Length > 0)
@@ -57,13 +57,18 @@ namespace MashBoxSDK.AnimationStudio
             float cosine = Mathf.Cos(angle*Mathf.Deg2Rad);
             foreach(var pair in adjacency)
             {
-                var uses=pair.Value;if(uses.Count!=2)continue;
+                var uses=pair.Value;
+                // Boundary-only selections also need their custom normals rebuilt.
+                if(recalculate&&(selection==null||selection.Contains(pair.Key)))
+                    foreach(var use in uses)
+                    {int start=offset[use.Face],count=Faces[use.Face].Vertices.Count;affected[start+use.Edge]=affected[start+(use.Edge+1)%count]=true;}
+                if(uses.Count!=2)continue;
                 var a=uses[0];var b=uses[1];var av=Faces[a.Face].Vertices;var bv=Faces[b.Face].Vertices;
                 int ai=a.Edge,aj=(a.Edge+1)%av.Count,bi=b.Edge,bj=(b.Edge+1)%bv.Count;
                 if(welded[av[ai]]!=welded[bv[bi]]) { int swap=bi;bi=bj;bj=swap; }
                 bool targeted=selection==null||selection.Contains(pair.Key);
                 bool soft;
-                if(targeted)soft=!harden&&Vector3.Dot(faceNormals[a.Face],faceNormals[b.Face])>=cosine-1e-6f;
+                if(targeted&&!recalculate)soft=!harden&&Vector3.Dot(faceNormals[a.Face],faceNormals[b.Face])>=cosine-1e-6f;
                 else if(node.normalGroups!=null&&node.normalGroups.Length==Positions.Length)
                     soft=node.normalGroups[av[ai]]==node.normalGroups[bv[bi]]&&node.normalGroups[av[aj]]==node.normalGroups[bv[bj]];
                 else if(sourceNormals.Length==Positions.Length)
@@ -139,13 +144,14 @@ namespace MashBoxSDK.AnimationStudio
             if(colors.Length>0)mesh.SetColors(sources.Select(i=>colors[i]).ToList());
             for(int c=0;c<8;c++)if(uv[c].Count>0)
             {
-                if(dimensions[c]==2)mesh.SetUVs(c,sources.Select(i=>new Vector2(uv[c][i].x,uv[c][i].y)).ToList());
+                if(dimensions[c]==1)StudioSubdivisionData.SetUV1(mesh,c,sources.Select(i=>uv[c][i]));
+                else if(dimensions[c]==2)mesh.SetUVs(c,sources.Select(i=>new Vector2(uv[c][i].x,uv[c][i].y)).ToList());
                 else if(dimensions[c]==3)mesh.SetUVs(c,sources.Select(i=>new Vector3(uv[c][i].x,uv[c][i].y,uv[c][i].z)).ToList());
                 else mesh.SetUVs(c,sources.Select(i=>uv[c][i]).ToList());
             }
             mesh.subMeshCount=triangles.Length;for(int s=0;s<triangles.Length;s++)mesh.SetTriangles(triangles[s],s);
             if(uv[0].Count>0)mesh.RecalculateTangents();else if(sourceTangents.Length==Positions.Length)mesh.SetTangents(sources.Select(i=>sourceTangents[i]).ToList());
-            mesh.RecalculateBounds();mesh.UploadMeshData(false);node.cutPolygons=polygons;node.cutTriangles=mesh.triangles;node.normalGroups=outputGroups.ToArray();
+            mesh.RecalculateBounds();mesh.UploadMeshData(false);node.cutPolygons=polygons;node.cutTriangles=mesh.triangles;node.normalGroups=outputGroups.ToArray();node.geometryVertices=GeometricIds(sources.Select(i=>welded[i]));
         }
     }
 }

@@ -12,10 +12,10 @@ namespace MashBoxSDK.AnimationStudio
         private int lockedObjectMoveControl;
         private Vector3 lockedObjectMovePosition;
         internal bool PivotLocked => pivotLocked;
-        private bool HasLockedPivot => pivotLocked && lockedPivotValid && lockedPivotDocument == Document;
+        private bool HasLockedPivot => !CenterMode && pivotLocked && lockedPivotValid && lockedPivotDocument == Document;
         private void EnsureLockedPivot()
         {
-            if (!pivotLocked || HasLockedPivot || !Document || Active < 0 || Active >= Transforms.Length) return;
+            if (CenterMode || !pivotLocked || HasLockedPivot || !Document || Active < 0 || Active >= Transforms.Length) return;
             var position = UnlockedEditingPivotPosition;
             if (mode != ComponentMode.Object && !HasComponentPivot)
             {
@@ -31,16 +31,16 @@ namespace MashBoxSDK.AnimationStudio
             lockedPivotOrientation = orientation.normalized; lockedPivotValid = true;
         }
         private Vector3 ResolveLockedPivotCenter(Vector3 fallback)
-        { EnsureLockedPivot(); return HasLockedPivot ? lockedPivotPosition : fallback; }
+        { if (CenterMode) return fallback; EnsureLockedPivot(); return HasLockedPivot ? lockedPivotPosition : fallback; }
         private Vector3 LockedObjectMoveHandleCenter(Vector3 fallback, int control)
         {
-            if (!HasLockedPivot || pivot || mode != ComponentMode.Object || tool != UnityEditor.Tool.Move) return fallback;
+            if (CenterMode || !HasLockedPivot || pivot || mode != ComponentMode.Object || tool != UnityEditor.Tool.Move) return fallback;
             if (control == 0 || control != lockedObjectMoveControl) { lockedObjectMoveControl = 0; return fallback; }
             return lockedObjectMovePosition;
         }
         private void TrackLockedObjectMove(Vector3 position, int control)
         {
-            if (!HasLockedPivot || pivot || mode != ComponentMode.Object || tool != UnityEditor.Tool.Move || control == 0) return;
+            if (CenterMode || !HasLockedPivot || pivot || mode != ComponentMode.Object || tool != UnityEditor.Tool.Move || control == 0) return;
             lockedObjectMoveControl = control; lockedObjectMovePosition = position;
         }
         internal void SetPivotLocked(bool enabled)

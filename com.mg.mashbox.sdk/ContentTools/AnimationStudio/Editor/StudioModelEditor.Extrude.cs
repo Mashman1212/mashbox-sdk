@@ -105,8 +105,8 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawLiveExtrudeFields()
         {
             EditorGUI.BeginChangeCheck();
-            extrusionDistance = EditorGUILayout.FloatField(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
-            extrusionInset = EditorGUILayout.FloatField(new GUIContent("Inset", "Mesh-local boundary offset. Positive moves outward; negative moves inward. Independent of normal distance."), extrusionInset);
+            extrusionDistance = StudioSceneUnits.Field(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
+            extrusionInset = StudioSceneUnits.Field(new GUIContent("Inset", "Mesh-local boundary offset. Positive moves outward; negative moves inward. Independent of normal distance."), extrusionInset);
             if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
             if (EditorGUI.EndChangeCheck()) StoreExtrusionDefaults();
             GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Cancel or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);

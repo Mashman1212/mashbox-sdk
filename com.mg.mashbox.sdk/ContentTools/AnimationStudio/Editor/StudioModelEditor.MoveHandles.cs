@@ -39,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
 #endif
         private Vector3 DrawMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
-            if (GUIUtility.hotControl == 0) moveDragControl = 0;
+            if (GUIUtility.hotControl == 0) { moveDragControl = 0; edgeSnapLatched = false; }
             float size = HandleUtility.GetHandleSize(center) * sizeMultiplier;
 #if MASHBOX_STUDIO_TESTS
             MoveHandleProbe?.Invoke(center,size);
@@ -164,12 +164,66 @@ namespace MashBoxSDK.AnimationStudio
         }
         private bool TryMoveSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)
         {
+            if (edgeSnapHeld) return TryEdgeSnapTarget(view, mouse, out target);
             var point = PivotCameraPoint(view, mouse);
             if (pivot) return TryPivotSnapVertex(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target);
             if (mode == ComponentMode.Object) return TryObjectSnapTarget(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target);
             var selected = MovingSnapVertices();
             return TryPivotSnapVertex(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target, null,
                 (node, vertex) => !selected.TryGetValue(node, out var vertices) || !vertices.Contains(vertex));
+        }
+        // Capture world endpoints once per gesture. Never traverse adjacency or
+        // re-query a moving target while sliding along the captured segment.
+        private bool TryEdgeSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)
+        {
+            target = default;
+            if (!view || !view.camera || !Document) return false;
+            var camera = view.camera;
+            float dpi = EditorGUIUtility.pixelsPerPoint;
+            var pointer = PivotCameraPoint(view, mouse);
+            if (!edgeSnapLatched)
+            {
+                var moving = MovingSnapVertices();
+                float best = 18 * 18, depth = float.PositiveInfinity;
+                for (int node = 0; node < Transforms.Length; node++)
+                {
+                    var transform = Transforms[node];
+                    if (!Document.nodes[node].mesh || !transform || !transform.gameObject.activeInHierarchy ||
+                        (!pivot && mode == ComponentMode.Object && IsSnapMovingNode(node))) continue;
+                    var renderer = transform.GetComponent<Renderer>();
+                    if (!renderer || !renderer.enabled) continue;
+                    moving.TryGetValue(node, out var excluded);
+                    var vertices = PickVertices(node);
+                    using (new ComponentTargetScope(this, node))
+                    foreach (var edge in Edges())
+                    {
+                        if (excluded != null && (excluded.Contains(edge.a) || excluded.Contains(edge.b))) continue;
+                        var a = transform.TransformPoint(vertices[edge.a]);
+                        var b = transform.TransformPoint(vertices[edge.b]);
+                        if (!FiniteScalePoint(a) || !FiniteScalePoint(b) || (b-a).sqrMagnitude < 1e-16f) continue;
+                        var sa = camera.WorldToScreenPoint(a); var sb = camera.WorldToScreenPoint(b);
+                        if (sa.z <= camera.nearClipPlane || sb.z <= camera.nearClipPlane) continue;
+                        var ga = new Vector2(sa.x/dpi, (camera.pixelHeight-sa.y)/dpi);
+                        var gb = new Vector2(sb.x/dpi, (camera.pixelHeight-sb.y)/dpi);
+                        var delta = gb-ga;
+                        float t = delta.sqrMagnitude > 1e-12f ? Mathf.Clamp01(Vector2.Dot(pointer-ga,delta)/delta.sqrMagnitude) : 0;
+                        float distance = (pointer-ga-delta*t).sqrMagnitude;
+                        float z = 1 / ((1-t)/sa.z+t/sb.z);
+                        if (distance > best || Mathf.Abs(distance-best) < .01f && z >= depth) continue;
+                        best = distance; depth = z; edgeSnapStart = a; edgeSnapEnd = b; edgeSnapLatched = true;
+                    }
+                }
+            }
+            if (!edgeSnapLatched) return false;
+            var start = camera.WorldToScreenPoint(edgeSnapStart);
+            var end = camera.WorldToScreenPoint(edgeSnapEnd);
+            var first = new Vector2(start.x/dpi,(camera.pixelHeight-start.y)/dpi);
+            var span = new Vector2((end.x-start.x)/dpi,(start.y-end.y)/dpi);
+            float fraction = span.sqrMagnitude > 1e-12f ? Mathf.Clamp01(Vector2.Dot(pointer-first,span)/span.sqrMagnitude) : 0;
+            // Perspective-correct interpolation, clamped to the finite edge.
+            float weight = fraction * start.z / ((1-fraction)*end.z + fraction*start.z);
+            target = Vector3.Lerp(edgeSnapStart, edgeSnapEnd, weight);
+            return true;
         }
         private Dictionary<int,HashSet<int>> MovingSnapVertices()
         {
@@ -221,6 +275,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private Vector3 ResolveMoveSnap(SceneView view, Vector2 mouse, Vector3 position, Vector3 previous)
         {
+            if (edgeSnapHeld) return TryEdgeSnapTarget(view, mouse, out var edgeTarget) ? edgeTarget : previous;
             if (pivotSnapHeld)
             {
                 bool found = moveDragAxes == MoveAxes.Free
@@ -231,8 +286,8 @@ namespace MashBoxSDK.AnimationStudio
             if (gridSnapHeld)
             {
                 if (moveDragAxes == MoveAxes.Free)
-                    return TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(mouse),StudioSettings.Current.gridSpacing,out var ground) ? ground : previous;
-                return SnapConstrainedGrid(moveDragOrigin,position,moveDragOrientation,moveDragAxes,StudioSettings.Current.gridSpacing);
+                    return TrySnapFreeMoveToGrid(HandleUtility.GUIPointToWorldRay(mouse),StudioSceneUnits.GridSpacing,out var ground) ? ground : previous;
+                return SnapConstrainedGrid(moveDragOrigin,position,moveDragOrientation,moveDragAxes,StudioSceneUnits.GridSpacing);
             }
             return position;
         }
@@ -241,9 +296,9 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 if (!pivotSnapHeld && !gridSnapHeld) return null;
-                string label = pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
+                string label = edgeSnapHeld ? "Edge Snap · "+StudioShortcuts.Label(StudioShortcut.EdgeSnap) : pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
                 if (pivotSnapHeld && gridSnapHeld) label += " (overrides grid)";
-                if (moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
+                if (!edgeSnapHeld && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
                     label += moveDragAxes == MoveAxes.Free ? " · Free" : " · " + moveDragAxes + (((int)moveDragAxes & ((int)moveDragAxes - 1)) == 0 ? " axis" : " plane");
                 return label;
             }

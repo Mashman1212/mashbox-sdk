@@ -49,7 +49,7 @@ namespace MashBoxSDK.AnimationStudio
                 for (int c = 0; c < 8; c++) if (source.UV[c] != null)
                 {
                     var values = used.Select(v => source.UV[c][v]);
-                    if (source.Dimensions[c] == 2) mesh.SetUVs(c, values.Select(v => new Vector2(v.x,v.y)).ToList());
+                    if (source.Dimensions[c] == 1) StudioSubdivisionData.SetUV1(mesh,c,values); else if (source.Dimensions[c] == 2) mesh.SetUVs(c, values.Select(v => new Vector2(v.x,v.y)).ToList());
                     else if (source.Dimensions[c] == 3) mesh.SetUVs(c, values.Select(v => new Vector3(v.x,v.y,v.z)).ToList());
                     else mesh.SetUVs(c, values.ToList());
                 }
@@ -60,7 +60,7 @@ namespace MashBoxSDK.AnimationStudio
                     position = node.position, positionOffset = node.positionOffset, rotation = node.rotation, scale = node.scale,
                     pivotRotation = node.pivotRotation, active = node.active, sourcePath = node.sourcePath, anchorType = node.anchorType,
                     materials = node.materials?.ToArray() ?? Array.Empty<Material>(), previewTextureSlice = node.previewTextureSlice, vertexAOBaked = node.vertexAOBaked,
-                    mesh = mesh, cutPolygons = faces.SelectMany(f => new[] { Faces[f].Submesh, Faces[f].Vertices.Count }.Concat(Faces[f].Vertices.Select(v => remap[v]))).ToArray(),
+                    mesh = mesh, geometryVertices = GeometricIds(used.Select(v=>welded[v])), subdivision=node.subdivision?.Copy(), cutPolygons = faces.SelectMany(f => new[] { Faces[f].Submesh, Faces[f].Vertices.Count }.Concat(Faces[f].Vertices.Select(v => remap[v]))).ToArray(),
                     cutTriangles = mesh.triangles, normalGroups = node.normalGroups != null && node.normalGroups.Length == Positions.Length ? used.Select(v => node.normalGroups[v]).ToArray() : null };
                 part.RotationChannels = node.RotationChannels; part.rotation = node.rotation;
                 return part;

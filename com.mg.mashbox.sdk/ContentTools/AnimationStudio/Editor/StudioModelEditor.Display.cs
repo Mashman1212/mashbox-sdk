@@ -24,7 +24,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void LoadDisplayConfiguration()
         {
+            materialChannelsExpanded = StudioPreferenceStore.GetFloat("Model.MaterialChannelsExpanded", 1) >= .5f;
             LoadPivotLock();
+            if (CenterMode) { pivot = false; EndPivotSnap(); }
             transformChannelsExpanded = StudioPreferenceStore.GetFloat("Model.TransformChannelsExpanded", 1) >= .5f;
             xray = StudioPreferenceStore.GetFloat("Model.ThroughSelection", 1) >= .5f;
             preventNegativeScale = StudioPreferenceStore.GetFloat("Model.PreventNegativeScale", 1) >= .5f;

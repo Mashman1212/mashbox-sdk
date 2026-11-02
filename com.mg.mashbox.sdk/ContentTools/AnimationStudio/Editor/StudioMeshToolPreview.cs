@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
             internal readonly StudioModelDocument.Node Work;
             internal readonly StudioMeshCuts Topology;
             private readonly StudioModelDocument.Node[] nodes;
-            private readonly int[][] polygons, triangles, groups;
+            private readonly int[][] polygons, triangles, groups, geometry;
             internal int PublishedVersion;
             internal bool StructureChanged;
             internal int VertexUpdateStart;
@@ -35,15 +35,17 @@ namespace MashBoxSDK.AnimationStudio
                 polygons = nodes.Select(n => n.cutPolygons?.ToArray()).ToArray();
                 triangles = nodes.Select(n => n.cutTriangles?.ToArray()).ToArray();
                 groups = nodes.Select(n => n.normalGroups?.ToArray()).ToArray();
+                geometry=nodes.Select(n=>n.geometryVertices?.ToArray()).ToArray();
                 Reset(); Work.mesh.MarkDynamic(); Live.MarkDynamic(); Topology = new StudioMeshCuts(Work);
                 PublishedVersion = EditorUtility.GetDirtyCount(Live);
             }
+            internal StudioModelDocument.Node ModifierSourceNode() => new StudioModelDocument.Node {mesh=Source,cutPolygons=polygons[0],cutTriangles=triangles[0],normalGroups=groups[0],geometryVertices=geometry[0]};
             internal void Reset()
             {
                 ReleaseGpuPreview(); IsBevelPreview=false;
                 VertexUpdateStart = 0; PublishedPositions = null; Welds = null; VertexUpdate=null;
                 CopyMesh(Source, Work.mesh);
-                Work.cutPolygons = polygons[0]; Work.cutTriangles = triangles[0]; Work.normalGroups = groups[0];
+                Work.cutPolygons = polygons[0]; Work.cutTriangles = triangles[0]; Work.normalGroups = groups[0];Work.geometryVertices=geometry[0];
             }
             internal void Publish()
             {
@@ -57,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
                 bool updated=!StructureChanged && VertexUpdate!=null && VertexUpdate.Apply(Live,true);
                 if (!updated && !CopyVertexStreams(Work.mesh, Live, start)) CopyMesh(Work.mesh, Live);
                 foreach (var node in nodes)
-                { node.cutPolygons = Work.cutPolygons; node.cutTriangles = Work.cutTriangles; node.normalGroups = Work.normalGroups; }
+                { node.cutPolygons = Work.cutPolygons; node.cutTriangles = Work.cutTriangles; node.normalGroups = Work.normalGroups;node.geometryVertices=Work.geometryVertices; }
                 StudioMeshCuts.ProfileBevelUpload("publish.finish");
                 EditorUtility.SetDirty(Live); PublishedVersion = EditorUtility.GetDirtyCount(Live);
                 StudioMeshCuts.ProfileBevelUpload("publish.dirty");
@@ -72,7 +74,7 @@ namespace MashBoxSDK.AnimationStudio
                 StructureChanged = true;
                 CopyMesh(Source, Live);
                 for (int i = 0; i < nodes.Length; i++)
-                { nodes[i].cutPolygons = polygons[i]; nodes[i].cutTriangles = triangles[i]; nodes[i].normalGroups = groups[i]; }
+                { nodes[i].cutPolygons = polygons[i]; nodes[i].cutTriangles = triangles[i]; nodes[i].normalGroups = groups[i];nodes[i].geometryVertices=geometry[i]; }
                 if (wasDirty) EditorUtility.SetDirty(Live); else EditorUtility.ClearDirty(Live);
             }
             internal void Dispose()

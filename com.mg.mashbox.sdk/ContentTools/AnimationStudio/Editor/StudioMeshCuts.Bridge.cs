@@ -130,6 +130,7 @@ namespace MashBoxSDK.AnimationStudio
             var uv=new List<Vector4>[8];var dimensions=(int[])source.Dimensions.Clone();
             for(int c=0;c<8;c++)uv[c]=source.UV[c]?.ToList()??new List<Vector4>();
             if(uv[0].Count==0){uv[0].AddRange(Enumerable.Repeat(Vector4.zero,positions.Count));dimensions[0]=2;}
+            var geometry=welded.ToList();
             var normalGroups=node.normalGroups!=null&&node.normalGroups.Length==Positions.Length?node.normalGroups.ToList():Enumerable.Range(0,Positions.Length).ToList();
             int nextGroup=normalGroups.Count>0?normalGroups.Max()+1:0;
             var indices=Enumerable.Range(0,mesh.subMeshCount).Select(sub=>mesh.GetTriangles(sub).ToList()).ToArray();
@@ -183,7 +184,7 @@ namespace MashBoxSDK.AnimationStudio
                 var tex=new[]{new Vector2((float)(lengths[i+1]/lengths[count]),0),new Vector2((float)(lengths[i]/lengths[count]),0),new Vector2((float)(lengths[i]/lengths[count]),1),new Vector2((float)(lengths[i+1]/lengths[count]),1)};
                 for(int c=0;c<4;c++)
                 {
-                    int v=from[c];positions.Add(Positions[v]);normals.Add(normal);normalGroups.Add(nextGroup);
+                    int v=from[c];positions.Add(Positions[v]);geometry.Add(welded[v]);normals.Add(normal);normalGroups.Add(nextGroup);
                     if(tangents.Count>0)tangents.Add(new Vector4(tangent.x,tangent.y,tangent.z,handedness));if(colors.Count>0)colors.Add(source.Colors[v]);
                     for(int channel=0;channel<8;channel++)if(uv[channel].Count>0){var value=source.UV[channel]!=null?source.UV[channel][v]:Vector4.zero;if(channel==0){value.x=tex[c].x;value.y=tex[c].y;}uv[channel].Add(value);}
                 }
@@ -194,7 +195,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if(divisions>0)
             {
-                LastBridgeProfile=SubdivideBridge(node,divisions,patchSides,positions,normals,tangents,colors,uv,normalGroups,indices,polygons);
+                LastBridgeProfile=SubdivideBridge(node,divisions,patchSides,positions,normals,tangents,colors,uv,normalGroups,indices,polygons,geometry);
                 LastBridgeProfile.ApplyToBuffers(curvature,positions,normals,tangents);
             }
             // The caller evaluates this on its captured transaction mesh. Everything
@@ -204,12 +205,12 @@ namespace MashBoxSDK.AnimationStudio
             if(tangents.Count>0)mesh.SetTangents(tangents);if(colors.Count>0)mesh.SetColors(colors);
             for(int c=0;c<8;c++)if(uv[c].Count>0)
             {
-                if(dimensions[c]==2)mesh.SetUVs(c,uv[c].Select(v=>new Vector2(v.x,v.y)).ToList());
+                if(dimensions[c]==1)StudioSubdivisionData.SetUV1(mesh,c,uv[c]);else if(dimensions[c]==2)mesh.SetUVs(c,uv[c].Select(v=>new Vector2(v.x,v.y)).ToList());
                 else if(dimensions[c]==3)mesh.SetUVs(c,uv[c].Select(v=>new Vector3(v.x,v.y,v.z)).ToList());
                 else mesh.SetUVs(c,uv[c]);
             }
             mesh.subMeshCount=indices.Length;for(int sub=0;sub<indices.Length;sub++)mesh.SetTriangles(indices[sub],sub,false);mesh.RecalculateBounds();
-            node.cutPolygons=polygons.ToArray();node.cutTriangles=mesh.triangles;node.normalGroups=normalGroups.ToArray();return count*(divisions+1);
+            node.cutPolygons=polygons.ToArray();node.cutTriangles=mesh.triangles;node.normalGroups=normalGroups.ToArray();node.geometryVertices=GeometricIds(geometry);return count*(divisions+1);
         }
     }
 }

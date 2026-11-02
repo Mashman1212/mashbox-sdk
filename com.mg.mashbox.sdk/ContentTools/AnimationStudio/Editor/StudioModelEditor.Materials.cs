@@ -80,11 +80,25 @@ namespace MashBoxSDK.AnimationStudio
             Changed(false);
         }
 
+        private bool materialChannelsExpanded = true;
+        private static readonly GUIContent MaterialChannelHeader = new GUIContent("Materials", EditorGUIUtility.IconContent("Material Icon").image);
         private void DrawMaterialChannels()
         {
             if (!Document || Active<0 || !ActiveMesh) return;
             var node=Document.nodes[Active];
-            GUILayout.Space(8);GUILayout.Label("MATERIALS",StudioTheme.Styles.boldLabel);
+            GUILayout.Space(4);
+            var rect=EditorGUILayout.GetControlRect(false,20);
+            EditorGUI.DrawRect(new Rect(rect.x-4,rect.y,rect.width+8,rect.height),Color.Lerp(StudioTheme.Current.Panel,StudioTheme.Current.Button,.5f));
+            bool expanded=DrawChannelCategoryFoldout(rect, materialChannelsExpanded, MaterialChannelHeader);
+            if(expanded!=materialChannelsExpanded)
+            {
+                materialChannelsExpanded=expanded;
+                StudioPreferenceStore.SetFloat("Model.MaterialChannelsExpanded",expanded?1:0);
+                repaint();
+            }
+            if(!expanded)return;
+            using(new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelTransformInset))
+            {
             int depth=0;
             for(int slot=0;slot<ActiveMesh.subMeshCount;slot++)
             {
@@ -101,7 +115,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(EditorGUI.EndChangeCheck()) { Undo.RecordObject(Document,"Preview material sub-ID");node.previewTextureSlice=slice;ApplyDisplayMaterials();Changed(false); }
                 EditorGUILayout.HelpBox("Previews the selected Sub-ID on the authored mesh, including shared artwork and per-ID shading. Terrain wind and shape deformation are disabled in this modeling preview.",MessageType.None);
             }
-            if(GUILayout.Button("Refresh Material Preview")) { displayTextures=true;ApplyDisplayMaterials();repaint(); }
+            }
         }
 
         private static void ConfigureTexturePreview(Material preview,Material source,int slice)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -147,11 +147,15 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SelectionPaintKeyDown(KeyDownEvent evt)
         {
+            if (studioInputActive != null && studioInputActive() && !EditorGUIUtility.editingTextField)
+                Studio?.ToolbarModelEditor?.UpdatePivotTargetModifiers(new Event { type = EventType.KeyDown, keyCode = evt.keyCode, modifiers = evt.modifiers });
             if (!DispatchSelectionPaintKey(EventType.KeyDown, evt.keyCode, evt.modifiers)) return;
             evt.imguiEvent?.Use(); evt.StopImmediatePropagation();
         }
         private void SelectionPaintKeyUp(KeyUpEvent evt)
         {
+            if (studioInputActive != null && studioInputActive() && !EditorGUIUtility.editingTextField)
+                Studio?.ToolbarModelEditor?.UpdatePivotTargetModifiers(new Event { type = EventType.KeyUp, keyCode = evt.keyCode, modifiers = evt.modifiers });
             if (!DispatchSelectionPaintKey(EventType.KeyUp, evt.keyCode, evt.modifiers)) return;
             evt.imguiEvent?.Use(); evt.StopImmediatePropagation();
         }
@@ -309,8 +313,7 @@ namespace MashBoxSDK.AnimationStudio
             // Mouse gestures are owned here too; changing Unity's navigation profile
             // cannot reintroduce the old bindings after a Studio gesture is remapped.
             if (evt.isMouse && (evt.alt || evt.button != 0) &&
-                !StudioShortcuts.Matches(StudioShortcut.MarkingMenu,evt) &&
-                !StudioShortcuts.Matches(StudioShortcut.AxisMenu,evt) && GUIUtility.hotControl == 0) evt.Use();
+                !StudioRadialMenus.Matches(evt) && GUIUtility.hotControl == 0) evt.Use();
         }
         internal void EnsurePerspectiveCamera()
         {

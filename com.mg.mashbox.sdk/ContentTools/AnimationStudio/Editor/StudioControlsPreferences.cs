@@ -7,23 +7,41 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed class StudioControlsPreferences : EditorWindow
     {
-        private static readonly string[] Pages={"General","Viewport","UV Editor","Appearance","Shortcuts","Profiles"};
+        private static GUIStyle pageTitleStyle,sectionTitleStyle;
+        internal static GUIStyle SectionTitleStyle => sectionTitleStyle ?? (sectionTitleStyle=new GUIStyle(EditorStyles.boldLabel){fontSize=14});
+        private static GUIStyle PageTitleStyle => pageTitleStyle ?? (pageTitleStyle=new GUIStyle(EditorStyles.boldLabel){fontSize=17});
+        private static readonly string[] Pages={"General","Viewport","UV Editor","Themes","Shortcuts","Profiles","Toolbars","Radial Menus"};
         private static readonly string[] Descriptions={
             "Window layout, editing history and modelling handles.",
             "Image quality, grid appearance and viewport performance.",
             "Display settings for UV editing.",
             "Choose a Studio theme or adjust your custom colors.",
             "Find commands and customize their keyboard or mouse bindings.",
-            "Load and export settings and hotkeys independently."};
+            "Load and export settings and hotkeys independently.",
+            "Create and arrange custom toolbar overlays.",
+            "Create radial presets, arrange their commands and assign shortcuts."};
         [SerializeField] private int page;
         private string search = "";
         private Vector2 scroll;
         private string feedback;
+        [SerializeField] private MashBoxStudioViewport owner;
+        private StudioToolbarCustomization toolbarEditor,radialEditor;
+        private string pendingToolbarId,pendingRadialId;
+        private void StopCustomizationInput(){if(toolbarEditor)toolbarEditor.CancelInput();if(radialEditor)radialEditor.CancelInput();}
+        private void OnLostFocus()=>StopCustomizationInput();
+        private void OnFocus(){if(toolbarEditor)toolbarEditor.ReloadEmbedded();if(radialEditor)radialEditor.ReloadEmbedded();}
+        private void OnDisable(){if(toolbarEditor)DestroyImmediate(toolbarEditor);if(radialEditor)DestroyImmediate(radialEditor);toolbarEditor=radialEditor=null;}
+        private void DrawCustomization()
+        {
+            if(!owner)owner=StudioWindowOwnership.FindStudioOwner() as MashBoxStudioViewport;
+            if(page==6){if(!toolbarEditor)toolbarEditor=StudioToolbarCustomization.CreateEmbedded(this,owner,false,pendingToolbarId);pendingToolbarId=null;toolbarEditor.DrawControls();}
+            else {if(!radialEditor)radialEditor=StudioToolbarCustomization.CreateEmbedded(this,owner,true,pendingRadialId);pendingRadialId=null;radialEditor.DrawControls();}
+        }
         private readonly System.Collections.Generic.Dictionary<string, bool> expandedGroups = new System.Collections.Generic.Dictionary<string, bool>();
         private void OnEnable()
         {
             titleContent=new GUIContent("Modelling Studio Preferences");
-            minSize=new Vector2(780,560);
+            minSize=new Vector2(page>=6?960:780,560);
             wantsMouseMove = true;
             wantsMouseEnterLeaveWindow = true;
         }
@@ -31,12 +49,37 @@ namespace MashBoxSDK.AnimationStudio
         {
             StudioModelCommands.RefreshActiveCatalog();
             var window = GetWindow<StudioControlsPreferences>(true,"Modelling Studio Preferences",true);
-            window.minSize = new Vector2(780,560);
+            window.minSize = new Vector2(window.page>=6?960:780,560);
             if(window.position.width<780||window.position.height<560)
                 window.position=new Rect(window.position.x,window.position.y,960,680);
-            var owner = focusedWindow as MashBoxStudioViewport ?? SceneView.lastActiveSceneView as MashBoxStudioViewport ??
+            var owner = focusedWindow as MashBoxStudioViewport ?? window.owner ?? SceneView.lastActiveSceneView as MashBoxStudioViewport ??
                 Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
+            window.owner=owner;
             StudioWindowOwnership.ShowUtility(window, owner);
+        }
+        internal static void OpenCustomization(bool radial,MashBoxStudioViewport view=null,string presetId=null)
+        {
+            Open();
+            var window=Resources.FindObjectsOfTypeAll<StudioControlsPreferences>().FirstOrDefault();if(!window)return;
+            window.StopCustomizationInput();if(view){window.owner=view;StudioWindowOwnership.ShowUtility(window,view);}
+            window.page=radial?7:6;window.scroll=Vector2.zero;
+            if(radial){window.pendingRadialId=presetId;if(window.radialEditor)DestroyImmediate(window.radialEditor);window.radialEditor=null;}
+            else {window.pendingToolbarId=presetId;if(window.toolbarEditor)DestroyImmediate(window.toolbarEditor);window.toolbarEditor=null;}
+            window.minSize=new Vector2(960,560);
+            if(window.position.width<1040)window.position=new Rect(window.position.position,new Vector2(1080,Mathf.Max(680,window.position.height)));
+            window.Repaint();
+        }
+        internal static void OpenThemes()
+        {
+            Open();
+            var window=Resources.FindObjectsOfTypeAll<StudioControlsPreferences>().FirstOrDefault();
+            if(window){window.StopCustomizationInput();window.page=3;window.scroll=Vector2.zero;window.minSize=new Vector2(780,560);window.Repaint();}
+        }
+        internal static void OpenShortcuts(string filter)
+        {
+            Open();
+            var window=Resources.FindObjectsOfTypeAll<StudioControlsPreferences>().FirstOrDefault();
+            if(window){window.StopCustomizationInput();window.page=4;window.search=filter;window.Repaint();}
         }
         private void OnDestroy() => StudioWindowOwnership.CloseOwnedWindows(this);
         private void OnGUI()
@@ -72,7 +115,7 @@ namespace MashBoxSDK.AnimationStudio
                             bool hover=rect.Contains(Event.current.mousePosition);
                             if(page==i||hover)EditorGUI.DrawRect(rect,page==i?StudioTheme.Current.Selection:StudioTheme.Current.Hover);
                             if(GUI.Button(rect,GUIContent.none,GUIStyle.none)&&page!=i)
-                            {page=i;scroll=Vector2.zero;GUI.FocusControl(null);}
+                            {StopCustomizationInput();page=i;scroll=Vector2.zero;minSize=new Vector2(page>=6?960:780,560);GUI.FocusControl(null);}
                             GUI.Label(new Rect(rect.x+12,rect.y,rect.width-20,rect.height),Pages[i],StudioTheme.Styles.label);
                         }
                         GUILayout.FlexibleSpace();
@@ -80,10 +123,11 @@ namespace MashBoxSDK.AnimationStudio
                     GUILayout.Space(12);
                     using(new EditorGUILayout.VerticalScope())
                     {
-                        GUILayout.Label(Pages[page],EditorStyles.boldLabel);
+                        GUILayout.Label(Pages[page],PageTitleStyle);
                         GUILayout.Label(Descriptions[page],EditorStyles.wordWrappedMiniLabel);
                         GUILayout.Space(12);
-                        using(var content=new EditorGUILayout.ScrollViewScope(scroll))
+                        if(page>=6)DrawCustomization();
+                        else using(var content=new EditorGUILayout.ScrollViewScope(scroll))
                         {
                             scroll=content.scrollPosition;
                             float oldLabelWidth=EditorGUIUtility.labelWidth;
@@ -108,7 +152,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawShortcuts()
         {
-            EditorGUILayout.LabelField("Command bindings", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Command bindings", StudioControlsPreferences.SectionTitleStyle);
             EditorGUILayout.HelpBox("Bindings apply to Studio modelling and its UV editor. Unity's shortcut profile is unchanged. Click a binding to record a replacement, + to add an alternative, or × to remove it. Changes save to your active hotkey file. Use Profiles to load or export hotkeys independently from settings.", MessageType.None);
             search = EditorGUILayout.TextField("Find a control",search);
             using (new EditorGUILayout.HorizontalScope())
@@ -211,19 +255,18 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (definition == null) { Close(); return; }
             if (HandleRecordingKey(Event.current)) return;
-            bool mouse = definition.id == StudioShortcut.Orbit || definition.id == StudioShortcut.Pan || definition.id == StudioShortcut.Dolly || definition.id == StudioShortcut.MarkingMenu || definition.id == StudioShortcut.AxisMenu;
-            GUILayout.Label(definition.name,EditorStyles.boldLabel);
-            GUILayout.Label(mouse ? "Click a mouse button here with your chosen modifiers." : "Press a key with your chosen Ctrl/Cmd, Shift or Alt modifiers.",EditorStyles.wordWrappedLabel);
+            GUILayout.Label(definition.name,StudioControlsPreferences.SectionTitleStyle);
+            GUILayout.Label("Press a key or click a mouse button here with your chosen Ctrl/Cmd, Shift or Alt modifiers.",EditorStyles.wordWrappedLabel);
             GUILayout.Label("Escape can be assigned. Use Cancel below to close without changes.",EditorStyles.wordWrappedMiniLabel);
-            if (!mouse) allowShift = EditorGUILayout.ToggleLeft("Also accept Shift with this binding",allowShift);
+            allowShift = EditorGUILayout.ToggleLeft("Also accept Shift with this binding",allowShift);
             if (message != null) EditorGUILayout.HelpBox(message,MessageType.Warning);
             GUILayout.FlexibleSpace();
             cancelRect = GUILayoutUtility.GetRect(new GUIContent("Cancel"),GUI.skin.button,GUILayout.Height(24));
             var evt = Event.current;
             if (evt.type == EventType.MouseDown && cancelRect.Contains(evt.mousePosition)) { evt.Use(); Close(); return; }
             GUI.Button(cancelRect,"Cancel");
-            if (mouse && evt.type == EventType.MouseDown)
-                Capture(new StudioShortcuts.Binding((KeyCode)((int)KeyCode.Mouse0+evt.button),StudioShortcuts.Modifiers(evt)));
+            if (evt.type == EventType.MouseDown && shortcutFocus.IsAcquired && !closingAfterInput)
+                Capture(new StudioShortcuts.Binding((KeyCode)((int)KeyCode.Mouse0+evt.button),StudioShortcuts.Modifiers(evt),allowShift&&!evt.shift));
         }
         private bool HandleRecordingKey(Event evt)
         {
@@ -231,8 +274,7 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand)
             { evt.Use(); return true; }
             if (!evt.isKey) return false;
-            bool mouse = definition.id == StudioShortcut.Orbit || definition.id == StudioShortcut.Pan || definition.id == StudioShortcut.Dolly || definition.id == StudioShortcut.MarkingMenu || definition.id == StudioShortcut.AxisMenu;
-            var binding = evt.type == EventType.KeyDown && !mouse && !IsModifier(evt.keyCode) && evt.keyCode != KeyCode.None
+            var binding = evt.type == EventType.KeyDown && !IsModifier(evt.keyCode) && evt.keyCode != KeyCode.None
                 ? new StudioShortcuts.Binding(evt.keyCode, StudioShortcuts.Modifiers(evt), allowShift && !evt.shift) : null;
             // Consume modifier-only events and releases too. Failed/conflicting
             // captures remain focused; they must not reach Unity's global menu.

@@ -43,7 +43,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void BindPaintingMode()
         {
-            EnsureModelEditor();
+            EnsureModelEditor();modelEditor.SetSubdivisionActive(false);
             viewport.wantsMouseMove = true;
             viewport.Bind(modelEditor.Scene);
             viewport.SetRetopologyPanels(false);

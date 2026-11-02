@@ -106,7 +106,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!modelingMode) modelEditor?.SuspendLighting();
             if (modelingMode)
             {
-                playing = false; EnsureModelEditor();
+                playing = false; EnsureModelEditor();modelEditor.SetSubdivisionActive(true);
                 viewport.Bind(modelEditor.Scene);
                 viewport.BindRigControls(() => modelEditor?.DrawHierarchy(LoadStudioModel));
                 viewport.BindInspector(() => modelEditor?.DrawInspector());

@@ -1,4 +1,4 @@
-using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
+﻿using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,6 +22,25 @@ namespace MashBoxSDK.AnimationStudio
         private readonly Dictionary<StudioModelDocument.Node, StudioMeshCuts> pivotTargetCache = new Dictionary<StudioModelDocument.Node, StudioMeshCuts>();
         private PivotTarget pivotHover;
         private Vector2 pivotPointer;
+        private PivotAction pivotTargetAction;
+        internal void UpdatePivotTargetModifiers(Event evt)
+        {
+            if (!pivot || evt == null || !(evt.isKey || evt.isMouse)) return;
+            bool control = evt.control || evt.command, shift = evt.shift;
+            // Modifier key-up events can still carry the released flag. Derive
+            // that modifier from the actual transition, before shortcuts use it.
+            if (evt.isKey)
+            {
+                bool down = evt.type == EventType.KeyDown;
+                if (evt.keyCode == KeyCode.LeftShift || evt.keyCode == KeyCode.RightShift) shift = down;
+                if (evt.keyCode == KeyCode.LeftControl || evt.keyCode == KeyCode.RightControl) control = down || evt.command;
+                if (evt.keyCode == KeyCode.LeftCommand || evt.keyCode == KeyCode.RightCommand) control = down || evt.control;
+            }
+            var next = PivotActionFor(control, shift);
+            if (next == pivotTargetAction) return;
+            pivotTargetAction = next;
+            repaint();
+        }
         private static readonly Vector2[] PivotPickOffsets = { new Vector2(0, 6), new Vector2(0, -6), new Vector2(6, 0), new Vector2(-6, 0), new Vector2(6, 6), new Vector2(-6, 6), new Vector2(6, -6), new Vector2(-6, -6) };
         internal Quaternion PivotOrientation
         {
@@ -31,6 +50,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             get
             {
+                if (pivot && HasComponentPivot) return componentPivot.orientation;
                 if (!componentAxes) return ObjectPivotOrientation;
                 if (HasComponentPivot) return componentPivot.orientation;
                 if (mode != ComponentMode.Object && ActiveMesh && Components.Count > 0)
@@ -52,11 +72,13 @@ namespace MashBoxSDK.AnimationStudio
         private bool PivotTargetSceneGUI(SceneView view, int selectionId)
         {
             var evt = Event.current;
+            UpdatePivotTargetModifiers(evt);
             if (!pivot || !CanAdjustPivot ||
                 evt.alt || pivotSnapHeld || GUIUtility.hotControl != 0 || evt.type == EventType.MouseLeaveWindow)
             { pivotHover = null; return false; }
             var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
-            if (!canvas.Contains(evt.mousePosition) || (view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition)))
+            var pointer = evt.isKey ? pivotPointer : evt.mousePosition;
+            if (!canvas.Contains(pointer) || (view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(pointer)))
             { pivotHover = null; return false; }
             if (evt.type == EventType.MouseMove || evt.type == EventType.MouseDown)
             {
@@ -66,7 +88,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (evt.type == EventType.KeyDown || evt.type == EventType.KeyUp) repaint();
             if (pivotHover == null || HandleUtility.nearestControl != selectionId) return false;
-            var action = PivotActionFor(evt.control || evt.command, evt.shift);
+            var action = pivotTargetAction;
             if (evt.type == EventType.Repaint) DrawPivotTarget(canvas, action);
             if (evt.type != EventType.MouseDown || evt.button != 0) return false;
             var target = pivotHover;
@@ -77,6 +99,8 @@ namespace MashBoxSDK.AnimationStudio
         internal void ApplyPivotTarget(PivotTarget target, PivotAction action)
         {
             if (target == null || !CanAdjustPivot) return;
+            if (action != PivotAction.Position && action != PivotAction.Aim && !FinitePivotOrientation(target.orientation))
+                throw new InvalidOperationException("Cannot apply a non-finite pivot orientation.");
             var transform = Transforms[Active];
             var orientation = PivotOrientation;
             if (action == PivotAction.Aim)

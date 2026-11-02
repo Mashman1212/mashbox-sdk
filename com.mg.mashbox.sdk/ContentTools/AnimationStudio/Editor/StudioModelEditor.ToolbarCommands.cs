@@ -28,6 +28,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Edit/Repeat Last Action": return "Repeat the last completed modeling action on the current selection using its completed settings.";
                 case "Mesh Display/Soften": return "Immediately blend vertex normals across selected edges regardless of angle.";
                 case "Mesh Display/Harden": return "Split shading normals along selected edges to create sharp shading breaks.";
+                case "Mesh Display/Recalculate Normals": return "Replace custom shading normals with surface normals, preserving existing hard and soft edges.";
                 case "Mesh Display/Soften…": return "Set the angle used to soften edges and preview the shading result.";
                 case "Mesh Display/X-ray Mode": return "Make surfaces transparent and show edges through the mesh.";
                 case "Mesh Display/Wireframe": return "Show polygon edges without drawing shaded surfaces.";

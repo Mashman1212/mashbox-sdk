@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -29,14 +30,65 @@ namespace MashBoxSDK.AnimationStudio
         {
             public string format = "MashBoxStudio.LastLoaded";
             public int version = 1;
-            public string settingsFile = "Settings.json", hotkeysFile = "Hotkeys.json";
+            public string settingsFile = "Profiles/Settings.json", hotkeysFile = "Profiles/Hotkeys.json";
         }
         private static Selection selected;
         private static string activeSettings, activeHotkeys;
         private static bool applyingSettings;
-        internal static string SelectionPath => Path.Combine(DirectoryPath, "LastLoaded.json");
-        internal static string DefaultSettingsPath => Path.Combine(DirectoryPath, "default_settings.json");
-        internal static string DefaultHotkeysPath => Path.Combine(DirectoryPath, "default_hotkeys.json");
+        internal static string SelectionPath => Path.Combine(DirectoryPath, "State", "LastLoaded.json");
+        internal static string RadialMenusDirectory => Path.Combine(DirectoryPath,"RadialMenus");
+        internal static string DefaultSettingsPath => Path.Combine(DirectoryPath, "Defaults", "Settings.json");
+        internal static string DefaultHotkeysPath => Path.Combine(DirectoryPath, "Defaults", "Hotkeys.json");
+        private static bool storageLayoutReady;
+        internal static void EnsureStorageLayout()
+        {
+            if(storageLayoutReady)return;
+            // Move only known project-owned files; explicitly loaded external or
+            // custom profile paths remain where the user selected them.
+            MoveLegacyFile("Settings.json","Profiles/Settings.json");
+            MoveLegacyFile("Hotkeys.json","Profiles/Hotkeys.json");
+            MoveLegacyFile("default_settings.json","Defaults/Settings.json");
+            MoveLegacyFile("default_hotkeys.json","Defaults/Hotkeys.json");
+            MoveLegacyFile("ToolbarOverlay_Settings.json","Layouts/ToolbarOverlays.json");
+            MoveLegacyFile("LastLoaded.json","State/LastLoaded.json");
+            if(File.Exists(SelectionPath))
+            {
+                try
+                {
+                    var saved=JsonUtility.FromJson<Selection>(File.ReadAllText(SelectionPath));
+                    if(saved!=null&&saved.format=="MashBoxStudio.LastLoaded"&&saved.version==1)
+                    {
+                        string settings=RelocatedProfile(saved.settingsFile,false),hotkeys=RelocatedProfile(saved.hotkeysFile,true);
+                        if(settings!=saved.settingsFile||hotkeys!=saved.hotkeysFile)
+                        {saved.settingsFile=settings;saved.hotkeysFile=hotkeys;WriteAtomic(SelectionPath,JsonUtility.ToJson(saved,true));}
+                    }
+                }
+                catch(Exception error){Debug.LogWarning("Could not update relocated Studio profile paths: "+error.Message);}
+            }
+            storageLayoutReady=true;
+        }
+        private static void MoveLegacyFile(string oldRelative,string newRelative)
+        {
+            string source=Path.Combine(DirectoryPath,oldRelative),target=Path.Combine(DirectoryPath,newRelative);
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            if(File.Exists(source))
+            {
+                if(!File.Exists(target))File.Move(source,target);
+                else if(File.ReadAllBytes(source).SequenceEqual(File.ReadAllBytes(target)))File.Delete(source);
+                else Debug.LogWarning("Studio kept both preference files because their contents differ: "+source+" and "+target);
+            }
+            if(!File.Exists(source)&&File.Exists(source+".bak")&&!File.Exists(target+".bak"))File.Move(source+".bak",target+".bak");
+        }
+        private static string RelocatedProfile(string path,bool hotkeys)
+        {
+            if(string.IsNullOrWhiteSpace(path))return path;
+            string name=hotkeys?"Hotkeys.json":"Settings.json";
+            string old=Path.Combine(DirectoryPath,name),next=Path.Combine(DirectoryPath,"Profiles",name);
+            string oldFactory=Path.Combine(DirectoryPath,hotkeys?"default_hotkeys.json":"default_settings.json");
+            string factory=hotkeys?DefaultHotkeysPath:DefaultSettingsPath;
+            if(SamePath(ResolvePath(path),oldFactory)&&!File.Exists(oldFactory)&&File.Exists(factory))return StoredPath(factory);
+            return SamePath(ResolvePath(path),old)&&!File.Exists(old)&&File.Exists(next)?StoredPath(next):path;
+        }
         private static string ResolvePath(string path) => Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(DirectoryPath, path));
         private static bool SamePath(string a, string b) => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
         private static string StoredPath(string path)
@@ -48,6 +100,7 @@ namespace MashBoxSDK.AnimationStudio
         private static void EnsureSelection()
         {
             if (selected != null) return;
+            EnsureStorageLayout();
             selected = new Selection();
             if (File.Exists(SelectionPath))
                 try
@@ -58,8 +111,9 @@ namespace MashBoxSDK.AnimationStudio
                     ResolvePath(saved.settingsFile); ResolvePath(saved.hotkeysFile); selected = saved;
                 }
                 catch (Exception ex) { Debug.LogWarning("MashBox Studio could not read LastLoaded.json: " + ex.Message); }
-            activeSettings = ExistingOrFallback(selected.settingsFile, "Settings.json");
-            activeHotkeys = ExistingOrFallback(selected.hotkeysFile, "Hotkeys.json");
+            selected.settingsFile=RelocatedProfile(selected.settingsFile,false);selected.hotkeysFile=RelocatedProfile(selected.hotkeysFile,true);
+            activeSettings = ExistingOrFallback(selected.settingsFile, "Profiles/Settings.json");
+            activeHotkeys = ExistingOrFallback(selected.hotkeysFile, "Profiles/Hotkeys.json");
         }
         private static string ExistingOrFallback(string saved, string fallback)
         {
@@ -85,8 +139,8 @@ namespace MashBoxSDK.AnimationStudio
             // Loading a factory preset is read-only. Its first edit creates a new
             // personal file rather than changing the preset or another user file.
             string stem = hotkeys ? "Custom_Hotkeys" : "Custom_Settings";
-            string copy = Path.Combine(DirectoryPath, stem + ".json"); int suffix = 2;
-            while (File.Exists(copy)) copy = Path.Combine(DirectoryPath, stem + "_" + suffix++ + ".json");
+            string copy = Path.Combine(DirectoryPath, "Profiles", stem + ".json"); int suffix = 2;
+            while (File.Exists(copy)) copy = Path.Combine(DirectoryPath, "Profiles", stem + "_" + suffix++ + ".json");
             WriteAtomic(copy, File.ReadAllText(path)); SelectFile(hotkeys, copy);
         }
         private static void WriteIfChanged(string path, string json)
@@ -103,12 +157,14 @@ namespace MashBoxSDK.AnimationStudio
             Add(StudioSettings.PreferenceKey, JsonUtility.ToJson(new StudioSettings.Preferences()));
             foreach (var item in new[] { ("Bevel Edges", "Width", .1f), ("Bevel Edges", "Subdivisions", 1f), ("Bevel Edges", "Tension", 1f), ("Bevel Edges", "Junction", 0f), ("Soften Edges", "Angle", 45f), ("Extrude", "Distance", .01f), ("Extrude", "Inset", 0f), ("Extrude", "Together", 1f) })
                 Number(ToolChannelPane.DefaultKey(item.Item1, item.Item2), item.Item3);
-            foreach (string title in new[] { "Bevel", "Soften Edges", "Extrude", "Edit Edge Flow", "Bridge Edges", "Tool Options" }) Number("MashBox.Studio.ToolDragSensitivity." + title, 1);
+            foreach (string title in new[] { "Bevel", "Soften Edges", "Extrude", "Edit Edge Flow", "Bridge Edges", "Bisect", "Tool Options" }) Number("MashBox.Studio.ToolDragSensitivity." + title, 1);
             Number(MashBoxStudioViewport.LeftWidthKey, 260); Number(MashBoxStudioViewport.RightWidthKey, 350); Number(MashBoxStudioViewport.ToolOptionsHeightKey, 220);
             Number(MashBoxStudioViewport.NavigationSensitivityKey, 1);
             Number("Model.BackfaceCulling", 1);
             Number("Model.CheckerMap", 0);
             Number("Model.EdgeLoopCount", 1);
+            Number(ToolChannelPane.DefaultKey("Bisect","Bisect Distance"),.01f);
+            Number(ToolChannelPane.DefaultKey("Bisect","Fill"),1);
             Number(StudioModelEditor.PivotLockKey, 0);
             Number(ToolChannelPane.DefaultKey("Combine Meshes","CombineUVs"),1);
             Number(ToolChannelPane.DefaultKey("Combine Meshes","Pivot"),0);
@@ -130,6 +186,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void WriteFactoryDefaults()
         {
+            EnsureStorageLayout();
             WriteIfChanged(DefaultSettingsPath, JsonUtility.ToJson(FactorySettings(), true));
             WriteIfChanged(DefaultHotkeysPath, StudioShortcuts.FactoryJson());
         }
@@ -145,14 +202,14 @@ namespace MashBoxSDK.AnimationStudio
             // Only factory files may be regenerated. Existing user configuration
             // is read as-is; reading defaults never writes an active profile.
             WriteFactoryDefaults(); EnsureLoaded();
-            if (!File.Exists(SettingsPath) && SamePath(SettingsPath, Path.Combine(DirectoryPath, "Settings.json")))
+            if (!File.Exists(SettingsPath) && SamePath(SettingsPath, Path.Combine(DirectoryPath, "Profiles", "Settings.json")))
             {
                 StudioSettings.Save();
                 foreach (var entry in FactorySettings().entries)
                     if (!data.entries.Exists(e => e.key == entry.key)) data.entries.Add(entry);
                 dirty = true; Flush();
             }
-            if (!File.Exists(HotkeysPath) && SamePath(HotkeysPath, Path.Combine(DirectoryPath, "Hotkeys.json")))
+            if (!File.Exists(HotkeysPath) && SamePath(HotkeysPath, Path.Combine(DirectoryPath, "Profiles", "Hotkeys.json")))
             {
                 string legacy = EditorPrefs.GetString(StudioShortcuts.PreferenceKey, "");
                 WriteAtomic(HotkeysPath, string.IsNullOrEmpty(legacy) ? "{\"format\":\"MashBoxStudio.Hotkeys\",\"version\":1,\"overrides\":[]}" : legacy);
@@ -219,7 +276,7 @@ namespace MashBoxSDK.AnimationStudio
             if (key == StudioShortcuts.PreferenceKey)
             {
                 if (File.Exists(HotkeysPath)) return File.ReadAllText(HotkeysPath);
-                return SamePath(HotkeysPath, Path.Combine(DirectoryPath, "Hotkeys.json")) ? EditorPrefs.GetString(key, fallback) : fallback;
+                return SamePath(HotkeysPath, Path.Combine(DirectoryPath, "Profiles", "Hotkeys.json")) ? EditorPrefs.GetString(key, fallback) : fallback;
             }
             var entry = data.entries.Find(e => e.key == CanonicalKey(key));
             if (entry != null) return entry.value;
@@ -334,7 +391,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static void DrawTransferButtons()
         {
             GUILayout.Label("Configuration files", StudioTheme.Styles.boldLabel);
-            EditorGUILayout.SelectableLabel("Settings: " + SettingsPath + "\nHotkeys: " + HotkeysPath + "\nToolbars: " + StudioToolbarPreferences.PathName, StudioTheme.Styles.wordWrappedMiniLabel, GUILayout.Height(66));
+            EditorGUILayout.SelectableLabel("Settings: " + SettingsPath + "\nHotkeys: " + HotkeysPath + "\nToolbars: " + StudioToolbarPreferences.PathName + "\nRadial menus: " + RadialMenusDirectory, StudioTheme.Styles.wordWrappedMiniLabel, GUILayout.Height(84));
             GUILayout.Label("The last loaded files reopen automatically. Changes save to those files; factory presets create a personal copy on first edit.", StudioTheme.Styles.wordWrappedMiniLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -364,7 +421,7 @@ namespace MashBoxSDK.AnimationStudio
         private static void ExecuteTransfer(bool hotkeys, bool export)
         {
             string name = hotkeys ? "Hotkeys" : "Settings";
-            string path = export ? EditorUtility.SaveFilePanel("Export Studio " + name, DirectoryPath, name, "json") : EditorUtility.OpenFilePanel("Import Studio " + name, DirectoryPath, "json");
+            string path = export ? EditorUtility.SaveFilePanel("Export Studio " + name, Path.Combine(DirectoryPath,"Profiles"), name, "json") : EditorUtility.OpenFilePanel("Import Studio " + name, Path.Combine(DirectoryPath,"Profiles"), "json");
             if (string.IsNullOrEmpty(path)) return;
             try
             {

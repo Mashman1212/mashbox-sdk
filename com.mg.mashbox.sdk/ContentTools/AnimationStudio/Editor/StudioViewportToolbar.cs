@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, DisplayName, true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioViewportToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Viewport";
@@ -42,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Viewport Shading", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 3, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioDisplayToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Display";
@@ -58,6 +58,15 @@ namespace MashBoxSDK.AnimationStudio
         internal const string Id = "MashBox/TransformTools";
         public StudioTransformToolbar() : base(StudioToolbarSelect.Id, StudioToolbarMove.Id,
             StudioToolbarRotate.Id, StudioToolbarScale.Id) { }
+    }
+
+    [Overlay(typeof(MashBoxStudioViewport), Id, "Center & Pivot", true,
+        defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
+        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
+    internal sealed class StudioPivotModeToolbar : ToolbarOverlay
+    {
+        internal const string Id = "MashBox/PivotMode";
+        public StudioPivotModeToolbar() : base(StudioToolbarPivotMode.Id) { }
     }
 
     // Native overlay controls bind to their own containing Studio window. They
@@ -273,6 +282,49 @@ namespace MashBoxSDK.AnimationStudio
     }
 
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
+    internal sealed class StudioToolbarPivotMode : EditorToolbarDropdown, IAccessContainerWindow
+    {
+        internal const string Id = "MashBox/Viewport/PivotMode";
+        private MashBoxStudioViewport view;
+        public EditorWindow containerWindow
+        {
+            get => view;
+            set { Unbind(); view = value as MashBoxStudioViewport; if (panel != null) Bind(); RefreshState(); }
+        }
+        public StudioToolbarPivotMode()
+        {
+            name = "studio-toolbar-pivot-mode";
+            tooltip = "Transform around the selection center or the editing pivot";
+            clicked += OpenMenu;
+            RegisterCallback<AttachToPanelEvent>(_ => Bind());
+            RegisterCallback<DetachFromPanelEvent>(_ => Unbind());
+        }
+        private void Bind()
+        {
+            if (view) { view.StudioToolbarStateChanged -= RefreshState; view.StudioToolbarStateChanged += RefreshState; }
+            RefreshState();
+        }
+        private void Unbind() { if (view) view.StudioToolbarStateChanged -= RefreshState; }
+        private void RefreshState()
+        {
+            var editor = view ? view.Studio?.ToolbarModelEditor : null;
+            SetEnabled(editor != null);
+            bool center = editor?.CenterMode ?? false;
+            text = center ? "Center" : "Pivot";
+            icon = EditorGUIUtility.IconContent(center ? "ToolHandleCenter" : "ToolHandlePivot").image as Texture2D;
+        }
+        private void OpenMenu()
+        {
+            var editor = view ? view.Studio?.ToolbarModelEditor : null;
+            if (editor == null) return;
+            var menu = new GenericMenu();
+            menu.AddItem(new GUIContent("Center"), editor.CenterMode, () => { view.Studio?.ToolbarModelEditor?.SetCenterMode(true); RefreshState(); });
+            menu.AddItem(new GUIContent("Pivot"), !editor.CenterMode, () => { view.Studio?.ToolbarModelEditor?.SetCenterMode(false); RefreshState(); });
+            menu.DropDown(worldBound);
+        }
+    }
+
+    [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
     internal sealed class StudioToolbarOrientation : EditorToolbarDropdown, IAccessContainerWindow
     {
         internal const string Id = "MashBox/Viewport/Orientation";
@@ -322,7 +374,7 @@ namespace MashBoxSDK.AnimationStudio
         internal const string Id = "MashBox/Viewport/Grid";
         public StudioToolbarGrid() : base("studio-toolbar-grid", "GridLayoutGroup Icon", "Show modeling grid") { }
         protected override bool Read(StudioModelEditor editor) => view.modelGridVisible;
-        protected override void Apply(StudioModelEditor editor, bool enabled) => view.modelGridVisible = enabled;
+        protected override void Apply(StudioModelEditor editor, bool enabled) => view.SetModelGridVisible(enabled);
     }
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
     internal sealed class StudioToolbarWireOnly : StudioToolbarToggle

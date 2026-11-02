@@ -54,6 +54,7 @@ namespace MashBoxSDK.AnimationStudio
                 for (int s = 0; s < render.Length; s++) mesh.SetIndices(render[s], MeshTopology.Triangles, s, false);
             }
             node.cutPolygons = polygons.ToArray(); node.cutTriangles = mesh.triangles;
+            node.geometryVertices = StudioSubdivisionData.Identity(mesh.vertexCount);
         }
     }
 }

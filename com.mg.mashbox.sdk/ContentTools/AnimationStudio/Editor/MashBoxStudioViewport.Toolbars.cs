@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
@@ -176,7 +176,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void RestoreFactoryToolbarPlacements(HashSet<string> savedIds)
         {
-            string[] top = { StudioGridToolbar.Id, StudioViewportToolbar.Id, StudioDisplayToolbar.Id,
+            string[] top = { StudioGridToolbar.Id, StudioPivotModeToolbar.Id, StudioViewportToolbar.Id, StudioDisplayToolbar.Id,
                 StudioPolygonPrimitivesToolbar.Id, StudioMeshToolsToolbar.Id, StudioMeshDisplayToolbar.Id };
             string[] left = { StudioTransformToolbar.Id, StudioSelectionToolbar.Id };
             void Place(string[] ids, string container, int layout)
@@ -420,6 +420,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void AddStudioToolbarMenu(StudioMenu menu)
         {
             menu.AddItem(new GUIContent("Toolbars/Customize Toolbars…"), false, () => StudioToolbarCustomization.Open(this), commandKey: "Toolbars/Customize", shortcutEligible: false);
+            menu.AddItem(new GUIContent("Radial Menus/Customize Radial Menus…"), false, () => StudioToolbarCustomization.OpenRadial(this), commandKey: "RadialMenus/Customize", shortcutEligible: false);
             menu.AddItem(new GUIContent("Toolbars/Restore Default Layout"), false, RestoreDefaultToolbarLayout, commandKey: "Toolbars/RestoreDefaultLayout", shortcutEligible: false);
             menu.AddSeparator("Toolbars");
             // Unity's canvas is the registry. Query it when opening the menu so
@@ -465,6 +466,14 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
         }
+        internal void SetModelGridVisible(bool visible)
+        {
+            if (modelGridVisible == visible) return;
+            modelGridVisible = visible;
+            StudioPreferenceStore.SetFloat("Studio.GridVisible", visible ? 1 : 0);
+            SyncStudioToolbarState();
+            MarkDirty(DirtyState.Scene);
+        }
         internal void SyncStudioToolbarState(bool force = false)
         {
             SyncStudioToolbarVisibility();
@@ -472,7 +481,7 @@ namespace MashBoxSDK.AnimationStudio
             int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.Wireframe ? 16 : 0) |
-                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0) | (editor.ToolbarComponentAxes ? 262144 : 0) | (editor.CheckerMap ? 524288 : 0);
+                (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0) | (editor.ToolbarComponentAxes ? 262144 : 0) | (editor.CheckerMap ? 524288 : 0) | (editor.CenterMode ? 1048576 : 0);
             // Track selection identity without reading skin bind-pose arrays on
             // every dirty redraw. Controls validate component editing on refresh.
             var mesh = editor?.ActiveMesh;

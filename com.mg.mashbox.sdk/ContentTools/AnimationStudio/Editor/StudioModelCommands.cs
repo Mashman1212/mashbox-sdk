@@ -38,6 +38,7 @@ namespace MashBoxSDK.AnimationStudio
             if (key.StartsWith("Mesh Tools/Deform/", StringComparison.Ordinal)) return key.Substring("Mesh Tools/".Length);
             if (key == "Modify/Lock Pivot" || key == "Modify/Finish Pivot Edit") return "Modify/Edit Pivot";
             if (key == "Mesh/UV Editor") return "UV/UV Editor";
+            if (key == "Modify/Clear History") return "Mesh Display/Bake Subdivision";
             return key;
         }
         internal static string ToolbarKey(string category, string label, string explicitKey) => Canonical(category, explicitKey ?? label);
@@ -50,7 +51,7 @@ namespace MashBoxSDK.AnimationStudio
                 return (StudioShortcut)(int)(hash | 0x80000000u);
             }
         }
-        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection", "Select/Grow Selection", "Select/Shrink Selection", "Edit/Repeat Last Action", "Mesh Tools/Bridge Edges", "Modify/Group" };
+        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection", "Select/Grow Selection", "Select/Shrink Selection", "Edit/Repeat Last Action", "Mesh Tools/Bridge Edges", "Modify/Group", "Mesh Display/Subdivision Preview" };
         internal static StudioShortcut StableId(string key) => Hash(key);
         internal static StudioShortcuts.Binding[] StandardBindings(string key)
         {
@@ -63,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
             if (key == "Select/Isolate Selected") return new[] { new StudioShortcuts.Binding(KeyCode.W, StudioModifiers.Shift) };
             if (key == "Select/Invert Selection") return new[] { new StudioShortcuts.Binding(KeyCode.I, StudioModifiers.Action) };
             if (key == "Select/Grow Selection") return new[] { new StudioShortcuts.Binding(KeyCode.Period) };
+            if (key == "Mesh Display/Subdivision Preview") return new[] { new StudioShortcuts.Binding(KeyCode.F3) };
             if (key == "Modify/Group") return new[] { new StudioShortcuts.Binding(KeyCode.G, StudioModifiers.Action) };
             if (key == "Edit/Repeat Last Action") return new[] { new StudioShortcuts.Binding(KeyCode.G) };
             if (key == "Select/Shrink Selection") return new[] { new StudioShortcuts.Binding(KeyCode.Comma) };
@@ -85,6 +87,7 @@ namespace MashBoxSDK.AnimationStudio
             int slash = key.IndexOf('/');
             bool deform = key.StartsWith("Deform/", StringComparison.Ordinal);
             definitions[id] = new StudioShortcuts.Definition(id, deform ? "Mesh Tools" : key=="Mesh Display/Wireframe"||key=="Mesh Display/Shaded Wireframe"||key=="Mesh Display/X-ray Mode" ? "View" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key == "Mesh Tools/Merge Vertices" ? "Merge to Center" : key.Substring(slash + 1), defaults);
+            if(key=="Mesh Display/Bake Subdivision")definitions[id]=new StudioShortcuts.Definition(id,"Modify","Clear History",defaults);
             paths[id] = key; keys[key] = id; ordered = null;
             StudioShortcuts.CatalogChanged();
             return id;
@@ -100,7 +103,7 @@ namespace MashBoxSDK.AnimationStudio
                 case StudioShortcut.LargerHandles: case StudioShortcut.SmallerHandles: return "View";
                 case StudioShortcut.Frame: case StudioShortcut.SelectAll: case StudioShortcut.Object: case StudioShortcut.Vertex:
                 case StudioShortcut.Edge: case StudioShortcut.Face: case StudioShortcut.PaintSelection: case StudioShortcut.UnpaintSelection: return "Select";
-                case StudioShortcut.Pivot: case StudioShortcut.VertexSnap: case StudioShortcut.GridSnap: case StudioShortcut.AxisMenu: return "Modify";
+                case StudioShortcut.Pivot: case StudioShortcut.VertexSnap: case StudioShortcut.EdgeSnap: case StudioShortcut.GridSnap: case StudioShortcut.AxisMenu: return "Modify";
                 case StudioShortcut.Select: case StudioShortcut.Move: case StudioShortcut.Rotate: case StudioShortcut.Scale: return "Modify";
                 case StudioShortcut.Extrude: case StudioShortcut.CommitCut: case StudioShortcut.RemoveCut: return "Mesh Tools";
                 case StudioShortcut.XRay: return "View";
@@ -109,14 +112,35 @@ namespace MashBoxSDK.AnimationStudio
                 default: return fallback;
             }
         }
+        internal static void SyncRadialMenus(List<StudioCustomToolbarDefinition> menus)
+        {
+            var live=new HashSet<StudioShortcut>(menus.Select(x=>StudioRadialMenus.Shortcut(x.id)));
+            bool changed=false;
+            foreach(var id in definitions.Where(x=>x.Value.group=="Radial Menus"&&!live.Contains(x.Key)).Select(x=>x.Key).ToArray())
+            { if(paths.TryGetValue(id,out var old))keys.Remove(old);paths.Remove(id);definitions.Remove(id);changed=true; }
+            foreach(var menu in menus)
+            {
+                var id=StudioRadialMenus.Shortcut(menu.id);
+                if(definitions.TryGetValue(id,out var old)&&old.group=="Radial Menus"&&old.name==menu.name)continue;
+                var defaults=id==StudioShortcut.MarkingMenu?new[]{new StudioShortcuts.Binding(KeyCode.Mouse1,allowShift:true),new StudioShortcuts.Binding(KeyCode.Mouse1,StudioModifiers.Action)}:
+                    id==StudioShortcut.AxisMenu?new[]{new StudioShortcuts.Binding(KeyCode.Mouse1,StudioModifiers.Action|StudioModifiers.Shift)}:Array.Empty<StudioShortcuts.Binding>();
+                string key="Radial Menus/"+menu.id;
+                definitions[id]=new StudioShortcuts.Definition(id,"Radial Menus",menu.name,defaults);
+                if((int)id<0){keys[key]=id;paths[id]=key;}
+                changed=true;
+            }
+            if(changed){ordered=null;StudioShortcuts.CatalogChanged();}
+        }
         internal static StudioShortcuts.Definition[] Definitions(StudioShortcuts.Definition[] builtins)
         {
+            StudioRadialMenus.EnsureRegistered();
             if (ordered != null) return ordered;
             var combined = builtins.Where(d => d.id != StudioShortcut.Preferences).Select(d => Find(d.id) ?? new StudioShortcuts.Definition(d.id, BuiltinGroup(d.id, d.group), d.name, d.defaults))
                 .Concat(definitions.Values.Where(d => (int)d.id < 0));
             int Order(string group) { int i = Array.IndexOf(StudioModelEditor.ModelMenuTitles, group); return i < 0 ? int.MaxValue : i; }
             return ordered = combined.OrderBy(d => Order(d.group)).ThenBy(d => d.group, StringComparer.Ordinal).ThenBy(d => d.name, StringComparer.Ordinal).ToArray();
         }
+        internal static StudioModelDocument ActiveDocument => active != null && active.TryGetTarget(out var editor) ? editor.Document : null;
         internal static void SetActive(StudioModelEditor editor) => active = new WeakReference<StudioModelEditor>(editor);
         internal static void RefreshActiveCatalog() { if (active != null && active.TryGetTarget(out var editor)) editor.RefreshModelCommandCatalog(); }
         internal static void Release(StudioModelEditor editor)

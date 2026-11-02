@@ -61,7 +61,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static bool SetViewportCameraLens(SceneView view, float fov, float near, float far, bool automatic)
         {
             if (!view || !Finite(fov) || !Finite(near) || !Finite(far)) return false;
-            near = Mathf.Max(.0001f, near); far = Mathf.Max(near + .001f, far);
+            near = Mathf.Max(.000001f, near); far = Mathf.Max(near + Mathf.Max(.000001f,near*.001f), far);
             if (far <= near) return false;
             var position = ViewportCameraPosition(view);
             view.cameraSettings.fieldOfView = Mathf.Clamp(fov, 1, 179);
@@ -92,17 +92,19 @@ namespace MashBoxSDK.AnimationStudio
         private static float CameraFloatField(string label, float value)
         {
             EditorGUI.BeginChangeCheck();
-            float edited = EditorGUILayout.FloatField(label, CameraDisplayValue(value));
+            float edited = StudioSceneUnits.Field(label, value);
             return EditorGUI.EndChangeCheck() ? edited : value;
         }
         private static Vector3 CameraVectorField(string label, Vector3 value)
         {
+            bool distance=label=="Position";
+            var original=value;if(distance)value=new Vector3(StudioSceneUnits.Display(value.x),StudioSceneUnits.Display(value.y),StudioSceneUnits.Display(value.z));
             var displayed = new Vector3(CameraDisplayValue(value.x), CameraDisplayValue(value.y), CameraDisplayValue(value.z));
-            var edited = EditorGUILayout.Vector3Field(label, displayed);
+            var edited = EditorGUILayout.Vector3Field(distance?label+" ("+StudioSceneUnits.Symbol+")":label, displayed);
             // Editing one axis must not round the other camera components.
-            return new Vector3(edited.x != displayed.x ? edited.x : value.x,
-                edited.y != displayed.y ? edited.y : value.y,
-                edited.z != displayed.z ? edited.z : value.z);
+            return new Vector3(edited.x != displayed.x ? (distance?StudioSceneUnits.Internal(edited.x):edited.x) : original.x,
+                edited.y != displayed.y ? (distance?StudioSceneUnits.Internal(edited.y):edited.y) : original.y,
+                edited.z != displayed.z ? (distance?StudioSceneUnits.Internal(edited.z):edited.z) : original.z);
         }
         private void DrawViewportCameraOptions()
         {

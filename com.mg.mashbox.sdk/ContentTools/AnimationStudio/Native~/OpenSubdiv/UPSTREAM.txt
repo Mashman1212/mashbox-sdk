@@ -1,0 +1,1 @@
+OpenSubdiv v3_6_1 f26d0dedeaf846ea321865a527bb4489691c2f04 https://github.com/PixarAnimationStudios/OpenSubdiv
