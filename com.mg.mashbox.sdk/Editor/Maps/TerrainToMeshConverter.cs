@@ -102,6 +102,9 @@ namespace MashBoxSDK.MapTools
 
         public static GameObject Convert(Terrain terrain, string assetFolder, TerrainConversionOptions options)
         {
+#if !UNITY_6000_0_OR_NEWER
+            throw new NotSupportedException("MG Terrain conversion requires Unity 6 or newer.");
+#else
             if (terrain == null || terrain.terrainData == null)
                 throw new ArgumentException("A Terrain with valid Terrain Data is required.", nameof(terrain));
             if (options == null)
@@ -263,6 +266,7 @@ namespace MashBoxSDK.MapTools
 
             Debug.Log($"Converted Unity Terrain '{terrain.name}' to MG Terrain '{root.name}'. Assets were written to {assetFolder}.", root);
             return root;
+#endif
         }
 
         public static string ToProjectAssetPath(string absoluteFolder)

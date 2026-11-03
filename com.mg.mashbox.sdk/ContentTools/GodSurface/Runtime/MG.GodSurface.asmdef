@@ -3,5 +3,6 @@
   "rootNamespace": "MG.GodSurface",
   "references": ["Unity.Collections", "Unity.Burst"],
   "allowUnsafeCode": true,
-  "autoReferenced": true
+  "autoReferenced": true,
+  "defineConstraints": ["UNITY_6000_0_OR_NEWER"]
 }

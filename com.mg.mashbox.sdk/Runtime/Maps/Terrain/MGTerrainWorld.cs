@@ -113,13 +113,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnEnable()
         {
+#if UNITY_6000_0_OR_NEWER
             EnsureGrassInteractionMap();
             RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
             RefreshChunks();
+#endif
         }
 
         void OnDisable()
         {
+#if UNITY_6000_0_OR_NEWER
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
             // Rebind while disabled, so children fall back to standalone or an outer world.
             foreach (var chunk in m_Chunks.ToArray())
@@ -127,13 +130,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
 #if UNITY_6000_0_OR_NEWER
             DisposeWorldRenderer();
 #endif
+#endif
         }
 
         void OnValidate()
         {
+#if UNITY_6000_0_OR_NEWER
             ApplySharedQuality();
             foreach (var chunk in m_Chunks)
                 if (chunk != null) chunk.InvalidateRenderCache();
+#endif
         }
 
         void OnTransformChildrenChanged() => RefreshChunks();
@@ -221,6 +227,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         static readonly Unity.Profiling.ProfilerMarker s_WorldRenderMarker = new Unity.Profiling.ProfilerMarker("MGTerrain.WorldRender");
         void Render(Camera camera)
         {
+#if UNITY_6000_0_OR_NEWER
             using var profile = s_WorldRenderMarker.Auto();
             if (m_Rendering || camera == null || camera.cameraType == CameraType.Preview) return;
             m_Rendering = true;
@@ -268,6 +275,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_CellBuildTiles.Clear();
                 m_Rendering = false;
             }
+#endif
         }
 
         // Integer remainder is carried forward; allocations never exceed the world budget.

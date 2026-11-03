@@ -74,10 +74,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnEnable()
         {
+#if UNITY_6000_0_OR_NEWER
             previousTime = Time.realtimeSinceStartupAsDouble; failed = false; clearRequested = true;
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.update -= EditorTick;
             UnityEditor.EditorApplication.update += EditorTick;
+#endif
 #endif
         }
         void OnDisable()
@@ -131,6 +133,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         }
         void Tick()
         {
+#if UNITY_6000_0_OR_NEWER
             double now = Time.realtimeSinceStartupAsDouble;
             float delta = Application.isPlaying ? Time.deltaTime : (float)(now - previousTime);
             previousTime = now;
@@ -165,6 +168,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             finally { Profiler.EndSample(); }
             elapsed = 0;
             Publish();
+#endif
         }
 
         bool EnsureResources()

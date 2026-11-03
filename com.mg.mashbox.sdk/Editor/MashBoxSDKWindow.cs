@@ -389,11 +389,15 @@ namespace MashBoxSDK.SDKMain
                     EnsureHiddenToolWindow(ref grassShapeTool).Draw();
                     break;
                 case ContentToolTab.GodSurface:
+#if UNITY_6000_0_OR_NEWER
                     EditorGUILayout.HelpBox("Share prop textures and render repeated meshes through automatic spatial cells. Keep placing props and colliders normally.", MessageType.Info);
                     if (GUILayout.Button("Open God Surface Cells", GUILayout.Height(28)))
                         System.Type.GetType("MG.GodSurface.Editor.MGSurfaceWindow, MG.GodSurface.Editor", true).GetMethod("Open").Invoke(null, null);
                     if (GUILayout.Button("Open God Surface Library Baker", GUILayout.Height(28)))
                         System.Type.GetType("MG.GodSurface.Editor.MGSurfaceBakeWindow, MG.GodSurface.Editor", true).GetMethod("Open").Invoke(null, null);
+#else
+                    EditorGUILayout.HelpBox("God Surface requires Unity 6 or newer.", MessageType.Info);
+#endif
                     break;
                 case ContentToolTab.MachEquipManager:
                     DrawMachEquipManager();

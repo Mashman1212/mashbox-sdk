@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+#if !UNITY_6000_0_OR_NEWER
+// Keep serialized terrain settings loadable; terrain execution requires Unity 6.
+using PhysicsMaterial = UnityEngine.PhysicMaterial;
+#endif
 
 namespace MashBoxSDK.Maps.TerrainSystem
 {
@@ -70,6 +74,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         }
         void FixedUpdate()
         {
+#if UNITY_6000_0_OR_NEWER
             if (!Application.isPlaying) return;
             if (m_DetailCollisionTarget) UpdateDetailColliders(m_DetailCollisionTarget.position);
             else
@@ -79,6 +84,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 if (m_DetailCollisionCamera) UpdateDetailColliders(m_DetailCollisionCamera.transform.position);
                 else if (m_DetailCollisionCells.Count > 0) ReleaseDetailColliders();
             }
+#endif
         }
         public void InvalidateDetailColliders() { m_DetailCollisionDirty = true; }
         public void ReleaseDetailColliders()
@@ -122,6 +128,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         }
         public void UpdateDetailColliders(Vector3 focus, bool force = false)
         {
+#if UNITY_6000_0_OR_NEWER
             if (!isActiveAndEnabled) return;
             bool any = false;
             foreach (var layer in m_DensityDetailLayers) if (layer?.CapsuleCollision?.enabled == true) { any = true; break; }
@@ -191,6 +198,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 var collider = m_DetailColliderPool.Pop(); if (!collider) continue;
                 if (Application.isPlaying) Destroy(collider.gameObject); else DestroyImmediate(collider.gameObject);
             }
+#endif
         }
         DetailCollisionCell BuildDetailCollisionCell(int layerIndex, DensityDetailLayer layer, Prototype prototype, Bounds bounds, int cells, int firstX, int firstZ, Matrix4x4 terrainMatrix)
         {

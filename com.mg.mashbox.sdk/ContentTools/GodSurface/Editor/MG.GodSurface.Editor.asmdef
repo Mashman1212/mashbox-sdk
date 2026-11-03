@@ -2,5 +2,6 @@
   "name": "MG.GodSurface.Editor",
   "references": ["MG.GodSurface", "Unity.Collections", "MashBoxSDK", "MashBoxSDK.Tools.Editor", "MashBox.Exporting"],
   "includePlatforms": ["Editor"],
-  "autoReferenced": true
+  "autoReferenced": true,
+  "defineConstraints": ["UNITY_6000_0_OR_NEWER"]
 }

@@ -156,6 +156,7 @@ namespace MashBoxSDK.MapTools
 
         void OnEnable()
         {
+#if UNITY_6000_0_OR_NEWER
             // Unity forbids reading Editor.targets inside OnSceneGUI.
             m_HasMultipleTargets = targets.Length > 1;
             if (target is MGTerrain terrain)
@@ -197,6 +198,7 @@ namespace MashBoxSDK.MapTools
             m_MaxDetailVerticesPerUpload = serializedObject.FindProperty("m_MaxDetailVerticesPerUpload");
             m_MaxDetailMeshUploadsPerFrame = serializedObject.FindProperty("m_MaxDetailMeshUploadsPerFrame");
             m_MaxPendingDetailBuilds = serializedObject.FindProperty("m_MaxPendingDetailBuilds");
+#endif
         }
 
 
@@ -247,6 +249,7 @@ namespace MashBoxSDK.MapTools
 
         public override void OnInspectorGUI()
         {
+#if UNITY_6000_0_OR_NEWER
             MGTerrainGizmos.DrawSettings();
             m_CurrentMeasurements.Draw(targets.Cast<MGTerrain>().ToArray());
             DrawCollisionParticipation();
@@ -567,6 +570,9 @@ namespace MashBoxSDK.MapTools
                     SceneView.RepaintAll();
                 }
             }
+#else
+            EditorGUILayout.HelpBox("MG Terrain requires Unity 6 or newer.", MessageType.Info);
+#endif
         }
 
         int ClearDetailsUnderLofts(MGTerrain terrain, bool confirmed = false)
@@ -1884,11 +1890,13 @@ namespace MashBoxSDK.MapTools
 
         void OnDisable()
         {
+#if UNITY_6000_0_OR_NEWER
             ClearDetailPrototypeThumbnails();
             SetHolePainting(false);
             SetDetailPainting(false);
             Undo.undoRedoPerformed -= RefreshPaintUndo;
             EditorApplication.update -= UpdateDetailPaintPreview;
+#endif
         }
 
         void RefreshPaintUndo()
@@ -1920,6 +1928,7 @@ namespace MashBoxSDK.MapTools
 
         void OnSceneGUI()
         {
+#if UNITY_6000_0_OR_NEWER
             if (m_HasMultipleTargets) return;
             DrawHoleSceneGUI();
             if (!m_DetailPainting) return;
@@ -2012,6 +2021,7 @@ namespace MashBoxSDK.MapTools
                 }
             }
             e.Use();
+#endif
         }
 
         void ApplyDetailBrushAdjustmentDelta(Vector2 delta)

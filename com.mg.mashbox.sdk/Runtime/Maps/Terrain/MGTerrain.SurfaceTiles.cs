@@ -152,15 +152,23 @@ namespace MashBoxSDK.Maps.TerrainSystem
             || (m_MasterRenderingSuppressed ? m_MasterWasForceRenderingOff : MeshRenderer.forceRenderingOff)
             ? 0 : m_CombinedSurface || m_SurfaceTiles.Count == 0 ? 1 : SurfaceTileCount;
 
-        void LateUpdate() { RefreshSurfaceTiles(); PumpSurfaceLods(); }
+        void LateUpdate()
+        {
+#if UNITY_6000_0_OR_NEWER
+            RefreshSurfaceTiles();
+            PumpSurfaceLods();
+#endif
+        }
 
         void PrepareSurfaceForCamera(Camera camera)
         {
+#if UNITY_6000_0_OR_NEWER
             using var profile = s_SurfaceRenderingMarker.Auto();
             ApplyFarGrassProperties();
             RefreshDistantMorphBounds();
             RefreshSurfaceTiles();
             SelectSurfaceRendering(camera);
+#endif
         }
 
         // Select cached geometry before this camera's culling. Source data is never swapped.

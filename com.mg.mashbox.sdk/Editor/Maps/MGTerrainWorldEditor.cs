@@ -130,12 +130,16 @@ namespace MashBoxSDK.MapTools
         }
         public override void OnInspectorGUI()
         {
+#if UNITY_6000_0_OR_NEWER
             var world = (MGTerrainWorld)target;
             MashBoxSDK.EditorResources.MashBoxInspectorHeaderUtility.DrawScriptHeader();
             EditorGUILayout.LabelField("MG Terrain World", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Manage terrain tiles, paint details, tune rendering and bake your world in the Terrain World window.", MessageType.None);
             if (GUILayout.Button("Open Terrain World", GUILayout.Height(32))) MGTerrainWorldWindow.Open(world);
             EditorGUILayout.LabelField("Registered tiles", world.Chunks.Count.ToString("N0"));
+#else
+            EditorGUILayout.HelpBox("MG Terrain requires Unity 6 or newer.", MessageType.Info);
+#endif
         }
 
         void DrawSurfaceLodPreview(MGTerrainWorld world)

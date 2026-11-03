@@ -50,6 +50,7 @@ namespace MashBoxSDK.MapTools
 
         void OnEnable()
         {
+#if UNITY_6000_0_OR_NEWER
             wantsMouseEnterLeaveWindow = true;
             titleContent = new GUIContent("Terrain World", EditorGUIUtility.IconContent("Terrain Icon").image);
             minSize = new Vector2(440, 360);
@@ -61,6 +62,7 @@ namespace MashBoxSDK.MapTools
             EditorApplication.delayCall += RefreshWorlds;
             RefreshWorlds();
             FollowSelection();
+#endif
         }
 
         void OnDisable()
@@ -175,6 +177,7 @@ namespace MashBoxSDK.MapTools
 
         void OnGUI()
         {
+#if UNITY_6000_0_OR_NEWER
             if (Event.current.type == EventType.MouseEnterWindow || Event.current.type == EventType.MouseLeaveWindow)
             {
                 RefreshBrushHover();
@@ -202,6 +205,9 @@ namespace MashBoxSDK.MapTools
             finally { EditorGUILayout.EndScrollView(); }
             GUILayout.Space(4);
             EditorGUILayout.LabelField("Scene: " + m_World.gameObject.scene.name + "   •   " + (m_Locked ? "Target locked" : "Follows terrain selection"), EditorStyles.miniLabel);
+#else
+            EditorGUILayout.HelpBox("MG Terrain requires Unity 6 or newer.", MessageType.Info);
+#endif
         }
 
         void DrawTargetBar()

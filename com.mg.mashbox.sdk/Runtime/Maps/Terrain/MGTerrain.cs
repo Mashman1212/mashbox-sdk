@@ -372,6 +372,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnEnable()
         {
+#if UNITY_6000_0_OR_NEWER
             ResolveComponents();
             if (!NeedsCollision) DisableSurfaceCollision();
             NotifySurfaceMeshChanged(true);
@@ -393,10 +394,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     + $"GPUResident={m_UseBatchRendererGroup}, mesh='{(m_MeshFilter != null && m_MeshFilter.sharedMesh != null ? m_MeshFilter.sharedMesh.name : "none")}'.",
                     this);
             }
+#endif
         }
 
         void OnDisable()
         {
+#if UNITY_6000_0_OR_NEWER
             ReleaseDetailColliders();
             RefreshWorldOwnership();
 #if UNITY_EDITOR
@@ -410,18 +413,22 @@ namespace MashBoxSDK.Maps.TerrainSystem
             ReleaseDetailRenderCache();
             ReleaseInstancedMaterials();
             m_TreeInstanceCells.Clear();
+#endif
         }
 
         void OnDestroy()
         {
+#if UNITY_6000_0_OR_NEWER
             ReleaseRuntimeEditingMeshes();
 #if UNITY_EDITOR
             MashBoxSDK.Maps.Roads.MGRoadSceneRegistry.Unregister(this);
+#endif
 #endif
         }
 
         void OnValidate()
         {
+#if UNITY_6000_0_OR_NEWER
             ResolveComponents();
             // Component settings/Undo recording do not change mesh topology.
             // Source, layout and tile-setting changes are checked by the cache;
@@ -429,22 +436,27 @@ namespace MashBoxSDK.Maps.TerrainSystem
             NotifySurfaceMeshChanged();
             InitializeDetailSettingsIfNeeded();
             InvalidateRenderCache();
+#endif
         }
 
         void OnTransformChildrenChanged() => InvalidateRenderCache();
 
         void OnRenderObject()
         {
+#if UNITY_6000_0_OR_NEWER
             if (m_World != null) return;
             RefreshSurfaceTiles();
             if (GraphicsSettings.currentRenderPipeline == null)
                 RenderInstances(Camera.current);
+#endif
         }
 
         void OnBeginCameraRendering(ScriptableRenderContext context, Camera camera)
         {
+#if UNITY_6000_0_OR_NEWER
             PrepareSurfaceForCamera(camera);
             RenderInstances(camera);
+#endif
         }
 
         public void Configure(MeshFilter meshFilter, MeshRenderer meshRenderer, MeshCollider meshCollider)
@@ -644,6 +656,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void RenderInstances(Camera camera)
         {
+#if UNITY_6000_0_OR_NEWER
             using var profile = s_InstanceUpdateMarker.Auto();
             if (EditorDetailsHidden && m_AppearanceCaptureCamera == null) return;
             if (camera == null || camera.cameraType == CameraType.Preview) return;
@@ -681,6 +694,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
             RenderDensityDetails(camera, planes);
 #if UNITY_6000_0_OR_NEWER
             if (!m_WorldDefersDraw) UpdateTerrainOcclusion(camera);
+#endif
 #endif
         }
 
