@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
             extrusionInset = ToolChannelPane.GetFloatDefault("Extrude", "Inset", 0);
             extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         }
-        private enum LiveTool { Bevel, Merge, Soften, Extrude, EdgeFlow, Bridge }
+        private enum LiveTool { Bevel, Merge, Soften, Extrude, EdgeFlow, Bridge, Weld }
         private StudioMeshToolPreview livePreview;
         private LiveTool liveTool, queuedTool;
         private bool previewQueued, liveValid, liveEvaluated;
@@ -40,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         private List<Vector4> liveExtrusionUV4 = new List<Vector4>();
         private void RepaintLiveToolPanes()
         {
+            if (rangeWeldToolPane) rangeWeldToolPane.Repaint();
             if (bevelToolPane) bevelToolPane.Repaint();
             if (softenToolPane) softenToolPane.Repaint();
             if (extrudeToolPane) extrudeToolPane.Repaint();
@@ -50,17 +51,17 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseLiveToolPane(LiveTool kind)
         {
             if (kind == LiveTool.Bevel) CloseBevelToolWindow();
-            else if (kind == LiveTool.Merge) CloseMergeToolWindow();
+            else if (kind == LiveTool.Merge || kind == LiveTool.Weld) CloseMergeToolWindow();
             else if (kind == LiveTool.Soften) CloseNormalsToolWindow();
             else if (kind == LiveTool.EdgeFlow) CloseEdgeFlowToolWindow();
             else if (kind == LiveTool.Bridge) CloseBridgeToolWindow();
             else CloseExtrudeToolWindow();
         }
         private void CloseLiveToolPanes()
-        { CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
+        { CloseFractureTool(); CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
         private bool HasLiveTool(LiveTool kind) => livePreview != null && liveTool == kind;
         private bool CanRunLiveTool(LiveTool kind) => HasLiveTool(kind) || (kind == LiveTool.Bevel ? CanBevelEdges :
-            kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : kind == LiveTool.Bridge ? CanBridgeEdges : CanExtrude);
+            kind == LiveTool.Weld ? CanRangeWeldVertices : kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : kind == LiveTool.Bridge ? CanBridgeEdges : CanExtrude);
         private Vector4 LiveParameters(LiveTool kind)
         {
             if (repeatingAction != null && repeatingAction.kind == RepeatKind.Live && repeatingAction.live == kind) return repeatingAction.parameters;
@@ -68,6 +69,7 @@ namespace MashBoxSDK.AnimationStudio
                 ToolChannelPane.GetFloatDefault(BevelTool, "Subdivisions", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Tension", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Junction", 0)+(ToolChannelPane.GetFloatDefault(BevelTool,"UnlockWidthRange",0)>=.5f?BevelUnlockRangeFlag:0));
             if (kind == LiveTool.EdgeFlow) return new Vector4(ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Influence",.5f),ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Iterations",4),0,0);
             if (kind == LiveTool.Bridge) return BridgeParameters;
+            if (kind == LiveTool.Weld) return new Vector4(ToolChannelPane.GetFloatDefault(RangeWeldTool, "Range", .001f), 0, 0, 0);
             if (kind == LiveTool.Merge) return Vector4.zero;
             if (kind == LiveTool.Soften) return new Vector4(ToolChannelPane.GetFloatDefault(SoftenTool, "Angle", 45), 0, 0, 0);
             return new Vector4(extrusionDistance, extrudeFacesTogether ? 1 : 0, extrusionInset, 0);
@@ -174,7 +176,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 else if (kind == LiveTool.EdgeFlow)
                 { changed |= EvaluateEdgeFlow(target,parameters.x,Mathf.Clamp(Mathf.RoundToInt(parameters.y),1,64)); }
-                else if (kind == LiveTool.Merge)
+                else if (kind == LiveTool.Merge || kind == LiveTool.Weld)
                 { merge = target.Topology.MergeVertices(target.Work, liveSelection, liveMergePair, parameters.x, liveWorld); changed |= merge != null; }
                 else if (kind == LiveTool.Soften)
                 { target.Topology.SetEdgeNormals(target.Work, liveNormalEdges[index], parameters.x, false); changed = true; }
@@ -222,7 +224,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
 #endif
             }
-            else if (kind == LiveTool.Merge) foreach (int i in merge.Selection) Components.Add(i);
+            else if (kind == LiveTool.Merge || kind == LiveTool.Weld) foreach (int i in merge.Selection) Components.Add(i);
             else if (kind == LiveTool.EdgeFlow) Components.UnionWith(liveSelection);
             else if (kind == LiveTool.Extrude) SelectExtrusionResult(liveExtrusion, liveFaces != null);
             else RestoreLiveComponentSelection();
@@ -314,7 +316,7 @@ namespace MashBoxSDK.AnimationStudio
             RemoveQueuedPreview(); EvaluateLiveTool(kind);
             CommitLiveTool(false);
         }
-        private void FinishLiveTool() => CommitLiveTool(true);
+        private void FinishLiveTool() { CloseFractureTool(); CommitLiveTool(true); }
         private void CommitLiveTool(bool closePane)
         {
             if (previewQueued)
@@ -325,7 +327,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!dispatchingComponentTool && CommitComponentLiveTools(closePane)) return;
             if (livePreview == null) return;
             if (!liveValid) throw new InvalidOperationException("Correct the tool values or close its pane to cancel the preview.");
-            string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Merge ? "Merge vertices to center" : liveTool == LiveTool.Soften ? "Soften edges" : liveTool == LiveTool.EdgeFlow ? "Edit edge flow" : liveTool == LiveTool.Bridge ? "Bridge edges" : "Extrude mesh components";
+            string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Weld ? "Weld vertices by range" : liveTool == LiveTool.Merge ? "Merge vertices to center" : liveTool == LiveTool.Soften ? "Soften edges" : liveTool == LiveTool.EdgeFlow ? "Edit edge flow" : liveTool == LiveTool.Bridge ? "Bridge edges" : "Extrude mesh components";
             var finishedTool = liveTool;
             var selectionBefore = CaptureSelection();
             selectionBefore = dispatchingComponentTool ? componentLiveBefore : SourceLiveSelection(selectionBefore);

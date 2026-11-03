@@ -10,6 +10,8 @@ namespace MashBoxSDK.AnimationStudio
     // Individual portable JSON presets, using the shared toolbar command-list schema.
     internal static class StudioRadialMenus
     {
+        internal const string MaterialSlotsContextId = "context-material-assign-selection";
+        internal static string MaterialAssignBranch => Branch(MaterialSlotsContextId);
         internal const string SpacerKey = "Radial/EmptySpacer";
         internal const string PreferenceKey = "Studio.RadialMenus";
         [Serializable] private sealed class Collection { public List<StudioCustomToolbarDefinition> items; }
@@ -133,17 +135,14 @@ namespace MashBoxSDK.AnimationStudio
         {
             StudioCustomToolbarDefinition D(string id,string name,params string[] items) => new StudioCustomToolbarDefinition { id=id,name=name,commands=items.ToList() };
             return new List<StudioCustomToolbarDefinition> {
-                D("components","Components","Select/Edge","Select/Object Mode",Branch("uv"),"Select/Face","Select/Vertex"),
-                D("transform","Transform","Modify/Rotate","Modify/Scale","Legacy/Axes","Modify/Move"),
+                D("components","Standard","Select/Edge","Select/Object Mode","RadialPreset/uv","Select/Face","Select/Vertex","RadialPreset/pivot","RadialPreset/context-material-assign-selection"),
                 D("pivot","Pivot","Modify/Edit Pivot","Modify/Center Pivot","Modify/Freeze Transforms"),
-                D("selection","Selection","Select/All","Select/Frame Selection","Legacy/Clear","Legacy/Through"),
-                D("convert-selection","Convert Selection",Branch("convert-vertices"),Branch("convert-edges"),Branch("convert-faces"),"Select/Convert Selection/Objects"),
+                D("uv","UVs","UV/Select UVs","UV/Select UV Shells"),
+                D("axes","Orientation","Legacy/ComponentAxes","Legacy/WorldAxes","Legacy/ObjectAxes"),
+                D("8e912b9b50274f31b2a787d56ed430f6","Convert Selection","RadialPreset/convert-vertices","RadialPreset/convert-edges","RadialPreset/convert-faces","Select/Convert Selection/Objects"),
                 D("convert-vertices","To Vertices","Select/Convert Selection/Vertices","Select/Convert Selection/To Perimeter Vertices"),
                 D("convert-edges","To Edges","Select/Convert Selection/Edges","Select/Convert Selection/To Perimeter Edges"),
-                D("convert-faces","To Faces","Select/Convert Selection/Faces","Select/Convert Selection/To Perimeter Faces"),
-                D("uv","UV","UV/Select UVs","UV/Select UV Shells"),
-                D("uvsets","UV Sets",Enumerable.Range(0,8).Select(i=>"Legacy/UV"+i).ToArray()),
-                D("axes","Orientation","Legacy/ComponentAxes","Legacy/WorldAxes","Legacy/ObjectAxes")
+                D("convert-faces","To Faces","Select/Convert Selection/Faces","Select/Convert Selection/To Perimeter Faces")
             };
         }
         internal static List<StudioCustomToolbarDefinition> Read()

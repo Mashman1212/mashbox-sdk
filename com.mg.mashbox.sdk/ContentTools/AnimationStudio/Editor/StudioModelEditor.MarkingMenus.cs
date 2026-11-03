@@ -91,6 +91,7 @@ namespace MashBoxSDK.AnimationStudio
         internal List<ToolbarCommand> RadialCommands(SceneView view)
         {
             var result=ToolbarCommands(view as MashBoxStudioViewport);
+            result.Add(new ToolbarCommand { Key = StudioRadialMenus.MaterialAssignBranch, Path = "Material/Assign Selection", Label = "Assign Material ›", Enabled = CanAssignMaterialSlot });
             result.Add(new ToolbarCommand{Key=StudioRadialMenus.SpacerKey,Path="Layout/Empty Spacer",Label="Empty Spacer",Enabled=false});
             result.Add(new ToolbarCommand{Key="UV/Select UVs",Path="UV/Select UVs",Label="Select UVs",Enabled=false});
             result.Add(new ToolbarCommand{Key="UV/Select UV Shells",Path="UV/Select UV Shells",Label="Select UV Shells",Enabled=false});
@@ -130,7 +131,9 @@ namespace MashBoxSDK.AnimationStudio
             var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);
             var point=evt.isMouse?evt.mousePosition:radialHasPointer?radialLastPointer:canvas.center;
             if(!canvas.Contains(point)||(view is MashBoxStudioViewport overlay&&overlay.IsOverViewportControls(point)))return false;
-            radialDefinitions=definitions;radialCommands=RadialCommands(view);radialParents.Clear();radialPreset=preset;radialBackArmed=false;
+            radialDefinitions=definitions.ToList();radialCommands=RadialCommands(view);
+            AddMaterialSlotRadialContext(radialDefinitions,radialCommands);
+            radialParents.Clear();radialPreset=preset;radialBackArmed=false;
             markingView=view;markingControl=id;markingButton=evt.isMouse?evt.button:-1;markingKey=evt.isKey?evt.keyCode:KeyCode.None;
             markingOpen=true;suppressModelContext=true;GUIUtility.hotControl=id;GUIUtility.keyboardControl=0;
             markingPointer=GUIUtility.GUIToScreenPoint(point);markingOrigin=markingPointer;markingAnchor=markingPointer;
@@ -174,7 +177,7 @@ namespace MashBoxSDK.AnimationStudio
                         {
                             CancelMarkingMenu();
                             // Resolve again at release, never execute a stale context closure.
-                            var command=RadialCommands(view).Find(x=>x.Key==key);
+                            var command=ResolveMaterialSlotRadialCommand(key)??RadialCommands(view).Find(x=>x.Key==key);
                             if(command!=null&&command.Enabled&&key.StartsWith("Control/",StringComparison.Ordinal))StudioRadialControlWindow.Open(key,view as MashBoxStudioViewport);
                             else if(command!=null&&command.Enabled)command.Execute?.Invoke();
                         }

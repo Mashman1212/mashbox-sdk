@@ -118,6 +118,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void PerformWorkspaceHistory(bool redo)
         {
+            if (fracturePreview != null || FractureBusy) { CancelFracture(); return; }
             if (bisectPreview != null || bisectDragging || bisectQueued) { CancelBisectPreview(); return; }
             if (livePreview != null || previewQueued) { CancelLiveTool(); return; }
             FinishChannelEdit(); resetChannelFocus = true;

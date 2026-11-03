@@ -137,13 +137,19 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static readonly GUIContent HierarchyIconGap = new GUIContent("  ");
         private readonly GUIContent hierarchyRowText = new GUIContent();
-        private void DrawHierarchyRowContent(Rect row, GUIContent content, GUIStyle style)
+        private void DrawHierarchyRowContent(Rect row, GUIContent content, GUIStyle style, bool hidden)
         {
             if (!content.image) { style.Draw(row, content, false, false, false, false); return; }
             const float iconSize = 16f;
             float gap = Mathf.Max(0, style.CalcSize(HierarchyIconGap).x - style.padding.horizontal);
             var iconRect = new Rect(row.x + style.padding.left, row.center.y - iconSize * .5f, iconSize, iconSize);
-            GUI.DrawTexture(iconRect, content.image, ScaleMode.ScaleToFit, true);
+            var iconColor=GUI.color;
+            try
+            {
+                if(hidden)GUI.color=new Color(iconColor.r*.45f,iconColor.g*.45f,iconColor.b*.45f,iconColor.a);
+                GUI.DrawTexture(iconRect, content.image, ScaleMode.ScaleToFit, true);
+            }
+            finally { GUI.color=iconColor; }
             row.xMin = Mathf.Min(row.xMax, iconRect.xMax + gap - style.padding.left);
             hierarchyRowText.text = content.text;
             style.Draw(row, hierarchyRowText, false, false, false, false);
@@ -159,7 +165,15 @@ namespace MashBoxSDK.AnimationStudio
                 bool pressed = !StudioTheme.HoverSuppressed && GUIUtility.hotControl == id;
                 if (objects.Contains(index) || pressed) EditorGUI.DrawRect(row, StudioTheme.Current.Selection);
                 else if (hovered) EditorGUI.DrawRect(row, StudioTheme.Current.Hover);
-                DrawHierarchyRowContent(row, content, style);
+                bool hidden=!Document.nodes[index].active ||
+                    index<Transforms.Length && Transforms[index] && !Transforms[index].gameObject.activeInHierarchy;
+                var contentColor=GUI.contentColor;
+                try
+                {
+                    if(hidden)GUI.contentColor=new Color(contentColor.r*.45f,contentColor.g*.45f,contentColor.b*.45f,contentColor.a);
+                    DrawHierarchyRowContent(row, content, style, hidden);
+                }
+                finally { GUI.contentColor=contentColor; }
             }
             HandleHierarchyDrop(row, index);
             if (evt.type == EventType.MouseDown && row.Contains(evt.mousePosition) && (evt.button == 0 || evt.button == 2))

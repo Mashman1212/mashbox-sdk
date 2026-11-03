@@ -41,6 +41,7 @@ namespace MashBoxSDK.AnimationStudio
                     case "selection": return "Select/All";
                     case "components": return "Select/Object Mode";
                     case "axes": return "Viewport/Orientation";
+                    case StudioRadialMenus.MaterialSlotsContextId: return "Material/Assign Selection";
                     default: return "Menu/Modify";
                 }
             }
@@ -208,6 +209,8 @@ namespace MashBoxSDK.AnimationStudio
             if (key.Contains("Empty")) return new[] { "GameObject Icon", "Transform Icon" };
             if (key.Contains("Anchor")) return new[] { "AvatarPivot", "ToolHandlePivot", "Transform Icon" };
             if (key.StartsWith("Create/")) return new[] { "WheelCollider Icon", "Mesh Icon" };
+            if (key == "Material/Assign New Slot") return new[] { "Toolbar Plus", "Material Icon" };
+            if (key.StartsWith("Material/",StringComparison.Ordinal)) return new[] { "Material Icon", "PreMatSphere" };
             if (key == "Modify/Move") return new[] { "MoveTool" };
             if (key == "Modify/Rotate") return new[] { "RotateTool" };
             if (key == "Modify/Scale") return new[] { "ScaleTool" };

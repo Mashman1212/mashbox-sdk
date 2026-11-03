@@ -1,4 +1,4 @@
-﻿using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -242,13 +242,8 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 finally { Handles.zTest = depth; }
             }
-            Handles.BeginGUI();
             var label = (action == PivotAction.Aim ? "Aim X" : action.ToString()) + " · " + target.kind;
-            var rect = new Rect(Mathf.Clamp(pivotPointer.x + 12, canvas.xMin, canvas.xMax - 150), Mathf.Clamp(pivotPointer.y + 20, canvas.yMin, canvas.yMax - 22), 150, 22);
-            var color = GUI.contentColor; GUI.contentColor = Color.black;
-            GUI.Label(new Rect(rect.x + 1, rect.y + 1, rect.width, rect.height), label, StudioTheme.Styles.miniLabel);
-            GUI.contentColor = Color.white; GUI.Label(rect, label, StudioTheme.Styles.miniLabel); GUI.contentColor = color;
-            Handles.EndGUI();
+            DrawCursorStatusLabel(canvas,pivotPointer,label);
         }
     }
 }

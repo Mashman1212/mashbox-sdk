@@ -119,7 +119,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Convert Selection/To Faces/To Faces", true, () => ConvertSelection(ComponentMode.Face), commandKey: "Convert Selection/Faces");
                     AddCommand(menu, "Convert Selection/To Faces/To Perimeter Faces", true, () => ConvertSelection(ComponentMode.Face,true), commandKey: "Convert Selection/To Perimeter Faces");
                     AddCommand(menu, "Convert Selection/To Objects", true, () => ConvertSelection(ComponentMode.Object), commandKey: "Convert Selection/Objects");
-                    AddCommand(menu, "Hide Selection", CanIsolateViewportSelection, HideViewportSelection);
+                    AddCommand(menu, "Hide Selection", CanHideViewportSelection, HideViewportSelection, finishPreview: false);
                     AddCommand(menu, "Unhide Last Hidden", hiddenSelections.Count > 0, UnhideLastSelection);
                     AddCommand(menu, "Grow Selection", CanGrowComponentSelection, () => GrowComponentSelection(false));
                     AddCommand(menu, "Shrink Selection", CanGrowComponentSelection, () => GrowComponentSelection(true));
@@ -153,6 +153,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Bridge Edges", true, OpenBridgeTool);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), true, ExtrudeSelected, finishPreview: false);
                     AddCommand(menu, "Bevel…", true, OpenBevelTool, finishPreview: false);
+                    AddCommand(menu, "Weld…", true, OpenRangeWeldTool, finishPreview: false);
                     AddCommand(menu, "Merge to Center", true, MergeToCenter, commandKey: "Merge Vertices");
                     menu.AddItem(new GUIContent("Target Weld"), targetWeldActive, () => Run(() => {
                         if (!targetWeldActive) PrepareMeshSelection(ComponentMode.Vertex, () => CanStartTargetWeld, "Select an editable static mesh, then drag a vertex onto another vertex to weld.", ComponentMode.Vertex);
@@ -164,6 +165,7 @@ namespace MashBoxSDK.AnimationStudio
                         ActivateCutTool(CutTool.EdgeLoop);
                     }));
                     menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool));
+                    menu.AddItem(new GUIContent("Fracture"), fracturePane, () => Run(OpenFractureTool));
                     menu.AddItem(new GUIContent("Multi-Cut"), cutTool == CutTool.MultiCut, () => Run(() => {
                         PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh to use Multi-Cut.", ComponentMode.Edge);
                         ActivateCutTool(CutTool.MultiCut);

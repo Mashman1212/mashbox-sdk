@@ -36,6 +36,7 @@ namespace MashBoxSDK.AnimationStudio
             public bool centerTransformMode;
             public float gridSpacing = .25f, gridOpacity = 1, uvPointSize = 4;
             public float handleSize = 1;
+            public bool showTransformOrientationLabel = true;
             public float channelDragSensitivity = 1;
             public int toolbarIconSize = 24;
             public int undoLimit = 50;
@@ -167,6 +168,7 @@ namespace MashBoxSDK.AnimationStudio
                         int undoLimit=EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions","Studio actions retained across Undo and Redo. One complete drag or tool operation counts as one action."),settings.undoLimit);
                         DrawFrameSelectionStyle();
                         DrawDefaultChoice("Default orientation", "Model.DefaultOrientation", 2, new[] { "World", "Object", "Component" });
+                        settings.showTransformOrientationLabel=EditorGUILayout.Toggle(new GUIContent("Show orientation label","Show World, Object or Component beside the transform gizmo."),settings.showTransformOrientationLabel);
                         settings.handleSize=EditorGUILayout.Slider(new GUIContent("Handle size","Resize modelling handles and anchor gizmos."),settings.handleSize,.25f,3);
                         if(EditorGUI.EndChangeCheck()){settings.undoLimit=Math.Max(1,undoLimit);StudioSettings.Save();}
                     });

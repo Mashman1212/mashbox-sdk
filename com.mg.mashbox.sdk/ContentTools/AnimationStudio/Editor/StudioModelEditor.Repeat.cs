@@ -7,9 +7,10 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot }
         private sealed class RepeatAction
         {
+            internal StudioMeshFracture.Settings fracture; internal Material fractureMaterial;
             internal RepeatKind kind; internal LiveTool live; internal Vector4 parameters; internal Vector3 flow; internal bool welded;
         }
         private RepeatAction lastRepeatAction, repeatingAction;
@@ -28,6 +29,8 @@ namespace MashBoxSDK.AnimationStudio
         private void RepeatLastAction()
         {
             // G finishes an existing preview once, without doubling that operation.
+            if(FractureBusy) throw new InvalidOperationException("Wait for Fracture to finish or cancel computation.");
+            if(fractureResult!=null){CommitFracture();return;}
             if(bisectPreview!=null){ApplyBisect();return;}
             if (livePreview != null || componentLiveTargets != null || previewQueued) { FinishLiveTool(); return; }
             if (!CanRepeatLastAction) throw new InvalidOperationException("There is no completed modeling action to repeat in this workspace.");
@@ -38,10 +41,12 @@ namespace MashBoxSDK.AnimationStudio
             {
                 switch (action.kind)
                 {
+                    case RepeatKind.MaterialSlot: AssignSelectionMaterialSlot(Mathf.RoundToInt(action.parameters.x)); break;
                     case RepeatKind.Live:
                         if (!EligibleComponentTool(action.live)) throw new InvalidOperationException("The last action is unavailable for the current component selection.");
                         if (action.live == LiveTool.Extrude) { extrusionDistance = action.parameters.x; extrudeFacesTogether = action.parameters.y >= .5f; extrusionInset = action.parameters.z; }
                         ApplyLiveTool(action.live); break;
+                    case RepeatKind.Fracture: OpenFractureTool(); fractureSettings=action.fracture.Copy(); fractureMaterial=action.fractureMaterial; break;
                     case RepeatKind.Bisect: OpenBisectTool(); break;
                     case RepeatKind.Group: GroupSelectedObjects(); break;
                     case RepeatKind.Combine: CombineSelectedObjects(); break;

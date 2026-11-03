@@ -191,19 +191,20 @@ namespace MashBoxSDK.AnimationStudio
             displayLighting = lighting; displayTextures = textures; SaveDisplayConfiguration();
             ApplyDisplayMaterials(); repaint();
         }
-        private void ApplyDisplayMaterials()
+        private void ApplyDisplayMaterials(ISet<Mesh> affected = null)
         {
-            ClearDisplayMaterials();
+            if (affected == null) ClearDisplayMaterials();
             if (!Document) return;
             for(int i=0;i<Transforms.Length;i++)
             {
                 var renderer = Transforms[i] ? Transforms[i].GetComponent<Renderer>() : null;
-                if (!renderer) continue;
+                if (!renderer || (affected != null && !affected.Contains(Document.nodes[i].mesh))) continue;
+                if (affected != null) blackBackfaceDraws.RemoveAll(draw => draw.renderer == renderer);
                 // Pure wireframe renders only Studio's edge overlay; keep the
                 // renderer enabled for picking and restore surfaces in shaded modes.
                 if(wireframeOnly)
                 {
-                    wireframeSurfaceSuppression[renderer]=renderer.forceRenderingOff;
+                    if (!wireframeSurfaceSuppression.ContainsKey(renderer)) wireframeSurfaceSuppression[renderer]=renderer.forceRenderingOff;
                     renderer.forceRenderingOff=true;
                 }
                 var node = Document.nodes[i];

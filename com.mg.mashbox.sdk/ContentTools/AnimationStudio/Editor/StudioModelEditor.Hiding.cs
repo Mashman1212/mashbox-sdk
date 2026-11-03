@@ -28,15 +28,21 @@ namespace MashBoxSDK.AnimationStudio
             if (filter) filter.sharedMesh = mesh;
             if (skin) skin.sharedMesh = mesh;
         }
+        private bool CanHideViewportSelection => CanIsolateViewportSelection &&
+            (mode!=ComponentMode.Object || objects.Any(IsVisibleHideTarget));
+        private bool IsVisibleHideTarget(int node) => Document && node>=0 && node<Document.nodes.Count &&
+            node<Transforms.Length && Transforms[node] && Document.nodes[node].active && Transforms[node].gameObject.activeInHierarchy;
         internal void HideViewportSelection()
         {
+            // A no-op hide must not finish previews or touch previous hide history.
+            if (!CanHideViewportSelection) return;
             FinishLiveTool();
-            if (!CanIsolateViewportSelection) return;
+            if (!CanHideViewportSelection) return;
             var entry = new HiddenSelection();
             if (mode == ComponentMode.Object)
             {
-                foreach (int node in objects.Where(i => i >= 0 && i < Document.nodes.Count))
-                    if (Document.nodes[node].active) entry.objects.Add(Document.nodes[node]);
+                foreach (int node in objects.Where(IsVisibleHideTarget))
+                    entry.objects.Add(Document.nodes[node]);
                 if (entry.objects.Count == 0) return;
                 ChangeHierarchyVisibility("Hide selection", i => !entry.objects.Contains(Document.nodes[i]) && Document.nodes[i].active);
                 objects.Clear(); objectSelectionOrder.Clear();
