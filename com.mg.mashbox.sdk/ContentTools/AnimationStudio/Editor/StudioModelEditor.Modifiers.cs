@@ -87,7 +87,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var node=Document.nodes.First(n=>n.mesh==target.Live);var source=target.ModifierSourceNode();
                 var operation=new StudioModifierOperation{kind=liveTool.ToString(),name=liveTool==LiveTool.EdgeFlow?"Edit Edge Flow":liveTool.ToString(),
-                    parameters=liveParameters,flow=liveFlowParameters,weld=weld,world=liveWorld,
+                    parameters=liveParameters,normalizedBevel=liveTool==LiveTool.Bevel,flow=liveFlowParameters,weld=weld,world=liveWorld,
                     faces=liveFaces?.ToArray(),edges=liveEdges?.SelectMany(e=>new[]{e.a,e.b}).ToArray(),vertices=liveSelection?.ToArray()};
                 if(liveTool==LiveTool.Soften)
                 {int index=Array.IndexOf(livePreview.Targets,target);operation.edges=liveNormalEdges[index].SelectMany(e=>new[]{e.Item1,e.Item2}).ToArray();}
@@ -223,8 +223,8 @@ namespace MashBoxSDK.AnimationStudio
                         case "Primitive":
                             DrawPrimitiveModifier(operation.primitiveType, ref p, ref cubeDivisions); break;
                         case "Bevel":
-                            p.x=Mathf.Max(0,StudioSceneUnits.Field("Width",p.x));p.y=ModifierIntegerField("Segments",Mathf.RoundToInt(p.y),0,32);
-                            p.z=Mathf.Clamp(EditorGUILayout.FloatField("Profile",p.z),-1,1);p.w=EditorGUILayout.Popup("Junction",Mathf.RoundToInt(p.w),new[]{"Grid","Cap"});
+                            bool bevelUnlocked=EditorGUILayout.Toggle("Unlock width range",BevelRangeUnlocked(p));p.w=(Mathf.RoundToInt(p.w)&1)+(bevelUnlocked?BevelUnlockRangeFlag:0);p.x=operation.normalizedBevel?Mathf.Clamp(EditorGUILayout.FloatField("Width",p.x),0,bevelUnlocked?float.PositiveInfinity:1):Mathf.Max(0,StudioSceneUnits.Field("Width",p.x));p.y=ModifierIntegerField("Segments",Mathf.RoundToInt(p.y),0,32);
+                            p.z=Mathf.Clamp(EditorGUILayout.FloatField("Profile",p.z),-1,1);p.w=EditorGUILayout.Popup("Junction",Mathf.RoundToInt(p.w)&1,new[]{"Grid","Cap"})+(bevelUnlocked?BevelUnlockRangeFlag:0);
                             flow.x=EditorGUILayout.Toggle("Edge Flow",flow.x>=.5f)?1:0;
                             if(flow.x>=.5f){flow.y=EditorGUILayout.FloatField("Flow influence",flow.y);flow.z=ModifierIntegerField("Flow iterations",Mathf.RoundToInt(flow.z),1,64);}break;
                         case "Extrude":p.x=StudioSceneUnits.Field("Distance",p.x);p.z=StudioSceneUnits.Field("Inset",p.z);p.y=EditorGUILayout.Toggle("Together",p.y>=.5f)?1:0;break;

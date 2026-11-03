@@ -90,6 +90,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly Dictionary<string, string[]> ChannelNames = new Dictionary<string, string[]> {
             { "Position", new[] { "StudioChannel:Position:0", "StudioChannel:Position:1", "StudioChannel:Position:2" } },
             { "World Position", new[] { "StudioChannel:World Position:0", "StudioChannel:World Position:1", "StudioChannel:World Position:2" } },
+            { "World Rotation", new[] { "StudioChannel:World Rotation:0", "StudioChannel:World Rotation:1", "StudioChannel:World Rotation:2" } },
             { "Rotation", new[] { "StudioChannel:Rotation:0", "StudioChannel:Rotation:1", "StudioChannel:Rotation:2" } },
             { "Scale", new[] { "StudioChannel:Scale:0", "StudioChannel:Scale:1", "StudioChannel:Scale:2" } }
         };

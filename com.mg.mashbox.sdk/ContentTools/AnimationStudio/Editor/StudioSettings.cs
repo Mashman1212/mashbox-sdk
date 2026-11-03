@@ -7,6 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     [InitializeOnLoad]
     internal static class StudioSettings
     {
+        internal static int DefaultOrientation => Mathf.Clamp(Mathf.RoundToInt(StudioPreferenceStore.GetFloat("Model.DefaultOrientation", 2)), 0, 2);
         internal const string PreferenceKey = "MashBox.Studio.Settings.v1";
         // Read the previous key until preferences are explicitly saved under the new name.
         private const string LegacyPreferenceKey = "MashBox.MGStudio.Settings.v1";
@@ -165,6 +166,7 @@ namespace MashBoxSDK.AnimationStudio
                         EditorGUI.BeginChangeCheck();
                         int undoLimit=EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions","Studio actions retained across Undo and Redo. One complete drag or tool operation counts as one action."),settings.undoLimit);
                         DrawFrameSelectionStyle();
+                        DrawDefaultChoice("Default orientation", "Model.DefaultOrientation", 2, new[] { "World", "Object", "Component" });
                         settings.handleSize=EditorGUILayout.Slider(new GUIContent("Handle size","Resize modelling handles and anchor gizmos."),settings.handleSize,.25f,3);
                         if(EditorGUI.EndChangeCheck()){settings.undoLimit=Math.Max(1,undoLimit);StudioSettings.Save();}
                     });
@@ -210,6 +212,18 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.DrawRect(chip, palette.Canvas);
             EditorGUI.DrawRect(new Rect(chip.x, chip.yMax - 6, chip.width, 6), palette.Accent);
             GUI.Label(new Rect(rect.x + 40, rect.y, rect.width - 44, rect.height), (active ? "✓ " : "") + palette.Name, StudioTheme.Styles.label);
+        }
+        private static void DrawDefaultChoice(string label, string key, int fallback, string[] choices)
+        {
+            int value = Mathf.Clamp(Mathf.RoundToInt(StudioPreferenceStore.GetFloat(key, fallback)), 0, choices.Length - 1);
+            var row = EditorGUI.PrefixLabel(EditorGUILayout.GetControlRect(), new GUIContent(label, "Initial mode for a new modeling session. Existing selections and explicit mode changes are retained."));
+            float width = row.width / choices.Length;
+            for (int i = 0; i < choices.Length; i++)
+            {
+                var cell = new Rect(row.x + i * width, row.y, width, row.height);
+                if (EditorGUI.ToggleLeft(cell, choices[i], i == value) && i != value)
+                    StudioPreferenceStore.SetFloat(key, i);
+            }
         }
         private static void DrawFrameSelectionStyle()
         {

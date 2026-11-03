@@ -7,11 +7,19 @@ namespace MashBoxSDK.AnimationStudio {
    internal void Reset(){lastVertex=previousVertex=lastEdge=previousEdge=lastFace=previousFace=-1;}
   }
   private readonly Dictionary<StudioModelDocument.Node,LoopSelectionState> loopSelections=new Dictionary<StudioModelDocument.Node,LoopSelectionState>();
+  private bool contiguousPath;
+  private void SetContiguousPath(bool enabled){if(contiguousPath==enabled)return;contiguousPath=enabled;foreach(var state in loopSelections.Values)state.Reset();SaveDisplayConfiguration();repaint();toolOptions?.Repaint();}
   private int selectionClickCount=1;
   private LoopSelectionState LoopState(){var node=Document.nodes[Active];var faces=Faces();var edges=Edges();int version=EditorUtility.GetDirtyCount(ActiveMesh);if(!loopSelections.TryGetValue(node,out var state)||state.mesh!=ActiveMesh||state.version!=version||state.weld!=weld||!ReferenceEquals(state.faces,faces)||!ReferenceEquals(state.edges,edges)){state=new LoopSelectionState{mesh=ActiveMesh,version=version,weld=weld,faces=faces,edges=edges,mode=mode};loopSelections[node]=state;}if(state.mode!=mode){state.mode=mode;state.Reset();}return state;}
   private static int RememberLoopComponent(int current,ref int last,ref int previous){if(current!=last){previous=last;last=current;}return previous;}
   private HashSet<int> ComponentClickSelection(int current,bool expand){var state=LoopState();int previous=-1;if(mode==ComponentMode.Vertex)previous=RememberLoopComponent(current,ref state.lastVertex,ref state.previousVertex);else if(mode==ComponentMode.Edge)previous=RememberLoopComponent(current,ref state.lastEdge,ref state.previousEdge);else{if(!expand&&current==state.lastFace)state.previousFace=-1;previous=RememberLoopComponent(current,ref state.lastFace,ref state.previousFace);}if(!expand)return new HashSet<int>{current};
    if(state.topology==null)state.topology=new StudioSelectionTopology(ActiveMesh.vertices,state.faces,state.edges,weld);
+   if(contiguousPath){
+    if(previous<0)return new HashSet<int>{current};
+    var path=state.topology.SelectShortestPath((int)mode,previous,current,IsolationAllowsComponent);
+    if(path.Count==0){error="No contiguous path connects these components in the visible mesh.";return new HashSet<int>{current};}
+    return path;
+   }
    if(mode==ComponentMode.Edge)return state.topology.SelectEdges(current,previous);
    if(mode==ComponentMode.Vertex)return state.topology.SelectVertices(previous,current);
    return state.topology.SelectFaces(previous,current);

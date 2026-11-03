@@ -36,6 +36,7 @@ namespace MashBoxSDK.AnimationStudio
             public int parent = -1, mesh = -1, siblingOrder = -1;
             public Vector3 position, scale, origin;
             public Quaternion rotation, axes;
+            public Quaternion frozenRotation=Quaternion.identity, frozenPivotBaseline=Quaternion.identity;
             public float[] rotationChannels;
             public bool active, skinned, ao;
             public int slice, rootBone;
@@ -91,7 +92,7 @@ namespace MashBoxSDK.AnimationStudio
             var data = new FileData { format = Format, version = Version, source = document.sourcePath, lighting = document.lighting, sceneUnits = document.sceneUnits, gridSpacing = document.gridSpacing,
                 nodes = document.nodes.Select(node => new NodeData {
                     name = node.name, anchor = node.anchorType, source = node.sourcePath, parent = node.parent, siblingOrder = node.siblingOrder,
-                    position = node.position, rotation = node.rotation, scale = node.scale, origin = node.positionOffset, axes = node.pivotRotation,
+                    position = node.position, rotation = node.rotation, scale = node.scale, origin = node.positionOffset, axes = node.pivotRotation, frozenRotation = node.frozenRotation, frozenPivotBaseline = node.frozenPivotBaseline,
                     rotationChannels = new[] { node.RotationChannels.x, node.RotationChannels.y, node.RotationChannels.z },
                     active = node.active, skinned = node.skinned, ao = node.vertexAOBaked, slice = node.previewTextureSlice,
                     bones = node.bones, rootBone = node.rootBone, mesh = MeshId(node.mesh),
@@ -187,7 +188,7 @@ namespace MashBoxSDK.AnimationStudio
                         throw new InvalidDataException("Invalid normal smoothing groups.");
                     document.nodes.Add(new StudioModelDocument.Node {
                         name = node.name, anchorType = node.anchor, sourcePath = node.source, parent = node.parent, siblingOrder = node.siblingOrder,
-                        position = node.position, rotation = node.rotation, scale = node.scale, positionOffset = node.origin, pivotRotation = node.axes,
+                        position = node.position, rotation = node.rotation, scale = node.scale, positionOffset = node.origin, pivotRotation = node.axes, frozenRotation = node.frozenRotation, frozenPivotBaseline = node.frozenPivotBaseline,
                         active = node.active, skinned = node.skinned, vertexAOBaked = node.ao, previewTextureSlice = node.slice,
                         bones = node.bones ?? Array.Empty<int>(), rootBone = node.rootBone, mesh = mesh,
                         materials = (node.materials ?? Array.Empty<int>()).Select(MaterialAt).ToArray(),

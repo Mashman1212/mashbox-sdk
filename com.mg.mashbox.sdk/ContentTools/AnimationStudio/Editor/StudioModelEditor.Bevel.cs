@@ -18,9 +18,12 @@ namespace MashBoxSDK.AnimationStudio
 
         private ToolChannelPane bevelToolPane;
 
+        // Parameter W retains the junction in bit 0 and range unlocking in bit 1.
+        private const int BevelUnlockRangeFlag=2;
+        private static bool BevelRangeUnlocked(Vector4 p)=>(Mathf.RoundToInt(p.w)&BevelUnlockRangeFlag)!=0;
         private const string BevelTool = "Bevel Edges";
 
-        private static readonly GUIContent BevelWidthContent = new GUIContent("Width offset", "Offset in mesh-local model units. 0 does nothing. Width is not normalized to nearby edge lengths or limited to 1; clipping updates affected topology as supporting surfaces meet.");
+        private static readonly GUIContent BevelWidthContent = new GUIContent("Width", "Fraction of this selection's available bevel range. 0 is no bevel; 1 is the maximum contact limit while locked; Unlock width range permits larger values. Independent of scene units.");
 
         private static readonly GUIContent BevelSubdivisionsContent = new GUIContent("Subdivisions", "Internal profile loops. 0 creates one chamfer strip; each additional subdivision adds a loop. Maximum 32.");
 
@@ -63,7 +66,11 @@ namespace MashBoxSDK.AnimationStudio
 
             EditorGUIUtility.labelWidth = 145;
 
-            ToolChannelPane.FloatParameter(BevelTool, "Width", BevelWidthContent, .1f, 0);
+            bool unlocked=ToolChannelPane.GetFloatDefault(BevelTool,"UnlockWidthRange",0)>=.5f;
+            bool editedUnlock=EditorGUILayout.Toggle(new GUIContent("Unlock width range","Allow width above 1 and bypass automatic contact clamping. Geometry validity checks still apply."),unlocked);
+            if(editedUnlock!=unlocked){unlocked=editedUnlock;ToolChannelPane.SetFloatDefault(BevelTool,"UnlockWidthRange",unlocked?1:0);}
+            if(!unlocked)ToolChannelPane.SetFloatDefault(BevelTool,"WidthFraction",Mathf.Clamp01(ToolChannelPane.GetFloatDefault(BevelTool,"WidthFraction",.1f)));
+            ToolChannelPane.FloatParameter(BevelTool, "WidthFraction", BevelWidthContent, .1f, 0, unlocked?float.PositiveInfinity:1);
 
             ToolChannelPane.IntParameter(BevelTool, "Subdivisions", BevelSubdivisionsContent, 1, 0, 32);
 

@@ -111,6 +111,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Select": {
                     AddAction(menu, "All", MarkingAction.SelectAll, view); AddAction(menu, "Deselect", MarkingAction.Clear, view);
                     AddCommand(menu, "Invert Selection", Document && (mode == ComponentMode.Object || ActiveMesh), InvertSelection);
+                    menu.AddItem(new GUIContent("Contiguous Path"),contiguousPath,()=>SetContiguousPath(!contiguousPath));
                     AddCommand(menu, "Convert Selection/To Vertices/To Vertices", true, () => ConvertSelection(ComponentMode.Vertex), commandKey: "Convert Selection/Vertices");
                     AddCommand(menu, "Convert Selection/To Vertices/To Perimeter Vertices", true, () => ConvertSelection(ComponentMode.Vertex,true), commandKey: "Convert Selection/To Perimeter Vertices");
                     AddCommand(menu, "Convert Selection/To Edges/To Edges", true, () => ConvertSelection(ComponentMode.Edge), commandKey: "Convert Selection/Edges");
@@ -118,6 +119,8 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Convert Selection/To Faces/To Faces", true, () => ConvertSelection(ComponentMode.Face), commandKey: "Convert Selection/Faces");
                     AddCommand(menu, "Convert Selection/To Faces/To Perimeter Faces", true, () => ConvertSelection(ComponentMode.Face,true), commandKey: "Convert Selection/To Perimeter Faces");
                     AddCommand(menu, "Convert Selection/To Objects", true, () => ConvertSelection(ComponentMode.Object), commandKey: "Convert Selection/Objects");
+                    AddCommand(menu, "Hide Selection", CanIsolateViewportSelection, HideViewportSelection);
+                    AddCommand(menu, "Unhide Last Hidden", hiddenSelections.Count > 0, UnhideLastSelection);
                     AddCommand(menu, "Grow Selection", CanGrowComponentSelection, () => GrowComponentSelection(false));
                     AddCommand(menu, "Shrink Selection", CanGrowComponentSelection, () => GrowComponentSelection(true));
                     menu.AddSeparator("");
@@ -137,6 +140,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddAction(menu, pivot ? "Finish Pivot Edit" : "Edit Pivot", MarkingAction.EditPivot, view);
                     AddCommand(menu, "Group", true, GroupSelectedObjects);
                     AddCommand(menu, "Clear History", true, ClearModifierHistory);
+                    AddCommand(menu,"Bake Pivot",Document && Active>=0 && mode==ComponentMode.Object && !Document.IsBone(Active),BakeEditingPivot);
                     AddAction(menu, "Center Pivot", MarkingAction.CenterPivot, view); AddAction(menu, "Freeze Transforms", MarkingAction.Freeze, view);
                 
                     break; }

@@ -28,7 +28,7 @@ namespace MashBoxSDK.AnimationStudio
                     var copy = new Node {
                         name = n.name, anchorType = n.anchorType, sourcePath = n.sourcePath, parent = Remap(n.parent),
                         position = n.position, positionOffset = n.positionOffset, rotation = n.rotation,
-                        scale = n.scale, pivotRotation = n.pivotRotation, active = n.active, skinned = n.skinned,
+                        scale = n.scale, pivotRotation = n.pivotRotation, frozenRotation = n.frozenRotation, frozenPivotBaseline = n.frozenPivotBaseline, active = n.active, skinned = n.skinned,
                         materials = n.materials?.ToArray() ?? System.Array.Empty<Material>(), previewTextureSlice = n.previewTextureSlice, vertexAOBaked = n.vertexAOBaked,
                         bones = n.bones?.Select(Remap).ToArray() ?? System.Array.Empty<int>(), rootBone = Remap(n.rootBone),
                         normalGroups = n.normalGroups?.ToArray(), geometryVertices = n.geometryVertices?.ToArray(), subdivision = n.subdivision?.Copy(), modifiers = n.modifiers?.Copy(), cutPolygons = n.cutPolygons?.ToArray(), cutTriangles = n.cutTriangles?.ToArray(), blendShape = n.blendShape?.Copy()

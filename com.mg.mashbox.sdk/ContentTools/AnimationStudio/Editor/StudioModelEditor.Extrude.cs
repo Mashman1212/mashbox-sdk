@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        private float extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .01f);
+        private float extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", 0);
         private float extrusionInset = ToolChannelPane.GetFloatDefault("Extrude", "Inset", 0);
         private bool extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         private bool CanExtrude => CanCutMesh && (mode == ComponentMode.Face || mode == ComponentMode.Edge) && Components.Count > 0;
@@ -95,6 +95,7 @@ namespace MashBoxSDK.AnimationStudio
             PrepareMeshSelection(ComponentMode.Face, () => CanExtrude,
                 "Select faces or open boundary edges on an editable static mesh to extrude.", ComponentMode.Face, ComponentMode.Edge);
             if (extrudeToolPane) { QueueLiveTool(LiveTool.Extrude); extrudeToolPane.Repaint(); extrudeToolPane.Focus(); return; }
+            extrusionDistance=0;extrusionInset=0;extrudeFacesTogether=true;
             extrudeToolPane = ToolChannelPane.Open("Extrude", DrawLiveExtrudeFields, () => extrudeToolPane = null,
                 new Vector2(300, 185), new Vector2(260, 175),
                 execute: () => ApplyLiveTool(LiveTool.Extrude), canExecute: () => CanRunLiveTool(LiveTool.Extrude),

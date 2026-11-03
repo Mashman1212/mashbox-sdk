@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot }
         private sealed class RepeatAction
         {
             internal RepeatKind kind; internal LiveTool live; internal Vector4 parameters; internal Vector3 flow; internal bool welded;
@@ -62,6 +62,7 @@ namespace MashBoxSDK.AnimationStudio
                     case RepeatKind.CenterPivot:
                         if (!CanAdjustPivot) throw new InvalidOperationException("Select an editable pivot to center.");
                         CenterEditingPivot(); break;
+                    case RepeatKind.BakePivot: BakeEditingPivot(); break;
                     case RepeatKind.Freeze:
                         if (!Document || Active < 0 || mode != ComponentMode.Object) throw new InvalidOperationException("Select an object to freeze.");
                         FreezeEditingObject(); break;

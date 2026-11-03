@@ -18,6 +18,8 @@ namespace MashBoxSDK.AnimationStudio
             internal Dictionary<(int,int),float> EdgeSpeeds;
             internal readonly List<int> SelectedFaces = new List<int>(), AffectedFaces = new List<int>(), StaticFaces = new List<int>();
             internal Vector3[][] Velocities;
+            internal float SplitLimit=float.PositiveInfinity,ContactWidth=float.PositiveInfinity;
+            internal readonly List<BevelContact> Contacts=new List<BevelContact>();
             internal float Limit = float.PositiveInfinity;
             internal Dictionary<(int,int),Vector3> FlatTerminalCuts;
             internal HashSet<int> FlatTerminalOwners;
@@ -30,8 +32,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private BevelWavefrontPlan bevelWavefront;
 
-        // At a three-face vertex with two beveled edges, their outer rails
-        // must meet at one point on the stationary edge. For face angle theta,
+        // At a manifold vertex fan, adjoining beveled face offsets
+        // must meet at one point on every shared stationary edge. For face angle theta,
         // travel = offset / sin(theta). Solve these exact offset ratios over
         // the connected edges before constructing the face wavefronts. Each
         // edge keeps one constant speed at both ends, preserving parallel rails
@@ -42,28 +44,37 @@ namespace MashBoxSDK.AnimationStudio
         {
             var links = new Dictionary<(int,int),List<((int,int) edge,double ratio)>>();
             foreach (var key in targets) links[key] = new List<((int,int),double)>();
-            foreach (int vertex in affected)
+            foreach(int vertex in affected)
             {
-                var incident = bevelIncident[vertex];
-                if (incident.Count != 3) continue;
-                BevelEdge first = null, second = null, stationary = null;
-                foreach (var edge in incident)
+                // Each stationary shared edge must receive the same intersection
+                // from both face offsets. Solve this for every manifold fan,
+                // rather than assuming the source vertex has exactly three edges.
+                foreach(var stationary in bevelIncident[vertex])
                 {
-                    if (!targets.Contains(BevelKey(edge.A,edge.B))) stationary = edge;
-                    else if (first == null) first = edge;
-                    else second = edge;
+                    if(targets.Contains(BevelKey(stationary.A,stationary.B))||stationary.Uses.Count!=2)continue;
+                    BevelEdge AdjacentSelected(int face)
+                    {
+                        var polygon=Faces[face].Vertices;
+                        for(int c=0;c<polygon.Count;c++)if(welded[polygon[c]]==vertex)
+                        {
+                            int previous=welded[polygon[(c+polygon.Count-1)%polygon.Count]],next=welded[polygon[(c+1)%polygon.Count]];
+                            var incoming=BevelKey(previous,vertex);var outgoing=BevelKey(vertex,next);
+                            var other=incoming==BevelKey(stationary.A,stationary.B)?outgoing:incoming;
+                            return targets.Contains(other)?bevelEdges[other]:null;
+                        }
+                        return null;
+                    }
+                    var first=AdjacentSelected(stationary.Uses[0].face);var second=AdjacentSelected(stationary.Uses[1].face);
+                    if(first==null||second==null||ReferenceEquals(first,second))continue;
+                    Vector3 Direction(BevelEdge edge)=>BevelUnit(plan.Originals[edge.A==vertex?edge.B:edge.A]-plan.Originals[vertex]);
+                    var fixedDirection=Direction(stationary);
+                    double a=Vector3.Cross(Direction(first),fixedDirection).magnitude,b=Vector3.Cross(Direction(second),fixedDirection).magnitude;
+                    if(a<1e-6||b<1e-6)continue;
+                    var x=BevelKey(first.A,first.B);var y=BevelKey(second.A,second.B);double ratio=Math.Log(b/a);
+                    links[x].Add((y,ratio));links[y].Add((x,-ratio));
                 }
-                if (first == null || second == null || stationary == null ||
-                    first.Uses.Count != 2 || second.Uses.Count != 2 || stationary.Uses.Count != 2) continue;
-                Vector3 Direction(BevelEdge edge) => BevelUnit(plan.Originals[edge.A == vertex ? edge.B : edge.A] - plan.Originals[vertex]);
-                var fixedDirection = Direction(stationary);
-                double a = Vector3.Cross(Direction(first),fixedDirection).magnitude;
-                double b = Vector3.Cross(Direction(second),fixedDirection).magnitude;
-                if (a < 1e-6 || b < 1e-6) continue;
-                var x = BevelKey(first.A,first.B); var y = BevelKey(second.A,second.B);
-                double ratio = Math.Log(b/a);
-                links[x].Add((y,ratio)); links[y].Add((x,-ratio));
             }
+
             var result = new Dictionary<(int,int),float>();
             var values = new Dictionary<(int,int),double>(); var region = new List<(int,int)>();
             foreach (var seed in targets)
@@ -84,6 +95,40 @@ namespace MashBoxSDK.AnimationStudio
                     result.Add(edge,plan.Distances[edge.Item1] * (consistent ? (float)Math.Exp(values[edge]-maximum) : 1));
             }
             return result;
+        }
+
+        private float BevelNeighborContactLimit(BevelWavefrontPlan plan)
+        {
+            float limit=float.PositiveInfinity;
+            foreach(var edge in bevelEdges.Values)
+            {
+                if(plan.Targets.Contains(BevelKey(edge.A,edge.B)))continue;
+                var span=plan.Originals[edge.B]-plan.Originals[edge.A];double square=ClipDot(span,span);
+                if(square<=bevelEpsilon*bevelEpsilon)continue;
+                double Rate(int owner,int other)
+                {
+                    if(!plan.Distances.TryGetValue(owner,out float distance))return 0;
+                    double rate=0;var direction=plan.Originals[other]-plan.Originals[owner];
+                    foreach(var use in edge.Uses)
+                    {
+                        var face=Faces[use.face].Vertices;
+                        for(int c=0;c<face.Count;c++)if(welded[face[c]]==owner)
+                        {
+                            int previous=welded[face[(c+face.Count-1)%face.Count]],next=welded[face[(c+1)%face.Count]];
+                            bool incoming=plan.Targets.Contains(BevelKey(previous,owner)),outgoing=plan.Targets.Contains(BevelKey(owner,next));
+                            // These are exactly the source-edge cuts constructed
+                            // by BuildBevelDraft, including unselected face fans.
+                            double candidate=!incoming&&!outgoing?distance/Math.Sqrt(square):
+                                plan.Velocities[use.face]!=null?ClipDot(plan.Velocities[use.face][c],direction)/square:0;
+                            rate=Math.Max(rate,candidate);break;
+                        }
+                    }
+                    return rate;
+                }
+                double speed=Rate(edge.A,edge.B)+Rate(edge.B,edge.A);
+                if(speed>0)limit=Math.Min(limit,(float)(1/speed));
+            }
+            return limit;
         }
 
         private BevelWavefrontPlan PrepareBevelWavefront(HashSet<(int,int)> targets, HashSet<int> affected)
@@ -153,9 +198,11 @@ namespace MashBoxSDK.AnimationStudio
                 for(int j=0;j<graph.nVertices;j++)
                 {
                     var v=graph.vertexDatas[j];
-                    if(v.partOfSplitEvent&&v.splitTime>1e-6f)plan.Limit=Mathf.Min(plan.Limit,v.splitTime);
+                    if(v.partOfSplitEvent&&v.splitTime>1e-6f){plan.SplitLimit=Mathf.Min(plan.SplitLimit,v.splitTime);plan.Limit=Mathf.Min(plan.Limit,v.splitTime);}
                 }
             }
+            plan.Limit=Math.Min(plan.Limit,BevelNeighborContactLimit(plan));
+            PrepareBevelContacts(plan);
             // Preserve the last nondegenerate interval. Continuing through an event
             // requires a 3D topology transaction, not merely welding close positions.
             if(!float.IsPositiveInfinity(plan.Limit))plan.Limit=Mathf.Max(0,plan.Limit-1e-5f);

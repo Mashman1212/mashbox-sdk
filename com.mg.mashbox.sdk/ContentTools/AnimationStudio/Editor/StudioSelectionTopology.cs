@@ -6,6 +6,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed class StudioSelectionTopology
     {
         internal readonly int[] Canonical,RenderEdges;
+        private readonly Vector3[] pathVertices,pathFaces;
         private readonly (int a,int b)[] edges;
         private readonly Dictionary<(int,int),int> lookup;
         private readonly int[] vertexOffsets,vertexIds,incidentOffsets,incidentEdges;
@@ -23,6 +24,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int id;if(!weld||!map.TryGetValue(positions[i],out id)){id=vertices++;if(weld)map.Add(positions[i],id);}Canonical[i]=id;
             }
+            pathVertices=new Vector3[vertices];for(int i=0;i<positions.Count;i++)pathVertices[Canonical[i]]=positions[i];
+            pathFaces=new Vector3[faces.Count];for(int f=0;f<faces.Count;f++){foreach(int v in faces[f].Vertices)pathFaces[f]+=positions[v];pathFaces[f]/=faces[f].Vertices.Count;}
             var counts=new int[vertices];foreach(int id in Canonical)counts[id]++;
             vertexOffsets=Offsets(counts);vertexIds=new int[positions.Count];Array.Clear(counts,0,counts.Length);
             for(int i=0;i<Canonical.Length;i++){int id=Canonical[i];vertexIds[vertexOffsets[id]+counts[id]++]=i;}
@@ -131,6 +134,55 @@ namespace MashBoxSDK.AnimationStudio
             for(int i=edgeFaceOffsets[seed];i<edgeFaceOffsets[seed+1];i++)Walk(edgeFaces[i],seed);
             return result;
         }
+        // Unweighted breadth-first paths minimize connected component steps.
+        // Uses authored adjacency and expands only the visited seam aliases.
+        internal HashSet<int> SelectShortestPath(int kind,int start,int finish,Func<int,bool> eligible=null)
+        {
+            var result=new HashSet<int>();
+            int count=kind==1?vertexOffsets.Length-1:kind==2?edges.Length:faceOffsets.Length-1;
+            int Decode(int id)=>kind==1?id>=0&&id<Canonical.Length?Canonical[id]:-1:kind==2?id>=0&&id<RenderEdges.Length?RenderEdges[id]:-1:id;
+            int first=Decode(start),last=Decode(finish);
+            if(first<0||last<0||first>=count||last>=count)return result;
+            var allowed=new bool[count];
+            if(eligible==null)for(int i=0;i<count;i++)allowed[i]=true;
+            else if(kind==1){for(int i=0;i<Canonical.Length;i++)if(eligible(i))allowed[Canonical[i]]=true;}
+            else if(kind==2){for(int i=0;i<RenderEdges.Length;i++)if(RenderEdges[i]>=0&&eligible(i))allowed[RenderEdges[i]]=true;}
+            else for(int i=0;i<count;i++)allowed[i]=eligible(i);
+            if(!allowed[first]||!allowed[last])return result;
+            Vector3 Center(int id)=>kind==1?pathVertices[id]:kind==2?(pathVertices[edges[id].a]+pathVertices[edges[id].b])*.5f:pathFaces[id];
+            var begin=Center(first);var chord=Center(last)-begin;double span=Math.Max(chord.magnitude,1e-12);var direction=chord/(float)span;
+            var parent=new int[count];var distance=new double[count];var settled=new bool[count];
+            for(int i=0;i<count;i++){parent[i]=-1;distance[i]=double.PositiveInfinity;}
+            var pending=new SortedSet<(double cost,int id)>();distance[first]=0;parent[first]=first;pending.Add((0,first));
+            void Visit(int from,int to){
+                if(!allowed[to]||settled[to]||from==to)return;
+                var delta=Center(to)-Center(from);double length=delta.magnitude;
+                if(kind==2)length=(Vector3.Distance(pathVertices[edges[from].a],pathVertices[edges[from].b])+Vector3.Distance(pathVertices[edges[to].a],pathVertices[edges[to].b]))*.5;
+                var midpoint=(Center(from)+Center(to))*.5f-begin;double t=Math.Max(0,Math.Min(span,Vector3.Dot(midpoint,direction)));
+                double deviation=(midpoint-direction*(float)t).magnitude/span;
+                double alignment=delta.sqrMagnitude>1e-24?Math.Abs(Vector3.Dot(delta.normalized,direction)):1;
+                double candidate=distance[from]+Math.Max(length,1e-12)*(1+2*deviation+.35*(1-alignment));
+                if(candidate>=distance[to])return;
+                if(!double.IsPositiveInfinity(distance[to]))pending.Remove((distance[to],to));
+                distance[to]=candidate;parent[to]=from;pending.Add((candidate,to));
+            }
+            while(pending.Count>0){
+                var entry=pending.Min;pending.Remove(entry);int current=entry.id;if(settled[current])continue;settled[current]=true;if(current==last)break;
+                if(kind==1){for(int i=incidentOffsets[current];i<incidentOffsets[current+1];i++)Visit(current,Other(incidentEdges[i],current));}
+                else if(kind==2){void Vertex(int v){for(int i=incidentOffsets[v];i<incidentOffsets[v+1];i++)Visit(current,incidentEdges[i]);}Vertex(edges[current].a);Vertex(edges[current].b);}
+                else for(int i=faceOffsets[current];i<faceOffsets[current+1];i++){int e=faceEdges[i];if(e<0)continue;for(int j=edgeFaceOffsets[e];j<edgeFaceOffsets[e+1];j++)Visit(current,edgeFaces[j]);}
+            }
+            if(parent[last]<0)return result;
+            for(int item=last;;item=parent[item])
+            {
+                if(kind==1){for(int i=vertexOffsets[item];i<vertexOffsets[item+1];i++)if(eligible==null||eligible(vertexIds[i]))result.Add(vertexIds[i]);}
+                else if(kind==2){for(int i=aliasOffsets[item];i<aliasOffsets[item+1];i++)if(eligible==null||eligible(aliases[i]))result.Add(aliases[i]);}
+                else result.Add(item);
+                if(item==first)break;
+            }
+            return result;
+        }
+
         internal HashSet<int> SelectEdges(int seed,int previous)
         {
             var result=new HashSet<int>();foreach(int e in EdgeLoop(RenderEdges[seed],previous>=0?RenderEdges[previous]:-1))for(int i=aliasOffsets[e];i<aliasOffsets[e+1];i++)result.Add(aliases[i]);return result;

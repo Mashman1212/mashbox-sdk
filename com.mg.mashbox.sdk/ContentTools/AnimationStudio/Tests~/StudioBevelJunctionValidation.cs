@@ -1,87 +1,42 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Collections.Generic;
-using MashBoxSDK.AnimationStudio;
-using UnityEditor;
-using UnityEngine;
-using Object = UnityEngine.Object;
-public static class StudioBevelJunctionValidation
-{
-    static int checks, cases;
-    static string current;
-    static void Check(bool valid, string message) { if (!valid) throw new Exception(current + ": " + message); checks++; }
-    static List<(int,int)> Edges(StudioModelDocument.Node node)
-    {
-        var positions = node.mesh.vertices; var seen = new HashSet<(Vector3,Vector3)>(); var result = new List<(int,int)>();
-        foreach (var face in new StudioMeshCuts(node).Faces) for(int i=0;i<face.Vertices.Count;i++)
-        {
-            int a=face.Vertices[i],b=face.Vertices[(i+1)%face.Vertices.Count];
-            if(seen.Add(StudioMeshCuts.NormalEdgePositionKeyForBevel(positions[a],positions[b])))result.Add((a,b));
-        }
-        return result;
-    }
-    static void Validate(Mesh mesh)
-    {
-        var positions = mesh.vertices; var triangles = mesh.triangles; var ids = new Dictionary<Vector3,int>();
-        var uses = new Dictionary<(int,int),(int count,int a,int b)>();
-        for(int i=0;i<triangles.Length;i+=3)
-        {
-            Check(Vector3.Cross(positions[triangles[i+1]]-positions[triangles[i]],positions[triangles[i+2]]-positions[triangles[i]]).sqrMagnitude>1e-26f,"No collapsed render triangle");
-            for(int e=0;e<3;e++)
-            {
-                var p=positions[triangles[i+e]];var q=positions[triangles[i+(e+1)%3]];
-                if(!ids.ContainsKey(p))ids[p]=ids.Count;if(!ids.ContainsKey(q))ids[q]=ids.Count;
-                int a=ids[p],b=ids[q];var key=(Math.Min(a,b),Math.Max(a,b));
-                if(uses.TryGetValue(key,out var use)){Check(use.count==1&&use.a==b,"Opposed seam winding");uses[key]=(2,use.a,use.b);}else uses[key]=(1,a,b);
-            }
-        }
-        Check(uses.Values.All(u=>u.count==2),"Closed seams without T junctions");
-        Check(ids.Count-uses.Count+triangles.Length/3==2,"Euler topology preserved");
-        Check(mesh.normals.Length==positions.Length&&mesh.normals.All(n=>!float.IsNaN(n.x)&&n.sqrMagnitude>.98f),"Finite unit normals");
-    }
-    public static void Run()
-    {
-        try
-        {
-            foreach(int count in new[]{1,2,3})foreach(int subdivisions in new[]{0,1,2,3,4,8,32})foreach(float tension in new[]{-1f,0,1})foreach(var style in new[]{StudioMeshCuts.BevelJunction.Uniform,StudioMeshCuts.BevelJunction.Patch})
-            {
-                current=$"{count} edges, {subdivisions} subdivisions, tension {tension}, {style}";
-                var mesh=StudioModelDocument.BuildPrimitive(PrimitiveType.Cube,out var polygons);
-                try
-                {
-                    var node=new StudioModelDocument.Node{mesh=mesh,cutPolygons=polygons,cutTriangles=mesh.triangles};var corner=Vector3.one*.5f;var positions=mesh.vertices;
-                    var selection=Edges(node).Where(e=>positions[e.Item1]==corner||positions[e.Item2]==corner).Take(count).ToArray();
-                    Check(selection.Length==count,"Correct incident edge selection");
-                    new StudioMeshCuts(node).BevelEdges(node,selection,new StudioMeshCuts.BevelOptions{Width=.2f,Subdivisions=subdivisions,Tension=tension,Junction=style});
-                    Validate(mesh);positions=mesh.vertices;
-                    var cap=new StudioMeshCuts(node).Faces.Where(f=>f.Vertices.All(i=>(positions[i]-corner).magnitude<.35f)).ToList();
-                    if(count==1)
-                    {
-                        var resultFaces=new StudioMeshCuts(node).Faces;
-                        Check(resultFaces.Count==6+subdivisions+1,"Single-edge ends merge into original faces without extra cap polygons");
-                        Check(cap.Count==0,"No separate end-cap boundary remains at the corner");
-                    }
-                    if(count==3)
-                    {
-                        int n=subdivisions+1,m=n/2;bool odd=(n&1)!=0;
-                        int expected=style==StudioMeshCuts.BevelJunction.Patch||subdivisions==0?1:3*(m*m+(odd?m:0))+(odd?1:0);
-                        Check(cap.Count==expected,"Three-edge patch has expected connected face grid");
-                        if(style==StudioMeshCuts.BevelJunction.Uniform&&subdivisions>0)
-                        {
-                            Check(cap.Count(f=>f.Vertices.Count==3)==(odd?1:0),"Only odd profile count needs one central triangle");
-                            Check(cap.All(f=>f.Vertices.Count==4||(odd&&f.Vertices.Count==3)),"Grid junction contains quads and its one central face");
-                        }
-                    }
-                    if(count==2&&subdivisions>0&&tension!=0&&style==StudioMeshCuts.BevelJunction.Uniform)
-                        Check(cap.Count==subdivisions+1&&cap.Count(f=>f.Vertices.Count==3)==2,"Two-edge profile loops connect through a strip with triangle ends");
-                    cases++;
-                }
-                finally{Object.DestroyImmediate(mesh);}
-            }
-            File.WriteAllText(Path.Combine(Application.dataPath,"../bevel-junction-result.txt"),$"PASS {checks} checks across {cases} one/two/three-edge junction cases");
-        }
-        catch(Exception e){File.WriteAllText(Path.Combine(Application.dataPath,"../bevel-junction-result.txt"),e.ToString());}
-        finally{EditorApplication.Exit(0);}
-    }
+using System;using System.IO;using System.Linq;using System.Collections.Generic;using System.Reflection;using UnityEditor;using UnityEngine;using MashBoxSDK.AnimationStudio;
+internal static class BevelHoleProbe {
+ static string Out(string n)=>Path.GetFullPath(Path.Combine(Application.dataPath,"../../"+n));
+ [InitializeOnLoadMethod] static void Request(){if(Application.dataPath.EndsWith("BevelJunctionProject/Assets")&&File.Exists(Out("bevel-hole-request.txt")))EditorApplication.delayCall+=Run;}
+ static FileSystemWatcher bridge;
+ static void Bridge(){if(bridge!=null)return;var context=System.Threading.SynchronizationContext.Current;bridge=new FileSystemWatcher(Path.GetDirectoryName(Out("bevel-hole-refresh.txt")),"bevel-hole-refresh.txt"){NotifyFilter=NotifyFilters.FileName|NotifyFilters.LastWrite};bridge.Created+=(s,e)=>context.Post(_=>{if(File.Exists(Out("bevel-hole-refresh.txt"))){File.Delete(Out("bevel-hole-refresh.txt"));AssetDatabase.Refresh();}},null);bridge.EnableRaisingEvents=true;AssemblyReloadEvents.beforeAssemblyReload+=()=>{bridge?.Dispose();bridge=null;};}
+ static bool triangleFaces; static StudioModelDocument.Node Shape(){var p=new List<Vector3>();for(int z=0;z<2;z++)for(int r=0;r<2;r++){float size=r==0?1:.5f;foreach(var v in new[]{new Vector2(-1,-1),new Vector2(1,-1),new Vector2(1,1),new Vector2(-1,1)})p.Add(new Vector3(v.x*size,v.y*size,z==0?.5f:-.5f));}var f=new List<int[]>();for(int i=0;i<4;i++){int j=(i+1)%4;f.Add(new[]{i,j,4+j,4+i});f.Add(new[]{8+j,8+i,12+i,12+j});f.Add(new[]{i,8+i,8+j,j});f.Add(new[]{4+j,12+j,12+i,4+i});}if(triangleFaces)f=f.SelectMany((v,i)=>i%4<2?new[]{new[]{v[0],v[1],v[2]},new[]{v[0],v[2],v[3]}}:new[]{v}).ToList();var m=new Mesh();m.SetVertices(p);m.SetTriangles(f.SelectMany(v=>Enumerable.Range(1,v.Length-2).SelectMany(i=>new[]{v[0],v[i],v[i+1]})).ToArray(),0);m.SetUVs(0,p.Select(v=>new Vector2(v.x,v.y)).ToList());m.RecalculateNormals();m.RecalculateBounds();return new StudioModelDocument.Node{name="Square hole",mesh=m,cutTriangles=m.triangles,cutPolygons=f.SelectMany(v=>new[]{0,v.Length}.Concat(v)).ToArray()};}
+ static string Check(StudioModelDocument.Node n){var t=new StudioMeshCuts(n);var uses=new Dictionary<(Vector3,Vector3),int>();float smallest=float.PositiveInfinity;foreach(var f in t.Faces)for(int c=0;c<f.Vertices.Count;c++){var a=t.Positions[f.Vertices[c]];var b=t.Positions[f.Vertices[(c+1)%f.Vertices.Count]];smallest=Math.Min(smallest,Vector3.Distance(a,b));var key=StudioMeshCuts.NormalEdgePositionKeyForBevel(a,b);uses.TryGetValue(key,out int count);uses[key]=count+1;}var renderUses=new Dictionary<(Vector3,Vector3),int>();var tr=n.mesh.triangles;var rp=n.mesh.vertices;for(int k=0;k<tr.Length;k+=3)for(int c=0;c<3;c++){var key=StudioMeshCuts.NormalEdgePositionKeyForBevel(rp[tr[k+c]],rp[tr[k+(c+1)%3]]);renderUses.TryGetValue(key,out int cnt);renderUses[key]=cnt+1;}if(uses.Values.Any(v=>v!=2)||renderUses.Values.Any(v=>v!=2))throw new Exception("Open authored or render boundary");return "renderOpen="+renderUses.Values.Count(v=>v!=2)+" faces="+t.Faces.Count+" points="+t.Positions.Distinct().Count()+" open="+uses.Values.Count(v=>v!=2)+" minEdge="+smallest.ToString("R");}
+ static void Capture(StudioModelDocument.Node node,string name){
+  var scene=UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();var root=new GameObject("Bevel probe");UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(root,scene);var cameraObject=new GameObject("Probe camera");UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(cameraObject,scene);
+  var shader=Shader.Find("Hidden/BevelHoleProbe");if(!shader)throw new Exception("Missing capture shader");var surface=new Material(shader);surface.SetColor("_Color",new Color(.65f,.65f,.65f,1));var wireMaterial=new Material(shader);wireMaterial.SetColor("_Color",new Color(.2f,.95f,.9f,1));wireMaterial.SetFloat("_Wire",1);wireMaterial.SetFloat("_Offset",-1);wireMaterial.renderQueue=2001;
+  root.layer=31;root.AddComponent<MeshFilter>().sharedMesh=node.mesh;root.AddComponent<MeshRenderer>().sharedMaterial=surface;
+  var wire=new GameObject("Authored edges");UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(wire,scene);wire.layer=31;var mesh=new Mesh();mesh.indexFormat=UnityEngine.Rendering.IndexFormat.UInt32;mesh.vertices=node.mesh.vertices;var ids=new List<int>();foreach(var face in new StudioMeshCuts(node).Faces)for(int c=0;c<face.Vertices.Count;c++){ids.Add(face.Vertices[c]);ids.Add(face.Vertices[(c+1)%face.Vertices.Count]);}mesh.SetIndices(ids.ToArray(),MeshTopology.Lines,0);wire.AddComponent<MeshFilter>().sharedMesh=mesh;wire.AddComponent<MeshRenderer>().sharedMaterial=wireMaterial;
+  var camera=cameraObject.AddComponent<Camera>();camera.scene=scene;camera.enabled=false;camera.cullingMask=1<<31;camera.transform.position=new Vector3(2.4f,1.7f,4.5f);camera.transform.LookAt(Vector3.zero);camera.fieldOfView=36;camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.13f,.13f,.13f,1);camera.nearClipPlane=.01f;camera.farClipPlane=100;
+  var rt=new RenderTexture(640,640,24);rt.Create();camera.targetTexture=rt;var previous=RenderTexture.active;var pipeline=UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline;var quality=QualitySettings.renderPipeline;
+  try{UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline=null;QualitySettings.renderPipeline=null;camera.Render();RenderTexture.active=rt;var image=new Texture2D(640,640,TextureFormat.RGBA32,false);image.ReadPixels(new Rect(0,0,640,640),0,0);image.Apply();File.WriteAllBytes(Out(name),image.EncodeToPNG());UnityEngine.Object.DestroyImmediate(image);}
+  finally{RenderTexture.active=previous;camera.targetTexture=null;UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline=pipeline;QualitySettings.renderPipeline=quality;UnityEngine.Object.DestroyImmediate(rt);UnityEngine.Object.DestroyImmediate(mesh);UnityEngine.Object.DestroyImmediate(surface);UnityEngine.Object.DestroyImmediate(wireMaterial);UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(scene);}
+ }
+
+ static void HistoryCheck(){
+  var doc=ScriptableObject.CreateInstance<StudioModelDocument>();triangleFaces=true;var node=Shape();doc.nodes.Add(node);var source=node.mesh.vertices;var sourcePolygons=node.cutPolygons.ToArray();var preview=new StudioMeshToolPreview(doc,new[]{0});var target=preview.Targets[0];
+  var topology=target.Topology;var selected=new HashSet<(int,int)>();foreach(var face in topology.Faces)for(int c=0;c<face.Vertices.Count;c++){int a=face.Vertices[c],b=face.Vertices[(c+1)%face.Vertices.Count];var p=topology.Positions[a];var q=topology.Positions[b];if(((Mathf.Abs(p.x)==1f&&Mathf.Abs(p.y)==1f&&Mathf.Abs(q.x)==1f&&Mathf.Abs(q.y)==1f)||(Mathf.Abs(p.x)==.5f&&Mathf.Abs(p.y)==.5f&&p.x==q.x&&p.y==q.y&&p.z!=q.z)))selected.Add((Math.Min(a,b),Math.Max(a,b)));}
+  void Evaluate(float width){target.Reset();var result=topology.BevelEdges(target.Work,selected,new StudioMeshCuts.BevelOptions{Width=width,Subdivisions=2,Tension=1,Junction=StudioMeshCuts.BevelJunction.Uniform});target.Welds=result.Welds;target.VertexUpdate=result.VertexUpdate;target.VertexUpdateStart=result.VertexUpdateStart;target.PublishedPositions=result.PublishedPositions;preview.Publish(true);Check(node);}
+  void Assert(bool yes,string text){if(!yes)throw new Exception(text);}
+  try{Evaluate(.3f);var below=node.mesh.vertices;var belowFaces=node.cutPolygons.ToArray();Evaluate(2);var contact=node.mesh.vertices;var contactFaces=node.cutPolygons.ToArray();Assert(contact.Distinct().Count()<below.Distinct().Count(),"Contact geometric identities not merged");Evaluate(.3f);Assert(below.SequenceEqual(node.mesh.vertices)&&belowFaces.SequenceEqual(node.cutPolygons),"Scrubbing back changed source evaluation");preview.Restore();Assert(source.SequenceEqual(node.mesh.vertices)&&sourcePolygons.SequenceEqual(node.cutPolygons),"Cancel failed to restore original topology");Evaluate(2);preview.Commit("Bevel contact check");UnityEditor.Undo.FlushUndoRecordObjects();
+   EditorApplication.delayCall+=()=>{try{MashBoxSDK.AnimationStudio.StudioUndo.PerformUndo();EditorApplication.delayCall+=()=>{try{Assert(doc.nodes[0].mesh.vertices.SequenceEqual(source)&&doc.nodes[0].cutPolygons.SequenceEqual(sourcePolygons),"Contact Undo failed");MashBoxSDK.AnimationStudio.StudioUndo.PerformRedo();EditorApplication.delayCall+=()=>{try{Assert(doc.nodes[0].mesh.vertices.SequenceEqual(contact)&&doc.nodes[0].cutPolygons.SequenceEqual(contactFaces),"Contact Redo failed");Check(doc.nodes[0]);File.AppendAllText(Out("bevel-hole-result.txt"),"\nPASS captured preview: below/contact/back, Cancel, native Undo/Redo exact mesh and face metadata\n");}catch(Exception e){File.AppendAllText(Out("bevel-hole-result.txt"),"\nHISTORY FAIL "+e);}finally{preview.Dispose();UnityEngine.Object.DestroyImmediate(node.mesh);UnityEngine.Object.DestroyImmediate(doc);}};}catch(Exception e){File.AppendAllText(Out("bevel-hole-result.txt"),"\nHISTORY FAIL "+e);}};}catch(Exception e){File.AppendAllText(Out("bevel-hole-result.txt"),"\nHISTORY FAIL "+e);}};
+  }catch(Exception e){preview.Dispose();UnityEngine.Object.DestroyImmediate(node.mesh);UnityEngine.Object.DestroyImmediate(doc);File.AppendAllText(Out("bevel-hole-result.txt"),"\nHISTORY FAIL "+e);}
+ }
+
+ public static void Run(){if(!Application.dataPath.EndsWith("BevelJunctionProject/Assets"))return;Bridge();File.Delete(Out("bevel-hole-request.txt"));var log=new List<string>();foreach(bool triangles in new[]{false})foreach(int subdivisions in new[]{2})foreach(float width in new[]{.1f}){triangleFaces=triangles;var n=Shape();try{var t=new StudioMeshCuts(n);var targets=new List<(int,int)>();var seen=new HashSet<(int,int)>();foreach(var f in t.Faces)for(int c=0;c<f.Vertices.Count;c++){int a=f.Vertices[c],b=f.Vertices[(c+1)%f.Vertices.Count];var p=t.Positions[a];var q=t.Positions[b];if(((Mathf.Abs(p.x)==1f&&Mathf.Abs(p.y)==1f&&Mathf.Abs(q.x)==1f&&Mathf.Abs(q.y)==1f)||(Mathf.Abs(p.x)==.5f&&Mathf.Abs(p.y)==.5f&&p.x==q.x&&p.y==q.y&&p.z!=q.z))&&seen.Add((Math.Min(a,b),Math.Max(a,b))))targets.Add((a,b));}t.BevelEdges(n,targets,new StudioMeshCuts.BevelOptions{Width=width,Subdivisions=subdivisions,Tension=1,Junction=StudioMeshCuts.BevelJunction.Uniform});log.Add((triangles?"TRI ":"QUAD ")+subdivisions+" "+width+" "+Check(n));if(subdivisions==2)Capture(n,"bevel-hole-"+(triangles?"tri":"quad")+"-"+width.ToString("0.00",System.Globalization.CultureInfo.InvariantCulture)+".png");if(width==2||width==.3f){var probe=new StudioMeshCuts(n);File.WriteAllText(Out("bevel-hole-"+(triangles?"tri-":"quad-")+subdivisions+"-"+width.ToString("0.00",System.Globalization.CultureInfo.InvariantCulture)+".obj"),string.Join("\n",probe.Positions.Select(p=>"v "+p.x.ToString("R",System.Globalization.CultureInfo.InvariantCulture)+" "+p.y.ToString("R",System.Globalization.CultureInfo.InvariantCulture)+" "+p.z.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Concat(probe.Faces.Select(f=>"f "+string.Join(" ",f.Vertices.Select(v=>(v+1).ToString()))))));}}catch(Exception e){log.Add((triangles?"TRI ":"QUAD ")+subdivisions+" "+width+" FAIL "+e);}finally{UnityEngine.Object.DestroyImmediate(n.mesh);}}File.WriteAllLines(Out("bevel-hole-result.txt"),log);}
 }
+
+
+
+
+
+
+
+
+
+
+

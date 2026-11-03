@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
     [Serializable] public sealed class StudioModifierOperation
     {
         public string id=Guid.NewGuid().ToString("N"),kind,name;
-        public bool enabled=true,weld=true;
+        public bool enabled=true,weld=true,normalizedBevel;
         public Vector4 parameters;
         public PrimitiveType primitiveType;
         public Vector3Int cubeDivisions;
@@ -116,7 +116,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 case "Bevel":
                     if(p.x<=0)return;
-                    var bevel=topology.BevelEdges(node,edges,new StudioMeshCuts.BevelOptions {Width=p.x,Subdivisions=Mathf.Clamp(Mathf.RoundToInt(p.y),0,32),Tension=p.z,Junction=(StudioMeshCuts.BevelJunction)Mathf.RoundToInt(p.w)});
+                    var bevel=topology.BevelEdges(node,edges,new StudioMeshCuts.BevelOptions {Width=p.x,NormalizedWidth=operation.normalizedBevel,UnlockWidthRange=(Mathf.RoundToInt(p.w)&2)!=0,Subdivisions=Mathf.Clamp(Mathf.RoundToInt(p.y),0,32),Tension=p.z,Junction=(StudioMeshCuts.BevelJunction)(Mathf.RoundToInt(p.w)&1)});
                     if(bevel==null)throw new InvalidOperationException("The saved edges cannot be beveled.");
                     if(operation.flow.x>=.5f&&p.y>0&&bevel.RenderSelection.Count>0)
                     {

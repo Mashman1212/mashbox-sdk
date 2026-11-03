@@ -356,7 +356,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (polygon.OriginalFace >= 0) continue;
                 var vertices = new List<int>(polygon.Vertices.Count); foreach (int vertex in polygon.Vertices) vertices.Add(render[vertex]);
                 output.Metadata.Add(polygon.Material); output.Metadata.Add(vertices.Count); output.Metadata.AddRange(vertices);
-                output.Triangles[polygon.Material].AddRange(BevelTriangulate(vertices, output.Positions, epsilon));
+                if (polygon.TriangleCorners != null) foreach (int corner in polygon.TriangleCorners) output.Triangles[polygon.Material].Add(vertices[corner]);
+                else output.Triangles[polygon.Material].AddRange(BevelTriangulate(vertices, output.Positions, epsilon));
             }
             if (!SameBevelIndices(output.CachedMetadata, output.Metadata, output.StaticMetadata.Length)) output.CachedMetadata = output.Metadata.ToArray();
             if (!SameBevelIndices(output.CachedGroups, output.Groups, output.StaticGroups.Length)) output.CachedGroups = output.Groups.ToArray();

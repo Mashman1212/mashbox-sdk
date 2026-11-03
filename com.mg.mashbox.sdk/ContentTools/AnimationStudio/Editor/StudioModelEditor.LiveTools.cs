@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
             CancelLiveTool(); LoadDisplayConfiguration();
             edgeLoopCount = Mathf.Clamp(Mathf.RoundToInt(StudioPreferenceStore.GetFloat("Model.EdgeLoopCount", 1)), 1, MaximumEdgeLoops);
 
-            extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", .01f);
+            extrusionDistance = ToolChannelPane.GetFloatDefault("Extrude", "Distance", 0);
             extrusionInset = ToolChannelPane.GetFloatDefault("Extrude", "Inset", 0);
             extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         }
@@ -64,8 +64,8 @@ namespace MashBoxSDK.AnimationStudio
         private Vector4 LiveParameters(LiveTool kind)
         {
             if (repeatingAction != null && repeatingAction.kind == RepeatKind.Live && repeatingAction.live == kind) return repeatingAction.parameters;
-            if (kind == LiveTool.Bevel) return new Vector4(ToolChannelPane.GetFloatDefault(BevelTool, "Width", .1f),
-                ToolChannelPane.GetFloatDefault(BevelTool, "Subdivisions", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Tension", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Junction", 0));
+            if (kind == LiveTool.Bevel) return new Vector4(Mathf.Max(0,ToolChannelPane.GetFloatDefault(BevelTool, "WidthFraction", .1f)),
+                ToolChannelPane.GetFloatDefault(BevelTool, "Subdivisions", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Tension", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Junction", 0)+(ToolChannelPane.GetFloatDefault(BevelTool,"UnlockWidthRange",0)>=.5f?BevelUnlockRangeFlag:0));
             if (kind == LiveTool.EdgeFlow) return new Vector4(ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Influence",.5f),ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Iterations",4),0,0);
             if (kind == LiveTool.Bridge) return BridgeParameters;
             if (kind == LiveTool.Merge) return Vector4.zero;
@@ -126,6 +126,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!dispatchingComponentTool && EvaluateComponentLiveTools(kind)) return;
             StartLiveTool(kind);
             var parameters = LiveParameters(kind);
+            if(kind==LiveTool.Bevel)parameters.x=BevelRangeUnlocked(parameters)?Mathf.Max(0,parameters.x):Mathf.Clamp01(parameters.x);
             var flowParameters = FlowParameters(kind);
             if (liveEvaluated && liveValid && parameters.Equals(liveParameters) && flowParameters.Equals(liveFlowParameters)) return;
 #if MASHBOX_STUDIO_TESTS
@@ -165,8 +166,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (kind == LiveTool.Bevel)
                 {
                     bevel = target.Topology.BevelEdges(target.Work, liveEdges, new StudioMeshCuts.BevelOptions {
-                        Width = parameters.x, Subdivisions = Mathf.RoundToInt(parameters.y), Tension = parameters.z,
-                        Junction = (StudioMeshCuts.BevelJunction)Mathf.RoundToInt(parameters.w) });
+                        Width = parameters.x, NormalizedWidth = true, UnlockWidthRange = BevelRangeUnlocked(parameters), Subdivisions = Mathf.RoundToInt(parameters.y), Tension = parameters.z,
+                        Junction = (StudioMeshCuts.BevelJunction)(Mathf.RoundToInt(parameters.w)&1) });
                     changed |= bevel != null;
                     target.IsBevelPreview=bevel!=null; target.VertexUpdate=bevel?.VertexUpdate; target.Welds=bevel?.Welds; target.VertexUpdateStart = bevel?.VertexUpdateStart ?? 0; target.PublishedPositions = bevel?.PublishedPositions;
                     if(flowParameters.x>=.5f&&Mathf.RoundToInt(parameters.y)>0)SmoothBevelOutput(target,bevel,flowParameters);

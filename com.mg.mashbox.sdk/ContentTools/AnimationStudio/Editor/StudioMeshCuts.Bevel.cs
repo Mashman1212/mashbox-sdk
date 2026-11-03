@@ -23,6 +23,7 @@ namespace MashBoxSDK.AnimationStudio
 
         {
 
+            internal bool NormalizedWidth, UnlockWidthRange;
             internal float Width, Tension;
 
             internal int Subdivisions;
@@ -87,6 +88,7 @@ namespace MashBoxSDK.AnimationStudio
         {
 
             internal int Material;
+            internal List<int> TriangleCorners;
             internal int OriginalFace = -1;
             internal bool SourceSurface;
 
@@ -116,6 +118,7 @@ namespace MashBoxSDK.AnimationStudio
 
             internal readonly HashSet<(int, int)> Selection = new HashSet<(int, int)>();
 
+            internal readonly Dictionary<(int,int),HashSet<int>> ContactCandidates=new Dictionary<(int,int),HashSet<int>>();
             internal List<int>[][] Corners;
             internal void Reset(BevelWavefrontPlan next)
             {
@@ -131,7 +134,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (Corners!=null) foreach (int face in next.AffectedFaces) Corners[face]=null;
                 }
                 Vertices.Clear(); Polygons.Clear();
-                JunctionAnchors.Clear(); NormalHints.Clear(); SourceHints.Clear(); Selection.Clear(); pointBins.Clear();
+                JunctionAnchors.Clear(); NormalHints.Clear(); SourceHints.Clear(); Selection.Clear(); pointBins.Clear(); ContactCandidates.Clear();
             }
             internal float Width;
             internal BevelWavefrontPlan Plan;
@@ -408,7 +411,12 @@ namespace MashBoxSDK.AnimationStudio
                 if(degree>=3){vertexPatch=true;break;}
             }
             var clip=PrepareFlatClip(plan,mesh);
-            float width=clip!=null?Mathf.Min(options.Width,clip.Limit):Mathf.Min(options.Width,plan.Limit);
+            if(options.NormalizedWidth){float sourceMaximum=plan.Contacts.Count>0?plan.ContactWidth:plan.Limit;float maximum=clip!=null&&!float.IsInfinity(clip.Limit)?Math.Min(clip.Limit,sourceMaximum):sourceMaximum;if(float.IsNaN(maximum)||float.IsInfinity(maximum)||maximum<=0)throw new InvalidOperationException("This selection has no finite bevel range.");options.Width=(options.UnlockWidthRange?Mathf.Max(0,options.Width):Mathf.Clamp01(options.Width))*maximum;}
+            float requestedWidth = options.Width;
+            float safeLimit = clip != null ? Math.Min(clip.Limit, plan.Limit) : plan.Limit;
+            bool extend = options.UnlockWidthRange && requestedWidth > safeLimit;
+            if (extend) clip = null;
+            float width = extend ? safeLimit : clip != null ? Mathf.Min(options.Width, clip.Limit) : Mathf.Min(options.Width, plan.Limit);
             bevelUseClipping=false;
             if(clip!=null)
             {
@@ -420,7 +428,7 @@ namespace MashBoxSDK.AnimationStudio
             if(!bevelUseClipping)
             {
                 if(options.Subdivisions==0)PrepareFlatBevelTerminations(plan);
-                width=Mathf.Min(options.Width,plan.Limit,options.Subdivisions==0?plan.FlatTerminalLimit:float.PositiveInfinity);
+                width=Mathf.Min(extend?safeLimit:options.Width,plan.Limit,options.Subdivisions==0?plan.FlatTerminalLimit:float.PositiveInfinity);
             }
             if(width<=epsilon)throw new InvalidOperationException("No room remains for a nondegenerate bevel at this selection.");
             if(bevelUseClipping&&!FlatClipChanged(clip))return null;
@@ -430,7 +438,7 @@ namespace MashBoxSDK.AnimationStudio
             BevelProfileStage?.Invoke("bevel.prepare");
 #endif
             BevelDraft draft;
-            try { draft = BuildBevelDraft(node, edges, incident, targets, affected, normals, options, width, epsilon); }
+            try { draft = BuildBevelDraft(node, edges, incident, targets, affected, normals, options, width, epsilon); if (extend) ExtendBevelDraft(draft, requestedWidth, epsilon); }
             catch (BevelOverlap e) { throw new InvalidOperationException("The bevel junction cannot be constructed safely: " + e.Message); }
 
 #if MASHBOX_STUDIO_TESTS
@@ -470,6 +478,7 @@ namespace MashBoxSDK.AnimationStudio
             void BoundaryCut(int vertex, int other, int point)
             {
                 var key = BevelKey(vertex, other);
+                if(!draft.ContactCandidates.TryGetValue(key,out var meeting))draft.ContactCandidates[key]=meeting=new HashSet<int>();meeting.Add(point);
                 if (!boundaryCuts.TryGetValue(key, out var points)) boundaryCuts.Add(key, points = new List<int>());
                 if (!points.Contains(point)) points.Add(point);
                 var cutKey = (vertex, other);
@@ -815,12 +824,96 @@ namespace MashBoxSDK.AnimationStudio
 
             }
 
-            SealBevelCorners(draft, affected, options, AddFace, epsilon);
+            var terminalAnchors = new HashSet<int>();
+            SealBevelCorners(draft, affected, options, AddFace, epsilon, terminalAnchors);
+            ConnectBevelTerminalAnchors(draft, terminalAnchors, epsilon);
+            if (!(options.UnlockWidthRange && options.Width > width)) ApplyBevelContacts(draft,options.Width,(geometry,source,material,normals,isSource,original)=>{buildingSourceFaces=isSource;AddFace(geometry,source,material,normals);draft.Polygons[draft.Polygons.Count-1].OriginalFace=original;});
 
             return draft;
 
         }
 
+
+
+        private static void ConnectBevelTerminalAnchors(BevelDraft draft, HashSet<int> anchors, double epsilon)
+        {
+            int count = draft.Polygons.Count;
+            for (int p = 0; p < count; p++)
+            {
+                var polygon = draft.Polygons[p];
+                if (!polygon.SourceSurface || polygon.OriginalFace >= 0) continue;
+                var corners = new List<int>();
+                for (int c = 0; c < polygon.Vertices.Count; c++)
+                    if (anchors.Contains(draft.Vertices[polygon.Vertices[c]].Geo)) corners.Add(c);
+                if (corners.Count < 2) continue;
+                var parts = new List<BevelPolygon>();
+                for (int c = 0; c < corners.Count; c++)
+                {
+                    int a = corners[c], b = corners[(c + 1) % corners.Count];
+                    var part = new BevelPolygon { Material = polygon.Material, SourceSurface = true };
+                    for (int i = a; ; i = (i + 1) % polygon.Vertices.Count)
+                    { part.Vertices.Add(polygon.Vertices[i]); if (i == b) break; }
+                    if (part.Vertices.Count > 2) parts.Add(part);
+                }
+                if (corners.Count > 2)
+                {
+                    var middle = new BevelPolygon { Material = polygon.Material, SourceSurface = true };
+                    foreach (int c in corners) middle.Vertices.Add(polygon.Vertices[c]);
+                    parts.Add(middle);
+                }
+                if (parts.Count < 2) continue;
+                // Only retain face splits that preserve the source surface. A
+                // chord across an exterior concavity is not a valid connection.
+                var original = polygon.Vertices.Select(v => draft.Vertices[v].Geo).ToList();
+                var normal = BevelPolygonNormal(original, draft.Positions);
+                if (original.Any(id => Math.Abs(ClipDot(draft.Positions[id] - draft.Positions[original[0]], normal)) > epsilon * 8)) continue;
+                int axis = BevelAxis(normal);
+                double Area(IList<int> ring)
+                {
+                    double area = 0;
+                    var origin = BevelProject(draft.Positions[ring[0]], axis);
+                    for (int i = 1; i + 1 < ring.Count; i++) area += BevelCross(origin, BevelProject(draft.Positions[ring[i]], axis), BevelProject(draft.Positions[ring[i + 1]], axis));
+                    return area;
+                }
+                double total = Area(original), sum = 0; bool valid = true;
+                foreach (var part in parts)
+                {
+                    var ring = part.Vertices.Select(v => draft.Vertices[v].Geo).ToList();
+                    double area = Area(ring);
+                    if (area * total <= 0) { valid = false; break; }
+                    try { BevelTriangulate(ring, draft.Positions, epsilon); }
+                    catch (BevelOverlap) { valid = false; break; }
+                    sum += area;
+                }
+                if (!valid || Math.Abs(sum - total) > Math.Max(epsilon * epsilon, Math.Abs(total) * 1e-6)) continue;
+                draft.Polygons[p] = parts[0];
+                for (int i = 1; i < parts.Count; i++) draft.Polygons.Add(parts[i]);
+            }
+        }
+
+        private static void ExtendBevelDraft(BevelDraft draft, float width, double epsilon)
+        {
+            // Unclamped bevels retain pre-contact connectivity and render
+            // diagonals as rails pass through neighboring faces. Do not ask a
+            // simple-polygon triangulator to repair the deliberate overlap.
+            foreach (var polygon in draft.Polygons)
+            {
+                if (polygon.OriginalFace >= 0) continue;
+                var geometry = polygon.Vertices.Select(v => draft.Vertices[v].Geo).ToList();
+                var triangles = BevelTriangulate(geometry, draft.Positions, epsilon);
+                polygon.TriangleCorners = triangles.Select(id => geometry.IndexOf(id)).ToList();
+            }
+            double ratio = width / (double)draft.Width;
+            for (int i = draft.Originals.Length; i < draft.Positions.Count; i++)
+            {
+                int owner = draft.Owners[i];
+                if (owner < 0) throw new BevelOverlap("An unlocked bevel point has no source trajectory.");
+                var origin = new ClipVector(draft.Originals[owner]);
+                draft.Positions[i] = (origin + (new ClipVector(draft.Positions[i]) - origin) * ratio).Float;
+                if (!BevelFinite(draft.Positions[i])) throw new BevelOverlap("The unlocked bevel produced non-finite coordinates.");
+            }
+            draft.Width = width;
+        }
 
 
         private static Vector3 BevelProfile(Vector3 a, Vector3 b, Vector3 original, float t, float tension) =>
@@ -851,7 +944,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void SealBevelCorners(BevelDraft draft, HashSet<int> affected, BevelOptions options,
 
-            Action<List<int>, int, int, List<Vector3>> addFace, double epsilon)
+            Action<List<int>, int, int, List<Vector3>> addFace, double epsilon, HashSet<int> terminalAnchors)
 
         {
 
@@ -979,6 +1072,43 @@ namespace MashBoxSDK.AnimationStudio
 
                 if (geometric.sqrMagnitude < .5f) throw new BevelOverlap("A corner patch has no stable surface normal.");
 
+                int terminalDegree=0;
+                foreach(var edge in bevelIncident[vertex])if(draft.Plan.Targets.Contains(BevelKey(edge.A,edge.B)))terminalDegree++;
+                // Retain the existing terminal boundary and strip geometry. The
+                // terminal patch is an intentional modeling surface: keep its
+                // triangles rather than absorbing it into one receiving face.
+                if(terminalDegree==1)
+                {
+                    int receiver=-1;
+                    foreach(int candidate in cornerPolygons[vertex])
+                    {
+                        var polygon=draft.Polygons[candidate];if(!polygon.SourceSurface)continue;
+                        int face=draft.Vertices[polygon.Vertices[0]].SourceFace;
+                        if(Math.Abs(Vector3.Dot(bevelNormals[face],geometric))<.9999f)continue;
+                        var origin=Positions[Faces[face].Vertices[0]];bool coplanar=true;
+                        foreach(int point in ring)if(Math.Abs(ClipDot(draft.Positions[point]-origin,bevelNormals[face]))>epsilon*8){coplanar=false;break;}
+                        if(coplanar){receiver=face;break;}
+                    }
+                    if(receiver>=0)
+                    {
+                        // Anchor a solo edge's cap on its perpendicular source
+                        // neighbor, rather than letting ear order choose a rail.
+                        var profile=new HashSet<int>();var capEdges=new HashSet<(int,int)>();
+                        for(int c=0;c<ring.Count;c++)capEdges.Add(BevelKey(ring[c],ring[(c+1)%ring.Count]));
+                        foreach(int candidate in cornerPolygons[vertex]){var polygon=draft.Polygons[candidate];if(polygon.SourceSurface)continue;for(int c=0;c<polygon.Vertices.Count;c++){int a=draft.Vertices[polygon.Vertices[c]].Geo,b=draft.Vertices[polygon.Vertices[(c+1)%polygon.Vertices.Count]].Geo;if(capEdges.Contains(BevelKey(a,b))){profile.Add(a);profile.Add(b);}}}
+                        var triangles=new List<int>();
+                        for(int anchor=0;anchor<ring.Count;anchor++)
+                        {
+                            if(profile.Contains(ring[anchor]))continue;bool valid=true;triangles.Clear();
+                            for(int c=1;c+1<ring.Count;c++){int a=ring[anchor],b=ring[(anchor+c)%ring.Count],d=ring[(anchor+c+1)%ring.Count];var cross=(new ClipVector(draft.Positions[b])-new ClipVector(draft.Positions[a])).Cross(new ClipVector(draft.Positions[d])-new ClipVector(draft.Positions[a]));if(cross.Dot(new ClipVector(geometric))<=0){valid=false;break;}triangles.Add(a);triangles.Add(b);triangles.Add(d);}
+                            if(valid){terminalAnchors.Add(ring[anchor]);break;}triangles.Clear();
+                        }
+                        if(triangles.Count==0)triangles=BevelTriangulate(ring,draft.Positions,epsilon);
+                        for(int c=0;c<triangles.Count;c+=3)
+                            addFace(new List<int>{triangles[c],triangles[c+1],triangles[c+2]},receiver,Faces[receiver].Submesh,null);
+                        continue;
+                    }
+                }
                 if (AbsorbPlanarBevelEnd(draft, ring, geometric, cornerPolygons[vertex], addFace, epsilon, options.Subdivisions == 0 && draft.Plan.FlatTerminalOwners.Contains(vertex))) continue;
 
                 if (normal.sqrMagnitude < 1e-10f) normal = geometric; normal.Normalize();
@@ -1895,7 +2025,8 @@ namespace MashBoxSDK.AnimationStudio
 
                 metadata.Add(polygon.Material); metadata.Add(vertices.Count); metadata.AddRange(vertices);
 
-                indices[polygon.Material].AddRange(BevelTriangulate(vertices, positions, epsilon));
+                if (polygon.TriangleCorners != null) foreach (int corner in polygon.TriangleCorners) indices[polygon.Material].Add(vertices[corner]);
+                else indices[polygon.Material].AddRange(BevelTriangulate(vertices, positions, epsilon));
 
             }
 
