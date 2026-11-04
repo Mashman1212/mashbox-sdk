@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
         private readonly GUIContent toolOptionsHeader = new GUIContent();
-        private ToolChannelPane ActiveChannelTool => rangeWeldToolPane ? rangeWeldToolPane : fracturePane ? fracturePane : bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
+        private ToolChannelPane ActiveChannelTool => circularizePane?circularizePane:rangeWeldToolPane ? rangeWeldToolPane : fracturePane ? fracturePane : bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
             : bridgeToolPane ? bridgeToolPane : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : selectionActionPane ? selectionActionPane : combineToolPane;
         internal void PrepareEmbeddedChannelTool()
         {

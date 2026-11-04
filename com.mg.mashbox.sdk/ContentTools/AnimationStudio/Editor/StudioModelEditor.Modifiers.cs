@@ -89,6 +89,7 @@ namespace MashBoxSDK.AnimationStudio
                 var operation=new StudioModifierOperation{kind=liveTool.ToString(),name=liveTool==LiveTool.EdgeFlow?"Edit Edge Flow":liveTool.ToString(),
                     parameters=liveParameters,normalizedBevel=liveTool==LiveTool.Bevel,flow=liveFlowParameters,weld=weld,world=liveWorld,
                     faces=liveFaces?.ToArray(),edges=liveEdges?.SelectMany(e=>new[]{e.a,e.b}).ToArray(),vertices=liveSelection?.ToArray()};
+                if(liveTool==LiveTool.Circularize && liveMode!=ComponentMode.Vertex)operation.vertices=null;
                 if(liveTool==LiveTool.Soften)
                 {int index=Array.IndexOf(livePreview.Targets,target);operation.edges=liveNormalEdges[index].SelectMany(e=>new[]{e.Item1,e.Item2}).ToArray();}
                 operation.Bind(source);AppendModifier(node,operation,StudioModifierSource.Capture(source));
@@ -199,7 +200,7 @@ namespace MashBoxSDK.AnimationStudio
                 using var sensitivity=new StudioDragSensitivity.DragScope(StudioSettings.Current.channelDragSensitivity);
                 foreach(var operation in history.operations.AsEnumerable().Reverse().ToArray())
                 {
-                    bool hasFields=operation.kind is "Primitive" or "Bevel" or "Extrude" or "Bridge" or "Soften" or "EdgeFlow" or "Subdivision" or "Weld";
+                    bool hasFields=operation.kind is "Primitive" or "Bevel" or "Extrude" or "Bridge" or "Soften" or "EdgeFlow" or "Subdivision" or "Weld" or "Circularize";
                     bool open=hasFields&&!closedModifiers.Contains(operation.id);
                     using(new EditorGUILayout.HorizontalScope())
                     {
@@ -229,6 +230,7 @@ namespace MashBoxSDK.AnimationStudio
                             if(flow.x>=.5f){flow.y=EditorGUILayout.FloatField("Flow influence",flow.y);flow.z=ModifierIntegerField("Flow iterations",Mathf.RoundToInt(flow.z),1,64);}break;
                         case "Extrude":p.x=StudioSceneUnits.Field("Distance",p.x);p.z=StudioSceneUnits.Field("Inset",p.z);p.y=EditorGUILayout.Toggle("Together",p.y>=.5f)?1:0;break;
                         case "Bridge":p.x=ModifierIntegerField("Divisions",Mathf.RoundToInt(p.x),0,64);p.y=Mathf.Clamp(EditorGUILayout.FloatField("Curvature",p.y),-1,1);break;
+                        case "Circularize":p=DrawCircularizeFields(p,ref flow);break;
                         case "Weld":p.x=Mathf.Max(0,StudioSceneUnits.Field("Range",p.x));break;
                         case "Soften":p.x=Mathf.Clamp(EditorGUILayout.FloatField("Angle",p.x),0,180);break;
                         case "EdgeFlow":p.x=EditorGUILayout.FloatField("Influence",p.x);p.y=ModifierIntegerField("Iterations",Mathf.RoundToInt(p.y),1,64);break;

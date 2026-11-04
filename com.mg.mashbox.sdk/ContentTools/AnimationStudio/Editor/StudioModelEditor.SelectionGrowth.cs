@@ -53,13 +53,8 @@ namespace MashBoxSDK.AnimationStudio
         private HashSet<int> ConvertComponents(ComponentMode source,ComponentMode next,HashSet<int> selected,bool perimeter)
         {
             var result=new HashSet<int>();
-            var positions=ComponentPositions();var logical=new int[positions.Count];
-            var aliases=new Dictionary<UnityEngine.Vector3,int>();
-            for(int i=0;i<logical.Length;i++)
-            {
-                if(!weld){logical[i]=i;continue;}
-                if(!aliases.TryGetValue(positions[i],out int id)){id=aliases.Count;aliases.Add(positions[i],id);}logical[i]=id;
-            }
+            var positions=ComponentPositions();
+            var logical=weld?SelectionWeldIdentities(positions):Enumerable.Range(0,positions.Count).ToArray();
             (int,int) Key(int a,int b)=>logical[a]<logical[b]?(logical[a],logical[b]):(logical[b],logical[a]);
             var vertices=new HashSet<int>();var boundaries=new HashSet<(int,int)>();
             var edges=Edges();var faces=Faces();
@@ -168,13 +163,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ResizeComponentSelection(bool shrink)
         {
-            var points=ComponentPositions();var vertices=new int[points.Count];
-            var weldedIds=new Dictionary<UnityEngine.Vector3,int>();
-            for(int i=0;i<points.Count;i++)
-            {
-                if(!weld){vertices[i]=i;continue;}
-                if(!weldedIds.TryGetValue(points[i],out int id)){id=weldedIds.Count;weldedIds.Add(points[i],id);}vertices[i]=id;
-            }
+            var points=ComponentPositions();
+            var vertices=weld?SelectionWeldIdentities(points):Enumerable.Range(0,points.Count).ToArray();
             (int,int) Key(int a,int b)=>a<b?(a,b):(b,a);
             var edges=Edges();var groups=new List<HashSet<int>>();int[] logical;
             if(mode==ComponentMode.Vertex)

@@ -26,8 +26,26 @@ namespace MashBoxSDK.AnimationStudio
             {"Mesh Tools/Extrude", StudioShortcut.Extrude}, {"Mesh Display/X-ray Mode", StudioShortcut.XRay}
         };
         private static string Normalize(string text) => text.Replace("...", "…").Trim();
+        // Presentation categories may change; saved command identities may not.
+        private static readonly Dictionary<string,string> editMeshLegacyKeys=new Dictionary<string,string> {
+            {"Extrude","Mesh Tools/Extrude"},
+            {"Bevel…","Mesh Tools/Bevel…"},
+            {"Bridge Edges","Mesh Tools/Bridge Edges"},
+            {"Circularize…","Mesh Tools/Circularize…"},
+            {"Weld…","Mesh Tools/Weld…"},
+            {"Merge Vertices","Mesh Tools/Merge Vertices"},
+            {"Target Weld","Mesh Tools/Target Weld"},
+            {"Insert Edge Loop","Mesh Tools/Insert Edge Loop"},
+            {"Multi-Cut","Mesh Tools/Multi-Cut"},
+            {"Duplicate Face","Mesh Tools/Duplicate Face"},
+            {"Duplicate Face as New Object","Mesh Tools/Duplicate Face as New Object"},
+            {"Detach Face","Mesh Tools/Detach Face"},
+            {"Subdivision Preview","Mesh Display/Subdivision Preview"},
+            {"Add Subdivision","Mesh Display/Add Subdivision"}
+        };
         private static string Canonical(string category, string path)
         {
+            if(category=="Edit Mesh"&&editMeshLegacyKeys.TryGetValue(Normalize(path),out var legacy))return legacy;
             string key = Normalize(category + "/" + path);
             // View regroups existing controls without changing saved shortcut IDs.
             if(key=="View/Wireframe"||key=="View/Shaded Wireframe"||key=="View/X-ray Mode")
@@ -88,7 +106,7 @@ namespace MashBoxSDK.AnimationStudio
             var defaults = StudioShortcuts.Find(id)?.defaults ?? StandardBindings(key);
             int slash = key.IndexOf('/');
             bool deform = key.StartsWith("Deform/", StringComparison.Ordinal);
-            definitions[id] = new StudioShortcuts.Definition(id, deform ? "Mesh Tools" : key=="Mesh Display/Wireframe"||key=="Mesh Display/Shaded Wireframe"||key=="Mesh Display/X-ray Mode" ? "View" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key == "Mesh Tools/Merge Vertices" ? "Merge to Center" : key.Substring(slash + 1), defaults);
+            definitions[id] = new StudioShortcuts.Definition(id, editMeshLegacyKeys.ContainsValue(key) ? "Edit Mesh" : deform ? "Mesh Tools" : key=="Mesh Display/Wireframe"||key=="Mesh Display/Shaded Wireframe"||key=="Mesh Display/X-ray Mode" ? "View" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key == "Mesh Tools/Merge Vertices" ? "Merge to Center" : key.Substring(slash + 1), defaults);
             if(key=="Mesh Display/Bake Subdivision")definitions[id]=new StudioShortcuts.Definition(id,"Modify","Clear History",defaults);
             paths[id] = key; keys[key] = id; ordered = null;
             StudioShortcuts.CatalogChanged();
@@ -107,7 +125,7 @@ namespace MashBoxSDK.AnimationStudio
                 case StudioShortcut.Edge: case StudioShortcut.Face: case StudioShortcut.PaintSelection: case StudioShortcut.UnpaintSelection: return "Select";
                 case StudioShortcut.Pivot: case StudioShortcut.VertexSnap: case StudioShortcut.EdgeSnap: case StudioShortcut.GridSnap: case StudioShortcut.AxisMenu: return "Modify";
                 case StudioShortcut.Select: case StudioShortcut.Move: case StudioShortcut.Rotate: case StudioShortcut.Scale: return "Modify";
-                case StudioShortcut.Extrude: case StudioShortcut.CommitCut: case StudioShortcut.RemoveCut: return "Mesh Tools";
+                case StudioShortcut.Extrude: case StudioShortcut.CommitCut: case StudioShortcut.RemoveCut: return "Edit Mesh";
                 case StudioShortcut.XRay: return "View";
                 case StudioShortcut.FrameAllUV: return "UV";
                 case StudioShortcut.Orbit: case StudioShortcut.Pan: case StudioShortcut.Dolly: case StudioShortcut.MarkingMenu: return "Navigation";

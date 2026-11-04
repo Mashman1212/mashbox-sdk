@@ -145,14 +145,13 @@ namespace MashBoxSDK.AnimationStudio
                 
                     break; }
                 case "Edit Mesh": {
-                    AddCommand(menu, "Edit Edge Flow…", true, OpenEdgeFlowTool, finishPreview: false);
-                    break; }
-                case "Mesh Tools": {
-                    AddCommand(menu, "Combine Meshes…", true, OpenCombineTool);
-                    AddCommand(menu, "Split Selection", true, () => ChooseSelectionAction("Split Selection", SplitSelectedComponents, "Select faces, edges or vertices to cut into a new mesh. Leave at least one face in each source mesh."));
-                    AddCommand(menu, "Bridge Edges", true, OpenBridgeTool);
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), true, ExtrudeSelected, finishPreview: false);
                     AddCommand(menu, "Bevel…", true, OpenBevelTool, finishPreview: false);
+                    AddCommand(menu, "Bridge Edges", true, OpenBridgeTool);
+                    menu.AddSeparator("");
+                    AddCommand(menu, "Circularize…", true, OpenCircularizeTool, finishPreview: false);
+                    AddCommand(menu, "Edit Edge Flow…", true, OpenEdgeFlowTool, finishPreview: false);
+                    menu.AddSeparator("");
                     AddCommand(menu, "Weld…", true, OpenRangeWeldTool, finishPreview: false);
                     AddCommand(menu, "Merge to Center", true, MergeToCenter, commandKey: "Merge Vertices");
                     menu.AddItem(new GUIContent("Target Weld"), targetWeldActive, () => Run(() => {
@@ -164,27 +163,33 @@ namespace MashBoxSDK.AnimationStudio
                         PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh, then select an edge to insert an edge loop.", ComponentMode.Edge);
                         ActivateCutTool(CutTool.EdgeLoop);
                     }));
-                    menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool));
-                    menu.AddItem(new GUIContent("Fracture"), fracturePane, () => Run(OpenFractureTool));
                     menu.AddItem(new GUIContent("Multi-Cut"), cutTool == CutTool.MultiCut, () => Run(() => {
                         PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh to use Multi-Cut.", ComponentMode.Edge);
                         ActivateCutTool(CutTool.MultiCut);
                     }));
                     menu.AddSeparator("");
-                    AddCommand(menu, "Deform/Blend Shape", Document && SelectedBlendMeshes.Length >= 2, CreateSelectedBlendShape);
-                    AddCommand(menu, "Deform/Bake Current Pose", HasBlendShape, BakeSelectedBlendShape);
-                
-                    break; }
-                case "Mesh Display": {
+                    AddCommand(menu, "Duplicate Face", true, () => DuplicateSelectedFaces(false));
+                    AddCommand(menu, "Duplicate Face as New Object", true, () => DuplicateSelectedFaces(true));
+                    AddCommand(menu, "Detach Face", true, () => ChooseSelectionAction("Detach Face", () => EditSelectedFaces(false), "Select faces to disconnect from neighboring faces on the same object."));
+                    menu.AddSeparator("");
                     AddCommand(menu, "Subdivision Preview", true, ToggleSubdivision);
                     AddCommand(menu, "Add Subdivision", true, AddSubdivisionModifier);
+                    break; }
+                case "Mesh Tools": {
+                    AddCommand(menu, "Combine Meshes…", true, OpenCombineTool);
+                    AddCommand(menu, "Split Selection", true, () => ChooseSelectionAction("Split Selection", SplitSelectedComponents, "Select faces, edges or vertices to cut into a new mesh. Leave at least one face in each source mesh."));
+                    menu.AddSeparator("");
+                    menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool));
+                    menu.AddItem(new GUIContent("Fracture"), fracturePane, () => Run(OpenFractureTool));
+                    menu.AddSeparator("");
+                    AddCommand(menu, "Deform/Blend Shape", Document && SelectedBlendMeshes.Length >= 2, CreateSelectedBlendShape);
+                    AddCommand(menu, "Deform/Bake Current Pose", HasBlendShape, BakeSelectedBlendShape);
+                    break; }
+                case "Mesh Display": {
                     AddCommand(menu, "Soften", true, () => ApplyEdgeNormals(false));
                     AddCommand(menu, "Harden", true, () => ApplyEdgeNormals(true));
                     AddCommand(menu, "Soften…", true, OpenSoftenTool, finishPreview: false);
                     AddCommand(menu, "Recalculate Normals", true, RecalculateNormals);
-
-
-                
                     break; }
                 case "UV": {
                     AddAction(menu, "UV Editor", MarkingAction.OpenUV, view);

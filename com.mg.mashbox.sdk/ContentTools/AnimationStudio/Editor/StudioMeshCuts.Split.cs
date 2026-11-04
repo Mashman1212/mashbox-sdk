@@ -69,3 +69,74 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+
+namespace MashBoxSDK.AnimationStudio
+{
+    internal sealed partial class StudioMeshCuts
+    {
+        // Copy the selected region as one island, retaining its internal seams and
+        // exact render triangles. New geometric identities prevent positional welds.
+        internal int[] CopyFaceRegion(StudioModelDocument.Node node, HashSet<int> selected, bool duplicate)
+        {
+            ValidateSplitSource(node);
+            if (selected.Count == 0 || selected.Any(f => f < 0 || f >= Faces.Count))
+                throw new InvalidOperationException("Select valid faces to duplicate or detach.");
+            var source = BevelSource(node.mesh); var render = BevelSourceTriangles(node.mesh);
+            var used = selected.SelectMany(f => Faces[f].Vertices).Distinct().OrderBy(v => v).ToArray();
+            var surface = new HashSet<int>(Faces.SelectMany(f=>f.Vertices));
+            var retained = new HashSet<int>(Faces.Where((f,i)=>!selected.Contains(i)).SelectMany(f=>f.Vertices));
+            // Detach removes newly unused originals, but retains preexisting loose vertices.
+            var originals = Enumerable.Range(0,Positions.Length).Where(v=>duplicate||retained.Contains(v)||!surface.Contains(v)).ToArray();
+            var originalMap = originals.Select((v,i)=>(v,i)).ToDictionary(p=>p.v,p=>p.i);
+            var map = used.Select((v,i) => (v,i)).ToDictionary(p => p.v,p => originals.Length+p.i);
+            var indices = originals.Concat(used).ToArray();
+            var mesh = new Mesh { name=node.mesh.name, indexFormat=indices.Length>65535?IndexFormat.UInt32:node.mesh.indexFormat };
+            try
+            {
+                mesh.SetVertices(indices.Select(v=>Positions[v]).ToList());
+                if(source.Normals.Length==Positions.Length)mesh.SetNormals(indices.Select(v=>source.Normals[v]).ToList());
+                if(source.Tangents.Length==Positions.Length)mesh.SetTangents(indices.Select(v=>source.Tangents[v]).ToList());
+                if(source.Colors.Length==Positions.Length)mesh.SetColors(indices.Select(v=>source.Colors[v]).ToList());
+                for(int c=0;c<8;c++)if(source.UV[c]!=null)
+                {
+                    var values=indices.Select(v=>source.UV[c][v]).ToList();
+                    if(source.Dimensions[c]==1)StudioSubdivisionData.SetUV1(mesh,c,values);
+                    else if(source.Dimensions[c]==2)mesh.SetUVs(c,values.Select(v=>new Vector2(v.x,v.y)).ToList());
+                    else if(source.Dimensions[c]==3)mesh.SetUVs(c,values.Select(v=>new Vector3(v.x,v.y,v.z)).ToList());
+                    else mesh.SetUVs(c,values);
+                }
+                var ordered=selected.OrderBy(f=>f).ToArray();
+                var faceIds=Enumerable.Range(0,Faces.Count).Concat(duplicate?ordered:Array.Empty<int>()).ToArray();
+                var polygons=new List<int>();var triangles=Enumerable.Range(0,node.mesh.subMeshCount).Select(_=>new List<int>()).ToArray();
+                for(int i=0;i<faceIds.Length;i++)
+                {
+                    int f=faceIds[i];bool copy=duplicate?i>=Faces.Count:selected.Contains(f);
+                    int Remap(int v)=>copy?map[v]:originalMap[v];
+                    polygons.Add(Faces[f].Submesh);polygons.Add(Faces[f].Vertices.Count);
+                    polygons.AddRange(Faces[f].Vertices.Select(Remap));
+                    triangles[Faces[f].Submesh].AddRange(render[f].Select(Remap));
+                }
+                mesh.subMeshCount=triangles.Length;
+                for(int s=0;s<triangles.Length;s++)mesh.SetTriangles(triangles[s],s,false);
+                mesh.RecalculateBounds();
+                var originalIds=GeometricIds(Enumerable.Range(0,Positions.Length).Select(v=>welded[v]));
+                int next=originalIds.Length==0?0:originalIds.Max()+1;
+                var newIds=new Dictionary<int,int>();
+                var geometry=originals.Select(v=>originalIds[v]).Concat(used.Select(v=> {int id=originalIds[v];if(!newIds.TryGetValue(id,out int n))newIds.Add(id,n=next++);return n;})).ToArray();
+                int[] groups=null;
+                if(node.normalGroups?.Length==Positions.Length)
+                {
+                    // Separate continuity identities without changing authored normals.
+                    var labels=new Dictionary<int,int>();int offset=node.normalGroups.Distinct().Count();
+                    groups=node.normalGroups.Select(g=> {if(!labels.TryGetValue(g,out int n))labels.Add(g,n=labels.Count);return n;}).ToArray();
+                    groups=originals.Select(v=>groups[v]).Concat(used.Select(v=>groups[v]+offset)).ToArray();
+                }
+                StudioMeshToolPreview.CopyMesh(mesh,node.mesh);
+                node.cutPolygons=polygons.ToArray();node.cutTriangles=node.mesh.triangles;
+                node.geometryVertices=geometry;node.normalGroups=groups;
+                return duplicate?Enumerable.Range(Faces.Count,ordered.Length).ToArray():ordered;
+            }
+            finally { UnityEngine.Object.DestroyImmediate(mesh); }
+        }
+    }
+}

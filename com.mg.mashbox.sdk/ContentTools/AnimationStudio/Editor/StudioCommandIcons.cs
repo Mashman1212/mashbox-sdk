@@ -50,7 +50,6 @@ namespace MashBoxSDK.AnimationStudio
                 case "Menu/Select/Convert Selection/To Vertices": return "Select/Convert Selection/Vertices";
                 case "Menu/Select/Convert Selection/To Edges": return "Select/Convert Selection/Edges";
                 case "Menu/Select/Convert Selection/To Faces": return "Select/Convert Selection/Faces";
-                case "Select/Convert Selection/Objects": return "Select/Object Mode";
                 case "UV/Select UVs": return "UV/UV Editor";
                 case "UV/Select UV Shells": return "Menu/UV Sets";
                 case "Legacy/Clear": return "Select/Deselect";

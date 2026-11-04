@@ -35,13 +35,13 @@ internal static class StudioCommandRegistryValidation {
    var meshMenu=new StudioMenu("Mesh Tools",true);populate.Invoke(editor,new object[]{"Mesh Tools",meshMenu,view,(Action<StudioModelDocument>)(d=>editor.Load(d))});
    Check(meshMenu.Items.Single(i=>i.Text=="Deform").Children.Count==2,"Both Deform operations nested once");
    Check(items>50,"Expected all menu actions, got "+items);
-   foreach(string name in new[]{"Bevel…","Merge Vertices","Insert Edge Loop","Multi-Cut"})
-    Check(StudioShortcuts.Definitions.Any(d=>d.group=="Mesh Tools"&&d.name==name),"Missing Mesh Tools/"+name);
+   foreach(string name in new[]{"Bevel…","Merge to Center","Insert Edge Loop","Multi-Cut"})
+    Check(StudioShortcuts.Definitions.Any(d=>d.group=="Edit Mesh"&&d.name==name),"Missing Edit Mesh/"+name);
    var soften=StudioShortcuts.Definitions.Where(d=>d.group=="Mesh Display"&&d.name.StartsWith("Soften")).ToArray();
    Check(soften.Length==2 && soften[0].id!=soften[1].id,"Soften and Soften options need distinct bindings");
    Check(StudioShortcuts.Bindings(StudioShortcut.Move)[0].key==KeyCode.W,"Legacy Move default");
    Check(StudioShortcuts.Definitions.Select(d=>d.id).Distinct().Count()==StudioShortcuts.Definitions.Length,"Unique command IDs");
-   var bevel=StudioShortcuts.Definitions.Single(d=>d.group=="Mesh Tools"&&d.name=="Bevel…");
+   var bevel=StudioShortcuts.Definitions.Single(d=>d.group=="Edit Mesh"&&d.name=="Bevel…");
    Check(bevel.defaults.Any(b=>b.key==KeyCode.B&&b.modifiers==StudioModifiers.Action),"Standard Bevel default");
    Check(StudioShortcuts.Definitions.Single(d=>d.group=="View"&&d.name=="Shaded Wireframe").defaults.Any(b=>b.key==KeyCode.BackQuote&&b.allowShift),"Standard backtick and tilde toggle default");
    StudioShortcuts.Set(bevel.id,new[]{new StudioShortcuts.Binding(KeyCode.F8)});

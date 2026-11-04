@@ -36,8 +36,12 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Tools/Extrude": return "Extend selected faces or open boundary edges to create new geometry.";
                 case "Mesh Tools/Bevel…": return "Replace selected edges with a chamfer or rounded profile.";
                 case "Mesh Tools/Bridge Edges": return "Fill the gap between two non-touching boundary chains or loops with equal edge counts.";
+                case "Mesh Tools/Duplicate Face": return "Copy selected faces in place on the same object; move the selected copies independently.";
+                case "Mesh Tools/Duplicate Face as New Object": return "Copy selected faces into independent new objects, leaving each source unchanged.";
+                case "Mesh Tools/Detach Face": return "Disconnect selected faces from neighboring faces while retaining the same object.";
                 case "Mesh Tools/Split Selection": return "Cut selected faces, or faces touching selected vertices or edges, into separate mesh objects.";
                 case "Mesh Tools/Combine Meshes…": return "Combine selected mesh objects into one object, preserving polygon faces and materials.";
+                case "Mesh Tools/Circularize…": return "Turn selected vertices, closed edge loops or face-region borders into circles.";
                 case "Mesh Tools/Weld…": return "Weld selected vertices within a distance range.";
                 case "Mesh Tools/Merge Vertices": return "Merge selected vertices at their shared center.";
                 case "Mesh Tools/Target Weld": return "Drag a source vertex onto a target vertex and weld them together.";
