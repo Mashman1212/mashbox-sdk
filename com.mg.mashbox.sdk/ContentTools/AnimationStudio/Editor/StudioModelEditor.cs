@@ -108,6 +108,7 @@ namespace MashBoxSDK.AnimationStudio
             statisticsCache.Clear(); occlusionIndices.Clear();
             foreach (var go in Scene.GetRootGameObjects()) UnityEngine.Object.DestroyImmediate(go);
             Transforms = Document ? Document.Build(Scene) : Array.Empty<Transform>();
+            UpdateLiveVehicleParts();
             previewNodes = Document ? Document.nodes.ToArray() : Array.Empty<StudioModelDocument.Node>();
             edgeMesh = null; cachedEdges = null; cutTopology = null; cutMesh = null;
             faceNode = null; cachedFaces = null;
@@ -199,7 +200,7 @@ namespace MashBoxSDK.AnimationStudio
             if (markingOpen && (!markingView || EditorWindow.focusedWindow != markingView)) CancelMarkingMenu();
             TickMarkingMenu();
         }
-        internal void Changed(bool geometryChanged = true) { if(geometryChanged)DirtySubdivision(); componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
+        internal void Changed(bool geometryChanged = true) { UpdateLiveVehicleParts(); if(geometryChanged)DirtySubdivision(); componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
         internal void MeshTopologyChanged() { if (Document) foreach (var node in Document.nodes) if (node.normalGroups != null && (!node.mesh || node.normalGroups.Length != node.mesh.vertexCount)) node.normalGroups = null; if (componentPivot) componentPivot.custom = false; Components.Clear(); Rebuild(); Changed(); }
         internal void Save()
         {
@@ -322,9 +323,11 @@ namespace MashBoxSDK.AnimationStudio
                             hierarchyContents[n] = contents;
                         }
                         var content = contents.label;
+                        content.image = n.vehiclePart != null ? VehiclePartIcon(n.vehiclePart.live) : !string.IsNullOrEmpty(n.anchorType) ? AnchorIcon : EditorGUIUtility.IconContent(n.mesh ? "Mesh Icon" : "Transform Icon").image;
                         var old = GUI.backgroundColor;
                         var row = new Rect(fullRow.x+14,fullRow.y,Mathf.Max(0,fullRow.width-14),fullRow.height);
                         HandleHierarchyContext(row, i);
+                        DrawVehicleValidationBadge(ref row, i);
                         DrawHierarchyDragRow(row, content, rowStyle, i);
                         GUI.backgroundColor = old;
                         bool isolate = Event.current.alt;
@@ -407,6 +410,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (EditorGUI.EndChangeCheck()) Run(() => RenameObject(Active, nextName));
                     }
                     DrawAnchorChannels();
+                    DrawVehiclePartChannels();
                 }
                 if (DrawTransformChannelHeader())
                 {

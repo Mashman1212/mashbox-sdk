@@ -22,6 +22,7 @@ namespace MashBoxSDK.AnimationStudio
                 try
                 {
                     captured[0].name = RootName(copy);
+                    captured[0].vehiclePart = VehiclePartData.From(template);
                     foreach (var node in captured)
                     {
                         if (node.parent >= 0) node.parent += root;
@@ -41,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
                     throw;
                 }
             }
-            var created = new List<Node> { new Node { name = RootName(copy) } };
+            var created = new List<Node> { new Node { name = RootName(copy), vehiclePart = VehiclePartData.From(template) } };
             var paths = new Dictionary<string, int>(StringComparer.Ordinal) { [""] = 0 };
             int EnsurePath(string path)
             {

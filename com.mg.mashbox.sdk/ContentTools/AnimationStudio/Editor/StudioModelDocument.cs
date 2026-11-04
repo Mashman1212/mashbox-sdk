@@ -16,6 +16,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             public string name;
             public string anchorType;
+            [SerializeReference] public VehiclePartData vehiclePart;
             public string sourcePath;
             public int parent = -1;
             public int siblingOrder = -1;

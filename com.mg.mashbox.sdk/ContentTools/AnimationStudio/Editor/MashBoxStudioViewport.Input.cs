@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private sealed class InputHandler
         {
             internal Action original, wrapped;
+            internal readonly StudioMouseCapture capture = new StudioMouseCapture();
         }
         private readonly Dictionary<IMGUIContainer,InputHandler> studioInputHandlers = new Dictionary<IMGUIContainer,InputHandler>();
         private Func<bool> studioInputActive;
@@ -46,6 +47,19 @@ namespace MashBoxSDK.AnimationStudio
                 if(!canvas)BindStudioHoverRedraw(container);
                 handler.wrapped = () => {
                     var inputEvent = Event.current;
+                    var rawType = inputEvent.rawType;
+                    int mouseButton = inputEvent.button;
+                    if (rawType != EventType.MouseUp && handler.capture.ShouldRelease(rawType, mouseButton, GUIUtility.hotControl))
+                    {
+                        GUIUtility.hotControl = 0;
+                        EditorGUIUtility.SetWantsMouseJumping(0);
+                        handler.capture.Clear();
+                    }
+                    int previousHotControl = GUIUtility.hotControl;
+                    // Reclassify every new press, even if the retained pointer-up
+                    // was swallowed by a panel or popup on the previous gesture.
+                    if (canvas && rawType == EventType.MouseDown)
+                        RecordCameraPointerDown(inputEvent.mousePosition + rootVisualElement.WorldToLocal(container.LocalToWorld(Vector2.zero)));
                     if (canvas)
                     {
                         // Capture before SceneView changes its GUI clip/matrix for callbacks.
@@ -75,7 +89,17 @@ namespace MashBoxSDK.AnimationStudio
                         else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider)) studioKeyboard?.Invoke();
                     }
                     try { handler.original(); }
-                    finally { if (menuBlocked) inputEvent.mousePosition = mousePosition; if(canvas) { UpdateMeshToolCursor(container,menuBlocked); DrawCameraOwnershipCursor(); } }
+                    finally
+                    {
+                        handler.capture.Observe(rawType, mouseButton, previousHotControl, GUIUtility.hotControl);
+                        if (rawType == EventType.MouseUp && handler.capture.ShouldRelease(rawType, mouseButton, GUIUtility.hotControl))
+                        {
+                            GUIUtility.hotControl = 0; EditorGUIUtility.SetWantsMouseJumping(0); handler.capture.Clear();
+                        }
+                        if (rawType == EventType.MouseUp) ScheduleCameraPointerRelease();
+                        if (menuBlocked) inputEvent.mousePosition = mousePosition;
+                        if(canvas) { UpdateMeshToolCursor(container,menuBlocked); DrawCameraOwnershipCursor(); }
+                    }
                     // Panels get their text-field and rename handling first. Everything else
                     // stays in Studio instead of falling through to Unity's global shortcuts.
                     if (studioInputActive != null && studioInputActive() && Event.current.isKey)
@@ -238,6 +262,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void TrackCameraPointerUp(PointerUpEvent evt)
         {
+            if (evt.pressedButtons == 0) ScheduleCameraPointerRelease();
+        }
+        private void ScheduleCameraPointerRelease()
+        {
             // Keep ownership while this release is delivered to IMGUI. A release
             // over a UI control may never reach the camera's own callback.
             int generation = cameraPointerGeneration;
@@ -247,7 +275,15 @@ namespace MashBoxSDK.AnimationStudio
             };
         }
         private void TrackCameraPointerCancel(PointerCancelEvent evt)
-        { cameraPointerGeneration++; cameraDragStartedInUI = cameraDragStartedInCanvas = false; }
+        { ReleaseStudioInput(); }
+        private void TrackCameraPointerMove(PointerMoveEvent evt)
+        {
+            // A move with no buttons is positive evidence that a previous release
+            // was missed. A genuine UI-to-canvas drag retains its original owner.
+            if (evt.pressedButtons != 0) return;
+            if (navigating || cameraDragStartedInUI || cameraDragStartedInCanvas) ReleaseStudioInput();
+            if (menuShieldPointer >= 0) EndMenuShieldPointer();
+        }
         private void DrawCameraOwnershipCursor()
         {
             if (!cameraDragStartedInUI || Event.current == null || Event.current.type != EventType.Repaint) return;
@@ -277,7 +313,7 @@ namespace MashBoxSDK.AnimationStudio
             if (evt == null) return false;
             if (!evt.isMouse && evt.type != EventType.ScrollWheel && evt.type != EventType.ContextClick) return false;
             var point = evt.mousePosition + CanvasInputOrigin;
-            if (evt.type == EventType.MouseDown && !cameraDragStartedInUI && !cameraDragStartedInCanvas) RecordCameraPointerDown(point);
+            if (evt.type == EventType.MouseDown) RecordCameraPointerDown(point);
             bool overUI = IsOverCameraUI(point);
             if (cameraDragStartedInUI || (overUI && !cameraDragStartedInCanvas && !navigating)) { evt.Use(); return true; }
             return false;

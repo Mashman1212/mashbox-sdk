@@ -71,7 +71,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     changed = false;
                     foreach (int i in ancestors)
-                        if (!remove.Contains(i) && !nodes[i].mesh && string.IsNullOrEmpty(nodes[i].anchorType) && !IsBone(i) &&
+                        if (!remove.Contains(i) && nodes[i].vehiclePart == null && !nodes[i].mesh && string.IsNullOrEmpty(nodes[i].anchorType) && !IsBone(i) &&
                             !nodes.Where((n, j) => n.parent == i && !remove.Contains(j)).Any())
                         { remove.Add(i); changed = true; }
                 } while (changed);

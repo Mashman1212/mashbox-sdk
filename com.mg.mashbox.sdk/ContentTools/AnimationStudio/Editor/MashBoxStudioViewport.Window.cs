@@ -37,9 +37,11 @@ namespace MashBoxSDK.AnimationStudio
             rootVisualElement.UnregisterCallback<PointerDownEvent>(TrackCameraPointerDown, TrickleDown.TrickleDown);
             rootVisualElement.UnregisterCallback<PointerUpEvent>(TrackCameraPointerUp, TrickleDown.TrickleDown);
             rootVisualElement.UnregisterCallback<PointerCancelEvent>(TrackCameraPointerCancel, TrickleDown.TrickleDown);
+            rootVisualElement.UnregisterCallback<PointerMoveEvent>(TrackCameraPointerMove, TrickleDown.TrickleDown);
             rootVisualElement.RegisterCallback<PointerDownEvent>(TrackCameraPointerDown, TrickleDown.TrickleDown);
             rootVisualElement.RegisterCallback<PointerUpEvent>(TrackCameraPointerUp, TrickleDown.TrickleDown);
             rootVisualElement.RegisterCallback<PointerCancelEvent>(TrackCameraPointerCancel, TrickleDown.TrickleDown);
+            rootVisualElement.RegisterCallback<PointerMoveEvent>(TrackCameraPointerMove, TrickleDown.TrickleDown);
             rootVisualElement.UnregisterCallback<DragPerformEvent>(FocusAfterDrop, TrickleDown.TrickleDown);
             rootVisualElement.RegisterCallback<DragPerformEvent>(FocusAfterDrop, TrickleDown.TrickleDown);
         }
