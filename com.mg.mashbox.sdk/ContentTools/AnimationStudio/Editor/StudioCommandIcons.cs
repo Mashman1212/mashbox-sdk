@@ -54,7 +54,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "UV/Select UV Shells": return "Menu/UV Sets";
                 case "Legacy/Clear": return "Select/Deselect";
                 case "Legacy/Through": return "Select/Through Selection";
-                case "Legacy/Axes": case "Legacy/ObjectAxes": case "Legacy/WorldAxes": case "Legacy/ComponentAxes": return "Viewport/Orientation";
+                case "Legacy/Axes": case "Legacy/ObjectAxes": case "Legacy/WorldAxes": case "Legacy/ComponentAxes": case "Legacy/CenterAxes": return "Viewport/Orientation";
                 case "Control/MashBox/Selection/Object": return "Select/Object Mode";
                 case "Control/MashBox/Selection/Vertex": return "Select/Vertex";
                 case "Control/MashBox/Selection/Edge": return "Select/Edge";

@@ -86,7 +86,11 @@ namespace MashBoxSDK.AnimationStudio
                             if (pointer && toolbar && !navigating && !cameraDragStartedInCanvas) { releaseStudioHolds?.Invoke(); evt.Use(); }
                             else RouteStudioCanvasInput();
                         }
-                        else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider)) studioKeyboard?.Invoke();
+                        else if (Event.current.isKey && !EditorGUIUtility.editingTextField && !(resizingTools && container == toolOptionsDivider))
+                        {
+                            if (container != rigControls || Studio?.ToolbarModelEditor?.HandleHierarchyVisibilityShortcut() != true)
+                                studioKeyboard?.Invoke();
+                        }
                     }
                     try { handler.original(); }
                     finally

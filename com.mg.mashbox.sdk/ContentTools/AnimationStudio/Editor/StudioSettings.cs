@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     [InitializeOnLoad]
     internal static class StudioSettings
     {
-        internal static int DefaultOrientation => Mathf.Clamp(Mathf.RoundToInt(StudioPreferenceStore.GetFloat("Model.DefaultOrientation", 2)), 0, 2);
+        internal static int DefaultOrientation => Mathf.Clamp(Mathf.RoundToInt(StudioPreferenceStore.GetFloat("Model.DefaultOrientation", 2)), 0, 3);
         internal const string PreferenceKey = "MashBox.Studio.Settings.v1";
         // Read the previous key until preferences are explicitly saved under the new name.
         private const string LegacyPreferenceKey = "MashBox.MGStudio.Settings.v1";
@@ -167,7 +167,7 @@ namespace MashBoxSDK.AnimationStudio
                         EditorGUI.BeginChangeCheck();
                         int undoLimit=EditorGUILayout.DelayedIntField(new GUIContent("Maximum undo actions","Studio actions retained across Undo and Redo. One complete drag or tool operation counts as one action."),settings.undoLimit);
                         DrawFrameSelectionStyle();
-                        DrawDefaultChoice("Default orientation", "Model.DefaultOrientation", 2, new[] { "World", "Object", "Component" });
+                        DrawDefaultChoice("Default orientation", "Model.DefaultOrientation", 2, new[] { "World", "Object", "Component", "Center" });
                         settings.showTransformOrientationLabel=EditorGUILayout.Toggle(new GUIContent("Show orientation label","Show World, Object or Component beside the transform gizmo."),settings.showTransformOrientationLabel);
                         settings.handleSize=EditorGUILayout.Slider(new GUIContent("Handle size","Resize modelling handles and anchor gizmos."),settings.handleSize,.25f,3);
                         if(EditorGUI.EndChangeCheck()){settings.undoLimit=Math.Max(1,undoLimit);StudioSettings.Save();}

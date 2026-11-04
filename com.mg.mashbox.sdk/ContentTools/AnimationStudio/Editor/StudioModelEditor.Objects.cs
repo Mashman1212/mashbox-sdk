@@ -115,6 +115,9 @@ namespace MashBoxSDK.AnimationStudio
                 holder.AddComponent<MeshFilter>().sharedMesh = mesh;
                 holder.AddComponent<MeshRenderer>().sharedMaterial = StudioMeshMaterialPreview.DefaultMaterial;
                 ImportModel(holder, loaded);
+                Document.nodes[Active].sourcePath = AssetDatabase.GetAssetPath(mesh);
+                Document.nodes[Active].sourceMeshAsset = true;
+                EditorUtility.SetDirty(Document);
             }
             finally { Object.DestroyImmediate(holder); }
         }

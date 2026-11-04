@@ -139,9 +139,10 @@ namespace MashBoxSDK.AnimationStudio
             if (labelled) rect = EditorGUI.PrefixLabel(rect, new GUIContent("Orientation"));
             if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, style)) return;
             var menu = new StudioMenu();
-            menu.AddItem(new GUIContent("Object"), local && !componentAxes, () => { SetToolbarLocalAxes(true); });
+            menu.AddItem(new GUIContent("Object"), !CenterMode && local && !componentAxes, () => { SetToolbarLocalAxes(true); });
             menu.AddItem(new GUIContent("Component"), ToolbarComponentAxes, () => { SetToolbarComponentAxes(); });
-            menu.AddItem(new GUIContent("World"), !local, () => { SetToolbarLocalAxes(false); });
+            menu.AddItem(new GUIContent("World"), !CenterMode && !local, () => { SetToolbarLocalAxes(false); });
+            menu.AddItem(new GUIContent("Center"), CenterMode, () => { SetCenterMode(true); });
             menu.DropDown(rect);
         }
         private static Vector3 DrawChannels(string label, Vector3 value)

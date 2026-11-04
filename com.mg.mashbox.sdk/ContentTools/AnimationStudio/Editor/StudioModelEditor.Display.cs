@@ -41,6 +41,7 @@ namespace MashBoxSDK.AnimationStudio
             displayXray = StudioPreferenceStore.GetFloat("Model.XRay", 0) >= .5f;
             backfaceCulling = StudioPreferenceStore.GetFloat("Model.BackfaceCulling", 1) >= .5f;
             wireframeOnly = StudioPreferenceStore.GetFloat("Model.WireframeOnly", 0) >= .5f;
+            if (CenterMode) local = componentAxes = false;
             ApplyDisplayMaterials();
         }
         private bool displayLighting = true, displayTextures = true, checkerMap;
@@ -171,19 +172,21 @@ namespace MashBoxSDK.AnimationStudio
         private Material neutralPreview;
 
         private bool componentAxes;
-        internal bool ToolbarComponentAxes => local && componentAxes;
-        internal string ToolbarOrientationLabel => !local ? "World" : componentAxes ? "Component" : "Object";
+        internal bool ToolbarComponentAxes => !CenterMode && local && componentAxes;
+        internal string ToolbarOrientationLabel => CenterMode ? "Center" : !local ? "World" : componentAxes ? "Component" : "Object";
         internal bool ToolbarLocalAxes => local;
         internal bool ToolbarLighting => displayLighting;
         internal bool ToolbarTextures => displayTextures;
         internal void SetToolbarLocalAxes(bool value)
         {
-            if (local == value && !componentAxes) return;
+            if (!CenterMode && local == value && !componentAxes) return;
+            SetCenterMode(false);
             local = value; componentAxes = false; SaveDisplayConfiguration(); repaint(); toolOptions?.Repaint();
         }
         internal void SetToolbarComponentAxes()
         {
             if (ToolbarComponentAxes) return;
+            SetCenterMode(false);
             local = true; componentAxes = true; SaveDisplayConfiguration(); repaint(); toolOptions?.Repaint();
         }
         internal void SetDisplayMode(bool lighting, bool textures)

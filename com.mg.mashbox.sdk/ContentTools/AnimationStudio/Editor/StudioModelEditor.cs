@@ -58,7 +58,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             this.repaint = () => { repaint(); RepaintLiveToolPanes(); }; Scene = EditorSceneManager.NewPreviewScene();
             LoadDisplayConfiguration(); InitializeModifiers();
-            local = StudioSettings.DefaultOrientation != 0; componentAxes = StudioSettings.DefaultOrientation == 2;
+            if (StudioSettings.DefaultOrientation == 3) StudioSettings.Current.centerTransformMode = true;
+            local = !CenterMode && StudioSettings.DefaultOrientation != 0; componentAxes = !CenterMode && StudioSettings.DefaultOrientation == 2;
             mode = ComponentMode.Object;
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
@@ -461,12 +462,21 @@ namespace MashBoxSDK.AnimationStudio
             if (!source) throw new InvalidOperationException("Unity could not import this model.");
             ImportModel(source, loaded, path);
         }
-        internal void ImportModel(GameObject source, Action<StudioModelDocument> loaded) => ImportModel(source, loaded, AssetDatabase.GetAssetPath(source));
+        internal static string SourceAssetPath(GameObject source)
+        {
+            string path = AssetDatabase.GetAssetPath(source);
+            if (!string.IsNullOrEmpty(path))
+                return AssetDatabase.LoadAssetAtPath<GameObject>(path) == source ? path : null;
+            return PrefabUtility.GetOutermostPrefabInstanceRoot(source) == source ? PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(source) : null;
+        }
+        internal void ImportModel(GameObject source, Action<StudioModelDocument> loaded) => ImportModel(source, loaded, SourceAssetPath(source));
         private void ImportModel(GameObject source, Action<StudioModelDocument> loaded, string recentPath)
         {
             using var camera = new CreationCameraScope(commandView);
             CancelMarkingMenu(); EnsureWorkspace(loaded);
             int root = Document.AppendModel(source);
+            // Preserve the original dropped file, not an Assets/Studio Imports cache copy.
+            Document.nodes[root].sourcePath = string.IsNullOrEmpty(recentPath) ? SourceAssetPath(source) : recentPath;
             mode = ComponentMode.Object; pivot = false; search = "";
             Rebuild();
             selectionTransactionDepth++;
@@ -500,18 +510,20 @@ namespace MashBoxSDK.AnimationStudio
             ExportFile(path, selectionOnly);
             AssetDatabase.Refresh();
         }
-        internal void ExportFile(string path, bool selectionOnly)
+        internal void ExportFile(string path, bool selectionOnly) => ExportFile(path, selectionOnly, -1);
+        private void ExportFile(string path, bool selectionOnly, int sourceRoot)
         {
             FlushModifierEdits();
             StudioFbxDependency.EnsureAvailable();
-            if (!Document || (selectionOnly && !CanExportSelection)) throw new InvalidOperationException("Select an object before exporting.");
+            if (!Document || (sourceRoot < 0 && selectionOnly && !CanExportSelection)) throw new InvalidOperationException("Select an object before exporting.");
             // A separate, temporary hierarchy avoids exporter changes affecting the live editor.
             var scene = EditorSceneManager.NewPreviewScene();
             var exportMeshes = new List<Mesh>();
             try
             {
                 var nodes = Document.Build(scene);
-                if (selectionOnly) FilterExportSelection(nodes);
+                if (sourceRoot >= 0) FilterExportSelection(nodes, new[] { sourceRoot });
+                else if (selectionOnly) FilterExportSelection(nodes);
                 for (int i = 0; i < nodes.Length; i++)
                 {
                     if (!nodes[i] || !nodes[i].GetComponent<Renderer>()) continue;
@@ -531,9 +543,9 @@ namespace MashBoxSDK.AnimationStudio
                     else nodes[i].GetComponent<MeshFilter>().sharedMesh = copy;
                 }
                 // For a multi-model workspace, use the active model root as the export origin.
-                var origin = Active >= 0 && Active < nodes.Length && nodes[Active] ? nodes[Active].root.position : Vector3.zero;
+                var origin = sourceRoot >= 0 && nodes[sourceRoot] ? nodes[sourceRoot].position : Active >= 0 && Active < nodes.Length && nodes[Active] ? nodes[Active].root.position : Vector3.zero;
                 ExportTo(path, ExportRoot(nodes.Where(t => t).ToArray(), scene, origin));
-                NotifyFile(path, "saved");
+                if (sourceRoot < 0) NotifyFile(path, "saved");
             }
             finally { EditorSceneManager.ClosePreviewScene(scene); foreach (var mesh in exportMeshes) UnityEngine.Object.DestroyImmediate(mesh); }
         }

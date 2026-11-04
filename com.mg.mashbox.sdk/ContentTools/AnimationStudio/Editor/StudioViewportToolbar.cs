@@ -32,17 +32,17 @@ namespace MashBoxSDK.AnimationStudio
 
     [Overlay(typeof(MashBoxStudioViewport), Id, DisplayName, true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioViewportToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Viewport";
-        internal const string DisplayName = "World & Local";
+        internal const string DisplayName = "Orientation";
         public StudioViewportToolbar() : base(StudioToolbarOrientation.Id) { }
     }
 
     [Overlay(typeof(MashBoxStudioViewport), Id, "Viewport Shading", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 3, defaultLayout = Layout.HorizontalToolbar)]
+        defaultDockIndex = 2, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioDisplayToolbar : ToolbarOverlay
     {
         internal const string Id = "MashBox/Display";
@@ -60,14 +60,7 @@ namespace MashBoxSDK.AnimationStudio
             StudioToolbarRotate.Id, StudioToolbarScale.Id) { }
     }
 
-    [Overlay(typeof(MashBoxStudioViewport), Id, "Center & Pivot", true,
-        defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
-        defaultDockIndex = 1, defaultLayout = Layout.HorizontalToolbar)]
-    internal sealed class StudioPivotModeToolbar : ToolbarOverlay
-    {
-        internal const string Id = "MashBox/PivotMode";
-        public StudioPivotModeToolbar() : base(StudioToolbarPivotMode.Id) { }
-    }
+
 
     // Native overlay controls bind to their own containing Studio window. They
     // refresh on display-state changes, not on an editor tick or polling timer.
@@ -280,48 +273,7 @@ namespace MashBoxSDK.AnimationStudio
         public StudioToolbarScale() : base(Tool.Scale, StudioShortcut.Scale, "Scale", "ScaleTool") { }
     }
 
-    [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
-    internal sealed class StudioToolbarPivotMode : EditorToolbarDropdown, IAccessContainerWindow
-    {
-        internal const string Id = "MashBox/Viewport/PivotMode";
-        private MashBoxStudioViewport view;
-        public EditorWindow containerWindow
-        {
-            get => view;
-            set { Unbind(); view = value as MashBoxStudioViewport; if (panel != null) Bind(); RefreshState(); }
-        }
-        public StudioToolbarPivotMode()
-        {
-            name = "studio-toolbar-pivot-mode";
-            tooltip = "Transform around the selection center or the editing pivot";
-            clicked += OpenMenu;
-            RegisterCallback<AttachToPanelEvent>(_ => Bind());
-            RegisterCallback<DetachFromPanelEvent>(_ => Unbind());
-        }
-        private void Bind()
-        {
-            if (view) { view.StudioToolbarStateChanged -= RefreshState; view.StudioToolbarStateChanged += RefreshState; }
-            RefreshState();
-        }
-        private void Unbind() { if (view) view.StudioToolbarStateChanged -= RefreshState; }
-        private void RefreshState()
-        {
-            var editor = view ? view.Studio?.ToolbarModelEditor : null;
-            SetEnabled(editor != null);
-            bool center = editor?.CenterMode ?? false;
-            text = center ? "Center" : "Pivot";
-            icon = EditorGUIUtility.IconContent(center ? "ToolHandleCenter" : "ToolHandlePivot").image as Texture2D;
-        }
-        private void OpenMenu()
-        {
-            var editor = view ? view.Studio?.ToolbarModelEditor : null;
-            if (editor == null) return;
-            var menu = new GenericMenu();
-            menu.AddItem(new GUIContent("Center"), editor.CenterMode, () => { view.Studio?.ToolbarModelEditor?.SetCenterMode(true); RefreshState(); });
-            menu.AddItem(new GUIContent("Pivot"), !editor.CenterMode, () => { view.Studio?.ToolbarModelEditor?.SetCenterMode(false); RefreshState(); });
-            menu.DropDown(worldBound);
-        }
-    }
+
 
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]
     internal sealed class StudioToolbarOrientation : EditorToolbarDropdown, IAccessContainerWindow
@@ -336,7 +288,7 @@ namespace MashBoxSDK.AnimationStudio
         internal bool IconOnly;
         public StudioToolbarOrientation()
         {
-            name = "studio-toolbar-orientation"; tooltip = "World, Object or Component transform axes";
+            name = "studio-toolbar-orientation"; tooltip = "World, Object, Component or Center transform orientation";
             icon = StudioCommandIcons.Get("Viewport/Orientation");
             clicked += OpenMenu;
             RegisterCallback<AttachToPanelEvent>(_ => Bind());
@@ -360,9 +312,10 @@ namespace MashBoxSDK.AnimationStudio
             var editor = view ? view.Studio?.ToolbarModelEditor : null;
             if (editor == null) return;
             var menu = new GenericMenu();
-            menu.AddItem(new GUIContent("Object"), editor.ToolbarLocalAxes && !editor.ToolbarComponentAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarLocalAxes(true));
+            menu.AddItem(new GUIContent("Object"), !editor.CenterMode && editor.ToolbarLocalAxes && !editor.ToolbarComponentAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarLocalAxes(true));
             menu.AddItem(new GUIContent("Component"), editor.ToolbarComponentAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarComponentAxes());
-            menu.AddItem(new GUIContent("World"), !editor.ToolbarLocalAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarLocalAxes(false));
+            menu.AddItem(new GUIContent("World"), !editor.CenterMode && !editor.ToolbarLocalAxes, () => view.Studio?.ToolbarModelEditor?.SetToolbarLocalAxes(false));
+            menu.AddItem(new GUIContent("Center"), editor.CenterMode, () => view.Studio?.ToolbarModelEditor?.SetCenterMode(true));
             menu.DropDown(worldBound);
         }
     }

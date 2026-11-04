@@ -187,9 +187,10 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         // Keep selected subtrees once, plus skeleton dependencies needed by skinned meshes.
-        internal void FilterExportSelection(Transform[] nodes)
+        internal void FilterExportSelection(Transform[] nodes) => FilterExportSelection(nodes, objects);
+        private void FilterExportSelection(Transform[] nodes, IEnumerable<int> roots)
         {
-            var geometry = Document.WithDescendants(objects);
+            var geometry = Document.WithDescendants(roots);
             var included = new HashSet<int>(geometry);
             void IncludeBone(int index)
             {

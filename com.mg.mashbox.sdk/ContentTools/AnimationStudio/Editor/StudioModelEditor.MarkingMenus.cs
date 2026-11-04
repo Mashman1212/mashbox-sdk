@@ -14,7 +14,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             None, Object, Vertex, Edge, Face, TransformMenu, PivotMenu, SelectionMenu, UVMenu, UVSetsMenu,
             Move, Rotate, Scale, Axes, EditPivot, CenterPivot, Freeze, SelectAll, Clear, Frame, Through,
-            OpenUV, UV0, UV1, UV2, UV3, UV4, UV5, UV6, UV7, ObjectAxes, WorldAxes, ComponentAxes
+            OpenUV, UV0, UV1, UV2, UV3, UV4, UV5, UV6, UV7, ObjectAxes, WorldAxes, ComponentAxes, CenterAxes
         }
         private bool markingOpen, suppressModelContext;
         private SceneView markingView;
@@ -37,7 +37,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool MarkingActionEnabled(MarkingAction action)
         {
             if (action == MarkingAction.None) return false;
-            if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes || action == MarkingAction.ComponentAxes) return true;
+            if (action == MarkingAction.ObjectAxes || action == MarkingAction.WorldAxes || action == MarkingAction.ComponentAxes || action == MarkingAction.CenterAxes) return true;
             if (action == MarkingAction.Object || action == MarkingAction.TransformMenu || action == MarkingAction.SelectionMenu ||
                 action == MarkingAction.Move || action == MarkingAction.Rotate || action == MarkingAction.Scale || action == MarkingAction.Axes || action == MarkingAction.Through) return true;
             if (action == MarkingAction.Vertex || action == MarkingAction.Edge || action == MarkingAction.Face)
@@ -59,6 +59,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.ObjectAxes: return "Object";
                 case MarkingAction.ComponentAxes: return "Component";
                 case MarkingAction.WorldAxes: return "World";
+                case MarkingAction.CenterAxes: return "Center";
                 case MarkingAction.TransformMenu: return "Transform ›";
                 case MarkingAction.PivotMenu: return "Pivot ›";
                 case MarkingAction.SelectionMenu: return "Selection ›";
@@ -83,8 +84,8 @@ namespace MashBoxSDK.AnimationStudio
             (action == MarkingAction.Move && tool == Tool.Move) ||
             (action == MarkingAction.Rotate && tool == Tool.Rotate) ||
             (action == MarkingAction.Scale && tool == Tool.Scale) ||
-            (action == MarkingAction.ObjectAxes && local && !componentAxes) ||
-            (action == MarkingAction.ComponentAxes && ToolbarComponentAxes) || (action == MarkingAction.WorldAxes && !local);
+            (action == MarkingAction.ObjectAxes && !CenterMode && local && !componentAxes) ||
+            (action == MarkingAction.ComponentAxes && ToolbarComponentAxes) || (action == MarkingAction.WorldAxes && !CenterMode && !local) || (action == MarkingAction.CenterAxes && CenterMode);
 
         // Called before SceneView gets RMB, so its fly camera and native context menu
         // cannot claim the gesture. Alt navigation and existing handle drags pass through.
@@ -97,7 +98,7 @@ namespace MashBoxSDK.AnimationStudio
             result.Add(new ToolbarCommand{Key="UV/Select UV Shells",Path="UV/Select UV Shells",Label="Select UV Shells",Enabled=false});
             foreach(MarkingAction action in Enum.GetValues(typeof(MarkingAction)))
             {
-                if(action!=MarkingAction.Axes&&action!=MarkingAction.Clear&&action!=MarkingAction.Through&&!(action>=MarkingAction.UV0&&action<=MarkingAction.ComponentAxes))continue;
+                if(action!=MarkingAction.Axes&&action!=MarkingAction.Clear&&action!=MarkingAction.Through&&!(action>=MarkingAction.UV0&&action<=MarkingAction.CenterAxes))continue;
                 var captured=action;
                 result.Add(new ToolbarCommand{Key="Legacy/"+action,Path="Radial Actions/"+MarkingText(action),Label=MarkingText(action),Enabled=MarkingActionEnabled(action),Checked=MarkingIsCurrent(action),Execute=()=>Run(()=>ExecuteMarkingAction(captured,view))});
             }
@@ -310,6 +311,7 @@ namespace MashBoxSDK.AnimationStudio
                 case MarkingAction.ObjectAxes: SetToolbarLocalAxes(true); break;
                 case MarkingAction.ComponentAxes: SetToolbarComponentAxes(); break;
                 case MarkingAction.WorldAxes: SetToolbarLocalAxes(false); break;
+                case MarkingAction.CenterAxes: SetCenterMode(true); break;
                 case MarkingAction.EditPivot: TogglePivotEdit(view); break;
                 case MarkingAction.CenterPivot: CenterEditingPivot(); break;
                 case MarkingAction.Freeze: FreezeEditingObject(); RememberAction(RepeatKind.Freeze); break;

@@ -36,7 +36,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetCenterMode(bool enabled)
         {
             if (CenterMode == enabled || GUIUtility.hotControl != 0) return;
-            if (enabled) { pivot = false; EndPivotSnap(); }
+            if (enabled) { pivot = false; EndPivotSnap(); local = componentAxes = false; SaveDisplayConfiguration(); }
             StudioSettings.Current.centerTransformMode = enabled;
             StudioSettings.Save(); InvalidateHandleComponentFrame(); pivotHover = null;
             repaint(); toolOptions?.Repaint();

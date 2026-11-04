@@ -176,7 +176,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void RestoreFactoryToolbarPlacements(HashSet<string> savedIds)
         {
-            string[] top = { StudioGridToolbar.Id, StudioPivotModeToolbar.Id, StudioViewportToolbar.Id, StudioDisplayToolbar.Id,
+            string[] top = { StudioGridToolbar.Id, StudioViewportToolbar.Id, StudioDisplayToolbar.Id,
                 StudioPolygonPrimitivesToolbar.Id, StudioMeshToolsToolbar.Id, StudioMeshDisplayToolbar.Id };
             string[] left = { StudioTransformToolbar.Id, StudioSelectionToolbar.Id };
             void Place(string[] ids, string container, int layout)
