@@ -27,7 +27,8 @@ namespace MashBoxSDK.AnimationStudio
                     : (vehicle == "BMX" && (template.part == "Rim" || template.part == "Spokes" || template.part == "Nipples" || template.part == "Tire")) ||
                       (vehicle == "Scooter" && (template.part == "Wheel" || template.part == "Urethane"))
                         ? new[] { VehicleTargetDirection.Front, VehicleTargetDirection.Rear } : new[] { VehicleTargetDirection.None })
-                for (int instance = 1; instance <= (vehicle == "BMX" && template.part == "Stem Bolt" ? 6 : 1); instance++)
+                for (int instance = 1; instance <= (vehicle == "BMX" && template.part == "Stem Bolt" ? 6 :
+                    vehicle == "Scooter" && template.part == "Clamp Bolt" ? 4 : 1); instance++)
                 {
                     var captured = CaptureNodes(template.sourceModel);
                     int offset = root + created.Count;
@@ -51,6 +52,11 @@ namespace MashBoxSDK.AnimationStudio
                     }
                     if (vehicle == "Scooter" && (template.part == "Wheel" || template.part == "Urethane"))
                         captured[0].vehiclePart.targetAnchor = "Wheel_Anchor";
+                    if (vehicle == "Scooter" && template.part == "Clamp Bolt")
+                    {
+                        captured[0].vehiclePart.targetAnchor = "ClampBolt_Anchor";
+                        captured[0].vehiclePart.targetAnchorId = instance;
+                    }
                     if (vehicle == "BMX")
                     {
                         if (template.part == "Rim" || template.part == "Spokes" || template.part == "Nipples" || template.part == "Tire") captured[0].vehiclePart.targetAnchor = "Wheel_Anchor";

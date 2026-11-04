@@ -30,7 +30,7 @@
         },
         {
             "SuperType": "Scooter",
-            "Types": ["Deck","Bars","Clamp","Forks","Headset","Griptape","Wheel","Peg","Urethane","Grip","Bar End"]
+            "Types": ["Deck","Bars","Clamp","Clamp Bolt","Forks","Headset","Griptape","Wheel","Peg","Urethane","Grip","Bar End"]
         },
         {
             "SuperType": "BMX",
@@ -52,6 +52,13 @@
     "AnchorRules": [
         {
             "AppliesToSuperType": "Scooter",
+            "AppliesToType": "Clamp Bolt",
+            "AppliesToBrand": "",
+            "RequiredChildren": [],
+            "RequiredPatterns": []
+        },
+        {
+            "AppliesToSuperType": "Scooter",
             "AppliesToType": "Deck",
             "AppliesToBrand": "",
             "RequiredChildren": [
@@ -70,10 +77,10 @@
             "AppliesToType": "Clamp",
             "AppliesToBrand": "",
             "RequiredChildren": [
-                "StemBolt_Anchor_1",
-                "StemBolt_Anchor_2",
-                "StemBolt_Anchor_3",
-                "StemBolt_Anchor_4",
+                "ClampBolt_Anchor_1",
+                "ClampBolt_Anchor_2",
+                "ClampBolt_Anchor_3",
+                "ClampBolt_Anchor_4",
                 "Bars_Anchor",
                 "Mesh"
             ]

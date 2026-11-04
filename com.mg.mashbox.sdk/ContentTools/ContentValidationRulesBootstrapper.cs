@@ -28,7 +28,7 @@ namespace MashBoxSDK.ContentTools
                 SuperType = "Scooter",
                 Types = new[]
                 {
-                    "Deck","Bars","Clamp","Forks","Headset","Griptape","Wheel","Urethane","Bar End" // :contentReference[oaicite:2]{index=2}
+                    "Deck","Bars","Clamp","Clamp Bolt","Forks","Headset","Griptape","Wheel","Urethane","Bar End" // :contentReference[oaicite:2]{index=2}
                 }
             });
 

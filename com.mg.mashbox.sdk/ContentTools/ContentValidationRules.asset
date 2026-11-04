@@ -95,6 +95,7 @@ MonoBehaviour:
     - Deck
     - Bars
     - Clamp
+    - Clamp Bolt
     - Forks
     - Headset
     - Griptape
@@ -1611,10 +1612,10 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren:
-    - StemBolt_Anchor_1
-    - StemBolt_Anchor_2
-    - StemBolt_Anchor_3
-    - StemBolt_Anchor_4
+    - ClampBolt_Anchor_1
+    - ClampBolt_Anchor_2
+    - ClampBolt_Anchor_3
+    - ClampBolt_Anchor_4
     - Bars_Anchor
     RequiredDescendantsAnywhere: []
     PreferredOrientations: []
@@ -1640,6 +1641,37 @@ MonoBehaviour:
     - ShaderProperty: _EmissiveColorMap
       MaxSize: 512
     MaxVertexCount: 10000
+    MaxRenderers: 1
+    MaxDistinctMaterials: 1
+  - AppliesToSuperType: 4
+    AppliesToType: 51
+    AppliesToBrand:
+    IgnoreRequiredChildren: 0
+    RequiredChildren: []
+    RequiredDescendantsAnywhere: []
+    PreferredOrientations: []
+    ShaderType: 1
+    AdditionalAllowedShaderTypes:
+    MaxTextureDataMB:
+      MB: 0.25
+    Slots:
+    - ShaderProperty: _BaseColorMap
+      MaxSize: 128
+    - ShaderProperty: _MaskMap
+      MaxSize: 128
+    - ShaderProperty: _NormalMap
+      MaxSize: 128
+    - ShaderProperty: _StickerMap
+      MaxSize: 128
+    - ShaderProperty: _DetailMap
+      MaxSize: 128
+    - ShaderProperty: _DetailColorMap
+      MaxSize: 128
+    - ShaderProperty: _CoatMaskMap
+      MaxSize: 128
+    - ShaderProperty: _EmissiveColorMap
+      MaxSize: 128
+    MaxVertexCount: 500
     MaxRenderers: 1
     MaxDistinctMaterials: 1
   - AppliesToSuperType: 4

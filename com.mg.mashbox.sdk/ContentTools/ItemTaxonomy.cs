@@ -82,7 +82,8 @@ namespace MashBoxSDK.ContentTools
         Chain,
         Accessory,
         Full_Skin,
-        Cassette
+        Cassette,
+        Clamp_Bolt
 
     }
 }
