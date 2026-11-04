@@ -52,7 +52,6 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void UpdateLiveVehicleParts()
         {
-            vehicleValidation.Clear();
             attachedVehicleParts.Clear();
             if (Document && Transforms != null) liveVehicleStatus = Document.SnapLiveVehicleParts(Transforms, attachedVehicleParts);
         }

@@ -78,6 +78,19 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 return VehicleTargetDirection.None;
             }
+            // Normalize each active socket once, rather than once per live part.
+            var sockets = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+            var socketNames = new string[nodes.Count];
+            for (int j = 0; j < nodes.Count; j++)
+            {
+                string anchor = nodes[j].anchorType;
+                if (string.IsNullOrEmpty(anchor) && (nodes[j].name.StartsWith("Anchor_", StringComparison.OrdinalIgnoreCase) || nodes[j].name.EndsWith("_Anchor", StringComparison.OrdinalIgnoreCase))) anchor = nodes[j].name;
+                if (string.IsNullOrEmpty(anchor) || !transforms[j].gameObject.activeInHierarchy) continue;
+                socketNames[j] = anchor;
+                string key = VehicleAnchorId(anchor);
+                if (!sockets.TryGetValue(key, out var entries)) sockets[key] = entries = new List<int>();
+                entries.Add(j);
+            }
             var targets = new Dictionary<int, int>();
             for (int i = 0; i < nodes.Count; i++)
             {
@@ -87,11 +100,14 @@ namespace MashBoxSDK.AnimationStudio
                 if (id.Length == 0) { status[i] = "Choose a target anchor."; continue; }
                 if (!transforms[i].gameObject.activeInHierarchy) { status[i] = "Inactive part."; continue; }
                 var matches = new List<int>();
-                for (int j = 0; j < nodes.Count; j++)
+                string baseTarget = VehicleAnchorId(string.IsNullOrEmpty(part.targetAnchor) ? part.part : part.targetAnchor);
+                var candidates = new List<int>();
+                if (sockets.TryGetValue(id, out var direct)) candidates.AddRange(direct);
+                if (part.targetDirection != VehicleTargetDirection.None && baseTarget != id && sockets.TryGetValue(baseTarget, out var inherited)) candidates.AddRange(inherited);
+                foreach (int j in candidates)
                 {
-                    string anchor = nodes[j].anchorType;
-                    if (string.IsNullOrEmpty(anchor) && (nodes[j].name.StartsWith("Anchor_", StringComparison.OrdinalIgnoreCase) || nodes[j].name.EndsWith("_Anchor", StringComparison.OrdinalIgnoreCase))) anchor = nodes[j].name;
-                    if (string.IsNullOrEmpty(anchor) || Descendant(j, i) || !transforms[j].gameObject.activeInHierarchy) continue;
+                    string anchor = socketNames[j];
+                    if (Descendant(j, i)) continue;
                     string anchorId = VehicleAnchorId(anchor);
                     bool directMatch = anchorId == id;
                     bool inheritedMatch = false;
@@ -100,7 +116,6 @@ namespace MashBoxSDK.AnimationStudio
                         var directionalSocket = new VehiclePartData { targetAnchor = anchor, targetDirection = part.targetDirection };
                         // Only add context to an unqualified socket; never reinterpret an
                         // explicitly opposite-side socket using its parent's direction.
-                        string baseTarget = VehicleAnchorId(string.IsNullOrEmpty(part.targetAnchor) ? part.part : part.targetAnchor);
                         inheritedMatch = anchorId == baseTarget && InheritedDirection(j) == part.targetDirection &&
                             VehicleAnchorId(directionalSocket.ResolvedTargetAnchor()) == id;
                     }

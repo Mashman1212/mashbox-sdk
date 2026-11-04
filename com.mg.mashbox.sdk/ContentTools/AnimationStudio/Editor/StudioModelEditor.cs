@@ -93,6 +93,7 @@ namespace MashBoxSDK.AnimationStudio
             ResetTargetWeldGesture(false);
             hierarchyRenameNode = null;
             hierarchyRows = null; hierarchyContents.Clear(); hierarchyParents.Clear();
+            vehicleValidation.Clear();
             var currentNodes = Document ? new HashSet<StudioModelDocument.Node>(Document.nodes) : new HashSet<StudioModelDocument.Node>();
             collapsedHierarchy.RemoveWhere(node => !currentNodes.Contains(node));
             componentFrameValid = false;

@@ -14,6 +14,9 @@ namespace MashBoxSDK.AnimationStudio
         private static void InitializeVehicleValidation() => EditorApplication.projectChanged += () => vehicleValidationProjectRevision++;
         private StudioVehiclePartValidation.Result VehicleValidation(int index)
         {
+            // Transform drags dirty the document every event. Keep existing feedback
+            // until release rather than revalidating every part on every repaint.
+            if (GUIUtility.hotControl != 0 && vehicleValidation.TryGetValue(index, out var duringDrag)) return duringDrag;
             var rules = StudioVehiclePartCatalog.RulesAsset;
             int revision = rules ? EditorUtility.GetDirtyCount(rules) : -1;
             int documentRevision = EditorUtility.GetDirtyCount(Document);
