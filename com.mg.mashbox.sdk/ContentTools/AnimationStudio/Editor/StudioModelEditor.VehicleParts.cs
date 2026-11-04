@@ -25,7 +25,8 @@ namespace MashBoxSDK.AnimationStudio
             Rebuild(); SelectObject(index); Changed(false);
             if (view)
             {
-                view.ShowNotification(new GUIContent(template.ruleCount == 0 ?
+                view.ShowNotification(new GUIContent(template.sourceModel ?
+                    "Part created from the SDK model. Geometry and anchors are ready to edit." : template.ruleCount == 0 ?
                     "No hierarchy rule for this part; created a mesh root." :
                     "Part template created. Shape the placeholders and position the anchors."));
             }

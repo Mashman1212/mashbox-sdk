@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 
@@ -9,6 +10,7 @@ namespace MashBoxSDK.AnimationStudio
     internal static class StudioVehiclePartCatalog
     {
         private const string RulesGuid = "c7baf1b43fbb9564ea4bcc515370d9ad";
+        private const string BmxFolderGuid = "7406e492c18440644b2d473afa63f908";
         private static UnityEngine.Object cachedAsset;
         private static int cachedRevision;
         private static List<Template> cachedTemplates;
@@ -19,10 +21,11 @@ namespace MashBoxSDK.AnimationStudio
         internal sealed class Template
         {
             internal string vehicle, part, brand, color;
+            internal GameObject sourceModel;
             internal int ruleCount, maxRenderers = -1;
             internal readonly List<string> paths = new List<string>();
             internal readonly Dictionary<string, Quaternion> orientations = new Dictionary<string, Quaternion>(StringComparer.Ordinal);
-            internal string MenuPath => "Vehicle Part/" + vehicle + "/" + part + (string.IsNullOrEmpty(brand) ? "" : " (" + brand + ")") + (ruleCount == 0 ? " (mesh only)" : "");
+            internal string MenuPath => "Vehicle Part/" + vehicle + "/" + part + (string.IsNullOrEmpty(brand) ? "" : " (" + brand + ")") + (ruleCount == 0 && !sourceModel ? " (mesh only)" : "");
         }
         internal static UnityEngine.Object RulesAsset => AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(RulesGuid));
         private static string EnumName(SerializedProperty field) => field.enumValueIndex >= 0 && field.enumValueIndex < field.enumNames.Length ? field.enumNames[field.enumValueIndex] : "";
@@ -37,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!asset) return result;
             int revision = EditorUtility.GetDirtyCount(asset);
             if (cachedTemplates != null && cachedAsset == asset && cachedRevision == revision) return cachedTemplates;
+            var bmxModels = LoadBmxModels();
             using (var data = new SerializedObject(asset))
             {
                 var pairs = data.FindProperty("AllowedPairs"); var rules = data.FindProperty("ItemRules");
@@ -58,6 +62,11 @@ namespace MashBoxSDK.AnimationStudio
                         foreach (string brand in brands)
                         {
                             var template = new Template { vehicle = vehicle, part = part, brand = brand, color = color };
+                            if (vehicle == "BMX")
+                            {
+                                string modelPart = part == "Front Hub" || part == "Rear Hub" ? "Hub" : part == "Mag" ? "MagWheel" : part.Replace(" ", "");
+                                bmxModels.TryGetValue(modelPart, out template.sourceModel);
+                            }
                             foreach (int r in matching)
                             {
                                 var rule = rules.GetArrayElementAtIndex(r);
@@ -95,6 +104,20 @@ namespace MashBoxSDK.AnimationStudio
             }
             cachedAsset = asset; cachedRevision = revision;
             return cachedTemplates = result.OrderBy(t => t.vehicle, StringComparer.Ordinal).ThenBy(t => t.part, StringComparer.Ordinal).ThenBy(t => t.brand, StringComparer.Ordinal).ToList();
+        }
+        private static Dictionary<string, GameObject> LoadBmxModels()
+        {
+            var models = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
+            string folder = AssetDatabase.GUIDToAssetPath(BmxFolderGuid);
+            if (string.IsNullOrEmpty(folder) || !AssetDatabase.IsValidFolder(folder)) return models;
+            foreach (string path in AssetDatabase.FindAssets("t:Model", new[] { folder }).Select(AssetDatabase.GUIDToAssetPath).OrderBy(p => p, StringComparer.Ordinal))
+            {
+                string[] fields = Path.GetFileNameWithoutExtension(path).Split('_');
+                if (fields.Length < 2 || fields[0] != "BMX" || models.ContainsKey(fields[1])) continue;
+                var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (model) models.Add(fields[1], model);
+            }
+            return models;
         }
         private static string NormalizePath(string value) => (value ?? "").Trim().Replace('\\', '/').Trim('/');
         private static void AddPath(Template template, string value)

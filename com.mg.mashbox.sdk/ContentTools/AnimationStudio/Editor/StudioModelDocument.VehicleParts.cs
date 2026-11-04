@@ -16,6 +16,31 @@ namespace MashBoxSDK.AnimationStudio
             string RootName(int number) => template.vehicle + "_" + template.part + "_" + brand + "_" + (number == 1 ? "Template" : "Template " + number) + "_" + template.color;
             int copy = 1; while (nodes.Any(n => n.parent < 0 && n.name == RootName(copy))) copy++;
             int root = nodes.Count;
+            if (template.sourceModel)
+            {
+                var captured = CaptureNodes(template.sourceModel);
+                try
+                {
+                    captured[0].name = RootName(copy);
+                    foreach (var node in captured)
+                    {
+                        if (node.parent >= 0) node.parent += root;
+                        for (int i = 0; i < node.bones.Length; i++) if (node.bones[i] >= 0) node.bones[i] += root;
+                        if (node.rootBone >= 0) node.rootBone += root;
+                    }
+                    Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
+                    Undo.SetCurrentGroupName("Create " + template.vehicle + " " + template.part);
+                    Undo.RegisterCompleteObjectUndo(this, "Create vehicle part");
+                    nodes.AddRange(captured); EditorUtility.SetDirty(this);
+                    Undo.CollapseUndoOperations(group);
+                    return root;
+                }
+                catch
+                {
+                    foreach (var node in captured) if (node.mesh) DestroyImmediate(node.mesh);
+                    throw;
+                }
+            }
             var created = new List<Node> { new Node { name = RootName(copy) } };
             var paths = new Dictionary<string, int>(StringComparer.Ordinal) { [""] = 0 };
             int EnsurePath(string path)

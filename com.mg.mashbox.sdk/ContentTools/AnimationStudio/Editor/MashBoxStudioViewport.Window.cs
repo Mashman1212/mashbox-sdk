@@ -32,6 +32,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void BindCanvasFocus()
         {
+            EditorApplication.update -= TickCameraPointerOwnership;
+            EditorApplication.update += TickCameraPointerOwnership;
             rootVisualElement.UnregisterCallback<PointerDownEvent>(TrackCameraPointerDown, TrickleDown.TrickleDown);
             rootVisualElement.UnregisterCallback<PointerUpEvent>(TrackCameraPointerUp, TrickleDown.TrickleDown);
             rootVisualElement.UnregisterCallback<PointerCancelEvent>(TrackCameraPointerCancel, TrickleDown.TrickleDown);

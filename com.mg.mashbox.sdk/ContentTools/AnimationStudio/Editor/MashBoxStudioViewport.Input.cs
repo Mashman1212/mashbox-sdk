@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -197,9 +197,19 @@ namespace MashBoxSDK.AnimationStudio
             selectionPaintHeldKey = KeyCode.None; selectionPaintHoldCancelled = false;
             navigating = false; cameraDragStartedInCanvas = cameraDragStartedInUI = false; cameraPointerGeneration++; releaseStudioHolds?.Invoke();
         }
+        private void TickCameraPointerOwnership()
+        {
+            // Unity can retain focusedWindow while another Windows app is active.
+            // A release outside Unity may never reach the retained pointer handlers.
+            // Clear ownership in every Studio mode, including native camera modes.
+            if ((navigating || cameraDragStartedInCanvas || cameraDragStartedInUI) &&
+                (!UnityEditorInternal.InternalEditorUtility.isApplicationActive || focusedWindow != this))
+                ReleaseStudioInput();
+        }
         private void TickStudioInput()
         {
-            if (focusedWindow != this || studioInputActive == null || !studioInputActive()) ReleaseStudioInput();
+            if (!UnityEditorInternal.InternalEditorUtility.isApplicationActive ||
+                focusedWindow != this || studioInputActive == null || !studioInputActive()) ReleaseStudioInput();
         }
         public override void OnDisable()
         {
@@ -211,6 +221,7 @@ namespace MashBoxSDK.AnimationStudio
             ClearMenuInputShield();
             StopWorkspaceStatistics();
             EditorApplication.update -= TickStudioInput;
+            EditorApplication.update -= TickCameraPointerOwnership;
             StudioShortcuts.changed -= ReleaseStudioInput;
             RestoreStudioInput();
             base.OnDisable();
