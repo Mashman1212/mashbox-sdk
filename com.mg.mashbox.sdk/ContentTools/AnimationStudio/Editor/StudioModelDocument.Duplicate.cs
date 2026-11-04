@@ -26,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (!string.IsNullOrEmpty(n.anchorType) && !included.Contains(n.parent))
                         throw new System.InvalidOperationException("Create another anchor type, or duplicate its parent model to keep anchor names exact.");
                     var copy = new Node {
-                        name = n.name, anchorType = n.anchorType, sourcePath = n.sourcePath, parent = Remap(n.parent),
+                        name = n.name, anchorType = n.anchorType, sourcePath = n.sourcePath, sourceNodePath = n.sourceNodePath, sourceMeshAsset = n.sourceMeshAsset, parent = Remap(n.parent),
                         position = n.position, positionOffset = n.positionOffset, rotation = n.rotation,
                         scale = n.scale, pivotRotation = n.pivotRotation, frozenRotation = n.frozenRotation, frozenPivotBaseline = n.frozenPivotBaseline, active = n.active, skinned = n.skinned,
                         materials = n.materials?.ToArray() ?? System.Array.Empty<Material>(), previewTextureSlice = n.previewTextureSlice, vertexAOBaked = n.vertexAOBaked,

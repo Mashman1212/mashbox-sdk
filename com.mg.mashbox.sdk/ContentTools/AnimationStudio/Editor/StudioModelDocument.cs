@@ -17,6 +17,8 @@ namespace MashBoxSDK.AnimationStudio
             public string name;
             public string anchorType;
             public string sourcePath;
+            public string sourceNodePath;
+            public bool sourceMeshAsset;
             public int parent = -1;
             public int siblingOrder = -1;
             public Vector3 position, scale = Vector3.one;
@@ -130,6 +132,12 @@ namespace MashBoxSDK.AnimationStudio
             }
         }
 
+        internal static string SourceTransformPath(Transform child, Transform root)
+        {
+            var parts = new List<string>();
+            for (var at = child; at && at != root; at = at.parent) parts.Add(at.GetSiblingIndex().ToString(System.Globalization.CultureInfo.InvariantCulture));
+            parts.Reverse(); return string.Join("/", parts);
+        }
         private static List<Node> CaptureNodes(GameObject source)
         {
             if (!source) throw new ArgumentException("Choose a model first.");
@@ -144,7 +152,7 @@ namespace MashBoxSDK.AnimationStudio
                     var filter = t.GetComponent<MeshFilter>();
                     var renderer = t.GetComponent<Renderer>();
                     var mesh = skin ? skin.sharedMesh : filter ? filter.sharedMesh : null;
-                    var node = new Node { name = t.name, parent = Array.IndexOf(transforms, t.parent),
+                    var node = new Node { name = t.name, sourceNodePath = SourceTransformPath(t, source.transform), parent = Array.IndexOf(transforms, t.parent),
                         position = t.localPosition, rotation = t.localRotation, scale = t.localScale,
                         active = t.gameObject.activeSelf, skinned = skin,
                         materials = renderer ? renderer.sharedMaterials : Array.Empty<Material>() };

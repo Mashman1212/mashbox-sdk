@@ -44,6 +44,7 @@ namespace MashBoxSDK.AnimationStudio
         internal StudioMenu HierarchyVisibilityMenu(int index)
         {
             var menu = new StudioMenu();
+            AddUpdateSourceMenu(menu, index);
             bool visible = Document.nodes[index].active;
             menu.AddItem(new GUIContent(visible ? "Hide" : "Show"), false, () => Run(() => SetHierarchyVisibility(index, !visible)));
             menu.AddItem(new GUIContent("Isolate Visibility"), false, () => Run(() => IsolateHierarchyObject(index)));
