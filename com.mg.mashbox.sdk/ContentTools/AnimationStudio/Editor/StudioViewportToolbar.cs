@@ -225,8 +225,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             // An active tool is a radio selection; clicking it again must not
             // leave the model state and its native toggle visually out of sync.
-            if (enabled || editor.CameraOptionsVisible || editor.LightingOptionsVisible) { editor.ActivateTool(target); SetValueWithoutNotify(Read(editor)); }
-            else SetValueWithoutNotify(Read(editor));
+            editor.ActivateTool(target); SetValueWithoutNotify(Read(editor));
         }
     }
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]

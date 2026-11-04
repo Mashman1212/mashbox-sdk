@@ -368,6 +368,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void ClearLiveToolState()
         {
+            ClearExtrudeDistanceGizmo();
             liveFlowParameters = Vector3.zero;
             livePreview = null; liveSelection = liveFaces = liveWallTips = null; liveEdges = null;
             liveNormalEdges = null; livePoints = null; liveEdgePoints = null;

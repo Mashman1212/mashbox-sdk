@@ -26,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         private void OpenBisectTool()
         {
             if (bisectPane) { bisectPane.Focus(); return; }
-            FinishChannelEdit(); FinishLiveTool(); CloseLiveToolPanes(); StopCutTool(); StopTargetWeld(); EndPivotSnap();
+            FinishChannelEdit(); FinishToolsForSwitch(); StopCutTool(); StopTargetWeld(); EndPivotSnap();
             PrepareMeshSelection(ComponentMode.Object,()=>true,"",ComponentMode.Object,ComponentMode.Edge,ComponentMode.Face,ComponentMode.Vertex);
             bisectPane=ToolChannelPane.Open(BisectToolName,DrawBisectOptions,()=>{bisectPane=null;CancelBisectPreview();if(cutTool==CutTool.Bisect)cutTool=CutTool.None;repaint();},
                 new Vector2(350,220),new Vector2(310,200),execute:ApplyBisect,

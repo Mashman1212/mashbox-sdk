@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
         private void OpenFractureTool()
         {
             if(fracturePane){fracturePane.Focus();return;}
-            FinishChannelEdit();FinishLiveTool();CloseLiveToolPanes();StopCutTool();StopTargetWeld();EndPivotSnap();
+            FinishChannelEdit(); FinishToolsForSwitch();StopCutTool();StopTargetWeld();EndPivotSnap();
             PrepareMeshSelection(ComponentMode.Object,()=>true,"",ComponentMode.Object,ComponentMode.Edge,ComponentMode.Face,ComponentMode.Vertex);
             fractureSettings=new StudioMeshFracture.Settings();fractureMaterial=null;fractureExplode=.15f;fractureStale=false;
             fracturePane=ToolChannelPane.Open("Fracture",DrawFractureOptions,()=>{fracturePane=null;CancelFracture();repaint();},

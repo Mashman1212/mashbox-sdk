@@ -42,6 +42,7 @@ namespace MashBoxSDK.AnimationStudio
         private void OpenBevelTool()
 
         {
+            FinishToolsForSwitch(bevelToolPane);
 
             PrepareMeshSelection(ComponentMode.Edge, () => CanBevelEdges,
                 "Select edges on an editable static mesh to bevel.", ComponentMode.Edge);

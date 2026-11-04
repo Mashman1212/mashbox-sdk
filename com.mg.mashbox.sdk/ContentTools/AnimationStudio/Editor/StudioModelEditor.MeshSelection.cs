@@ -45,12 +45,16 @@ namespace MashBoxSDK.AnimationStudio
                 else mode = preferred;
             }
             FinishSelectionPaint(); StopTargetWeld(); StopCutTool(); EndPivotSnap(); CancelMarkingMenu();
-            CameraOptionsVisible = LightingOptionsVisible = false; pivot = false; tool = Tool.None;
+            CameraOptionsVisible = LightingOptionsVisible = false; pivot = false;
             if (!ready())
             {
+                tool = Tool.None;
                 if (!executingSelectionAction) { CloseLiveToolPanes(); CloseCombineToolWindow(); }
                 throw new InvalidOperationException(instruction);
             }
+            // Parameter tools keep the current transform gizmo. Starting from
+            // Select still needs a usable gizmo once the selection is compatible.
+            if (tool != Tool.Move && tool != Tool.Rotate && tool != Tool.Scale) tool = Tool.Move;
             repaint(); toolOptions?.Repaint();
         }
     }

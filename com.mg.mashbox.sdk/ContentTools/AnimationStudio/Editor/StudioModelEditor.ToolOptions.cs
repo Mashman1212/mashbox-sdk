@@ -41,11 +41,35 @@ namespace MashBoxSDK.AnimationStudio
             StopCutTool(); SetComponentMode(value); repaint(); toolOptions?.Repaint();
         }
         internal bool ToolbarToolSelected(Tool value) => !targetWeldActive && cutTool == CutTool.None && tool == value;
+        // Complete valid pending work on a tool change; an invalid preview is
+        // discarded so it cannot trap the user. An idle pane after Apply must not
+        // execute the operation again.
+        private void FinishToolsForSwitch(ToolChannelPane keep = null)
+        {
+            if (keep && ActiveChannelTool == keep) return;
+            bool pending = livePreview != null || componentLiveTargets != null || previewQueued ||
+                bisectPreview != null || fracturePreview != null;
+            if (pending)
+            {
+                var pane = ActiveChannelTool;
+                if (pane) pane.ExecuteCommand(true);
+                else
+                {
+                    try { FinishLiveTool(); }
+                    catch (System.InvalidOperationException) { /* Cancel the failed preview below. */ }
+                }
+            }
+            CancelLiveTool();
+            CloseLiveToolPanes(); CloseCombineToolWindow();
+            StopTargetWeld(); StopCutTool();
+            ToolChannelPane.ResetSessionValues();
+            extrusionDistance = extrusionInset = 0; extrudeFacesTogether = true;
+            error = null;
+        }
         internal void ActivateTool(Tool next)
         {
             FinishSelectionPaint();
-            FinishLiveTool();
-            CloseLiveToolPanes(); CloseCombineToolWindow();
+            FinishToolsForSwitch();
             StopTargetWeld(); StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; EndPivotSnap(); repaint(); toolOptions?.Repaint();
         }
         internal void OpenToolOptions()

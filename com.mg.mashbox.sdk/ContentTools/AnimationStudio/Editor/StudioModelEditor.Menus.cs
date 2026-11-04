@@ -147,7 +147,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Edit Mesh": {
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), true, ExtrudeSelected, finishPreview: false);
                     AddCommand(menu, "Bevel…", true, OpenBevelTool, finishPreview: false);
-                    AddCommand(menu, "Bridge Edges", true, OpenBridgeTool);
+                    AddCommand(menu, "Bridge Edges", true, OpenBridgeTool, finishPreview: false);
                     menu.AddSeparator("");
                     AddCommand(menu, "Circularize…", true, OpenCircularizeTool, finishPreview: false);
                     AddCommand(menu, "Edit Edge Flow…", true, OpenEdgeFlowTool, finishPreview: false);
@@ -155,18 +155,21 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Weld…", true, OpenRangeWeldTool, finishPreview: false);
                     AddCommand(menu, "Merge to Center", true, MergeToCenter, commandKey: "Merge Vertices");
                     menu.AddItem(new GUIContent("Target Weld"), targetWeldActive, () => Run(() => {
+                        if (!targetWeldActive) FinishToolsForSwitch();
                         if (!targetWeldActive) PrepareMeshSelection(ComponentMode.Vertex, () => CanStartTargetWeld, "Select an editable static mesh, then drag a vertex onto another vertex to weld.", ComponentMode.Vertex);
                         ActivateTargetWeld();
-                    }));
+                    }, false));
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent("Insert Edge Loop"), cutTool == CutTool.EdgeLoop, () => Run(() => {
+                        FinishToolsForSwitch();
                         PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh, then select an edge to insert an edge loop.", ComponentMode.Edge);
                         ActivateCutTool(CutTool.EdgeLoop);
-                    }));
+                    }, false));
                     menu.AddItem(new GUIContent("Multi-Cut"), cutTool == CutTool.MultiCut, () => Run(() => {
+                        FinishToolsForSwitch();
                         PrepareMeshSelection(ComponentMode.Edge, () => CanCutMesh, "Select an editable static mesh to use Multi-Cut.", ComponentMode.Edge);
                         ActivateCutTool(CutTool.MultiCut);
-                    }));
+                    }, false));
                     menu.AddSeparator("");
                     AddCommand(menu, "Duplicate Face", true, () => DuplicateSelectedFaces(false));
                     AddCommand(menu, "Duplicate Face as New Object", true, () => DuplicateSelectedFaces(true));
@@ -176,11 +179,11 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Add Subdivision", true, AddSubdivisionModifier);
                     break; }
                 case "Mesh Tools": {
-                    AddCommand(menu, "Combine Meshes…", true, OpenCombineTool);
+                    AddCommand(menu, "Combine Meshes…", true, OpenCombineTool, finishPreview: false);
                     AddCommand(menu, "Split Selection", true, () => ChooseSelectionAction("Split Selection", SplitSelectedComponents, "Select faces, edges or vertices to cut into a new mesh. Leave at least one face in each source mesh."));
                     menu.AddSeparator("");
-                    menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool));
-                    menu.AddItem(new GUIContent("Fracture"), fracturePane, () => Run(OpenFractureTool));
+                    menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool, false));
+                    menu.AddItem(new GUIContent("Fracture"), fracturePane, () => Run(OpenFractureTool, false));
                     menu.AddSeparator("");
                     AddCommand(menu, "Deform/Blend Shape", Document && SelectedBlendMeshes.Length >= 2, CreateSelectedBlendShape);
                     AddCommand(menu, "Deform/Bake Current Pose", HasBlendShape, BakeSelectedBlendShape);
@@ -230,7 +233,7 @@ namespace MashBoxSDK.AnimationStudio
                 action == MarkingAction.Scale ? StudioShortcut.Scale : action == MarkingAction.Frame ? StudioShortcut.Frame :
                 action == MarkingAction.EditPivot ? StudioShortcut.Pivot : (StudioShortcut?)null;
             if (shortcut.HasValue) label = StudioShortcuts.MenuLabel(label,shortcut.Value);
-            if (MarkingActionEnabled(action)) menu.AddItem(new GUIContent(label), MarkingIsCurrent(action), () => Run(() => ExecuteMarkingAction(action, view)));
+            if (MarkingActionEnabled(action)) menu.AddItem(new GUIContent(label), MarkingIsCurrent(action), () => Run(() => ExecuteMarkingAction(action, view), action != MarkingAction.Move && action != MarkingAction.Rotate && action != MarkingAction.Scale));
             else menu.AddDisabledItem(new GUIContent(label));
         }
 

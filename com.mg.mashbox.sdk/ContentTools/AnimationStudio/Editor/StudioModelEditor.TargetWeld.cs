@@ -31,7 +31,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (targetWeldActive) { StopTargetWeld(); repaint(); return; }
             if (!CanStartTargetWeld) throw new InvalidOperationException("Target Weld requires an editable static mesh.");
-            FinishSelectionPaint(); FinishLiveTool(); FinishChannelEdit(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
+            FinishToolsForSwitch();
+            FinishSelectionPaint(); FinishChannelEdit(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
             CloseLiveToolPanes(); CloseCombineToolWindow();
             ChangeComponentMode(ComponentMode.Vertex, null);
             CameraOptionsVisible = LightingOptionsVisible = false; tool = Tool.None; pivot = false;
