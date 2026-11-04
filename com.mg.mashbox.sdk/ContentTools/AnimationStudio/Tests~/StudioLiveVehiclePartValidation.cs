@@ -37,6 +37,20 @@ public static class StudioLiveVehiclePartValidation
             Require(Vector3.Distance(transforms[2].position, transforms[1].position) < 1e-5f && Quaternion.Angle(transforms[2].rotation, transforms[1].rotation) < .01f, "Root position and rotation match the socket");
             Require(Vector3.Distance(transforms[4].position, transforms[3].position) < 1e-5f && stem.scale == Vector3.one * 2, "Chains resolve and preserve authored scale");
             report.Add("PASS: normalized IDs, position/rotation, dependency chain, scale preservation");
+            forks.vehiclePart.targetAnchor = "StemBolt_Anchor";
+            for (int boltId = 1; boltId <= 6; boltId++)
+            {
+                forks.vehiclePart.targetAnchorId = boltId;
+                forkSocket.anchorType = "StemBolt_Anchor_" + boltId;
+                Require(doc.SnapLiveVehicleParts(transforms)[2].StartsWith("Attached"), "Numbered bolt targets its exact ID");
+                forkSocket.anchorType = "StemBolt_Anchor_" + (boltId + 1);
+                Require(doc.SnapLiveVehicleParts(transforms)[2].StartsWith("Waiting"), "Other bolt IDs cannot match");
+            }
+            Require(JsonUtility.FromJson<StudioModelDocument.VehiclePartData>(JsonUtility.ToJson(forks.vehiclePart)).targetAnchorId == 6, "Anchor ID survives serialization");
+            forks.vehiclePart.targetAnchorId = 0;
+            forks.vehiclePart.targetAnchor = "Anchor_Forks";
+            forkSocket.anchorType = "Forks_Anchor";
+            report.Add("PASS: IDs 1-6 select exact sockets, reject other IDs, and survive serialization");
             var sided = new StudioModelDocument.VehiclePartData { part = "Bar End", targetDirection = StudioModelDocument.VehicleTargetDirection.Left };
             Require(sided.ResolvedTargetAnchor() == "Left_BarEnd_Anchor", "Directional target inferred from part");
             sided.targetAnchor = "Left_Grip_Anchor";

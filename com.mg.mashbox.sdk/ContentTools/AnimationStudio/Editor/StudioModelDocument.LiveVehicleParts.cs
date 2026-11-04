@@ -14,7 +14,13 @@ namespace MashBoxSDK.AnimationStudio
             public string vehicle = "BMX", part = "Frame", targetAnchor = "";
             public bool live;
             public VehicleTargetDirection targetDirection;
+            public int targetAnchorId;
             internal string ResolvedTargetAnchor()
+            {
+                string anchor = DirectionalTargetAnchor();
+                return targetAnchorId > 0 && !string.IsNullOrEmpty(anchor) ? anchor + "_" + targetAnchorId : anchor;
+            }
+            private string DirectionalTargetAnchor()
             {
                 if (targetDirection == VehicleTargetDirection.None) return targetAnchor;
                 string anchor = string.IsNullOrEmpty(targetAnchor) ? part.Replace(" ", "") + "_Anchor" : targetAnchor;
@@ -33,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
             internal static string DefaultAnchor(string part)
             {
                 string name = part.Replace(" ", "") + "_Anchor";
-                return StudioAnchorCatalog.Contains(name) ? name : "";
+                return StudioAnchorCatalog.Contains(name) || StudioAnchorCatalog.Contains(name + "_1") ? name : "";
             }
         }
 
@@ -100,7 +106,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (id.Length == 0) { status[i] = "Choose a target anchor."; continue; }
                 if (!transforms[i].gameObject.activeInHierarchy) { status[i] = "Inactive part."; continue; }
                 var matches = new List<int>();
-                string baseTarget = VehicleAnchorId(string.IsNullOrEmpty(part.targetAnchor) ? part.part : part.targetAnchor);
+                string baseAnchor = string.IsNullOrEmpty(part.targetAnchor) ? part.part.Replace(" ", "") + "_Anchor" : part.targetAnchor;
+                string baseTarget = VehicleAnchorId(baseAnchor + (part.targetAnchorId > 0 ? "_" + part.targetAnchorId : ""));
                 var candidates = new List<int>();
                 if (sockets.TryGetValue(id, out var direct)) candidates.AddRange(direct);
                 if (part.targetDirection != VehicleTargetDirection.None && baseTarget != id && sockets.TryGetValue(baseTarget, out var inherited)) candidates.AddRange(inherited);

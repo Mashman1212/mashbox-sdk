@@ -44,6 +44,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     inferredPart.live = node.vehiclePart.live;
                     inferredPart.targetDirection = node.vehiclePart.targetDirection;
+                    inferredPart.targetAnchorId = node.vehiclePart.targetAnchorId;
                     if (inferredPart.vehicle == node.vehiclePart.vehicle && inferredPart.part == node.vehiclePart.part)
                         inferredPart.targetAnchor = node.vehiclePart.targetAnchor;
                 }

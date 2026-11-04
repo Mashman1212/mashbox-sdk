@@ -27,6 +27,7 @@ namespace MashBoxSDK.AnimationStudio
                     : (vehicle == "BMX" && (template.part == "Rim" || template.part == "Spokes" || template.part == "Nipples" || template.part == "Tire")) ||
                       (vehicle == "Scooter" && (template.part == "Wheel" || template.part == "Urethane"))
                         ? new[] { VehicleTargetDirection.Front, VehicleTargetDirection.Rear } : new[] { VehicleTargetDirection.None })
+                for (int instance = 1; instance <= (vehicle == "BMX" && template.part == "Stem Bolt" ? 6 : 1); instance++)
                 {
                     var captured = CaptureNodes(template.sourceModel);
                     int offset = root + created.Count;
@@ -43,6 +44,11 @@ namespace MashBoxSDK.AnimationStudio
                         captured[0].rotation = Quaternion.identity;
                     }
                     captured[0].vehiclePart.targetDirection = direction;
+                    if (vehicle == "BMX" && template.part == "Stem Bolt")
+                    {
+                        captured[0].vehiclePart.targetAnchor = "StemBolt_Anchor";
+                        captured[0].vehiclePart.targetAnchorId = instance;
+                    }
                     if (vehicle == "Scooter" && (template.part == "Wheel" || template.part == "Urethane"))
                         captured[0].vehiclePart.targetAnchor = "Wheel_Anchor";
                     if (vehicle == "BMX")

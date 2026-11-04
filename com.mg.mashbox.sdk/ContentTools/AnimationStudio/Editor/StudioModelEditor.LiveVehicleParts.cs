@@ -154,9 +154,11 @@ namespace MashBoxSDK.AnimationStudio
             {
                 data.targetAnchor = customAnchor.Trim();
                 data.targetDirection = StudioModelDocument.VehicleTargetDirection.None;
+                data.targetAnchorId = 0;
             }
             data.targetDirection = (StudioModelDocument.VehicleTargetDirection)EditorGUILayout.EnumPopup("Target Direction", data.targetDirection);
-            if (data.targetDirection != StudioModelDocument.VehicleTargetDirection.None)
+            data.targetAnchorId = Mathf.Max(0, EditorGUILayout.DelayedIntField(new GUIContent("Target Anchor ID", "0 uses the anchor without an ID. 1 targets StemBolt_Anchor_1 when the target is StemBolt_Anchor."), data.targetAnchorId));
+            if (data.targetDirection != StudioModelDocument.VehicleTargetDirection.None || data.targetAnchorId > 0)
                 EditorGUILayout.LabelField(new GUIContent("Resolved Target", "Matches this directional anchor, or an unqualified anchor such as Pedal_Anchor under a part with the matching direction."), new GUIContent(data.ResolvedTargetAnchor()));
             if (EditorGUI.EndChangeCheck()) { int index = Active; Run(() => SetVehiclePartData(index, data)); }
             }
