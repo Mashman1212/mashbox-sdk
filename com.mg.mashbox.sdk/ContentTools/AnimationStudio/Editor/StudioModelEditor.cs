@@ -58,7 +58,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             this.repaint = () => { repaint(); RepaintLiveToolPanes(); }; Scene = EditorSceneManager.NewPreviewScene();
             LoadDisplayConfiguration(); InitializeModifiers();
-            local = StudioSettings.DefaultOrientation != 0; componentAxes = StudioSettings.DefaultOrientation == 2;
+            if (StudioSettings.DefaultOrientation == 3) StudioSettings.Current.centerTransformMode = true;
+            local = !CenterMode && StudioSettings.DefaultOrientation != 0; componentAxes = !CenterMode && StudioSettings.DefaultOrientation == 2;
             mode = ComponentMode.Object;
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;

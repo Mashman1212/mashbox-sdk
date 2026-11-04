@@ -118,6 +118,7 @@ namespace MashBoxSDK.AnimationStudio
             if (definition == null) return;
             foreach (string key in definition.commands)
             {
+                if (key == "Control/MashBox/Viewport/PivotMode") continue;
                 var native = StudioCustomToolbars.CreateControl(key, containerWindow as MashBoxStudioViewport);
                 if (native != null) { contents.Add(native); continue; }
                 string captured = key;
