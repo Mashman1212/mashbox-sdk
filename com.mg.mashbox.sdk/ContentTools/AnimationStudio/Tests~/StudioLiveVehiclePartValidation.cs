@@ -35,8 +35,16 @@ public static class StudioLiveVehiclePartValidation
             }
             doc.SnapLiveVehicleParts(transforms);
             Require(Vector3.Distance(transforms[2].position, transforms[1].position) < 1e-5f && Quaternion.Angle(transforms[2].rotation, transforms[1].rotation) < .01f, "Root position and rotation match the socket");
-            Require(Vector3.Distance(transforms[4].position, transforms[3].position) < 1e-5f && stem.scale == Vector3.one * 2, "Chains resolve and preserve authored scale");
-            report.Add("PASS: normalized IDs, position/rotation, dependency chain, scale preservation");
+            Require(Vector3.Distance(transforms[4].position, transforms[3].position) < 1e-5f && Vector3.Distance(stem.scale, Vector3.one) < 1e-5f, "Chains resolve and follow anchor scale");
+            transforms[3].localScale = new Vector3(-1, .4f, 2);
+            doc.SnapLiveVehicleParts(transforms);
+            Require(Vector3.Distance(transforms[4].localScale, transforms[3].localScale) < 1e-5f, "Nonuniform mirrored socket scale follows");
+            var snappedScale = transforms[4].localScale;
+            doc.SnapLiveVehicleParts(transforms);
+            Require(Vector3.Distance(snappedScale, transforms[4].localScale) < 1e-5f, "Scale does not accumulate");
+            transforms[3].localScale = Vector3.one;
+            doc.SnapLiveVehicleParts(transforms);
+            report.Add("PASS: normalized IDs, position/rotation, dependency chain, anchor scale including reflection");
             forks.vehiclePart.targetAnchor = "StemBolt_Anchor";
             for (int boltId = 1; boltId <= 6; boltId++)
             {

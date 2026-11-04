@@ -152,15 +152,27 @@ namespace MashBoxSDK.AnimationStudio
                 if (source.parent && Mathf.Abs(source.parent.localToWorldMatrix.determinant) < 1e-12f)
                 { states[index] = 3; status[index] = "Parent has zero scale; snapping paused."; return false; }
                 var rotation = destination.rotation;
+                var rotationOffset = Quaternion.identity;
                 int targetOwner = Owner(target);
                 if (string.Equals(nodes[index].vehiclePart.part, "Pedal", StringComparison.OrdinalIgnoreCase) && targetOwner >= 0 &&
                     string.Equals(nodes[targetOwner].vehiclePart.part.Replace(" ", ""), "CrankArm", StringComparison.OrdinalIgnoreCase))
-                    rotation *= Quaternion.Euler(0, 180, 0);
+                    rotationOffset = Quaternion.Euler(0, 180, 0);
+                rotation *= rotationOffset;
                 source.SetPositionAndRotation(destination.position, rotation);
-                // Keep authored scale and pivot offsets; only position/rotation follow.
+                // Convert the socket basis into the part's parent space so assembly
+                // scale is inherited once, including mirrored and nonuniform sockets.
+                var localTarget = (source.parent ? source.parent.worldToLocalMatrix : Matrix4x4.identity) *
+                    destination.localToWorldMatrix * Matrix4x4.Rotate(rotationOffset);
+                float AxisScale(int axis, Vector3 direction)
+                {
+                    Vector3 basis = localTarget.GetColumn(axis);
+                    return basis.magnitude * (Vector3.Dot(basis, source.localRotation * direction) < 0 ? -1 : 1);
+                }
+                source.localScale = new Vector3(AxisScale(0, Vector3.right), AxisScale(1, Vector3.up), AxisScale(2, Vector3.forward));
                 var node = nodes[index];
                 node.position = source.localPosition - node.positionOffset;
                 node.rotation = source.localRotation;
+                node.scale = source.localScale;
                 status[index] = "Attached to " + nodes[target].name;
                 states[index] = 2;
                 attachedParts?.Add(index);
