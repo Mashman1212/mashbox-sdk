@@ -12,8 +12,23 @@ namespace MashBoxSDK.AnimationStudio
         // The SDK's canonical ContentValidationRules asset; GUID survives package/folder moves.
         private const string RulesGuid = "c7baf1b43fbb9564ea4bcc515370d9ad";
         private static string[] names;
-        internal static string[] Names => names ?? (names = LoadNames());
-        static StudioAnchorCatalog() { EditorApplication.projectChanged += () => names = null; }
+        private static UnityEngine.Object cachedAsset;
+        private static int cachedRevision;
+        internal static string[] Names
+        {
+            get
+            {
+                var asset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(RulesGuid));
+                int revision = asset ? EditorUtility.GetDirtyCount(asset) : -1;
+                if (names == null || asset != cachedAsset || revision != cachedRevision)
+                {
+                    names = LoadNames(); cachedAsset = asset; cachedRevision = revision;
+                }
+                return names;
+            }
+        }
+        internal static void Invalidate() => names = null;
+        static StudioAnchorCatalog() { EditorApplication.projectChanged += Invalidate; }
         internal static bool Contains(string name) => Array.IndexOf(Names,name) >= 0;
         private static string[] LoadNames()
         {
@@ -43,6 +58,16 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             return found.OrderBy(n=>n,StringComparer.Ordinal).ToArray();
+        }
+    }
+
+    internal sealed class StudioAnchorCatalogPostprocessor : AssetPostprocessor
+    {
+        private static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
+        {
+            if (imported.Concat(deleted).Concat(moved).Concat(movedFrom)
+                .Any(path => path.EndsWith("/ContentValidationRules.asset", StringComparison.OrdinalIgnoreCase)))
+                StudioAnchorCatalog.Invalidate();
         }
     }
 }

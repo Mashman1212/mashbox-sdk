@@ -60,8 +60,22 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!Document || index < 0 || index >= Document.nodes.Count) return;
             if (!string.IsNullOrEmpty(Document.nodes[index].anchorType)) throw new InvalidOperationException("An anchor cannot also be a vehicle part root.");
+            var node = Document.nodes[index];
+            string nextName = node.name;
+            if (data != null && node.vehiclePart != null &&
+                (data.vehicle != node.vehiclePart.vehicle || data.part != node.vehiclePart.part))
+            {
+                var tags = node.name.Split('_');
+                // Replace only the type tags; retain the authored brand/model suffix.
+                nextName = data.vehicle + "_" + data.part +
+                    (tags.Length > 2 ? "_" + string.Join("_", tags.Skip(2)) : tags.Length == 1 ? "_" + node.name : "");
+                if (nextName != node.name && Document.nodes.Any(other => other != node && other.parent == node.parent && other.name == nextName))
+                    throw new InvalidOperationException("An object with that name already exists under this parent.");
+            }
             Undo.RegisterCompleteObjectUndo(Document, data == null ? "Unmark vehicle part" : "Change vehicle part");
-            Document.nodes[index].vehiclePart = data?.Copy();
+            node.vehiclePart = data?.Copy();
+            node.name = nextName;
+            if (Transforms != null && index < Transforms.Length && Transforms[index]) Transforms[index].name = nextName;
             Changed(false);
         }
         private int[] SelectedVehicleParts(int fallback)
@@ -84,9 +98,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!string.IsNullOrEmpty(node.anchorType)) return;
             if (node.vehiclePart == null)
                 menu.AddItem(new GUIContent("Mark as Vehicle Part"), false, () => Run(() => {
-                    var tags = Document.nodes[index].name.Split('_');
-                    var template = tags.Length >= 2 ? StudioVehiclePartCatalog.Load().FirstOrDefault(t => string.Equals(t.vehicle, tags[0], StringComparison.OrdinalIgnoreCase) && string.Equals(t.part, tags[1].Trim(), StringComparison.OrdinalIgnoreCase)) : null;
-                    SetVehiclePartData(index, template != null ? StudioModelDocument.VehiclePartData.From(template) : new StudioModelDocument.VehiclePartData());
+                    SetVehiclePartData(index, StudioVehiclePartCatalog.InferPart(Document.nodes[index].name) ?? new StudioModelDocument.VehiclePartData());
                 }));
             else
             {
@@ -109,14 +121,12 @@ namespace MashBoxSDK.AnimationStudio
             string[] vehicles = templates.Select(t => t.vehicle).Append(data.vehicle).Distinct().OrderBy(v => v).ToArray();
             EditorGUI.BeginChangeCheck();
             int vehicle = EditorGUILayout.Popup("Vehicle", Array.IndexOf(vehicles, data.vehicle), vehicles);
-            if (vehicle >= 0 && vehicles[vehicle] != data.vehicle) { data.vehicle = vehicles[vehicle]; data.part = templates.First(t => t.vehicle == data.vehicle).part; data.targetAnchor = StudioModelDocument.VehiclePartData.DefaultAnchor(data.part); }
+            // Changing vehicle does not change the authored part or its anchor.
+            // Keep unsupported pairs visible so validation can explain them.
+            if (vehicle >= 0 && vehicles[vehicle] != data.vehicle) data.vehicle = vehicles[vehicle];
             string[] parts = templates.Where(t => t.vehicle == data.vehicle).Select(t => t.part).Append(data.part).Distinct().OrderBy(p => p).ToArray();
             int part = EditorGUILayout.Popup("Part", Array.IndexOf(parts, data.part), parts);
             if (part >= 0 && parts[part] != data.part) { data.part = parts[part]; data.targetAnchor = StudioModelDocument.VehiclePartData.DefaultAnchor(data.part); }
-            string[] anchors = new[] { "" }.Concat(StudioAnchorCatalog.Names).Concat(Document.nodes.Select(n => n.anchorType).Where(a => !string.IsNullOrEmpty(a))).Append(data.targetAnchor ?? "").Distinct().ToArray();
-            string[] labels = anchors.Select(a => string.IsNullOrEmpty(a) ? "None" : a).ToArray();
-            int anchor = EditorGUILayout.Popup("Target Anchor", Array.IndexOf(anchors, data.targetAnchor ?? ""), labels);
-            if (anchor >= 0) data.targetAnchor = anchors[anchor];
             if (EditorGUI.EndChangeCheck()) { int index = Active; Run(() => SetVehiclePartData(index, data)); }
             var liveTargets = SelectedVehicleParts(Active);
             bool allLive = liveTargets.All(i => Document.nodes[i].vehiclePart.live);
@@ -131,6 +141,26 @@ namespace MashBoxSDK.AnimationStudio
             }
             finally { EditorGUI.showMixedValue = previousMixed; }
             if (liveTargets.Length > 1) EditorGUILayout.LabelField(liveTargets.Length + " vehicle parts selected");
+            data = Document.nodes[Active].vehiclePart.Copy();
+            using (new EditorGUI.DisabledScope(!data.live))
+            {
+            EditorGUI.BeginChangeCheck();
+            string[] anchors = new[] { "" }.Concat(StudioAnchorCatalog.Names).Concat(Document.nodes.Select(n => n.anchorType).Where(a => !string.IsNullOrEmpty(a))).Append(data.targetAnchor ?? "").Distinct().ToArray();
+            string[] labels = anchors.Select(a => string.IsNullOrEmpty(a) ? "None" : a).ToArray();
+            int anchor = EditorGUILayout.Popup("Target Anchor", Array.IndexOf(anchors, data.targetAnchor ?? ""), labels);
+            if (anchor >= 0) data.targetAnchor = anchors[anchor];
+            EditorGUI.BeginChangeCheck();
+            string customAnchor = EditorGUILayout.DelayedTextField(new GUIContent("Custom Target Anchor", "Type an exact anchor name. Committing a name clears Target Direction so it is used directly."), data.targetAnchor ?? "");
+            if (EditorGUI.EndChangeCheck())
+            {
+                data.targetAnchor = customAnchor.Trim();
+                data.targetDirection = StudioModelDocument.VehicleTargetDirection.None;
+            }
+            data.targetDirection = (StudioModelDocument.VehicleTargetDirection)EditorGUILayout.EnumPopup("Target Direction", data.targetDirection);
+            if (data.targetDirection != StudioModelDocument.VehicleTargetDirection.None)
+                EditorGUILayout.LabelField(new GUIContent("Resolved Target", "Matches this directional anchor, or an unqualified anchor such as Pedal_Anchor under a part with the matching direction."), new GUIContent(data.ResolvedTargetAnchor()));
+            if (EditorGUI.EndChangeCheck()) { int index = Active; Run(() => SetVehiclePartData(index, data)); }
+            }
             if (Document.nodes[Active].vehiclePart.live) EditorGUILayout.HelpBox(liveVehicleStatus.TryGetValue(Active, out var status) ? status : "Waiting for a matching anchor.", MessageType.None);
             DrawVehicleValidationChannels();
             GUILayout.Space(6);

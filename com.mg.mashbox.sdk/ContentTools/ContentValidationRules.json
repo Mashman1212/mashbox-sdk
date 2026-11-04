@@ -108,7 +108,7 @@
             "AppliesToBrand": "",
             "RequiredChildren": [
                 "Mesh",
-                "Stem_Anchor"
+                "Clamp_Anchor"
             ],
             "RequiredPatterns": []
         },

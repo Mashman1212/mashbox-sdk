@@ -159,6 +159,7 @@ namespace MashBoxSDK.AnimationStudio
                         materials = renderer ? renderer.sharedMaterials : Array.Empty<Material>() };
                     captured.Add(node);
                     if (!mesh && StudioAnchorCatalog.Contains(t.name)) node.anchorType = t.name;
+                    if (string.IsNullOrEmpty(node.anchorType)) node.vehiclePart = StudioVehiclePartCatalog.InferPart(t.name);
                     if (mesh)
                     {
                         node.mesh = StudioWorkspaceText.ReadableSnapshot(mesh); node.mesh.name = mesh.name + " Editable";

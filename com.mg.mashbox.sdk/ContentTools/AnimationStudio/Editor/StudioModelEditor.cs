@@ -344,6 +344,7 @@ namespace MashBoxSDK.AnimationStudio
                 var rootDrop = GUILayoutUtility.GetRect(0, 32, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
                 HandleHierarchyDrop(rootDrop, -1);
                 EditorGUILayout.EndScrollView();
+                if (Event.current.type == EventType.Repaint) hierarchyViewHeight = GUILayoutUtility.GetLastRect().height;
                 EditorGUILayout.EndVertical();
             }
         }
@@ -471,11 +472,18 @@ namespace MashBoxSDK.AnimationStudio
             return PrefabUtility.GetOutermostPrefabInstanceRoot(source) == source ? PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(source) : null;
         }
         internal void ImportModel(GameObject source, Action<StudioModelDocument> loaded) => ImportModel(source, loaded, SourceAssetPath(source));
+        private void CollapseAddedHierarchy(int firstNode)
+        {
+            for (int i = firstNode; i < Document.nodes.Count; i++)
+                collapsedHierarchy.Add(Document.nodes[i]);
+            hierarchyRows = null;
+        }
         private void ImportModel(GameObject source, Action<StudioModelDocument> loaded, string recentPath)
         {
             using var camera = new CreationCameraScope(commandView);
             CancelMarkingMenu(); EnsureWorkspace(loaded);
             int root = Document.AppendModel(source);
+            CollapseAddedHierarchy(root);
             // Preserve the original dropped file, not an Assets/Studio Imports cache copy.
             Document.nodes[root].sourcePath = string.IsNullOrEmpty(recentPath) ? SourceAssetPath(source) : recentPath;
             mode = ComponentMode.Object; pivot = false; search = "";

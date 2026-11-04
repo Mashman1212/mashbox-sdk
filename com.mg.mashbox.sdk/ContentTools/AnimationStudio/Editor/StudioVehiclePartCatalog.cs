@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         private const string RulesGuid = "c7baf1b43fbb9564ea4bcc515370d9ad";
         private const string BmxFolderGuid = "7406e492c18440644b2d473afa63f908";
+        private const string ScooterFolderGuid = "06acbd7466271a146b771e9def5d5c00";
         private static UnityEngine.Object cachedAsset;
         private static int cachedRevision;
         private static List<Template> cachedTemplates;
@@ -28,6 +29,19 @@ namespace MashBoxSDK.AnimationStudio
             internal string MenuPath => "Vehicle Part/" + vehicle + "/" + part + (string.IsNullOrEmpty(brand) ? "" : " (" + brand + ")") + (ruleCount == 0 && !sourceModel ? " (mesh only)" : "");
         }
         internal static UnityEngine.Object RulesAsset => AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(RulesGuid));
+        internal static StudioModelDocument.VehiclePartData InferPart(string name)
+        {
+            var tags = (name ?? "").Split('_');
+            if (tags.Length < 2) return null;
+            var candidates = Load().Where(t => string.Equals(t.vehicle, tags[0], StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (candidates.Length == 0) return null;
+            string part = tags[1].Trim();
+            var template = candidates.FirstOrDefault(t => string.Equals(t.part.Replace(" ", ""), part.Replace(" ", ""), StringComparison.OrdinalIgnoreCase));
+            // Recognize the vehicle prefix even when the part tag needs correction.
+            // Validation reports naming problems without changing the authored name.
+            return template != null ? StudioModelDocument.VehiclePartData.From(template)
+                : new StudioModelDocument.VehiclePartData { vehicle = candidates[0].vehicle, part = part, targetAnchor = "" };
+        }
         private static string EnumName(SerializedProperty field) => field.enumValueIndex >= 0 && field.enumValueIndex < field.enumNames.Length ? field.enumNames[field.enumValueIndex] : "";
         private static IEnumerable<string> Strings(SerializedProperty array)
         {
@@ -40,7 +54,8 @@ namespace MashBoxSDK.AnimationStudio
             if (!asset) return result;
             int revision = EditorUtility.GetDirtyCount(asset);
             if (cachedTemplates != null && cachedAsset == asset && cachedRevision == revision) return cachedTemplates;
-            var bmxModels = LoadBmxModels();
+            var bmxModels = LoadVehicleModels(BmxFolderGuid, "BMX");
+            var scooterModels = LoadVehicleModels(ScooterFolderGuid, "Scooter");
             using (var data = new SerializedObject(asset))
             {
                 var pairs = data.FindProperty("AllowedPairs"); var rules = data.FindProperty("ItemRules");
@@ -62,10 +77,15 @@ namespace MashBoxSDK.AnimationStudio
                         foreach (string brand in brands)
                         {
                             var template = new Template { vehicle = vehicle, part = part, brand = brand, color = color };
+                            if (vehicle == "Scooter") scooterModels.TryGetValue(part.Replace(" ", ""), out template.sourceModel);
                             if (vehicle == "BMX")
                             {
-                                string modelPart = part == "Front Hub" || part == "Rear Hub" ? "Hub" : part == "Mag" ? "MagWheel" : part.Replace(" ", "");
-                                bmxModels.TryGetValue(modelPart, out template.sourceModel);
+                                string modelPart = part.Replace(" ", "");
+                                if (!bmxModels.TryGetValue(modelPart, out template.sourceModel))
+                                {
+                                    string legacyPart = part == "Front Hub" || part == "Rear Hub" ? "Hub" : part == "Mag" ? "MagWheel" : modelPart;
+                                    bmxModels.TryGetValue(legacyPart, out template.sourceModel);
+                                }
                             }
                             foreach (int r in matching)
                             {
@@ -105,17 +125,19 @@ namespace MashBoxSDK.AnimationStudio
             cachedAsset = asset; cachedRevision = revision;
             return cachedTemplates = result.OrderBy(t => t.vehicle, StringComparer.Ordinal).ThenBy(t => t.part, StringComparer.Ordinal).ThenBy(t => t.brand, StringComparer.Ordinal).ToList();
         }
-        private static Dictionary<string, GameObject> LoadBmxModels()
+        private static Dictionary<string, GameObject> LoadVehicleModels(string folderGuid, string vehicle)
         {
             var models = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
-            string folder = AssetDatabase.GUIDToAssetPath(BmxFolderGuid);
+            string folder = AssetDatabase.GUIDToAssetPath(folderGuid);
             if (string.IsNullOrEmpty(folder) || !AssetDatabase.IsValidFolder(folder)) return models;
             foreach (string path in AssetDatabase.FindAssets("t:Model", new[] { folder }).Select(AssetDatabase.GUIDToAssetPath).OrderBy(p => p, StringComparer.Ordinal))
             {
                 string[] fields = Path.GetFileNameWithoutExtension(path).Split('_');
-                if (fields.Length < 2 || fields[0] != "BMX" || models.ContainsKey(fields[1])) continue;
+                if (fields.Length < 2 || !string.Equals(fields[0], vehicle, StringComparison.OrdinalIgnoreCase)) continue;
+                string part = fields[1].Replace(" ", "");
+                if (models.ContainsKey(part)) continue;
                 var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                if (model) models.Add(fields[1], model);
+                if (model) models.Add(part, model);
             }
             return models;
         }

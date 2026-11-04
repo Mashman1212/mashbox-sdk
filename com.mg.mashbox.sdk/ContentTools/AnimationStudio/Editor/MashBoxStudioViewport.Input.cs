@@ -175,6 +175,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void SelectionPaintKeyDown(KeyDownEvent evt)
         {
+            if (studioInputActive != null && studioInputActive() && !MenuInputBlocked &&
+                IsOverControl(rigControls, selectionPaintInputPointer) &&
+                Studio?.ToolbarModelEditor?.HandleHierarchyFrameShortcut(new Event { type = EventType.KeyDown, keyCode = evt.keyCode, modifiers = evt.modifiers }) == true)
+            {
+                evt.imguiEvent?.Use(); evt.StopImmediatePropagation(); return;
+            }
             if (studioInputActive != null && studioInputActive() && !EditorGUIUtility.editingTextField)
                 Studio?.ToolbarModelEditor?.UpdatePivotTargetModifiers(new Event { type = EventType.KeyDown, keyCode = evt.keyCode, modifiers = evt.modifiers });
             if (!DispatchSelectionPaintKey(EventType.KeyDown, evt.keyCode, evt.modifiers)) return;

@@ -72,6 +72,35 @@ namespace MashBoxSDK.AnimationStudio
                 !StudioShortcuts.Pressed(StudioModelCommands.StableId("Select/Hide Selection"), evt)) return false;
             evt.Use(); Run(ToggleHierarchySelectionVisibility, false); return true;
         }
+        private float hierarchyViewHeight = 300;
+        internal bool HandleHierarchyFrameShortcut(Event evt)
+        {
+            if (evt == null || evt.type != EventType.KeyDown || EditorGUIUtility.editingTextField ||
+                hierarchyRenameNode != null || GUIUtility.hotControl != 0 || !Document ||
+                !(StudioShortcuts.Pressed(StudioShortcut.Frame, evt) ||
+                  (evt.keyCode == KeyCode.F && !evt.alt && !evt.control && !evt.command && !evt.shift))) return false;
+            var selected = objects.Where(i => i >= 0 && i < Document.nodes.Count).ToArray();
+            if (selected.Length == 0 && Active >= 0 && Active < Document.nodes.Count) selected = new[] { Active };
+            if (selected.Length > 0)
+            {
+                search = "";
+                foreach (int index in selected)
+                    for (int p = Document.nodes[index].parent; p >= 0; p = Document.nodes[p].parent)
+                        collapsedHierarchy.Remove(Document.nodes[p]);
+                hierarchyRows = null;
+                var rows = HierarchyRows();
+                var style = StudioTheme.Styles.hierarchyRow;
+                float height = Mathf.Max(EditorGUIUtility.singleLineHeight, style.fixedHeight) + style.margin.vertical;
+                int first = selected.Min(i => rows.IndexOf(i)), last = selected.Max(i => rows.IndexOf(i));
+                float span = (last - first + 1) * height;
+                int focus = selected.Contains(Active) ? rows.IndexOf(Active) : first;
+                hierarchyScroll.y = Mathf.Max(0, span <= hierarchyViewHeight
+                    ? first * height - (hierarchyViewHeight - span) * .5f
+                    : focus * height - (hierarchyViewHeight - height) * .5f);
+                repaint();
+            }
+            evt.Use(); return true;
+        }
         internal void ToggleHierarchySelectionVisibility()
         {
             if (!Document) return;

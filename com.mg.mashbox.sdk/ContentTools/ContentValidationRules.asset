@@ -1540,7 +1540,7 @@ MonoBehaviour:
     AppliesToBrand: 
     IgnoreRequiredChildren: 0
     RequiredChildren:
-    - Stem_Anchor
+    - Clamp_Anchor
     RequiredDescendantsAnywhere: []
     PreferredOrientations: []
     ShaderType: 1

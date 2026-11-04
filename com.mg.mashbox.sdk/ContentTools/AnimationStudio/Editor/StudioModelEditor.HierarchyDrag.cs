@@ -37,6 +37,18 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("An object with that name already exists under this parent.");
             Undo.RegisterCompleteObjectUndo(Document, "Rename object");
             node.name = value;
+            var inferredPart = StudioVehiclePartCatalog.InferPart(value);
+            if (inferredPart != null)
+            {
+                if (node.vehiclePart != null)
+                {
+                    inferredPart.live = node.vehiclePart.live;
+                    inferredPart.targetDirection = node.vehiclePart.targetDirection;
+                    if (inferredPart.vehicle == node.vehiclePart.vehicle && inferredPart.part == node.vehiclePart.part)
+                        inferredPart.targetAnchor = node.vehiclePart.targetAnchor;
+                }
+                node.vehiclePart = inferredPart;
+            }
             Transforms[index].name = value;
             Changed(false);
         }

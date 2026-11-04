@@ -7,11 +7,26 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class StudioModelDocument
     {
+        public enum VehicleTargetDirection { None, Left, Right, Front, Rear, Forward, Back, FrontLeft, FrontRight, RearLeft, RearRight }
         [Serializable]
         public sealed class VehiclePartData
         {
             public string vehicle = "BMX", part = "Frame", targetAnchor = "";
             public bool live;
+            public VehicleTargetDirection targetDirection;
+            internal string ResolvedTargetAnchor()
+            {
+                if (targetDirection == VehicleTargetDirection.None) return targetAnchor;
+                string anchor = string.IsNullOrEmpty(targetAnchor) ? part.Replace(" ", "") + "_Anchor" : targetAnchor;
+                if (anchor.StartsWith("Anchor_", StringComparison.OrdinalIgnoreCase)) anchor = anchor.Substring(7) + "_Anchor";
+                var directions = new[] { "Left_", "Right_", "Front_", "Rear_", "Forward_", "Back_" };
+                string prefix;
+                while ((prefix = directions.FirstOrDefault(d => anchor.StartsWith(d, StringComparison.OrdinalIgnoreCase))) != null)
+                    anchor = anchor.Substring(prefix.Length);
+                string direction = targetDirection.ToString().Replace("FrontLeft", "Front_Left").Replace("FrontRight", "Front_Right")
+                    .Replace("RearLeft", "Rear_Left").Replace("RearRight", "Rear_Right");
+                return direction + "_" + anchor;
+            }
             public VehiclePartData Copy() => (VehiclePartData)MemberwiseClone();
             internal static VehiclePartData From(StudioVehiclePartCatalog.Template template)
                 => new VehiclePartData { vehicle = template.vehicle, part = template.part, targetAnchor = DefaultAnchor(template.part) };
@@ -48,12 +63,27 @@ namespace MashBoxSDK.AnimationStudio
                 for (int i = index; i >= 0; i = nodes[i].parent) if (nodes[i].vehiclePart != null) return i;
                 return -1;
             }
+            VehicleTargetDirection InheritedDirection(int anchor)
+            {
+                for (int p = nodes[anchor].parent; p >= 0; p = nodes[p].parent)
+                {
+                    var parentPart = nodes[p].vehiclePart;
+                    if (parentPart == null) continue;
+                    if (parentPart.targetDirection != VehicleTargetDirection.None) return parentPart.targetDirection;
+                    // A manually selected Left_CrankArm_Anchor also identifies its side.
+                    string parentTarget = VehicleAnchorId(parentPart.targetAnchor);
+                    foreach (var direction in Enum.GetValues(typeof(VehicleTargetDirection)).Cast<VehicleTargetDirection>()
+                        .Where(d => d != VehicleTargetDirection.None).OrderByDescending(d => d.ToString().Length))
+                        if (parentTarget.StartsWith(direction.ToString().ToLowerInvariant(), StringComparison.Ordinal)) return direction;
+                }
+                return VehicleTargetDirection.None;
+            }
             var targets = new Dictionary<int, int>();
             for (int i = 0; i < nodes.Count; i++)
             {
                 var part = nodes[i].vehiclePart;
                 if (part == null || !part.live) continue;
-                string id = VehicleAnchorId(part.targetAnchor);
+                string id = VehicleAnchorId(part.ResolvedTargetAnchor());
                 if (id.Length == 0) { status[i] = "Choose a target anchor."; continue; }
                 if (!transforms[i].gameObject.activeInHierarchy) { status[i] = "Inactive part."; continue; }
                 var matches = new List<int>();
@@ -61,7 +91,20 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     string anchor = nodes[j].anchorType;
                     if (string.IsNullOrEmpty(anchor) && (nodes[j].name.StartsWith("Anchor_", StringComparison.OrdinalIgnoreCase) || nodes[j].name.EndsWith("_Anchor", StringComparison.OrdinalIgnoreCase))) anchor = nodes[j].name;
-                    if (string.IsNullOrEmpty(anchor) || VehicleAnchorId(anchor) != id || Descendant(j, i) || !transforms[j].gameObject.activeInHierarchy) continue;
+                    if (string.IsNullOrEmpty(anchor) || Descendant(j, i) || !transforms[j].gameObject.activeInHierarchy) continue;
+                    string anchorId = VehicleAnchorId(anchor);
+                    bool directMatch = anchorId == id;
+                    bool inheritedMatch = false;
+                    if (!directMatch && part.targetDirection != VehicleTargetDirection.None)
+                    {
+                        var directionalSocket = new VehiclePartData { targetAnchor = anchor, targetDirection = part.targetDirection };
+                        // Only add context to an unqualified socket; never reinterpret an
+                        // explicitly opposite-side socket using its parent's direction.
+                        string baseTarget = VehicleAnchorId(string.IsNullOrEmpty(part.targetAnchor) ? part.part : part.targetAnchor);
+                        inheritedMatch = anchorId == baseTarget && InheritedDirection(j) == part.targetDirection &&
+                            VehicleAnchorId(directionalSocket.ResolvedTargetAnchor()) == id;
+                    }
+                    if (!directMatch && !inheritedMatch) continue;
                     // Group an assembly to isolate it from other bikes in the workspace.
                     if (nodes[i].parent >= 0 && Top(i) != Top(j)) continue;
                     int owner = Owner(j);
@@ -86,7 +129,12 @@ namespace MashBoxSDK.AnimationStudio
                 var source = transforms[index]; var destination = transforms[target];
                 if (source.parent && Mathf.Abs(source.parent.localToWorldMatrix.determinant) < 1e-12f)
                 { states[index] = 3; status[index] = "Parent has zero scale; snapping paused."; return false; }
-                source.SetPositionAndRotation(destination.position, destination.rotation);
+                var rotation = destination.rotation;
+                int targetOwner = Owner(target);
+                if (string.Equals(nodes[index].vehiclePart.part, "Pedal", StringComparison.OrdinalIgnoreCase) && targetOwner >= 0 &&
+                    string.Equals(nodes[targetOwner].vehiclePart.part.Replace(" ", ""), "CrankArm", StringComparison.OrdinalIgnoreCase))
+                    rotation *= Quaternion.Euler(0, 180, 0);
+                source.SetPositionAndRotation(destination.position, rotation);
                 // Keep authored scale and pivot offsets; only position/rotation follow.
                 var node = nodes[index];
                 node.position = source.localPosition - node.positionOffset;

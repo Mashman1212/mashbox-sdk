@@ -9,6 +9,69 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class StudioModelDocument
     {
+        internal int AddFullVehicle(string vehicle)
+        {
+            var templates = StudioVehiclePartCatalog.Load().Where(t => t.vehicle == vehicle && t.sourceModel)
+                .Where(t => vehicle != "BMX" || t.part != "Mag")
+                .Where(t => vehicle != "Scooter" || t.part != "Griptape")
+                .GroupBy(t => t.part).Select(g => g.First()).ToArray();
+            if (templates.Length == 0) throw new InvalidOperationException("No SDK models are available for " + vehicle + ".");
+            int root = nodes.Count;
+            var created = new List<Node> { new Node { name = ObjectNames.GetUniqueName(
+                nodes.Where(n => n.parent < 0).Select(n => n.name).ToArray(), "Full " + vehicle) } };
+            try
+            {
+                foreach (var template in templates)
+                foreach (var direction in template.part == "Grip" || template.part == "Bar End" || (vehicle == "BMX" && (template.part == "CrankArm" || template.part == "Pedal"))
+                    ? new[] { VehicleTargetDirection.Left, VehicleTargetDirection.Right }
+                    : (vehicle == "BMX" && (template.part == "Rim" || template.part == "Spokes" || template.part == "Nipples" || template.part == "Tire")) ||
+                      (vehicle == "Scooter" && (template.part == "Wheel" || template.part == "Urethane"))
+                        ? new[] { VehicleTargetDirection.Front, VehicleTargetDirection.Rear } : new[] { VehicleTargetDirection.None })
+                {
+                    var captured = CaptureNodes(template.sourceModel);
+                    int offset = root + created.Count;
+                    created.AddRange(captured);
+                    captured[0].vehiclePart = VehiclePartData.From(template);
+                    if (vehicle == "BMX" && template.part == "Frame")
+                    {
+                        captured[0].position = new Vector3(0, .6245f, .3144f);
+                        captured[0].rotation = Quaternion.Euler(344.5617f, 0, 0);
+                    }
+                    if (vehicle == "Scooter" && template.part == "Deck")
+                    {
+                        captured[0].position = new Vector3(0, .1445f, -.0102f);
+                        captured[0].rotation = Quaternion.identity;
+                    }
+                    captured[0].vehiclePart.targetDirection = direction;
+                    if (vehicle == "Scooter" && (template.part == "Wheel" || template.part == "Urethane"))
+                        captured[0].vehiclePart.targetAnchor = "Wheel_Anchor";
+                    if (vehicle == "BMX")
+                    {
+                        if (template.part == "Rim" || template.part == "Spokes" || template.part == "Nipples" || template.part == "Tire") captured[0].vehiclePart.targetAnchor = "Wheel_Anchor";
+                        else if (template.part == "Front Hub") captured[0].vehiclePart.targetAnchor = "FrontWheel_Anchor";
+                        else if (template.part == "Rear Hub") captured[0].vehiclePart.targetAnchor = "RearWheel_Anchor";
+                    }
+                    captured[0].vehiclePart.live = !string.Equals(template.part, vehicle == "Scooter" ? "Deck" : "Frame", StringComparison.OrdinalIgnoreCase);
+                    foreach (var node in captured)
+                    {
+                        node.parent = node.parent < 0 ? root : node.parent + offset;
+                        for (int i = 0; i < node.bones.Length; i++) if (node.bones[i] >= 0) node.bones[i] += offset;
+                        if (node.rootBone >= 0) node.rootBone += offset;
+                    }
+                }
+            }
+            catch
+            {
+                foreach (var node in created) if (node.mesh) DestroyImmediate(node.mesh);
+                throw;
+            }
+            Undo.IncrementCurrentGroup();
+            Undo.RegisterCompleteObjectUndo(this, "Create full " + vehicle);
+            nodes.AddRange(created);
+            EditorUtility.SetDirty(this);
+            return root;
+        }
+
         internal int AddVehiclePart(StudioVehiclePartCatalog.Template template)
         {
             if (template == null) throw new ArgumentNullException(nameof(template));
