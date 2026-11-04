@@ -62,6 +62,31 @@ namespace MashBoxSDK.AnimationStudio
             return false;
         }
 
+        internal bool HandleHierarchyVisibilityShortcut()
+        {
+            var evt = Event.current;
+            if (evt == null || evt.type != EventType.KeyDown || GUIUtility.hotControl != 0 ||
+                EditorGUIUtility.editingTextField || hierarchyRenameNode != null ||
+                !StudioShortcuts.Pressed(StudioModelCommands.StableId("Select/Hide Selection"), evt)) return false;
+            evt.Use(); Run(ToggleHierarchySelectionVisibility, false); return true;
+        }
+        internal void ToggleHierarchySelectionVisibility()
+        {
+            if (!Document) return;
+            var selected = objects.Where(i => i >= 0 && i < Document.nodes.Count).ToArray();
+            if (selected.Length == 0) return;
+            FinishLiveTool();
+            selected = objects.Where(i => i >= 0 && i < Document.nodes.Count).ToArray();
+            if (selected.Length == 0) return;
+            bool show = !selected.Any(IsVisibleHideTarget);
+            ClearHierarchyIsolation();
+            ChangeHierarchyVisibility(show ? "Show hierarchy selection" : "Hide hierarchy selection", i =>
+                selected.Contains(i) ? show : show && selected.Any(child => IsHierarchyDescendant(child, i)) ? true : Document.nodes[i].active);
+            // Keep row/component selection so another press toggles the same set.
+            // Like the eye controls, this is document visibility with StudioUndo;
+            // viewport component masks and last-hidden history are independent.
+        }
+
         internal void SetHierarchyVisibility(int index, bool visible)
         {
             if (!Document || index < 0 || index >= Document.nodes.Count) return;
