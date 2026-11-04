@@ -46,6 +46,19 @@ namespace MashBoxSDK.AnimationStudio
                 return Mathf.Min(difference.sqrMagnitude, opposite.sqrMagnitude) < 1e-12f;
             }
             public Quaternion pivotRotation = Quaternion.identity;
+            public Quaternion frozenRotation = Quaternion.identity, frozenPivotBaseline = Quaternion.identity;
+            internal static Quaternion FrozenFrame(Quaternion value)
+            {
+                float length=value.x*value.x+value.y*value.y+value.z*value.z+value.w*value.w;
+                if(float.IsNaN(length)||float.IsInfinity(length))throw new InvalidOperationException("Invalid frozen rotation frame.");
+                return length>1e-12f?value.normalized:Quaternion.identity;
+            }
+            internal Quaternion RetainedWorldRotation(Transform transform) => (transform.rotation * FrozenFrame(frozenRotation)).normalized;
+            // An explicit pivot edit wins over the frozen baseline; otherwise
+            // baking restores the retained object frame into rotation channels.
+            internal Quaternion BakeRotation => SameRotation(pivotRotation,FrozenFrame(frozenPivotBaseline)) ? FrozenFrame(frozenRotation) : pivotRotation;
+            internal void ClearBakedOffsets()
+            { positionOffset=Vector3.zero;pivotRotation=frozenRotation=frozenPivotBaseline=Quaternion.identity; }
             public Mesh mesh;
             [SerializeReference] public StudioBlendShape blendShape;
             public int[] cutPolygons, cutTriangles;
@@ -235,12 +248,44 @@ namespace MashBoxSDK.AnimationStudio
             var matrix = t.localToWorldMatrix; matrix.SetColumn(3, new Vector4(worldPosition.x, worldPosition.y, worldPosition.z, 1));
             Compensate(index, transforms, matrix, () => t.position = worldPosition, "Move object pivot");
         }
+        internal Matrix4x4 ValidateBakePivot(int index, Transform[] transforms)
+        {
+            var node=nodes[index];
+            if(IsBone(index)||node.skinned||node.blendShape!=null||(node.mesh&&(node.mesh.blendShapeCount>0||node.mesh.bindposes.Length>0)))
+                throw new InvalidOperationException("Bake Pivot requires an unskinned object without live blend shapes.");
+            var q=node.BakeRotation;
+            float norm=q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w;
+            if(float.IsNaN(norm)||float.IsInfinity(norm)||norm<1e-12f)throw new InvalidOperationException("Cannot bake an invalid pivot orientation.");
+            var t=transforms[index];
+            var matrix=(t.parent?t.parent.localToWorldMatrix:Matrix4x4.identity)*Matrix4x4.TRS(t.localPosition,t.localRotation*q.normalized,t.localScale);
+            for(int i=0;i<16;i++)if(float.IsNaN(matrix[i])||float.IsInfinity(matrix[i]))
+                throw new InvalidOperationException("Cannot bake a non-finite object transform.");
+            ValidateCompensation(index,transforms,matrix);
+            return matrix;
+        }
+        internal void BakePivot(int index, Transform[] transforms)
+        {
+            var matrix=ValidateBakePivot(index,transforms);var t=transforms[index];
+            if(Node.SameRotation(nodes[index].BakeRotation.normalized,Quaternion.identity))
+            {
+                Undo.RegisterCompleteObjectUndo(this,"Bake pivot");
+                nodes[index].ClearBakedOffsets();ReadTransform(index,t);
+                return;
+            }
+            var rotation=t.localRotation*nodes[index].BakeRotation.normalized;
+            Compensate(index,transforms,matrix,()=>{
+                t.localRotation=rotation;nodes[index].ClearBakedOffsets();
+                var e=t.localEulerAngles;
+                nodes[index].RotationChannels=new Vector3(Mathf.DeltaAngle(0,e.x),Mathf.DeltaAngle(0,e.y),Mathf.DeltaAngle(0,e.z));
+            },"Bake pivot");
+        }
         public void Freeze(int index, Transform[] transforms)
         {
             if (IsBone(index)) throw new InvalidOperationException("Freeze is unavailable on skin bones.");
             if(nodes[index].blendShape!=null) throw new InvalidOperationException("Bake Current Pose before freezing a blend shape.");
             var t = transforms[index];
             var placement = t.localPosition;
+            var retainedWorldRotation=nodes[index].RetainedWorldRotation(t);
             var matrix = (t.parent ? t.parent.localToWorldMatrix : Matrix4x4.identity) * Matrix4x4.Translate(placement);
             Compensate(index, transforms, matrix, () => {
                 nodes[index].positionOffset = placement;
@@ -249,6 +294,8 @@ namespace MashBoxSDK.AnimationStudio
                 // Local channels remain zero while a rotated parent is offset so
                 // the effective editing pivot frame is exactly world-aligned.
                 nodes[index].pivotRotation = Quaternion.Inverse(t.rotation);
+                nodes[index].frozenPivotBaseline=nodes[index].pivotRotation;
+                nodes[index].frozenRotation=(Quaternion.Inverse(t.rotation)*retainedWorldRotation).normalized;
             }, "Freeze transforms");
         }
         private void Compensate(int index, Transform[] transforms, Matrix4x4 newWorld, Action change, string label)
@@ -257,11 +304,10 @@ namespace MashBoxSDK.AnimationStudio
             ValidateCompensation(index, transforms, newWorld);
             var childIndices = Enumerable.Range(0, nodes.Count).Where(i => nodes[i].parent == index).ToArray();
             var childMatrices = childIndices.Select(i => newWorld.inverse * transforms[i].localToWorldMatrix).ToArray();
-            Undo.RegisterCompleteObjectUndo(this, label);
             var mesh = nodes[index].mesh;
+            Undo.RegisterCompleteObjectUndo(mesh ? new UnityEngine.Object[] {this,mesh} : new UnityEngine.Object[] {this}, label);
             if (mesh)
             {
-                Undo.RegisterCompleteObjectUndo(mesh, label);
                 TransformMesh(mesh, newWorld.inverse * t.localToWorldMatrix);
             }
             change(); ReadTransform(index, t);

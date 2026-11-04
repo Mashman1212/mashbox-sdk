@@ -41,6 +41,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (GUIUtility.hotControl == 0) { moveDragControl = 0; edgeSnapLatched = false; }
             float size = HandleUtility.GetHandleSize(center) * sizeMultiplier;
+            DrawTransformOrientationStatus(center,orientation,size);
 #if MASHBOX_STUDIO_TESTS
             MoveHandleProbe?.Invoke(center,size);
 #endif
@@ -100,6 +101,7 @@ namespace MashBoxSDK.AnimationStudio
         private Vector3 DrawScaleHandle(Vector3 center, Quaternion orientation, float sizeMultiplier)
         {
             float size = HandleUtility.GetHandleSize(center) * sizeMultiplier;
+            DrawTransformOrientationStatus(center,orientation,size);
             var result = Handles.ScaleHandle(Vector3.one, center, orientation, size);
             using (new Handles.DrawingScope())
             {
@@ -302,6 +304,68 @@ namespace MashBoxSDK.AnimationStudio
                     label += moveDragAxes == MoveAxes.Free ? " · Free" : " · " + moveDragAxes + (((int)moveDragAxes & ((int)moveDragAxes - 1)) == 0 ? " axis" : " plane");
                 return label;
             }
+        }
+        private static void DrawCursorStatusLabel(Rect canvas,Vector2 pointer,string label,bool handlesGUI=true,Vector2? labelOffset=null,bool leftOfAnchor=false)
+        {
+            if(handlesGUI)Handles.BeginGUI();
+            var content=new GUIContent(label);var style=StudioTheme.Styles.miniLabel;
+            float width=Mathf.Min(canvas.width,style.CalcSize(content).x+4);
+            var offset=labelOffset??new Vector2(12,20);
+            float x=leftOfAnchor?pointer.x-offset.x-width:pointer.x+offset.x;
+            var rect=new Rect(Mathf.Clamp(x,canvas.xMin,Mathf.Max(canvas.xMin,canvas.xMax-width)),Mathf.Clamp(pointer.y+offset.y,canvas.yMin,Mathf.Max(canvas.yMin,canvas.yMax-22)),width,22);
+            var color=GUI.contentColor;
+            try
+            {
+                GUI.contentColor=Color.black;GUI.Label(new Rect(rect.x+1,rect.y+1,rect.width,rect.height),content,style);
+                GUI.contentColor=Color.white;GUI.Label(rect,content,style);
+            }
+            finally {GUI.contentColor=color;if(handlesGUI)Handles.EndGUI();}
+        }
+        private bool transformOrientationLabelVisible;
+        private Vector2 transformOrientationGuiPoint;
+        private bool transformOrientationLabelOnLeft;
+        private SceneView transformOrientationView;
+        private void DrawTransformOrientationStatus(Vector3 center,Quaternion orientation,float gizmoSize)
+        {
+            var view=SceneView.currentDrawingSceneView?SceneView.currentDrawingSceneView:commandView;
+            if(!view||Event.current.type!=EventType.Repaint)return;
+            // Capture the handle projection here; draw text after the scene image
+            // in the existing viewport IMGUI overlay, not inside its render target.
+            // HandleUtility relies on Camera.current, which the gizmo AA blit
+            // has already cleared. Project through the explicit viewport camera.
+            var camera=view.camera;if(!camera)return;
+            // Match the actual XY/XZ/YZ square positions. Choose the plane
+            // whose normal is most aligned with the camera viewing direction.
+            var toCamera=(camera.transform.position-center).normalized;
+            float best=-1;var anchor=center;
+            for(int plane=0;plane<3;plane++)
+            {
+                var first=orientation*(plane==2?Vector3.up:Vector3.right);
+                var second=orientation*(plane==0?Vector3.up:Vector3.forward);
+                float facing=Mathf.Abs(Vector3.Dot(Vector3.Cross(first,second),toCamera));
+                if(facing<=best)continue;
+                best=facing;anchor=center+(first+second)*gizmoSize*.23f;
+            }
+            var pixel=camera.WorldToScreenPoint(anchor);if(pixel.z<=0)return;
+            float pixelsPerPoint=EditorGUIUtility.pixelsPerPoint;
+            var point=new Vector2(pixel.x/pixelsPerPoint,(camera.pixelRect.yMax-pixel.y)/pixelsPerPoint);
+            if(float.IsNaN(point.x)||float.IsNaN(point.y)||float.IsInfinity(point.x)||float.IsInfinity(point.y))return;
+            transformOrientationGuiPoint=point;
+            transformOrientationLabelOnLeft=pixel.x<camera.WorldToScreenPoint(center).x;
+            transformOrientationView=view;transformOrientationLabelVisible=true;
+        }
+        internal void DrawViewportModelOverlays()
+        {
+            var view=transformOrientationView;
+            if(Event.current.type==EventType.Repaint&&transformOrientationLabelVisible&&view&&StudioSettings.Current.showTransformOrientationLabel&&
+                !pivot&&!markingOpen&&!ActiveChannelTool&&(tool==Tool.Move||tool==Tool.Rotate||tool==Tool.Scale))
+            {
+                var point=transformOrientationGuiPoint;
+                var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);
+                if(canvas.Contains(point)&&(!(view is MashBoxStudioViewport overlay)||!overlay.IsOverViewportControls(point)))
+                    DrawCursorStatusLabel(canvas,point,ToolbarOrientationLabel,false,new Vector2(10,-11),transformOrientationLabelOnLeft);
+            }
+            DrawMarkingMenu();
         }
         private void DrawSnapStatus(SceneView view)
         {

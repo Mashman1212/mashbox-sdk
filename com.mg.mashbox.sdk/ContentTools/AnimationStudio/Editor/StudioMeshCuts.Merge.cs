@@ -114,9 +114,10 @@ namespace MashBoxSDK.AnimationStudio
                 int match = candidates.FindIndex(v => Same(i, v));
                 if (match >= 0) render[i] = candidates[match]; else candidates.Add(i);
             }
-            var faces = new List<Face>();
-            foreach (var face in Faces)
+            var faces = new List<Face>(); var sourceFaces = new List<int>();
+            for (int sourceFace = 0; sourceFace < Faces.Count; sourceFace++)
             {
+                var face = Faces[sourceFace];
                 var polygon = new List<int>();
                 foreach (int i in face.Vertices)
                     if (polygon.Count == 0 || geometric[polygon[polygon.Count-1]] != geometric[i]) polygon.Add(render[i]);
@@ -124,8 +125,8 @@ namespace MashBoxSDK.AnimationStudio
                 if (polygon.Count < 3 || polygon.Select(v => geometric[v]).Distinct().Count() != polygon.Count) continue;
                 Vector3 area = Vector3.zero;
                 for (int i = 0; i < polygon.Count; i++) area += Vector3.Cross(positions[polygon[i]], positions[polygon[(i+1)%polygon.Count]]);
-                if (area.sqrMagnitude < 1e-20f) continue;
-                faces.Add(new Face { Submesh = face.Submesh, Vertices = polygon });
+                if (face.Vertices.Any(i => cluster[i] >= 0) && area.sqrMagnitude < 1e-20f) continue;
+                faces.Add(new Face { Submesh = face.Submesh, Vertices = polygon }); sourceFaces.Add(sourceFace);
             }
             var retained = new HashSet<int>(faces.SelectMany(f => f.Vertices));
             // A fully collapsed mesh still leaves its welded point. Preserve
@@ -141,7 +142,25 @@ namespace MashBoxSDK.AnimationStudio
             var compact = used.Select(i => positions[i]).ToList();
             foreach (var face in faces) face.Vertices = face.Vertices.Select(i => remap[i]).ToList();
             var triangles = Enumerable.Range(0, mesh.subMeshCount).Select(_ => new List<int>()).ToArray();
-            foreach (var face in faces) Triangulate(face.Vertices, compact, triangles[face.Submesh]);
+            // Welding contracts existing vertices; it does not cut new faces.
+            // Carry the captured render tessellation through that contraction,
+            // retaining warped/tiny/unrelated polygons and authored boundaries.
+            var sourceTriangles = BevelSourceTriangles(mesh);
+            for (int f = 0; f < faces.Count; f++)
+            {
+                var face = faces[f]; var corners = new Dictionary<int, int>();
+                foreach (int vertex in face.Vertices) corners[geometric[used[vertex]]] = vertex;
+                var original = sourceTriangles[sourceFaces[f]];
+                var emitted = new HashSet<(int,int,int)>();
+                for (int t = 0; t + 2 < original.Count; t += 3)
+                {
+                    int a = corners[geometric[original[t]]], b = corners[geometric[original[t + 1]]], c = corners[geometric[original[t + 2]]];
+                    if (a == b || b == c || c == a) continue;
+                    var sorted = new[] { a, b, c }; Array.Sort(sorted);
+                    if (!emitted.Add((sorted[0], sorted[1], sorted[2]))) continue;
+                    triangles[face.Submesh].Add(a); triangles[face.Submesh].Add(b); triangles[face.Submesh].Add(c);
+                }
+            }
             beforeWrite?.Invoke();
             mesh.Clear(); mesh.indexFormat = used.Length > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16; mesh.SetVertices(compact);
             if (colors.Length > 0) mesh.SetColors(used.Select(i => colors[i]).ToList());

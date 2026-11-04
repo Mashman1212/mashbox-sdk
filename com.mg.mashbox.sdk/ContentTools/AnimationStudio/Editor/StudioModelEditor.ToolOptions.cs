@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
         private readonly GUIContent toolOptionsHeader = new GUIContent();
-        private ToolChannelPane ActiveChannelTool => bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
+        private ToolChannelPane ActiveChannelTool => rangeWeldToolPane ? rangeWeldToolPane : fracturePane ? fracturePane : bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
             : bridgeToolPane ? bridgeToolPane : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : selectionActionPane ? selectionActionPane : combineToolPane;
         internal void PrepareEmbeddedChannelTool()
         {
@@ -90,6 +90,9 @@ namespace MashBoxSDK.AnimationStudio
             if (tool == Tool.Scale && mode != ComponentMode.Object)
                 preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges and faces cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
             if (EditorGUI.EndChangeCheck()) { SaveDisplayConfiguration(); repaint(); }
+            bool pathMode=EditorGUILayout.Toggle(new GUIContent("Contiguous path", "Single-click the start, then double-click the end to select the shorter, straighter connected route through triangles and irregular faces. Off: the pair defines the existing loop or ring direction."),contiguousPath);
+            if(pathMode!=contiguousPath)SetContiguousPath(pathMode);
+            if(mode!=ComponentMode.Object)GUILayout.Label(contiguousPath?"Click start, double-click end: shorter, straighter connected path.":"Click first, double-click second: loop or ring direction.",StudioTheme.Styles.wordWrappedMiniLabel);
             if (tool == Tool.Move || tool == Tool.Rotate || tool == Tool.Scale)
             {
                 EditorGUI.BeginChangeCheck();

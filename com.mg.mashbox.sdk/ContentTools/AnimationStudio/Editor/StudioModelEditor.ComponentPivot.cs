@@ -112,6 +112,40 @@ namespace MashBoxSDK.AnimationStudio
             float norm = value.x*value.x + value.y*value.y + value.z*value.z + value.w*value.w;
             return !float.IsNaN(norm) && !float.IsInfinity(norm) && norm > 1e-12f;
         }
+        private void BakeEditingPivot()
+        {
+            if(!Document||Active<0||mode!=ComponentMode.Object)throw new System.InvalidOperationException("Select an object to Bake Pivot.");
+            FinishChannelEdit();FlushModifierEdits();
+            var node=Document.nodes[Active];Document.ValidateBakePivot(Active,Transforms);
+            if(node.modifiers?.operations.Any(o=>!string.IsNullOrEmpty(o.failure))==true)
+                throw new System.InvalidOperationException("Repair the broken modifier or Clear History before baking the pivot.");
+            bool rotate=!StudioModelDocument.Node.SameRotation(node.BakeRotation.normalized,Quaternion.identity);
+            if(!rotate&&node.positionOffset.Equals(Vector3.zero)&&StudioModelDocument.Node.SameRotation(node.pivotRotation,Quaternion.identity)&&StudioModelDocument.Node.SameRotation(node.frozenRotation,Quaternion.identity)&&StudioModelDocument.Node.SameRotation(node.frozenPivotBaseline,Quaternion.identity))return;
+            var before=rotate&&node.mesh?StudioModifierSource.Capture(node):null;
+            var mesh=node.mesh;
+            bool copied=rotate&&mesh&&(EditorUtility.IsPersistent(mesh)||Document.nodes.Count(n=>n.mesh==mesh)>1);
+            if(copied){mesh=Object.Instantiate(mesh);mesh.name=node.mesh.name;}
+            writingModifiers=true;
+            Undo.IncrementCurrentGroup();int group=Undo.GetCurrentGroup();
+            try
+            {
+                Undo.RegisterCompleteObjectUndo(rotate&&mesh?new Object[]{Document,mesh}:new Object[]{Document},"Bake pivot");
+                if(rotate)ClearSubdivision();
+                if(copied){node.mesh=mesh;Transforms[Active].GetComponent<MeshFilter>().sharedMesh=mesh;}
+                Document.BakePivot(Active,Transforms);
+                if(before!=null)
+                {
+                    var source=before.Restore();
+                    try{var operation=new StudioModifierOperation{kind="Direct",name="Bake Pivot",inputMesh=before.mesh,replacement=StudioModifierSource.Capture(node)};operation.Bind(source);AppendModifier(node,operation,before);}
+                    finally{Object.DestroyImmediate(source.mesh);}
+                }
+                pivot=false;EndPivotSnap();RememberLockedPivot(Transforms[Active].position,Transforms[Active].rotation);
+                Undo.CollapseUndoOperations(group);Undo.IncrementCurrentGroup();
+                if(rotate)RefreshModifierResult();else Changed(false);
+                RememberAction(RepeatKind.BakePivot);
+            }
+            finally{writingModifiers=false;}
+        }
         private void FreezeEditingObject()
         {
             Document.Freeze(Active, Transforms);

@@ -281,6 +281,14 @@ namespace MashBoxSDK.AnimationStudio
             private readonly List<Vector4>[] uv = new List<Vector4>[8];
             private readonly int[] dimensions = new int[8];
             private readonly int submeshes;
+            internal BisectBuffer(Vector3[] points)
+            {
+                Positions=points.ToList();Normals=Enumerable.Repeat(Vector3.zero,points.Length).ToList();
+                Tangents=new List<Vector4>();Colors=new List<Color>();Geometry=Enumerable.Range(0,points.Length).ToList();
+                Groups=Geometry.ToList();NextGeometry=points.Length;submeshes=1;
+                for(int c=0;c<8;c++)uv[c]=new List<Vector4>();
+                uv[0].AddRange(Enumerable.Repeat(Vector4.zero,points.Length));dimensions[0]=2;
+            }
             internal BisectBuffer(StudioModelDocument.Node node, bool capAttributes=true)
             {
                 var m = node.mesh; Positions = m.vertices.ToList(); Normals = m.normals.ToList(); Tangents = m.tangents.ToList(); Colors = m.colors.ToList();

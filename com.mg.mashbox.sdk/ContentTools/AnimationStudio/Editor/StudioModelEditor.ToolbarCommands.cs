@@ -38,6 +38,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Tools/Bridge Edges": return "Fill the gap between two non-touching boundary chains or loops with equal edge counts.";
                 case "Mesh Tools/Split Selection": return "Cut selected faces, or faces touching selected vertices or edges, into separate mesh objects.";
                 case "Mesh Tools/Combine Meshes…": return "Combine selected mesh objects into one object, preserving polygon faces and materials.";
+                case "Mesh Tools/Weld…": return "Weld selected vertices within a distance range.";
                 case "Mesh Tools/Merge Vertices": return "Merge selected vertices at their shared center.";
                 case "Mesh Tools/Target Weld": return "Drag a source vertex onto a target vertex and weld them together.";
                 case "Mesh Tools/Insert Edge Loop": return "Insert one or more connected edge loops through a polygon strip.";

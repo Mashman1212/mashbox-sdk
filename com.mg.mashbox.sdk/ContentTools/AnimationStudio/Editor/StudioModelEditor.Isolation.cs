@@ -62,6 +62,7 @@ namespace MashBoxSDK.AnimationStudio
                 pair.Value.Dispose();
             }
             isolatedComponents.Clear();
+            ClearHiddenSelectionHistory();
         }
         private void ClearViewportIsolation()
         {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -155,14 +155,20 @@ namespace MashBoxSDK.AnimationStudio
             Add("Studio.Files.WorkspaceFolder", "");
             Add("Studio.Files.AssetFolder", "");
             Add(StudioSettings.PreferenceKey, JsonUtility.ToJson(new StudioSettings.Preferences()));
-            foreach (var item in new[] { ("Bevel Edges", "Width", .1f), ("Bevel Edges", "Subdivisions", 1f), ("Bevel Edges", "Tension", 1f), ("Bevel Edges", "Junction", 0f), ("Soften Edges", "Angle", 45f), ("Extrude", "Distance", .01f), ("Extrude", "Inset", 0f), ("Extrude", "Together", 1f) })
+            foreach (var item in new[] { ("Bevel Edges", "Width", .1f), ("Bevel Edges", "Subdivisions", 1f), ("Bevel Edges", "Tension", 1f), ("Bevel Edges", "Junction", 0f), ("Soften Edges", "Angle", 45f), ("Extrude", "Distance", 0f), ("Extrude", "Inset", 0f), ("Extrude", "Together", 1f) })
                 Number(ToolChannelPane.DefaultKey(item.Item1, item.Item2), item.Item3);
             foreach (string title in new[] { "Bevel", "Soften Edges", "Extrude", "Edit Edge Flow", "Bridge Edges", "Bisect", "Tool Options" }) Number("MashBox.Studio.ToolDragSensitivity." + title, 1);
             Number(MashBoxStudioViewport.LeftWidthKey, 260); Number(MashBoxStudioViewport.RightWidthKey, 350); Number(MashBoxStudioViewport.ToolOptionsHeightKey, 220);
             Number(MashBoxStudioViewport.NavigationSensitivityKey, 1);
             Number("Model.BackfaceCulling", 1);
             Number("Model.CheckerMap", 0);
+            Number("Model.LocalAxes", 1);
+            Number("Model.ComponentAxes", 1);
+            Number("Model.DefaultOrientation", 2);
             Number("Model.EdgeLoopCount", 1);
+            Number(ToolChannelPane.DefaultKey("Bevel Edges","WidthFraction"),.1f);
+            Number(ToolChannelPane.DefaultKey("Bevel Edges","UnlockWidthRange"),0);
+            Number("Model.ContiguousPath", 0);
             Number(ToolChannelPane.DefaultKey("Bisect","Bisect Distance"),.01f);
             Number(ToolChannelPane.DefaultKey("Bisect","Fill"),1);
             Number(StudioModelEditor.PivotLockKey, 0);

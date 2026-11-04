@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private void SaveDisplayConfiguration()
         {
             StudioPreferenceStore.SetFloat(PivotLockKey, pivotLocked ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.ContiguousPath", contiguousPath ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.ThroughSelection", xray ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.PreventNegativeScale", preventNegativeScale ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.LocalAxes", local ? 1 : 0);
@@ -28,10 +29,12 @@ namespace MashBoxSDK.AnimationStudio
             LoadPivotLock();
             if (CenterMode) { pivot = false; EndPivotSnap(); }
             transformChannelsExpanded = StudioPreferenceStore.GetFloat("Model.TransformChannelsExpanded", 1) >= .5f;
+            bool loadedPath=StudioPreferenceStore.GetFloat("Model.ContiguousPath",0)>=.5f;
+            if(loadedPath!=contiguousPath){contiguousPath=loadedPath;foreach(var state in loopSelections.Values)state.Reset();}
             xray = StudioPreferenceStore.GetFloat("Model.ThroughSelection", 1) >= .5f;
             preventNegativeScale = StudioPreferenceStore.GetFloat("Model.PreventNegativeScale", 1) >= .5f;
-            local = StudioPreferenceStore.GetFloat("Model.LocalAxes", 0) >= .5f;
-            componentAxes = local && StudioPreferenceStore.GetFloat("Model.ComponentAxes", 0) >= .5f;
+            local = StudioPreferenceStore.GetFloat("Model.LocalAxes", 1) >= .5f;
+            componentAxes = local && StudioPreferenceStore.GetFloat("Model.ComponentAxes", 1) >= .5f;
             displayLighting = StudioPreferenceStore.GetFloat("Model.Lighting", 1) >= .5f;
             displayTextures = StudioPreferenceStore.GetFloat("Model.Textures", 1) >= .5f;
             checkerMap = StudioPreferenceStore.GetFloat("Model.CheckerMap", 0) >= .5f;
@@ -188,19 +191,20 @@ namespace MashBoxSDK.AnimationStudio
             displayLighting = lighting; displayTextures = textures; SaveDisplayConfiguration();
             ApplyDisplayMaterials(); repaint();
         }
-        private void ApplyDisplayMaterials()
+        private void ApplyDisplayMaterials(ISet<Mesh> affected = null)
         {
-            ClearDisplayMaterials();
+            if (affected == null) ClearDisplayMaterials();
             if (!Document) return;
             for(int i=0;i<Transforms.Length;i++)
             {
                 var renderer = Transforms[i] ? Transforms[i].GetComponent<Renderer>() : null;
-                if (!renderer) continue;
+                if (!renderer || (affected != null && !affected.Contains(Document.nodes[i].mesh))) continue;
+                if (affected != null) blackBackfaceDraws.RemoveAll(draw => draw.renderer == renderer);
                 // Pure wireframe renders only Studio's edge overlay; keep the
                 // renderer enabled for picking and restore surfaces in shaded modes.
                 if(wireframeOnly)
                 {
-                    wireframeSurfaceSuppression[renderer]=renderer.forceRenderingOff;
+                    if (!wireframeSurfaceSuppression.ContainsKey(renderer)) wireframeSurfaceSuppression[renderer]=renderer.forceRenderingOff;
                     renderer.forceRenderingOff=true;
                 }
                 var node = Document.nodes[i];

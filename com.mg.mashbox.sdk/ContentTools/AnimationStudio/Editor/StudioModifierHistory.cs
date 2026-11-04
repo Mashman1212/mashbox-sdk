@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
     [Serializable] public sealed class StudioModifierOperation
     {
         public string id=Guid.NewGuid().ToString("N"),kind,name;
-        public bool enabled=true,weld=true;
+        public bool enabled=true,weld=true,normalizedBevel;
         public Vector4 parameters;
         public PrimitiveType primitiveType;
         public Vector3Int cubeDivisions;
@@ -116,7 +116,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 case "Bevel":
                     if(p.x<=0)return;
-                    var bevel=topology.BevelEdges(node,edges,new StudioMeshCuts.BevelOptions {Width=p.x,Subdivisions=Mathf.Clamp(Mathf.RoundToInt(p.y),0,32),Tension=p.z,Junction=(StudioMeshCuts.BevelJunction)Mathf.RoundToInt(p.w)});
+                    var bevel=topology.BevelEdges(node,edges,new StudioMeshCuts.BevelOptions {Width=p.x,NormalizedWidth=operation.normalizedBevel,UnlockWidthRange=(Mathf.RoundToInt(p.w)&2)!=0,Subdivisions=Mathf.Clamp(Mathf.RoundToInt(p.y),0,32),Tension=p.z,Junction=(StudioMeshCuts.BevelJunction)(Mathf.RoundToInt(p.w)&1)});
                     if(bevel==null)throw new InvalidOperationException("The saved edges cannot be beveled.");
                     if(operation.flow.x>=.5f&&p.y>0&&bevel.RenderSelection.Count>0)
                     {
@@ -128,6 +128,8 @@ namespace MashBoxSDK.AnimationStudio
                     if(Mathf.Abs(p.x)<1e-5f&&Mathf.Abs(p.z)<1e-5f)return;
                     topology.Extrude(node,operation.faces!=null&&operation.faces.Length>0?operation.faces:null,operation.edges==null||operation.edges.Length==0?null:edges.ToArray(),p.x,p.y>=.5f,operation.weld,inset:p.z);node.normalGroups=null;break;
                 case "Bridge":topology.BridgeEdges(node,edges,Mathf.Clamp(Mathf.RoundToInt(p.x),0,64),Mathf.Clamp(p.y,-1,1));break;
+                case "MaterialSlot":if(p.y>=.5f)topology.RemoveMaterialSlot(node,Mathf.RoundToInt(p.x),Mathf.RoundToInt(p.w));else topology.AssignMaterialSlot(node,Mathf.RoundToInt(p.x),operation.faces);break;
+                case "Weld":topology.MergeVertices(node,operation.vertices,false,p.x,operation.world);break;
                 case "Merge":topology.MergeVertices(node,operation.vertices,true,p.x,operation.world);break;
                 case "Soften":topology.SetEdgeNormals(node,new HashSet<(int,int)>(edges),p.x,false);break;
                 case "EdgeFlow":SetPositions(node,topology.CreateEdgeFlowPlan(node.mesh,edges,operation.weld).Evaluate(p.x,Mathf.Clamp(Mathf.RoundToInt(p.y),1,64)));break;

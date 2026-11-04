@@ -9,7 +9,6 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed class ToolChannelPane : EditorWindow
     {
         private static readonly System.Collections.Generic.Dictionary<string, float> FloatDefaults = new System.Collections.Generic.Dictionary<string, float>();
-        private static readonly System.Collections.Generic.HashSet<string> DirtyDefaults = new System.Collections.Generic.HashSet<string>();
         private static readonly System.Collections.Generic.Dictionary<(string, string), string> DefaultKeys = new System.Collections.Generic.Dictionary<(string, string), string>();
         private static readonly GUIContent CloseContent = new GUIContent("\u00d7", "Cancel tool and close options");
         internal static string DefaultKey(string tool, string parameter)
@@ -23,7 +22,8 @@ namespace MashBoxSDK.AnimationStudio
             string key = DefaultKey(tool, parameter);
             if (!FloatDefaults.TryGetValue(key, out float value))
             {
-                value = StudioPreferenceStore.GetFloat(key, fallback);
+                // Operation parameters belong to this open tool session, not a profile.
+                value = fallback;
                 if (float.IsNaN(value) || float.IsInfinity(value)) value = fallback;
                 FloatDefaults[key] = value;
             }
@@ -34,7 +34,7 @@ namespace MashBoxSDK.AnimationStudio
             if (float.IsNaN(value) || float.IsInfinity(value)) return;
             string key = DefaultKey(tool, parameter);
             if (FloatDefaults.TryGetValue(key, out float old) && old == value) return;
-            FloatDefaults[key] = value; DirtyDefaults.Add(key);
+            FloatDefaults[key] = value;
         }
         internal static float FloatParameter(string tool, string parameter, GUIContent label, float fallback,
             float minimum = float.NegativeInfinity, float maximum = float.PositiveInfinity)
@@ -68,15 +68,15 @@ namespace MashBoxSDK.AnimationStudio
             if (EditorGUI.EndChangeCheck()) { value = edited; SetFloatDefault(tool, parameter, Convert.ToInt32(value)); }
             return value;
         }
+        internal static void ResetSessionValues() => FloatDefaults.Clear();
         internal static void FlushDefaults()
         {
-            foreach (string key in DirtyDefaults) StudioPreferenceStore.SetFloat(key, FloatDefaults[key]);
-            DirtyDefaults.Clear();
+            // Session parameters are deliberately not persisted.
         }
         internal static void ReloadPreferences()
         {
             foreach (var pane in Resources.FindObjectsOfTypeAll<ToolChannelPane>()) pane.Close();
-            FloatDefaults.Clear(); DirtyDefaults.Clear();
+            ResetSessionValues();
         }
         private readonly StudioShortcutFocusGuard shortcutFocus = new StudioShortcutFocusGuard();
         private void OnEnable()
@@ -185,6 +185,7 @@ namespace MashBoxSDK.AnimationStudio
             Action execute = null, Func<bool> canExecute = null, Action<Exception> failed = null, EditorWindow owner = null, Action preview = null, Action cancelPreview = null, Action<bool> history = null, Action repeat = null)
         {
             foreach (var pane in Resources.FindObjectsOfTypeAll<ToolChannelPane>()) pane.Close();
+            ResetSessionValues();
             var window = CreateInstance<ToolChannelPane>();
             window.titleContent = new GUIContent(title);
             window.embeddedHeader = new GUIContent(title.ToUpperInvariant());
@@ -325,7 +326,8 @@ namespace MashBoxSDK.AnimationStudio
             if (chromeControl != 0 && GUIUtility.hotControl == chromeControl) GUIUtility.hotControl = 0;
             chromeControl = 0;
             cancelPreview?.Invoke(); cancelPreview = preview = null;
-            var callback = closed; draw = closed = execute = null; canExecute = null; failed = null; callback?.Invoke();
+            var callback = closed; draw = closed = execute = null; canExecute = null; failed = null;
+            try { callback?.Invoke(); } finally { ResetSessionValues(); }
         }
     }
 }

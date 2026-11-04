@@ -153,6 +153,7 @@ namespace MashBoxSDK.AnimationStudio
             var orientation=gesture?.orientation??(local?PivotOrientation:Quaternion.identity);
             var position=gesture?.position??center;var rotation=gesture?.rotation??orientation;var factor=Vector3.one;
             float size=StudioSettings.Current.handleSize;
+            float gizmoSize=HandleUtility.GetHandleSize(center)*size;
             EditorGUI.BeginChangeCheck();
             using(new Handles.DrawingScope(Matrix4x4.identity))
             {
@@ -163,10 +164,12 @@ namespace MashBoxSDK.AnimationStudio
                 else if(tool==Tool.Rotate)
                 {
                     var modifiers=evt.modifiers;if(evt.control||evt.command)evt.modifiers=modifiers&~EventModifiers.Shift;
+                    DrawTransformOrientationStatus(center,orientation,gizmoSize);
                     try{rotation=DrawSizedRotationHandle(Handles.RotationHandleIds.@default,rotation,center,size);}finally{evt.modifiers=modifiers;}
                 }
                 else factor=DrawScaleHandle(center,orientation,size);
-                AntialiasTransformGizmo(center,HandleUtility.GetHandleSize(center)*size*1.35f);
+                AntialiasTransformGizmo(center,gizmoSize*1.35f);
+
             }
             bool changed=EditorGUI.EndChangeCheck();
             if(gesture==null&&GUIUtility.hotControl!=0){multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl);gesture.pendingExtrude=shiftDown;}

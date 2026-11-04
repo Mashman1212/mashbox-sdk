@@ -58,6 +58,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             this.repaint = () => { repaint(); RepaintLiveToolPanes(); }; Scene = EditorSceneManager.NewPreviewScene();
             LoadDisplayConfiguration(); InitializeModifiers();
+            local = StudioSettings.DefaultOrientation != 0; componentAxes = StudioSettings.DefaultOrientation == 2;
+            mode = ComponentMode.Object;
             Undo.undoRedoEvent += OnUndoEvent;
             EditorApplication.update += Tick;
             ObjectChangeEvents.changesPublished += OnMaterialAssetChanges;
@@ -65,7 +67,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void Load(StudioModelDocument document)
         {
-            CloseSelectionActionPane();
+            CloseFractureTool(); CloseSelectionActionPane();
             if (Document != document) lastRepeatAction = null;
             StopTargetWeld(); FinishSelectionPaint();
             CancelLiveTool(); CloseExtrudeToolWindow();
@@ -81,7 +83,7 @@ namespace MashBoxSDK.AnimationStudio
             if (componentPivot) componentPivot.custom = false;
             ClearGridSnap();
             CancelMarkingMenu();
-            FlushModifierEdits(); StopCutTool(); ResetComponentTargets(); Document = document; Active = -1; objects.Clear(); Components.Clear(); Rebuild(); RestoreSelectionHistory();
+            FlushModifierEdits(); StopCutTool(); ResetComponentTargets(); Document = document; Active = -1; objects.Clear(); Components.Clear(); mode = ComponentMode.Object; Rebuild(); RestoreSelectionHistory();
             WorkspaceSaveStateChanged?.Invoke();
         }
         private void Rebuild()
@@ -128,7 +130,8 @@ namespace MashBoxSDK.AnimationStudio
         private void OnUndoEvent(in UndoRedoInfo info)
         {
             pendingModifiers.Clear(); EditorApplication.update-=FinishPendingModifiers; ClearSubdivision();
-            bool hadPreview = livePreview != null || previewQueued || bisectPreview != null;
+            bool hadPreview = livePreview != null || previewQueued || bisectPreview != null || fracturePreview != null || FractureBusy;
+            CancelFracture(true);
             CancelBisectPreview(true);
             CancelLiveTool(true);
             if (hadPreview) { OnUndo(); RestoreSelectionHistory(); return; }
@@ -245,7 +248,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             try
             {
-                if (finishPreview) FinishLiveTool();
+                if (finishPreview) { CloseFractureTool(); FinishLiveTool(); }
                 // Native transform drags do not change selection. Avoid copying large sets per frame.
                 bool track = selectionTransactionDepth == 0 && livePreview == null && !previewQueued &&
                     (GUIUtility.hotControl == 0 || handleExtrudeFailed);
@@ -415,7 +418,12 @@ namespace MashBoxSDK.AnimationStudio
                     using (new EditorGUI.DisabledScope(true)) DrawChannels("World Position", Transforms[Active].position);
                     Vector3 r, s;
                     using (new EditorGUI.DisabledScope(pivot))
-                    { r = DrawObjectChannels("Rotation", n.RotationChannels); s = DrawObjectChannels("Scale", n.scale); }
+                    {
+                        r = DrawObjectChannels("Rotation", n.RotationChannels);
+                        var world=n.RetainedWorldRotation(Transforms[Active]).eulerAngles;
+                        using(new EditorGUI.DisabledScope(true))DrawChannels("World Rotation",new Vector3(Mathf.DeltaAngle(0,world.x),Mathf.DeltaAngle(0,world.y),Mathf.DeltaAngle(0,world.z)));
+                        s = DrawObjectChannels("Scale", n.scale);
+                    }
                     bool transformChanged = EditorGUI.EndChangeCheck();
                     if (visibilityChanged || transformChanged) Run(() => SetObjectChannels(p, r, s, visible));
                     }
@@ -661,7 +669,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void SceneGUI(SceneView view, Action<StudioModelDocument> loaded)
         {
             var evt = Event.current;
-            if(evt.type==EventType.Repaint)UpdateSubdivision();
+            if(evt.type==EventType.Repaint){transformOrientationLabelVisible=false;UpdateSubdivision();}
 #if MASHBOX_STUDIO_TESTS
             ProfileScene("scene.start");
 #endif
@@ -832,6 +840,7 @@ namespace MashBoxSDK.AnimationStudio
             using (new Handles.DrawingScope(Matrix4x4.identity))
             {
                 var handleCenter = center;
+                float gizmoSize=HandleUtility.GetHandleSize(handleCenter)*handleSize;
 #if MASHBOX_STUDIO_TESTS
                 TransformHandleProbe?.Invoke(tool,handleCenter,orientation,HandleUtility.GetHandleSize(handleCenter)*handleSize);
 #endif
@@ -849,6 +858,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if (tool == Tool.Move) position = DrawMoveHandle(handleCenter, orientation, handleSize);
                 else if (tool == Tool.Rotate)
                 {
+                    DrawTransformOrientationStatus(handleCenter,orientation,gizmoSize);
                     rotationHandleIds = Handles.RotationHandleIds.@default;
                     var rotationEvent = Event.current;
                     var modifiers = rotationEvent.modifiers;
@@ -860,7 +870,8 @@ namespace MashBoxSDK.AnimationStudio
                     finally { rotationEvent.modifiers = modifiers; }
                 }
                 else scale = DrawScaleHandle(handleCenter, orientation, handleSize);
-                AntialiasTransformGizmo(handleCenter, HandleUtility.GetHandleSize(handleCenter) * handleSize * 1.35f);
+                AntialiasTransformGizmo(handleCenter,gizmoSize*1.35f);
+
             }
             bool handleChanged = EditorGUI.EndChangeCheck();
             if(handleChanged) handleComponentClickMoved=true;
