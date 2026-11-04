@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool CanEditEdgeFlow => CanBevelEdges;
         private static bool BevelEdgeFlow => ToolChannelPane.GetFloatDefault(BevelTool,"EdgeFlow",0)>=.5f;
         private Vector3 FlowParameters(LiveTool kind) => repeatingAction != null && repeatingAction.kind == RepeatKind.Live && repeatingAction.live == kind ? repeatingAction.flow : kind==LiveTool.Bevel
-            ? new Vector3(BevelEdgeFlow?1:0,ToolChannelPane.GetFloatDefault(BevelTool,"FlowInfluence",.5f),ToolChannelPane.GetFloatDefault(BevelTool,"FlowIterations",4)) : Vector3.zero;
+            ? new Vector3(BevelEdgeFlow?1:0,ToolChannelPane.GetFloatDefault(BevelTool,"FlowInfluence",.5f),ToolChannelPane.GetFloatDefault(BevelTool,"FlowIterations",4)) : kind==LiveTool.Circularize?CircularizeExtra:Vector3.zero;
         private void CloseEdgeFlowToolWindow(){if(edgeFlowToolPane)edgeFlowToolPane.Close();edgeFlowToolPane=null;}
         private void OpenEdgeFlowTool()
         {

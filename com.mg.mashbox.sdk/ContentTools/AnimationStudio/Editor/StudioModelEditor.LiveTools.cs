@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
             extrusionInset = ToolChannelPane.GetFloatDefault("Extrude", "Inset", 0);
             extrudeFacesTogether = ToolChannelPane.GetFloatDefault("Extrude", "Together", 1) >= .5f;
         }
-        private enum LiveTool { Bevel, Merge, Soften, Extrude, EdgeFlow, Bridge, Weld }
+        private enum LiveTool { Bevel, Merge, Soften, Extrude, EdgeFlow, Bridge, Weld, Circularize }
         private StudioMeshToolPreview livePreview;
         private LiveTool liveTool, queuedTool;
         private bool previewQueued, liveValid, liveEvaluated;
@@ -40,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         private List<Vector4> liveExtrusionUV4 = new List<Vector4>();
         private void RepaintLiveToolPanes()
         {
+            if(circularizePane)circularizePane.Repaint();
             if (rangeWeldToolPane) rangeWeldToolPane.Repaint();
             if (bevelToolPane) bevelToolPane.Repaint();
             if (softenToolPane) softenToolPane.Repaint();
@@ -50,7 +51,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void CloseLiveToolPane(LiveTool kind)
         {
-            if (kind == LiveTool.Bevel) CloseBevelToolWindow();
+            if(kind==LiveTool.Circularize)CloseCircularizeTool();
+            else if (kind == LiveTool.Bevel) CloseBevelToolWindow();
             else if (kind == LiveTool.Merge || kind == LiveTool.Weld) CloseMergeToolWindow();
             else if (kind == LiveTool.Soften) CloseNormalsToolWindow();
             else if (kind == LiveTool.EdgeFlow) CloseEdgeFlowToolWindow();
@@ -58,16 +60,17 @@ namespace MashBoxSDK.AnimationStudio
             else CloseExtrudeToolWindow();
         }
         private void CloseLiveToolPanes()
-        { CloseFractureTool(); CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
+        { CloseCircularizeTool(); CloseFractureTool(); CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
         private bool HasLiveTool(LiveTool kind) => livePreview != null && liveTool == kind;
         private bool CanRunLiveTool(LiveTool kind) => HasLiveTool(kind) || (kind == LiveTool.Bevel ? CanBevelEdges :
-            kind == LiveTool.Weld ? CanRangeWeldVertices : kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : kind == LiveTool.Bridge ? CanBridgeEdges : CanExtrude);
+            kind==LiveTool.Circularize?CanCircularize:kind == LiveTool.Weld ? CanRangeWeldVertices : kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : kind == LiveTool.Bridge ? CanBridgeEdges : CanExtrude);
         private Vector4 LiveParameters(LiveTool kind)
         {
             if (repeatingAction != null && repeatingAction.kind == RepeatKind.Live && repeatingAction.live == kind) return repeatingAction.parameters;
             if (kind == LiveTool.Bevel) return new Vector4(Mathf.Max(0,ToolChannelPane.GetFloatDefault(BevelTool, "WidthFraction", .1f)),
                 ToolChannelPane.GetFloatDefault(BevelTool, "Subdivisions", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Tension", 1), ToolChannelPane.GetFloatDefault(BevelTool, "Junction", 0)+(ToolChannelPane.GetFloatDefault(BevelTool,"UnlockWidthRange",0)>=.5f?BevelUnlockRangeFlag:0));
             if (kind == LiveTool.EdgeFlow) return new Vector4(ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Influence",.5f),ToolChannelPane.GetFloatDefault(EdgeFlowTool,"Iterations",4),0,0);
+            if(kind==LiveTool.Circularize)return CircularizeParameters;
             if (kind == LiveTool.Bridge) return BridgeParameters;
             if (kind == LiveTool.Weld) return new Vector4(ToolChannelPane.GetFloatDefault(RangeWeldTool, "Range", .001f), 0, 0, 0);
             if (kind == LiveTool.Merge) return Vector4.zero;
@@ -174,6 +177,8 @@ namespace MashBoxSDK.AnimationStudio
                     target.IsBevelPreview=bevel!=null; target.VertexUpdate=bevel?.VertexUpdate; target.Welds=bevel?.Welds; target.VertexUpdateStart = bevel?.VertexUpdateStart ?? 0; target.PublishedPositions = bevel?.PublishedPositions;
                     if(flowParameters.x>=.5f&&Mathf.RoundToInt(parameters.y)>0)SmoothBevelOutput(target,bevel,flowParameters);
                 }
+                else if(kind==LiveTool.Circularize)
+                { target.Topology.Circularize(target.Work,liveMode==ComponentMode.Vertex?liveSelection:null,liveEdges,liveFaces,parameters,flowParameters);changed=true; }
                 else if (kind == LiveTool.EdgeFlow)
                 { changed |= EvaluateEdgeFlow(target,parameters.x,Mathf.Clamp(Mathf.RoundToInt(parameters.y),1,64)); }
                 else if (kind == LiveTool.Merge || kind == LiveTool.Weld)
@@ -225,6 +230,7 @@ namespace MashBoxSDK.AnimationStudio
 #endif
             }
             else if (kind == LiveTool.Merge || kind == LiveTool.Weld) foreach (int i in merge.Selection) Components.Add(i);
+            else if(kind==LiveTool.Circularize) { if(liveMode==ComponentMode.Vertex || flowParameters.x==0)Components.UnionWith(liveSelection); }
             else if (kind == LiveTool.EdgeFlow) Components.UnionWith(liveSelection);
             else if (kind == LiveTool.Extrude) SelectExtrusionResult(liveExtrusion, liveFaces != null);
             else RestoreLiveComponentSelection();
@@ -247,8 +253,20 @@ namespace MashBoxSDK.AnimationStudio
         {
             var publication=ActiveBevelPublication();
             if (publication?.Welds!=null) { publication.Welds.Expand(selection); return; }
-            var points=new HashSet<Vector3>(selection.Select(i=>positions[i]));
-            for (int i=0;i<positions.Count;i++) if (points.Contains(positions[i])) selection.Add(i);
+            var identities=SelectionWeldIdentities(positions);
+            var selected=new HashSet<int>(selection.Select(i=>identities[i]));
+            for(int i=0;i<identities.Length;i++)if(selected.Contains(identities[i]))selection.Add(i);
+        }
+        private int[] SelectionWeldIdentities(IList<Vector3> positions)
+        {
+            // Explicit identities distinguish detached/coincident islands. Preserve
+            // positional alias selection only for legacy meshes without identities.
+            var geometry=Document.nodes[Active].geometryVertices;
+            if(geometry!=null&&geometry.Length==positions.Count)return geometry;
+            var ids=new Dictionary<Vector3,int>();var result=new int[positions.Count];
+            for(int i=0;i<result.Length;i++)
+            {if(!ids.TryGetValue(positions[i],out int id))ids.Add(positions[i],id=ids.Count);result[i]=id;}
+            return result;
         }
         private void UpdateExtrusionUV(Mesh mesh)
         {
@@ -327,7 +345,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!dispatchingComponentTool && CommitComponentLiveTools(closePane)) return;
             if (livePreview == null) return;
             if (!liveValid) throw new InvalidOperationException("Correct the tool values or close its pane to cancel the preview.");
-            string label = liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Weld ? "Weld vertices by range" : liveTool == LiveTool.Merge ? "Merge vertices to center" : liveTool == LiveTool.Soften ? "Soften edges" : liveTool == LiveTool.EdgeFlow ? "Edit edge flow" : liveTool == LiveTool.Bridge ? "Bridge edges" : "Extrude mesh components";
+            string label = liveTool==LiveTool.Circularize?"Circularize components":liveTool == LiveTool.Bevel ? "Bevel edges" : liveTool == LiveTool.Weld ? "Weld vertices by range" : liveTool == LiveTool.Merge ? "Merge vertices to center" : liveTool == LiveTool.Soften ? "Soften edges" : liveTool == LiveTool.EdgeFlow ? "Edit edge flow" : liveTool == LiveTool.Bridge ? "Bridge edges" : "Extrude mesh components";
             var finishedTool = liveTool;
             var selectionBefore = CaptureSelection();
             selectionBefore = dispatchingComponentTool ? componentLiveBefore : SourceLiveSelection(selectionBefore);

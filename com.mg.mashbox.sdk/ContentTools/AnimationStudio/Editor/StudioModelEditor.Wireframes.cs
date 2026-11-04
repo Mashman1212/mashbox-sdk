@@ -295,11 +295,18 @@ namespace MashBoxSDK.AnimationStudio
             if (!selectionWireframes.TryGetValue(node, out var wire))
             {
                 wire = new SelectionWireframe(); mesh.GetVertices(wire.vertices);
-                var canonical = new int[wire.vertices.Count]; var positions = new Dictionary<Vector3, int>();
+                var canonical = new int[wire.vertices.Count];
+                var positions = new Dictionary<(int,Vector3),int>();
+                var geometry=node.geometryVertices;
+                bool explicitIdentity=geometry!=null&&geometry.Length==wire.vertices.Count;
                 for (int i = 0; i < canonical.Length; i++)
                 {
                     if (node.skinned) { canonical[i] = i; continue; }
-                    if (!positions.TryGetValue(wire.vertices[i], out int id)) positions[wire.vertices[i]] = id = positions.Count;
+                    // Coincident detached faces must retain BOTH boundary edges.
+                    // Position alone is only a legacy fallback. Also keep raw
+                    // seams separate when unwelded editing moves their positions.
+                    var key=(explicitIdentity?geometry[i]:0,wire.vertices[i]);
+                    if (!positions.TryGetValue(key, out int id)) positions[key] = id = positions.Count;
                     canonical[i] = id;
                 }
                 var edges = new Dictionary<(int, int),int>(); var indices = new List<int>(); var adjacent = new List<int>();

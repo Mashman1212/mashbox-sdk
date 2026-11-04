@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class StudioModelDocument
     {
-        internal int[] SplitMeshes(IReadOnlyDictionary<int,HashSet<int>> selection, Action beforeCommit = null, bool generatedBase = false, IReadOnlyDictionary<int,(Vector3 source,Vector3 extracted)> cutPivots = null)
+        internal int[] SplitMeshes(IReadOnlyDictionary<int,HashSet<int>> selection, Action beforeCommit = null, bool generatedBase = false, IReadOnlyDictionary<int,(Vector3 source,Vector3 extracted)> cutPivots = null, bool duplicate = false)
         {
             var replacements = new Dictionary<int,Node>(); var additions = new List<Node>(); var result = new List<int>();
             var allocated = new List<Mesh>();
@@ -31,20 +31,23 @@ namespace MashBoxSDK.AnimationStudio
                     var topology = new StudioMeshCuts(source); topology.ValidateSplitSource(source);
                     var chosen = new HashSet<int>(pair.Value.Where(f => f >= 0 && f < topology.Faces.Count));
                     if (chosen.Count == 0) continue;
-                    if (chosen.Count == topology.Faces.Count)
+                    if (!duplicate && chosen.Count == topology.Faces.Count)
                         throw new InvalidOperationException("Split Selection would leave '" + source.name + "' with an empty mesh. Leave at least one face on every source mesh.");
                     var extracted = topology.ExtractSplitFaces(source,chosen,false); allocated.Add(extracted.mesh);
                     extracted.name = ObjectNames.GetUniqueName(nodes.Where(n => n.parent == source.parent).Concat(additions).Concat(replacements.Values)
-                        .Where(n => n.parent == source.parent).Select(n => n.name).ToArray(),source.name + " Split");
+                        .Where(n => n.parent == source.parent).Select(n => n.name).ToArray(),source.name + (duplicate ? " Duplicate" : " Split"));
                     extracted.mesh.name = extracted.name;
                     // Ordinary Split Selection centers the new object on its bounds;
                     // Bisect supplies the center of each actual section plane.
                     var center = cutPivots!=null && cutPivots.TryGetValue(pair.Key,out var pivots) ? pivots.extracted : extracted.mesh.bounds.center;
                     ShiftOrigin(extracted,center);
+                    if (!duplicate)
+                    {
                     var remaining = topology.ExtractSplitFaces(source,new HashSet<int>(Enumerable.Range(0,topology.Faces.Count).Where(f => !chosen.Contains(f))),true);
                     allocated.Add(remaining.mesh);
                     if(cutPivots!=null && cutPivots.TryGetValue(pair.Key,out var cut))ShiftOrigin(remaining,cut.source);
                     replacements.Add(pair.Key,remaining);
+                    }
                     extracted.siblingOrder = -1; result.Add(nodes.Count + additions.Count); additions.Add(extracted);
                 }
                 if (result.Count == 0) return Array.Empty<int>();
@@ -63,7 +66,7 @@ namespace MashBoxSDK.AnimationStudio
                     }
                 beforeCommit?.Invoke();
                 foreach (var mesh in allocated) AttachOwnedMesh(mesh);
-                Undo.RegisterCompleteObjectUndo(this,"Split mesh selection");
+                Undo.RegisterCompleteObjectUndo(this,duplicate ? "Duplicate faces as objects" : "Split mesh selection");
                 foreach (var pair in replacements)
                 {
                     // Preserve the source node/hierarchy; only Bisect requests a pivot shift.
