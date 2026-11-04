@@ -12,16 +12,14 @@ namespace MashBoxSDK.AnimationStudio
         internal int AddVehiclePart(StudioVehiclePartCatalog.Template template)
         {
             if (template == null) throw new ArgumentNullException(nameof(template));
-            string brand = string.IsNullOrEmpty(template.brand) ? "Custom" : template.brand;
-            string RootName(int number) => template.vehicle + "_" + template.part + "_" + brand + "_" + (number == 1 ? "Template" : "Template " + number) + "_" + template.color;
-            int copy = 1; while (nodes.Any(n => n.parent < 0 && n.name == RootName(copy))) copy++;
             int root = nodes.Count;
             if (template.sourceModel)
             {
                 var captured = CaptureNodes(template.sourceModel);
                 try
                 {
-                    captured[0].name = RootName(copy);
+                    // Preserve every authored name, including the root. Selecting a
+                    // vehicle/part chooses the source; it does not rename that source.
                     captured[0].vehiclePart = VehiclePartData.From(template);
                     foreach (var node in captured)
                     {
@@ -42,6 +40,9 @@ namespace MashBoxSDK.AnimationStudio
                     throw;
                 }
             }
+            string brand = string.IsNullOrEmpty(template.brand) ? "Custom" : template.brand;
+            string RootName(int number) => template.vehicle + "_" + template.part + "_" + brand + "_" + (number == 1 ? "Template" : "Template " + number);
+            int copy = 1; while (nodes.Any(n => n.parent < 0 && n.name == RootName(copy))) copy++;
             var created = new List<Node> { new Node { name = RootName(copy), vehiclePart = VehiclePartData.From(template) } };
             var paths = new Dictionary<string, int>(StringComparer.Ordinal) { [""] = 0 };
             int EnsurePath(string path)

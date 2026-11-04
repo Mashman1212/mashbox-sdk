@@ -48,8 +48,12 @@ namespace MashBoxSDK.AnimationStudio
         }
         private bool DrawActiveHierarchyRename(Rect row,int index)
         {
-            hierarchyRenameScreenRect = new Rect(GUIUtility.GUIToScreenPoint(row.position), row.size);
             var evt = Event.current;
+            // Layout uses provisional scroll/row coordinates. Publishing those
+            // makes the next click inside the text field look like an outside
+            // click, committing the rename before native text selection runs.
+            if (evt.type == EventType.Repaint)
+                hierarchyRenameScreenRect = new Rect(GUIUtility.GUIToScreenPoint(row.position), row.size);
             bool cancel = evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape;
             bool enter = evt.type == EventType.KeyDown && (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter);
             bool outside = evt.type == EventType.MouseDown && !row.Contains(evt.mousePosition);
@@ -65,7 +69,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             GUI.SetNextControlName("StudioHierarchyRename");
             hierarchyRenameText = EditorGUI.TextField(row, hierarchyRenameText);
-            if (focusHierarchyRename)
+            if (focusHierarchyRename && evt.type == EventType.Repaint)
             {
                 EditorGUI.FocusTextInControl("StudioHierarchyRename");
                 focusHierarchyRename = false;

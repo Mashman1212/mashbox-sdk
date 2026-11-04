@@ -435,6 +435,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if (visibilityChanged) Run(() => SetObjectChannels(n.position,n.RotationChannels,n.scale,visible));
             }
             else GUILayout.Label("No selection", StudioTheme.Styles.miniLabel);
+            DrawMeshChannels();
             DrawMaterialChannels();
             using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelInset))
             {

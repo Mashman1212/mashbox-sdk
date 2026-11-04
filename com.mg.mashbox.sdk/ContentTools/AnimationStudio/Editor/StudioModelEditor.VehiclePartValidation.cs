@@ -42,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUILayout.HelpBox(result.matchedRules > 0 ? "Naming and hierarchy checks passed." : "Naming checks passed. No hierarchy rule is defined for this part and brand.", MessageType.Info);
             else foreach (string issue in result.issues) EditorGUILayout.HelpBox(issue, MessageType.Warning);
             var node = Document.nodes[Active]; var tags = node.name.Split('_');
-            if (tags.Length == 5 && (tags[0] != node.vehiclePart.vehicle || tags[1] != node.vehiclePart.part))
+            if (tags.Length == 4 && (tags[0] != node.vehiclePart.vehicle || tags[1] != node.vehiclePart.part))
                 if (GUILayout.Button("Use Selected Vehicle and Part in Name"))
                 {
                     tags[0] = node.vehiclePart.vehicle; tags[1] = node.vehiclePart.part;

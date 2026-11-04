@@ -40,6 +40,20 @@ namespace MashBoxSDK.AnimationStudio
             Document.nodes[index].vehiclePart = data?.Copy();
             Changed(false);
         }
+        private int[] SelectedVehicleParts(int fallback)
+            => (objects.Contains(fallback) ? objects : new HashSet<int> { fallback })
+                .Where(i => i >= 0 && i < Document.nodes.Count && Document.nodes[i].vehiclePart != null).OrderBy(i => i).ToArray();
+        internal void SetVehiclePartsLive(IEnumerable<int> indices, bool live)
+        {
+            if (!Document) return;
+            var parts = indices.Distinct().Where(i => i >= 0 && i < Document.nodes.Count)
+                .Select(i => Document.nodes[i].vehiclePart).Where(p => p != null).ToArray();
+            if (!parts.Any(p => p.live != live)) return;
+            Undo.RegisterCompleteObjectUndo(Document, live ? "Make vehicle parts live" : "Make vehicle parts inactive");
+            foreach (var part in parts) part.live = live;
+            // Resolve attachment chains only after the entire selection is updated.
+            Changed(false);
+        }
         private void AddVehiclePartContext(StudioMenu menu, int index)
         {
             var node = Document.nodes[index];
@@ -52,9 +66,10 @@ namespace MashBoxSDK.AnimationStudio
                 }));
             else
             {
-                menu.AddItem(new GUIContent("Live Vehicle Part"), node.vehiclePart.live, () => Run(() => {
-                    var data = Document.nodes[index].vehiclePart.Copy(); data.live = !data.live; SetVehiclePartData(index, data);
-                }));
+                var targets = SelectedVehicleParts(index);
+                bool allLive = targets.All(i => Document.nodes[i].vehiclePart.live);
+                menu.AddItem(new GUIContent(targets.Length > 1 ? "Live Vehicle Parts" : "Live Vehicle Part"), allLive,
+                    () => Run(() => SetVehiclePartsLive(targets, !allLive)));
                 menu.AddItem(new GUIContent("Unmark Vehicle Part"), false, () => Run(() => SetVehiclePartData(index, null)));
             }
             menu.AddSeparator("");
@@ -78,9 +93,21 @@ namespace MashBoxSDK.AnimationStudio
             string[] labels = anchors.Select(a => string.IsNullOrEmpty(a) ? "None" : a).ToArray();
             int anchor = EditorGUILayout.Popup("Target Anchor", Array.IndexOf(anchors, data.targetAnchor ?? ""), labels);
             if (anchor >= 0) data.targetAnchor = anchors[anchor];
-            data.live = EditorGUILayout.Toggle(new GUIContent("Live", "Follow a matching anchor's position and rotation."), data.live);
             if (EditorGUI.EndChangeCheck()) { int index = Active; Run(() => SetVehiclePartData(index, data)); }
-            if (data.live) EditorGUILayout.HelpBox(liveVehicleStatus.TryGetValue(Active, out var status) ? status : "Waiting for a matching anchor.", MessageType.None);
+            var liveTargets = SelectedVehicleParts(Active);
+            bool allLive = liveTargets.All(i => Document.nodes[i].vehiclePart.live);
+            bool mixedLive = liveTargets.Any(i => Document.nodes[i].vehiclePart.live) && !allLive;
+            bool previousMixed = EditorGUI.showMixedValue;
+            try
+            {
+                EditorGUI.showMixedValue = mixedLive;
+                EditorGUI.BeginChangeCheck();
+                bool nextLive = EditorGUILayout.Toggle(new GUIContent("Live", "Set Live for all selected vehicle parts."), allLive);
+                if (EditorGUI.EndChangeCheck()) Run(() => SetVehiclePartsLive(liveTargets, nextLive));
+            }
+            finally { EditorGUI.showMixedValue = previousMixed; }
+            if (liveTargets.Length > 1) EditorGUILayout.LabelField(liveTargets.Length + " vehicle parts selected");
+            if (Document.nodes[Active].vehiclePart.live) EditorGUILayout.HelpBox(liveVehicleStatus.TryGetValue(Active, out var status) ? status : "Waiting for a matching anchor.", MessageType.None);
             DrawVehicleValidationChannels();
             GUILayout.Space(6);
         }

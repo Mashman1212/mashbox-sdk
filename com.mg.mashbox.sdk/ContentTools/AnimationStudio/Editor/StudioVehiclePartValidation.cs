@@ -38,12 +38,12 @@ namespace MashBoxSDK.AnimationStudio
             if (part == null) return result;
             void Issue(string message) { if (!result.issues.Contains(message)) result.issues.Add(message); }
             var tags = (root.name ?? "").Split('_');
-            if (tags.Length != 5) Issue("Name must contain five tags: Vehicle_Part_Brand_Name_Color.");
+            if (tags.Length != 4) Issue("Model names must contain four tags: Vehicle_Part_Brand_Name. Color tags belong on the prefab created later.");
             else
             {
                 if (tags.Any(t => !Regex.IsMatch(t, @"^[A-Za-z0-9 ]+$"))) Issue("Name tags must be non-empty and contain only letters, digits and spaces.");
                 if (!string.Equals(tags[0], part.vehicle, StringComparison.OrdinalIgnoreCase) || !string.Equals(tags[1].Trim(), part.part, StringComparison.OrdinalIgnoreCase))
-                    Issue("Name identifies a different type. Expected " + part.vehicle + "_" + part.part + "_Brand_Name_Color.");
+                    Issue("Name identifies a different type. Expected " + part.vehicle + "_" + part.part + "_Brand_Name.");
             }
             if (!rulesAsset) { Issue("SDK content validation rules are unavailable."); return result; }
             // Build exact root-relative paths, including inactive nodes. These checks
@@ -71,11 +71,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (pair.FindPropertyRelative("SuperType").stringValue == part.vehicle && Strings(pair.FindPropertyRelative("Types")).Contains(part.part)) allowed = true;
                 }
                 if (!allowed) Issue("The SDK does not allow " + part.vehicle + " / " + part.part + ". Choose a supported vehicle and part.");
-                var colors = Strings(data.FindProperty("Colors")).ToArray();
-                if (tags.Length == 5 && colors.Length > 0)
-                    foreach (string color in tags[4].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
-                        if (!colors.Contains(color)) Issue("Unknown color tag: '" + color + "'.");
-                string brand = tags.Length == 5 ? tags[2] : "";
+                string brand = tags.Length == 4 ? tags[2] : "";
                 for (int r = 0; r < rules.arraySize; r++)
                 {
                     var rule = rules.GetArrayElementAtIndex(r);
