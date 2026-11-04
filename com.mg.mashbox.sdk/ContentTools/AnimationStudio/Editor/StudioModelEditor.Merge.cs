@@ -21,6 +21,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OpenRangeWeldTool()
         {
+            FinishToolsForSwitch(rangeWeldToolPane);
             StopTargetWeld();
             PrepareMeshSelection(ComponentMode.Vertex, () => CanRangeWeldVertices,
                 "Select at least two vertices on an editable static mesh to weld within a range.", ComponentMode.Vertex);

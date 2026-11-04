@@ -66,6 +66,7 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseNormalsToolWindow() { if (softenToolPane) softenToolPane.Close(); softenToolPane = null; }
         private void OpenSoftenTool()
         {
+            FinishToolsForSwitch(softenToolPane);
             PrepareMeshSelection(ComponentMode.Object, () => CanAdjustEdgeNormals,
                 "Select editable static mesh objects or components to soften.", ComponentMode.Object, ComponentMode.Vertex, ComponentMode.Edge, ComponentMode.Face);
             if (softenToolPane) { QueueLiveTool(LiveTool.Soften); softenToolPane.Repaint(); softenToolPane.Focus(); return; }

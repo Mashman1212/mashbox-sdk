@@ -23,6 +23,7 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseEdgeFlowToolWindow(){if(edgeFlowToolPane)edgeFlowToolPane.Close();edgeFlowToolPane=null;}
         private void OpenEdgeFlowTool()
         {
+            FinishToolsForSwitch(edgeFlowToolPane);
             PrepareMeshSelection(ComponentMode.Edge, () => CanEditEdgeFlow,
                 "Select edges on an editable static mesh to edit edge flow.", ComponentMode.Edge);
             if(edgeFlowToolPane){QueueLiveTool(LiveTool.EdgeFlow);edgeFlowToolPane.Focus();return;}

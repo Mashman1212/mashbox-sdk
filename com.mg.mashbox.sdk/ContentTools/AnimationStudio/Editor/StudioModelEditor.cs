@@ -679,7 +679,7 @@ namespace MashBoxSDK.AnimationStudio
             if (evt.type == EventType.MouseDown && !evt.alt && (evt.button == 0 || evt.button == 2) &&
                 (!(view is MashBoxStudioViewport liveView) || (liveView.ModelCanvasRect.Contains(evt.mousePosition) && !liveView.IsOverViewportControls(evt.mousePosition))))
             {
-                try { FinishLiveTool(); }
+                try { if (!(ExtrudeDistanceGizmoActive && IsMoveHandle(HandleUtility.nearestControl))) FinishLiveTool(); }
                 catch (Exception exception) { error = exception.Message; evt.Use(); return; }
             }
             view.wantsMouseMove = true; view.wantsMouseEnterLeaveWindow = true;
@@ -796,6 +796,7 @@ namespace MashBoxSDK.AnimationStudio
             var movePointer = Event.current.mousePosition;
             if (!Document || Active < 0 || marquee || (tool == Tool.None && !pivot)) return;
             if (mode != ComponentMode.Object && !CanEditComponents()) return;
+            if (DrawExtrudeDistanceGizmo()) return;
             if (!pivot && DrawMultiComponentHandle()) return;
             var t = Transforms[Active];
             if (moveDrag != null && (tool != Tool.Move || pivot || moveDrag.control != GUIUtility.hotControl || moveDrag.mesh != ActiveMesh || moveDrag.node != Active || moveDrag.mode != mode)) moveDrag = null;

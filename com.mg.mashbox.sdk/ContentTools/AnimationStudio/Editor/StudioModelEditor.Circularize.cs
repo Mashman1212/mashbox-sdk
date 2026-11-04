@@ -20,6 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseCircularizeTool() { if(circularizePane)circularizePane.Close();circularizePane=null; }
         private void OpenCircularizeTool()
         {
+            FinishToolsForSwitch(circularizePane);
             if(circularizePane){circularizePane.Focus();return;}
             try { PrepareMeshSelection(ComponentMode.Vertex,()=>CanCircularize,
                 "Circularize: select at least three vertices, closed edge loops, or connected faces on editable static meshes.",

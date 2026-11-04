@@ -14,6 +14,7 @@ namespace MashBoxSDK.AnimationStudio
         private void CloseBridgeToolWindow(){if(bridgeToolPane)bridgeToolPane.Close();bridgeToolPane=null;}
         private void OpenBridgeTool()
         {
+            FinishToolsForSwitch(bridgeToolPane);
             PrepareMeshSelection(ComponentMode.Edge,()=>true,"",ComponentMode.Edge);
             if(bridgeToolPane){if(CanBridgeEdges)QueueLiveTool(LiveTool.Bridge);bridgeToolPane.Focus();return;}
             bridgeToolPane=ToolChannelPane.Open(BridgeTool,DrawBridgeTool,()=>bridgeToolPane=null,
