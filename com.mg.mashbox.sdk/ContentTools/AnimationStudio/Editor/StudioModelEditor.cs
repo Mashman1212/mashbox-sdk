@@ -417,6 +417,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     GUILayout.Space(4);
                     using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelTransformInset))
+                    using (new EditorGUI.DisabledScope(IsAttachedVehiclePart(Active)))
                     {
                     EditorGUI.BeginChangeCheck();
                     var p = DrawObjectChannels("Position", n.position);
@@ -811,7 +812,9 @@ namespace MashBoxSDK.AnimationStudio
             bool shiftHandleMouseDown = Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
                 Event.current.shift && !Event.current.alt && !Event.current.control && !Event.current.command;
             var movePointer = Event.current.mousePosition;
-            if (!Document || Active < 0 || marquee || (tool == Tool.None && !pivot)) return;
+            if (!Document || Active < 0 || marquee) return;
+            if (LiveObjectTransformLocked) { DrawLiveObjectPivotIcons(); return; }
+            if (tool == Tool.None && !pivot) return;
             if (mode != ComponentMode.Object && !CanEditComponents()) return;
             if (DrawExtrudeDistanceGizmo()) return;
             if (!pivot && DrawMultiComponentHandle()) return;

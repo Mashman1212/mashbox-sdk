@@ -32,8 +32,9 @@ namespace MashBoxSDK.AnimationStudio
             return new string(value.Where(c => c != '_' && c != '-' && c != '(' && c != ')' && !char.IsWhiteSpace(c)).Select(char.ToLowerInvariant).ToArray());
         }
 
-        internal Dictionary<int, string> SnapLiveVehicleParts(Transform[] transforms)
+        internal Dictionary<int, string> SnapLiveVehicleParts(Transform[] transforms, ISet<int> attachedParts = null)
         {
+            attachedParts?.Clear();
             var status = new Dictionary<int, string>();
             if (transforms.Length != nodes.Count) return status;
             bool Descendant(int child, int parent)
@@ -92,6 +93,7 @@ namespace MashBoxSDK.AnimationStudio
                 node.rotation = source.localRotation;
                 status[index] = "Attached to " + nodes[target].name;
                 states[index] = 2;
+                attachedParts?.Add(index);
                 return true;
             }
             foreach (int index in targets.Keys) Resolve(index);

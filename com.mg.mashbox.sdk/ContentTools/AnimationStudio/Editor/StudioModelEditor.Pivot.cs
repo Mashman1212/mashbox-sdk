@@ -51,6 +51,7 @@ namespace MashBoxSDK.AnimationStudio
         // Unity's native vertex snap uses the main editor selection, not our preview scene.
         private bool HandlePivotSnap(SceneView view)
         {
+            if (LiveObjectTransformLocked) { EndPivotSnap(); return false; }
             var evt = Event.current;
             if (evt.type == EventType.KeyUp && evt.keyCode == pivotSnapKey)
             {

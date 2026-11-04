@@ -68,6 +68,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ActivateTool(Tool next)
         {
+            if (LiveObjectTransformLocked && (next == Tool.Move || next == Tool.Rotate || next == Tool.Scale))
+            { repaint(); return; }
             FinishSelectionPaint();
             FinishToolsForSwitch();
             StopTargetWeld(); StopCutTool(); CameraOptionsVisible = false; LightingOptionsVisible = false; tool = next; pivot = false; EndPivotSnap(); repaint(); toolOptions?.Repaint();
@@ -181,6 +183,15 @@ namespace MashBoxSDK.AnimationStudio
             CloseLiveToolPanes(); CloseCombineToolWindow();
             if (!Document || Active < 0) return;
             var node = Document.nodes[Active];
+            if (IsAttachedVehiclePart(Active))
+            {
+                if (visible != node.active)
+                {
+                    Undo.RegisterCompleteObjectUndo(Document, "Change object visibility");
+                    node.active = visible; Transforms[Active].gameObject.SetActive(visible); Changed(false);
+                }
+                return;
+            }
             bool axisScrub = !pivot && (pendingChannelScrub == "Position" || pendingChannelScrub == "Rotation");
             if (!axisScrub && position == node.position && (pivot || (rotation == node.RotationChannels && scale == node.scale)) && visible == node.active) return;
             int control = ChannelEditControl(out bool text);

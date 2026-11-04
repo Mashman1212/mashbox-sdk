@@ -10,6 +10,29 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private Dictionary<int, string> liveVehicleStatus = new Dictionary<int, string>();
+        private readonly HashSet<int> attachedVehicleParts = new HashSet<int>();
+        private bool IsAttachedVehiclePart(int index) => Document && index >= 0 && index < Document.nodes.Count &&
+            Document.nodes[index].vehiclePart?.live == true && attachedVehicleParts.Contains(index);
+        private bool LiveObjectTransformLocked => mode == ComponentMode.Object &&
+            (IsAttachedVehiclePart(Active) || objects.Any(IsAttachedVehiclePart));
+        private void DrawLiveObjectPivotIcons()
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            var camera = SceneView.currentDrawingSceneView?.camera;
+            Handles.BeginGUI();
+            try
+            {
+                foreach (int index in objects.Concat(new[] { Active }).Distinct().Where(IsAttachedVehiclePart))
+                {
+                    var position = Transforms[index].position;
+                    if (camera && camera.WorldToViewportPoint(position).z <= 0) continue;
+                    var point = HandleUtility.WorldToGUIPoint(position);
+                    GUI.Label(new Rect(point.x - 12, point.y - 12, 24, 24),
+                        new GUIContent(VehiclePartIcon(true), "Live attachment controls this transform. Turn off Live to move, rotate or scale."));
+                }
+            }
+            finally { Handles.EndGUI(); }
+        }
         private static Texture2D liveVehicleIcon;
         private static Texture VehiclePartIcon(bool live)
         {
@@ -30,7 +53,8 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdateLiveVehicleParts()
         {
             vehicleValidation.Clear();
-            if (Document && Transforms != null) liveVehicleStatus = Document.SnapLiveVehicleParts(Transforms);
+            attachedVehicleParts.Clear();
+            if (Document && Transforms != null) liveVehicleStatus = Document.SnapLiveVehicleParts(Transforms, attachedVehicleParts);
         }
         internal void SetVehiclePartData(int index, StudioModelDocument.VehiclePartData data)
         {
