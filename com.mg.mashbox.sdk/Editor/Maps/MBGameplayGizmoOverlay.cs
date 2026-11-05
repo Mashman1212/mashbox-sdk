@@ -180,6 +180,33 @@ namespace MashBoxSDK.MapTools
             collapsedIcon = GetCollapsedIcon();
         }
 
+        public override void OnCreated()
+        {
+            base.OnCreated();
+            collapsedChanged += OnCollapsedChanged;
+            MBEditorToolState.ActiveEditingChanged += DisableEditingWhileCollapsed;
+            DisableEditingWhileCollapsed();
+        }
+
+        public override void OnWillBeDestroyed()
+        {
+            collapsedChanged -= OnCollapsedChanged;
+            MBEditorToolState.ActiveEditingChanged -= DisableEditingWhileCollapsed;
+            base.OnWillBeDestroyed();
+        }
+
+        void OnCollapsedChanged(bool isCollapsed)
+        {
+            if (isCollapsed)
+                MBEditorToolState.ActiveEditing = false;
+        }
+
+        void DisableEditingWhileCollapsed()
+        {
+            if (collapsed)
+                MBEditorToolState.ActiveEditing = false;
+        }
+
         public override VisualElement CreatePanelContent()
         {
             const float compactWidth = MappyPanelVisuals.PanelWidth;
