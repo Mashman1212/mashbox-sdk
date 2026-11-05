@@ -17,6 +17,7 @@ namespace MashBoxSDK.AnimationStudio
     internal static class StudioCustomToolbars
     {
         internal const string PreferenceKey = "Studio.CustomToolbars";
+        internal const string SpacerKey = "Toolbar/Spacer";
         private static IEnumerable<Type> ControlTypes()
         {
             try { return typeof(StudioCustomToolbars).Assembly.GetTypes(); }
@@ -65,6 +66,8 @@ namespace MashBoxSDK.AnimationStudio
         private StudioCustomToolbarDefinition definition;
         private string signature;
         private VisualElement contents;
+        private bool? contentVertical;
+        protected virtual bool MenuGroupSeparators => false;
         internal void Configure(StudioCustomToolbarDefinition value)
         {
             string next = JsonUtility.ToJson(value);
@@ -94,13 +97,29 @@ namespace MashBoxSDK.AnimationStudio
             if (containerWindow is MashBoxStudioViewport view) view.StudioToolbarStateChanged -= Refresh;
             base.OnWillBeDestroyed();
         }
-        private void OnLayout(Layout value) => Direction();
-        private void Direction() { if (contents != null) contents.style.flexDirection = layout == Layout.VerticalToolbar ? FlexDirection.Column : FlexDirection.Row; }
+        private void OnLayout(Layout value) {contentVertical=value==Layout.VerticalToolbar;Direction();}
+        private void Direction() => Direction(contentVertical??layout==Layout.VerticalToolbar);
+        private void Direction(bool vertical)
+        {
+            if(contents==null)return;
+            contents.style.flexDirection=vertical?FlexDirection.Column:FlexDirection.Row;
+            contents.style.flexGrow=0;contents.style.flexShrink=0;contents.style.alignSelf=Align.FlexStart;
+            foreach(var gap in contents.Children().Where(e=>e.name=="studio-toolbar-menu-separator"||e.name=="studio-toolbar-spacer"))
+            {
+                // Bound cross-axis size to one button footprint. Percentage/auto
+                // cross sizing can feed a wide row back into a native side dock.
+                float extent=StudioSettings.Current.toolbarIconSize+6;
+                gap.style.alignSelf=Align.Center;
+                gap.style.width=vertical?extent:8;gap.style.height=vertical?8:extent;
+                gap[0].style.width=vertical?extent:1;gap[0].style.height=vertical?1:extent;
+            }
+        }
         private OverlayToolbar CreateToolbar(bool vertical)
         {
+            contentVertical=vertical;
             var toolbar = new OverlayToolbar();
             toolbar.Add(CreatePanelContent());
-            contents.style.flexDirection = vertical ? FlexDirection.Column : FlexDirection.Row;
+            Direction(vertical);
             return toolbar;
         }
         OverlayToolbar ICreateHorizontalToolbar.CreateHorizontalToolbarContent() => CreateToolbar(false);
@@ -111,6 +130,13 @@ namespace MashBoxSDK.AnimationStudio
             contents.RegisterCallback<PointerEnterEvent>(_ => Refresh());
             Rebuild(); return contents;
         }
+        private static VisualElement CreateSeparator(string name,string key,bool automatic)
+        {
+            var gap=new VisualElement{name=name,userData=key,pickingMode=PickingMode.Ignore};
+            gap.style.display=automatic?DisplayStyle.None:DisplayStyle.Flex;gap.style.flexShrink=0;gap.style.alignItems=Align.Center;gap.style.justifyContent=Justify.Center;
+            var line=new VisualElement{pickingMode=PickingMode.Ignore};var tint=StudioTheme.Current.Text;tint.a=.25f;line.style.backgroundColor=tint;gap.Add(line);
+            return gap;
+        }
         private void Rebuild()
         {
             if (contents == null) return;
@@ -119,6 +145,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach (string key in definition.commands)
             {
                 if (key == "Control/MashBox/Viewport/PivotMode") continue;
+                if(key==StudioCustomToolbars.SpacerKey){contents.Add(CreateSeparator("studio-toolbar-spacer",key,false));continue;}
                 var native = StudioCustomToolbars.CreateControl(key, containerWindow as MashBoxStudioViewport);
                 if (native != null) { contents.Add(native); continue; }
                 string captured = key;
@@ -127,17 +154,36 @@ namespace MashBoxSDK.AnimationStudio
                 button.style.marginLeft = button.style.marginRight = 1;
                 button.style.marginTop = button.style.marginBottom = 1;
                 button.style.paddingLeft = button.style.paddingRight = 0;
+                if(MenuGroupSeparators)
+                {
+                    contents.Add(CreateSeparator("studio-toolbar-menu-separator",key,true));
+                }
                 contents.Add(button);
             }
             if (definition.commands.Count == 0)
                 contents.Add(new EditorToolbarButton(() => StudioToolbarCustomization.Open(containerWindow as MashBoxStudioViewport, definition.id)) { icon = StudioCommandIcons.Get("Customize/Add"), tooltip = "Add functions — customize this toolbar" });
-            Refresh();
+            Direction();Refresh();
+        }
+        private void UpdateMenuSeparators(List<StudioModelEditor.ToolbarCommand> commands)
+        {
+            if(!MenuGroupSeparators||contents==null)return;
+            string previous=null;
+            foreach(var gap in contents.Children().Where(e=>e.name=="studio-toolbar-menu-separator"))
+            {
+                string group=commands?.Find(c=>c.Key==(string)gap.userData)?.MenuGroup;
+                bool show=previous!=null&&group!=null&&group!=previous;
+                var display=show?DisplayStyle.Flex:DisplayStyle.None;
+                if(gap.style.display.value!=display)gap.style.display=display;
+                if(group!=null)previous=group;
+            }
         }
         private void Refresh()
         {
             if (contents == null || definition == null) return;
+            Direction();
             var view = containerWindow as MashBoxStudioViewport;
             var commands = view?.Studio?.ToolbarModelEditor?.ToolbarCommands(view);
+            UpdateMenuSeparators(commands);
             foreach (var element in contents.Children())
             {
                 if (!(element is Button button) || !(button.userData is string key)) continue;

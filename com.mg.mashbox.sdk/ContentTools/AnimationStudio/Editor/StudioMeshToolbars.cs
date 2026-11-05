@@ -20,6 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         defaultDockIndex = 4, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioMeshToolsToolbar : StudioCommandToolbar
     {
+        protected override bool MenuGroupSeparators => true;
         internal const string Id = "MashBox/MeshTools";
         public StudioMeshToolsToolbar() => Configure(new StudioCustomToolbarDefinition {
             id = Id, name = "Mesh Tools", commands = new List<string> {
@@ -36,6 +37,7 @@ namespace MashBoxSDK.AnimationStudio
         defaultDockIndex = 5, defaultLayout = Layout.HorizontalToolbar)]
     internal sealed class StudioMeshDisplayToolbar : StudioCommandToolbar
     {
+        protected override bool MenuGroupSeparators => true;
         internal const string Id = "MashBox/MeshDisplay";
         public StudioMeshDisplayToolbar() => Configure(new StudioCustomToolbarDefinition {
             id = Id, name = "Mesh Display", commands = new List<string> {

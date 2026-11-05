@@ -42,7 +42,11 @@ namespace MashBoxSDK.AnimationStudio
             foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
             {
                 // Do not rebuild a healthy window while another view is still recovering.
-                if (!view || view.IsEmbeddedView || (view.hideFlags & HideFlags.DontSave) != 0 || view.HasStudioBindings) continue;
+                if (!view || view.IsEmbeddedView || view.HasStudioBindings) continue;
+                // Unity can mark a real floating Studio host DontSave on reload.
+                // Its serialized Studio owner identifies it; only unowned temporary
+                // preview views should be excluded by that flag.
+                if ((view.hideFlags & HideFlags.DontSave) != 0 && !view.Studio) continue;
                 try
                 {
                     AnimationStudioWindow.RestoreExistingViewport(view);

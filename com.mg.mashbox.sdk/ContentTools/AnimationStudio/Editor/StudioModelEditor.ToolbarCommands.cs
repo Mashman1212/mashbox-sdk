@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal sealed class ToolbarCommand
         {
-            internal string Key, Path, Label;
+            internal string Key, Path, Label, MenuGroup;
             internal bool Enabled, Checked;
             internal StudioShortcut? Shortcut;
             internal string Tooltip => ToolbarTooltip(Key,Label,Shortcut);
@@ -123,13 +123,14 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static void CollectToolbarCommands(List<StudioMenu.Item> items, string path, List<ToolbarCommand> result)
         {
+            int menuGroup=0;
             foreach (var item in items)
             {
-                if (item.Separator) continue;
+                if (item.Separator) {menuGroup++;continue;}
                 string full = path + "/" + item.Text;
                 if (item.Children.Count > 0) { CollectToolbarCommands(item.Children, full, result); continue; }
                 if (item.Text == "No recent files" || item.Text.Contains("SDK rules unavailable")) continue;
-                result.Add(new ToolbarCommand { Key = item.ToolbarKey ?? full, Path = full, Label = item.Text, Enabled = item.Enabled && item.Action != null, Checked = item.Checked, Shortcut = item.Command, Execute = item.Action });
+                result.Add(new ToolbarCommand { Key = item.ToolbarKey ?? full, Path = full, Label = item.Text, MenuGroup = path+"#"+menuGroup, Enabled = item.Enabled && item.Action != null, Checked = item.Checked, Shortcut = item.Command, Execute = item.Action });
             }
         }
     }

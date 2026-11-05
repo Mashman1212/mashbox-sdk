@@ -15,15 +15,33 @@ namespace MashBoxSDK.AnimationStudio
         internal int ViewKind { get; private set; } = 1;
         internal bool IsOrthographicView => IsEmbeddedView && ViewKind != 1;
         internal StudioLightingSettings ViewLighting;
-        private MashBoxStudioViewport[] quadViews;
+        [NonSerialized] private MashBoxStudioViewport[] quadViews;
         private VisualElement quadRoot;
         private IMGUIContainer quadHeader;
-        private int maximizedQuad = -1, activeQuad = 1, hoveredQuad = -1, queuedQuad = -2;
+        [NonSerialized] private int maximizedQuad = -1, activeQuad = 1, hoveredQuad = -1, queuedQuad = -2;
+        [NonSerialized] private bool creatingQuadViews;
         private bool layingOutQuad;
+        private Vector2 quadPointer;
+        private bool hasQuadPointer;
         private static readonly string[] QuadNames = { "Front", "Perspective", "Side", "Top" };
         internal MashBoxStudioViewport LayoutOwner => QuadOwner ? QuadOwner : this;
         internal bool FourViews => LayoutOwner.quadLayout;
-        internal MashBoxStudioViewport EditingView => quadLayout && quadViews != null ? quadViews[activeQuad] : this;
+        internal bool SplitLayout => LayoutOwner.quadLayout && LayoutOwner.maximizedQuad < 0;
+        internal bool ViewportMaximized => !SplitLayout;
+        internal void ToggleActiveViewport() {
+            var owner = LayoutOwner;
+            owner.QueueQuadMaximize(owner.ValidQuadIndex(owner.activeQuad) ? owner.activeQuad : 1);
+        }
+        private bool ValidQuadIndex(int index) => quadViews != null && index >= 0 && index < quadViews.Length && quadViews[index];
+        private bool CompleteQuadViews => quadViews != null && quadViews.Length == 4 &&
+            ValidQuadIndex(0) && ValidQuadIndex(1) && ValidQuadIndex(2) && ValidQuadIndex(3);
+        internal MashBoxStudioViewport EditingView {
+            get {
+                if (!quadLayout) return this;
+                if (ValidQuadIndex(activeQuad)) return quadViews[activeQuad];
+                return ValidQuadIndex(1) ? quadViews[1] : this;
+            }
+        }
         internal static EditorWindow HostWindow(SceneView view) => view is MashBoxStudioViewport tile ? tile.LayoutOwner : view;
         internal static bool PointerOver(SceneView view) => view is MashBoxStudioViewport tile && tile.IsEmbeddedView
             ? mouseOverWindow == tile.QuadOwner && tile.QuadOwner.hoveredQuad == tile.ViewKind : mouseOverWindow == view;
@@ -33,15 +51,26 @@ namespace MashBoxSDK.AnimationStudio
         internal void SetFourViews(bool enabled)
         {
             if (IsEmbeddedView) { QuadOwner.SetFourViews(enabled); return; }
-            if (quadLayout == enabled && (enabled == (quadViews != null))) return;
-            quadLayout = enabled;
-            if (enabled) CreateQuadViews();
-            else ReleaseQuadViews(true);
+            if (!Studio || !Studio.IsModelingMode) return;
+            if (!enabled && !quadLayout) return;
+            EditorApplication.update -= ApplyQueuedQuad; queuedQuad = -2;
+            quadLayout = true;
+            CreateQuadViews();
+            if (!CompleteQuadViews) return;
+            maximizedQuad = enabled ? -1 : ValidQuadIndex(activeQuad) ? activeQuad : 1;
+            var editor = Studio.ToolbarModelEditor;
+            if (editor?.CameraOptionsVisible == true) editor.ShowCameraOptions(EditingView, true);
+            else if (editor?.LightingOptionsVisible == true) editor.ShowLightingOptions(EditingView, true);
             UpdatePanelLayout(); MarkDirty(DirtyState.All);
+            FocusEditingCanvas();
         }
         private void CreateQuadViews()
         {
-            if (quadViews != null || !Studio || !Studio.IsModelingMode || Studio.ToolbarModelEditor == null || !customScene.IsValid()) return;
+            if (creatingQuadViews || CompleteQuadViews || !Studio || !Studio.IsModelingMode || Studio.ToolbarModelEditor == null || !customScene.IsValid()) return;
+            if (quadViews != null) ReleaseQuadViews(false);
+            creatingQuadViews = true;
+            try {
+            activeQuad = 1; maximizedQuad = hoveredQuad = -1; queuedQuad = -2;
             quadRoot = new VisualElement { name = "mashbox-four-views" };
             quadRoot.style.position = Position.Absolute;
             quadRoot.style.overflow = Overflow.Hidden;
@@ -79,17 +108,18 @@ namespace MashBoxSDK.AnimationStudio
                 view.quadHeader.style.width = 200; view.quadHeader.style.height = 24;
                 root.Add(view.quadHeader);
                 int index = i;
-                root.RegisterCallback<PointerMoveEvent>(_ => { hoveredQuad = index; });
+                root.RegisterCallback<PointerMoveEvent>(e => TrackQuadPointer(e.position));
+                root.RegisterCallback<PointerEnterEvent>(e => TrackQuadPointer(e.position));
                 root.RegisterCallback<PointerLeaveEvent>(e => {
-                    if (!root.worldBound.Contains(e.position) && hoveredQuad == index) hoveredQuad = -1;
+                    TrackQuadPointer(e.position);
                 });
-                root.RegisterCallback<PointerDownEvent>(_ => { if (activeQuad != index) { activeQuad = index; SyncStudioToolbarState(true); } }, TrickleDown.TrickleDown);
+                root.RegisterCallback<GeometryChangedEvent>(_ => RefreshQuadHover());
+                root.RegisterCallback<PointerDownEvent>(e => { TrackQuadPointer(e.position); if (activeQuad != index) { activeQuad = index; SyncStudioToolbarState(true); } }, TrickleDown.TrickleDown);
             }
-            quadRoot.RegisterCallback<KeyDownEvent>(e => {
-                if (StudioShortcuts.Pressed(StudioShortcut.MaximizeViewport, new Event { type=EventType.KeyDown, keyCode=e.keyCode, modifiers=e.modifiers }) && !EditorGUIUtility.editingTextField && GUIUtility.hotControl == 0)
-                { QueueQuadMaximize(); e.imguiEvent?.Use(); e.StopImmediatePropagation(); }
-            }, TrickleDown.TrickleDown);
             LayoutQuadViews();
+            }
+            catch { ReleaseQuadViews(false); throw; }
+            finally { creatingQuadViews = false; }
         }
         internal static Quaternion QuadRotation(int kind) => kind == 0 ? Quaternion.Euler(0, 180, 0) :
             kind == 2 ? Quaternion.Euler(0, -90, 0) : Quaternion.Euler(90, 0, 0);
@@ -115,27 +145,66 @@ namespace MashBoxSDK.AnimationStudio
         private bool HandleQuadShortcut()
         {
             var e = Event.current;
-            if (!FourViews || e == null || !StudioShortcuts.Pressed(StudioShortcut.MaximizeViewport,e) ||
+            if (!LayoutOwner.Studio || !LayoutOwner.Studio.IsModelingMode || e == null || !StudioShortcuts.Pressed(StudioShortcut.MaximizeViewport,e) ||
                 EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0) return false;
             LayoutOwner.QueueQuadMaximize(); e.Use(); return true;
         }
-        private void QueueQuadMaximize()
+        private void HandleViewportLayoutKey(KeyDownEvent e)
         {
-            if (quadViews == null || (maximizedQuad < 0 && hoveredQuad < 0)) return;
-            queuedQuad = maximizedQuad >= 0 ? -1 : hoveredQuad;
+            if (IsEmbeddedView || !Studio || !Studio.IsModelingMode || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0) return;
+            if (!StudioShortcuts.Pressed(StudioShortcut.MaximizeViewport, new Event { type=EventType.KeyDown, keyCode=e.keyCode, modifiers=e.modifiers })) return;
+            QueueQuadMaximize(); e.imguiEvent?.Use(); e.StopImmediatePropagation();
+        }
+        private void QueueQuadMaximize(int menuTarget = -1)
+        {
+            int target = menuTarget >= 0 ? menuTarget : hoveredQuad >= 0 ? hoveredQuad : activeQuad;
+            // A fresh single viewport is already the one-view layout. The first
+            // toggle creates the other cameras and opens the split directly.
+            if (!quadLayout) queuedQuad = -1;
+            else {
+                if (!CompleteQuadViews || (maximizedQuad < 0 && !ValidQuadIndex(target))) return;
+                queuedQuad = maximizedQuad >= 0 ? -1 : target;
+            }
             EditorApplication.update -= ApplyQueuedQuad;
             EditorApplication.update += ApplyQueuedQuad;
         }
         private void ApplyQueuedQuad()
         {
             EditorApplication.update -= ApplyQueuedQuad;
-            if (!this || quadViews == null || queuedQuad == -2) return;
-            maximizedQuad = queuedQuad; queuedQuad = -2;
+            if (!this || queuedQuad == -2 || !Studio || !Studio.IsModelingMode) return;
+            int destination = queuedQuad; queuedQuad = -2;
+            if (!quadLayout) { quadLayout = true; CreateQuadViews(); }
+            if (!CompleteQuadViews || (destination != -1 && !ValidQuadIndex(destination))) return;
+            maximizedQuad = destination;
             if (maximizedQuad >= 0) activeQuad = maximizedQuad;
             var editor = Studio?.ToolbarModelEditor;
             if (editor?.CameraOptionsVisible == true) editor.ShowCameraOptions(EditingView, true);
             else if (editor?.LightingOptionsVisible == true) editor.ShowLightingOptions(EditingView, true);
             LayoutQuadViews(); MarkDirty(DirtyState.All);
+            // Hiding the previously focused tile removes its IMGUI container from
+            // the focus ring. Transfer retained keyboard focus to the visible canvas;
+            // never activate an OS window or require a click to repair focus.
+            FocusEditingCanvas();
+            RefreshQuadHover();
+        }
+        private void FocusEditingCanvas()
+        {
+            var view = EditingView;
+            view.cameraInputCanvas?.Focus();
+            view.clearCanvasKeyboardFocus = true;
+        }
+        private void TrackQuadPointer(Vector2 point)
+        {
+            quadPointer = point; hasQuadPointer = true;
+            RefreshQuadHover();
+        }
+        private void RefreshQuadHover()
+        {
+            if (!hasQuadPointer || quadViews == null) return;
+            hoveredQuad = -1;
+            for (int i = 0; i < quadViews.Length; i++)
+                if (ValidQuadIndex(i) && (maximizedQuad < 0 || maximizedQuad == i) && quadViews[i].rootVisualElement.worldBound.Contains(quadPointer))
+                { hoveredQuad = i; break; }
         }
         private void LayoutQuadViews()
         {
@@ -145,8 +214,8 @@ namespace MashBoxSDK.AnimationStudio
             {
                 bool visible = quadLayout && Studio && Studio.IsModelingMode;
                 if (!visible && quadViews != null) ReleaseQuadViews(true);
-                if (visible && quadViews == null) CreateQuadViews();
-                if (quadRoot == null) return;
+                if (visible && !CompleteQuadViews && !creatingQuadViews) CreateQuadViews();
+                if (quadRoot == null || !CompleteQuadViews) return;
                 quadRoot.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
                 if (cameraInputCanvas != null) cameraInputCanvas.style.display = visible ? DisplayStyle.None : DisplayStyle.Flex;
                 foreach (var button in new[] { viewportCameraButton, viewportLightingButton })
@@ -181,7 +250,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             EditorApplication.update -= ApplyQueuedQuad; queuedQuad = -2;
             if (quadViews == null) return;
-            if (retainPerspective && quadViews[1])
+            if (retainPerspective && ValidQuadIndex(1))
             {
                 var v = quadViews[1]; LookAtDirect(v.pivot, v.rotation, v.size);
                 cameraSettings.fieldOfView = v.cameraSettings.fieldOfView;
@@ -190,7 +259,7 @@ namespace MashBoxSDK.AnimationStudio
             var released = quadViews; quadViews = null;
             quadRoot?.RemoveFromHierarchy(); quadRoot = null;
             foreach (var view in released) if (view) { view.rootVisualElement.RemoveFromHierarchy(); DestroyImmediate(view); }
-            maximizedQuad = -1; hoveredQuad = -1;
+            maximizedQuad = -1; hoveredQuad = -1; hasQuadPointer = false;
             if (cameraInputCanvas != null) cameraInputCanvas.style.display = DisplayStyle.Flex;
         }
         private void RepaintQuadViews(DirtyState state)
