@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace MashBoxSDK.AnimationStudio
 {
-    // Project-local configuration only. Native Undo records and running jobs stay session-scoped.
+    // User-local configuration. Native Undo records and running jobs stay session-scoped.
     [InitializeOnLoad]
     internal static class StudioPreferenceStore
     {
@@ -23,7 +23,15 @@ namespace MashBoxSDK.AnimationStudio
         private static bool dirty, migrateLegacy;
         private static double flushAfter;
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
-        internal static string DirectoryPath => Path.Combine(Path.GetDirectoryName(Application.dataPath), "MashBoxStudio", "Preferences");
+        internal static string DirectoryPath
+        {
+            get
+            {
+                string documents=Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if(string.IsNullOrWhiteSpace(documents))throw new IOException("The user's Documents folder is unavailable for Studio settings.");
+                return Path.Combine(documents,"MashBoxStudio");
+            }
+        }
         internal static string SettingsPath { get { EnsureSelection(); return activeSettings; } }
         internal static string HotkeysPath { get { EnsureSelection(); return activeHotkeys; } }
         [Serializable] private sealed class Selection
@@ -43,7 +51,8 @@ namespace MashBoxSDK.AnimationStudio
         internal static void EnsureStorageLayout()
         {
             if(storageLayoutReady)return;
-            // Move only known project-owned files; explicitly loaded external or
+            MigrateProjectPreferences();
+            // Move only known legacy files; explicitly loaded external or
             // custom profile paths remain where the user selected them.
             MoveLegacyFile("Settings.json","Profiles/Settings.json");
             MoveLegacyFile("Hotkeys.json","Profiles/Hotkeys.json");
@@ -66,6 +75,43 @@ namespace MashBoxSDK.AnimationStudio
                 catch(Exception error){Debug.LogWarning("Could not update relocated Studio profile paths: "+error.Message);}
             }
             storageLayoutReady=true;
+        }
+        private static void MigrateProjectPreferences()
+        {
+            string marker=Path.Combine(DirectoryPath,"State","ProjectPreferencesMigrated.json");
+            if(File.Exists(marker))return;
+            string source=Path.Combine(Path.GetDirectoryName(Application.dataPath),"MashBoxStudio","Preferences");
+            // Preserve the project files as a backup. Never replace an existing
+            // user-wide file, and never reimport deleted presets on later loads.
+            bool copySelection=!File.Exists(SelectionPath);
+            if(Directory.Exists(source))
+            {
+                string prefix=Path.GetFullPath(source)+Path.DirectorySeparatorChar;
+                foreach(string file in Directory.GetFiles(source,"*",SearchOption.AllDirectories))
+                {
+                    string relative=Path.GetFullPath(file).Substring(prefix.Length);
+                    if(relative.EndsWith(".tmp",StringComparison.OrdinalIgnoreCase))continue;
+                    string target=Path.Combine(DirectoryPath,relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(target));
+                    if(!File.Exists(target))File.Copy(file,target,false);
+                }
+                if(File.Exists(SelectionPath))
+                {
+                    var saved=JsonUtility.FromJson<Selection>(File.ReadAllText(SelectionPath));
+                    if(saved==null||saved.format!="MashBoxStudio.LastLoaded"||saved.version!=1)
+                        throw new InvalidDataException("Cannot migrate unsupported Studio last-loaded settings.");
+                    string Relocate(string path)
+                    {
+                        if(string.IsNullOrWhiteSpace(path)||!Path.IsPathRooted(path))return path;
+                        string full=Path.GetFullPath(path);
+                        return full.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)?full.Substring(prefix.Length):path;
+                    }
+                    string settings=Relocate(saved.settingsFile),hotkeys=Relocate(saved.hotkeysFile);
+                    if(settings!=saved.settingsFile||hotkeys!=saved.hotkeysFile)
+                    {saved.settingsFile=settings;saved.hotkeysFile=hotkeys;WriteAtomic(SelectionPath,JsonUtility.ToJson(saved,true));}
+                }
+            }
+            WriteAtomic(marker,"{\"format\":\"MashBoxStudio.ProjectPreferencesMigrated\",\"version\":1}");
         }
         private static void MoveLegacyFile(string oldRelative,string newRelative)
         {
@@ -169,6 +215,7 @@ namespace MashBoxSDK.AnimationStudio
             Number(ToolChannelPane.DefaultKey("Bevel Edges","WidthFraction"),.1f);
             Number(ToolChannelPane.DefaultKey("Bevel Edges","UnlockWidthRange"),0);
             Number("Model.ContiguousPath", 0);
+            Number("Model.PreserveMoveUVs", 0);
             Number(ToolChannelPane.DefaultKey("Bisect","Bisect Distance"),.01f);
             Number(ToolChannelPane.DefaultKey("Bisect","Fill"),1);
             Number(StudioModelEditor.PivotLockKey, 0);
@@ -438,3 +485,5 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+
+

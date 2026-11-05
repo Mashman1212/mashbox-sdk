@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
         private sealed class MultiTransformTarget
         {
             internal int node;internal Mesh mesh;internal int[] indices;internal Vector3[] source,working;
-            internal Matrix4x4 localToWorld,worldToLocal;internal Vector3 center;internal Quaternion orientation;
+            internal Matrix4x4 localToWorld,worldToLocal;internal Vector3 center;internal Quaternion orientation;internal StudioMoveUVPreservation uvs;
         }
         private sealed class MultiComponentGesture
         {
@@ -51,6 +51,8 @@ namespace MashBoxSDK.AnimationStudio
                 var target=new MultiTransformTarget{node=node,center=!CenterMode && HasComponentPivot?componentPivot.position:ComponentSelectionCenter(),orientation=UnlockedPivotOrientation,mesh=ActiveMesh,indices=indices.OrderBy(i=>i).ToArray(),source=source,working=(Vector3[])source.Clone(),localToWorld=Transforms[node].localToWorldMatrix,worldToLocal=Transforms[node].worldToLocalMatrix};
                 gesture.targets.Add(target);byMesh[target.mesh]=target;
             }
+            if(gesture.tool==Tool.Move&&preserveMoveUVs&&!pivot)
+                foreach(var target in gesture.targets)target.uvs=StudioMoveUVPreservation.Capture(target.mesh,target.source,target.indices);
             return gesture;
         }
         private bool ApplyMultiComponentGesture(MultiComponentGesture gesture,Vector3 position,Quaternion rotation,Vector3 factor)
@@ -72,6 +74,7 @@ namespace MashBoxSDK.AnimationStudio
                 else world=gesture.center+gesture.orientation*Vector3.Scale(inverse*(world-gesture.center),factor);
                 var local=target.worldToLocal.MultiplyPoint3x4(world);if(!FiniteScalePoint(local))return false;target.working[index]=local;
             }
+            foreach(var target in gesture.targets)target.uvs?.Evaluate(target.working);
             if(!gesture.registered)
             {
                 foreach(var target in gesture.targets)using(new ComponentTargetScope(this,target.node))PreserveFaceTopology();
@@ -81,7 +84,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (EditorUtility.IsPersistent(target.mesh) || Document.nodes.Count(n=>n.mesh==target.mesh)>1)
                         { var copy=UnityEngine.Object.Instantiate(target.mesh);copy.name=target.mesh.name;target.mesh=copy; }
                 var records=gesture.targets.Select(t=>(UnityEngine.Object)t.mesh);
-                Undo.RegisterCompleteObjectUndo(independent?new UnityEngine.Object[]{Document}.Concat(records).ToArray():records.ToArray(),"Transform mesh components");
+                Undo.RegisterCompleteObjectUndo(independent?new UnityEngine.Object[]{Document}.Concat(records).ToArray():records.ToArray(),gesture.targets.Any(t=>t.uvs!=null)?PreserveUVMoveLabel:"Transform mesh components");
                 if (independent)
                     foreach (var target in gesture.targets)
                     {
@@ -92,7 +95,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             foreach(var target in gesture.targets)using(new ComponentTargetScope(this,target.node))
             {
-                target.mesh.vertices=target.working;RecalculateEditableNormals(target.mesh);target.mesh.RecalculateBounds();
+                target.mesh.vertices=target.working;target.uvs?.Publish(target.mesh);RecalculateEditableNormals(target.mesh);target.mesh.RecalculateBounds();
                 if(target.mesh.HasVertexAttribute(VertexAttribute.TexCoord0))target.mesh.RecalculateTangents();EditorUtility.SetDirty(target.mesh);
                 PositionsChanged(deferStatistics:GUIUtility.hotControl!=0,markerPositions:target.working,markerIndices:target.indices);
             }

@@ -127,6 +127,9 @@ namespace MashBoxSDK.AnimationStudio
                 case "Extrude":
                     if(Mathf.Abs(p.x)<1e-5f&&Mathf.Abs(p.z)<1e-5f)return;
                     topology.Extrude(node,operation.faces!=null&&operation.faces.Length>0?operation.faces:null,operation.edges==null||operation.edges.Length==0?null:edges.ToArray(),p.x,p.y>=.5f,operation.weld,inset:p.z);node.normalGroups=null;break;
+                case "FillHole":topology.FillHoles(node,edges);break;
+                case "EdgeRingCollapse":topology.CollapseEdgeRings(node,edges);break;
+                case "Poke":topology.PokeFaces(node,operation.faces);break;
                 case "Bridge":topology.BridgeEdges(node,edges,Mathf.Clamp(Mathf.RoundToInt(p.x),0,64),Mathf.Clamp(p.y,-1,1));break;
                 case "MaterialSlot":if(p.y>=.5f)topology.RemoveMaterialSlot(node,Mathf.RoundToInt(p.x),Mathf.RoundToInt(p.w));else topology.AssignMaterialSlot(node,Mathf.RoundToInt(p.x),operation.faces);break;
                 case "Circularize":topology.Circularize(node,operation.vertices,operation.edges==null?null:edges,operation.faces,p,operation.flow);break;

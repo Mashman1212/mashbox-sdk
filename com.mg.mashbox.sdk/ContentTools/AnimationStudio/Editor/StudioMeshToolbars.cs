@@ -26,8 +26,8 @@ namespace MashBoxSDK.AnimationStudio
                 "Mesh Tools/Combine Meshes…", "Mesh Tools/Duplicate Face",
                 "Mesh Tools/Duplicate Face as New Object", "Mesh Tools/Detach Face",
                 "Mesh Tools/Split Selection", "Mesh Tools/Bridge Edges",
-                "Mesh Tools/Extrude", "Mesh Tools/Bevel…", "Mesh Tools/Circularize…",
-                "Mesh Tools/Weld…", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld",
+                "Mesh Tools/Extrude", "Edit Mesh/Fill Hole", "Edit Mesh/Poke", "Mesh Tools/Bevel…", "Mesh Tools/Circularize…",
+                "Edit Mesh/To Edge Ring and Collapse", "Mesh Tools/Weld…", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld",
                 "Mesh Tools/Insert Edge Loop", "Mesh Tools/Bisect", "Mesh Tools/Fracture", "Mesh Tools/Multi-Cut",
                 "Deform/Blend Shape", "Deform/Bake Current Pose" } });
     }
