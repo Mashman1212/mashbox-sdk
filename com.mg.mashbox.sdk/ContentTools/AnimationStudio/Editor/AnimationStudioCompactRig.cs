@@ -21,7 +21,8 @@ namespace MashBoxSDK.AnimationStudio
             if (Event.current.type == EventType.Repaint)
             {
                 var previous = GUI.color;
-                GUI.color = selected ? TimelineGold : TimelineText;
+                // Keep active symbols white against the gold toggle background.
+                GUI.color = selected ? Color.white : TimelineText;
                 if (fallback == "Wheel")
                 {
                     var old=Handles.color;
@@ -59,16 +60,18 @@ namespace MashBoxSDK.AnimationStudio
             bool changed=false;
             var selectedRig=OutfitRig;
             string ikTip = selectedRig != null && !selectedRig.HasIK ? selectedRig.SolverStatus : "Show inverse-kinematics controls";
-            if (TimelineButton(new Rect(x,y,36,25),"IK",ikTip,showIKControls))
+            if (TimelineButton(new Rect(x,y,36,25),"IK",ikTip,showIKControls,showIKControls))
             {
                 if (selectedRig != null && !selectedRig.HasIK) ShowNotification(new GUIContent(selectedRig.SolverStatus), 5);
                 else { showIKControls=!showIKControls; changed=true; }
             } x+=36;
-            if (TimelineButton(new Rect(x,y,36,25),"FK","Show forward-kinematics controls",showFKControls))
+            if (TimelineButton(new Rect(x,y,36,25),"FK","Show forward-kinematics controls",showFKControls,showFKControls))
             { showFKControls=!showFKControls; changed=true; } x+=46;
             if (RigToolbarIcon(new Rect(x,y,30,25),null,"Wheel","Show vehicle rig controls",showVehicleControls))
             { showVehicleControls=!showVehicleControls; changed=true; } x+=34;
-            StudioSymbolIcons.TryGet("Animation/Rig Bones",out var bonesIcon);
+            Texture2D bonesIcon;
+            if (showSkeleton) StudioSymbolIcons.TryGetWhite("Animation/Rig Bones",out bonesIcon);
+            else StudioSymbolIcons.TryGet("Animation/Rig Bones",out bonesIcon);
             if (RigToolbarIcon(new Rect(x,y,30,25),bonesIcon,"⌁","Show full rig bones; FK guides remain visible with FK on",showSkeleton))
             { showSkeleton=!showSkeleton; changed=true; } x+=39;
             TimelineDivider(x-5,y); x+=4;
@@ -76,7 +79,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 bool limits=selectedRig!=null && selectedRig.HumanLimitsEnabled;
                 if (TimelineButton(new Rect(x,y,94,25),"Human Limits",
-                    "Constrain this humanoid to avatar joint ranges. Session only.",limits) && selectedRig!=null)
+                    "Constrain this humanoid to avatar joint ranges. Session only.",limits,limits) && selectedRig!=null)
                 {
                     Guard(() =>
                     {
@@ -90,9 +93,9 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             x+=103;
-            if (TimelineButton(new Rect(x,y,30,25),"▥","Fade FK controls by blend",fadeRigControls))
+            if (TimelineButton(new Rect(x,y,30,25),"▥","Fade FK controls by blend",fadeRigControls,fadeRigControls))
             { fadeRigControls=!fadeRigControls; if(!fadeRigControls) hideInactiveControls=false; viewport?.Repaint(); } x+=34;
-            if (TimelineButton(new Rect(x,y,30,25),"◉","Hide inactive IK/FK controls",hideInactiveControls))
+            if (TimelineButton(new Rect(x,y,30,25),"◉","Hide inactive IK/FK controls",hideInactiveControls,hideInactiveControls))
             { hideInactiveControls=!hideInactiveControls; if(hideInactiveControls) fadeRigControls=true; viewport?.Repaint(); } x+=34;
             using (new EditorGUI.DisabledScope(!OutfitActor || OutfitRig==null))
                 if (RigToolbarIcon(new Rect(x,y,30,25),EditorGUIUtility.IconContent("Refresh").image,"↻","Reset selected actor to rest pose")) ResetRestPose();

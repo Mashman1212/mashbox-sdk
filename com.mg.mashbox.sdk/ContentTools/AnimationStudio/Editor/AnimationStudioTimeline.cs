@@ -295,7 +295,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly Color TimelineHover = new Color32(64, 68, 70, 255);
         private static readonly Color TimelineTrack = new Color32(102, 102, 102, 255);
         private static readonly Color TimelineText = new Color32(240, 240, 240, 255);
-        private static GUIStyle timelineButtonStyle, timelinePlayStyle, timelineLabelStyle, timelineMutedStyle, timelineFrameCellStyle, timelineRulerLabelStyle, timelineRangeLabelStyle, timelineRangeRightLabelStyle, timelineRangeCenterLabelStyle;
+        private static GUIStyle timelineButtonStyle, timelinePlayStyle, timelineWhiteStyle, timelineLabelStyle, timelineMutedStyle, timelineFrameCellStyle, timelineRulerLabelStyle, timelineRangeLabelStyle, timelineRangeRightLabelStyle, timelineRangeCenterLabelStyle;
 
         private static void TimelineRect(Rect rect, Color color)
         {
@@ -326,6 +326,8 @@ namespace MashBoxSDK.AnimationStudio
                 timelineButtonStyle.normal.textColor = TimelineText;
                 timelinePlayStyle = new GUIStyle(timelineButtonStyle);
                 timelinePlayStyle.normal.textColor = Color.black;
+                timelineWhiteStyle = new GUIStyle(timelineButtonStyle);
+                timelineWhiteStyle.normal.textColor = Color.white;
                 timelineLabelStyle = new GUIStyle(timelineButtonStyle) { fontSize = 11, fontStyle = FontStyle.Normal };
                 timelineMutedStyle = new GUIStyle(timelineLabelStyle);
                 timelineMutedStyle.normal.textColor = new Color32(160, 160, 160, 255);
@@ -339,13 +341,15 @@ namespace MashBoxSDK.AnimationStudio
             return play ? timelinePlayStyle : muted ? timelineMutedStyle : timelineLabelStyle;
         }
 
-        private static bool TimelineButton(Rect rect, string label, string tooltip, bool accent = false)
+        private static bool TimelineButton(Rect rect, string label, string tooltip, bool accent = false, bool whiteAccent = false)
         {
             bool hovered = TimelineHovered(rect);
             TimelineRect(rect, accent ? hovered ? Color.Lerp(TimelineGold, Color.white, .20f) : TimelineGold :
                 hovered ? TimelineHover : TimelineButtonBackground);
             TimelineOutline(rect, TimelineBorder);
-            return GUI.Button(rect, new GUIContent(label, tooltip), accent ? TimelineStyle(true) : TimelineStyle());
+            if (!whiteAccent) return GUI.Button(rect, new GUIContent(label, tooltip), accent ? TimelineStyle(true) : TimelineStyle());
+            TimelineStyle(); // Ensure the cached toolbar styles have been created.
+            return GUI.Button(rect, new GUIContent(label, tooltip), timelineWhiteStyle);
         }
 
         private static int TimelineNumber(Rect rect, int value, string tooltip)

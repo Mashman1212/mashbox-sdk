@@ -14,6 +14,12 @@ namespace MashBoxSDK.AnimationStudio
             texture = symbol == null ? null : StudioToolbarIcons.Get("Studio symbol " + symbol + (EditorGUIUtility.isProSkin ? " dark" : " light"), () => Draw(symbol));
             return texture;
         }
+        internal static bool TryGetWhite(string key, out Texture2D texture)
+        {
+            string symbol = Symbol(key);
+            texture = symbol == null ? null : StudioToolbarIcons.Get("Studio symbol white " + symbol, () => Draw(symbol, true));
+            return texture;
+        }
         private static string Symbol(string key)
         {
             switch (key)
@@ -124,10 +130,10 @@ namespace MashBoxSDK.AnimationStudio
             internal void Gear(float x,float y){Circle(x,y,3,White);Circle(x,y,1,Gray,true);for(int i=0;i<8;i++){float a=i*Mathf.PI/4;Line(x+3*Mathf.Cos(a),y+3*Mathf.Sin(a),x+4*Mathf.Cos(a),y+4*Mathf.Sin(a),White);}}
             internal void Digit(int digit,float x,float y)
             {string[] rows={"111101101101111","010110010010111","111001111100111","111001111001111","101101111001001","111100111001111","111100111101111","111001001001001"};string data=rows[Mathf.Clamp(digit,0,7)];Fill(x-1,y-1,7,10,new Color(.18f,.2f,.22f,1));for(int row=0;row<5;row++)for(int col=0;col<3;col++)if(data[row*3+col]=='1')Fill(x+col*1.7f,y+(4-row)*1.7f,1.3f,1.3f,Gold);}
-            internal Texture2D Texture()
-            {var small=new Color[576];for(int y=0;y<24;y++)for(int x=0;x<24;x++){float a=0;var rgb=Vector3.zero;for(int dy=0;dy<Scale;dy++)for(int dx=0;dx<Scale;dx++){var c=pixels[(y*Scale+dy)*N+x*Scale+dx];rgb+=new Vector3(c.r,c.g,c.b)*c.a;a+=c.a;}small[y*24+x]=a>0?new Color(rgb.x/a,rgb.y/a,rgb.z/a,a/16):Color.clear;}var t=new Texture2D(24,24,TextureFormat.RGBA32,false);t.SetPixels(small);t.Apply(false,true);return t;}
+            internal Texture2D Texture(bool white=false)
+            {var small=new Color[576];for(int y=0;y<24;y++)for(int x=0;x<24;x++){float a=0;var rgb=Vector3.zero;for(int dy=0;dy<Scale;dy++)for(int dx=0;dx<Scale;dx++){var c=pixels[(y*Scale+dy)*N+x*Scale+dx];rgb+=new Vector3(c.r,c.g,c.b)*c.a;a+=c.a;}small[y*24+x]=a>0?white?new Color(1,1,1,a/16):new Color(rgb.x/a,rgb.y/a,rgb.z/a,a/16):Color.clear;}var t=new Texture2D(24,24,TextureFormat.RGBA32,false);t.SetPixels(small);t.Apply(false,true);return t;}
         }
-        private static Texture2D Draw(string symbol)
+        private static Texture2D Draw(string symbol, bool white=false)
         {
             var c=new Canvas();var w=c.White;var a=c.Accent;var g=c.Gold;
             switch(symbol)
@@ -212,7 +218,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "recent-group":c.Rect(3,6,14,13,w);c.Circle(16,7,6,a);c.Path(g,16,11,16,7,19,7);break;
                 default:if(symbol.StartsWith("uv-")){c.Grid();c.Digit(symbol[symbol.Length-1]-'0',16,3);}break;
             }
-            return c.Texture();
+            return c.Texture(white);
         }
     }
 }

@@ -21,11 +21,31 @@ namespace MashBoxSDK.AnimationStudio
                 (rigSelectionExplicit && rigSelection.Count == 0)) return;
             Action inspect = () =>
             {
-                if (!IsBike || !showVehicleControls || control == 8 || IsAttachmentHidden(take)) return;
-                var joint = BikeJoint(control);
-                if (!joint) return;
-                var center = BikeHandlePosition(control, joint);
-                rotationGizmoOwnsPointer = HandleUtility.DistanceToCircle(center, HandleUtility.GetHandleSize(center) * 1.1f) <= 0;
+                if (IsAttachmentHidden(take) || !viewport || !viewport.camera) return;
+                Vector3 center;
+                if (IsBike)
+                {
+                    if (!showVehicleControls || control == 8) return;
+                    var joint = BikeJoint(control);
+                    if (!joint) return;
+                    center = BikeHandlePosition(control, joint);
+                }
+                else if (ikMode)
+                {
+                    if (poleMode || !rig.HasIK || !showIKControls) return;
+                    center = rig.Root.transform.TransformPoint(DisplayEffector(Mathf.Clamp(control,0,3)).position);
+                }
+                else
+                {
+                    if (control < 0 || control >= rig.Bones.Length) return;
+                    center = rig.Bones[control].position;
+                }
+                if (viewport.camera.WorldToViewportPoint(center).z <= 0) return;
+                Vector2 screenCenter = HandleUtility.WorldToGUIPoint(center);
+                Vector2 screenEdge = HandleUtility.WorldToGUIPoint(
+                    center + viewport.camera.transform.right * HandleUtility.GetHandleSize(center));
+                float radius = Vector2.Distance(screenCenter,screenEdge) * 1.2f;
+                rotationGizmoOwnsPointer = Vector2.Distance(Event.current.mousePosition,screenCenter) <= radius;
             };
             if (activeActor >= 0 && activeActor < actorPreviews.Count) InActor(actorPreviews[activeActor], inspect);
             else inspect();
