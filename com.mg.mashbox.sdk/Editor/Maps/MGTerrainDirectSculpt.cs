@@ -13,7 +13,6 @@ namespace MashBoxSDK.MapTools
     internal static class MGTerrainDirectSculpt
     {
         static readonly Dictionary<MGTerrain, int> UndoGroups = new Dictionary<MGTerrain, int>();
-        static readonly HashSet<MGTerrain> EditedTerrains = new HashSet<MGTerrain>();
         // No update/tool-exit/reload autosaves: importing mesh assets can stall the editor.
         // Meshes and scenes stay dirty until the user saves through Unity.
         static MGTerrainDirectSculpt()
@@ -30,7 +29,6 @@ namespace MashBoxSDK.MapTools
             var filter = modifier.Target;
             var terrain = filter.GetComponentInParent<MGTerrain>(true);
             if (terrain == null || terrain.MeshFilter != filter || filter.sharedMesh == null) return;
-            EditedTerrains.Add(terrain);
             int group = Undo.GetCurrentGroup();
             if (!UndoGroups.TryGetValue(terrain, out int previous) || previous != group)
             {
@@ -81,22 +79,8 @@ namespace MashBoxSDK.MapTools
             if (terrain.gameObject.scene.IsValid()) EditorSceneManager.MarkSceneDirty(terrain.gameObject.scene);
         }
 
-        static void RefreshUndo()
-        {
-            foreach (var terrain in EditedTerrains.ToArray())
-            {
-                if (terrain == null) { EditedTerrains.Remove(terrain); continue; }
-                if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null) continue;
-                terrain.NotifySurfaceMeshChanged();
-                terrain.RefreshSurfaceCollidersFromMesh();
-            }
-            UndoGroups.Clear();
-            // Keep Undo changes dirty in memory for Unity's normal explicit save workflow.
-            foreach (var terrain in EditedTerrains)
-                if (terrain != null && terrain.MeshFilter != null && terrain.MeshFilter.sharedMesh != null)
-                    EditorUtility.SetDirty(terrain.MeshFilter.sharedMesh);
-            SceneView.RepaintAll();
-        }
+        // Object-specific mesh and collision refresh is handled by MGTerrainUndoRefresh.
+        static void RefreshUndo() => UndoGroups.Clear();
     }
 }
 #endif

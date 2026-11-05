@@ -1902,28 +1902,11 @@ namespace MashBoxSDK.MapTools
         void RefreshPaintUndo()
         {
             m_SelectedPaintLayers.Clear();
-            if (target is MGTerrain terrain)
-            {
-                // One Multi stroke can touch several tiles. Delegated editors are
-                // disposed at mouse-up, so upload every tile's restored textures here.
-                if (terrain.World != null)
-                {
-                    foreach (var tile in terrain.World.Chunks) RefreshTile(tile);
-                }
-                else RefreshTile(terrain);
-                if (m_SharedDefinitionSignature != null) RememberSharedDefinitions(terrain);
-            }
-            SceneView.RepaintAll();
+            // Restored maps/meshes are refreshed centrally, including tiles whose
+            // temporary painting inspectors were closed at the end of a stroke.
+            if (target is MGTerrain terrain && m_SharedDefinitionSignature != null)
+                RememberSharedDefinitions(terrain);
             Repaint();
-
-            static void RefreshTile(MGTerrain tile)
-            {
-                if (tile == null) return;
-                if (PaintCopiesByTerrain.TryGetValue(tile, out var maps))
-                    foreach (var map in maps)
-                        if (map != null && map.isReadable) { map.Apply(false, false); EditorUtility.SetDirty(map); }
-                tile.InvalidateRenderCache();
-            }
         }
 
         void OnSceneGUI()

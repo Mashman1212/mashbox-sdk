@@ -10,26 +10,6 @@ using Object = UnityEngine.Object;
 
 namespace MashBoxSDK.MapTools
 {
-    [InitializeOnLoad]
-    internal static class MGTerrainMergeUndo
-    {
-        static readonly HashSet<MGTerrain> terrains = new HashSet<MGTerrain>();
-        static MGTerrainMergeUndo() { Undo.undoRedoPerformed += Refresh; }
-        internal static void Track(MGTerrain terrain) => terrains.Add(terrain);
-        static void Refresh()
-        {
-            // Undo must still refresh collision after the merge window has been closed.
-            terrains.RemoveWhere(t => t == null);
-            foreach (var terrain in terrains)
-            {
-                if (terrain.MeshFilter == null || terrain.MeshFilter.sharedMesh == null) continue;
-                terrain.NotifySurfaceMeshChanged(); terrain.RefreshSurfaceCollidersFromMesh();
-                EditorUtility.SetDirty(terrain.MeshFilter.sharedMesh);
-            }
-            SceneView.RepaintAll();
-        }
-    }
-
     // Immutable, world-space triangle samples. No colliders or objects from the source
     // scene survive capture, and neither sampling nor preview edits a source asset.
     internal sealed class MGTerrainMergeSurface
@@ -207,7 +187,6 @@ namespace MashBoxSDK.MapTools
         }
         void Prepare(MGTerrain terrain)
         {
-            MGTerrainMergeUndo.Track(terrain);
             var tile = states[terrain]; var filter = terrain.MeshFilter;
             if (tile.editable == null || filter.sharedMesh != tile.editable)
             {

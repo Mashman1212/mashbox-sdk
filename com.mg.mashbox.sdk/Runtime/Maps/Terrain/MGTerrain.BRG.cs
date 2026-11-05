@@ -29,7 +29,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void UploadDetailDefinitions()
         {
-            int count = 1 + m_DensityDetailLayers.Count * 2;
+            int count = 1 + m_DensityDetailLayers.Count * 3;
             bool changed = m_LastDetailDefinitionBuffer != m_DetailBrgInstanceBuffer || m_LastDetailDefinitionAddress != DetailTableAddress;
             if (m_DetailDefinitionData == null || m_DetailDefinitionData.Length != count)
             {
@@ -46,8 +46,16 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 var layer = m_DensityDetailLayers[i];
                 Vector4 tint = layer != null ? (Vector4)layer.ShaderTint : Vector4.one;
                 Vector4 definition = layer != null ? layer.ShaderDefinition : new Vector4(0, 1, 0, 0);
-                definition.z = m_MidDetailDensity;
-                definition.w = m_FarDetailDensity;
+                Prototype prototype = layer != null && (uint)layer.PrototypeIndex < m_Prototypes.Count ? m_Prototypes[layer.PrototypeIndex] : null;
+                Vector4 densities = DensityFadeDensities(prototype);
+                Vector4 ranges = DensityFadeRanges(prototype);
+                definition.z = densities.x;
+                definition.w = densities.y;
+                // Append ranges after the existing 32-byte definitions. Tint,
+                // slice and wind offsets remain compatible with other readers.
+                int rangeIndex = 1 + m_DensityDetailLayers.Count * 2 + i;
+                changed |= data[rangeIndex] != ranges;
+                data[rangeIndex] = ranges;
                 changed |= data[1 + i * 2] != tint || data[2 + i * 2] != definition;
                 data[1 + i * 2] = tint;
                 data[2 + i * 2] = definition;
@@ -1076,7 +1084,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     maxHeight = layer != null ? layer.MaxHeight : 1f,
                     yOffset = layer != null ? layer.YOffset : 0f,
                     padding1 = layer != null && (uint)layer.PrototypeIndex < m_Prototypes.Count && CanFadeDetail(m_Prototypes[layer.PrototypeIndex])
-                        ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f
+                        ? DensityFadeOverall(m_Prototypes[layer.PrototypeIndex]) + 1f : 0f
                 };
             }
             if (parameters.Length > 0)
@@ -1189,7 +1197,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     var matrix = matrices[matrixIndex];
                     uint seed = Hash((uint)matrix.m03.GetHashCode() ^ (uint)matrix.m23.GetHashCode());
                     int slice = chunkIndex < batch.grassSliceChunks.Count ? batch.grassSliceChunks[chunkIndex][matrixIndex] : m_DensityDetailLayers[layerIndex].TextureSlice;
-                    group.shaderData.Add(new Vector4(EncodeDetailLayerHealth(layerIndex, BatchDetailHealth(batch, chunkIndex, matrixIndex)), slice + 1 + Hash01(seed) * .999f, (maximumInstances - remaining + matrixIndex + 1f) / Mathf.Max(1, population), fade ? Mathf.Clamp01(m_OverallDetailDensity) + 1f : 0f));
+                    group.shaderData.Add(new Vector4(EncodeDetailLayerHealth(layerIndex, BatchDetailHealth(batch, chunkIndex, matrixIndex)), slice + 1 + Hash01(seed) * .999f, (maximumInstances - remaining + matrixIndex + 1f) / Mathf.Max(1, population), fade ? DensityFadeOverall(batch.prototype) + 1f : 0f));
                 }
                 remaining -= count;
             }
@@ -1240,7 +1248,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 m_DetailBrgCapacity = Mathf.NextPowerOfTwo(Mathf.Max(256, requiredInstances));
                 m_DetailDefinitionCapacity = Mathf.Max(1, m_DensityDetailLayers.Count);
                 long bytes = BrgZeroPrefixBytes + (long)m_DetailBrgCapacity * (BrgPackedMatrixBytes * 2L + 16L)
-                    + (1L + m_DetailDefinitionCapacity * 2L) * 16L;
+                    + (1L + m_DetailDefinitionCapacity * 3L) * 16L;
                 if (bytes > int.MaxValue)
                     throw new InvalidOperationException("The requested MG Terrain BRG buffer exceeds the 2 GB GraphicsBuffer limit.");
                 m_DetailBrgInstanceBuffer = new GraphicsBuffer(

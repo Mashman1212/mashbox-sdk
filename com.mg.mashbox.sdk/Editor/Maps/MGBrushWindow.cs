@@ -547,6 +547,8 @@ namespace MashBoxSDK.MapTools
             SceneView.duringSceneGui += OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
+            ObjectChangeEvents.changesPublished -= OnPaintUndoChanges;
+            ObjectChangeEvents.changesPublished += OnPaintUndoChanges;
             Selection.selectionChanged -= OnVisualEditingSelectionChanged;
             Selection.selectionChanged += OnVisualEditingSelectionChanged;
             RememberVertexPaintSelection();
@@ -569,6 +571,8 @@ namespace MashBoxSDK.MapTools
             splatHoverCandidate = null;
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
+            ObjectChangeEvents.changesPublished -= OnPaintUndoChanges;
+            paintUndoPending = false;
             Selection.selectionChanged -= OnVisualEditingSelectionChanged;
             if (s_ActiveSceneToolOwner == this)
                 s_ActiveSceneToolOwner = null;
@@ -854,11 +858,52 @@ namespace MashBoxSDK.MapTools
             }
         }
 
-        private void OnUndoRedoPerformed()
+        bool paintUndoPending;
+        private void OnUndoRedoPerformed() => paintUndoPending = true;
+
+        private void OnPaintUndoChanges(ref ObjectChangeEventStream stream)
         {
+            if (!paintUndoPending) return;
+            paintUndoPending = false;
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+            var changed = new HashSet<Object>();
+            for (int i = 0; i < stream.length; i++)
+            {
+                int id;
+                if (stream.GetEventType(i) == ObjectChangeKind.ChangeGameObjectOrComponentProperties)
+                {
+                    stream.GetChangeGameObjectOrComponentPropertiesEvent(i, out var component);
+                    id = component.instanceId;
+                }
+                else if (stream.GetEventType(i) == ObjectChangeKind.ChangeAssetObjectProperties)
+                {
+                    stream.GetChangeAssetObjectPropertiesEvent(i, out var asset);
+                    id = asset.instanceId;
+                }
+                else continue;
+                var obj = EditorUtility.InstanceIDToObject(id);
+                if (obj is Mesh || obj is MeshFilter || obj is MultiSplineLoft || obj is VertexPaintModifier)
+                    changed.Add(obj);
+            }
+            if (changed.Count == 0) return;
             ClearSplatMeshCaches();
-            RebuildLoftVertexPaintModifiers();
-            RefreshPaintTargetMeshes();
+            RebuildLoftVertexPaintModifiers(changed);
+            var refreshed = new HashSet<MeshFilter>();
+            foreach (var target in paintTargets)
+            {
+                if (target == null) continue;
+                foreach (var filter in target.GetComponentsInChildren<MeshFilter>(true))
+                {
+                    if (!changed.Contains(filter) && !changed.Contains(filter.sharedMesh)) continue;
+                    if (!refreshed.Add(filter) || IsGeneratedMeshMicroBumpFilter(filter)) continue;
+                    var terrain = filter.GetComponentInParent<MGTerrain>();
+                    // The terrain dispatcher refreshes this source once, including
+                    // collision and details, even after the brush has closed.
+                    if (terrain != null && terrain.MeshFilter == filter) continue;
+                    RefreshPaintMesh(filter);
+                }
+            }
+            Repaint();
         }
 
         private void DrawDecorSettings()
@@ -3167,7 +3212,7 @@ namespace MashBoxSDK.MapTools
             return modifier;
         }
 
-        private void RebuildLoftVertexPaintModifiers()
+        private void RebuildLoftVertexPaintModifiers(HashSet<Object> changed)
         {
             var rebuilt = new HashSet<VertexPaintModifier>();
             for (int i = 0; i < paintTargets.Count; i++)
@@ -3179,6 +3224,7 @@ namespace MashBoxSDK.MapTools
                 VertexPaintModifier modifier = loft.VertexPaintModifier != null
                     ? loft.VertexPaintModifier
                     : loft.GetComponent<VertexPaintModifier>();
+                if (!changed.Contains(loft) && (modifier == null || !changed.Contains(modifier))) continue;
                 if (modifier != null && rebuilt.Add(modifier))
                     modifier.Rebuild();
                 else if (modifier == null)

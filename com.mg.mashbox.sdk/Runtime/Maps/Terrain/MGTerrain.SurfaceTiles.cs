@@ -560,7 +560,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
             SetSurfaceColliderVertexMaps(maps.ToArray(), source.vertexCount);
         }
 
-        public void RefreshSurfaceCollidersFromMesh()
+        public void RefreshSurfaceCollidersFromMesh() => RefreshSurfaceCollidersFromMesh(true);
+
+        // Undo replay must not append new records or discard the redo branch.
+        public void RefreshSurfaceCollidersFromMesh(bool recordUndo)
         {
             if (!NeedsCollision) { DisableSurfaceCollision(); return; }
             if (!NeedsCollisionChunks)
@@ -612,7 +615,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 }
                 if (!changed) continue;
 #if UNITY_EDITOR
-                if (!Application.isPlaying) UnityEditor.Undo.RecordObject(mesh, "Update Terrain Child Collider");
+                if (recordUndo && !Application.isPlaying) UnityEditor.Undo.RecordObject(mesh, "Update Terrain Child Collider");
 #endif
                 mesh.vertices = updated;
                 mesh.RecalculateBounds();
@@ -659,12 +662,5 @@ namespace MashBoxSDK.Maps.TerrainSystem
             m_HasSurfaceRendererState = false;
         }
 
-#if UNITY_EDITOR
-        void OnSurfaceTilesUndoRedo()
-        {
-            if (!NeedsCollision) DisableSurfaceCollision();
-            NotifySurfaceMeshChanged(true);
-        }
-#endif
     }
 }

@@ -53,7 +53,6 @@ namespace MashBoxSDK.MapTools
                         data.ApplyModifiedPropertiesWithoutUndo();
                     }
                     tile.NotifySurfaceMeshChanged(); tile.RefreshSurfaceCollidersFromMesh();
-                    MGTerrainMergeUndo.Track(tile);
                     PrefabUtility.RecordPrefabInstancePropertyModifications(filter);
                     PrefabUtility.RecordPrefabInstancePropertyModifications(tile);
                     if (tile.MeshCollider != null) PrefabUtility.RecordPrefabInstancePropertyModifications(tile.MeshCollider);

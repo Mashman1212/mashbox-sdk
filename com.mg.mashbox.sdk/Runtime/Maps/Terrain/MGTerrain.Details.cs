@@ -561,7 +561,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
         readonly Dictionary<Prototype, bool> m_DetailFadeEligibility = new Dictionary<Prototype, bool>();
         bool CanFadeDetail(Prototype prototype)
         {
-            if (prototype == null || prototype.Kind == InstanceKind.Tree || PrototypeHasCapsules(prototype)) return false;
+            if (prototype == null || (prototype.Kind != InstanceKind.Tree && PrototypeHasCapsules(prototype))) return false;
             if (m_DetailFadeEligibility.TryGetValue(prototype, out bool eligible)) return eligible;
             eligible = EvaluateDetailFadeEligibility(prototype);
             m_DetailFadeEligibility.Add(prototype, eligible);
@@ -570,13 +570,32 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         bool EvaluateDetailFadeEligibility(Prototype prototype)
         {
-            if (!UseFixedDetailCells || !m_UseDetailDensityLod || m_DensityTransitionWidth <= 0f) return false;
+            if (!UseFixedDetailCells) return false;
+            if (prototype.Kind == InstanceKind.Tree ? prototype.TreeDensityTransitionWidth <= 0f
+                : !m_UseDetailDensityLod || m_DensityTransitionWidth <= 0f) return false;
             var parts = GetDenseDetailRenderParts(prototype).parts;
             if (parts.Count == 0) return false;
             foreach (var part in parts)
-                if (part.material == null || part.material.shader == null || part.material.shader.name != "Shader Graphs/MG_GodGrass") return false;
+                if (part.material == null || part.material.shader == null || (part.material.shader.name != "Shader Graphs/MG_GodGrass" && part.material.shader.name != "Shader Graphs/MG_GodGrass_V2")) return false;
             return true;
         }
+        Vector4 DensityFadeRanges(Prototype prototype) => prototype != null && prototype.Kind == InstanceKind.Tree
+            ? new Vector4(prototype.TreeLod1Distance, prototype.TreeLod2Distance, prototype.TreeDensityTransitionWidth, 0)
+            : DetailFadeRanges;
+        Vector4 DensityFadeDensities(Prototype prototype) => prototype != null && prototype.Kind == InstanceKind.Tree
+            ? new Vector4(prototype.TreeMidDensity, prototype.TreeFarDensity, 0, 0)
+            : new Vector4(m_MidDetailDensity, m_FarDetailDensity, 0, 0);
+        float DensityFadeOverall(Prototype prototype) => prototype != null && prototype.Kind == InstanceKind.Tree
+            ? 1f : Mathf.Clamp01(m_OverallDetailDensity);
+        int DensityFadePopulation(Prototype prototype, int population, float distance)
+        {
+            Vector4 ranges = DensityFadeRanges(prototype), densities = DensityFadeDensities(prototype);
+            float guard = Mathf.Max(.1f, m_DetailStreamingRefreshDistance);
+            float cap = distance < ranges.x + ranges.z * .5f + guard ? 1f
+                : distance < ranges.y + ranges.z * .5f + guard ? Mathf.Max(densities.x, densities.y) : densities.y;
+            return Mathf.Clamp(Mathf.CeilToInt(population * DensityFadeOverall(prototype) * cap), 0, population);
+        }
+
         Vector4 DetailFadeRanges => new Vector4(Mathf.Max(0, m_FullDetailDensityDistance), Mathf.Max(m_FullDetailDensityDistance, m_MidDetailDensityDistance),
             Mathf.Min(Mathf.Max(0, m_DensityTransitionWidth), Mathf.Max(0, m_MidDetailDensityDistance - m_FullDetailDensityDistance)), 0);
         [SerializeField, Min(0f), Tooltip("Cells at or inside this distance keep 100% of their generated detail density.")]
@@ -1843,6 +1862,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         int GetVisibleDensityDetailInstanceCount(VisibleDensityDetail visible)
         {
             if (LayerHasCapsules(visible.chunk.layerIndex)) return visible.chunk.instanceCount;
+            if (CanFadeDetail(visible.prototype))
+                return DensityFadePopulation(visible.prototype, visible.chunk.instanceCount, visible.distance);
             if (visible.prototype.Kind == InstanceKind.Tree)
             {
                 // Retain full resident transforms; submit a stable prefix shared by
@@ -1853,16 +1874,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
             if (!UseFixedDetailCells)
                 return visible.chunk.instanceCount;
-            if (CanFadeDetail(visible.prototype))
-            {
-                // Retain the denser band's population through the entire fade.
-                // The shader animates coverage continuously between CPU refreshes.
-                Vector4 ranges = DetailFadeRanges;
-                float guard = Mathf.Max(.1f, m_DetailStreamingRefreshDistance);
-                float cap = visible.distance < ranges.x + ranges.z * .5f + guard ? 1f
-                    : visible.distance < ranges.y + ranges.z * .5f + guard ? Mathf.Max(m_MidDetailDensity, m_FarDetailDensity) : m_FarDetailDensity;
-                return Mathf.Clamp(Mathf.CeilToInt(visible.chunk.instanceCount * Mathf.Clamp01(m_OverallDetailDensity) * cap), 0, visible.chunk.instanceCount);
-            }
             return Mathf.Clamp(
                 Mathf.FloorToInt(visible.chunk.instanceCount * GetDetailDensityScale(visible.densityLod)),
                 0,
@@ -1944,8 +1955,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
             int remaining = maximumInstances;
             int queued = 0;
-            accumulator.properties.SetVector("_MGDetailFadeRanges", DetailFadeRanges);
-            accumulator.properties.SetVector("_MGDetailFadeDensities", new Vector4(m_MidDetailDensity, m_FarDetailDensity, 0, 0));
+            accumulator.properties.SetVector("_MGDetailFadeRanges", DensityFadeRanges(batch.prototype));
+            accumulator.properties.SetVector("_MGDetailFadeDensities", DensityFadeDensities(batch.prototype));
             for (int chunkIndex = 0; chunkIndex < batch.matrixChunks.Count && remaining > 0; chunkIndex++)
             {
                 Matrix4x4[] matrices = batch.matrixChunks[chunkIndex];
@@ -1962,7 +1973,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         int slice = chunkIndex < batch.grassSliceChunks.Count ? batch.grassSliceChunks[chunkIndex][sourceIndex + i] : m_DensityDetailLayers[definitionIndex].TextureSlice;
                         float layerHealth = EncodeDetailLayerHealth(definitionIndex, BatchDetailHealth(batch, chunkIndex, sourceIndex + i));
                         accumulator.fadeData[accumulator.count + i] = fade
-                            ? new Vector4(layerHealth, slice + 1, (queued + i + 1f) / Mathf.Max(1, population), Mathf.Clamp01(m_OverallDetailDensity) + 1f)
+                            ? new Vector4(layerHealth, slice + 1, (queued + i + 1f) / Mathf.Max(1, population), DensityFadeOverall(batch.prototype) + 1f)
                             : new Vector4(layerHealth, slice + 1, 0, 0);
                     }
                     accumulator.count += copyCount;
@@ -2018,8 +2029,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 {
                     accumulator.properties.Clear();
                     accumulator.properties.SetVector("_MGDetailInstance", accumulator.fadeData[index]);
-                    accumulator.properties.SetVector("_MGDetailFadeRanges", DetailFadeRanges);
-                    accumulator.properties.SetVector("_MGDetailFadeDensities", new Vector4(m_MidDetailDensity, m_FarDetailDensity, 0, 0));
+                    accumulator.properties.SetVector("_MGDetailFadeRanges", DensityFadeRanges(batch.prototype));
+                    accumulator.properties.SetVector("_MGDetailFadeDensities", DensityFadeDensities(batch.prototype));
                     Graphics.DrawMesh(
                         batch.mesh,
                         accumulator.matrices[index],

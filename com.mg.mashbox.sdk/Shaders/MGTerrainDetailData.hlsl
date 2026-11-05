@@ -39,7 +39,9 @@ void MGTerrainDetailFade_float(float InAlpha, float2 UV, out float OutAlpha, out
         uint index = (uint)max(instance.x, 0);
         if (index < (uint)header.x)
         {
-            ranges = float4(header.yzw, 0);
+            // Per-layer ranges follow the unchanged tint/definition records.
+            uint rangeAddress = tableAddress + 16 + (uint)header.x * 32 + index * 16;
+            ranges = asfloat(unity_DOTSInstanceData.Load4(rangeAddress));
             densities = asfloat(unity_DOTSInstanceData.Load4(tableAddress + 32 + index * 32)).zw;
         }
     }

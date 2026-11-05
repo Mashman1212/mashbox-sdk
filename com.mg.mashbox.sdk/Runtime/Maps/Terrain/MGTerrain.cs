@@ -47,6 +47,9 @@ namespace MashBoxSDK.Maps.TerrainSystem
             [SerializeField, Range(0f, 1f)] float m_TreeMidDensity = 1f;
             [SerializeField, Range(0f, 1f)] float m_TreeFarDensity = 1f;
             [SerializeField, HideInInspector] bool m_TreeDensityInitialized = true;
+            [SerializeField, Min(0f), Tooltip("GodGrass density dither width in metres. Zero keeps hard density transitions. Mesh LOD selection is unchanged.")]
+            float m_TreeDensityTransitionWidth = 10f;
+            public float TreeDensityTransitionWidth => Mathf.Min(Mathf.Max(0f, m_TreeDensityTransitionWidth), Mathf.Max(0f, TreeLod2Distance - TreeLod1Distance));
             public float TreeMidDensity => Mathf.Clamp01(m_TreeMidDensity);
             public float TreeFarDensity => Mathf.Clamp01(m_TreeFarDensity);
             // Density bands remain available when two mesh LODs reuse the same far impostor.
@@ -143,6 +146,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             internal readonly List<Matrix4x4[]> matrixChunks = new List<Matrix4x4[]>();
             internal readonly List<byte[]> grassSliceChunks = new List<byte[]>();
             internal readonly List<byte[]> healthChunks = new List<byte[]>();
+            internal List<Vector4[]> treeFadeChunks;
+            internal MaterialPropertyBlock treeFadeProperties;
             internal bool forceNonInstanced;
             internal LightProbeUsage lightProbeUsage = LightProbeUsage.BlendProbes;
             internal ShadowCastingMode? shadowCastingOverride;
@@ -379,8 +384,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
 #if UNITY_EDITOR
             s_EditorActiveTerrains.Add(this);
             MashBoxSDK.Maps.Roads.MGRoadSceneRegistry.Register(this);
-            UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
-            UnityEditor.Undo.undoRedoPerformed += OnSurfaceTilesUndoRedo;
 #endif
             InitializeDetailSettingsIfNeeded();
             RefreshWorldOwnership();
@@ -404,7 +407,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             RefreshWorldOwnership();
 #if UNITY_EDITOR
             s_EditorActiveTerrains.Remove(this);
-            UnityEditor.Undo.undoRedoPerformed -= OnSurfaceTilesUndoRedo;
 #endif
             RestoreDistantMorphBounds();
             ReleaseSurfaceTiles();
@@ -709,6 +711,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
             int maximumInstances,
             ShadowCastingMode? shadowCastingOverride)
         {
+            if (batch.treeFadeChunks != null && CanFadeDetail(batch.prototype))
+                return DrawTreeDitherBatch(batch, camera, maximumInstances, shadowCastingOverride);
             int remaining = Mathf.Max(0, maximumInstances);
             if (remaining == 0)
                 return 0;
@@ -735,6 +739,42 @@ namespace MashBoxSDK.Maps.TerrainSystem
             {
                 batch.forceNonInstanced = true;
                 return DrawBatchWithoutInstancing(batch, camera, maximumInstances, shadowCasting);
+            }
+            return drawn;
+        }
+
+        int DrawTreeDitherBatch(DrawBatch batch, Camera camera, int maximumInstances, ShadowCastingMode? shadowCastingOverride)
+        {
+            int remaining = Mathf.Max(0, maximumInstances), drawn = 0;
+            var properties = batch.treeFadeProperties;
+            properties.SetVector("_MGDetailFadeRanges", DensityFadeRanges(batch.prototype));
+            properties.SetVector("_MGDetailFadeDensities", DensityFadeDensities(batch.prototype));
+            ShadowCastingMode shadows = shadowCastingOverride ?? batch.shadowCastingOverride ?? batch.prototype.ShadowCasting;
+            for (int chunkIndex = 0; chunkIndex < batch.matrixChunks.Count && remaining > 0; chunkIndex++)
+            {
+                var matrices = batch.matrixChunks[chunkIndex];
+                var data = batch.treeFadeChunks[chunkIndex];
+                int count = Mathf.Min(remaining, matrices.Length);
+                bool instanced = SystemInfo.supportsInstancing && !batch.forceNonInstanced;
+                if (instanced)
+                {
+                    try
+                    {
+                        properties.SetVectorArray("_MGDetailInstance", data);
+                        Graphics.DrawMeshInstanced(batch.mesh, batch.subMesh, batch.material, matrices, count, properties,
+                            shadows, batch.prototype.ReceiveShadows, gameObject.layer, camera, batch.lightProbeUsage);
+                    }
+                    catch (InvalidOperationException) { batch.forceNonInstanced = true; instanced = false; }
+                }
+                if (!instanced)
+                    for (int i = 0; i < count; i++)
+                    {
+                        properties.SetVector("_MGDetailInstance", data[i]);
+                        Graphics.DrawMesh(batch.mesh, matrices[i], batch.material, gameObject.layer, camera, batch.subMesh,
+                            properties, shadows, batch.prototype.ReceiveShadows, null, batch.lightProbeUsage, null);
+                    }
+                remaining -= count;
+                drawn += count;
             }
             return drawn;
         }
@@ -1028,7 +1068,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                         int treeLod = SelectTreeLod(prototype, candidate.distance);
                         foreach (var batch in chunk.batches)
                             if (TreeBatchVisible(batch, treeLod)) QueueDenseDetailBatch(batch, camera, allowed, ShadowCastingMode.Off,
-                                chunk.instanceCount, false, layerIndex);
+                                chunk.instanceCount, CanFadeDetail(prototype), layerIndex);
                         remaining -= allowed;
                     }
                 }
@@ -1194,6 +1234,21 @@ namespace MashBoxSDK.Maps.TerrainSystem
             foreach (var entry in cells.Values)
             {
                 var cell = entry.cell;
+                // One stable root rank shared by every submesh and mesh LOD.
+                // Cached with the matrices, so camera movement never rebuilds it.
+                bool treeDither = CanFadeDetail(cell.prototype);
+                var treeFadeChunks = new List<Vector4[]>();
+                for (int start = 0; treeDither && start < entry.roots.Count; start += 1023)
+                {
+                    var data = new Vector4[Mathf.Min(1023, entry.roots.Count - start)];
+                    for (int i = 0; i < data.Length; i++)
+                    {
+                        var root = entry.roots[start + i];
+                        float rank = Hash01(Hash((uint)root.m03.GetHashCode() ^ (uint)root.m23.GetHashCode()));
+                        data[i] = new Vector4(0, 0, (rank * 254f + .5f) / 255f, 2);
+                    }
+                    treeFadeChunks.Add(data);
+                }
                 var transforms = new Dictionary<Matrix4x4, List<Matrix4x4[]>>();
                 foreach (var part in GetDenseDetailRenderParts(cell.prototype).parts)
                 {
@@ -1210,6 +1265,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     }
                     var batch = new DrawBatch { mesh = part.mesh, subMesh = part.subMesh,
                         material = GetInstancedMaterial(part.material), prototype = cell.prototype, treeLodMask = part.treeLodMask };
+                    batch.treeFadeChunks = treeDither ? treeFadeChunks : null;
+                    batch.treeFadeProperties = treeDither ? new MaterialPropertyBlock() : null;
                     batch.matrixChunks.AddRange(chunks);
                     cell.batches.Add(batch);
                     foreach (var chunk in chunks)
