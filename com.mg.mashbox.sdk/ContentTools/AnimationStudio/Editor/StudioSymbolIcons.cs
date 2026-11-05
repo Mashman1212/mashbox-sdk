@@ -57,6 +57,9 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Tools/Weld…": return "weld-range";
                 case "Mesh Tools/Bisect": return "bisect";
                 case "Mesh Tools/Fracture": return "fracture";
+                case "Edit Mesh/Fill Hole": return "fill-hole";
+                case "Edit Mesh/To Edge Ring and Collapse": return "ring-collapse";
+                case "Edit Mesh/Poke": return "poke";
                 case "Mesh Tools/Extrude": return "extrude";
                 case "Mesh Tools/Bevel…": return "bevel";
                 case "Mesh Tools/Merge Vertices": return "merge";
@@ -155,6 +158,9 @@ namespace MashBoxSDK.AnimationStudio
                 case "weld-range":for(int i=0;i<6;i++)c.Arc(12,12,9,i*60,i*60+31,a);c.Circle(8,12,2.4f,w,true);c.Circle(16,12,2.4f,w,true);c.Line(10,12,14,12,a,2);break;
                 case "bisect":c.Path(w,3,7,3,21,17,21);c.Path(w,7,3,21,3,21,17);c.Line(3,3,21,21,a,2);break;
                 case "fracture":c.Rect(3,3,18,18,w);c.Path(a,9,3,13,11,8,21);c.Path(a,13,11,21,15);break;
+                case "fill-hole":c.Fill(5,5,14,14,a);c.Rect(4,4,16,16,w);c.Circle(4,12,1.6f,w,true);c.Circle(12,20,1.6f,w,true);c.Circle(20,12,1.6f,w,true);c.Circle(12,4,1.6f,w,true);break;
+                case "ring-collapse":c.Rect(3,5,18,14,w);c.Line(3,12,21,12,a,2);c.Arrow(8,3,8,9,a);c.Arrow(16,21,16,15,a);break;
+                case "poke":c.Rect(4,4,16,16,w);c.Line(4,4,20,20,a);c.Line(4,20,20,4,a);c.Circle(12,12,2,a,true);break;
                 case "extrude":c.Rect(4,4,16,8,w);c.Arrow(12,10,12,22,a);break;
                 case "bevel":c.Path(w,4,4,4,14,10,20,20,20,20,4,4,4);c.Line(4,14,10,20,a,2);break;
                 case "merge":c.Circle(3,12,2,w,true);c.Circle(21,12,2,w,true);c.Arrow(6,12,10,12,a);c.Arrow(18,12,14,12,a);c.Circle(12,12,2,a,true);break;

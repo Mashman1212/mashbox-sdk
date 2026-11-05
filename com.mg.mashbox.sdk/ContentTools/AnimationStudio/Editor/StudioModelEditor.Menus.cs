@@ -146,12 +146,15 @@ namespace MashBoxSDK.AnimationStudio
                     break; }
                 case "Edit Mesh": {
                     AddCommand(menu, StudioShortcuts.MenuLabel("Extrude",StudioShortcut.Extrude), true, ExtrudeSelected, finishPreview: false);
+                    AddCommand(menu, "Fill Hole", true, FillSelectedHoles);
+                    AddCommand(menu, "Poke", true, PokeSelectedFaces);
                     AddCommand(menu, "Bevel…", true, OpenBevelTool, finishPreview: false);
                     AddCommand(menu, "Bridge Edges", true, OpenBridgeTool, finishPreview: false);
                     menu.AddSeparator("");
                     AddCommand(menu, "Circularize…", true, OpenCircularizeTool, finishPreview: false);
                     AddCommand(menu, "Edit Edge Flow…", true, OpenEdgeFlowTool, finishPreview: false);
                     menu.AddSeparator("");
+                    AddCommand(menu, "Collapse Edge Ring", true, CollapseSelectedEdgeRings, commandKey: "To Edge Ring and Collapse");
                     AddCommand(menu, "Weld…", true, OpenRangeWeldTool, finishPreview: false);
                     AddCommand(menu, "Merge to Center", true, MergeToCenter, commandKey: "Merge Vertices");
                     menu.AddItem(new GUIContent("Target Weld"), targetWeldActive, () => Run(() => {

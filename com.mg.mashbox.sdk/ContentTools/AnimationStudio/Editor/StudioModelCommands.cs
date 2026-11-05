@@ -108,6 +108,7 @@ namespace MashBoxSDK.AnimationStudio
             bool deform = key.StartsWith("Deform/", StringComparison.Ordinal);
             definitions[id] = new StudioShortcuts.Definition(id, editMeshLegacyKeys.ContainsValue(key) ? "Edit Mesh" : deform ? "Mesh Tools" : key=="Mesh Display/Wireframe"||key=="Mesh Display/Shaded Wireframe"||key=="Mesh Display/X-ray Mode" ? "View" : key.StartsWith("Lighting/", StringComparison.Ordinal) ? "Render" : key.Substring(0, slash), deform ? key : key == "Mesh Tools/Merge Vertices" ? "Merge to Center" : key.Substring(slash + 1), defaults);
             if(key=="Mesh Display/Bake Subdivision")definitions[id]=new StudioShortcuts.Definition(id,"Modify","Clear History",defaults);
+            if(key=="Edit Mesh/To Edge Ring and Collapse")definitions[id]=new StudioShortcuts.Definition(id,"Edit Mesh","Collapse Edge Ring",defaults);
             paths[id] = key; keys[key] = id; ordered = null;
             StudioShortcuts.CatalogChanged();
             return id;

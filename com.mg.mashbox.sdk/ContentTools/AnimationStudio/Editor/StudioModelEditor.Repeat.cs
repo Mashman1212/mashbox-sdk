@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace, Poke, FillHole, EdgeRingCollapse }
         private sealed class RepeatAction
         {
             internal StudioMeshFracture.Settings fracture; internal Material fractureMaterial;
@@ -41,6 +41,9 @@ namespace MashBoxSDK.AnimationStudio
             {
                 switch (action.kind)
                 {
+                    case RepeatKind.FillHole: FillSelectedHoles(); break;
+                    case RepeatKind.EdgeRingCollapse: CollapseSelectedEdgeRings(); break;
+                    case RepeatKind.Poke: PokeSelectedFaces(); break;
                     case RepeatKind.DuplicateFace: EditSelectedFaces(true,action.parameters.x>=.5f); break;
                     case RepeatKind.DetachFace: EditSelectedFaces(false); break;
                     case RepeatKind.MaterialSlot: AssignSelectionMaterialSlot(Mathf.RoundToInt(action.parameters.x)); break;

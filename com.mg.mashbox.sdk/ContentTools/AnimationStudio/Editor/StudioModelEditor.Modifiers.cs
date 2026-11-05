@@ -54,7 +54,7 @@ namespace MashBoxSDK.AnimationStudio
                 try
                 {
                     var operation=new StudioModifierOperation{kind="Direct",name=pending.Name,inputMesh=pending.Source.mesh,replacement=after};operation.Bind(before);
-                    if(operation.Matches(node)&&(pending.Name.IndexOf("Transform",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("channel",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("Move",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("Rotate",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("Scale",StringComparison.OrdinalIgnoreCase)>=0))
+                    if(pending.Name.IndexOf("preserve UVs",StringComparison.OrdinalIgnoreCase)<0&&operation.Matches(node)&&(pending.Name.IndexOf("Transform",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("channel",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("Move",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("Rotate",StringComparison.OrdinalIgnoreCase)>=0||pending.Name.IndexOf("Scale",StringComparison.OrdinalIgnoreCase)>=0))
                     {operation.kind="Transform";var positions=node.mesh.vertices;var original=before.mesh.vertices;operation.offsets=positions.Select((p,i)=>p-original[i]).ToArray();operation.inputMesh=null;operation.replacement=null;}
                     AppendModifier(node,operation,pending.Source);
                 }

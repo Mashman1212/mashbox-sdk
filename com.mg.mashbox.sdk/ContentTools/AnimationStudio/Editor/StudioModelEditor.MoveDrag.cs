@@ -8,6 +8,8 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        private bool preserveMoveUVs;
+        private const string PreserveUVMoveLabel="Move mesh components (preserve UVs)";
         private sealed class MoveDrag
         {
             internal int control, node;
@@ -20,14 +22,17 @@ namespace MashBoxSDK.AnimationStudio
             internal int[] vertices;
             internal Vector3[] sourceVertices, workingVertices;
             internal bool undoRegistered;
+            internal StudioMoveUVPreservation uvs;
         }
         private MoveDrag moveDrag;
         private MoveDrag CaptureMoveDrag(int control, Vector3 center, Quaternion orientation,
             HashSet<int> indices, Vector3[] vertices)
         {
+            var selected=indices.OrderBy(i=>i).ToArray();
             return new MoveDrag { control=control, node=Active, mode=mode, mesh=ActiveMesh, center=center, position=center,
                 orientation=orientation, worldToLocal=Transforms[Active].worldToLocalMatrix,
-                componentIndices=new HashSet<int>(indices), vertices=indices.OrderBy(i=>i).ToArray(),
+                componentIndices=new HashSet<int>(indices), vertices=selected,
+                uvs=preserveMoveUVs&&mode!=ComponentMode.Object&&!pivot?StudioMoveUVPreservation.Capture(ActiveMesh,vertices,selected):null,
                 sourceVertices=vertices, workingVertices=(Vector3[])vertices.Clone() };
         }
         private bool ApplyMoveDrag(Vector3 position)
@@ -45,13 +50,15 @@ namespace MashBoxSDK.AnimationStudio
                 if(!FiniteScalePoint(value))return false;
                 drag.workingVertices[i]=value;
             }
+            drag.uvs?.Evaluate(drag.workingVertices);
             if(!drag.undoRegistered)
             {
                 PreserveFaceTopology();
-                Undo.RegisterCompleteObjectUndo(drag.mesh,"Transform mesh components");
+                Undo.RegisterCompleteObjectUndo(drag.mesh,drag.uvs!=null?PreserveUVMoveLabel:"Transform mesh components");
                 drag.undoRegistered=true;
             }
             drag.mesh.vertices=drag.workingVertices;
+            drag.uvs?.Publish(drag.mesh);
             RecalculateEditableNormals(drag.mesh);drag.mesh.RecalculateBounds();
             if(drag.mesh.HasVertexAttribute(VertexAttribute.TexCoord0))drag.mesh.RecalculateTangents();
             EditorUtility.SetDirty(drag.mesh);

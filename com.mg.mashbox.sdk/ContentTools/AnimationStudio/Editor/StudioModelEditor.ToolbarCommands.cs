@@ -34,6 +34,9 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Display/Wireframe": return "Show polygon edges without drawing shaded surfaces.";
                 case "Mesh Display/Shaded Wireframe": return "Toggle polygon edge outlines over shaded surfaces.";
                 case "Mesh Tools/Extrude": return "Extend selected faces or open boundary edges to create new geometry.";
+                case "Edit Mesh/Fill Hole": return "Cap selected closed boundary loops with n-gons, retaining every intermediate edge endpoint.";
+                case "Edit Mesh/To Edge Ring and Collapse": return "Follow opposite edges through quad faces, fuse each edge at its midpoint, and remove crushed faces.";
+                case "Edit Mesh/Poke": return "Add a center vertex to each selected face and connect it to every boundary edge. Concave fans remain artist-editable.";
                 case "Mesh Tools/Bevel…": return "Replace selected edges with a chamfer or rounded profile.";
                 case "Mesh Tools/Bridge Edges": return "Fill the gap between two non-touching boundary chains or loops with equal edge counts.";
                 case "Mesh Tools/Duplicate Face": return "Copy selected faces in place on the same object; move the selected copies independently.";
