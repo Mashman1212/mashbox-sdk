@@ -120,7 +120,7 @@ namespace MashBoxSDK.AnimationStudio
                 // Keep this input correction separate from keyed angles and crank compensation.
                 if (bikeDragControl == 4) distance = -distance;
                 SetBikeAngle(bikeDragControl,bikeDragAngle+distance/bikeDragRadius*Mathf.Rad2Deg);
-                pose=rig.Capture(); PreviewSceneEdit("Rotate bike control"); Event.current.Use();
+                CaptureBikeRotation(bikeDragControl); PreviewSceneEdit("Rotate bike control"); Event.current.Use();
             }
             if(GUIUtility.hotControl==id && Event.current.rawType==EventType.MouseUp)
             { GUIUtility.hotControl=0; FinishSceneEdit(); Event.current.Use(); }
@@ -152,6 +152,14 @@ namespace MashBoxSDK.AnimationStudio
             joint.localRotation = i == 1
                 ? joint.localRotation * Quaternion.AngleAxis(angle - old, axis)
                 : rig.Rest.bones[index].rotation * Quaternion.AngleAxis(angle, axis);
+            if (pose != null && index < pose.bones.Length)
+            {
+                var authored = pose.bones[index];
+                var axes = Vector3.zero;
+                if (axis == Vector3.up) axes.y = angle; else axes.x = angle;
+                authored.SetRotationAngles(axes, joint.localRotation * Quaternion.Inverse(Quaternion.Euler(axes)));
+                pose.bones[index] = authored;
+            }
             if(i==3)
             {
                 // The left pedal uses the opposite pitch direction to the right.
@@ -160,14 +168,41 @@ namespace MashBoxSDK.AnimationStudio
                     var bone=BikeJoint(pedal); if(!bone) continue;
                     float compensation = pedal == 4 ? angle - old : old - angle;
                     bone.localRotation=Quaternion.AngleAxis(compensation,Vector3.right)*bone.localRotation;
+                    int pedalIndex=Array.IndexOf(rig.Bones,bone);
+                    if (pose != null && pedalIndex >= 0 && pedalIndex < pose.bones.Length)
+                    {
+                        var authored=pose.bones[pedalIndex];
+                        var angles=authored.continuousRotation ? authored.rotationAngles :
+                            (Quaternion.Inverse(rig.Rest.bones[pedalIndex].rotation)*authored.rotation).eulerAngles;
+                        angles.x+=compensation;
+                        authored.SetRotationAngles(angles,bone.localRotation*Quaternion.Inverse(Quaternion.Euler(angles)));
+                        pose.bones[pedalIndex]=authored;
+                    }
                 }
             }
         }
         private float BikeAngle(int i)
         {
             var bone=BikeJoint(i); int index=Array.IndexOf(rig.Bones,bone);
+            if (pose != null && index >= 0 && index < pose.bones.Length && pose.bones[index].continuousRotation)
+                return BikeAxis(i) == Vector3.up ? pose.bones[index].rotationAngles.y : pose.bones[index].rotationAngles.x;
             var delta=Quaternion.Inverse(rig.Rest.bones[index].rotation)*bone.localRotation;
             return Mathf.DeltaAngle(0, 2f * Mathf.Atan2(BikeAxis(i) == Vector3.up ? delta.y : delta.x, delta.w) * Mathf.Rad2Deg);
+        }
+        private void CaptureBikeRotation(int i)
+        {
+            var previous = pose;
+            pose = rig.Capture();
+            if (previous == null) return;
+            for (int controlIndex = 1; controlIndex <= 5; controlIndex++)
+            {
+                var joint = BikeJoint(controlIndex);
+                int boneIndex = Array.IndexOf(rig.Bones, joint);
+                if (boneIndex < 0 || !previous.bones[boneIndex].continuousRotation) continue;
+                var authored = previous.bones[boneIndex];
+                authored.rotation = pose.bones[boneIndex].rotation;
+                pose.bones[boneIndex] = authored;
+            }
         }
         private bool DrawBikeControls()
         {
@@ -182,8 +217,9 @@ namespace MashBoxSDK.AnimationStudio
             if(control==0)
             {
                 var position=EditorGUILayout.Vector3Field("BMX position",bone.localPosition);
-                var angles=EditorGUILayout.Vector3Field("BMX rotation",bone.localEulerAngles);
-                if(EditorGUI.EndChangeCheck()) { bone.localPosition=position; bone.localEulerAngles=angles; pose=rig.Capture(); Commit("Edit BMX root"); }
+                int rootIndex=Array.IndexOf(rig.Bones,bone);
+                var angles=EditorGUILayout.Vector3Field("BMX rotation",pose.bones[rootIndex].DisplayRotation);
+                if(EditorGUI.EndChangeCheck()) { bone.localPosition=position; bone.localEulerAngles=angles; pose=rig.Capture(); var rootPose=pose.bones[rootIndex]; rootPose.SetRotationAngles(angles,Quaternion.identity); pose.bones[rootIndex]=rootPose; Commit("Edit BMX root"); }
             }
             else if(control==8)
             {
@@ -195,7 +231,7 @@ namespace MashBoxSDK.AnimationStudio
             else
             {
                 float angle=EditorGUILayout.FloatField(BikeAxis(control)==Vector3.up ? "Rotate Y (degrees)" : "Rotate X (degrees)",BikeAngle(control));
-                if(EditorGUI.EndChangeCheck()) { SetBikeAngle(control,angle); pose=rig.Capture(); Commit("Edit bike control"); }
+                if(EditorGUI.EndChangeCheck()) { SetBikeAngle(control,angle); CaptureBikeRotation(control); Commit("Edit bike control"); }
             }
             using(new EditorGUI.DisabledScope(true))
             {
@@ -249,7 +285,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     var offset=BikeHandle(control); EditorGUI.BeginChangeCheck();
                     var p=handlePosition; var r=selected.rotation*Quaternion.Euler(offset?.rotation ?? Vector3.zero);
-                    if(rotate) r=StudioRotationHandle(r,p); else p=Handles.PositionHandle(p,HandleOrientation(r));
+                    if(rotate) r=StudioRotationHandle(r,p); else p=StudioUnsnappedHandles.PositionHandle(p,HandleOrientation(r));
                     if(EditorGUI.EndChangeCheck()) SaveBikeHandle(control,selected.InverseTransformPoint(p),(Quaternion.Inverse(selected.rotation)*r).eulerAngles);
                     return true;
                 }
@@ -261,7 +297,7 @@ namespace MashBoxSDK.AnimationStudio
                     Vector3 p=handlePosition;
                     Quaternion r=selected.rotation;
                     if(rotate && control==0) r=StudioRotationHandle(r,p);
-                    else p=Handles.PositionHandle(p,HandleOrientation(selected.rotation));
+                    else p=StudioUnsnappedHandles.PositionHandle(p,HandleOrientation(selected.rotation));
                     if(EditorGUI.EndChangeCheck())
                     {
                         if(!rotate || control==8) selected.position+=p-handlePosition;

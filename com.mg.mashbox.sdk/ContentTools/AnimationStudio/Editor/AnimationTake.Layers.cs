@@ -79,7 +79,17 @@ namespace MashBoxSDK.AnimationStudio
                         if (bit == 1 && StudioRigChannels.IsTargetId(bonePaths[i]))
                             sample.position.y = frame < b.frame ? a.bones[i].position.y : b.bones[i].position.y;
                         if(bit==1) current.position=add ? current.position+sample.position*w : Vector3.Lerp(current.position,sample.position,w);
-                        else if(bit==2) current.rotation=add ? current.rotation*RotationPower(sample.rotation,w) : Quaternion.Slerp(current.rotation,sample.rotation,w);
+                        else if(bit==2)
+                        {
+                            if (!add && (current.continuousRotation || sample.continuousRotation)) current=BonePose.BlendRotation(current,sample,w);
+                            else if (add && sample.continuousRotation)
+                            {
+                                Vector3 angles=current.DisplayRotation+sample.rotationAngles*w;
+                                Quaternion composed=current.rotation*Quaternion.Euler(sample.rotationAngles*w);
+                                current.SetRotationAngles(angles,composed*Quaternion.Inverse(Quaternion.Euler(angles)));
+                            }
+                            else { current.rotation=add ? current.rotation*RotationPower(sample.rotation,w) : Quaternion.Slerp(current.rotation,sample.rotation,w); current.continuousRotation=false; }
+                        }
                         else current.scale=add ? current.scale+sample.scale*w : Vector3.Lerp(current.scale,sample.scale,w);
                         result.bones[i]=current;
                     }
@@ -92,7 +102,14 @@ namespace MashBoxSDK.AnimationStudio
                         if(i>=layer.effectors.Length || (layer.effectors[i]&bit)==0 || !LayerChannel(layer,frame,i,bit,true,out var a,out var b,out float t)) continue;
                         var sample=EffectorPose.Blend(a.effectors[i],b.effectors[i],t); var current=result.effectors[i];
                         if(bit==1) current.position=add ? current.position+sample.position*w : Vector3.Lerp(current.position,sample.position,w);
-                        else if(bit==2) current.rotation=add ? current.rotation*RotationPower(sample.rotation,w) : Quaternion.Slerp(current.rotation,sample.rotation,w);
+                        else if(bit==2)
+                        {
+                            if (!add && (current.continuousRotation || sample.continuousRotation))
+                                current.SetRotationAngles(Vector3.LerpUnclamped(current.DisplayRotation,sample.DisplayRotation,w));
+                            else if (add && sample.continuousRotation)
+                                current.SetRotationAngles(current.DisplayRotation+sample.rotationAngles*w);
+                            else { current.rotation=add ? current.rotation*RotationPower(sample.rotation,w) : Quaternion.Slerp(current.rotation,sample.rotation,w); current.continuousRotation=false; }
+                        }
                         else if(bit==4) current.pole=add ? current.pole+sample.pole*w : Vector3.Lerp(current.pole,sample.pole,w);
                         else { current.weight=Mathf.Clamp01(add ? current.weight+sample.weight*w : Mathf.Lerp(current.weight,sample.weight,w)); current.CopyPinsFrom(sample); }
                         result.effectors[i]=current;
@@ -119,7 +136,19 @@ namespace MashBoxSDK.AnimationStudio
                 var value=desired.bones[i]; var baseline=lower.bones[i];
                 foreach(var offset in layer.offsets.AsEnumerable().Reverse()) if(offset.path==bonePaths[i]) { value.rotation*=Quaternion.Inverse(RotationPower(offset.Rotation,w)); value.position-=offset.position*w; }
                 if((mask&1)!=0) key.bones[i].position=(add ? Vector3.zero : baseline.position)+(value.position-baseline.position)/w;
-                if((mask&2)!=0) key.bones[i].rotation=(add ? Quaternion.identity : baseline.rotation)*RotationPower(Quaternion.Inverse(baseline.rotation)*value.rotation,1/w);
+                if((mask&2)!=0)
+                {
+                    var keyed=key.bones[i];
+                    keyed.rotation=(add ? Quaternion.identity : baseline.rotation)*RotationPower(Quaternion.Inverse(baseline.rotation)*value.rotation,1/w);
+                    keyed.continuousRotation=value.continuousRotation;
+                    if(keyed.continuousRotation)
+                    {
+                        keyed.rotationAngles=add ? (value.rotationAngles-baseline.DisplayRotation)/w
+                            : baseline.DisplayRotation+(value.rotationAngles-baseline.DisplayRotation)/w;
+                        keyed.rotationBase=keyed.rotation*Quaternion.Inverse(Quaternion.Euler(keyed.rotationAngles));
+                    }
+                    key.bones[i]=keyed;
+                }
                 if((mask&4)!=0) key.bones[i].scale=(add ? Vector3.zero : baseline.scale)+(value.scale-baseline.scale)/w;
                 key.boneChannels[i]|=mask;
             }
@@ -128,7 +157,15 @@ namespace MashBoxSDK.AnimationStudio
                 int mask=layer.effectors[i]&(effectorMask==null ? 15 : effectorMask[i]); if(mask==0) continue; any=true;
                 var value=desired.effectors[i]; var baseline=lower.effectors[i];
                 if((mask&1)!=0) key.effectors[i].position=(add ? Vector3.zero : baseline.position)+(value.position-baseline.position)/w;
-                if((mask&2)!=0) key.effectors[i].rotation=(add ? Quaternion.identity : baseline.rotation)*RotationPower(Quaternion.Inverse(baseline.rotation)*value.rotation,1/w);
+                if((mask&2)!=0)
+                {
+                    var keyed=key.effectors[i];
+                    keyed.rotation=(add ? Quaternion.identity : baseline.rotation)*RotationPower(Quaternion.Inverse(baseline.rotation)*value.rotation,1/w);
+                    keyed.continuousRotation=value.continuousRotation;
+                    if(keyed.continuousRotation) keyed.rotationAngles=add ? (value.rotationAngles-baseline.DisplayRotation)/w
+                        : baseline.DisplayRotation+(value.rotationAngles-baseline.DisplayRotation)/w;
+                    key.effectors[i]=keyed;
+                }
                 if((mask&4)!=0) key.effectors[i].pole=(add ? Vector3.zero : baseline.pole)+(value.pole-baseline.pole)/w;
                 if((mask&8)!=0) { key.effectors[i].weight=(add ? 0 : baseline.weight)+(value.weight-baseline.weight)/w; key.effectors[i].CopyPinsFrom(value); }
                 key.effectorChannels[i]|=mask;

@@ -48,4 +48,50 @@ namespace MashBoxSDK.AnimationStudio
             return EditorGUI.EndChangeCheck()?Internal(edited):meters;
         }
     }
+
+    // Unity's PositionHandle consumes the main Scene view's incremental snap setting.
+    // Studio move handles pass zero snap explicitly and leave EditorSnapSettings untouched.
+    internal static class StudioUnsnappedHandles
+    {
+        internal static Vector3 PositionHandle(Vector3 position, Quaternion rotation)
+        {
+            var evt = Event.current;
+            var modifiers = evt != null ? evt.modifiers : EventModifiers.None;
+            if (evt != null) evt.modifiers &= ~(EventModifiers.Control | EventModifiers.Command);
+            try
+            {
+                float size = HandleUtility.GetHandleSize(position);
+                Vector3 result = position;
+                using (new Handles.DrawingScope())
+                {
+                    for (int axis = 0; axis < 3; axis++)
+                    {
+                        int id = GUIUtility.GetControlID(FocusType.Passive);
+                        Handles.color = axis == 0 ? Handles.xAxisColor : axis == 1 ? Handles.yAxisColor : Handles.zAxisColor;
+                        Vector3 direction = rotation * (axis == 0 ? Vector3.right : axis == 1 ? Vector3.up : Vector3.forward);
+                        Vector3 next = Handles.Slider(id, position, direction, size, Handles.ArrowHandleCap, 0);
+                        if (GUIUtility.hotControl == id) result = next;
+                    }
+                    for (int plane = 0; plane < 3; plane++)
+                    {
+                        int a = plane == 2 ? 1 : 0, b = plane == 0 ? 1 : 2;
+                        Vector3 first = rotation * (a == 0 ? Vector3.right : Vector3.up);
+                        Vector3 second = rotation * (b == 1 ? Vector3.up : Vector3.forward);
+                        Vector3 offset = (first + second) * size * .23f;
+                        int id = GUIUtility.GetControlID(FocusType.Passive);
+                        Handles.color = plane == 0 ? Handles.zAxisColor : plane == 1 ? Handles.yAxisColor : Handles.xAxisColor;
+                        Vector3 next = Handles.Slider2D(id, position + offset, Vector3.Cross(first, second),
+                            first, second, size * .065f, Handles.RectangleHandleCap, Vector2.zero);
+                        if (GUIUtility.hotControl == id) result = next - offset;
+                    }
+                    int centerId = GUIUtility.GetControlID(FocusType.Passive);
+                    Handles.color = Color.yellow;
+                    Vector3 free = Handles.FreeMoveHandle(centerId, position, size * .075f, Vector3.zero, Handles.RectangleHandleCap);
+                    if (GUIUtility.hotControl == centerId) result = free;
+                }
+                return result;
+            }
+            finally { if (evt != null) evt.modifiers = modifiers; }
+        }
+    }
 }

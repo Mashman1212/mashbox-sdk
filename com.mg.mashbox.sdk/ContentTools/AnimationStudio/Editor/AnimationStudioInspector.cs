@@ -62,7 +62,7 @@ namespace MashBoxSDK.AnimationStudio
                             EditorGUI.BeginChangeCheck();
                             Vector3 p = joint.localPosition;
                             if (selected == 0) p = SelectedTransformVector("Position", p);
-                            var r = joint.localEulerAngles; float angle = 0;
+                            var r = selected == 0 ? pose.bones[System.Array.IndexOf(rig.Bones,joint)].DisplayRotation : joint.localEulerAngles; float angle = 0;
                             if (selected == 0) r = SelectedTransformVector("Rotation", r);
                             else if (selected > 0 && selected < 8)
                                 angle = EditorGUILayout.FloatField(BikeAxis(selected) == Vector3.up ? "Rotation Y" : "Rotation X", BikeAngle(selected));
@@ -70,7 +70,8 @@ namespace MashBoxSDK.AnimationStudio
                             {
                                 if (selected == 0) { joint.localPosition = p; joint.localRotation = Quaternion.Euler(r); }
                                 else if (selected < 8) SetBikeAngle(selected, angle);
-                                pose = rig.Capture();
+                                if (selected == 0) { pose = rig.Capture(); var rootPose=pose.bones[System.Array.IndexOf(rig.Bones,joint)]; rootPose.SetRotationAngles(r,Quaternion.identity); pose.bones[System.Array.IndexOf(rig.Bones,joint)]=rootPose; }
+                                else CaptureBikeRotation(selected);
                             };
                         }
                         else if (ikMode)
@@ -81,14 +82,14 @@ namespace MashBoxSDK.AnimationStudio
                             {
                                 EditorGUI.BeginChangeCheck();
                                 var p = SelectedTransformVector("Position", pole ? e.pole : e.position);
-                                Vector3 r = e.rotation.eulerAngles;
+                                Vector3 r = e.DisplayRotation;
                                 if (!pole) r = SelectedTransformVector("Rotation", r);
                                 if (EditorGUI.EndChangeCheck()) edit = () =>
                                 {
                                     if (pole) { e.pole = p; if (e.pinPole) e.pinnedPole = rig.Root.transform.TransformPoint(p); }
                                     else
                                     {
-                                        e.position = p; e.rotation = Quaternion.Euler(r);
+                                        e.position = p; e.SetRotationAngles(r);
                                         if (e.pinPosition) e.pinnedPosition = rig.Root.transform.TransformPoint(p);
                                         if (e.pinRotation) e.pinnedRotation = rig.Root.transform.rotation * e.rotation;
                                     }
@@ -103,16 +104,17 @@ namespace MashBoxSDK.AnimationStudio
                             var original = BonePose.Read(bone);
                             EditorGUI.BeginChangeCheck(); Vector3 p = original.position;
                             if (CanTranslateBone(selected)) p = SelectedTransformVector("Position", p);
-                            var r = SelectedTransformVector("Rotation", original.rotation.eulerAngles);
+                            var r = SelectedTransformVector("Rotation", pose.bones[selected].DisplayRotation);
                             if (EditorGUI.EndChangeCheck()) edit = () =>
                             {
                                 if (kind >= 0)
                                 {
                                     if (p != original.position) rig.PoseBodyControl(pose, kind, bone.parent ? bone.parent.TransformPoint(p) : p, bone.rotation, false);
-                                    if (Quaternion.Angle(Quaternion.Euler(r), original.rotation) > .0001f)
+                                    if (r != pose.bones[selected].DisplayRotation)
                                         rig.PoseBodyControl(pose, kind, bone.position, (bone.parent ? bone.parent.rotation : Quaternion.identity) * Quaternion.Euler(r), true);
+                                    var keyed=pose.bones[selected]; keyed.SetRotationAngles(r,Quaternion.identity); pose.bones[selected]=keyed;
                                 }
-                                else { PrepareFKEdit(selected); original.position = p; original.rotation = Quaternion.Euler(r); pose.bones[selected] = original; }
+                                else { PrepareFKEdit(selected); original.position = p; original.SetRotationAngles(r,Quaternion.identity); pose.bones[selected] = original; }
                             };
                         }
                     }
@@ -170,16 +172,16 @@ namespace MashBoxSDK.AnimationStudio
             {
                 control=Mathf.Clamp(control,0,3); var e=pose.effectors[control];
                 var p=EditorGUILayout.Vector3Field(poleMode ? "Pole position" : "Position",poleMode ? e.pole : e.position);
-                var q=EditorGUILayout.Vector3Field("Rotation",e.rotation.eulerAngles);
-                if(EditorGUI.EndChangeCheck()) { if(poleMode) e.pole=p; else e.position=p; e.rotation=Quaternion.Euler(q); e.weight=1; pose.effectors[control]=e; Commit("Edit selected IK transform"); }
+                var q=EditorGUILayout.Vector3Field("Rotation",e.DisplayRotation);
+                if(EditorGUI.EndChangeCheck()) { if(poleMode) e.pole=p; else e.position=p; e.SetRotationAngles(q); e.weight=1; pose.effectors[control]=e; Commit("Edit selected IK transform"); }
             }
             else
             {
                 control=Mathf.Clamp(control,0,rig.Bones.Length-1); var b=BonePose.Read(rig.Bones[control]);
                 using(new EditorGUI.DisabledScope(!CanTranslateBone(control)))
                     b.position=EditorGUILayout.Vector3Field("Position",b.position);
-                b.rotation=Quaternion.Euler(EditorGUILayout.Vector3Field("Rotation",b.rotation.eulerAngles));
-                if(EditorGUI.EndChangeCheck()) { PrepareFKEdit(control); pose.bones[control]=b; Commit("Edit selected FK transform"); }
+                var angles=EditorGUILayout.Vector3Field("Rotation",pose.bones[control].DisplayRotation);
+                if(EditorGUI.EndChangeCheck()) { b.SetRotationAngles(angles,Quaternion.identity); PrepareFKEdit(control); pose.bones[control]=b; Commit("Edit selected FK transform"); }
             }
         }
         private void DrawViewportInspector()

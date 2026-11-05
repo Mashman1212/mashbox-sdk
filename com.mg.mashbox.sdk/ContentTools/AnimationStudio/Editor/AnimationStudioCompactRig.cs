@@ -69,7 +69,7 @@ namespace MashBoxSDK.AnimationStudio
             if (RigToolbarIcon(new Rect(x,y,30,25),null,"Wheel","Show vehicle rig controls",showVehicleControls))
             { showVehicleControls=!showVehicleControls; changed=true; } x+=34;
             StudioSymbolIcons.TryGet("Animation/Rig Bones",out var bonesIcon);
-            if (RigToolbarIcon(new Rect(x,y,30,25),bonesIcon,"⌁","Show rig bones — human and vehicle",showSkeleton))
+            if (RigToolbarIcon(new Rect(x,y,30,25),bonesIcon,"⌁","Show full rig bones; FK guides remain visible with FK on",showSkeleton))
             { showSkeleton=!showSkeleton; changed=true; } x+=39;
             TimelineDivider(x-5,y); x+=4;
             using (new EditorGUI.DisabledScope(selectedRig==null || !selectedRig.SupportsHumanLimits))

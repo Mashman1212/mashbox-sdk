@@ -276,6 +276,8 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 DrawBodyIKPickers(view, canPick);
+                if (showFKControls && !showSkeleton && rig.Animator && evt.type == EventType.Repaint)
+                    DrawFkGuideLines();
                 if (showSkeleton)
                 {
                     foreach (var bone in rig.DisplayBones)
@@ -337,6 +339,44 @@ namespace MashBoxSDK.AnimationStudio
                 }
             }
             finally { Handles.color = oldColor; Handles.zTest = oldDepth; }
+        }
+
+        private void DrawFkGuideLines()
+        {
+            var animator = rig.Animator;
+            var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+            var spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+            var chest = animator.GetBoneTransform(HumanBodyBones.Chest);
+            var upperChest = animator.GetBoneTransform(HumanBodyBones.UpperChest);
+            var neck = animator.GetBoneTransform(HumanBodyBones.Neck);
+            var head = animator.GetBoneTransform(HumanBodyBones.Head);
+            DrawFkGuide(hips, spine);
+            DrawFkGuide(spine, chest);
+            DrawFkGuide(chest, upperChest);
+            DrawFkGuide(upperChest ? upperChest : chest, neck);
+            DrawFkGuide(neck, head);
+            var shoulderRoot = upperChest ? upperChest : chest;
+            for (int i = 0; i < 4; i++)
+            {
+                float alpha = RigAlpha(false, i);
+                if (alpha <= .001f) continue;
+                if (i < 2)
+                {
+                    var shoulder = animator.GetBoneTransform(i == 0 ? HumanBodyBones.LeftShoulder : HumanBodyBones.RightShoulder);
+                    DrawFkGuide(shoulderRoot, shoulder, alpha);
+                    DrawFkGuide(shoulder ? shoulder : shoulderRoot, rig.Starts[i], alpha);
+                }
+                else DrawFkGuide(hips, rig.Starts[i], alpha);
+                DrawFkGuide(rig.Starts[i], rig.Middles[i], alpha);
+                DrawFkGuide(rig.Middles[i], rig.Ends[i], alpha);
+            }
+        }
+
+        private static void DrawFkGuide(Transform from, Transform to, float alpha = 1f)
+        {
+            if (!from || !to) return;
+            Handles.color = new Color(.38f, .72f, .86f, .58f * alpha);
+            Handles.DrawAAPolyLine(2, from.position, to.position);
         }
     }
 }

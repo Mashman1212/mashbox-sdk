@@ -73,7 +73,7 @@ namespace MashBoxSDK.AnimationStudio
                 var position = bone.position;
                 var rotation = bone.rotation;
                 if (rotateHandle) rotation = StudioRotationHandle(rotation, position);
-                else position = Handles.PositionHandle(position, HandleOrientation(rotation));
+                else position = StudioUnsnappedHandles.PositionHandle(position, HandleOrientation(rotation));
                 if (EditorGUI.EndChangeCheck())
                     Guard(() => ApplyCorrectionGizmo(joint, position, rotation, rotateHandle));
             }

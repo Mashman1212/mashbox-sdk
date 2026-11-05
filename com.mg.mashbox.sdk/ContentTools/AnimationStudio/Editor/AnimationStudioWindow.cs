@@ -698,7 +698,7 @@ namespace MashBoxSDK.AnimationStudio
                     EditorGUI.BeginChangeCheck();
                     float weight = EditorGUILayout.Slider("IK blend (0 FK â†’ 1 IK)", effector.weight, 0, 1);
                     Vector3 position = poleMode ? effector.pole : effector.position;
-                    Vector3 rotation = effector.rotation.eulerAngles;
+                    Vector3 rotation = effector.DisplayRotation;
                     if(!selectionTransformsDrawn)
                     {
                         position=EditorGUILayout.Vector3Field(poleMode ? "Pole position" : "Target position",position);
@@ -708,7 +708,7 @@ namespace MashBoxSDK.AnimationStudio
                     {
                         effector.weight = weight;
                         if (poleMode) effector.pole = position; else effector.position = position;
-                        effector.rotation = Quaternion.Euler(rotation);
+                        effector.SetRotationAngles(rotation);
                         pose.effectors[control] = effector; Commit("Edit IK control");
                     }
                     using (new EditorGUILayout.HorizontalScope())
@@ -751,7 +751,8 @@ namespace MashBoxSDK.AnimationStudio
                     var bone = BonePose.Read(rig.Bones[control]);
                     using (new EditorGUI.DisabledScope(!CanTranslateBone(control)))
                         bone.position = EditorGUILayout.Vector3Field("Local position", bone.position);
-                    bone.rotation = Quaternion.Euler(EditorGUILayout.Vector3Field("Local rotation", bone.rotation.eulerAngles));
+                    var angles = EditorGUILayout.Vector3Field("Local rotation", pose.bones[control].DisplayRotation);
+                    bone.SetRotationAngles(angles, Quaternion.identity);
                     if (EditorGUI.EndChangeCheck()) { PrepareFKEdit(control); pose.bones[control] = bone; Commit("Edit FK bone"); }
                 }
             }
@@ -1134,7 +1135,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (rotate && !poleMode) eff.rotation = Quaternion.Inverse(root.rotation) * StudioRotationHandle(root.rotation * eff.rotation, target);
                 else
                 {
-                    target = Handles.PositionHandle(target, HandleOrientation(poleMode ? root.rotation : root.rotation * eff.rotation));
+                    target = StudioUnsnappedHandles.PositionHandle(target, HandleOrientation(poleMode ? root.rotation : root.rotation * eff.rotation));
                     if (poleMode) eff.pole = root.InverseTransformPoint(target);
                     else eff.position = root.InverseTransformPoint(target);
                 }
@@ -1155,7 +1156,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 else if (CanTranslateBone(control))
                 {
-                    Vector3 position = Handles.PositionHandle(bone.position, HandleOrientation(bone.rotation));
+                    Vector3 position = StudioUnsnappedHandles.PositionHandle(bone.position, HandleOrientation(bone.rotation));
                     p.position = bone.parent ? bone.parent.InverseTransformPoint(position) : position;
                 }
                 if (EditorGUI.EndChangeCheck()) { PrepareFKEdit(control); pose.bones[control] = p; PreviewSceneEdit("Move FK control"); }

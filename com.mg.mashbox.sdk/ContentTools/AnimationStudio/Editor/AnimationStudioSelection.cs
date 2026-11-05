@@ -161,7 +161,7 @@ namespace MashBoxSDK.AnimationStudio
    Vector3 moved=pivot; Quaternion turn=Quaternion.identity;
    var active=entries.LastOrDefault(e=>e.Item.Actor==OutfitActor && e.Item.Index==control && e.Item.IK==ikMode && e.Item.Pole==poleMode) ?? entries[entries.Count-1];
    Quaternion orientation=HandleOrientation(active.Rotation);
-   if(groupRotate) turn=StudioRotationHandle(orientation,pivot)*Quaternion.Inverse(orientation); else moved=Handles.PositionHandle(pivot,orientation);
+   if(groupRotate) turn=StudioRotationHandle(orientation,pivot)*Quaternion.Inverse(orientation); else moved=StudioUnsnappedHandles.PositionHandle(pivot,orientation);
    if(!EditorGUI.EndChangeCheck()) return;
    foreach(var entry in entries.OrderBy(e=>e.Depth)) InSelectedActor(entry.Item.Actor,()=>
    {
@@ -185,7 +185,7 @@ namespace MashBoxSDK.AnimationStudio
       SetBikeAngle(item.Index,BikeAngle(item.Index)+angle*Vector3.Dot(axis,bone.TransformDirection(BikeAxis(item.Index))));
      }
      else { if(groupRotate) { if(item.Index==8) return; bone.rotation=turn*entry.Rotation; } else bone.position=entry.Position+moved-pivot; }
-     pose=rig.Capture();
+     CaptureBikeRotation(item.Index);
     }
     else
     {

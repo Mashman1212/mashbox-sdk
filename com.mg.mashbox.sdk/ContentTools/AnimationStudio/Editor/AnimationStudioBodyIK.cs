@@ -103,7 +103,7 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             Vector3 position = bone.position; Quaternion rotation = bone.rotation;
             if (rotate) rotation = StudioRotationHandle(rotation, position);
-            else position = Handles.PositionHandle(position, HandleOrientation(rotation));
+            else position = StudioUnsnappedHandles.PositionHandle(position, HandleOrientation(rotation));
             if (EditorGUI.EndChangeCheck())
             {
                 rig.PoseBodyControl(pose, kind, position, rotation, rotate);

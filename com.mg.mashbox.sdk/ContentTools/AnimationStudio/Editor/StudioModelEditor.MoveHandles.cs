@@ -129,8 +129,6 @@ namespace MashBoxSDK.AnimationStudio
                         first, second, size * .065f, PlaneRectangleCap, Vector2.zero);
                     if (GUIUtility.hotControl != id) continue;
                     float factor = PlaneScaleFactor(next - center - offset, first, second, size);
-                    if (Event.current.control || Event.current.command)
-                        factor = 1 + Handles.SnapValue(factor - 1, EditorSnapSettings.scale);
                     result = Vector3.one; result[a] = factor; result[b] = factor;
                 }
             }

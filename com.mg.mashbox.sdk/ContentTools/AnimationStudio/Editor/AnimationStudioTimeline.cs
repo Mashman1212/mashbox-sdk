@@ -402,18 +402,23 @@ namespace MashBoxSDK.AnimationStudio
             DrawTimelineLayerPicker(new Rect(rightX, toolbar.y, layerWidth, 24)); rightX += layerWidth + 9;
             DrawTimelineFrameRate(new Rect(rightX, toolbar.y, fpsWidth, 24)); rightX += fpsWidth + 9;
             var record = new Rect(rightX, toolbar.y, 24, 24);
-            TimelineRect(record, TimelineHovered(record) ? TimelineHover : TimelineButtonBackground);
-            TimelineOutline(record, TimelineBorder);
+            var recordRed = new Color32(240, 68, 68, 255);
+            Color recordBackground = autoKey ? new Color32(57, 27, 30, 255) : TimelineButtonBackground;
+            if (TimelineHovered(record)) recordBackground = Color.Lerp(recordBackground, autoKey ? recordRed : TimelineHover, .22f);
+            TimelineRect(record, recordBackground);
+            TimelineOutline(record, autoKey ? recordRed : TimelineBorder);
             if (GUI.Button(record, new GUIContent("", autoKey ? "Auto Key ON — pose edits create keys" : "Auto Key OFF — click to enable"), TimelineStyle()))
             { FinishSceneEdit(); autoKey = !autoKey; Repaint(); }
             if (Event.current.type == EventType.Repaint)
             {
-                var red = new Color32(240,68,68,255);
-                for (int row=-5; row<=5; row++)
-                {
-                    int halfWidth = Mathf.RoundToInt(Mathf.Sqrt(25-row*row));
-                    TimelineRect(new Rect(record.center.x-halfWidth,record.center.y+row,halfWidth*2+1,1),red);
-                }
+                var previousColor = Handles.color;
+                Handles.BeginGUI();
+                Handles.color = autoKey ? recordRed : new Color32(125, 86, 86, 255);
+                Handles.DrawSolidDisc(record.center, Vector3.forward, 6);
+                Handles.color = recordBackground;
+                Handles.DrawSolidDisc(record.center, Vector3.forward, autoKey ? 3.5f : 4.5f);
+                Handles.EndGUI();
+                Handles.color = previousColor;
             }
         }
 

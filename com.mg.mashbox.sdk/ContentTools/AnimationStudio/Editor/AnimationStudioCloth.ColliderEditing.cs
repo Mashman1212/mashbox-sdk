@@ -105,7 +105,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             else
             {
-                var start=Handles.PositionHandle(shape.a,a.rotation);var end=Handles.PositionHandle(shape.b,b.rotation);
+                var start=StudioUnsnappedHandles.PositionHandle(shape.a,a.rotation);var end=StudioUnsnappedHandles.PositionHandle(shape.b,b.rotation);
                 if(EditorGUI.EndChangeCheck()){capsule.startOffset=a.InverseTransformPoint(start);capsule.endOffset=b.InverseTransformPoint(end);SetEditedClothCapsule(capsule);}
             }
             Handles.color=color;return true;

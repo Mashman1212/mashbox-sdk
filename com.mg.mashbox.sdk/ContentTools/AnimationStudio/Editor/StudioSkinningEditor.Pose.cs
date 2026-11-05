@@ -82,7 +82,7 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.Label(joint.position, StudioSkinningDocument.BoneName(joint.name));
                 EditorGUI.BeginChangeCheck();
                 Vector3 p = joint.position; Quaternion q = joint.rotation;
-                if (poseTranslate) p = Handles.PositionHandle(p,poseLocal ? q : Quaternion.identity);
+                if (poseTranslate) p = StudioUnsnappedHandles.PositionHandle(p,poseLocal ? q : Quaternion.identity);
                 else if (poseLocal) q = Handles.RotationHandle(q,p);
                 else
                 {

@@ -63,7 +63,7 @@ namespace MashBoxSDK.AnimationStudio
             var scale = objectScaleHandle;
             var axes = poseLocal ? rotation : Quaternion.identity;
             if (objectScale) scale = Handles.ScaleHandle(scale,pivot,axes,HandleUtility.GetHandleSize(pivot));
-            else if (poseTranslate) position = Handles.PositionHandle(pivot, poseLocal ? rotation : Quaternion.identity);
+            else if (poseTranslate) position = StudioUnsnappedHandles.PositionHandle(pivot, poseLocal ? rotation : Quaternion.identity);
             else if (poseLocal) nextRotation = Handles.RotationHandle(rotation, pivot);
             else
             {

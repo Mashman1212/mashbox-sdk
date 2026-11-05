@@ -56,18 +56,56 @@ namespace MashBoxSDK.AnimationStudio
         public Vector3 position;
         public Quaternion rotation;
         public Vector3 scale;
+        // Quaternion alone cannot distinguish 0 from 360 degrees. Keep the authored
+        // angles for interpolation, while retaining the quaternion for old takes.
+        public bool continuousRotation;
+        public Vector3 rotationAngles;
+        public Quaternion rotationBase;
+        public void SetRotationAngles(Vector3 angles, Quaternion basis)
+        {
+            continuousRotation = true; rotationAngles = angles; rotationBase = basis;
+            rotation = basis * Quaternion.Euler(angles);
+        }
+        public Vector3 DisplayRotation => continuousRotation ? rotationAngles : rotation.eulerAngles;
+        public static Quaternion ContinuousBlend(BonePose a, BonePose b, float t)
+        {
+            if (!a.continuousRotation && !b.continuousRotation) return Quaternion.Slerp(a.rotation, b.rotation, t);
+            Quaternion basis = a.continuousRotation ? a.rotationBase : b.rotationBase;
+            Vector3 from = a.continuousRotation ? a.rotationAngles : (Quaternion.Inverse(basis) * a.rotation).eulerAngles;
+            Vector3 to = b.continuousRotation ? b.rotationAngles : (Quaternion.Inverse(basis) * b.rotation).eulerAngles;
+            Quaternion fromBasis = a.continuousRotation ? a.rotationBase : basis;
+            Quaternion toBasis = b.continuousRotation ? b.rotationBase : basis;
+            return Quaternion.Slerp(fromBasis, toBasis, t) * Quaternion.Euler(Vector3.LerpUnclamped(from, to, t));
+        }
+        public static BonePose BlendRotation(BonePose a, BonePose b, float t)
+        {
+            var result = a;
+            result.rotation = ContinuousBlend(a, b, t);
+            result.continuousRotation = a.continuousRotation || b.continuousRotation;
+            if (result.continuousRotation)
+            {
+                Quaternion basis = a.continuousRotation ? a.rotationBase : b.rotationBase;
+                result.rotationBase = a.continuousRotation && b.continuousRotation
+                    ? Quaternion.Slerp(a.rotationBase,b.rotationBase,t) : basis;
+                Vector3 from = a.continuousRotation ? a.rotationAngles : (Quaternion.Inverse(basis) * a.rotation).eulerAngles;
+                Vector3 to = b.continuousRotation ? b.rotationAngles : (Quaternion.Inverse(basis) * b.rotation).eulerAngles;
+                result.rotationAngles = Vector3.LerpUnclamped(from, to, t);
+            }
+            return result;
+        }
         public static BonePose Read(Transform t) => new BonePose
             { position = t.localPosition, rotation = t.localRotation, scale = t.localScale };
         public void Apply(Transform t)
         {
             t.localPosition = position; t.localRotation = rotation; t.localScale = scale;
         }
-        public static BonePose Blend(BonePose a, BonePose b, float t) => new BonePose
+        public static BonePose Blend(BonePose a, BonePose b, float t)
         {
-            position = Vector3.Lerp(a.position, b.position, t),
-            rotation = Quaternion.Slerp(a.rotation, b.rotation, t),
-            scale = Vector3.Lerp(a.scale, b.scale, t)
-        };
+            var result = BlendRotation(a,b,t);
+            result.position = Vector3.Lerp(a.position,b.position,t);
+            result.scale = Vector3.Lerp(a.scale,b.scale,t);
+            return result;
+        }
     }
 
     [Serializable]
@@ -76,6 +114,11 @@ namespace MashBoxSDK.AnimationStudio
         // Coordinates relative to the authoring character root, never the live character.
         public Vector3 position;
         public Quaternion rotation;
+        public bool continuousRotation;
+        public Vector3 rotationAngles;
+        public Vector3 DisplayRotation => continuousRotation ? rotationAngles : rotation.eulerAngles;
+        public void SetRotationAngles(Vector3 angles)
+        { continuousRotation = true; rotationAngles = angles; rotation = Quaternion.Euler(angles); }
         public Vector3 pole;
         public float weight;
         public bool pinPosition, pinRotation, pinPole;
@@ -97,7 +140,12 @@ namespace MashBoxSDK.AnimationStudio
         public static EffectorPose Blend(EffectorPose a, EffectorPose b, float t) => new EffectorPose
         {
             position = Vector3.Lerp(a.position, b.position, t),
-            rotation = Quaternion.Slerp(a.rotation, b.rotation, t),
+            rotation = a.continuousRotation || b.continuousRotation
+                ? Quaternion.Euler(Vector3.LerpUnclamped(a.DisplayRotation, b.DisplayRotation, t))
+                : Quaternion.Slerp(a.rotation, b.rotation, t),
+            continuousRotation = a.continuousRotation || b.continuousRotation,
+            rotationAngles = a.continuousRotation || b.continuousRotation
+                ? Vector3.LerpUnclamped(a.DisplayRotation, b.DisplayRotation, t) : Vector3.zero,
             pole = Vector3.Lerp(a.pole, b.pole, t),
             weight = Mathf.Lerp(a.weight, b.weight, t),
             // Pins are discrete keyed holds, never halfway enabled or drifting anchors.
@@ -219,7 +267,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     ChannelPair(frame,i,bit,false,out var a,out var b,out float t);
                     if(bit==1) result.bones[i].position=Vector3.Lerp(a.bones[i].position,b.bones[i].position,t);
-                    else if(bit==2) result.bones[i].rotation=Quaternion.Slerp(a.bones[i].rotation,b.bones[i].rotation,t);
+                    else if(bit==2) result.bones[i]=BonePose.BlendRotation(a.bones[i],b.bones[i],t);
                     else result.bones[i].scale=Vector3.Lerp(a.bones[i].scale,b.bones[i].scale,t);
                     if (bit == 1 && i < bonePaths.Length && StudioRigChannels.IsTargetId(bonePaths[i]))
                         result.bones[i].position.y = frame < b.frame ? a.bones[i].position.y : b.bones[i].position.y;
@@ -230,7 +278,7 @@ namespace MashBoxSDK.AnimationStudio
                     ChannelPair(frame,i,bit,true,out var a,out var b,out float t);
                     var e=EffectorPose.Blend(a.effectors[i],b.effectors[i],t);
                     if(bit==1) result.effectors[i].position=e.position;
-                    else if(bit==2) result.effectors[i].rotation=e.rotation;
+                    else if(bit==2) { result.effectors[i].rotation=e.rotation; result.effectors[i].continuousRotation=e.continuousRotation; result.effectors[i].rotationAngles=e.rotationAngles; }
                     else if(bit==4) result.effectors[i].pole=e.pole;
                     else { result.effectors[i].weight=e.weight; result.effectors[i].CopyPinsFrom(e); }
                 }
@@ -250,7 +298,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int mask=bones[i];
                 if((mask&1)!=0) key.bones[i].position=source.bones[i].position;
-                if((mask&2)!=0) key.bones[i].rotation=source.bones[i].rotation;
+                if((mask&2)!=0) { key.bones[i].rotation=source.bones[i].rotation; key.bones[i].continuousRotation=source.bones[i].continuousRotation; key.bones[i].rotationAngles=source.bones[i].rotationAngles; key.bones[i].rotationBase=source.bones[i].rotationBase; }
                 if((mask&4)!=0) key.bones[i].scale=source.bones[i].scale;
                 if(key.selective) key.boneChannels[i]|=mask;
             }
@@ -258,7 +306,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int mask=effectors[i];
                 if((mask&1)!=0) key.effectors[i].position=source.effectors[i].position;
-                if((mask&2)!=0) key.effectors[i].rotation=source.effectors[i].rotation;
+                if((mask&2)!=0) { key.effectors[i].rotation=source.effectors[i].rotation; key.effectors[i].continuousRotation=source.effectors[i].continuousRotation; key.effectors[i].rotationAngles=source.effectors[i].rotationAngles; }
                 if((mask&4)!=0) key.effectors[i].pole=source.effectors[i].pole;
                 if((mask&8)!=0) { key.effectors[i].weight=source.effectors[i].weight; key.effectors[i].CopyPinsFrom(source.effectors[i]); }
                 if(key.selective) key.effectorChannels[i]|=mask;
