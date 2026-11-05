@@ -168,10 +168,14 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void AddActor(GameObject source)
         {
+            AddActorWithKind(source, null);
+        }
+        private void AddActorWithKind(GameObject source, string vehicleKind)
+        {
             if(!source) throw new InvalidOperationException("Actor source not found.");
             if(!EditorUtility.IsPersistent(take) && !EditingClip) throw new InvalidOperationException("Open an animation or save the primary take before adding actors.");
             FinishActorEdits();
-            var child=CreateInstance<AnimationTake>(); child.name=source.name; child.character=source;
+            var child=CreateInstance<AnimationTake>(); child.name=vehicleKind ?? source.name; child.character=source;
             child.frameRate=take.frameRate; child.lastFrame=take.lastFrame; child.loop=take.loop;
             try
             {

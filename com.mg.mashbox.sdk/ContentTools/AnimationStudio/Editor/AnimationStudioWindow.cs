@@ -265,7 +265,7 @@ namespace MashBoxSDK.AnimationStudio
             if (asset != take && !ConfirmReplaceClip()) return;
             FlushEdits();
             if (asset != clipSession) ReleaseClipSession();
-            take = asset; character = asset.character; body = asset.body; frame = 0;
+            take = asset; character = asset.character; body = asset.body; frame = asset.firstFrame;
             StudioPreferenceStore.SetString("MashBox.LastTake." + Application.dataPath,AssetDatabase.GetAssetPath(asset));
             clothing = asset.clothing ?? Array.Empty<GameObject>(); outfitOptions = asset.outfitOptions ?? Array.Empty<OutfitOptions>();
             Guard(BuildRig);
@@ -390,7 +390,7 @@ namespace MashBoxSDK.AnimationStudio
                 RefreshActorPreviewsAfterUndo();
             });
             if (take) Save();
-            if (rig != null && take) Guard(() => Seek(Mathf.Clamp(frame, 0, take.lastFrame)));
+            if (rig != null && take) Guard(() => Seek(Mathf.Clamp(frame, take.firstFrame, take.lastFrame)));
             Repaint();
         }
         private void Guard(Action action)
@@ -464,7 +464,7 @@ namespace MashBoxSDK.AnimationStudio
                 FlushEdits();
                 ReleaseClipSession();
                 take = nextTake;
-                if (take) { character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>(); frame = 0; Guard(BuildRig); }
+                if (take) { character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>(); frame = take.firstFrame; Guard(BuildRig); }
                 else { ReleaseRig(); }
             }
             using (new EditorGUI.DisabledScope(rig == null))
@@ -567,7 +567,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.Studio = this;
             UpdateClipSaveState();
             viewport.BindTimeline(DrawViewportTimeline);
-            viewport.BindRigControls(DrawViewportRigControls);
+            viewport.BindRigControls(DrawAnimationMeshes);
             viewport.BindLimbBlend(DrawViewportLimbBlend);
             viewport.BindInspector(DrawViewportInspector);
             viewport.SetInspectorExpanded(inspectorExpanded);
@@ -647,7 +647,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 Undo.RecordObject(take, "Change animation timing");
                 take.frameRate = Mathf.Clamp(fps, 1, 120);
-                take.lastFrame = Mathf.Clamp(end, 1, 18000);
+                take.lastFrame = Mathf.Clamp(end, take.firstFrame + 1, 18000);
                 take.loop = loop; take.interpolation = interpolation; Save(); Seek(Mathf.Min(frame, take.lastFrame));
             }
             EditorGUILayout.LabelField("Scrub and play using the timeline at the bottom of the viewport.", StudioTheme.Styles.wordWrappedMiniLabel);
@@ -798,7 +798,7 @@ namespace MashBoxSDK.AnimationStudio
             FinishSceneEdit();
             FinishActorEdits();
             unkeyedPose = false;
-            frame = Mathf.Clamp(next, 0, take.lastFrame);
+            frame = Mathf.Clamp(next, take.firstFrame, take.lastFrame);
             pose = take.Evaluate(frame) ?? rig.Rest.Copy(frame);
             rig.Apply(pose); viewport?.Repaint(); Repaint();
             SampleActors(frame);
@@ -863,7 +863,7 @@ namespace MashBoxSDK.AnimationStudio
             if (playing) { playing = false; return; }
             StopStudioAudio(); audioErrors.Clear();
             playing = true; previousTime = EditorApplication.timeSinceStartup;
-            playFrame = frame >= take.lastFrame ? 0 : frame;
+            playFrame = frame >= take.lastFrame ? take.firstFrame : frame;
             audioPlaybackFrame = playFrame;
             PlayAudioRange(playFrame, playFrame, true);
         }
@@ -891,15 +891,15 @@ namespace MashBoxSDK.AnimationStudio
             double now = EditorApplication.timeSinceStartup;
             double advanced = audioPlaybackFrame + (now - previousTime) * take.frameRate; previousTime = now;
             double previous = audioPlaybackFrame;
-            int end = Mathf.Max(1, take.lastFrame);
+            int end = Mathf.Max(take.firstFrame + 1, take.lastFrame);
             if (take.loop)
             {
                 while (advanced > end)
                 {
                     PlayAudioRange(previous, end);
                     audioPreview.StopLoops();
-                    advanced -= end; previous = 0;
-                    PlayAudioRange(0, 0, true);
+                    advanced -= end - take.firstFrame; previous = take.firstFrame;
+                    PlayAudioRange(take.firstFrame, take.firstFrame, true);
                 }
                 PlayAudioRange(previous, advanced);
             }
@@ -1018,7 +1018,7 @@ namespace MashBoxSDK.AnimationStudio
             if (view == viewport && view.camera)
             {
                 view.camera.cameraType = CameraType.Preview;
-                StudioPreviewLighting.ConfigureStudioBackground(view);
+                StudioPreviewLighting.ConfigureStudioBackground(view, new Color32(25, 28, 31, 255));
             }
             if (view != viewport || rig == null || pose == null || !take) return;
             var evt = Event.current;
@@ -1071,12 +1071,14 @@ namespace MashBoxSDK.AnimationStudio
             }
             try
             {
+            if (view == viewport && !drawingActorControls && !inActorScope)
+                viewport.DrawAnimationBackdrop(view.camera);
             if (DrawActorScene(view))
             {
                 return;
             }
             if (view != viewport || rig == null || pose == null) return;
-            if (showGroundGrid) viewport.DrawGroundGrid();
+            if (showGroundGrid) viewport.DrawAnimationGrid(view.camera);
             if (!take) return;
             bool released = Event.current.rawType == EventType.MouseUp;
             HandleKeys(Event.current);

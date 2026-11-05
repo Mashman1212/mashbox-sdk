@@ -146,6 +146,7 @@ namespace MashBoxSDK.AnimationStudio
         public GameObject[] clothing = Array.Empty<GameObject>();
         public OutfitOptions[] outfitOptions = Array.Empty<OutfitOptions>();
         public int frameRate = 30;
+        public int firstFrame;
         public int lastFrame = 60;
         [HideInInspector] public int endpointLeadFrames;
         [HideInInspector] public int endpointTailFrames;

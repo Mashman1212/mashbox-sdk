@@ -33,7 +33,12 @@ namespace MashBoxSDK.AnimationStudio
         {
             // Preserve control-ID allocation and drawing; suppress only hit tests.
             if (rotationGizmoOwnsPointer && (type == EventType.Layout || type == EventType.MouseMove)) return;
+            var oldColor = Handles.color;
+            if (type == EventType.Repaint && !playing && !Event.current.alt &&
+                HandleUtility.nearestControl == id)
+                Handles.color = new Color(1f, .86f, .35f, oldColor.a);
             Handles.CircleHandleCap(id, position, rotation, size, type);
+            Handles.color = oldColor;
         }
         private Quaternion globalRotationPrevious = Quaternion.identity;
 
@@ -196,7 +201,9 @@ namespace MashBoxSDK.AnimationStudio
             Handles.DrawAAPolyLine(3,origin+new Vector2(px,py)*scale,p);
             bool selected = bone && !ikMode && rig.Bones[Mathf.Clamp(control,0,rig.Bones.Length-1)] == bone;
             float strength = bone ? RigAlpha(false, BoneLimb(bone)) : 0;
-            Handles.color = !bone ? Color.gray : selected ? Color.white : Color.Lerp(new Color(.22f,.27f,.3f), StudioTheme.Current.Accent,strength);
+            bool hovered = bone && !playing && new Rect(p.x-10,p.y-10,20,20).Contains(Event.current.mousePosition);
+            Handles.color = !bone ? Color.gray : hovered ? new Color(1f,.86f,.35f) : selected ? Color.white :
+                Color.Lerp(new Color(.22f,.27f,.3f), StudioTheme.Current.Accent,strength);
             Handles.DrawSolidDisc(p, Vector3.forward,selected ? 8 : 6);
             if (bone && GUI.Button(new Rect(p.x-10,p.y-10,20,20),new GUIContent("",human.ToString()), GUIStyle.none)) SelectBone(bone);
         }
@@ -284,8 +291,10 @@ namespace MashBoxSDK.AnimationStudio
                             HandleUtility.AddControl(id, Mathf.Max(0, HandleUtility.DistanceToLine(bone.parent.position, bone.position) - 5));
                         if (evt.type == EventType.Repaint)
                         {
-                            Handles.color = selected ? new Color(1,1,1,alpha) : new Color(0.35f, 0.75f, 0.9f, 0.8f*alpha);
-                            Handles.DrawAAPolyLine(selected ? 4 : 2, bone.parent.position, bone.position);
+                            bool hovered = canPick && HandleUtility.nearestControl == id;
+                            Handles.color = hovered ? new Color(1f,.86f,.35f,alpha) :
+                                selected ? new Color(1,1,1,alpha) : new Color(0.35f, 0.75f, 0.9f, 0.8f*alpha);
+                            Handles.DrawAAPolyLine(hovered || selected ? 4 : 2, bone.parent.position, bone.position);
                         }
                         if (evt.type == EventType.MouseDown && canPick && GUIUtility.hotControl == 0 && HandleUtility.nearestControl == id)
                         { SelectBone(bone.parent); evt.Use(); }

@@ -117,6 +117,8 @@ namespace MashBoxSDK.AnimationStudio
             if (rigControls != null)
             {
                 rigControls.style.left = HierarchyLeft; rigControls.style.width = widths.x;
+                if (!panelsModeling && animationToolbar != null && animationToolbar.resolvedStyle.display != DisplayStyle.None)
+                    rigControls.style.top = AnimationToolbarHeight;
                 if (panelsModeling) rigControls.style.bottom = PanelMargin;
                 float leftRadius = panelsModeling && !HasLeftDockedToolbar ? PanelCornerRadius : 0;
                 rigControls.style.borderTopLeftRadius = 0;
@@ -195,11 +197,11 @@ namespace MashBoxSDK.AnimationStudio
             leftDivider.style.left = HierarchyLeft + widths.x;
             rightDivider.style.right = PanelMargin + widths.y;
             leftDivider.style.top = rightDivider.style.top = ModelingPanelTop;
-            leftDivider.style.bottom = rightDivider.style.bottom = panelsModeling ? PanelMargin : 148;
+            leftDivider.style.bottom = rightDivider.style.bottom = panelsModeling ? PanelMargin : AnimationTimelineOverlayBottom;
             if (rigControls != null)
             {
                 rigControls.style.display = FoldablePanels && skinLeftTucked ? DisplayStyle.None : DisplayStyle.Flex;
-                rigControls.style.width = panelsModeling ? widths.x : 548;
+                rigControls.style.width = panelsModeling ? widths.x : 280;
                 rigControls.style.backgroundColor = panelsModeling ? StudioTheme.Current.Panel : Color.clear;
             }
             if (inspector != null)

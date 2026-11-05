@@ -32,7 +32,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!take || take.audioCues == null || toSeconds < fromSeconds) yield break;
             foreach (var cue in take.audioCues)
             {
-                if (cue == null || !cue.enabled || cue.frame < 0 || cue.frame > take.lastFrame) continue;
+                if (cue == null || !cue.enabled || cue.frame < take.firstFrame || cue.frame > take.lastFrame) continue;
                 double time = cue.frame / (double)Math.Max(1, take.frameRate);
                 if ((time > fromSeconds || (includeStart && time == fromSeconds)) && time <= toSeconds) yield return cue;
             }

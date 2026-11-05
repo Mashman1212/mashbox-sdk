@@ -238,13 +238,10 @@ namespace MashBoxSDK.AnimationStudio
                 activeActor = existing; ApplyAttachmentVisibility(); viewport?.Repaint(); return;
             }
             int previousActor = activeActor;
-            AddActor(skeleton);
+            AddActorWithKind(skeleton, kind);
             var added = OutfitActor;
             try
             {
-                added.name = kind;
-                OutfitRig.BuildVehicleParts(added.vehicleParts, kind == "BMX");
-                OutfitRig.SetNeutralShading(neutralShading);
                 SaveOutfitActor(); viewport?.Repaint();
             }
             catch

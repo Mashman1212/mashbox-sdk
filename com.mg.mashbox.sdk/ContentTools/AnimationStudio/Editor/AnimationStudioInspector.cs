@@ -29,10 +29,23 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawViewportSelectedTransform()
         {
-            if (!take || rig == null || pose == null || (rigSelectionExplicit && rigSelection.Count == 0)) return;
+            if (!take || rig == null || pose == null) return;
             if (quickCorrectionMode != QuickCorrectionMode.None) return;
             var actor = activeActor >= 0 && activeActor < actorPreviews.Count ? actorPreviews[activeActor] : null;
-            bool drewBikeBalance = false;
+            if (rigSelectionExplicit && rigSelection.Count == 0)
+            {
+                pendingRigChannels.Clear();
+                System.Action drawChannels = () =>
+                {
+                    if (IsBike) DrawCompactBikeBalance();
+                    else DrawViewportRigChannels();
+                };
+                if (actor == null) drawChannels();
+                else InActor(actor, drawChannels);
+                ApplyPendingRigChannels();
+                return;
+            }
+            bool drewRigChannels = false;
             System.Action edit = null;
             System.Action draw = () =>
             {
@@ -107,8 +120,14 @@ namespace MashBoxSDK.AnimationStudio
                 if (IsBike)
                 {
                     pendingRigChannels.Clear();
-                    drewBikeBalance = true;
+                    drewRigChannels = true;
                     DrawCompactBikeBalance();
+                }
+                else
+                {
+                    pendingRigChannels.Clear();
+                    drewRigChannels = true;
+                    DrawViewportRigChannels();
                 }
             };
             float labelWidth = EditorGUIUtility.labelWidth;
@@ -134,7 +153,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (!autoKey) RecordUnkeyedPoseUndo();
                     selectedTransformEditing = false;
                 }
-                if (drewBikeBalance) ApplyPendingRigChannels();
+                if (drewRigChannels) ApplyPendingRigChannels();
             }
             finally { EditorGUIUtility.labelWidth = labelWidth; }
         }

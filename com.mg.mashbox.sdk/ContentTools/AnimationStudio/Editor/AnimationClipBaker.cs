@@ -32,12 +32,12 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if (humanoid) handler = new HumanPoseHandler(rig.Animator.avatar, rig.Root.transform);
                 var humanPose = new HumanPose();
-                for (int frame = 0; frame <= take.lastFrame; frame++)
+                for (int frame = take.firstFrame; frame <= take.lastFrame; frame++)
                 {
-                    if (frame % 30 == 0 && EditorUtility.DisplayCancelableProgressBar("Bake animation", "Sampling frame " + frame, (float)frame / Mathf.Max(1, take.lastFrame)))
+                    if (frame % 30 == 0 && EditorUtility.DisplayCancelableProgressBar("Bake animation", "Sampling frame " + frame, (float)(frame - take.firstFrame) / Mathf.Max(1, take.lastFrame - take.firstFrame)))
                         throw new OperationCanceledException("Bake cancelled. No clip was saved.");
                     rig.Apply(take.Evaluate(frame));
-                    float time = (float)frame / take.frameRate;
+                    float time = (float)(frame - take.firstFrame) / take.frameRate;
                     if (humanoid)
                     {
                         handler.GetHumanPose(ref humanPose);

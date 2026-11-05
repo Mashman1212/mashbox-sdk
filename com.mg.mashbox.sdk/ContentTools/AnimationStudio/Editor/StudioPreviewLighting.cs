@@ -294,10 +294,10 @@ namespace MashBoxSDK.AnimationStudio
             Set(mask,"mask",bits); Set(data,framesName,frames); Set(data,maskName,mask);
             Set(data,"customRenderingSettings",true);
         }
-        internal static void ConfigureStudioBackground(SceneView view)
+        internal static void ConfigureStudioBackground(SceneView view, Color? overrideColor = null)
         {
             if (!view || !view.camera) return;
-            var background = StudioSettings.Current.sceneBackground;
+            var background = overrideColor ?? StudioSettings.Current.sceneBackground;
             view.sceneViewState.showSkybox = false;
             view.sceneViewState.showFog = false;
             view.camera.clearFlags = CameraClearFlags.SolidColor;

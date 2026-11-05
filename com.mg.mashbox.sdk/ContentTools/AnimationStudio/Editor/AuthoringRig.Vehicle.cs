@@ -26,6 +26,15 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class AuthoringRig
     {
         private readonly List<GameObject> vehicleVisuals = new List<GameObject>();
+        private static string fullBmxOutfitSignature;
+        private static List<StudioVehiclePart> fullBmxOutfitCache;
+        private static List<StudioVehiclePart> CopyVehicleParts(IEnumerable<StudioVehiclePart> parts) => parts.Select(p => new StudioVehiclePart
+        {
+            source = p.source, joint = p.joint, anchorPart = p.anchorPart, anchor = p.anchor,
+            position = p.position, rotation = p.rotation, scale = p.scale,
+            bindFromRest = p.bindFromRest, preserveAnchorParent = p.preserveAnchorParent,
+            localRotationChannel = p.localRotationChannel
+        }).ToList();
         private sealed class VehicleRotationBinding
         {
             public Transform visual, joint;
@@ -169,11 +178,24 @@ namespace MashBoxSDK.AnimationStudio
         // Persist asset references and solved rest placements, never temporary preview objects.
         internal static List<StudioVehiclePart> BuildFullBmxOutfit()
         {
+            // Resolving a full assembly constructs and snaps every SDK model. Reuse
+            // the solved layout until a source model or the rules asset changes.
+            string AssetSignature(UnityEngine.Object asset)
+            {
+                string path = UnityEditor.AssetDatabase.GetAssetPath(asset);
+                return path + ":" + UnityEditor.AssetDatabase.GetAssetDependencyHash(path);
+            }
+            string signature = AssetSignature(StudioVehiclePartCatalog.RulesAsset) + "|" + string.Join("|",
+                StudioVehiclePartCatalog.Load().Where(t => t.vehicle == "BMX" && t.part != "Mag" && t.sourceModel)
+                    .GroupBy(t => t.part).Select(g => g.First())
+                    .Select(t => t.part + ":" + AssetSignature(t.sourceModel)));
+            if (fullBmxOutfitCache != null && fullBmxOutfitSignature == signature && fullBmxOutfitCache.All(p => p.source))
+                return CopyVehicleParts(fullBmxOutfitCache);
             var document = ScriptableObject.CreateInstance<StudioModelDocument>();
             var scene = UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();
             try
             {
-                document.AddFullVehicle("BMX", false);
+                document.AddFullVehicle("BMX", false, false);
                 var transforms = document.Build(scene);
                 var targets = new Dictionary<int, int>();
                 document.SnapLiveVehicleParts(transforms, null, targets);
@@ -214,6 +236,8 @@ namespace MashBoxSDK.AnimationStudio
                     return index;
                 }
                 for (int i = 0; i < document.nodes.Count; i++) AddPart(i);
+                fullBmxOutfitCache = CopyVehicleParts(result);
+                fullBmxOutfitSignature = signature;
                 return result;
             }
             finally

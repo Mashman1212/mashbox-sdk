@@ -67,7 +67,7 @@ namespace MashBoxSDK.AnimationStudio
             bool collapsed = primary ? humanMeshesCollapsed : collapsedMeshActors.Contains(actor);
             string title = preview.Animator && preview.Animator.isHuman ? "Human" : (actor ? actor.name : "Vehicle");
             var group = GUILayoutUtility.GetRect(256,24,GUILayout.Width(256),GUILayout.Height(24));
-            EditorGUI.DrawRect(group, new Color(.09f,.10f,.10f,1));
+            EditorGUI.DrawRect(group, TimelineHovered(group) ? TimelineHover : new Color(.09f,.10f,.10f,1));
             bool expanded = EditorGUI.Foldout(new Rect(group.x+12,group.y,group.width-12,24), !collapsed, title, true);
             if (expanded == collapsed)
             {
@@ -84,7 +84,8 @@ namespace MashBoxSDK.AnimationStudio
                 string path = AnimationUtility.CalculateTransformPath(renderer.transform, preview.Root.transform);
                 bool shown = !hiddenPreviewMeshes.Exists(item => item.actor == actor && item.path == path);
                 var row = GUILayoutUtility.GetRect(256, 22, GUILayout.Width(256), GUILayout.Height(22));
-                EditorGUI.DrawRect(row, new Color(.12f,.13f,.14f,1));
+                EditorGUI.DrawRect(row, TimelineHovered(new Rect(row.x+3,row.y+3,18,16)) ?
+                    TimelineHover : new Color(.12f,.13f,.14f,1));
                 bool next = GUI.Toggle(new Rect(row.x+3,row.y+3,18,16), shown, GUIContent.none);
                 var iconRect = new Rect(row.x+26,row.y+3,16,16);
                 DrawAnimationMeshIcon(iconRect, renderer.name);

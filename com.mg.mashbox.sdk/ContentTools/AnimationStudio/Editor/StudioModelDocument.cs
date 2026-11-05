@@ -139,7 +139,7 @@ namespace MashBoxSDK.AnimationStudio
             for (var at = child; at && at != root; at = at.parent) parts.Add(at.GetSiblingIndex().ToString(System.Globalization.CultureInfo.InvariantCulture));
             parts.Reverse(); return string.Join("/", parts);
         }
-        private static List<Node> CaptureNodes(GameObject source)
+        private static List<Node> CaptureNodes(GameObject source, bool includeGeometry = true)
         {
             if (!source) throw new ArgumentException("Choose a model first.");
             var captured = new List<Node>();
@@ -149,9 +149,9 @@ namespace MashBoxSDK.AnimationStudio
             {
                 foreach (var t in transforms)
                 {
-                    var skin = t.GetComponent<SkinnedMeshRenderer>();
-                    var filter = t.GetComponent<MeshFilter>();
-                    var renderer = t.GetComponent<Renderer>();
+                    var skin = includeGeometry ? t.GetComponent<SkinnedMeshRenderer>() : null;
+                    var filter = includeGeometry ? t.GetComponent<MeshFilter>() : null;
+                    var renderer = includeGeometry ? t.GetComponent<Renderer>() : null;
                     var mesh = skin ? skin.sharedMesh : filter ? filter.sharedMesh : null;
                     var node = new Node { name = t.name, sourceNodePath = SourceTransformPath(t, source.transform), parent = Array.IndexOf(transforms, t.parent),
                         position = t.localPosition, rotation = t.localRotation, scale = t.localScale,
@@ -159,7 +159,7 @@ namespace MashBoxSDK.AnimationStudio
                         materials = renderer ? renderer.sharedMaterials : Array.Empty<Material>() };
                     captured.Add(node);
                     if (!mesh && StudioAnchorCatalog.Contains(t.name)) node.anchorType = t.name;
-                    if (string.IsNullOrEmpty(node.anchorType)) node.vehiclePart = StudioVehiclePartCatalog.InferPart(t.name);
+                    if (includeGeometry && string.IsNullOrEmpty(node.anchorType)) node.vehiclePart = StudioVehiclePartCatalog.InferPart(t.name);
                     if (mesh)
                     {
                         node.mesh = StudioWorkspaceText.ReadableSnapshot(mesh); node.mesh.name = mesh.name + " Editable";

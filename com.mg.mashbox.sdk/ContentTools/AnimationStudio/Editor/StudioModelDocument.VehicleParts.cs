@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class StudioModelDocument
     {
-        internal int AddFullVehicle(string vehicle, bool recordUndo = true)
+        internal int AddFullVehicle(string vehicle, bool recordUndo = true, bool includeGeometry = true)
         {
             var templates = StudioVehiclePartCatalog.Load().Where(t => t.vehicle == vehicle && t.sourceModel)
                 .Where(t => vehicle != "BMX" || t.part != "Mag")
@@ -30,7 +30,7 @@ namespace MashBoxSDK.AnimationStudio
                 for (int instance = 1; instance <= (vehicle == "BMX" && template.part == "Stem Bolt" ? 6 :
                     vehicle == "Scooter" && template.part == "Clamp Bolt" ? 4 : 1); instance++)
                 {
-                    var captured = CaptureNodes(template.sourceModel);
+                    var captured = CaptureNodes(template.sourceModel, includeGeometry);
                     int offset = root + created.Count;
                     created.AddRange(captured);
                     captured[0].vehiclePart = VehiclePartData.From(template);

@@ -7,49 +7,100 @@ namespace MashBoxSDK.AnimationStudio
     {
         private GUIContent RigIcon(string name, string tooltip) => new GUIContent(EditorGUIUtility.IconContent(name).image, tooltip);
 
-        private void DrawRigOrientationDropdown()
+        private void DrawRigOrientationDropdown(Rect rect)
         {
-            var content = new GUIContent(localHandleSpace ? "Local" : "Global", "Transform handle orientation");
-            var style = StudioTheme.Styles.overlayDropdown;
-            var rect = GUILayoutUtility.GetRect(content, style, GUILayout.Width(82), GUILayout.Height(24));
-            if (!EditorGUI.DropdownButton(rect, content, FocusType.Passive, style)) return;
+            if (!TimelineButton(rect, "✣   " + (localHandleSpace ? "Local" : "Global") + "          ▾", "Transform handle orientation")) return;
             var menu = new StudioMenu();
             menu.AddItem(new GUIContent("Local"), localHandleSpace, () => SetHandleSpace(true));
             menu.AddItem(new GUIContent("Global"), !localHandleSpace, () => SetHandleSpace(false));
             menu.DropDown(rect);
         }
+        private bool RigToolbarIcon(Rect rect, Texture icon, string fallback, string tooltip, bool selected = false)
+        {
+            bool clicked = TimelineButton(rect, "", tooltip);
+            if (Event.current.type == EventType.Repaint)
+            {
+                var previous = GUI.color;
+                GUI.color = selected ? TimelineGold : TimelineText;
+                if (fallback == "Wheel")
+                {
+                    var old=Handles.color;
+                    Handles.BeginGUI(); Handles.color=GUI.color;
+                    var center=new Vector3(rect.center.x,rect.center.y,0);
+                    Handles.DrawWireDisc(center,Vector3.forward,6);
+                    Handles.DrawSolidDisc(center,Vector3.forward,1.5f);
+                    for(int spoke=0;spoke<6;spoke++)
+                    {
+                        float angle=spoke*Mathf.PI/3;
+                        Handles.DrawAAPolyLine(1.5f,center,
+                            center+new Vector3(Mathf.Cos(angle)*5,Mathf.Sin(angle)*5,0));
+                    }
+                    Handles.color=old; Handles.EndGUI();
+                }
+                else if (icon) GUI.DrawTexture(new Rect(rect.x+7,rect.y+5,rect.width-14,rect.height-10),icon,ScaleMode.ScaleToFit,true);
+                else
+                {
+                    var style = new GUIStyle(TimelineStyle()) { fontSize = 14, fontStyle = FontStyle.Bold };
+                    style.normal.textColor = GUI.color;
+                    GUI.Label(rect,fallback,style);
+                }
+                GUI.color = previous;
+            }
+            return clicked;
+        }
         private void DrawCompactRigToolbar()
         {
-            using (new GUILayout.VerticalScope(GUILayout.Width(548)))
+            var bar = GUILayoutUtility.GetRect(1,34,GUILayout.ExpandWidth(true));
+            TimelineRect(bar,TimelineToolbarBackground);
+            TimelineRect(new Rect(bar.x,bar.yMax-1,bar.width,1),TimelineBorder);
+            float x=bar.x+12, y=bar.y+4;
+            DrawRigOrientationDropdown(new Rect(x,y,126,25)); x+=137;
+            TimelineDivider(x-6,y); x+=4;
+            bool changed=false;
+            if (TimelineButton(new Rect(x,y,36,25),"IK","Show inverse-kinematics controls",showIKControls))
+            { showIKControls=!showIKControls; changed=true; } x+=36;
+            if (TimelineButton(new Rect(x,y,36,25),"FK","Show forward-kinematics controls",showFKControls))
+            { showFKControls=!showFKControls; changed=true; } x+=46;
+            if (RigToolbarIcon(new Rect(x,y,30,25),null,"Wheel","Show vehicle rig controls",showVehicleControls))
+            { showVehicleControls=!showVehicleControls; changed=true; } x+=34;
+            StudioSymbolIcons.TryGet("Animation/Rig Bones",out var bonesIcon);
+            if (RigToolbarIcon(new Rect(x,y,30,25),bonesIcon,"⌁","Show rig bones — human and vehicle"))
+            { showSkeleton=!showSkeleton; changed=true; } x+=39;
+            TimelineDivider(x-5,y); x+=4;
+            var selectedRig=OutfitRig;
+            using (new EditorGUI.DisabledScope(selectedRig==null || !selectedRig.SupportsHumanLimits))
             {
-                // Match the settings controls, which draw at y = 0 with 24px height.
-                using (new GUILayout.HorizontalScope())
+                bool limits=selectedRig!=null && selectedRig.HumanLimitsEnabled;
+                if (TimelineButton(new Rect(x,y,94,25),"Human Limits",
+                    "Constrain this humanoid to avatar joint ranges. Session only.",limits) && selectedRig!=null)
                 {
-                    GUILayout.Space(4);
-                    if (GUILayout.Button(RigIcon("SettingsIcon", "Studio appearance and preferences"), StudioTheme.Styles.overlayButton, GUILayout.Width(24), GUILayout.Height(24))) StudioSettingsWindow.Open();
-                    GUILayout.Space(8);
-                    DrawRigOrientationDropdown();
-                    GUILayout.Space(8);
-                    EditorGUI.BeginChangeCheck();
-                    showIKControls = GUILayout.Toggle(showIKControls, new GUIContent("IK", "Show inverse-kinematics controls"), StudioTheme.Styles.overlayButton, GUILayout.Width(32), GUILayout.Height(24));
-                    GUILayout.Space(6);
-                    showFKControls = GUILayout.Toggle(showFKControls, new GUIContent("FK", "Show forward-kinematics controls"), StudioTheme.Styles.overlayButton, GUILayout.Width(32), GUILayout.Height(24));
-                    GUILayout.Space(6);
-                    showVehicleControls = GUILayout.Toggle(showVehicleControls, RigIcon("WheelCollider Icon", "Show vehicle rig controls (independent of human IK / FK)"), StudioTheme.Styles.overlayButton, GUILayout.Width(24), GUILayout.Height(24));
-                    GUILayout.Space(6);
-                    StudioSymbolIcons.TryGet("Animation/Rig Bones", out var bonesIcon);
-                    showSkeleton = GUILayout.Toggle(showSkeleton, new GUIContent(bonesIcon, "Show rig bones — human and vehicle. Controls remain visible when bones are hidden."), StudioTheme.Styles.overlayButton, GUILayout.Width(24), GUILayout.Height(24));
-                    if (EditorGUI.EndChangeCheck()) { SaveAnimationConfiguration(); viewport?.Repaint(); }
-                    GUILayout.Space(10);
-                    DrawRigOptionButtons();
-                    GUILayout.Space(8);
-                    DrawRestPoseButton();
-                    GUILayout.Space(8);
-                    DrawSingleFramePoseButton();
-                    GUILayout.Space(4);
+                    Guard(() =>
+                    {
+                        FinishSceneEdit(); FinishActorEdits();
+                        selectedRig.HumanLimitsEnabled=!limits;
+                        System.Action apply=()=>rig.Apply(pose);
+                        if(activeActor>=0 && activeActor<actorPreviews.Count) InActor(actorPreviews[activeActor],apply);
+                        else apply();
+                        EvaluateConstraints(); viewport?.Repaint(); Repaint();
+                    });
                 }
-                GUILayout.Space(3);
             }
+            x+=103;
+            if (TimelineButton(new Rect(x,y,30,25),"▥","Fade FK controls by blend",fadeRigControls))
+            { fadeRigControls=!fadeRigControls; if(!fadeRigControls) hideInactiveControls=false; viewport?.Repaint(); } x+=34;
+            if (TimelineButton(new Rect(x,y,30,25),"◉","Hide inactive IK/FK controls",hideInactiveControls))
+            { hideInactiveControls=!hideInactiveControls; if(hideInactiveControls) fadeRigControls=true; viewport?.Repaint(); } x+=34;
+            using (new EditorGUI.DisabledScope(!OutfitActor || OutfitRig==null))
+                if (RigToolbarIcon(new Rect(x,y,30,25),EditorGUIUtility.IconContent("Refresh").image,"↻","Reset selected actor to rest pose")) ResetRestPose();
+            x+=34;
+            using (new EditorGUI.DisabledScope(!take))
+                if (RigToolbarIcon(new Rect(x,y,30,25),null,"▲","Single Frame Pose",true))
+                    Guard(()=>SetSingleFramePoseMode(!take.singleFramePose));
+            x+=39;
+            TimelineDivider(x-5,y); x+=4;
+            if (RigToolbarIcon(new Rect(x,y,30,25),EditorGUIUtility.IconContent("SettingsIcon").image,"⚙","Studio appearance and preferences"))
+                StudioSettingsWindow.Open();
+            if(changed) { SaveAnimationConfiguration(); viewport?.Repaint(); }
         }
 
     }

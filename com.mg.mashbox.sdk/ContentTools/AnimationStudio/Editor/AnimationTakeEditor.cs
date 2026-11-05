@@ -17,8 +17,8 @@ namespace MashBoxSDK.AnimationStudio
             var take = (AnimationTake)target;
             EditorGUILayout.LabelField("ANIMATION TAKE",EditorStyles.boldLabel);
             if (GUILayout.Button("Open in MashBox Studio",GUILayout.Height(32))) AnimationStudioWindow.OpenInStudio(take);
-            EditorGUILayout.LabelField("Duration", ((float)take.lastFrame/Mathf.Max(1,take.frameRate)).ToString("0.##")+" seconds");
-            EditorGUILayout.LabelField("Timing",take.frameRate+" fps · "+(take.lastFrame+1)+" frames");
+            EditorGUILayout.LabelField("Duration", ((float)(take.lastFrame-take.firstFrame)/Mathf.Max(1,take.frameRate)).ToString("0.##")+" seconds");
+            EditorGUILayout.LabelField("Timing",take.frameRate+" fps · "+(take.lastFrame-take.firstFrame+1)+" frames");
             EditorGUILayout.LabelField("Pose keys",take.keys.Count.ToString());
             using (new EditorGUI.DisabledScope(true)) EditorGUILayout.ObjectField("Character",take.character,typeof(GameObject),false);
             advanced = EditorGUILayout.Foldout(advanced,"Asset data (advanced)",true);

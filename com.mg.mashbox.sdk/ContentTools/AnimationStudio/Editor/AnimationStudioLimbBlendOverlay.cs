@@ -15,7 +15,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             BindViewportControl(ref limbBlend, "mashbox-limb-blend", draw);
             limbBlend.style.left = 8;
-            limbBlend.style.bottom = 148;
+            limbBlend.style.bottom = AnimationTimelineOverlayBottom;
             limbBlend.style.width = 310;
             limbBlend.style.display = panelsModeling ? DisplayStyle.None : DisplayStyle.Flex;
         }
@@ -32,10 +32,8 @@ namespace MashBoxSDK.AnimationStudio
             if (activePreview == null) bikeSelected = IsBike;
             else InActor(activePreview, () => bikeSelected = IsBike);
             if (bikeSelected) return;
-            pendingRigChannels.Clear();
-            DrawViewportRigChannels();
             var selected = SelectedBlendLimbs();
-            if (selected.Count == 0) { ApplyPendingRigChannels(); return; }
+            if (selected.Count == 0) return;
             float first = 0;
             bool mixed = false, hasFirst = false;
             foreach (var item in selected)
@@ -55,7 +53,9 @@ namespace MashBoxSDK.AnimationStudio
             bool previousMixed = EditorGUI.showMixedValue;
             EditorGUI.showMixedValue = mixed;
             EditorGUI.BeginChangeCheck();
-            float next = GUI.HorizontalSlider(new Rect(area.x + 105, area.y + 6, 98, 18), first, 0, 1);
+            var blendSlider = new Rect(area.x + 105, area.y + 6, 98, 18);
+            DrawAnimationHover(blendSlider);
+            float next = GUI.HorizontalSlider(blendSlider, first, 0, 1);
             bool changed = EditorGUI.EndChangeCheck();
             EditorGUI.showMixedValue = previousMixed;
             GUI.Label(new Rect(area.x + 210, area.y + 3, 38, 20),
@@ -63,11 +63,8 @@ namespace MashBoxSDK.AnimationStudio
                     "0% = FK, 100% = IK. Preserves the visible pose for all selected limbs. Hold Alt while dragging to blend between the stored poses instead."), StudioTheme.Styles.miniLabel);
             if (changed) Guard(() => ApplySelectedBlend(selected, next, true, false));
             DrawIKPinButtons(area, SelectedBlendLimbs(false));
-            DrawSelectedTargetChannels(selected);
-            ApplyPendingRigChannels();
         }
 
-        [SerializeField] private bool rigChannelsExpanded;
         private AnimationTake selectedRigChannelActor;
         private int selectedRigChannelBone = -1;
         private int selectedRigChannelAxis = -1;
@@ -112,14 +109,11 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawViewportRigChannels()
         {
-            var actor = activeActor >= 0 && activeActor < actorPreviews.Count ? actorPreviews[activeActor] : null;
-            Action draw = () =>
+            using (new GUILayout.VerticalScope(StudioTheme.Styles.helpBox))
             {
-                rigChannelsExpanded = EditorGUILayout.Foldout(rigChannelsExpanded, "Hand / foot targets", true);
-                if (!rigChannelsExpanded) return;
+                GUILayout.Label("Hand / foot targets", StudioTheme.Styles.boldLabel);
                 for (int limb = 0; limb < 4; limb++) DrawCompactLimbTargetChannels(limb);
-            };
-            if (actor == null) draw(); else InActor(actor, draw);
+            }
         }
 
         private void DrawCompactBikeBalance()
@@ -130,16 +124,6 @@ namespace MashBoxSDK.AnimationStudio
                 DrawRigChannel("PID X", "PIDBalanceControl", 1);
                 DrawRigChannel("PID Z", "PIDBalanceControl", 2);
             }
-        }
-
-        private void DrawSelectedTargetChannels(List<RigSelectionItem> selected)
-        {
-            if (rigChannelsExpanded) return;
-            foreach (var item in selected)
-                WithBlendActor(item.Actor, () =>
-                {
-                    DrawCompactLimbTargetChannels(item.Index);
-                });
         }
 
         private void DrawCompactLimbTargetChannels(int limb)
@@ -154,6 +138,16 @@ namespace MashBoxSDK.AnimationStudio
                 EditorGUI.DrawRect(new Rect(area.x, area.y, 158, area.height), new Color(.5f, .7f, .3f, .18f));
             if (RigChannelSelected(targetIndex))
                 EditorGUI.DrawRect(new Rect(area.x + 158, area.y, 92, area.height), new Color(.5f, .7f, .3f, .18f));
+            if (weightIndex >= 0)
+            {
+                DrawAnimationHover(new Rect(area.x + 7, area.y + 3, 45, 18));
+                if (!playing) DrawAnimationHover(new Rect(area.x + 55, area.y + 4, 58, 18));
+            }
+            if (targetIndex >= 0)
+            {
+                DrawAnimationHover(new Rect(area.x + 161, area.y + 3, 16, 18));
+                if (!playing) DrawAnimationHover(new Rect(area.x + 181, area.y + 2, 60, 20));
+            }
             if (GUI.Button(new Rect(area.x + 7, area.y + 3, 45, 18),
                 new GUIContent(shortName, "Show " + LimbNames[limb] + " weight keys on the timeline"), StudioTheme.Styles.miniLabel))
                 SelectRigChannel(weightIndex);
@@ -195,6 +189,7 @@ namespace MashBoxSDK.AnimationStudio
             using (new EditorGUI.DisabledScope(index < 0 || playing))
             {
                 if (index < 0) { GUI.Label(area, label + ": missing " + boneName, StudioTheme.Styles.miniLabel); return; }
+                DrawAnimationHover(new Rect(area.x + 55, area.y + 4, area.width - 100, 18));
                 if (GUI.Button(new Rect(area.x + 4, area.y + 2, 45, 18),
                     new GUIContent(label, "Show " + label + " keys on the timeline"),
                     RigChannelSelected(index, axis) ? StudioTheme.Styles.overlayButton : StudioTheme.Styles.miniLabel))

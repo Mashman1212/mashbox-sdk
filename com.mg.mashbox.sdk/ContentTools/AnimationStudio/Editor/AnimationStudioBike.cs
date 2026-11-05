@@ -85,7 +85,13 @@ namespace MashBoxSDK.AnimationStudio
                 HandleUtility.AddControl(id,Mathf.Max(0,distance-5));
             }
             if(Event.current.type==EventType.Repaint)
-            { Handles.color=RigControlSelected(index) ? Color.white : new Color(.9f,.4f,1); Handles.DrawAAPolyLine(RigControlSelected(index)?3:2,points); }
+            {
+                bool hovered = !playing && !Event.current.alt && !rotationGizmoOwnsPointer &&
+                    HandleUtility.nearestControl == id;
+                Handles.color = hovered ? new Color(1f,.86f,.35f) :
+                    RigControlSelected(index) ? Color.white : new Color(.9f,.4f,1);
+                Handles.DrawAAPolyLine(hovered || RigControlSelected(index) ? 3 : 2,points);
+            }
             if(Event.current.type==EventType.MouseDown && Event.current.button==0 && !Event.current.alt && !playing && !rotationGizmoOwnsPointer && GUIUtility.hotControl==0 && HandleUtility.nearestControl==id)
             {
                 FinishSceneEdit(); PickRigControl(index); control=index; ikMode=false;

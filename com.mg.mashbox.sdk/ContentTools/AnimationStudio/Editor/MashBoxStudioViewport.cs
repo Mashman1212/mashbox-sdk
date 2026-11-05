@@ -30,6 +30,7 @@ namespace MashBoxSDK.AnimationStudio
             timeline != null && rigControls != null && inspector != null &&
             // Modeling and Skinning deliberately have no timeline callback.
             (panelsModeling || timeline.onGUIHandler != null) && rigControls.onGUIHandler != null && inspector.onGUIHandler != null &&
+            (Studio == null || !Studio.IsAnimationMode || animationToolbar != null && animationToolbar.onGUIHandler != null && rootVisualElement.Contains(animationToolbar)) &&
             rootVisualElement.Contains(timeline) && rootVisualElement.Contains(rigControls) && rootVisualElement.Contains(inspector);
 
         private static void RestoreStudioViewsWhenReady()
@@ -63,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
         private IMGUIContainer timeline;
         private IMGUIContainer inspector;
         private IMGUIContainer rigControls;
+        private IMGUIContainer animationToolbar;
         private VisualElement statusBar;
         private readonly System.Collections.Generic.List<StatusToast> statusMessages = new System.Collections.Generic.List<StatusToast>();
         private readonly System.Collections.Generic.Dictionary<string, double> statusLastShown = new System.Collections.Generic.Dictionary<string, double>(System.StringComparer.Ordinal);
@@ -243,6 +245,9 @@ namespace MashBoxSDK.AnimationStudio
         private IMGUIContainer meshStatistics;
         private IMGUIContainer attachments;
         private IMGUIContainer selectedTransform;
+        private const float AnimationTimelineHeight = 116;
+        private const float AnimationToolbarHeight = 34;
+        private const float AnimationTimelineOverlayBottom = AnimationTimelineHeight + 8;
         internal void BindAttachments(System.Action draw, System.Action drawTransform = null)
         {
             BindViewportControl(ref attachments, "mashbox-attachments", draw);
@@ -250,7 +255,7 @@ namespace MashBoxSDK.AnimationStudio
             BindViewportControl(ref selectedTransform, "mashbox-selected-transform", drawTransform);
             selectedTransform.style.width = 280;
             selectedTransform.style.right = 8;
-            selectedTransform.style.bottom = 148;
+            selectedTransform.style.bottom = AnimationTimelineOverlayBottom;
             UpdatePanelLayout();
         }
         internal void BindStatistics(System.Action draw)
@@ -309,12 +314,14 @@ namespace MashBoxSDK.AnimationStudio
                 modeSelector.style.position = Position.Absolute;
                 modeSelector.style.width = ModeSelectorWidth; modeSelector.style.height = 24;
                 modeSelector.style.backgroundColor = Color.clear;
+                EnableHoverRepaint(modeSelector);
                 rootVisualElement.Add(modeSelector);
             }
             modeSelector.onGUIHandler = WrapStudioGUI(draw, true); modeSelector.BringToFront();
             if (!Studio || !Studio.IsModelingMode) { BindModelInput(null, null, null); BindStatusBar(false); }
-            if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? PanelMargin : 148; inspector.style.height = StyleKeyword.Auto; }
+            if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? PanelMargin : AnimationTimelineOverlayBottom; inspector.style.height = StyleKeyword.Auto; }
             if (rigControls != null) { rigControls.style.top = ModelingPanelTop; rigControls.style.bottom = modeling ? new StyleLength(PanelMargin) : new StyleLength(StyleKeyword.Auto); }
+            if (animationToolbar != null) animationToolbar.style.display = Studio != null && Studio.IsAnimationMode ? DisplayStyle.Flex : DisplayStyle.None;
             if (timeline != null) timeline.style.display = modeling ? DisplayStyle.None : DisplayStyle.Flex;
             if (limbBlend != null) limbBlend.style.display = modeling ? DisplayStyle.None : DisplayStyle.Flex;
             BindPanelResizers(modeling);
@@ -337,6 +344,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 control = new IMGUIContainer { name = elementName };
                 control.style.position = Position.Absolute;
+                EnableHoverRepaint(control);
                 rootVisualElement.Add(control);
             }
             control.onGUIHandler = WrapStudioGUI(draw, elementName == "mashbox-model-menu");
@@ -344,10 +352,33 @@ namespace MashBoxSDK.AnimationStudio
             control.BringToFront();
         }
 
+        private static void EnableHoverRepaint(IMGUIContainer container)
+        {
+            container.RegisterCallback<PointerMoveEvent>(_ => container.MarkDirtyRepaint());
+            container.RegisterCallback<PointerLeaveEvent>(_ => container.MarkDirtyRepaint());
+        }
+
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverNativeToolbar(point) || IsOverControl(viewportCameraButton, point) || IsOverControl(viewportLightingButton, point) || IsOverControl(viewportIsolateButton, point) || IsOverControl(viewportShowAllButton, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
+            IsOverNativeToolbar(point) || IsOverControl(animationToolbar, point) || IsOverControl(viewportCameraButton, point) || IsOverControl(viewportLightingButton, point) || IsOverControl(viewportIsolateButton, point) || IsOverControl(viewportShowAllButton, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
         private bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.worldBound.Contains(rootVisualElement.LocalToWorld(point));
+
+        internal void BindAnimationToolbar(System.Action draw)
+        {
+            if (animationToolbar == null)
+            {
+                animationToolbar = new IMGUIContainer { name = "mashbox-animation-toolbar" };
+                animationToolbar.style.position = Position.Absolute;
+                animationToolbar.style.left = 0; animationToolbar.style.right = 0;
+                animationToolbar.style.top = 0; animationToolbar.style.height = AnimationToolbarHeight;
+                EnableHoverRepaint(animationToolbar);
+                rootVisualElement.Add(animationToolbar);
+            }
+            animationToolbar.onGUIHandler = draw == null ? null : WrapStudioGUI(draw);
+            animationToolbar.style.display = draw == null ? DisplayStyle.None : DisplayStyle.Flex;
+            animationToolbar.BringToFront();
+            UpdatePanelLayout();
+        }
 
         internal void BindRigControls(System.Action draw)
         {
@@ -359,6 +390,7 @@ namespace MashBoxSDK.AnimationStudio
                 rigControls.style.left = 8;
                 rigControls.style.width = 260;
                 rigControls.style.backgroundColor = panelsModeling ? StudioTheme.Current.Panel : Color.clear;
+                EnableHoverRepaint(rigControls);
                 rootVisualElement.Add(rigControls);
             }
             rigControls.onGUIHandler = WrapStudioGUI(draw);
@@ -376,6 +408,7 @@ namespace MashBoxSDK.AnimationStudio
                 inspector.style.right = 8;
                 inspector.style.width = 350;
                 inspector.style.backgroundColor = StudioTheme.Current.Panel;
+                EnableHoverRepaint(inspector);
                 rootVisualElement.Add(inspector);
             }
             inspector.onGUIHandler = WrapStudioGUI(draw);
@@ -402,13 +435,14 @@ namespace MashBoxSDK.AnimationStudio
                 timeline.style.left = 0;
                 timeline.style.right = 0;
                 timeline.style.bottom = 0;
-                timeline.style.height = 140;
+                timeline.style.height = AnimationTimelineHeight;
                 timeline.style.backgroundColor = StudioTheme.Current.Header;
+                EnableHoverRepaint(timeline);
                 rootVisualElement.Add(timeline);
             }
             timeline.onGUIHandler = WrapStudioGUI(draw);
             timeline.style.left = 0; timeline.style.right = 0; timeline.style.bottom = 0;
-            timeline.style.height = 140;
+            timeline.style.height = AnimationTimelineHeight;
             timeline.BringToFront();
         }
         private bool skinPreviewTimeline;
@@ -486,6 +520,7 @@ namespace MashBoxSDK.AnimationStudio
             if (inspector != null) inspector.style.backgroundColor = palette.Panel;
             if (modelToolOptions != null) modelToolOptions.style.backgroundColor = palette.Panel;
             if (rigControls != null) rigControls.style.backgroundColor = palette.Panel;
+            if (animationToolbar != null) animationToolbar.style.backgroundColor = palette.Header;
             foreach (var toast in statusMessages) { toast.label.style.backgroundColor = palette.Header; toast.label.style.color = palette.Text; }
             UpdatePanelLayout();
             if (timeline != null) timeline.style.backgroundColor = palette.Header;
@@ -517,6 +552,103 @@ namespace MashBoxSDK.AnimationStudio
                 Handles.DrawLine(new Vector3(-extent, 0, 0), new Vector3(extent, 0, 0));
                 Handles.color = new Color(0.25f, 0.5f, 1f, 0.65f * StudioSettings.Current.gridOpacity);
                 Handles.DrawLine(new Vector3(0, 0, -extent), new Vector3(0, 0, extent));
+            }
+            finally
+            {
+                Handles.color = previousColor;
+                Handles.zTest = previousDepth;
+                Handles.matrix = previousMatrix;
+            }
+        }
+
+        internal void DrawAnimationBackdrop(Camera camera)
+        {
+            if (!camera || Event.current.type != EventType.Repaint) return;
+            var previousColor = Handles.color;
+            var previousDepth = Handles.zTest;
+            var previousMatrix = Handles.matrix;
+            try
+            {
+                Handles.matrix = Matrix4x4.identity;
+                Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
+                float depth = camera.farClipPlane * 0.95f;
+                const int bands = 24;
+                var bottom = new Color32(39, 42, 45, 255);
+                var top = new Color32(18, 21, 24, 255);
+                for (int i = 0; i < bands; i++)
+                {
+                    float low = (float)i / bands;
+                    float high = (float)(i + 1) / bands;
+                    Handles.DrawSolidRectangleWithOutline(new[]
+                    {
+                        camera.ViewportToWorldPoint(new Vector3(0, low, depth)),
+                        camera.ViewportToWorldPoint(new Vector3(1, low, depth)),
+                        camera.ViewportToWorldPoint(new Vector3(1, high, depth)),
+                        camera.ViewportToWorldPoint(new Vector3(0, high, depth))
+                    }, Color.Lerp(bottom, top, (low + high) * 0.5f), Color.clear);
+                }
+            }
+            finally
+            {
+                Handles.color = previousColor;
+                Handles.zTest = previousDepth;
+                Handles.matrix = previousMatrix;
+            }
+        }
+
+        internal void DrawAnimationGrid(Camera camera)
+        {
+            if (!camera || Event.current.type != EventType.Repaint) return;
+            var previousColor = Handles.color;
+            var previousDepth = Handles.zTest;
+            var previousMatrix = Handles.matrix;
+            try
+            {
+                Handles.matrix = Matrix4x4.identity;
+                Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
+                float spacing = StudioSceneUnits.GridSpacing;
+                const int steps = 40;
+                const int segments = 8;
+                float extent = steps * spacing;
+                float centerX = Mathf.Round(camera.transform.position.x / spacing) * spacing;
+                float centerZ = Mathf.Round(camera.transform.position.z / spacing) * spacing;
+                float opacity = StudioSettings.Current.gridOpacity;
+                for (int i = -steps; i <= steps; i++)
+                {
+                    float x = centerX + i * spacing;
+                    float z = centerZ + i * spacing;
+                    for (int j = 0; j < segments; j++)
+                    {
+                        float from = -extent + 2f * extent * j / segments;
+                        float to = -extent + 2f * extent * (j + 1) / segments;
+                        float middle = (from + to) * 0.5f;
+                        float distance = Mathf.Sqrt(i * i * spacing * spacing + middle * middle);
+                        float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(extent * 0.2f, extent * 0.85f, distance));
+                        if (fade <= 0.01f) continue;
+                        if (Mathf.Abs(z) > spacing * 0.25f)
+                        {
+                            Handles.color = StudioTheme.Alpha(StudioTheme.Current.Grid,
+                                (Mathf.RoundToInt(z / spacing) % 4 == 0 ? 0.20f : 0.10f) * fade * opacity);
+                            Handles.DrawLine(new Vector3(centerX + from, 0, z), new Vector3(centerX + to, 0, z));
+                        }
+                        else
+                        {
+                            Handles.color = new Color(0.9f, 0.3f, 0.25f, 0.55f * fade * opacity);
+                            Handles.DrawLine(new Vector3(centerX + from, 0, z), new Vector3(centerX + to, 0, z));
+                        }
+                        if (Mathf.Abs(x) > spacing * 0.25f)
+                        {
+                            Handles.color = StudioTheme.Alpha(StudioTheme.Current.Grid,
+                                (Mathf.RoundToInt(x / spacing) % 4 == 0 ? 0.20f : 0.10f) * fade * opacity);
+                            Handles.DrawLine(new Vector3(x, 0, centerZ + from), new Vector3(x, 0, centerZ + to));
+                        }
+                        else
+                        {
+                            Handles.color = new Color(0.25f, 0.5f, 1f, 0.55f * fade * opacity);
+                            Handles.DrawLine(new Vector3(x, 0, centerZ + from), new Vector3(x, 0, centerZ + to));
+                        }
+                    }
+                }
             }
             finally
             {

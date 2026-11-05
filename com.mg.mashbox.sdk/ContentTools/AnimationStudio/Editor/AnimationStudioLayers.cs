@@ -81,6 +81,18 @@ namespace MashBoxSDK.AnimationStudio
             if(activeActor>=0 && activeActor<actorPreviews.Count) InActor(actorPreviews[activeActor],draw);
             else draw();
         }
+        private void DrawTimelineLayerPicker(Rect rect)
+        {
+            Action draw = () =>
+            {
+                take.layers = take.layers ?? new List<StudioAnimationLayer>();
+                string name = take.activeLayer >= 0 && take.activeLayer < take.layers.Count
+                    ? take.layers[take.activeLayer].name : "Base motion";
+                if (TimelineButton(rect, name + "  ▾", "Key on layer for " + take.name)) ShowTimelineLayerMenu(rect);
+            };
+            if (activeActor >= 0 && activeActor < actorPreviews.Count) InActor(actorPreviews[activeActor], draw);
+            else draw();
+        }
         private void ShowTimelineLayerMenu(Rect rect)
         {
             var target=take;

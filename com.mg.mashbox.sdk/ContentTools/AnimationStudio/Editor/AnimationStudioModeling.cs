@@ -89,11 +89,13 @@ namespace MashBoxSDK.AnimationStudio
             else SwitchStudioMode(mode == "Modeling");
         }
         internal bool IsPaintingMode => paintingMode;
+        internal bool IsAnimationMode => !modelingMode && !skinningMode && !retopologyMode && !paintingMode && !clothMode;
         internal bool IsModelingMode => modelingMode && !skinningMode && !retopologyMode && !paintingMode && !clothMode;
         internal StudioModelEditor ToolbarModelEditor => IsModelingMode ? modelEditor : null;
         private void BindStudioMode()
         {
             if (!viewport) return;
+            viewport.BindAnimationToolbar(IsAnimationMode ? (System.Action)DrawCompactRigToolbar : null);
             if (clothMode) { BindClothMode(); return; }
             if (paintingMode) { BindPaintingMode(); return; }
             // Keep navigation available even if the selected preview mode cannot initialize.
