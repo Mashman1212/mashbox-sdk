@@ -304,6 +304,26 @@ namespace MashBoxSDK.AnimationStudio
                         selected.rotation=r; pose=rig.Capture(); PreviewSceneEdit("Move bike control");
                     }
                 }
+                else if (rotate)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    Quaternion before = selected.rotation;
+                    Quaternion after = StudioRotationHandle(before,handlePosition);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Quaternion delta = after * Quaternion.Inverse(before);
+                        delta.ToAngleAxis(out float degrees,out Vector3 axis);
+                        if (degrees > 180f) degrees -= 360f;
+                        Vector3 allowedAxis = selected.TransformDirection(BikeAxis(control));
+                        float signedAngle = degrees * Vector3.Dot(axis,allowedAxis);
+                        if (Mathf.Abs(signedAngle) > .00001f)
+                        {
+                            SetBikeAngle(control,BikeAngle(control)+signedAngle);
+                            CaptureBikeRotation(control);
+                            PreviewSceneEdit("Rotate bike control");
+                        }
+                    }
+                }
                 return true;
             }
             finally { Handles.color=color; Handles.zTest=depth; }

@@ -21,9 +21,10 @@ namespace MashBoxSDK.AnimationStudio
                 (rigSelectionExplicit && rigSelection.Count == 0)) return;
             Action inspect = () =>
             {
-                if (!IsBike || !showVehicleControls || control != 0 || IsAttachmentHidden(take)) return;
-                var joint = BikeJoint(0);
-                var center = BikeHandlePosition(0, joint);
+                if (!IsBike || !showVehicleControls || control == 8 || IsAttachmentHidden(take)) return;
+                var joint = BikeJoint(control);
+                if (!joint) return;
+                var center = BikeHandlePosition(control, joint);
                 rotationGizmoOwnsPointer = HandleUtility.DistanceToCircle(center, HandleUtility.GetHandleSize(center) * 1.1f) <= 0;
             };
             if (activeActor >= 0 && activeActor < actorPreviews.Count) InActor(actorPreviews[activeActor], inspect);

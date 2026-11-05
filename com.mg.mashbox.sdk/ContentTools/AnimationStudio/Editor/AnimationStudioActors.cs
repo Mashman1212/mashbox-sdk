@@ -186,6 +186,11 @@ namespace MashBoxSDK.AnimationStudio
                 take.actors.Add(child); EditorUtility.SetDirty(child); Save(); FlushSave();
                 if (EditorUtility.IsPersistent(take)) AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(take));
                 EnsureActors(); activeActor=actorPreviews.Count-1;
+                if (actorPreviews[activeActor].Rig.IsBmxRig)
+                {
+                    showVehicleControls = true;
+                    viewport?.Repaint(); Repaint();
+                }
             }
             catch { if(!EditorUtility.IsPersistent(child)) DestroyImmediate(child); throw; }
         }

@@ -33,6 +33,8 @@ namespace MashBoxSDK.AnimationStudio
   }
   private void SetRigControlSelection(int index,bool ik,bool pole,bool add)
   {
+   if(!pole && !ik && !editBikeHandleLayout && (IsBike ? index>0 && index<8 : !CanTranslateBone(index))) rotate=true;
+   if(pole) rotate=false;
    selectedRigChannelActor=null; selectedRigChannelBone=-1; selectedRigChannelAxis=-1;
    rigSelectionExplicit=true;
    var existing=rigSelection.FirstOrDefault(s=>s.Matches(take,index,ik,pole));
@@ -52,7 +54,9 @@ namespace MashBoxSDK.AnimationStudio
    int actor= item.Actor==take ? -1 : actorPreviews.FindIndex(a=>a.Take==item.Actor);
    if(actor<0 && item.Actor!=take) return;
    activeActor=actor;
-   Action select=()=>{control=item.Index; ikMode=item.IK; poleMode=item.Pole; if(item.Pole) rotate=false;};
+   Action select=()=>{control=item.Index; ikMode=item.IK; poleMode=item.Pole;
+    if(item.Pole) rotate=false;
+    else if(!item.IK && !editBikeHandleLayout && (IsBike ? item.Index>0 && item.Index<8 : !CanTranslateBone(item.Index))) rotate=true;};
    if(actor<0) select(); else InActor(actorPreviews[actor],select);
   }
   private void SelectRigRectangle(Rect rectangle,bool add)

@@ -104,6 +104,7 @@ namespace MashBoxSDK.AnimationStudio
                 actorClip = clip;
                 ImportActorClip();
                 hiddenAttachments.Remove(target); ApplyAttachmentVisibility();
+                if (!human) { showVehicleControls = true; viewport?.Repaint(); Repaint(); }
             }
             catch
             {

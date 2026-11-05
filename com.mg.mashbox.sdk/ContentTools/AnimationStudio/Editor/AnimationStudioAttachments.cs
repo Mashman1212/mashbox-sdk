@@ -235,7 +235,8 @@ namespace MashBoxSDK.AnimationStudio
             if (existing >= 0)
             {
                 hiddenAttachments.Remove(actorPreviews[existing].Take);
-                activeActor = existing; ApplyAttachmentVisibility(); viewport?.Repaint(); return;
+                activeActor = existing; showVehicleControls = true;
+                ApplyAttachmentVisibility(); viewport?.Repaint(); Repaint(); return;
             }
             int previousActor = activeActor;
             AddActorWithKind(skeleton, kind);
