@@ -27,6 +27,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 case "Edit/Repeat Last Action": return "Repeat the last completed modeling action on the current selection using its completed settings.";
                 case "Mesh Display/Soften": return "Immediately blend vertex normals across selected edges regardless of angle.";
+                case "Mesh Display/Flip Normals": return "Reverse the orientation of selected faces or faces incident to selected edges and vertices; object selection flips whole meshes.";
                 case "Mesh Display/Harden": return "Split shading normals along selected edges to create sharp shading breaks.";
                 case "Mesh Display/Recalculate Normals": return "Replace custom shading normals with surface normals, preserving existing hard and soft edges.";
                 case "Mesh Display/Soften…": return "Set the angle used to soften edges and preview the shading result.";
@@ -57,6 +58,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "View/Material Textures": return "Toggle assigned material textures or neutral Studio shading.";
                 case "View/Checker Map": return "Show the checker material to inspect UV scale and distortion.";
                 case "View/Backface Culling": return "Hide polygon back faces or show both sides.";
+                case "View/Non-planar Quad Diagonals": return "Show light red-orange render diagonals inside warped quads; stronger bends draw stronger lines without changing topology.";
                 case "Viewport/Camera": return "Adjust camera position, orbit distance and navigation sensitivity.";
                 case "Viewport/Lighting": return "Adjust Studio viewport lights and environment settings.";
                 case "Edit/Undo": return "Undo the previous modeling action.";

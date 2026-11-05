@@ -6,7 +6,8 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed class StudioSelectionTopology
     {
         internal readonly int[] Canonical,RenderEdges;
-        private readonly Vector3[] pathVertices,pathFaces;
+        private readonly Vector3[] pathVertices,pathFaces;
+
         private readonly (int a,int b)[] edges;
         private readonly Dictionary<(int,int),int> lookup;
         private readonly int[] vertexOffsets,vertexIds,incidentOffsets,incidentEdges;
@@ -24,8 +25,10 @@ namespace MashBoxSDK.AnimationStudio
             {
                 int id;if(!weld||!map.TryGetValue(positions[i],out id)){id=vertices++;if(weld)map.Add(positions[i],id);}Canonical[i]=id;
             }
-            pathVertices=new Vector3[vertices];for(int i=0;i<positions.Count;i++)pathVertices[Canonical[i]]=positions[i];
-            pathFaces=new Vector3[faces.Count];for(int f=0;f<faces.Count;f++){foreach(int v in faces[f].Vertices)pathFaces[f]+=positions[v];pathFaces[f]/=faces[f].Vertices.Count;}
+            pathVertices=new Vector3[vertices];for(int i=0;i<positions.Count;i++)pathVertices[Canonical[i]]=positions[i];
+
+            pathFaces=new Vector3[faces.Count];for(int f=0;f<faces.Count;f++){foreach(int v in faces[f].Vertices)pathFaces[f]+=positions[v];pathFaces[f]/=faces[f].Vertices.Count;}
+
             var counts=new int[vertices];foreach(int id in Canonical)counts[id]++;
             vertexOffsets=Offsets(counts);vertexIds=new int[positions.Count];Array.Clear(counts,0,counts.Length);
             for(int i=0;i<Canonical.Length;i++){int id=Canonical[i];vertexIds[vertexOffsets[id]+counts[id]++]=i;}
@@ -85,9 +88,9 @@ namespace MashBoxSDK.AnimationStudio
         private bool SharesFace(int a,int b){for(int i=edgeFaceOffsets[a];i<edgeFaceOffsets[a+1];i++)if(HasFace(b,edgeFaces[i]))return true;return false;}
         private int Other(int e,int v)=>edges[e].a==v?edges[e].b:edges[e].a;
         private int Next(int e,int v)=>next[e*2+(edges[e].a==v?0:1)];
-        // Single-edge double-click follows geometry rather than quad valence.
-        // Compare length to the seed to prevent incremental length drift.
-        internal HashSet<int> SelectConnectedSimilarEdges(int renderSeed,Func<int,bool> eligible=null)
+        // Whole loops prefer authored connectivity. Irregular triangle junctions
+        // may continue along a clearly aligned edge, without length restrictions.
+        internal HashSet<int> SelectConnectedEdgeLoop(int renderSeed,Func<int,bool> eligible=null)
         {
             var result=new HashSet<int>();
             if(renderSeed<0||renderSeed>=RenderEdges.Length)return result;
@@ -96,31 +99,47 @@ namespace MashBoxSDK.AnimationStudio
             for(int i=0;i<RenderEdges.Length;i++)if(RenderEdges[i]>=0&&(eligible==null||eligible(i)))allowed[RenderEdges[i]]=true;
             if(!allowed[seed])return result;
             var chosen=new HashSet<int>{seed};
-            float seedLength=Vector3.Distance(pathVertices[edges[seed].a],pathVertices[edges[seed].b]);
             bool Finite(float v)=>!float.IsNaN(v)&&!float.IsInfinity(v);
+            int Continue(int entered,int vertex)
+            {
+                // Regular quad loops and unbranched borders may turn corners.
+                int regular=Next(entered,vertex);
+                if(regular>=0)return regular;
+                int opposite=-1,opposites=0;
+                for(int i=incidentOffsets[vertex];i<incidentOffsets[vertex+1];i++)
+                {
+                    int candidate=incidentEdges[i];
+                    // A non-manifold junction is not a resolvable loop direction.
+                    if(FaceCount(candidate)>2)return -1;
+                    if(candidate!=entered&&!SharesFace(entered,candidate)){opposite=candidate;opposites++;}
+                }
+                if(opposites==1)return opposite;
+                var incoming=pathVertices[vertex]-pathVertices[Other(entered,vertex)];float length=incoming.magnitude;
+                if(!Finite(length)||length<=0)return -1;
+                int best=-1;float score=-1,runner=-1;
+                for(int i=incidentOffsets[vertex];i<incidentOffsets[vertex+1];i++)
+                {
+                    int candidate=incidentEdges[i];if(candidate==entered||opposites>0&&SharesFace(entered,candidate))continue;
+                    var direction=pathVertices[Other(candidate,vertex)]-pathVertices[vertex];float distance=direction.magnitude;
+                    if(!Finite(distance)||distance<=0)continue;
+                    float alignment=Vector3.Dot(incoming/length,direction/distance);
+                    if(alignment>score){runner=score;score=alignment;best=candidate;}else if(alignment>runner)runner=alignment;
+                }
+                // Geometric fallback only resolves a clear forward continuation.
+                return score>=.5f&&score-runner>=.00001f?best:-1;
+            }
             void Walk(int vertex)
             {
                 int entered=seed;
                 while(FaceCount(entered)<=2)
                 {
-                    var incoming=pathVertices[vertex]-pathVertices[Other(entered,vertex)];float length=incoming.magnitude;
-                    if(!Finite(length)||length<=0)return;
-                    int best=-1;float score=float.MaxValue,runner=float.MaxValue;
-                    for(int i=incidentOffsets[vertex];i<incidentOffsets[vertex+1];i++)
-                    {
-                        int candidate=incidentEdges[i];if(candidate==entered||!allowed[candidate]||FaceCount(candidate)>2)continue;
-                        var direction=pathVertices[Other(candidate,vertex)]-pathVertices[vertex];float distance=direction.magnitude;
-                        if(!Finite(distance)||distance<=0||distance<seedLength*.5f||distance>seedLength*2||distance<length*.5f||distance>length*2)continue;
-                        float alignment=Vector3.Dot(incoming/length,direction/distance);if(alignment<.8660254f)continue;
-                        float value=1-alignment+.05f*Mathf.Abs(Mathf.Log(distance/seedLength));
-                        if(value<score){runner=score;score=value;best=candidate;}else if(value<runner)runner=value;
-                    }
-                    // Equally plausible branches have no artist-specified direction.
-                    if(best<0||runner-score<.01f||!chosen.Add(best))return;
-                    vertex=Other(best,vertex);entered=best;
+                    int nextEdge=Continue(entered,vertex);
+                    // Hidden topology blocks the loop; do not choose another branch.
+                    if(nextEdge<0||!allowed[nextEdge]||!chosen.Add(nextEdge))return;
+                    vertex=Other(nextEdge,vertex);entered=nextEdge;
                 }
             }
-            if(Finite(seedLength)&&seedLength>0){Walk(edges[seed].a);Walk(edges[seed].b);}
+            Walk(edges[seed].a);Walk(edges[seed].b);
             foreach(int e in chosen)for(int i=aliasOffsets[e];i<aliasOffsets[e+1];i++)if(eligible==null||eligible(aliases[i]))result.Add(aliases[i]);
             return result;
         }
@@ -131,14 +150,22 @@ namespace MashBoxSDK.AnimationStudio
             if(previous>=0&&previous!=seed&&previous<edges.Length)
             {
                 var a=edges[seed];var b=edges[previous];int common=a.a==b.a||a.a==b.b?a.a:a.b==b.a||a.b==b.b?a.b:-1;
-                if(common<0)
-                {
-                    // Opposite sides of an authored quad establish a ring direction,
-                    // not an end-to-end edge loop. Do not infer it from world axes.
-                    for(int f=edgeFaceOffsets[seed];f<edgeFaceOffsets[seed+1];f++)
-                        if(OppositeEdge(edgeFaces[f],seed)==previous)return EdgeRing(seed);
-                    return result;
-                }
+                if(common<0)
+
+                {
+
+                    // Opposite sides of an authored quad establish a ring direction,
+
+                    // not an end-to-end edge loop. Do not infer it from world axes.
+
+                    for(int f=edgeFaceOffsets[seed];f<edgeFaceOffsets[seed+1];f++)
+
+                        if(OppositeEdge(edgeFaces[f],seed)==previous)return EdgeRing(seed);
+
+                    return result;
+
+                }
+
                 if(common>=0&&Next(seed,common)!=previous)
                 {
                     int face=-1,count=0;for(int f=edgeFaceOffsets[seed];f<edgeFaceOffsets[seed+1];f++)if(HasFace(previous,edgeFaces[f])){face=edgeFaces[f];count++;}
@@ -148,31 +175,56 @@ namespace MashBoxSDK.AnimationStudio
             void Walk(int v){int e=seed;while(true){int other=Next(e,v);if(other<0||!result.Add(other))return;v=Other(other,v);e=other;}}
             Walk(edges[seed].a);Walk(edges[seed].b);return result;
         }
-        private int OppositeEdge(int face,int entered)
-        {
-            if(FaceSize(face)!=4)return -1;
-            for(int side=0;side<4;side++)if(faceEdges[faceOffsets[face]+side]==entered)
-                return faceEdges[faceOffsets[face]+(side+2)%4];
-            return -1;
-        }
-        private HashSet<int> EdgeRing(int seed)
-        {
-            var result=new HashSet<int>{seed};
-            if(FaceCount(seed)>2)return result;
-            void Walk(int face,int entered)
-            {
-                while(true)
-                {
-                    int exit=OppositeEdge(face,entered);
-                    if(exit<0||FaceCount(exit)>2||!result.Add(exit))return;
-                    if(FaceCount(exit)!=2)return;
-                    int first=edgeFaces[edgeFaceOffsets[exit]],second=edgeFaces[edgeFaceOffsets[exit]+1];
-                    face=first==face?second:first;entered=exit;
-                }
-            }
-            for(int i=edgeFaceOffsets[seed];i<edgeFaceOffsets[seed+1];i++)Walk(edgeFaces[i],seed);
-            return result;
-        }
+        private int OppositeEdge(int face,int entered)
+
+        {
+
+            if(FaceSize(face)!=4)return -1;
+
+            for(int side=0;side<4;side++)if(faceEdges[faceOffsets[face]+side]==entered)
+
+                return faceEdges[faceOffsets[face]+(side+2)%4];
+
+            return -1;
+
+        }
+
+        private HashSet<int> EdgeRing(int seed)
+
+        {
+
+            var result=new HashSet<int>{seed};
+
+            if(FaceCount(seed)>2)return result;
+
+            void Walk(int face,int entered)
+
+            {
+
+                while(true)
+
+                {
+
+                    int exit=OppositeEdge(face,entered);
+
+                    if(exit<0||FaceCount(exit)>2||!result.Add(exit))return;
+
+                    if(FaceCount(exit)!=2)return;
+
+                    int first=edgeFaces[edgeFaceOffsets[exit]],second=edgeFaces[edgeFaceOffsets[exit]+1];
+
+                    face=first==face?second:first;entered=exit;
+
+                }
+
+            }
+
+            for(int i=edgeFaceOffsets[seed];i<edgeFaceOffsets[seed+1];i++)Walk(edgeFaces[i],seed);
+
+            return result;
+
+        }
+
         // Unweighted breadth-first paths minimize connected component steps.
         // Uses authored adjacency and expands only the visited seam aliases.
         internal HashSet<int> SelectShortestPath(int kind,int start,int finish,Func<int,bool> eligible=null)
@@ -210,7 +262,8 @@ namespace MashBoxSDK.AnimationStudio
                 if(kind==1){for(int i=incidentOffsets[current];i<incidentOffsets[current+1];i++)Visit(current,Other(incidentEdges[i],current));}
                 else if(kind==2){void Vertex(int v){for(int i=incidentOffsets[v];i<incidentOffsets[v+1];i++)Visit(current,incidentEdges[i]);}Vertex(edges[current].a);Vertex(edges[current].b);}
                 else for(int i=faceOffsets[current];i<faceOffsets[current+1];i++){int e=faceEdges[i];if(e<0)continue;for(int j=edgeFaceOffsets[e];j<edgeFaceOffsets[e+1];j++)Visit(current,edgeFaces[j]);}
-            }
+            }
+
             if(parent[last]<0)return result;
             for(int item=last;;item=parent[item])
             {
@@ -263,4 +316,6 @@ namespace MashBoxSDK.AnimationStudio
             return result;
         }
     }
-}
+}
+
+

@@ -39,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
         internal const string Id = "MashBox/MeshDisplay";
         public StudioMeshDisplayToolbar() => Configure(new StudioCustomToolbarDefinition {
             id = Id, name = "Mesh Display", commands = new List<string> {
-                "Mesh Display/Soften", "Mesh Display/Harden", "Mesh Display/Soften…",
+                "Mesh Display/Soften", "Mesh Display/Harden", "Mesh Display/Flip Normals", "Mesh Display/Soften…",
                 "Mesh Display/X-ray Mode" } });
     }
 }

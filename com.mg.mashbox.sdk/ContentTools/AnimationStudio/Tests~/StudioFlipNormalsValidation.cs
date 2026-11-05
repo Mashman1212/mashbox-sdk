@@ -1,0 +1,42 @@
+using System;using System.IO;using System.Linq;using System.Reflection;using System.Collections.Generic;using UnityEditor;using UnityEngine;using UnityEngine.Rendering;
+namespace MashBoxSDK.AnimationStudio {
+ internal static class StudioFlipNormalsValidation {
+  const BindingFlags F=BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public;
+  static string Out(string n)=>Path.GetFullPath(Path.Combine(Application.dataPath,"../../FlipNormals/"+n));
+  [InitializeOnLoadMethod]static void Boot(){if(Application.dataPath.Replace('\\','/').EndsWith("/ThemeIsolationProject/Assets")&&File.Exists(Out("request.txt")))EditorApplication.update+=Next;}
+  static void Next(){EditorApplication.update-=Next;Run();}
+  static StudioModelDocument.Node Make(){var mesh=new Mesh();var points=new[]{new Vector3(-1,-1,0),new Vector3(0,-1,0),new Vector3(1,-1,0),new Vector3(-1,1,0),new Vector3(0,1,0),new Vector3(1,1,0)};mesh.vertices=points;mesh.normals=Enumerable.Repeat(Vector3.forward,6).ToArray();mesh.tangents=Enumerable.Repeat(new Vector4(1,0,0,1),6).ToArray();mesh.colors=Enumerable.Range(0,6).Select(i=>new Color(i*.1f,.3f,.7f,1)).ToArray();mesh.SetUVs(7,points.Select(p=>new Vector4(p.x,p.y,.2f,.7f)).ToArray());mesh.subMeshCount=2;mesh.SetTriangles(new[]{0,1,4,0,4,3},0);mesh.SetTriangles(new[]{1,2,5,1,5,4},1);mesh.RecalculateBounds();return new StudioModelDocument.Node{name="Flip test",mesh=mesh,cutPolygons=new[]{0,4,0,1,4,3,1,4,1,2,5,4},cutTriangles=mesh.triangles,geometryVertices=Enumerable.Range(0,6).ToArray()};}
+  static object Call(StudioModelEditor e,string name,params object[] args)=>typeof(StudioModelEditor).GetMethods(F).Single(m=>m.Name==name&&m.GetParameters().Length==args.Length).Invoke(e,args);
+  static void Run(){File.Delete(Out("request.txt"));var log=new List<string>();void Check(bool v,string m){if(!v)throw new Exception(m);log.Add("PASS "+m);}
+   try {
+    var n=Make();try{
+     var before=n.mesh.GetTriangles(1);var positions=n.mesh.vertices;var uv=new List<Vector4>();n.mesh.GetUVs(7,uv);var map=new StudioMeshCuts(n).FlipNormals(n,new[]{0});var topology=new StudioMeshCuts(n);
+     Check(n.mesh.vertexCount==8&&n.geometryVertices.Distinct().Count()==6,"Partial flip only aliases shared render corners; geometric connectivity unchanged");
+     Check(n.mesh.GetTriangles(1).SequenceEqual(before)&&new[]{1,2,4,5}.All(v=>n.mesh.normals[v]==Vector3.forward),"Unselected face tessellation and normals unchanged");
+     Check(topology.Faces[0].Vertices.All(v=>n.mesh.normals[v]==Vector3.back&&n.mesh.tangents[v].w==-1),"Selected shading normals and tangent handedness reverse");
+     Check(Vector3.Cross(n.mesh.vertices[n.mesh.triangles[1]]-n.mesh.vertices[n.mesh.triangles[0]],n.mesh.vertices[n.mesh.triangles[2]]-n.mesh.vertices[n.mesh.triangles[0]]).z<0,"Actual render triangle winding reverses");
+     var afterUV=new List<Vector4>();n.mesh.GetUVs(7,afterUV);Check(afterUV.Take(6).SequenceEqual(uv)&&map.All(p=>afterUV[p.Value]==uv[p.Key])&&n.mesh.GetVertexAttributeDimension(VertexAttribute.TexCoord7)==4,"UV7 values, seams and dimension preserved");
+     Check(n.mesh.vertices.Take(6).SequenceEqual(positions)&&topology.Faces.Count==2&&topology.Faces.All(f=>f.Vertices.Count==4),"Original positions and authored quad boundaries preserved");
+     new StudioMeshCuts(n).FlipNormals(n,new[]{0});Check(n.mesh.vertexCount==8&&new StudioMeshCuts(n).Faces[0].Vertices.All(v=>n.mesh.normals[v]==Vector3.forward),"Second flip restores orientation without accumulating aliases");
+     bool rejected=false;var original=n.mesh.triangles;try{new StudioMeshCuts(n).FlipNormals(n,new[]{999});}catch(InvalidOperationException){rejected=true;}Check(rejected&&n.mesh.triangles.SequenceEqual(original),"Invalid face selection rejected atomically");
+    }finally{UnityEngine.Object.DestroyImmediate(n.mesh);}
+    n=Make();try{int frontBefore=Capture(n,-1,"before-front.png"),backBefore=Capture(n,1,"before-back.png");new StudioMeshCuts(n).FlipNormals(n,null);int frontAfter=Capture(n,-1,"after-front.png"),backAfter=Capture(n,1,"after-back.png");Check(frontBefore>1000&&frontAfter<100||frontAfter>1000&&frontBefore<100,"Front-facing renderer visibility reverses");Check(backBefore>1000&&backAfter<100||backAfter>1000&&backBefore<100,"Opposite camera visibility reverses");Check(n.mesh.vertexCount==6,"Whole mesh flip does not duplicate vertices");}finally{UnityEngine.Object.DestroyImmediate(n.mesh);}
+    foreach(var mode in new[]{StudioModelEditor.ComponentMode.Face,StudioModelEditor.ComponentMode.Edge,StudioModelEditor.ComponentMode.Vertex,StudioModelEditor.ComponentMode.Object}){
+     var doc=ScriptableObject.CreateInstance<StudioModelDocument>();n=Make();doc.nodes.Add(n);try{using(var editor=new StudioModelEditor(()=>{})){
+      editor.Load(doc);editor.SelectObject(0);editor.SetToolbarComponentMode(mode);if(mode==StudioModelEditor.ComponentMode.Face)editor.Components.Add(0);else if(mode==StudioModelEditor.ComponentMode.Vertex)editor.Components.Add(0);else if(mode==StudioModelEditor.ComponentMode.Edge){var edges=(List<(int a,int b)>)Call(editor,"Edges");editor.Components.Add(edges.FindIndex(e=>e==(0,3)||e==(3,0)));}
+      editor.ToolbarCommands(null).Single(c=>c.Key=="Mesh Display/Flip Normals").Execute();
+      Check(n.modifiers.operations.Last().kind=="FlipNormals"&&editor.ToolbarComponentMode==mode,"Shared command records compact modifier and retains mode "+mode);
+      Check(mode==StudioModelEditor.ComponentMode.Object||editor.Components.Count>0,"Selection remains available after flip "+mode);
+      var replay=StudioModifierEvaluator.Evaluate(n.modifiers);try{Check(replay.mesh.triangles.SequenceEqual(n.mesh.triangles)&&replay.mesh.normals.SequenceEqual(n.mesh.normals),"Strict history replay exact in "+mode);}finally{UnityEngine.Object.DestroyImmediate(replay.mesh);}
+      if(mode==StudioModelEditor.ComponentMode.Face){UnityEditor.Undo.FlushUndoRecordObjects();StudioUndo.IncrementCurrentGroup();StudioUndo.PerformUndo();Check(n.mesh.vertexCount==6&&n.mesh.normals.All(v=>v==Vector3.forward),"StudioUndo restores source mesh");StudioUndo.PerformRedo();Check(n.mesh.vertexCount==8&&editor.Components.Contains(0),"StudioRedo restores flipped mesh and selection");Call(editor,"RepeatLastAction");Check(new StudioMeshCuts(n).Faces[0].Vertices.All(v=>n.mesh.normals[v]==Vector3.forward),"G repeats Flip Normals against current faces");}
+     }}finally{UnityEngine.Object.DestroyImmediate(n.mesh);UnityEngine.Object.DestroyImmediate(doc);}
+    }
+   }catch(Exception e){log.Add("FAIL "+e);}File.WriteAllLines(Out("result.txt"),log);
+  }
+  static int Capture(StudioModelDocument.Node node,int side,string file){
+   var scene=UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();var root=new GameObject("Flip culling capture");UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(root,scene);root.layer=31;root.AddComponent<MeshFilter>().sharedMesh=node.mesh;var material=new Material(Shader.Find("Hidden/StudioFlipNormalsProbe"));root.AddComponent<MeshRenderer>().sharedMaterials=new[]{material,material};var cameraObject=new GameObject("Culling camera");UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(cameraObject,scene);var camera=cameraObject.AddComponent<Camera>();camera.scene=scene;camera.enabled=false;camera.cullingMask=1<<31;camera.transform.position=new Vector3(0,0,side*4);camera.transform.LookAt(Vector3.zero);camera.fieldOfView=45;camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=Color.black;camera.nearClipPlane=.01f;camera.farClipPlane=100;var rt=new RenderTexture(256,256,24);rt.Create();camera.targetTexture=rt;var active=RenderTexture.active;var pipeline=GraphicsSettings.defaultRenderPipeline;var quality=QualitySettings.renderPipeline;
+   try{GraphicsSettings.defaultRenderPipeline=null;QualitySettings.renderPipeline=null;camera.Render();RenderTexture.active=rt;var image=new Texture2D(256,256,TextureFormat.RGBA32,false);try{image.ReadPixels(new Rect(0,0,256,256),0,0);image.Apply();File.WriteAllBytes(Out(file),image.EncodeToPNG());return image.GetPixels32().Count(c=>c.r>128);}finally{UnityEngine.Object.DestroyImmediate(image);}}
+   finally{RenderTexture.active=active;GraphicsSettings.defaultRenderPipeline=pipeline;QualitySettings.renderPipeline=quality;camera.targetTexture=null;UnityEngine.Object.DestroyImmediate(rt);UnityEngine.Object.DestroyImmediate(material);UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(scene);}
+  }
+ }
+}

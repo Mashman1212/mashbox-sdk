@@ -42,6 +42,7 @@ namespace MashBoxSDK.AnimationStudio
             checkerMap = StudioPreferenceStore.GetFloat("Model.CheckerMap", 0) >= .5f;
             displayXray = StudioPreferenceStore.GetFloat("Model.XRay", 0) >= .5f;
             backfaceCulling = StudioPreferenceStore.GetFloat("Model.BackfaceCulling", 1) >= .5f;
+            showNonPlanarQuadDiagonals = StudioPreferenceStore.GetFloat("Model.NonPlanarQuadDiagonals", 1) >= .5f;
             wireframeOnly = StudioPreferenceStore.GetFloat("Model.WireframeOnly", 0) >= .5f;
             if (CenterMode) local = componentAxes = false;
             ApplyDisplayMaterials();

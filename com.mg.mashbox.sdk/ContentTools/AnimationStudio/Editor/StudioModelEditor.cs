@@ -1148,9 +1148,28 @@ namespace MashBoxSDK.AnimationStudio
                 int i = candidates == null ? candidate : candidates[candidate];
                 if (!IsolationAllowsComponent(i)) continue;
                 Vector3 world = mode == ComponentMode.Vertex ? t.TransformPoint(vertices[i]) : mode == ComponentMode.Edge ? t.TransformPoint((vertices[edges[i].a] + vertices[edges[i].b]) * .5f) : t.TransformPoint(FaceCenter(Faces()[i], vertices));
-                if (view.camera.WorldToViewportPoint(world).z <= 0) continue;
-                float distance = Vector2.Distance(pointer, Project(world));
-                if (mode == ComponentMode.Edge) distance = HandleUtility.DistancePointLine(pointer, Project(t.TransformPoint(vertices[edges[i].a])), Project(t.TransformPoint(vertices[edges[i].b])));
+                float distance;
+                if (mode == ComponentMode.Edge)
+                {
+                    var a=t.TransformPoint(vertices[edges[i].a]);var b=t.TransformPoint(vertices[edges[i].b]);
+                    float za=view.camera.WorldToViewportPoint(a).z,zb=view.camera.WorldToViewportPoint(b).z;
+                    // Clip to the visible segment before projecting; a midpoint behind
+                    // the camera must not discard a visible end of a long edge.
+                    float near=view.camera.nearClipPlane;
+                    if(za<near&&zb<near)continue;
+                    if(za<near){a=Vector3.Lerp(a,b,(near-za)/(zb-za));za=near;}
+                    else if(zb<near){b=Vector3.Lerp(b,a,(near-zb)/(za-zb));zb=near;}
+                    var screenA=Project(a);var screenB=Project(b);
+                    float fraction=StudioEdgePickGeometry.ClosestFraction(pointer,screenA,screenB);
+                    distance=Vector2.Distance(pointer,Vector2.Lerp(screenA,screenB,fraction));
+                    // Occlude the hovered point, not an unrelated edge midpoint.
+                    world=Vector3.Lerp(a,b,StudioEdgePickGeometry.PerspectiveFraction(fraction,za,zb));
+                }
+                else
+                {
+                    if (view.camera.WorldToViewportPoint(world).z <= 0) continue;
+                    distance=Vector2.Distance(pointer,Project(world));
+                }
                 if (mode == ComponentMode.Face && !RayFace(ray, cachedFaceTriangles[i], vertices, t, out distance)) continue;
                 // Reject distant/non-improving candidates before any scene ray tests.
                 if (distance >= bestDistance || (!xray && (paintRay.HasValue ? PaintOccluded(view,world,ref occluders) : Occluded(view, world, ref occluders)))) continue;

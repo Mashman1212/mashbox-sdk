@@ -207,6 +207,7 @@ namespace MashBoxSDK.AnimationStudio
             Number(MashBoxStudioViewport.LeftWidthKey, 260); Number(MashBoxStudioViewport.RightWidthKey, 350); Number(MashBoxStudioViewport.ToolOptionsHeightKey, 220);
             Number(MashBoxStudioViewport.NavigationSensitivityKey, 1);
             Number("Model.BackfaceCulling", 1);
+            Number("Model.NonPlanarQuadDiagonals", 1);
             Number("Model.CheckerMap", 0);
             Number("Model.LocalAxes", 1);
             Number("Model.ComponentAxes", 1);

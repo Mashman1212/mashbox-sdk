@@ -38,7 +38,7 @@ public class StudioMeshToolbarsValidation : EditorWindow
         foreach(var bar in added)
         {
             var state=StateOf(bar);Check(bar.displayed,"New toolbar is not enabled: "+bar.id);Check(state.containerId=="overlay-toolbar__top","New toolbar not at top");Check(state.dockPosition==0,"New toolbar right-aligned");Check(state.layout==1,"New toolbar not horizontal");
-            var contents=bar.CreatePanelContent();var buttons=contents.Children().OfType<EditorToolbarButton>().ToArray();Check(buttons.Length==(bar is StudioMeshDisplayToolbar?4:18),"Menu functions missing");
+            var contents=bar.CreatePanelContent();var buttons=contents.Children().OfType<EditorToolbarButton>().ToArray();Check(buttons.Length==(bar is StudioMeshDisplayToolbar?5:21),"Menu functions missing");
             var commands=view.Studio.ToolbarModelEditor.ToolbarCommands(view);
             foreach(var button in buttons){string key=(string)button.userData;var command=commands.SingleOrDefault(x=>x.Key==key);Check(command!=null,"Unknown command: "+key);Check(button.icon,"Missing icon: "+key);Check(string.IsNullOrEmpty(button.text),"Visible word label: "+key);Check(button.enabledSelf==command.Enabled,"Menu availability differs: "+key);Check(button.tooltip==command.Tooltip&&button.tooltip.IndexOf((char)10)>=0&&!button.tooltip.Contains(command.Path),"Tooltip must contain a description without its menu path: "+key);}
         }

@@ -68,8 +68,8 @@ public class StudioToolbarCatalogRevisionValidation : EditorWindow
         Check(StudioPreferenceStore.GetString("Studio.Toolbars")==olderJson,"Applying missing toolbar default rewrote saved layout");
         var primitive=view.overlayCanvas.overlays.OfType<StudioPolygonPrimitivesToolbar>().Single();
         var buttons=primitive.CreatePanelContent().Children().OfType<EditorToolbarButton>().ToArray();Check(buttons.Length==5,"Built-in primitives missing");Check(buttons.Select(x=>x.icon).Distinct().Count()==5,"Primitive glyphs repeated");
-        var actions=editor.ToolbarCommands(view);Check(!actions.Any(x=>x.Key.Contains("Recalculate Normals")),"Recalculate Normals command remains");
-        var display=view.overlayCanvas.overlays.OfType<StudioMeshDisplayToolbar>().Single();Check(display.CreatePanelContent().Children().OfType<EditorToolbarButton>().Count()==4,"Wrong Mesh Display contents");
+        var actions=editor.ToolbarCommands(view);Check(actions.Any(x=>x.Key=="Mesh Display/Recalculate Normals"),"Recalculate Normals command missing");
+        var display=view.overlayCanvas.overlays.OfType<StudioMeshDisplayToolbar>().Single();Check(display.CreatePanelContent().Children().OfType<EditorToolbarButton>().Count()==5,"Wrong Mesh Display contents");
         var hashes=new Dictionary<uint,string>();var duplicates=new List<string>();
         foreach(string title in pages)
         {
