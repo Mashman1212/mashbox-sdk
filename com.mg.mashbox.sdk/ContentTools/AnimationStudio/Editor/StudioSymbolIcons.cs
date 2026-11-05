@@ -71,6 +71,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Display/Soften": return "soften";
                 case "Mesh Display/Soften…": return "soften-options";
                 case "Mesh Display/Harden": return "harden";
+                case "Mesh Display/Flip Normals": return "flip-normals";
                 case "Mesh Display/X-ray Mode": return "xray";
                 case "UV/UV Editor": return "uv-editor";
                 case "Lighting/Bake Vertex AO (Red)…": return "ao";
@@ -170,6 +171,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "blend":c.Rect(3,6,7,12,c.Gray);c.Path(w,15,5,13,18,20,20,22,8,15,5);c.Arrow(5,3,19,3,a);break;
                 case "bake":c.Path(w,4,18,9,13,15,18,20,13);c.Arrow(12,13,12,6,a);c.Rect(4,3,16,3,w);break;
                 case "soften":case "soften-options":c.Path(w,4,4,4,12);c.Arc(12,12,8,90,180,a);c.Line(12,20,20,20,w);if(symbol.EndsWith("options"))c.Gear(18,6);break;
+                case "flip-normals":c.Path(w,3,13,12,8,21,13,12,18,3,13);c.Arrow(12,8,12,1,a);c.Arrow(12,18,12,23,a);break;
                 case "harden":c.Path(w,4,3,4,20,21,20);c.Arrow(4,11,11,11,a);c.Arrow(13,20,13,13,g);break;
                 case "wire":c.Cube();break;
                 case "shaded-wire":c.Cube(true);c.Path(a,4,6,12,12,20,6);break;

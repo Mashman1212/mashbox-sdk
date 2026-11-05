@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
             WireAdjacent=Shader.PropertyToID("_WireAdjacent"),WireSubset=Shader.PropertyToID("_WireSubset"),WireUseSubset=Shader.PropertyToID("_WireUseSubset");
         private static void ReleaseWireBatch(SelectionWireframe wire)
         {
+            if(wire.quadOverlay!=null)foreach(var batch in wire.quadOverlay.batches)if(batch!=null)ReleaseWireBatch(batch);
             wire.positionBuffer?.Dispose(); wire.edgeBuffer?.Dispose();
             wire.adjacentBuffer?.Dispose();wire.adjacentBuffer=null;
             wire.positionBuffer=wire.edgeBuffer=null;

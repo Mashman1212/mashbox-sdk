@@ -9,6 +9,7 @@ namespace MashBoxSDK.AnimationStudio
         private sealed class SelectionWireframe
         {
             internal int[] indices, canonical;
+            internal QuadDiagonalOverlay quadOverlay;
             internal Dictionary<(int,int),int> edgeLookup;
             internal Vector3[] lines;
             internal int[] orderedIndices, stripEnds;
@@ -90,6 +91,7 @@ namespace MashBoxSDK.AnimationStudio
                 int count=wire.vertices.Count;
                 mesh.GetVertices(wire.vertices);
                 wire.batchPositionsDirty = true; wire.vertexUpdateStart = 0;
+                if(wire.quadOverlay!=null)wire.quadOverlay.dirty=true;
                 if(wire.vertices.Count!=count){ClearSelectionWireframes();break;}
                 for(int i=0;i<wire.lines.Length;i++)wire.lines[i]=wire.vertices[wire.indices[i]];
             }
@@ -164,9 +166,11 @@ namespace MashBoxSDK.AnimationStudio
                     bool highlight=selected&&SelectionOutlineEnabled&&mode==ComponentMode.Object;
                     Handles.zTest=displayXray?UnityEngine.Rendering.CompareFunction.Always:UnityEngine.Rendering.CompareFunction.LessEqual;
                     bool drawWire=wireframeOnly || !StudioSettings.Current.hideObjectWireframe || (mode!=ComponentMode.Object&&i==Active);
-                    if(!drawWire&&!highlight)continue;
+                    if(!drawWire&&!highlight&&!showNonPlanarQuadDiagonals)continue;
                     SelectionWireframeLines(i, false);
                     var wire=selectionWireframes[Document.nodes[i]];
+                    if(showNonPlanarQuadDiagonals)DrawQuadDiagonals(i,wire);
+                    if(!drawWire&&!highlight)continue;
                     var color=highlight?ContrastingWireColor(new Color(1,.65f,.15f,1)):selected?ContrastingWireColor(new Color(.2f,.9f,.75f,1)):BackgroundWireColor;
                     float width=highlight?1.2f:1.25f;
                     using(new Handles.DrawingScope(color,Matrix4x4.identity))
@@ -377,6 +381,7 @@ namespace MashBoxSDK.AnimationStudio
                 Transforms[index].GetComponent<SkinnedMeshRenderer>().BakeMesh(wire.baked);
                 wire.baked.GetVertices(wire.vertices);
                 wire.batchPositionsDirty = true; wire.vertexUpdateStart = 0;
+                if(wire.quadOverlay!=null)wire.quadOverlay.dirty=true;
                 for (int i = 0; i < wire.lines.Length; i++) wire.lines[i] = wire.vertices[wire.indices[i]];
 
             }

@@ -64,6 +64,7 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("Material Textures"), displayTextures, () => SetDisplayMode(displayLighting,!displayTextures));
                     menu.AddItem(new GUIContent("Checker Map"), checkerMap, () => SetCheckerMap(!checkerMap));
                     menu.AddItem(new GUIContent("Backface Culling"), backfaceCulling, () => SetBackfaceCulling(!backfaceCulling));
+                    menu.AddItem(new GUIContent("Non-planar Quad Diagonals"), showNonPlanarQuadDiagonals, () => SetNonPlanarQuadDiagonals(!showNonPlanarQuadDiagonals));
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent("X-ray Mode"), displayXray, () => SetXRayMode(!displayXray));
                     break; }
@@ -196,6 +197,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Harden", true, () => ApplyEdgeNormals(true));
                     AddCommand(menu, "Soften…", true, OpenSoftenTool, finishPreview: false);
                     AddCommand(menu, "Recalculate Normals", true, RecalculateNormals);
+                    AddCommand(menu, "Flip Normals", true, FlipSelectedNormals);
                     break; }
                 case "UV": {
                     AddAction(menu, "UV Editor", MarkingAction.OpenUV, view);
