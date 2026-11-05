@@ -15,7 +15,7 @@ public static class StudioExtrudeInsetValidation
   m.triangles=triangles.ToArray();m.uv=p.Select(v=>new Vector2(v.x,v.y)).ToArray();m.colors=Enumerable.Repeat(Color.cyan,p.Length).ToArray();m.RecalculateNormals();m.RecalculateBounds();return new StudioModelDocument.Node{name="Inset",mesh=m,cutPolygons=polygons.ToArray(),cutTriangles=m.triangles};
  }
  static StudioModelDocument.Node Quad()=>Node(new[]{new Vector3(-.5f,-.5f,0),new Vector3(.5f,-.5f,0),new Vector3(.5f,.5f,0),new Vector3(-.5f,.5f,0)},new[]{new[]{0,1,2,3}});
- static StudioMeshCuts.ExtrusionResult Extrude(StudioModelDocument.Node n,int[] faces,float d,float inset,bool together=true,(int,int)[] edges=null)=>new StudioMeshCuts(n).Extrude(n,faces,edges,d,together,true,inset:inset);
+ static StudioMeshCuts.ExtrusionResult Extrude(StudioModelDocument.Node n,int[] faces,float d,float inset,bool together=true,(int,int)[] edges=null)=>new StudioMeshCuts(n).Extrude(n,faces,edges,d,together,true,inset:inset,edgeExtension:faces==null);
  static void Cap(StudioModelDocument.Node n,StudioMeshCuts.ExtrusionResult r,Vector3 source,Vector3 expected,string label){var p=n.mesh.vertices;var ids=r.MovingVertices.Where(i=>(r.SourceVertices[i]-source).sqrMagnitude<1e-8f).ToArray();Check(ids.Length>0,label+" source missing");foreach(int i in ids)Check((p[i]-expected).sqrMagnitude<1e-8f,label+" incorrect offset: "+p[i]+" expected "+expected);}
  public static void Run(){EditorApplication.delayCall+=()=>{try{if(!Application.dataPath.Replace("\\","/").Contains("/obj/StudioControlsValidation/"))throw new Exception("Disposable project only");Geometry();Live();Multi();Capture();}catch(Exception e){Finish(e);}};}
  static void Geometry()
@@ -26,7 +26,21 @@ public static class StudioExtrudeInsetValidation
   var separate=Node(new[]{new Vector3(-1,-.5f,0),new Vector3(0,-.5f,0),new Vector3(1,-.5f,0),new Vector3(-1,.5f,0),new Vector3(0,.5f,0),new Vector3(1,.5f,0)},new[]{new[]{0,1,4,3},new[]{1,2,5,4}});var sr=Extrude(separate,new[]{0,1},.2f,-.1f,false);var tips=sr.MovingVertices.Where(i=>sr.SourceVertices[i]==new Vector3(0,-.5f,0)).Select(i=>separate.mesh.vertices[i].x).ToArray();Check(tips.Any(x=>Mathf.Abs(x-.1f)<1e-5f)&&tips.Any(x=>Mathf.Abs(x+.1f)<1e-5f),"Individual caps must inset independently");
   var concave=Node(new[]{Vector3.zero,new Vector3(2,0,0),new Vector3(2,1,0),new Vector3(1,1,0),new Vector3(1,2,0),new Vector3(0,2,0)},new[]{new[]{0,1,2,3,4,5}});var cr=Extrude(concave,new[]{0},.2f,-.1f);Cap(concave,cr,new Vector3(1,1,0),new Vector3(.9f,.9f,.2f),"Concave reflex miter");
   var points=new List<Vector3>();for(int y=0;y<4;y++)for(int x=0;x<4;x++)points.Add(new Vector3(x,y,0));var faces=new List<int[]>();for(int y=0;y<3;y++)for(int x=0;x<3;x++)if(x!=1||y!=1)faces.Add(new[]{y*4+x,y*4+x+1,(y+1)*4+x+1,(y+1)*4+x});var ring=Node(points.ToArray(),faces.ToArray());var rr=Extrude(ring,Enumerable.Range(0,8).ToArray(),.2f,-.1f);Cap(ring,rr,new Vector3(0,0,0),new Vector3(.1f,.1f,.2f),"Ring outer");Cap(ring,rr,new Vector3(1,1,0),new Vector3(.9f,.9f,.2f),"Hole expands during region inset");
-  var edge=Quad();var er=Extrude(edge,null,.2f,.1f,edges:new[]{(0,1),(1,2)});Cap(edge,er,new Vector3(.5f,-.5f,0),new Vector3(.6f,-.6f,.2f),"Open edge chain");Check(new StudioMeshCuts(edge).Faces.Count==3,"Open edge chain topology");
+  var edge=Quad();var er=Extrude(edge,null,.2f,.1f,edges:new[]{(0,1),(1,2)});Cap(edge,er,new Vector3(.5f,-.5f,0),new Vector3(.7f,-.7f,.1f),"Open edge chain");Check(new StudioMeshCuts(edge).Faces.Count==3,"Open edge chain topology");
+  var legacyEdge=Quad();var legacyResult=new StudioMeshCuts(legacyEdge).Extrude(legacyEdge,null,new[]{(0,1),(1,2)},.2f,true,true,inset:.1f,edgeExtension:false);Cap(legacyEdge,legacyResult,new Vector3(.5f,-.5f,0),new Vector3(.6f,-.6f,.2f),"Saved edge extrusion axes");
+  var arc=new List<Vector3>();for(int x=0;x<4;x++){float a=x*Mathf.PI/16;arc.Add(new Vector3(Mathf.Cos(a)*.5f,-1,Mathf.Sin(a)*.5f));arc.Add(new Vector3(Mathf.Cos(a)*.5f,1,Mathf.Sin(a)*.5f));}
+  var cylinderSide=Node(arc.ToArray(),new[]{new[]{0,1,3,2},new[]{2,3,5,4},new[]{4,5,7,6}});
+  var sideTopology=new StudioMeshCuts(cylinderSide);var sideNormal=Vector3.Cross(arc[1]-arc[0],arc[3]-arc[0]).normalized;
+  var sideDirection=sideTopology.ExtrusionHandleDirection(null,new[]{(0,1)},true,true);
+  Check(Mathf.Abs(Vector3.Dot(sideDirection,sideNormal))<1e-5f&&Mathf.Abs(sideDirection.y)<1e-5f,"Cylinder boundary handle follows surface tangent");
+  var sideResult=Extrude(cylinderSide,null,.2f,0,edges:new[]{(0,1)});
+  Cap(cylinderSide,sideResult,arc[0],arc[0]+sideDirection*.2f,"Cylinder boundary extension");
+  Check(sideResult.MovingVertices.All(i=>Mathf.Abs(cylinderSide.mesh.vertices[i].y-sideResult.SourceVertices[i].y)<1e-5f),"Cylinder edge extension keeps its vertical profile");
+  Check(new StudioMeshCuts(cylinderSide).Faces.Count==4,"Cylinder boundary adds one connected wall");
+  var cappedSide=Node(new[]{arc[0],arc[1],arc[2],arc[3],new Vector3(0,1,0)},new[]{new[]{0,1,3,2},new[]{4,3,1}});
+  var cappedResult=Extrude(cappedSide,null,.2f,0,edges:new[]{(0,1),(1,4)});
+  Check(cappedResult.MovingVertices.Where(i=>cappedResult.SourceVertices[i]==arc[1]).Select(i=>cappedSide.mesh.vertices[i]).Distinct().Count()==1,"Cylinder cap and side share one extended corner");
+  Check(new StudioMeshCuts(cappedSide).Faces.Count==4,"Cylinder cap-to-side edge chain adds two walls");
   var collapse=Quad();var original=collapse.mesh.vertices;bool rejected=false;try{Extrude(collapse,new[]{0},.2f,-.6f);}catch(InvalidOperationException){rejected=true;}Check(rejected&&collapse.mesh.vertices.SequenceEqual(original),"Invalid inset must fail atomically");
  }
  static void Live()

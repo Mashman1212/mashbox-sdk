@@ -16,6 +16,7 @@ namespace MashBoxSDK.AnimationStudio
         static void Check(bool value, string label) { if (!value) throw new Exception(label); Results.Add("PASS: " + label); }
         static void Near(Vector3 a, Vector3 b, string label) => Check(Vector3.Distance(a,b) < .0002f,label);
         static Vector3[] World(StudioModelEditor editor) => editor.ActiveMesh.vertices.Select(editor.Transforms[0].TransformPoint).ToArray();
+        static Vector3[] WorldAt(StudioModelEditor editor,int index) => editor.Transforms[index].GetComponent<MeshFilter>().sharedMesh.vertices.Select(editor.Transforms[index].TransformPoint).ToArray();
         public static void Run()
         {
             StudioModelEditor editor = null; Scene exportScene = default; GameObject imported = null;
@@ -86,11 +87,47 @@ namespace MashBoxSDK.AnimationStudio
                     Check(multi[0].parent == multiRoot.transform && multi[second].parent == multiRoot.transform,"Multi-model export retains distinct model roots");
                 }
                 finally { EditorSceneManager.ClosePreviewScene(multiScene); }
+                MultiSelection();
                 File.WriteAllLines("freeze-pivot-result.txt",Results);
             }
             catch(Exception e) { Results.Add("FAIL: " + e); File.WriteAllLines("freeze-pivot-result.txt",Results); }
             finally { if(imported) Object.DestroyImmediate(imported); if(exportScene.IsValid()) EditorSceneManager.ClosePreviewScene(exportScene); editor?.Dispose(); }
             EditorApplication.Exit(Results.Any(r => r.StartsWith("FAIL")) ? 1 : 0);
+        }
+        static void MultiSelection()
+        {
+            var doc=ScriptableObject.CreateInstance<StudioModelDocument>();
+            var shared=StudioModelDocument.BuildPrimitive(PrimitiveType.Cube,out var polygons);
+            var childMesh=StudioModelDocument.BuildPrimitive(PrimitiveType.Cube,out var childPolygons);
+            doc.nodes.Add(new StudioModelDocument.Node{name="Parent",mesh=shared,cutPolygons=polygons,cutTriangles=shared.triangles,position=new Vector3(1,2,3),rotation=Quaternion.Euler(20,30,0),scale=Vector3.one*2});
+            doc.nodes.Add(new StudioModelDocument.Node{name="Sibling",mesh=shared,cutPolygons=polygons,cutTriangles=shared.triangles,position=new Vector3(-3,1,0),rotation=Quaternion.Euler(0,45,10)});
+            doc.nodes.Add(new StudioModelDocument.Node{name="Child",mesh=childMesh,cutPolygons=childPolygons,cutTriangles=childMesh.triangles,parent=0,position=new Vector3(1,0,2),rotation=Quaternion.Euler(10,0,0)});
+            var editor=new StudioModelEditor(()=>{});
+            try
+            {
+                editor.Load(doc);editor.SelectObject(0);editor.SelectObject(1,true);editor.SelectObject(2,true);
+                var before=Enumerable.Range(0,3).Select(i=>WorldAt(editor,i)).ToArray();
+                doc.nodes[1].blendShape=new StudioBlendShape();
+                bool rejected=false;
+                try{typeof(StudioModelEditor).GetMethod("FreezeEditingObject",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(editor,null);}
+                catch(System.Reflection.TargetInvocationException exception) when(exception.InnerException is InvalidOperationException){rejected=true;}
+                Check(rejected&&doc.nodes[0].position==new Vector3(1,2,3)&&WorldAt(editor,0).Zip(before[0],(a,b)=>Vector3.Distance(a,b)).Max()<.0002f,"Invalid selected object rejects the whole freeze before mutation");
+                doc.nodes[1].blendShape=null;
+                typeof(StudioModelEditor).GetMethod("FreezeEditingObject",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(editor,null);
+                Check(Enumerable.Range(0,3).All(i=>doc.nodes[i].position==Vector3.zero&&doc.nodes[i].scale==Vector3.one&&Quaternion.Angle(doc.nodes[i].rotation,Quaternion.identity)<.001f),"Freeze resets every selected object, including a selected child");
+                Check(Enumerable.Range(0,3).All(i=>WorldAt(editor,i).Zip(before[i],(a,b)=>Vector3.Distance(a,b)).Max()<.0002f),"Freeze preserves all selected world surfaces");
+                Check(doc.nodes[0].mesh!=doc.nodes[1].mesh,"Freeze separates shared source meshes");
+                Undo.PerformUndo();
+                Check(Quaternion.Angle(doc.nodes[0].rotation,Quaternion.Euler(20,30,0))<.001f&&Quaternion.Angle(doc.nodes[1].rotation,Quaternion.Euler(0,45,10))<.001f&&Quaternion.Angle(doc.nodes[2].rotation,Quaternion.Euler(10,0,0))<.001f,"One Undo restores all selected transforms");
+                Undo.PerformRedo();
+                Check(Enumerable.Range(0,3).All(i=>doc.nodes[i].position==Vector3.zero&&WorldAt(editor,i).Zip(before[i],(a,b)=>Vector3.Distance(a,b)).Max()<.0002f),"One Redo reapplies all selected freezes");
+            }
+            finally
+            {
+                editor.Dispose();
+                foreach(var mesh in doc.nodes.Select(n=>n.mesh).Where(m=>m).Distinct())Object.DestroyImmediate(mesh);
+                Object.DestroyImmediate(doc);
+            }
         }
     }
 }

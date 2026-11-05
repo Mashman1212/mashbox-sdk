@@ -45,15 +45,15 @@ public static class StudioAxisSnapValidation
             foreach(bool ortho in new[]{false,true})
             {
                 view.orthographic=ortho;view.LookAtDirect(Vector3.zero,ortho?Quaternion.Euler(70,-120,25):Quaternion.Euler(-20,40,0),5);
-                var actual=(Vector3)Call("ResolveMoveSnap",view,ortho?new Vector2(-10000,9000):new Vector2(1,2),raw,origin);
+                var actual=(Vector3)Call("ResolveMoveSnap",view,ortho?new Vector2(-10000,9000):new Vector2(1,2),raw,origin,false);
                 Near(actual,expected,"Vertex snapping changed with camera or pointer");
                 var delta=Quaternion.Inverse(orientation)*(actual-origin);
                 for(int a=0;a<3;a++)if(((int)axis&(1<<a))==0)Check(Mathf.Abs(delta[a])<.00002f,"Locked vertex coordinate moved");
             }
             Set("gridSnapHeld",true);
-            Near((Vector3)Call("ResolveMoveSnap",null,Vector2.zero,raw,origin),expected,"Grid overrode held vertex snap");
+            Near((Vector3)Call("ResolveMoveSnap",null,Vector2.zero,raw,origin,false),expected,"Grid overrode held vertex snap");
             Set("pivotSnapHeld",false);StudioSettings.Current.gridSpacing=.5f;
-            var grid=(Vector3)Call("ResolveMoveSnap",null,Vector2.zero,raw,origin);
+            var grid=(Vector3)Call("ResolveMoveSnap",null,Vector2.zero,raw,origin,false);
             var gridPoint=Quaternion.Inverse(orientation)*grid;var gridDelta=Quaternion.Inverse(orientation)*(grid-origin);
             for(int a=0;a<3;a++)if(((int)axis&(1<<a))==0)Check(Mathf.Abs(gridDelta[a])<.00002f,"Locked grid coordinate moved");else Check(Mathf.Abs(gridPoint[a]*2-Mathf.Round(gridPoint[a]*2))<.00002f,"Active coordinate missed grid");
             Set("gridSnapHeld",false);
@@ -75,7 +75,7 @@ public static class StudioAxisSnapValidation
         }
         stage="no stationary target";Target(0,StudioModelEditor.ComponentMode.Vertex);Target(1,StudioModelEditor.ComponentMode.Vertex);editor.Transforms[1].gameObject.SetActive(true);editor.Transforms[2].gameObject.SetActive(false);
         Set("pivotSnapHeld",true);Set("gridSnapHeld",true);Set("moveDragAxes",StudioModelEditor.MoveAxes.Y);
-        var previous=new Vector3(.1f,.2f,.3f);Near((Vector3)Call("ResolveMoveSnap",null,Vector2.zero,new Vector3(2,3,4),previous),previous,"Missing vertex fell back to grid or moving geometry");
+        var previous=new Vector3(.1f,.2f,.3f);Near((Vector3)Call("ResolveMoveSnap",null,Vector2.zero,new Vector3(2,3,4),previous,false),previous,"Missing vertex fell back to grid or moving geometry");
         Check(checks>500,"Incomplete snap matrix");
     }
     static void CheckVertices(Vector3[][] before,Vector3 delta,int count)

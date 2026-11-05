@@ -46,6 +46,11 @@ public static class VDPrecisionBaker
         }
         public bool Occluded(Vector3 origin, Vector3 direction, float limit)
             => limit > 0 && tree.AnyHit(origin, direction, limit);
+        public bool TryHit(Vector3 origin, Vector3 direction, float limit, out float distance)
+        {
+            distance = tree.Hit(origin, direction, limit, true);
+            return distance < limit;
+        }
     }
 
     internal enum Output { RGB, Red, Green, Blue, Alpha, RGBA }

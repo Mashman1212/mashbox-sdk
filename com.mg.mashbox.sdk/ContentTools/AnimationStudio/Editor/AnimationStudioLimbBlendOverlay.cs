@@ -218,6 +218,7 @@ namespace MashBoxSDK.AnimationStudio
                 var mask = new int[pose.bones.Length]; mask[index] = 1;
                 if (!WriteAuthoringKey(mask, new int[pose.effectors.Length])) return;
                 Save();
+                viewport?.ShowStatusMessage("Keyed position");
             }
             else unkeyedPose = true;
             rig.Apply(pose); EvaluateConstraints(); viewport?.Repaint(); Repaint();

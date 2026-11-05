@@ -289,10 +289,18 @@ namespace MashBoxSDK.AnimationStudio
                 nodes[index].RotationChannels=new Vector3(Mathf.DeltaAngle(0,e.x),Mathf.DeltaAngle(0,e.y),Mathf.DeltaAngle(0,e.z));
             },"Bake pivot");
         }
-        public void Freeze(int index, Transform[] transforms)
+        internal void ValidateFreeze(int index, Transform[] transforms)
         {
             if (IsBone(index)) throw new InvalidOperationException("Freeze is unavailable on skin bones.");
             if(nodes[index].blendShape!=null) throw new InvalidOperationException("Bake Current Pose before freezing a blend shape.");
+            var t = transforms[index];
+            var placement = t.localPosition;
+            var matrix = (t.parent ? t.parent.localToWorldMatrix : Matrix4x4.identity) * Matrix4x4.Translate(placement);
+            ValidateCompensation(index, transforms, matrix);
+        }
+        public void Freeze(int index, Transform[] transforms)
+        {
+            ValidateFreeze(index, transforms);
             var t = transforms[index];
             var placement = t.localPosition;
             var retainedWorldRotation=nodes[index].RetainedWorldRotation(t);

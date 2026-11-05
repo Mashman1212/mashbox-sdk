@@ -45,7 +45,7 @@ namespace MashBoxSDK.AnimationStudio
                 Check(rejected && doc.nodes[anchor].name=="Left_Grip_Anchor","Non-catalog names cannot be assigned");
                 rejected=false;
                 try { doc.AddAnchor("Left_Grip_Anchor",0); } catch(InvalidOperationException) { rejected=true; }
-                Check(rejected,"Duplicate anchor types under one parent are rejected instead of numbered automatically");
+                Check(rejected,"Create Anchor Point rejects an already-used type instead of numbering it automatically");
                 int duplicate=doc.DuplicateObjects(new[]{0})[0]; editor.Load(doc);
                 Check(doc.nodes[duplicate+1].anchorType=="Left_Grip_Anchor" && doc.nodes[duplicate+1].name=="Left_Grip_Anchor","Duplicating a model preserves exact child anchor identifiers");
                 Check(File.ReadAllBytes(AssetDatabase.GetAssetPath(doc)).SequenceEqual(disk),"Anchor creation, movement and type changes remain unsaved until Save");
@@ -66,6 +66,19 @@ namespace MashBoxSDK.AnimationStudio
                 var existing=doc.nodes[anchor]; existing.anchorType=null;
                 editor.Load(doc);
                 Check(doc.nodes[anchor].anchorType=="Left_Grip_Anchor","Existing workspace anchor transforms gain typed controls on load");
+                editor.SelectObject(anchor);
+                int beforeDuplicate=doc.nodes.Count;
+                editor.DuplicateSelectedObjects();
+                int copy=editor.Active;
+                Check(doc.nodes.Count==beforeDuplicate+1 && copy==beforeDuplicate && doc.nodes[copy].parent==doc.nodes[anchor].parent,
+                    "Duplicating a selected anchor creates and selects a sibling anchor");
+                Check(doc.nodes[copy].anchorType==doc.nodes[anchor].anchorType && doc.nodes[copy].name==doc.nodes[anchor].name,
+                    "The copied anchor retains the same SDK type and exact name");
+                Check(doc.nodes[copy].position==doc.nodes[anchor].position && doc.nodes[copy].rotation==doc.nodes[anchor].rotation &&
+                    editor.Transforms[copy].localPosition==editor.Transforms[anchor].localPosition,
+                    "The copied anchor retains its placement");
+                Check(editor.Transforms[copy].name==editor.Transforms[anchor].name && !doc.nodes[copy].mesh,
+                    "The duplicated anchor remains an editable empty transform");
             }
             catch(Exception e) { results.Add("FAIL: "+e); exit=1; }
             finally { editor?.Dispose(); }

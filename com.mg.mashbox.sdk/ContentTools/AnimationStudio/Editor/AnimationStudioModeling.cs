@@ -124,7 +124,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindWorkspaceStatistics();
             viewport.BindModelToolOptions(modelingMode ? (System.Action)(() => modelEditor?.DrawEmbeddedToolOptions()) : null);
             if (modelEditor != null) modelEditor.FocusToolOptions = viewport.FocusModelToolOptions;
-            viewport.BindStatusBar(modelingMode);
+            viewport.BindStatusBar(modelingMode || IsAnimationMode);
             viewport.BindStatistics(modelingMode ? (System.Action)(() => modelEditor?.DrawStatistics()) : null);
             viewport.BindMarkingMenu(modelingMode ? (System.Action)(() => modelEditor?.DrawViewportModelOverlays()) : null);
             viewport.BindModelInput(modelingMode ? (System.Func<bool>)(() => modelingMode) : null,

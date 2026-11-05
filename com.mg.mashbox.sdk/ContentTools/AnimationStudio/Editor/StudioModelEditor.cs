@@ -98,6 +98,7 @@ namespace MashBoxSDK.AnimationStudio
             collapsedHierarchy.RemoveWhere(node => !currentNodes.Contains(node));
             componentFrameValid = false;
             ResetHandleExtrusion();
+            surfaceSnapDragging = false;
             scaleDrag = null;
             moveDragControl = 0;
             gestureUndo = -1;moveDrag=null;
@@ -816,6 +817,11 @@ namespace MashBoxSDK.AnimationStudio
             if (handleExtrudeControl != 0 && GUIUtility.hotControl != handleExtrudeControl) ResetHandleExtrusion();
             if (Active >= 0 && !Transforms[Active].gameObject.activeInHierarchy) return;
             bool moveDragEvent = Event.current.type == EventType.MouseDrag;
+            bool surfaceSnap = (Event.current.control || Event.current.command) && Event.current.shift && !Event.current.alt;
+            if (moveDragEvent) surfaceSnapDragging = surfaceSnap && (pivot || tool == Tool.Move) &&
+                moveDragControl != 0 && GUIUtility.hotControl == moveDragControl;
+            else if (Event.current.type == EventType.MouseUp || Event.current.type == EventType.KeyUp || GUIUtility.hotControl == 0)
+                surfaceSnapDragging = false;
             // Native handles consume mouse-down (including rawType). Snapshot the
             // modifier gesture before drawing, then confirm that a handle captured it.
             bool shiftHandleMouseDown = Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
@@ -825,7 +831,7 @@ namespace MashBoxSDK.AnimationStudio
             if (LiveObjectTransformLocked) { DrawLiveObjectPivotIcons(); return; }
             if (tool == Tool.None && !pivot) return;
             if (mode != ComponentMode.Object && !CanEditComponents()) return;
-            if (DrawExtrudeDistanceGizmo()) return;
+            if (DrawExtrudeDistanceGizmo()) { surfaceSnapDragging = false; return; }
             if (!pivot && DrawMultiComponentHandle()) return;
             var t = Transforms[Active];
             if (moveDrag != null && (tool != Tool.Move || pivot || moveDrag.control != GUIUtility.hotControl || moveDrag.mesh != ActiveMesh || moveDrag.node != Active || moveDrag.mode != mode)) moveDrag = null;
@@ -942,8 +948,8 @@ namespace MashBoxSDK.AnimationStudio
             componentHandleRotation = rotation;
             if ((pivot || tool == Tool.Move) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl && moveDragEvent)
             {
-                position = ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,center);
-                if (pivotSnapHeld || gridSnapHeld) handleChanged = (position - center).sqrMagnitude > 1e-12f;
+                position = ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,center,surfaceSnap);
+                if (surfaceSnap || pivotSnapHeld || gridSnapHeld) handleChanged = (position - center).sqrMagnitude > 1e-12f;
             }
             if (!handleChanged) return;
             if (indices!=null && vertices==null) vertices=readVertices.ToArray();
@@ -1200,13 +1206,17 @@ namespace MashBoxSDK.AnimationStudio
             internal VDPrecisionBaker.RayIndex Tree;
             internal OcclusionIndex Cached;
         }
-        private OcclusionMesh[] CaptureOccluders()
+        private OcclusionMesh[] CaptureOccluders() => CaptureSnapOccluders(null);
+        private OcclusionMesh[] CaptureSnapOccluders(Predicate<int> includeNode)
         {
             var result = new List<OcclusionMesh>();
             for (int n = 0; n < Transforms.Length; n++)
             {
+                if (includeNode != null && !includeNode(n)) continue;
                 var mesh = IsolationPickMesh(n);
                 if (!mesh || !Transforms[n].gameObject.activeInHierarchy || !IsolationNodeVisible(n)) continue;
+                var renderer = Transforms[n].GetComponent<Renderer>();
+                if (!renderer || !renderer.enabled) continue;
                 int version = EditorUtility.GetDirtyCount(mesh);
                 if (!occlusionIndices.TryGetValue(mesh, out var cached) || cached.Version != version)
                     occlusionIndices[mesh] = cached = new OcclusionIndex { Version = version };

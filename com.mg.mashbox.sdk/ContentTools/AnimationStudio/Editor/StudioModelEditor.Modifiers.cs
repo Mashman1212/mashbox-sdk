@@ -87,7 +87,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var node=Document.nodes.First(n=>n.mesh==target.Live);var source=target.ModifierSourceNode();
                 var operation=new StudioModifierOperation{kind=liveTool.ToString(),name=liveTool==LiveTool.EdgeFlow?"Edit Edge Flow":liveTool.ToString(),
-                    parameters=liveParameters,normalizedBevel=liveTool==LiveTool.Bevel,flow=liveFlowParameters,weld=weld,world=liveWorld,
+                    parameters=liveParameters,normalizedBevel=liveTool==LiveTool.Bevel,edgeExtension=liveTool==LiveTool.Extrude&&liveMode==ComponentMode.Edge,flow=liveFlowParameters,weld=weld,world=liveWorld,
                     faces=liveFaces?.ToArray(),edges=liveEdges?.SelectMany(e=>new[]{e.a,e.b}).ToArray(),vertices=liveSelection?.ToArray()};
                 if(liveTool==LiveTool.Circularize && liveMode!=ComponentMode.Vertex)operation.vertices=null;
                 if(liveTool==LiveTool.Soften)
@@ -228,7 +228,7 @@ namespace MashBoxSDK.AnimationStudio
                             p.z=Mathf.Clamp(EditorGUILayout.FloatField("Profile",p.z),-1,1);p.w=EditorGUILayout.Popup("Junction",Mathf.RoundToInt(p.w)&1,new[]{"Grid","Cap"})+(bevelUnlocked?BevelUnlockRangeFlag:0);
                             flow.x=EditorGUILayout.Toggle("Edge Flow",flow.x>=.5f)?1:0;
                             if(flow.x>=.5f){flow.y=EditorGUILayout.FloatField("Flow influence",flow.y);flow.z=ModifierIntegerField("Flow iterations",Mathf.RoundToInt(flow.z),1,64);}break;
-                        case "Extrude":p.x=StudioSceneUnits.Field("Distance",p.x);p.z=StudioSceneUnits.Field("Inset",p.z);p.y=EditorGUILayout.Toggle("Together",p.y>=.5f)?1:0;break;
+                        case "Extrude":p.x=StudioSceneUnits.Field(operation.edgeExtension?"Extension distance":"Distance",p.x);p.z=StudioSceneUnits.Field(operation.edgeExtension?"Normal offset":"Inset",p.z);if(!operation.edgeExtension)p.y=EditorGUILayout.Toggle("Together",p.y>=.5f)?1:0;break;
                         case "Bridge":p.x=ModifierIntegerField("Divisions",Mathf.RoundToInt(p.x),0,64);p.y=Mathf.Clamp(EditorGUILayout.FloatField("Curvature",p.y),-1,1);break;
                         case "Circularize":p=DrawCircularizeFields(p,ref flow);break;
                         case "Weld":p.x=Mathf.Max(0,StudioSceneUnits.Field("Range",p.x));break;

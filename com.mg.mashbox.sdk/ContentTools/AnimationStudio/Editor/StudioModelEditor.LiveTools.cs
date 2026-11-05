@@ -149,6 +149,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (kind == LiveTool.Extrude && liveExtrusion != null && liveExtrusionTogether == extrudeFacesTogether && (Mathf.Abs(parameters.x) >= 1e-5f || Mathf.Abs(parameters.z) >= 1e-5f) && (parameters.z == 0 || liveExtrusion.InsetDirections != null))
                 {
                     // Distance/inset edits retain the index buffer, cached wavefront and expanded topology.
+                    liveExtrusion.ValidateDistance(parameters.x);
                     liveExtrusion.ValidateInset(parameters.z);
                     for (int i = 0; i < liveExtrusionPositions.Length; i++) liveExtrusionPositions[i] = liveExtrusion.SourceVertices[i] + liveExtrusion.NormalDirections[i] * parameters.x + (liveExtrusion.InsetDirections == null ? Vector3.zero : liveExtrusion.InsetDirections[i] * parameters.z);
                     target.Work.mesh.vertices = liveExtrusionPositions;
@@ -190,7 +191,7 @@ namespace MashBoxSDK.AnimationStudio
                     // Zero distance and zero inset together are a reversible no-op.
                     liveExtrusion = null;
                     if (Mathf.Abs(parameters.x) < 1e-5f && Mathf.Abs(parameters.z) < 1e-5f) continue;
-                    liveExtrusion = target.Topology.Extrude(target.Work, liveFaces, liveEdges, parameters.x, extrudeFacesTogether, weld, inset: parameters.z);
+                    liveExtrusion = target.Topology.Extrude(target.Work, liveFaces, liveEdges, parameters.x, extrudeFacesTogether, weld, inset: parameters.z, edgeExtension: liveFaces == null);
                     target.Work.normalGroups = null; liveExtrusionTogether = extrudeFacesTogether;
                     liveExtrusionPositions = target.Work.mesh.vertices;
                     liveExtrusionDirections = liveExtrusion.NormalDirections;

@@ -87,7 +87,7 @@ public static class StudioHierarchyDragValidation
         }
         catch(Exception e){Finish(e.ToString());}
     }
-    static void Mouse(EventType type,Vector2 position)=>window.SendEvent(new Event{type=type,button=button,mousePosition=position,delta=new Vector2(12,0)});
+    static void Mouse(EventType type,Vector2 position,EventModifiers modifiers=EventModifiers.None)=>window.SendEvent(new Event{type=type,button=button,mousePosition=position,delta=new Vector2(12,0),modifiers=modifiers});
     static void Log(string text,string stack,LogType type){if(type==LogType.Exception||type==LogType.Error||type==LogType.Assert)errors+=text+"\n"+stack;}
     static void Tick()
     {
@@ -98,7 +98,19 @@ public static class StudioHierarchyDragValidation
             var source=new Vector2(80,40);var target=new Vector2(80,64);var blank=new Vector2(80,240);
             switch(step++)
             {
-                case 0:Mouse(EventType.MouseDown,source);break;
+                case 0:
+                    if(button==0)
+                    {
+                        editor.SetToolbarComponentMode(StudioModelEditor.ComponentMode.Vertex);
+                        Mouse(EventType.MouseDown,source);Mouse(EventType.MouseUp,source);
+                        Check(editor.ToolbarComponentMode==StudioModelEditor.ComponentMode.Object&&editor.Active==0&&editor.CanDeleteObjects,"Hierarchy click returns to Object mode for Delete");
+                        editor.SetToolbarComponentMode(StudioModelEditor.ComponentMode.Edge);
+                        Mouse(EventType.MouseDown,target,EventModifiers.Shift);Mouse(EventType.MouseUp,target,EventModifiers.Shift);
+                        var selected=(HashSet<int>)typeof(StudioModelEditor).GetField("objects",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(editor);
+                        Check(editor.ToolbarComponentMode==StudioModelEditor.ComponentMode.Object&&selected.SetEquals(new[]{0,1}),"Shift-click selects objects and returns to Object mode");
+                        Mouse(EventType.MouseDown,source);Mouse(EventType.MouseUp,source);
+                    }
+                    Mouse(EventType.MouseDown,source);break;
                 case 1:Mouse(EventType.MouseDrag,source+new Vector2(15,0));Check(DragAndDrop.GetGenericData("MashBoxStudio.HierarchyDrag")!=null,"Native button "+button+" starts internal drag");break;
                 case 2:Mouse(EventType.DragUpdated,target);Check(DragAndDrop.visualMode==DragAndDropVisualMode.Move,"Target accepts drag");break;
                 case 3:Mouse(EventType.DragPerform,target);Check(editor.Document.nodes[0].parent==1,"Drop reparents for button "+button);break;

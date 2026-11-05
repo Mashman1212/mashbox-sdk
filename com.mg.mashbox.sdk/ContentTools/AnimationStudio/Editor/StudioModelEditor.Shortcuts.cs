@@ -80,7 +80,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             ResetTargetWeldGesture(); ReleaseMultiCutPointer(); ReleaseBisectPointer(); FinishSelectionPaint();
             if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
-            EndPivotSnap(); ClearGridSnap();
+            EndPivotSnap(); ClearGridSnap(); surfaceSnapDragging = false;
         }
     }
 }

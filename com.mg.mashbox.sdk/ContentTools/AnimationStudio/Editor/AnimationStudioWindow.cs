@@ -396,7 +396,13 @@ namespace MashBoxSDK.AnimationStudio
         private void Guard(Action action)
         {
             try { action(); message = null; }
-            catch (Exception ex) { message = ex.GetBaseException().Message; playing = false; }
+            catch (Exception ex)
+            {
+                message = ex.GetBaseException().Message;
+                playing = false;
+                Debug.LogException(ex);
+                ShowNotification(new GUIContent(message), 5);
+            }
             Repaint();
         }
 
@@ -813,6 +819,7 @@ namespace MashBoxSDK.AnimationStudio
                 if(!WriteAuthoringKey()) return;
                 Save();
                 unkeyedPose = false;
+                viewport?.ShowStatusMessage(KeyedStatusFor(label));
             }
             else unkeyedPose = true;
             Guard(() => rig.Apply(pose)); viewport?.Repaint();
@@ -854,6 +861,17 @@ namespace MashBoxSDK.AnimationStudio
             if(!WriteAuthoringKey()) return;
             unkeyedPose = false;
             Save();
+            bool rotationEdit = rotate || draftLabel.IndexOf("Rotate", StringComparison.OrdinalIgnoreCase) >= 0;
+            viewport?.ShowStatusMessage(rotationEdit ? "Keyed rotation" : "Keyed position");
+        }
+        private static string KeyedStatusFor(string label)
+        {
+            if (label.IndexOf("blend", StringComparison.OrdinalIgnoreCase) >= 0) return "Keyed IK/FK blend";
+            if (label == "Edit bike control" || label.IndexOf("rotate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                label.IndexOf("rotation", StringComparison.OrdinalIgnoreCase) >= 0) return "Keyed rotation";
+            if (label.IndexOf("move", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                label.IndexOf("position", StringComparison.OrdinalIgnoreCase) >= 0) return "Keyed position";
+            return "Keyed pose";
         }
         private void TogglePlay()
         {
@@ -971,6 +989,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             Undo.RecordObject(take,rotationChannel ? "Key selected rotation" : "Key selected position");
             if(!WriteAuthoringKey(bones,effectors)) return;
+            viewport?.ShowStatusMessage(rotationChannel ? "Keyed rotation" : "Keyed position");
             sceneDraft=false; playing=false; Save();
             var stored=take.Evaluate(frame);
             unkeyedPose=false;

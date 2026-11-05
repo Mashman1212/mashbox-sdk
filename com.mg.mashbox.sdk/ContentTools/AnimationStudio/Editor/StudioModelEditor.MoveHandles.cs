@@ -17,6 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly Vector3[] PivotTrianglePoints = new Vector3[3];
         private readonly int[] moveHandleIds = new int[7];
         private int moveDragControl;
+        private bool surfaceSnapDragging;
         private MoveAxes moveDragAxes = MoveAxes.Free;
         private Vector3 moveDragOrigin;
         private Quaternion moveDragOrientation;
@@ -38,6 +39,17 @@ namespace MashBoxSDK.AnimationStudio
         internal static System.Action<Vector3,float> MoveHandleProbe;
 #endif
         private Vector3 DrawMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
+        {
+            var evt = Event.current;
+            var modifiers = evt.modifiers;
+            // Studio resolves Ctrl+Shift against its preview meshes. Suppress the
+            // native handle's main-scene collider snap for this chord.
+            if ((evt.control || evt.command) && evt.shift && !evt.alt)
+                evt.modifiers &= ~(EventModifiers.Control | EventModifiers.Command | EventModifiers.Shift);
+            try { return DrawMoveHandleCore(center, orientation, sizeMultiplier); }
+            finally { evt.modifiers = modifiers; }
+        }
+        private Vector3 DrawMoveHandleCore(Vector3 center, Quaternion orientation, float sizeMultiplier)
         {
             if (GUIUtility.hotControl == 0) { moveDragControl = 0; edgeSnapLatched = false; }
             float size = HandleUtility.GetHandleSize(center) * sizeMultiplier;
@@ -183,6 +195,7 @@ namespace MashBoxSDK.AnimationStudio
             var camera = view.camera;
             float dpi = EditorGUIUtility.pixelsPerPoint;
             var pointer = PivotCameraPoint(view, mouse);
+            OcclusionMesh[] occluders = null;
             if (!edgeSnapLatched)
             {
                 var moving = MovingSnapVertices();
@@ -212,6 +225,8 @@ namespace MashBoxSDK.AnimationStudio
                         float distance = (pointer-ga-delta*t).sqrMagnitude;
                         float z = 1 / ((1-t)/sa.z+t/sb.z);
                         if (distance > best || Mathf.Abs(distance-best) < .01f && z >= depth) continue;
+                        float edgeWeight = t * sa.z / ((1-t)*sb.z+t*sa.z);
+                        if (Occluded(view, Vector3.Lerp(a,b,edgeWeight), ref occluders)) continue;
                         best = distance; depth = z; edgeSnapStart = a; edgeSnapEnd = b; edgeSnapLatched = true;
                     }
                 }
@@ -226,6 +241,40 @@ namespace MashBoxSDK.AnimationStudio
             float weight = fraction * start.z / ((1-fraction)*end.z + fraction*start.z);
             target = Vector3.Lerp(edgeSnapStart, edgeSnapEnd, weight);
             return true;
+        }
+        private bool TrySurfaceSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)
+        {
+            target = default;
+            if (!view || !view.camera || !Document) return false;
+            return TrySurfaceSnapTarget(HandleUtility.GUIPointToWorldRay(mouse), out target);
+        }
+        internal bool TrySurfaceSnapTarget(Ray ray, out Vector3 target)
+        {
+            target = default;
+            if (!Document) return false;
+            // A moving selection must not raycast against its own updated geometry.
+            var movingComponents = !pivot && mode != ComponentMode.Object
+                ? new HashSet<int>(ComponentTargetNodes(true)) : null;
+            var surfaces = CaptureSnapOccluders(node =>
+                (pivot || mode != ComponentMode.Object || !IsSnapMovingNode(node)) &&
+                (movingComponents == null || !movingComponents.Contains(node)));
+            float nearest = float.PositiveInfinity;
+            bool found = false;
+            foreach (var surface in surfaces)
+            {
+                var direction = surface.WorldToLocal.MultiplyVector(ray.direction);
+                float scale = direction.magnitude;
+                if (scale <= 1e-12f) continue;
+                var localRay = new Ray(surface.WorldToLocal.MultiplyPoint3x4(ray.origin), direction / scale);
+                float limit = nearest * scale;
+                if (!surface.Bounds.IntersectRay(localRay, out float entry) || entry >= limit) continue;
+                PrepareOcclusionIndex(surface);
+                if (!surface.Tree.TryHit(localRay.origin, localRay.direction, limit, out float distance)) continue;
+                nearest = distance / scale;
+                target = ray.GetPoint(nearest);
+                found = true;
+            }
+            return found;
         }
         private Dictionary<int,HashSet<int>> MovingSnapVertices()
         {
@@ -275,8 +324,11 @@ namespace MashBoxSDK.AnimationStudio
             }
             return found;
         }
-        private Vector3 ResolveMoveSnap(SceneView view, Vector2 mouse, Vector3 position, Vector3 previous)
+        private Vector3 ResolveMoveSnap(SceneView view, Vector2 mouse, Vector3 position, Vector3 previous, bool surfaceSnap)
         {
+            if (surfaceSnap)
+                return TrySurfaceSnapTarget(view, mouse, out var surfaceTarget)
+                    ? ConstrainMove(moveDragOrigin, surfaceTarget, moveDragOrientation, moveDragAxes) : previous;
             if (edgeSnapHeld) return TryEdgeSnapTarget(view, mouse, out var edgeTarget) ? edgeTarget : previous;
             if (pivotSnapHeld)
             {
@@ -297,6 +349,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             get
             {
+                if (surfaceSnapDragging) return "Surface Snap · " +
+                    (Application.platform == RuntimePlatform.OSXEditor ? "Cmd+Shift" : "Ctrl+Shift");
                 if (!pivotSnapHeld && !gridSnapHeld) return null;
                 string label = edgeSnapHeld ? "Edge Snap · "+StudioShortcuts.Label(StudioShortcut.EdgeSnap) : pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
                 if (pivotSnapHeld && gridSnapHeld) label += " (overrides grid)";

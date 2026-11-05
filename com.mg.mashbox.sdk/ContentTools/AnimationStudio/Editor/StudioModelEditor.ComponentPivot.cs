@@ -1,4 +1,5 @@
 using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -116,41 +117,100 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!Document||Active<0||mode!=ComponentMode.Object)throw new System.InvalidOperationException("Select an object to Bake Pivot.");
             FinishChannelEdit();FlushModifierEdits();
-            var node=Document.nodes[Active];Document.ValidateBakePivot(Active,Transforms);
-            if(node.modifiers?.operations.Any(o=>!string.IsNullOrEmpty(o.failure))==true)
-                throw new System.InvalidOperationException("Repair the broken modifier or Clear History before baking the pivot.");
-            bool rotate=!StudioModelDocument.Node.SameRotation(node.BakeRotation.normalized,Quaternion.identity);
-            if(!rotate&&node.positionOffset.Equals(Vector3.zero)&&StudioModelDocument.Node.SameRotation(node.pivotRotation,Quaternion.identity)&&StudioModelDocument.Node.SameRotation(node.frozenRotation,Quaternion.identity)&&StudioModelDocument.Node.SameRotation(node.frozenPivotBaseline,Quaternion.identity))return;
-            var before=rotate&&node.mesh?StudioModifierSource.Capture(node):null;
-            var mesh=node.mesh;
-            bool copied=rotate&&mesh&&(EditorUtility.IsPersistent(mesh)||Document.nodes.Count(n=>n.mesh==mesh)>1);
-            if(copied){mesh=Object.Instantiate(mesh);mesh.name=node.mesh.name;}
-            writingModifiers=true;
+            var targets=SelectedObjectTransformTargets();
+            foreach(int index in targets)
+            {
+                var node=Document.nodes[index];Document.ValidateBakePivot(index,Transforms);
+                if(node.modifiers?.operations.Any(o=>!string.IsNullOrEmpty(o.failure))==true)
+                    throw new System.InvalidOperationException("Repair the broken modifier or Clear History before baking the pivot on " + node.name + ".");
+            }
+            bool NeedsBake(StudioModelDocument.Node node) =>
+                !StudioModelDocument.Node.SameRotation(node.BakeRotation.normalized,Quaternion.identity) ||
+                !node.positionOffset.Equals(Vector3.zero) ||
+                !StudioModelDocument.Node.SameRotation(node.pivotRotation,Quaternion.identity) ||
+                !StudioModelDocument.Node.SameRotation(node.frozenRotation,Quaternion.identity) ||
+                !StudioModelDocument.Node.SameRotation(node.frozenPivotBaseline,Quaternion.identity);
+            targets=targets.Where(index=>NeedsBake(Document.nodes[index])).ToArray();
+            if(targets.Length==0)return;
+            var copies=new List<Mesh>();
+            bool rotated=false,priorWriting=writingModifiers;writingModifiers=true;
             Undo.IncrementCurrentGroup();int group=Undo.GetCurrentGroup();
             try
             {
-                Undo.RegisterCompleteObjectUndo(rotate&&mesh?new Object[]{Document,mesh}:new Object[]{Document},"Bake pivot");
-                if(rotate)ClearSubdivision();
-                if(copied){node.mesh=mesh;Transforms[Active].GetComponent<MeshFilter>().sharedMesh=mesh;}
-                Document.BakePivot(Active,Transforms);
-                if(before!=null)
+                Undo.SetCurrentGroupName("Bake pivots");
+                Undo.RegisterCompleteObjectUndo(Document,"Bake pivots");
+                foreach(int index in targets)
                 {
-                    var source=before.Restore();
-                    try{var operation=new StudioModifierOperation{kind="Direct",name="Bake Pivot",inputMesh=before.mesh,replacement=StudioModifierSource.Capture(node)};operation.Bind(source);AppendModifier(node,operation,before);}
-                    finally{Object.DestroyImmediate(source.mesh);}
+                    var node=Document.nodes[index];
+                    bool rotate=!StudioModelDocument.Node.SameRotation(node.BakeRotation.normalized,Quaternion.identity);
+                    var before=rotate&&node.mesh?StudioModifierSource.Capture(node):null;
+                    var mesh=rotate?IndependentTransformMesh(index,copies):node.mesh;
+                    Undo.RegisterCompleteObjectUndo(rotate&&mesh?new Object[]{Document,mesh}:new Object[]{Document},"Bake pivot");
+                    if(rotate){ClearSubdivision();rotated=true;}
+                    Document.BakePivot(index,Transforms);
+                    if(before!=null)
+                    {
+                        var source=before.Restore();
+                        try{var operation=new StudioModifierOperation{kind="Direct",name="Bake Pivot",inputMesh=before.mesh,replacement=StudioModifierSource.Capture(node)};operation.Bind(source);AppendModifier(node,operation,before);}
+                        finally{Object.DestroyImmediate(source.mesh);}
+                    }
                 }
                 pivot=false;EndPivotSnap();RememberLockedPivot(Transforms[Active].position,Transforms[Active].rotation);
                 Undo.CollapseUndoOperations(group);Undo.IncrementCurrentGroup();
-                if(rotate)RefreshModifierResult();else Changed(false);
+                if(rotated)RefreshModifierResult();else Changed(false);
                 RememberAction(RepeatKind.BakePivot);
             }
-            finally{writingModifiers=false;}
+            catch
+            {
+                Undo.RevertAllDownToGroup(group);Rebuild();
+                foreach(var copy in copies)if(copy)Object.DestroyImmediate(copy);
+                Undo.IncrementCurrentGroup();throw;
+            }
+            finally{writingModifiers=priorWriting;}
         }
         private void FreezeEditingObject()
         {
-            Document.Freeze(Active, Transforms);
-            RememberLockedPivot(EditingPivotPosition, Quaternion.identity);
-            Changed();
+            if(!Document||Active<0||mode!=ComponentMode.Object)throw new System.InvalidOperationException("Select objects to Freeze Transforms.");
+            FinishChannelEdit();FlushModifierEdits();
+            var targets=SelectedObjectTransformTargets();
+            foreach(int index in targets)Document.ValidateFreeze(index,Transforms);
+            var copies=new List<Mesh>();
+            Undo.IncrementCurrentGroup();int group=Undo.GetCurrentGroup();
+            try
+            {
+                Undo.SetCurrentGroupName("Freeze transforms");
+                Undo.RegisterCompleteObjectUndo(Document,"Freeze transforms");
+                foreach(int index in targets)
+                {
+                    IndependentTransformMesh(index,copies);
+                    Document.Freeze(index,Transforms);
+                }
+                RememberLockedPivot(EditingPivotPosition,Quaternion.identity);
+                Undo.CollapseUndoOperations(group);Undo.IncrementCurrentGroup();Changed();
+            }
+            catch
+            {
+                Undo.RevertAllDownToGroup(group);Rebuild();
+                foreach(var copy in copies)if(copy)Object.DestroyImmediate(copy);
+                Undo.IncrementCurrentGroup();throw;
+            }
+        }
+        private int[] SelectedObjectTransformTargets()
+        {
+            var selected=objects.Contains(Active)?new HashSet<int>(objects):new HashSet<int>{Active};
+            // Parent compensation runs first; a selected child then gets its own
+            // channels reset against the parent's final transform.
+            return Document.OrderedHierarchy().Where(selected.Contains).ToArray();
+        }
+        private Mesh IndependentTransformMesh(int index,List<Mesh> copies)
+        {
+            var node=Document.nodes[index];var mesh=node.mesh;
+            if(!mesh||!EditorUtility.IsPersistent(mesh)&&Document.nodes.Count(n=>n.mesh==mesh)==1)return mesh;
+            var copy=Object.Instantiate(mesh);copy.name=mesh.name;copies.Add(copy);
+            node.mesh=copy;
+            var filter=Transforms[index].GetComponent<MeshFilter>();if(filter)filter.sharedMesh=copy;
+            var skin=Transforms[index].GetComponent<SkinnedMeshRenderer>();if(skin)skin.sharedMesh=copy;
+            return copy;
         }
         private void MoveEditingPivot(Vector3 position)
         {

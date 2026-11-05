@@ -123,7 +123,7 @@ namespace MashBoxSDK.AnimationStudio
                     var faces=mode==ComponentMode.Face?Components.OrderBy(c=>c).ToArray():null;
                     var edges=mode==ComponentMode.Edge?Components.OrderBy(c=>c).Select(c=>Edges()[c]).ToArray():null;
                     var work=preview.Targets[i];
-                    var result=work.Topology.Extrude(work.Work,faces,edges,.1f,extrudeFacesTogether,weld,TransformPoint);results.Add(result);
+                    var result=work.Topology.Extrude(work.Work,faces,edges,.1f,extrudeFacesTogether,weld,TransformPoint,edgeExtension:false);results.Add(result);
                 }
             }
             // Evaluate every mesh before publishing or registering Undo.
@@ -178,8 +178,9 @@ namespace MashBoxSDK.AnimationStudio
             if(gesture==null&&GUIUtility.hotControl!=0){multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl);gesture.pendingExtrude=shiftDown;}
             if(tool==Tool.Move&&moveEvent&&moveDragControl!=0&&moveDragControl==GUIUtility.hotControl)
             {
-                position=ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,gesture?.position??center);
-                if(pivotSnapHeld||gridSnapHeld)changed=(position-(gesture?.position??center)).sqrMagnitude>1e-12f;
+                bool surfaceSnap=(evt.control||evt.command)&&evt.shift&&!evt.alt;
+                position=ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,gesture?.position??center,surfaceSnap);
+                if(surfaceSnap||pivotSnapHeld||gridSnapHeld)changed=(position-(gesture?.position??center)).sqrMagnitude>1e-12f;
             }
             if(changed)
             {

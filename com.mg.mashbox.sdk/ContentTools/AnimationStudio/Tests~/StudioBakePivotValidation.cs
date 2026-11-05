@@ -42,9 +42,43 @@ internal static class StudioBakePivotValidation
             editor.SetObjectChannels(doc.nodes[0].position,Vector3.zero,doc.nodes[0].scale,true);
             Check(Quaternion.Angle(editor.Transforms[0].rotation,Quaternion.identity)<.001f,"zero rotation did not square frame");
             Check(Same(original.Select(p=>Quaternion.Inverse(pivot)*p).ToArray(),World(editor,0)),"zero did not rotate geometry by minus45");
+            MultiSelection();
             File.WriteAllText(Out("bake-pivot-result.txt"),"PASS "+checks+" focused checks");
         }
         catch(Exception ex){File.WriteAllText(Out("bake-pivot-result.txt"),"FAIL after "+checks+": "+ex);}
         finally{editor?.Dispose();if(doc){foreach(var m in doc.nodes.Select(n=>n.mesh).Where(m=>m).Distinct())Object.DestroyImmediate(m);Object.DestroyImmediate(doc);}}
+    }
+    static void MultiSelection()
+    {
+        var doc=ScriptableObject.CreateInstance<StudioModelDocument>();
+        var mesh=StudioModelDocument.BuildPrimitive(PrimitiveType.Cube,out var polygons);
+        var first=Quaternion.Euler(20,0,0);var second=Quaternion.Euler(0,35,0);
+        doc.nodes.Add(new StudioModelDocument.Node{name="First",mesh=mesh,cutPolygons=polygons,cutTriangles=mesh.triangles,pivotRotation=first});
+        doc.nodes.Add(new StudioModelDocument.Node{name="Second",mesh=mesh,cutPolygons=polygons,cutTriangles=mesh.triangles,position=Vector3.right*3,pivotRotation=second});
+        var editor=new StudioModelEditor(()=>{});
+        try
+        {
+            editor.Load(doc);editor.SelectObject(0);editor.SelectObject(1,true);
+            var world0=World(editor,0);var world1=World(editor,1);
+            doc.nodes[1].skinned=true;
+            bool rejected=false;
+            try{typeof(StudioModelEditor).GetMethod("BakeEditingPivot",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(editor,null);}
+            catch(TargetInvocationException exception) when(exception.InnerException is InvalidOperationException){rejected=true;}
+            Check(rejected&&Quaternion.Angle(doc.nodes[0].pivotRotation,first)<.001f&&Same(world0,World(editor,0)),"Invalid selected object rejects the whole bake before mutation");
+            doc.nodes[1].skinned=false;
+            typeof(StudioModelEditor).GetMethod("BakeEditingPivot",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(editor,null);
+            Check(Quaternion.Angle(doc.nodes[0].rotation,first)<.001f&&Quaternion.Angle(doc.nodes[1].rotation,second)<.001f,"Multi-selection bakes both pivot frames");
+            Check(Same(world0,World(editor,0))&&Same(world1,World(editor,1))&&doc.nodes[0].mesh!=doc.nodes[1].mesh,"Multi-selection preserves both shared-mesh surfaces independently");
+            UnityEditor.Undo.PerformUndo();
+            Check(Quaternion.Angle(doc.nodes[0].pivotRotation,first)<.001f&&Quaternion.Angle(doc.nodes[1].pivotRotation,second)<.001f,"One Undo restores both pivot frames");
+            UnityEditor.Undo.PerformRedo();
+            Check(Quaternion.Angle(doc.nodes[0].rotation,first)<.001f&&Quaternion.Angle(doc.nodes[1].rotation,second)<.001f&&Same(world0,World(editor,0))&&Same(world1,World(editor,1)),"One Redo reapplies both pivots");
+        }
+        finally
+        {
+            editor.Dispose();
+            foreach(var item in doc.nodes.Select(n=>n.mesh).Where(m=>m).Distinct())Object.DestroyImmediate(item);
+            Object.DestroyImmediate(doc);
+        }
     }
 }

@@ -71,7 +71,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (changed && extrudeDistanceControl != 0)
             {
-                if (dragging) position = ResolveMoveSnap(SceneView.currentDrawingSceneView, pointer, position, center);
+                if (dragging) position = ResolveMoveSnap(SceneView.currentDrawingSceneView, pointer, position, center, false);
                 SetExtrudeDistanceFromGizmo(position, extrudeDistanceOrigin, extrudeDistanceStep, extrudeDistanceStart);
             }
             if (extrudeDistanceControl != 0 && GUIUtility.hotControl != extrudeDistanceControl) ResetExtrudeDistanceGizmo();

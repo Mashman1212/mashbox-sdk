@@ -15,7 +15,14 @@ namespace MashBoxSDK.AnimationStudio
             internal int[] MovingVertices;
             internal Vector3[] SourceVertices, NormalDirections, InsetDirections;
             internal float PositiveInsetLimit = float.PositiveInfinity, NegativeInsetLimit = float.PositiveInfinity;
+            internal float PositiveDistanceLimit = float.PositiveInfinity, NegativeDistanceLimit = float.PositiveInfinity;
             internal int[] CapTriangles;
+            internal void ValidateDistance(float distance)
+            {
+                float limit=distance>0?PositiveDistanceLimit:NegativeDistanceLimit;
+                if(Mathf.Abs(distance)>0 && Mathf.Abs(distance)>=limit-1e-6f)
+                    throw new InvalidOperationException("Edge extension reaches a boundary collision. Reduce the distance.");
+            }
             internal void ValidateInset(float inset)
             {
                 if(float.IsNaN(inset)||float.IsInfinity(inset))throw new InvalidOperationException("Inset must be finite.");
@@ -39,7 +46,7 @@ namespace MashBoxSDK.AnimationStudio
         // Render-vertex splits retain their attributes; coincident seams share displacement.
         internal ExtrusionResult Extrude(StudioModelDocument.Node node, int[] selectedFaces,
             (int a, int b)[] selectedEdges, float distance, bool together, bool keepSeams,
-            Func<Vector3, Vector3> transform = null, float inset = 0)
+            Func<Vector3, Vector3> transform = null, float inset = 0, bool edgeExtension = false)
         {
             var mesh = node.mesh;
             if (node.skinned || node.blendShape != null || mesh.blendShapeCount > 0 || mesh.boneWeights.Length > 0)
@@ -47,6 +54,7 @@ namespace MashBoxSDK.AnimationStudio
             if (float.IsNaN(distance) || float.IsInfinity(distance) || float.IsNaN(inset) || float.IsInfinity(inset) || Mathf.Abs(distance) < .00001f && Mathf.Abs(inset) < .00001f)
                 throw new InvalidOperationException("Extrude distance and inset must be finite, with at least one non-zero value.");
             bool faceMode = selectedFaces != null;
+            bool surfaceExtension = !faceMode && edgeExtension;
             var selected = new HashSet<int>(selectedFaces ?? Array.Empty<int>());
             if (faceMode && (selected.Count == 0 || selected.Any(f => f < 0 || f >= Faces.Count)))
                 throw new InvalidOperationException("Select one or more faces to extrude.");
@@ -112,7 +120,9 @@ namespace MashBoxSDK.AnimationStudio
                     var key = (Group(f), v); directions.TryGetValue(key, out var sum);
                     directions[key] = sum + faceNormals[f];
                 }
-            var insetPlan = inset != 0 ? PrepareExtrusionInset(boundary, faceNormals, Group, Canonical, faceMode) : null;
+            // An edge extends in the neighboring surface plane. Its secondary
+            // offset follows the surface normal; faces retain their usual axes.
+            var insetPlan = surfaceExtension || inset != 0 ? PrepareExtrusionInset(boundary, faceNormals, Group, Canonical, faceMode) : null;
             Vector3 InsetDirection(int f,int v) => insetPlan != null && insetPlan.Directions.TryGetValue((Group(f),Canonical(v)),out var direction) ? direction : Vector3.zero;
             var normalDirections = Enumerable.Repeat(Vector3.zero,Positions.Length).ToList();
             var insetDirections = Enumerable.Repeat(Vector3.zero,Positions.Length).ToList();
@@ -147,7 +157,8 @@ namespace MashBoxSDK.AnimationStudio
                 var normal = directions[(Group(f), Canonical(v))].normalized;
                 if (normal.sqrMagnitude < .5f) throw new InvalidOperationException("The selected normals cancel out. Extrude the faces individually.");
                 var offset = InsetDirection(f,v);
-                int id = Copy(v, Positions[v] + normal * distance + offset * inset, normalDirection: normal, insetDirection: offset);
+                int id = Copy(v, Positions[v] + (surfaceExtension ? offset * distance + normal * inset : normal * distance + offset * inset),
+                    normalDirection: surfaceExtension ? offset : normal, insetDirection: surfaceExtension ? normal : offset);
                 var geoKey=(Group(f),Canonical(v));if(!topGeometry.TryGetValue(geoKey,out int geo))topGeometry.Add(geoKey,geo=nextGeo++);geometry[id]=geo;
                 moving.Add(id);
                 return top[key] = id;
@@ -208,7 +219,11 @@ namespace MashBoxSDK.AnimationStudio
                 MovingVertices = used.Where(moving.Contains).Select(i => remap[i]).ToArray(), SourceVertices = used.Select(i => sources[i]).ToArray(),
                 NormalDirections = used.Select(i => normalDirections[i]).ToArray(),
                 InsetDirections = insetPlan == null ? null : used.Select(i => insetDirections[i]).ToArray(), CapTriangles = capTriangles.ToArray(),
-                PositiveInsetLimit = insetPlan?.PositiveInsetLimit ?? float.PositiveInfinity, NegativeInsetLimit = insetPlan?.NegativeInsetLimit ?? float.PositiveInfinity };
+                PositiveInsetLimit = !surfaceExtension ? insetPlan?.PositiveInsetLimit ?? float.PositiveInfinity : float.PositiveInfinity,
+                NegativeInsetLimit = !surfaceExtension ? insetPlan?.NegativeInsetLimit ?? float.PositiveInfinity : float.PositiveInfinity,
+                PositiveDistanceLimit = surfaceExtension ? insetPlan.PositiveInsetLimit : float.PositiveInfinity,
+                NegativeDistanceLimit = surfaceExtension ? insetPlan.NegativeInsetLimit : float.PositiveInfinity };
+            extrusion.ValidateDistance(distance);
             extrusion.ValidateInset(inset);
             mesh.Clear(); mesh.indexFormat = compact.Count > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16;
             mesh.SetVertices(compact);

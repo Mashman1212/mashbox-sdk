@@ -5700,6 +5700,7 @@ namespace MashBoxSDK.MapTools
                     throw new Exception($"Could not activate temporary export scene '{scenePath}' while preparing baked lighting.");
 
                 CopyAndRebindLightingDataForTemporaryScene(scene, scenePath, tempRoot);
+                var exportLighting = MapExportLightingBindings.Capture(scene);
 
                 ThrowIfSceneHasMissingPrefabInstances(scene,
                     "Cannot export this map because the copied export scene contains missing prefab reference(s). Restore or replace the missing prefab instances in the source scene before publishing.");
@@ -5753,7 +5754,22 @@ namespace MashBoxSDK.MapTools
 
                 EditorSceneManager.MarkSceneDirty(scene);
                 EditorSceneManager.SaveScene(scene);
+                // Unpacking changes native scene object IDs. Rebind the copied bake only
+                // after the final IDs have been serialized, then verify a fresh scene load.
+                exportLighting.Rebind(scene);
                 AssetDatabase.SaveAssets();
+                EditorSceneManager.CloseScene(scene, true);
+                scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+                if (!SceneManager.SetActiveScene(scene))
+                    throw new Exception("Could not reopen the export scene to verify baked lighting.");
+                if (MapExportLightingBindings.Capture(scene, recoverUnpacked: true).Rebind(scene) > 0)
+                {
+                    EditorSceneManager.CloseScene(scene, true);
+                    scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+                    if (!SceneManager.SetActiveScene(scene))
+                        throw new Exception("Could not reload the repaired export lighting.");
+                }
+                MapExportLightingBindings.Capture(scene);
                 Debug.Log($"[MashBoxMapTools] Frozen {frozenMeshes.Count} unique mesh asset(s) across {frozenReferenceCount} scene mesh reference(s) for map export.");
             }
             finally
@@ -6010,7 +6026,7 @@ namespace MashBoxSDK.MapTools
             if (!scene.IsValid() || !scene.isLoaded)
                 return;
 
-            var sourceLightingData = Lightmapping.lightingDataAsset;
+            var sourceLightingData = MapExportLightingBindings.GetLightingData(scene);
             if (sourceLightingData == null)
                 return;
 

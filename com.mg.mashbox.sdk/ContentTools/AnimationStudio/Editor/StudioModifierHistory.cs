@@ -24,6 +24,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         public string id=Guid.NewGuid().ToString("N"),kind,name;
         public bool enabled=true,weld=true,normalizedBevel;
+        public bool edgeExtension;
         public Vector4 parameters;
         public PrimitiveType primitiveType;
         public Vector3Int cubeDivisions;
@@ -126,7 +127,7 @@ namespace MashBoxSDK.AnimationStudio
                     break;
                 case "Extrude":
                     if(Mathf.Abs(p.x)<1e-5f&&Mathf.Abs(p.z)<1e-5f)return;
-                    topology.Extrude(node,operation.faces!=null&&operation.faces.Length>0?operation.faces:null,operation.edges==null||operation.edges.Length==0?null:edges.ToArray(),p.x,p.y>=.5f,operation.weld,inset:p.z);node.normalGroups=null;break;
+                    topology.Extrude(node,operation.faces!=null&&operation.faces.Length>0?operation.faces:null,operation.edges==null||operation.edges.Length==0?null:edges.ToArray(),p.x,p.y>=.5f,operation.weld,inset:p.z,edgeExtension:operation.edgeExtension);node.normalGroups=null;break;
                 case "FillHole":topology.FillHoles(node,edges);break;
                 case "EdgeRingCollapse":topology.CollapseEdgeRings(node,edges);break;
                 case "Poke":topology.PokeFaces(node,operation.faces);break;

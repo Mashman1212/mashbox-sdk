@@ -12,7 +12,7 @@ namespace MashBoxSDK.AnimationStudio
         // Project integrations can offer cosmetic attachments without introducing
         // gameplay dependencies into Studio. The animator belongs to the preview scene.
         public static event Action<AnimationTake, Animator> ActorInspectorGUI;
-        private const string BikePath = "Assets/MashBox/BMX Physics Development/Bike Skeleton.fbx";
+        private const string BikePath = "Packages/com.mg.mashbox.sdk/Runtime/Vehicles/BMX/Bike Skeleton.fbx";
         [SerializeField] private int activeActor = -1;
         [SerializeField] private bool showAllActorControls = true;
         private bool drawingActorControls, actorPickersOnly, skipActorPickers;
@@ -282,12 +282,12 @@ namespace MashBoxSDK.AnimationStudio
                 return true;
             }
             var color=Handles.color;
-            if(activeActor>=0)
+            if(showSkeleton && activeActor>=0)
             {
                 Handles.color=new Color(.35f,.65f,.8f,.55f);
                 foreach(var bone in rig.DisplayBones) if(bone.parent && rig.DisplayBones.Contains(bone.parent)) Handles.DrawLine(bone.parent.position,bone.position);
             }
-            foreach(var actor in actorPreviews)
+            if(showSkeleton) foreach(var actor in actorPreviews)
             {
                 if (IsAttachmentHidden(actor.Take)) continue;
                 if(activeActor>=0 && actor==actorPreviews[activeActor]) continue;

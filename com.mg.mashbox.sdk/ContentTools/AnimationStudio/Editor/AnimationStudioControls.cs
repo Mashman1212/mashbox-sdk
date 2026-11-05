@@ -281,23 +281,11 @@ namespace MashBoxSDK.AnimationStudio
                     foreach (var bone in rig.DisplayBones)
                     {
                         if (!bone.parent || bone == rig.Root.transform || !rig.DisplayBones.Contains(bone.parent)) continue;
-                        const float alpha = 1;
-                        // The segment leaving a joint selects that joint, as in a DCC skeleton.
-                        int id = GUIUtility.GetControlID(bone.GetInstanceID(), FocusType.Passive);
-                        int boneIndex=Array.IndexOf(rig.Bones,bone.parent);
-                        RegisterRigPoint(boneIndex,false,false,bone.parent.position);
-                        bool selected = RigControlSelected(boneIndex);
-                        if (evt.type == EventType.Layout && canPick)
-                            HandleUtility.AddControl(id, Mathf.Max(0, HandleUtility.DistanceToLine(bone.parent.position, bone.position) - 5));
                         if (evt.type == EventType.Repaint)
                         {
-                            bool hovered = canPick && HandleUtility.nearestControl == id;
-                            Handles.color = hovered ? new Color(1f,.86f,.35f,alpha) :
-                                selected ? new Color(1,1,1,alpha) : new Color(0.35f, 0.75f, 0.9f, 0.8f*alpha);
-                            Handles.DrawAAPolyLine(hovered || selected ? 4 : 2, bone.parent.position, bone.position);
+                            Handles.color = new Color(0.35f, 0.75f, 0.9f, 0.8f);
+                            Handles.DrawAAPolyLine(2, bone.parent.position, bone.position);
                         }
-                        if (evt.type == EventType.MouseDown && canPick && GUIUtility.hotControl == 0 && HandleUtility.nearestControl == id)
-                        { SelectBone(bone.parent); evt.Use(); }
                     }
                 }
                 if (showFKControls && rig.Animator)

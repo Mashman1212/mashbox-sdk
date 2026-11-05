@@ -141,6 +141,8 @@ namespace MashBoxSDK.AnimationStudio
         private void LayoutStatusMessages()
         {
             if (statusBar == null) return;
+            statusBar.style.bottom = Studio != null && Studio.IsAnimationMode
+                ? AnimationTimelineOverlayBottom + 8 : PanelMargin;
             float width = Mathf.Min(520, Mathf.Max(0, StudioContentWidth - 32));
             statusBar.style.width = width;
             statusBar.style.left = Mathf.Max(16, (StudioContentWidth - width) * .5f);
@@ -318,7 +320,11 @@ namespace MashBoxSDK.AnimationStudio
                 rootVisualElement.Add(modeSelector);
             }
             modeSelector.onGUIHandler = WrapStudioGUI(draw, true); modeSelector.BringToFront();
-            if (!Studio || !Studio.IsModelingMode) { BindModelInput(null, null, null); BindStatusBar(false); }
+            if (!Studio || !Studio.IsModelingMode)
+            {
+                BindModelInput(null, null, null);
+                BindStatusBar(Studio != null && Studio.IsAnimationMode);
+            }
             if (inspector != null) { inspector.style.top = ModelingPanelTop; inspector.style.bottom = modeling ? PanelMargin : AnimationTimelineOverlayBottom; inspector.style.height = StyleKeyword.Auto; }
             if (rigControls != null) { rigControls.style.top = ModelingPanelTop; rigControls.style.bottom = modeling ? new StyleLength(PanelMargin) : new StyleLength(StyleKeyword.Auto); }
             if (animationToolbar != null) animationToolbar.style.display = Studio != null && Studio.IsAnimationMode ? DisplayStyle.Flex : DisplayStyle.None;

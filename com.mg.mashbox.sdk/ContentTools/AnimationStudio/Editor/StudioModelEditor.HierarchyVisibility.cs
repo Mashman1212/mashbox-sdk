@@ -35,7 +35,7 @@ namespace MashBoxSDK.AnimationStudio
             var evt = Event.current;
             if (evt == null || evt.alt || GUIUtility.hotControl != 0 || !row.Contains(evt.mousePosition) ||
                 !(evt.type == EventType.ContextClick || (evt.type == EventType.MouseDown && evt.button == 1))) return false;
-            mode = ComponentMode.Object;
+            EnsureHierarchyObjectMode();
             if (!objects.Contains(index)) SelectObject(index);
             HierarchyVisibilityMenu(index).DropDown(new Rect(evt.mousePosition, Vector2.zero));
             evt.Use(); return true;

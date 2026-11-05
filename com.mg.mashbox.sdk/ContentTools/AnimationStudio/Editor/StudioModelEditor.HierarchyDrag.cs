@@ -104,6 +104,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void SelectHierarchyRow(int index, bool keepMultiSelection)
         {
+            EnsureHierarchyObjectMode();
             var visible = new System.Collections.Generic.List<int>();
             foreach (int row in HierarchyRows())
                 if (string.IsNullOrEmpty(search) || Document.nodes[row].name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
@@ -123,7 +124,6 @@ namespace MashBoxSDK.AnimationStudio
 #pragma warning restore CS0618
             }
             finally { evt.modifiers = modifiers; }
-            FinishChannelEdit();
             if (componentPivot) componentPivot.custom = false;
             StopCutTool(); Components.Clear();
             objects.Clear(); objects.UnionWith(selection);
@@ -131,6 +131,18 @@ namespace MashBoxSDK.AnimationStudio
             hierarchySelectionDocument = Document;
             hierarchyLastClickedNode = Document.nodes[index];
             repaint();
+        }
+        private void EnsureHierarchyObjectMode()
+        {
+            FinishChannelEdit();
+            if (EditorGUIUtility.editingTextField)
+            {
+                GUI.FocusControl(null);
+                EditorGUIUtility.editingTextField = false;
+            }
+            if (mode == ComponentMode.Object) return;
+            ChangeComponentMode(ComponentMode.Object, null);
+            toolOptions?.Repaint();
         }
         // Keep the OS drag loop separate from IMGUI event handling for editor tests.
         private Action<string> beginHierarchyDrag = DragAndDrop.StartDrag;
@@ -197,7 +209,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if (evt.button == 0 && evt.clickCount == 2 && string.IsNullOrEmpty(Document.nodes[index].anchorType))
                 {
-                    CancelHierarchyDrag(); SelectObject(index);
+                    CancelHierarchyDrag(); EnsureHierarchyObjectMode(); SelectObject(index);
                     hierarchyRenameNode = Document.nodes[index]; hierarchyRenameText = hierarchyRenameNode.name;
                     focusHierarchyRename = true;
                     evt.Use(); repaint(); return;
@@ -211,22 +223,23 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if ((GUIUtility.GUIToScreenPoint(evt.mousePosition) - hierarchyDragStart).sqrMagnitude >= 25)
                 {
+                    GUIUtility.hotControl = 0; hierarchyDragControl = 0;
                     SelectHierarchyRow(index, true);
                     DragAndDrop.PrepareStartDrag();
                     DragAndDrop.objectReferences = Array.Empty<UnityEngine.Object>(); DragAndDrop.paths = Array.Empty<string>();
                     var selection = Document.OrderedHierarchy().Where(objects.Contains).ToArray();
                     DragAndDrop.SetGenericData(HierarchyDragKey, new HierarchyDragPayload { owner = this, document = Document,
                         selection = selection, nodes = selection.Select(i => Document.nodes[i]).ToArray() });
-                    GUIUtility.hotControl = 0; hierarchyDragControl = 0;
                     beginHierarchyDrag(objects.Count == 1 ? Document.nodes[index].name : "MashBox Studio objects");
                 }
                 evt.Use();
             }
             else if (evt.type == EventType.MouseUp && evt.button == hierarchyDragButton && GUIUtility.hotControl == id)
             {
+                GUIUtility.hotControl = 0; hierarchyDragControl = 0;
                 if (row.Contains(evt.mousePosition) && hierarchyDragButton == 0)
                     SelectHierarchyRow(index, false);
-                GUIUtility.hotControl = 0; hierarchyDragControl = 0; evt.Use();
+                evt.Use();
             }
         }
         private void HandleHierarchyDrop(Rect rect, int parent)

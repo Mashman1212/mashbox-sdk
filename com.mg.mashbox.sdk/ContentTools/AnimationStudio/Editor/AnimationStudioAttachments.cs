@@ -226,11 +226,11 @@ namespace MashBoxSDK.AnimationStudio
         private void AddQuickVehicle(string kind)
         {
             var skeleton = AssetDatabase.LoadAssetAtPath<GameObject>(BikePath);
-            if (!skeleton) throw new InvalidOperationException("The shared vehicle skeleton is unavailable in this project. Choose a custom rig or actor preset below.");
+            if (!skeleton) throw new InvalidOperationException("The SDK BMX skeleton could not be loaded at " + BikePath + ". Check that the package asset imported successfully.");
             // BMX previews use the same default full assembly as the modeler.
             // Keep previously outfitted actors available under Existing without changing their parts or keys.
             EnsureActors();
-            int existing = actorPreviews.FindIndex(a => a.Take.name == kind && a.Take.character == skeleton
+            int existing = actorPreviews.FindIndex(a => a.Take.name == kind && a.Rig.IsBmxRig
                 && (a.Take.vehicleParts == null || a.Take.vehicleParts.Count == 0));
             if (existing >= 0)
             {

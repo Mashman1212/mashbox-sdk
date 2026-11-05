@@ -23,8 +23,6 @@ namespace MashBoxSDK.AnimationStudio
                 foreach (int index in sourceIndices)
                 {
                     var n = nodes[index];
-                    if (!string.IsNullOrEmpty(n.anchorType) && !included.Contains(n.parent))
-                        throw new System.InvalidOperationException("Create another anchor type, or duplicate its parent model to keep anchor names exact.");
                     var copy = new Node {
                         name = n.name, vehiclePart = n.vehiclePart?.Copy(), anchorType = n.anchorType, sourcePath = n.sourcePath, sourceNodePath = n.sourceNodePath, sourceMeshAsset = n.sourceMeshAsset, parent = Remap(n.parent),
                         position = n.position, positionOffset = n.positionOffset, rotation = n.rotation,
@@ -37,7 +35,10 @@ namespace MashBoxSDK.AnimationStudio
                     if (n.mesh) { copy.mesh = Instantiate(n.mesh); copy.mesh.name = n.mesh.name; }
                     if (!included.Contains(n.parent))
                     {
-                        copy.name = ObjectNames.GetUniqueName(nodes.Concat(copies.Take(copies.Count - 1)).Where(s => s.parent == copy.parent).Select(s => s.name).ToArray(), n.name);
+                        // Anchor names are SDK identifiers. Duplicating one keeps its exact
+                        // type and name, even when the original is a sibling.
+                        if (string.IsNullOrEmpty(n.anchorType))
+                            copy.name = ObjectNames.GetUniqueName(nodes.Concat(copies.Take(copies.Count - 1)).Where(s => s.parent == copy.parent).Select(s => s.name).ToArray(), n.name);
                         roots.Add(remap[index]);
                     }
                 }

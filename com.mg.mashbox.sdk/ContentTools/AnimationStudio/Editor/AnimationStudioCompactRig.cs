@@ -17,7 +17,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private bool RigToolbarIcon(Rect rect, Texture icon, string fallback, string tooltip, bool selected = false)
         {
-            bool clicked = TimelineButton(rect, "", tooltip);
+            bool clicked = TimelineButton(rect, "", tooltip, selected);
             if (Event.current.type == EventType.Repaint)
             {
                 var previous = GUI.color;
@@ -57,17 +57,21 @@ namespace MashBoxSDK.AnimationStudio
             DrawRigOrientationDropdown(new Rect(x,y,126,25)); x+=137;
             TimelineDivider(x-6,y); x+=4;
             bool changed=false;
-            if (TimelineButton(new Rect(x,y,36,25),"IK","Show inverse-kinematics controls",showIKControls))
-            { showIKControls=!showIKControls; changed=true; } x+=36;
+            var selectedRig=OutfitRig;
+            string ikTip = selectedRig != null && !selectedRig.HasIK ? selectedRig.SolverStatus : "Show inverse-kinematics controls";
+            if (TimelineButton(new Rect(x,y,36,25),"IK",ikTip,showIKControls))
+            {
+                if (selectedRig != null && !selectedRig.HasIK) ShowNotification(new GUIContent(selectedRig.SolverStatus), 5);
+                else { showIKControls=!showIKControls; changed=true; }
+            } x+=36;
             if (TimelineButton(new Rect(x,y,36,25),"FK","Show forward-kinematics controls",showFKControls))
             { showFKControls=!showFKControls; changed=true; } x+=46;
             if (RigToolbarIcon(new Rect(x,y,30,25),null,"Wheel","Show vehicle rig controls",showVehicleControls))
             { showVehicleControls=!showVehicleControls; changed=true; } x+=34;
             StudioSymbolIcons.TryGet("Animation/Rig Bones",out var bonesIcon);
-            if (RigToolbarIcon(new Rect(x,y,30,25),bonesIcon,"⌁","Show rig bones — human and vehicle"))
+            if (RigToolbarIcon(new Rect(x,y,30,25),bonesIcon,"⌁","Show rig bones — human and vehicle",showSkeleton))
             { showSkeleton=!showSkeleton; changed=true; } x+=39;
             TimelineDivider(x-5,y); x+=4;
-            var selectedRig=OutfitRig;
             using (new EditorGUI.DisabledScope(selectedRig==null || !selectedRig.SupportsHumanLimits))
             {
                 bool limits=selectedRig!=null && selectedRig.HumanLimitsEnabled;
@@ -94,7 +98,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (RigToolbarIcon(new Rect(x,y,30,25),EditorGUIUtility.IconContent("Refresh").image,"↻","Reset selected actor to rest pose")) ResetRestPose();
             x+=34;
             using (new EditorGUI.DisabledScope(!take))
-                if (RigToolbarIcon(new Rect(x,y,30,25),null,"▲","Single Frame Pose",true))
+                if (RigToolbarIcon(new Rect(x,y,30,25),null,"▲","Single Frame Pose",take.singleFramePose))
                     Guard(()=>SetSingleFramePoseMode(!take.singleFramePose));
             x+=39;
             TimelineDivider(x-5,y); x+=4;

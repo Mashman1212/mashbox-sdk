@@ -152,7 +152,7 @@ namespace MashBoxSDK.AnimationStudio
             // Preserve IK targets, weights and pins without baking solved IK into FK channels.
             for (int i = 0; i < Bones.Length; i++) pose.bones[i] = BonePose.Read(Bones[i]);
         }
-        private FinalIKBridge solver;
+        private StudioIKBridge solver;
         private Material neutralMaterial;
         private readonly HashSet<Renderer> doubleSidedRenderers = new HashSet<Renderer>();
         private readonly Dictionary<Material, Material> doubleSidedMaterials = new Dictionary<Material, Material>();
@@ -278,7 +278,11 @@ namespace MashBoxSDK.AnimationStudio
                     for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
                         for (var bone = Animator.GetBoneTransform((HumanBodyBones)i); bone && bone != Root.transform; bone = bone.parent)
                             DisplayBones.Add(bone);
-                    try { solver = new FinalIKBridge(Animator); SolverStatus = "Final IK • Independent limbs"; }
+                    try
+                    {
+                        solver = new StudioIKBridge(Animator);
+                        SolverStatus = solver.UsesFinalIK ? "Final IK • Independent limbs" : "Studio IK • Independent limbs";
+                    }
                     catch (Exception ex) { SolverStatus = "FK only: " + ex.GetBaseException().Message; }
                 }
                 else SolverStatus = "FK only: select the root with a valid Humanoid Animator for limb IK.";
@@ -471,24 +475,22 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 
-    // Optional dependency: Final IK is distributed in Assembly-CSharp in this project.
-    // Reflection keeps the SDK assembly usable without bundling or requiring the paid plugin.
-    internal sealed class FinalIKBridge
+    // Use Final IK when a project has it, with a local two-bone solver for SDK-only projects.
+    internal sealed class StudioIKBridge
     {
         private readonly Transform root;
         private readonly Transform[] starts = new Transform[4], middles = new Transform[4], ends = new Transform[4];
         private readonly MethodInfo solve;
+        public bool UsesFinalIK => solve != null;
         private static Type FindType(string name) => AppDomain.CurrentDomain.GetAssemblies()
             .Select(a => a.GetType(name, false)).FirstOrDefault(t => t != null);
 
-        public FinalIKBridge(Animator animator)
+        public StudioIKBridge(Animator animator)
         {
             root = animator.transform;
             var type = FindType("RootMotion.FinalIK.IKSolverTrigonometric");
-            if (type == null) throw new InvalidOperationException("Final IK is not installed.");
-            solve = type.GetMethod("Solve", BindingFlags.Public | BindingFlags.Static, null,
+            solve = type?.GetMethod("Solve", BindingFlags.Public | BindingFlags.Static, null,
                 new[] { typeof(Transform), typeof(Transform), typeof(Transform), typeof(Vector3), typeof(Vector3), typeof(float) }, null);
-            if (solve == null) throw new MissingMethodException(type.FullName, "Solve");
             HumanBodyBones[] first = { HumanBodyBones.LeftUpperArm, HumanBodyBones.RightUpperArm, HumanBodyBones.LeftUpperLeg, HumanBodyBones.RightUpperLeg };
             HumanBodyBones[] middle = { HumanBodyBones.LeftLowerArm, HumanBodyBones.RightLowerArm, HumanBodyBones.LeftLowerLeg, HumanBodyBones.RightLowerLeg };
             HumanBodyBones[] last = { HumanBodyBones.LeftHand, HumanBodyBones.RightHand, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot };
@@ -521,9 +523,46 @@ namespace MashBoxSDK.AnimationStudio
                     normal = Vector3.Cross(i < 2 ? -root.forward : root.forward, axis);
                 if (normal.sqrMagnitude < 1e-12f) normal = Vector3.Cross(root.up, axis);
                 Quaternion rotation = Quaternion.Slerp(ends[i].rotation, root.rotation * effector.rotation, rotationWeight);
-                solve.Invoke(null, new object[] { starts[i], middles[i], ends[i], target, normal.normalized, weight });
+                if (solve != null)
+                    solve.Invoke(null, new object[] { starts[i], middles[i], ends[i], target, normal.normalized, weight });
+                else if (weight > 0)
+                    SolveTwoBone(starts[i], middles[i], ends[i], target, root.TransformPoint(effector.pole), weight);
                 ends[i].rotation = rotation;
             }
+        }
+
+        private static void SolveTwoBone(Transform start, Transform middle, Transform end,
+            Vector3 target, Vector3 pole, float weight)
+        {
+            Vector3 origin = start.position;
+            float firstLength = Vector3.Distance(origin, middle.position);
+            float secondLength = Vector3.Distance(middle.position, end.position);
+            if (firstLength < 1e-5f || secondLength < 1e-5f) return;
+
+            // Weight moves the displayed end toward the target. The final distance is
+            // clamped to the chain's reach, while the pole selects the elbow/knee side.
+            Vector3 desired = Vector3.Lerp(end.position, target, weight) - origin;
+            if (desired.sqrMagnitude < 1e-10f) desired = end.position - origin;
+            if (desired.sqrMagnitude < 1e-10f) return;
+            Vector3 direction = desired.normalized;
+            float reach = Mathf.Clamp(desired.magnitude,
+                Mathf.Abs(firstLength - secondLength) + 1e-5f,
+                firstLength + secondLength - 1e-5f);
+            Vector3 bend = Vector3.ProjectOnPlane(pole - origin, direction);
+            if (bend.sqrMagnitude < 1e-10f)
+                bend = Vector3.ProjectOnPlane(middle.position - origin, direction);
+            if (bend.sqrMagnitude < 1e-10f)
+                bend = Vector3.Cross(direction, Vector3.up);
+            if (bend.sqrMagnitude < 1e-10f)
+                bend = Vector3.Cross(direction, Vector3.right);
+            bend.Normalize();
+
+            float along = (firstLength * firstLength + reach * reach - secondLength * secondLength) / (2f * reach);
+            float outward = Mathf.Sqrt(Mathf.Max(0f, firstLength * firstLength - along * along));
+            Vector3 middleTarget = origin + direction * along + bend * outward;
+            Vector3 endTarget = origin + direction * reach;
+            start.rotation = Quaternion.FromToRotation(middle.position - origin, middleTarget - origin) * start.rotation;
+            middle.rotation = Quaternion.FromToRotation(end.position - middle.position, endTarget - middle.position) * middle.rotation;
         }
     }
 }

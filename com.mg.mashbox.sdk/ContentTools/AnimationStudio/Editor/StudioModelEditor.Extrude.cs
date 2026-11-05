@@ -49,7 +49,7 @@ namespace MashBoxSDK.AnimationStudio
                 ? new UnityEngine.Object[] { Document, ActiveMesh, componentPivot }
                 : new UnityEngine.Object[] { Document, ActiveMesh }, label);
             PrepareIsolationTopologyEdit();
-            var result = topology.Extrude(Document.nodes[Active], faces, edges, .1f, extrudeFacesTogether, weld, TransformPoint);
+            var result = topology.Extrude(Document.nodes[Active], faces, edges, .1f, extrudeFacesTogether, weld, TransformPoint, edgeExtension: false);
             // Keep the captured handle and preview transforms alive throughout the drag.
             edgeMesh = null; cachedEdges = null; faceNode = null; cachedFaces = null;
             cutTopology = null; cutMesh = null; ClearComponentDrawing();
@@ -107,8 +107,12 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawLiveExtrudeFields()
         {
             EditorGUI.BeginChangeCheck();
-            extrusionDistance = StudioSceneUnits.Field(new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
-            extrusionInset = StudioSceneUnits.Field(new GUIContent("Inset", "Mesh-local boundary offset. Positive moves outward; negative moves inward. Independent of normal distance."), extrusionInset);
+            extrusionDistance = StudioSceneUnits.Field(mode == ComponentMode.Edge
+                ? new GUIContent("Extension distance", "Distance along the adjacent surface. Positive extends the boundary outward; negative moves inward.")
+                : new GUIContent("Normal distance", "Distance in mesh-local units. Negative values extrude inward."), extrusionDistance);
+            extrusionInset = StudioSceneUnits.Field(mode == ComponentMode.Edge
+                ? new GUIContent("Normal offset", "Offset the extended edge along the adjacent surface normal.")
+                : new GUIContent("Inset", "Mesh-local boundary offset. Positive moves outward; negative moves inward. Independent of normal distance."), extrusionInset);
             if (mode == ComponentMode.Face) extrudeFacesTogether = EditorGUILayout.Toggle("Keep faces together", extrudeFacesTogether);
             if (EditorGUI.EndChangeCheck()) StoreExtrusionDefaults();
             GUILayout.Label("Changes preview immediately. Apply keeps the pane open; Execute finishes. Cancel or Escape cancels the unapplied preview.", StudioTheme.Styles.wordWrappedMiniLabel);
