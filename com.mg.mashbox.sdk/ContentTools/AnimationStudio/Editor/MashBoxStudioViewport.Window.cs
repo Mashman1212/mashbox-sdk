@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool clearCanvasKeyboardFocus;
         internal void FocusCanvas()
         {
-            Focus();
+            LayoutOwner.Focus();
             EditorGUIUtility.editingTextField = false;
             foreach (var container in StudioChromeRoot.Query<UnityEngine.UIElements.IMGUIContainer>().ToList())
             {
@@ -47,7 +47,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void InitializeStoredConfiguration()
         {
-            if (storedConfigurationInitialized) return;
+            if (IsEmbeddedView || storedConfigurationInitialized) return;
             storedConfigurationInitialized = true;
             modelGridVisible = StudioPreferenceStore.GetFloat("Studio.GridVisible", modelGridVisible ? 1 : 0) >= .5f;
             rootVisualElement.RegisterCallback<UnityEngine.UIElements.GeometryChangedEvent>(_ => SaveStoredConfiguration());
@@ -65,6 +65,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void RestoreStoredConfiguration()
         {
+            if (IsEmbeddedView) return;
             Studio?.RestoreStoredMode();
             preferredLeft = ValidWidth(StudioPreferenceStore.GetFloat(LeftWidthKey, 260), 260, MinLeft);
             preferredRight = ValidWidth(StudioPreferenceStore.GetFloat(RightWidthKey, 350), 350, MinRight);
@@ -109,6 +110,7 @@ namespace MashBoxSDK.AnimationStudio
 
         internal bool HandleWindowShortcut()
         {
+            if (HandleQuadShortcut()) return true;
             var evt = Event.current;
             if (!StudioShortcuts.Pressed(StudioShortcut.Maximize,evt) || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0) return false;
             evt.Use();

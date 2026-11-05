@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -11,7 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         Select, Move, Rotate, Scale, Pivot, Frame, Object, Vertex, Edge, Face,
         Save, SaveAs, Duplicate, Delete, Extrude, Undo, Redo, Cancel, CommitCut, RemoveCut,
         VertexSnap, EdgeSnap, GridSnap, LargerHandles, SmallerHandles, Maximize, Preferences,
-        Orbit, Pan, Dolly, MarkingMenu, FrameAllUV, SelectAll, AxisMenu, XRay, PaintSelection, UnpaintSelection
+        Orbit, Pan, Dolly, MarkingMenu, FrameAllUV, SelectAll, AxisMenu, XRay, PaintSelection, UnpaintSelection, MaximizeViewport
     }
     [Flags] internal enum StudioModifiers { None = 0, Shift = 1, Action = 2, Alt = 4 }
 
@@ -111,6 +111,7 @@ namespace MashBoxSDK.AnimationStudio
             new Definition(StudioShortcut.UnpaintSelection,"Select","Unpaint selection (hold + left drag)",Key(KeyCode.Tab,StudioModifiers.Action)),
             new Definition(StudioShortcut.Frame,"View","Frame selection",Key(KeyCode.F,shift:true)),
             new Definition(StudioShortcut.XRay,"View","X-ray mode",Key(KeyCode.X,StudioModifiers.Alt)),
+            new Definition(StudioShortcut.MaximizeViewport,"Window","Maximize / restore hovered viewport",Key(KeyCode.W,StudioModifiers.Alt)),
             new Definition(StudioShortcut.Maximize,"View","Maximize / restore window",Key(KeyCode.F11),Key(KeyCode.Space,StudioModifiers.Shift)),
             new Definition(StudioShortcut.LargerHandles,"View","Increase handle size",Key(KeyCode.Equals,shift:true),Key(KeyCode.Plus,shift:true),Key(KeyCode.KeypadPlus,shift:true)),
             new Definition(StudioShortcut.SmallerHandles,"View","Decrease handle size",Key(KeyCode.Minus,shift:true),Key(KeyCode.KeypadMinus,shift:true)),

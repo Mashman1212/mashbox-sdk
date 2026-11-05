@@ -126,7 +126,7 @@ namespace MashBoxSDK.AnimationStudio
             viewport.BindStatistics(modelingMode ? (System.Action)(() => modelEditor?.DrawStatistics()) : null);
             viewport.BindMarkingMenu(modelingMode ? (System.Action)(() => modelEditor?.DrawViewportModelOverlays()) : null);
             viewport.BindModelInput(modelingMode ? (System.Func<bool>)(() => modelingMode) : null,
-                () => viewport.HandleWindowShortcut() || modelEditor.HandleModelKeyboard(viewport),
+                () => viewport.HandleWindowShortcut() || modelEditor.HandleModelKeyboard(viewport.EditingView),
                 () => modelEditor?.ReleaseShortcutHolds());
             viewport.minSize = new Vector2(1050, 600);
             if (!modelingMode) viewport.SetInspectorExpanded(inspectorExpanded);
@@ -138,7 +138,7 @@ namespace MashBoxSDK.AnimationStudio
             if (paintingMode) { DrawPaintingMenu(); return; }
             if (retopologyMode) { retopologyEditor?.DrawMenu(); return; }
             if (skinningMode) { DrawSkinningFileMenu(); DrawSkinningEditMenu(); DrawSkinToolsMenu(); return; }
-            if (modelingMode) modelEditor?.DrawMenuBar(viewport, LoadStudioModel);
+            if (modelingMode) modelEditor?.DrawMenuBar(viewport.EditingView, LoadStudioModel);
             else { DrawAnimationFileMenu(); DrawAnimationEditMenu(); }
         }
         private void DrawStudioModes()
@@ -196,7 +196,7 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawModelScene(SceneView view)
         {
             if(Event.current.type == EventType.Repaint) viewport.RecordWorkspaceFrame(EditorApplication.timeSinceStartup);
-            EnsureModelEditor(); if (viewport.modelGridVisible) viewport.DrawGroundGrid(); modelEditor.SceneGUI(view, LoadStudioModel);
+            EnsureModelEditor(); if (view is MashBoxStudioViewport modelView && modelView.modelGridVisible) modelView.DrawGroundGrid(); modelEditor.SceneGUI(view, LoadStudioModel);
         }
     }
 }

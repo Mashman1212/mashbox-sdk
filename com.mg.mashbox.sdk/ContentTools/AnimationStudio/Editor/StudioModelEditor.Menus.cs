@@ -20,6 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void PopulateModelMenu(string title,StudioMenu menu,SceneView view,Action<StudioModelDocument> loaded)
         {
+            if (view is MashBoxStudioViewport menuView) view = menuView.LayoutOwner.EditingView;
             switch(title)
             {
                 case "File": {
@@ -69,7 +70,12 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("X-ray Mode"), displayXray, () => SetXRayMode(!displayXray));
                     break; }
                 case "Window": {
-                    menu.AddItem(new GUIContent("Material Library"), StudioMaterialLibrary.Visible, () => StudioMaterialLibrary.Toggle(view as MashBoxStudioViewport), shortcutEligible: false);
+                    if (view is MashBoxStudioViewport layoutView) {
+                        var owner = layoutView.LayoutOwner;
+                        menu.AddItem(new GUIContent("Layout/Single View"), !owner.FourViews, () => owner.SetFourViews(false), shortcutEligible: false);
+                        menu.AddItem(new GUIContent("Layout/2×2"), owner.FourViews, () => owner.SetFourViews(true), shortcutEligible: false);
+                    }
+                    menu.AddItem(new GUIContent("Material Library"), StudioMaterialLibrary.Visible, () => StudioMaterialLibrary.Toggle((view as MashBoxStudioViewport)?.LayoutOwner), shortcutEligible: false);
                     break; }
                 case "Display": {
                     menu.AddItem(new GUIContent("Tool Options"), !StudioSettings.Current.hideToolOptions, () => {
@@ -79,7 +85,7 @@ namespace MashBoxSDK.AnimationStudio
                     });
 
                     menu.AddSeparator("");
-                    if (view is MashBoxStudioViewport studioToolbarView) studioToolbarView.AddStudioToolbarMenu(menu);
+                    if (view is MashBoxStudioViewport studioToolbarView) studioToolbarView.LayoutOwner.AddStudioToolbarMenu(menu);
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent("Mesh Statistics"), StudioSettings.Current.showMeshStatistics, () => {
                         StudioSettings.Current.showMeshStatistics = !StudioSettings.Current.showMeshStatistics; StudioSettings.Save();

@@ -248,6 +248,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void InitializeStudioToolbars()
         {
+            if (IsEmbeddedView) return;
             UnbindStoredToolbarEvents();
             SyncCustomToolbarDefinitions();
             if (studioOverlayRoot == null)
@@ -466,9 +467,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SetModelGridVisible(bool visible)
         {
+            if (!IsEmbeddedView && quadLayout && quadViews != null) { EditingView.SetModelGridVisible(visible); return; }
             if (modelGridVisible == visible) return;
             modelGridVisible = visible;
-            StudioPreferenceStore.SetFloat("Studio.GridVisible", visible ? 1 : 0);
+            if (!IsEmbeddedView) StudioPreferenceStore.SetFloat("Studio.GridVisible", visible ? 1 : 0);
             SyncStudioToolbarState();
             MarkDirty(DirtyState.Scene);
         }
@@ -476,7 +478,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             SyncStudioToolbarVisibility();
             var editor = Studio?.ToolbarModelEditor;
-            int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
+            int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (EditingView.modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.Wireframe ? 16 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0) | (editor.ToolbarComponentAxes ? 262144 : 0) | (editor.CheckerMap ? 524288 : 0) | (editor.CenterMode ? 1048576 : 0);
@@ -493,6 +495,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ReleaseStudioToolbars()
         {
             CancelStoredToolbarSave();
+            if (IsEmbeddedView) return;
             UnbindStoredToolbarEvents();
             foreach (var overlay in studioToolbarOverlays)
             {

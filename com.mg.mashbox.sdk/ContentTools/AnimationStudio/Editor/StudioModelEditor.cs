@@ -193,13 +193,13 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Tick()
         {
-            if (pivotSnapHeld && (!vertexSnapView || EditorWindow.focusedWindow != vertexSnapView))
+            if (pivotSnapHeld && (!vertexSnapView || EditorWindow.focusedWindow != MashBoxStudioViewport.HostWindow(vertexSnapView)))
             {
                 if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
                 EndPivotSnap(); repaint();
             }
-            if (gridSnapHeld && (!gridSnapView || EditorWindow.focusedWindow != gridSnapView)) ClearGridSnap();
-            if (markingOpen && (!markingView || EditorWindow.focusedWindow != markingView)) CancelMarkingMenu();
+            if (gridSnapHeld && (!gridSnapView || EditorWindow.focusedWindow != MashBoxStudioViewport.HostWindow(gridSnapView))) ClearGridSnap();
+            if (markingOpen && (!markingView || EditorWindow.focusedWindow != MashBoxStudioViewport.HostWindow(markingView))) CancelMarkingMenu();
             TickMarkingMenu();
         }
         internal void Changed(bool geometryChanged = true) { UpdateLiveVehicleParts(); if(geometryChanged)DirtySubdivision(); componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
@@ -1181,7 +1181,7 @@ namespace MashBoxSDK.AnimationStudio
             ResetComponentHover();hoverPreviewNode=hoverPreviewComponent=-1;
             if (evt.type != EventType.MouseLeaveWindow && mode != ComponentMode.Object && !pivot && !pivotSnapHeld &&
                 !marquee && !evt.alt && GUIUtility.hotControl == 0 && HandleUtility.nearestControl == selectionId &&
-                EditorWindow.mouseOverWindow == view)
+                MashBoxStudioViewport.PointerOver(view))
             {
                 var canvas = view is MashBoxStudioViewport studio ? studio.ModelCanvasRect : new Rect(Vector2.zero, view.position.size);
                 if (canvas.Contains(evt.mousePosition) && !(view is MashBoxStudioViewport overlay && overlay.IsOverViewportControls(evt.mousePosition)))

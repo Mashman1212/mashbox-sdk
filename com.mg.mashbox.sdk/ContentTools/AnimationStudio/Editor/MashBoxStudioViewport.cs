@@ -42,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
             foreach (var view in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
             {
                 // Do not rebuild a healthy window while another view is still recovering.
-                if (!view || view.HasStudioBindings) continue;
+                if (!view || view.IsEmbeddedView || (view.hideFlags & HideFlags.DontSave) != 0 || view.HasStudioBindings) continue;
                 try
                 {
                     AnimationStudioWindow.RestoreExistingViewport(view);
@@ -345,7 +345,7 @@ namespace MashBoxSDK.AnimationStudio
         }
 
         internal bool IsOverViewportControls(Vector2 point) =>
-            IsOverNativeToolbar(point) || IsOverControl(viewportCameraButton, point) || IsOverControl(viewportLightingButton, point) || IsOverControl(viewportIsolateButton, point) || IsOverControl(viewportShowAllButton, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
+            IsOverControl(quadHeader, point) || IsOverNativeToolbar(point) || IsOverControl(viewportCameraButton, point) || IsOverControl(viewportLightingButton, point) || IsOverControl(viewportIsolateButton, point) || IsOverControl(viewportShowAllButton, point) || IsOverControl(modelMenuBar, point) || IsOverControl(modeSelector, point) || IsOverControl(viewportOptions, point) || IsOverControl(studioSettings, point);
         private bool IsOverControl(IMGUIContainer control, Vector2 point) =>
             control != null && control.resolvedStyle.display != DisplayStyle.None && control.worldBound.Contains(rootVisualElement.LocalToWorld(point));
 
@@ -431,6 +431,7 @@ namespace MashBoxSDK.AnimationStudio
 
         internal void Bind(Scene scene)
         {
+            if (!IsEmbeddedView) ReleaseQuadViews(false);
             BindCanvasFocus();
             MarkDirty(DirtyState.Scene);
             customScene = scene;
@@ -498,7 +499,7 @@ namespace MashBoxSDK.AnimationStudio
             var previousMatrix = Handles.matrix;
             try
             {
-                Handles.matrix = Matrix4x4.identity;
+                Handles.matrix = IsOrthographicView ? Matrix4x4.Rotate(ViewKind == 0 ? Quaternion.Euler(90,0,0) : ViewKind == 2 ? Quaternion.Euler(0,0,90) : Quaternion.identity) : Matrix4x4.identity;
                 Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
                 float spacing = StudioSceneUnits.GridSpacing;
                 const int steps = 40;
@@ -513,9 +514,9 @@ namespace MashBoxSDK.AnimationStudio
                     Handles.DrawLine(new Vector3(-extent, 0, coordinate), new Vector3(extent, 0, coordinate));
                     Handles.DrawLine(new Vector3(coordinate, 0, -extent), new Vector3(coordinate, 0, extent));
                 }
-                Handles.color = new Color(0.9f, 0.3f, 0.25f, 0.65f * StudioSettings.Current.gridOpacity);
+                Handles.color = IsOrthographicView && ViewKind == 2 ? new Color(.3f,.8f,.3f,.65f * StudioSettings.Current.gridOpacity) : new Color(0.9f, 0.3f, 0.25f, 0.65f * StudioSettings.Current.gridOpacity);
                 Handles.DrawLine(new Vector3(-extent, 0, 0), new Vector3(extent, 0, 0));
-                Handles.color = new Color(0.25f, 0.5f, 1f, 0.65f * StudioSettings.Current.gridOpacity);
+                Handles.color = IsOrthographicView && ViewKind == 0 ? new Color(.3f,.8f,.3f,.65f * StudioSettings.Current.gridOpacity) : new Color(0.25f, 0.5f, 1f, 0.65f * StudioSettings.Current.gridOpacity);
                 Handles.DrawLine(new Vector3(0, 0, -extent), new Vector3(0, 0, extent));
             }
             finally

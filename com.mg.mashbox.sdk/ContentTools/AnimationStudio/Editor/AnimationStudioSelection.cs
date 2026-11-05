@@ -71,7 +71,7 @@ namespace MashBoxSDK.AnimationStudio
    if (view == viewport && paintingMode) { DrawPaintingScene(view); return; }
    if (view == viewport && retopologyMode) { retopologyEditor?.SceneGUI(viewport); return; }
    if (view == viewport && skinningMode) { if (viewport.modelGridVisible) viewport.DrawGroundGrid(); skinningEditor?.SceneGUI(view); return; }
-   if (view == viewport && modelingMode) { DrawModelScene(view); return; }
+   if (viewport && viewport.OwnsModelView(view) && IsModelingMode) { DrawModelScene(view); return; }
    if(view!=viewport || rig==null || !take || inActorScope || drawingActorControls) { DrawStudioSceneGUI(view); return; }
    rigSelection.RemoveAll(s=>!s.Actor || (s.Actor!=take && !take.actors.Contains(s.Actor)));
    int id=GUIUtility.GetControlID("MashBoxRigMarquee".GetHashCode(),FocusType.Passive);

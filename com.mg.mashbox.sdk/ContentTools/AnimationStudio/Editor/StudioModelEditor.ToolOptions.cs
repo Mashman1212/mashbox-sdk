@@ -12,7 +12,7 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 foreach (var viewport in Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>())
-                    if (viewport.Studio?.ToolbarModelEditor == this) return viewport;
+                    if (!viewport.IsEmbeddedView && viewport.Studio?.ToolbarModelEditor == this) return viewport;
                 return EditorWindow.focusedWindow;
             }
         }

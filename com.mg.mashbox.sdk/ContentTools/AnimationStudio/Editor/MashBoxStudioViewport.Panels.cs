@@ -53,6 +53,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             get
             {
+                if (IsEmbeddedView) return new Rect(Vector2.zero, rootVisualElement.contentRect.size);
                 var widths = PanelWidths;
                 float left = HierarchyLeft + widths.x + DividerWidth;
                 float right = StudioContentWidth - PanelMargin - widths.y - DividerWidth;
@@ -164,6 +165,7 @@ namespace MashBoxSDK.AnimationStudio
             if (viewportOptions != null) { viewportOptions.style.left = overlayLeft + 32; viewportOptions.style.top = optionsTop; }
             if (studioSettings != null) { studioSettings.style.left = overlayLeft; studioSettings.style.top = optionsTop; }
             LayoutCameraSettingsButton(overlayLeft, optionsTop);
+            LayoutQuadViews();
             if (meshStatistics != null)
             {
                 meshStatistics.style.left = overlayLeft;

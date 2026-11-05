@@ -188,6 +188,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ReloadCustomToolbars()
         {
+            if (IsEmbeddedView) return;
             SyncCustomToolbarDefinitions(); InitializeStudioToolbars();
             QueueStoredToolbarSave();
             MarkDirty(DirtyState.UI);

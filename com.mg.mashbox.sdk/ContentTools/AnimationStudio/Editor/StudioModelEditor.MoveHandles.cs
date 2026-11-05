@@ -1,3 +1,4 @@
+using UnityEngine.UIElements;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -363,7 +364,13 @@ namespace MashBoxSDK.AnimationStudio
                 var point=transformOrientationGuiPoint;
                 var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);
                 if(canvas.Contains(point)&&(!(view is MashBoxStudioViewport overlay)||!overlay.IsOverViewportControls(point)))
+                {
+                    if (view is MashBoxStudioViewport tile && tile.IsEmbeddedView) {
+                        var origin=tile.rootVisualElement.ChangeCoordinatesTo(tile.LayoutOwner.rootVisualElement,Vector2.zero);
+                        point+=origin;canvas.position+=origin;
+                    }
                     DrawCursorStatusLabel(canvas,point,ToolbarOrientationLabel,false,new Vector2(10,-11),transformOrientationLabelOnLeft);
+                }
             }
             DrawMarkingMenu();
         }

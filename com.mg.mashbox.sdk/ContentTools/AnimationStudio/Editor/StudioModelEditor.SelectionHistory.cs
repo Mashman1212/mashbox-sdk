@@ -188,7 +188,7 @@ namespace MashBoxSDK.AnimationStudio
             if (selectionPaintBefore == null || component < 0 || component >= ComponentCount()) return false;
             return selectionPaintErase ? Components.Remove(component) : Components.Add(component);
         }
-        private bool HandleSelectionPaintKey(SceneView view) => HandleSelectionPaintKey(view, Event.current, EditorWindow.mouseOverWindow == view);
+        private bool HandleSelectionPaintKey(SceneView view) => HandleSelectionPaintKey(view, Event.current, MashBoxStudioViewport.PointerOver(view));
         internal bool HandleSelectionPaintKey(SceneView view, Event evt, bool pointerInCanvas)
         {
             if (selectionPaintArmed || selectionPaintBefore != null)

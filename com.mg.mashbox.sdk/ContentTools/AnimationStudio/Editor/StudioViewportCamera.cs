@@ -29,6 +29,7 @@ namespace MashBoxSDK.AnimationStudio
         internal static void SetDefaultViewportCameraPose(SceneView view)
         {
             if (!view) return;
+            if (view is MashBoxStudioViewport flat && flat.IsOrthographicView) { view.orthographic=true; view.camera.orthographic=true; view.LookAtDirect(Vector3.zero, MashBoxStudioViewport.QuadRotation(flat.ViewKind), 5); CameraChanged(view); return; }
             const float distance = 10f;
             float size = distance * Mathf.Sin(view.cameraSettings.fieldOfView * .5f * Mathf.Deg2Rad);
             view.isRotationLocked = false; view.in2DMode = false; view.orthographic = false; view.camera.orthographic = false;
@@ -71,7 +72,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void SetViewportCameraProjection(SceneView view, bool orthographic)
         {
-            if (view is MashBoxStudioViewport) orthographic = false;
+            if (view is MashBoxStudioViewport projectionView) orthographic = projectionView.IsOrthographicView;
             var position = ViewportCameraPosition(view);
             var rotation = view.rotation; float size = view.size;
             view.isRotationLocked = false; view.in2DMode = false; view.orthographic = orthographic; view.size = size;
@@ -108,17 +109,17 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawViewportCameraOptions()
         {
-            var view = commandView ? commandView : cameraOptionsView;
+            var view = cameraOptionsView ? cameraOptionsView : commandView;
             if (!view) { EditorGUILayout.HelpBox("Open a Studio viewport to edit its camera.", MessageType.Info); return; }
             EditorGUI.BeginChangeCheck();
             float sensitivity = EditorGUILayout.Slider(new GUIContent("Navigation sensitivity", "Shared multiplier for orbit, pan, drag zoom and mouse-wheel zoom. Lower values give finer control up close; 1 is the standard speed."), MashBoxStudioViewport.NavigationSensitivity, .05f, 4f);
             if (EditorGUI.EndChangeCheck()) MashBoxStudioViewport.NavigationSensitivity = sensitivity;
             if (view is MashBoxStudioViewport studio) studio.EnsurePerspectiveCamera();
             else if (view.orthographic || view.in2DMode || view.isRotationLocked) SetViewportCameraProjection(view, false);
-            EditorGUILayout.LabelField("Projection", "Perspective");
+            EditorGUILayout.LabelField("Projection", view.orthographic ? "Orthographic" : "Perspective");
             EditorGUI.BeginChangeCheck();
             float fov;
-            fov = EditorGUILayout.Slider(new GUIContent("Field of view", "Vertical field of view in degrees."), view.cameraSettings.fieldOfView, 1, 179);
+            using (new EditorGUI.DisabledScope(view.orthographic)) fov = EditorGUILayout.Slider(new GUIContent("Field of view", "Vertical field of view in degrees."), view.cameraSettings.fieldOfView, 1, 179);
             bool automatic = EditorGUILayout.Toggle("Automatic clipping", view.cameraSettings.dynamicClip);
             float near = view.cameraSettings.nearClip, far = view.cameraSettings.farClip;
             using (new EditorGUI.DisabledScope(automatic))
@@ -132,11 +133,12 @@ namespace MashBoxSDK.AnimationStudio
             { cameraOptionsLastRotation = view.rotation; cameraOptionsEuler = view.rotation.eulerAngles; }
             EditorGUI.BeginChangeCheck();
             var position = CameraVectorField("Position", ViewportCameraPosition(view));
-            var euler = CameraVectorField("Rotation", cameraOptionsEuler);
+            Vector3 euler;
+            using (new EditorGUI.DisabledScope(view is MashBoxStudioViewport flatView && flatView.IsOrthographicView)) euler = CameraVectorField("Rotation", cameraOptionsEuler);
             if (EditorGUI.EndChangeCheck() && SetViewportCameraPose(view, position, euler))
             { cameraOptionsLastRotation = view.rotation; cameraOptionsEuler = euler; }
             EditorGUI.BeginChangeCheck();
-            float size = CameraFloatField("Orbit distance", view.cameraDistance);
+            float size = CameraFloatField(view.orthographic ? "View size" : "Orbit distance", view.orthographic ? view.size : view.cameraDistance);
             if (EditorGUI.EndChangeCheck()) SetViewportCameraSize(view, size);
             EditorGUILayout.Space(6);
             if (GUILayout.Button("Reset to Defaults"))
@@ -250,7 +252,7 @@ namespace MashBoxSDK.AnimationStudio
             var editor = Studio?.ToolbarModelEditor;
             if (editor == null) return;
             if (DrawViewportOverlayButton(viewportLightingButton, LightingSettingsHint, "Light Icon"))
-                editor.ShowLightingOptions(true);
+                editor.ShowLightingOptions(this, true);
         }
     }
 }
