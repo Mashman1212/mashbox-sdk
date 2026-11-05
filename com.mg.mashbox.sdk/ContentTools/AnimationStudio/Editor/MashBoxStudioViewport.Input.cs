@@ -301,7 +301,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private bool IsOverCameraUI(Vector2 point) => IsOverViewportControls(point) ||
             IsOverControl(inspector, point) || IsOverControl(modelToolOptions, point) || IsOverControl(rigControls, point) ||
-            IsOverControl(timeline, point) || IsOverControl(attachments, point) ||
+            IsOverControl(timeline, point) || IsOverControl(attachments, point) || IsOverControl(selectedTransform, point) ||
             IsOverControl(leftDivider, point) || IsOverControl(rightDivider, point) || IsOverControl(toolOptionsDivider, point) ||
             IsOverControl(skinInfluencesPanel, point) || IsOverControl(skinInfluencesTab, point) ||
             IsOverControl(skinLeftTab, point) || IsOverControl(skinRightTab, point) || IsOverControl(skinPracticeTab, point);

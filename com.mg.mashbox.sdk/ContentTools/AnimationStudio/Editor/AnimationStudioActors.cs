@@ -75,7 +75,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (!asset || !asset.character) throw new InvalidOperationException("An actor is missing its source character.");
                     var preview = new ActorPreview { Take=asset, Rig=new AuthoringRig(asset.character,asset.body,asset.clothing,asset.outfitOptions) };
                     actorPreviews.Add(preview);
-                    preview.Rig.BuildVehicleParts(asset.vehicleParts);
+                    preview.Rig.BuildVehicleParts(asset.vehicleParts, asset.name != "Scooter" && asset.name != "MTB");
                     SceneManager.MoveGameObjectToScene(preview.Rig.Root,rig.Scene);
                     preview.Rig.SetNeutralShading(neutralShading);
                     preview.Pose = asset.Evaluate((float)frame/take.frameRate*asset.frameRate) ?? preview.Rig.Rest.Copy(0);
@@ -86,6 +86,16 @@ namespace MashBoxSDK.AnimationStudio
             activeActor = Mathf.Clamp(activeActor,-1,actorPreviews.Count-1);
             ApplyAttachmentVisibility();
         }
+        private void RefreshActorPreviewsAfterUndo()
+        {
+            // Pose Undo must retain the existing rigs, meshes and selected controls.
+            // Only source/outfit changes require a new rig; membership is checked by EnsureActors.
+            if (actorPreviews.Any(actor => !actor.Rig.MatchesAppearance(actor.Take))) ReleaseActors();
+            EnsureActors();
+            foreach (var actor in actorPreviews)
+                actor.Rig.RefreshVehiclePartsAfterUndo(actor.Take.vehicleParts, actor.Take.name != "Scooter" && actor.Take.name != "MTB");
+        }
+
         private void SampleActors(float atFrame)
         {
             if (inActorScope) return;
@@ -133,7 +143,8 @@ namespace MashBoxSDK.AnimationStudio
             var names = new[] { "Primary · "+take.name }.Concat(actorPreviews.Select(a=>a.Take.name)).ToArray();
             EditorGUI.BeginChangeCheck();
             int chosen=EditorGUILayout.Popup("Edit actor",activeActor+1,names)-1;
-            if(EditorGUI.EndChangeCheck()) { FinishSceneEdit(); FinishActorEdits(); activeActor=chosen; viewport?.Repaint(); }
+            if(EditorGUI.EndChangeCheck())
+            { FinishSceneEdit(); FinishActorEdits(); activeActor=chosen; selectedRigChannelActor=null; selectedRigChannelBone=selectedRigChannelAxis=-1; viewport?.Repaint(); }
             var attachmentActor = activeActor >= 0 ? actorPreviews[activeActor].Take : take;
             var attachmentRig = activeActor >= 0 ? actorPreviews[activeActor].Rig : rig;
             ActorInspectorGUI?.Invoke(attachmentActor, attachmentRig.Animator);
@@ -201,6 +212,10 @@ namespace MashBoxSDK.AnimationStudio
                 Undo.RegisterCompleteObjectUndo(target,"Import actor clip");
                 int sharedEnd=Mathf.Max(take.lastFrame,replacement.lastFrame);
                 target.keys=replacement.keys; target.frameRate=replacement.frameRate; target.lastFrame=replacement.lastFrame;
+                target.outputClip = actorClip;
+                target.layers.Clear(); target.activeLayer = -1;
+                target.singleFramePose = false;
+                target.loop = AnimationUtility.GetAnimationClipSettings(actorClip).loopTime;
                 target.quickCorrections?.Clear();
                 target.interpolation=PoseInterpolation.Linear; target.endpointLeadFrames=target.endpointTailFrames=0;
                 EditorUtility.SetDirty(target); if (EditorUtility.IsPersistent(target)) AssetDatabase.SaveAssetIfDirty(target);

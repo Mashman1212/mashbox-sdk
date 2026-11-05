@@ -218,9 +218,27 @@ namespace MashBoxSDK.AnimationStudio
             return preview;
         }
 
+        private bool? previewMeshesVisible;
+        internal void SetPreviewMeshesVisible(bool visible)
+        {
+            if (previewMeshesVisible == visible) return;
+            foreach (var renderer in Root.GetComponentsInChildren<Renderer>(true)) renderer.forceRenderingOff = !visible;
+            previewMeshesVisible = visible;
+        }
+        private readonly GameObject previewSource, previewBody;
+        private readonly GameObject[] previewClothing;
+        private readonly OutfitOptions[] previewOutfitOptions;
+
+        internal bool MatchesAppearance(AnimationTake actor) => actor && previewSource == actor.character && previewBody == actor.body &&
+            previewClothing.SequenceEqual(actor.clothing ?? Array.Empty<GameObject>()) &&
+            previewOutfitOptions.SequenceEqual(actor.outfitOptions ?? Array.Empty<OutfitOptions>());
+
         public AuthoringRig(GameObject source, GameObject body, GameObject[] clothing = null, OutfitOptions[] outfitOptions = null)
         {
             if (!source) throw new ArgumentException("Choose a character or skeleton first.");
+            previewSource = source; previewBody = body;
+            previewClothing = (GameObject[])(clothing ?? Array.Empty<GameObject>()).Clone();
+            previewOutfitOptions = (OutfitOptions[])(outfitOptions ?? Array.Empty<OutfitOptions>()).Clone();
             Scene = EditorSceneManager.NewPreviewScene();
             try
             {
@@ -265,6 +283,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 else SolverStatus = "FK only: select the root with a valid Humanoid Animator for limb IK.";
                 if (!Animator) foreach (var bone in Bones) DisplayBones.Add(bone);
+                DisplayBones.RemoveWhere(b => StudioRigChannels.IsDataChannel(b.name));
                 BuildOutfit(body, clothing, outfitOptions);
                 Rest = Capture();
                 AddPreviewLight("Studio key", new Vector3(35, -30, 0), 2f);
@@ -433,6 +452,7 @@ namespace MashBoxSDK.AnimationStudio
             EnforceHumanLimits();
             solver?.Solve(pose.effectors);
             EnforceHumanLimits();
+            ApplyVehicleRotationConstraints();
         }
 
         public void Dispose()

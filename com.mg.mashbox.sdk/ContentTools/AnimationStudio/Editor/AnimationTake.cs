@@ -16,6 +16,9 @@ namespace MashBoxSDK.AnimationStudio
         public Vector3 position, rotation;
         public Vector3 scale = Vector3.one;
         public bool bindFromRest = true;
+        public bool preserveAnchorParent;
+        // 0: inherit anchor only, 1: joint local pitch, 2: joint local yaw.
+        public int localRotationChannel;
     }
     [Serializable]
     public sealed class StudioHandleOffset
@@ -172,7 +175,11 @@ namespace MashBoxSDK.AnimationStudio
                 float t = Mathf.InverseLerp(a.frame, b.frame, frame);
                 if (interpolation == PoseInterpolation.Stepped) t = frame < b.frame ? 0 : 1;
                 else if (interpolation == PoseInterpolation.Smooth) t = t * t * (3 - 2 * t);
-                return PoseKey.Blend(a, b, t);
+                var result = PoseKey.Blend(a, b, t);
+                for (int bone = 0; bone < result.bones.Length && bone < bonePaths.Length; bone++)
+                    if (StudioRigChannels.IsTargetId(bonePaths[bone]))
+                        result.bones[bone].position.y = frame < b.frame ? a.bones[bone].position.y : b.bones[bone].position.y;
+                return result;
             }
             return keys[keys.Count - 1].Copy(keys[keys.Count - 1].frame);
         }
@@ -213,6 +220,8 @@ namespace MashBoxSDK.AnimationStudio
                     if(bit==1) result.bones[i].position=Vector3.Lerp(a.bones[i].position,b.bones[i].position,t);
                     else if(bit==2) result.bones[i].rotation=Quaternion.Slerp(a.bones[i].rotation,b.bones[i].rotation,t);
                     else result.bones[i].scale=Vector3.Lerp(a.bones[i].scale,b.bones[i].scale,t);
+                    if (bit == 1 && i < bonePaths.Length && StudioRigChannels.IsTargetId(bonePaths[i]))
+                        result.bones[i].position.y = frame < b.frame ? a.bones[i].position.y : b.bones[i].position.y;
                 }
             for(int i=0;i<result.effectors.Length;i++)
                 for(int bit=1;bit<=8;bit*=2)

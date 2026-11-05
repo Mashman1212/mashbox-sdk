@@ -76,6 +76,8 @@ namespace MashBoxSDK.AnimationStudio
                     {
                         if(!LayerChannel(layer,frame,i,bit,false,out var a,out var b,out float t)) continue;
                         var sample=BonePose.Blend(a.bones[i],b.bones[i],t); var current=result.bones[i];
+                        if (bit == 1 && StudioRigChannels.IsTargetId(bonePaths[i]))
+                            sample.position.y = frame < b.frame ? a.bones[i].position.y : b.bones[i].position.y;
                         if(bit==1) current.position=add ? current.position+sample.position*w : Vector3.Lerp(current.position,sample.position,w);
                         else if(bit==2) current.rotation=add ? current.rotation*RotationPower(sample.rotation,w) : Quaternion.Slerp(current.rotation,sample.rotation,w);
                         else current.scale=add ? current.scale+sample.scale*w : Vector3.Lerp(current.scale,sample.scale,w);
@@ -150,6 +152,8 @@ namespace MashBoxSDK.AnimationStudio
                         {
                             if(!LayerChannel(layer,f,i,bit,false,out var a,out var b,out float t)) continue;
                             var sample=BonePose.Blend(a.bones[i],b.bones[i],t); var baseline=lower.bones[i];
+                            if (bit == 1 && StudioRigChannels.IsTargetId(bonePaths[i]))
+                                sample.position.y = f < b.frame ? a.bones[i].position.y : b.bones[i].position.y;
                             if(bit==1) key.bones[i].position=wasAdditive ? baseline.position+sample.position : sample.position-baseline.position;
                             else if(bit==2) key.bones[i].rotation=wasAdditive ? baseline.rotation*sample.rotation : Quaternion.Inverse(baseline.rotation)*sample.rotation;
                             else key.bones[i].scale=wasAdditive ? baseline.scale+sample.scale : sample.scale-baseline.scale;

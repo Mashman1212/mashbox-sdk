@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawCompactRigToolbar()
         {
-            using (new GUILayout.VerticalScope(GUILayout.Width(492)))
+            using (new GUILayout.VerticalScope(GUILayout.Width(548)))
             {
                 // Match the settings controls, which draw at y = 0 with 24px height.
                 using (new GUILayout.HorizontalScope())
@@ -34,7 +34,12 @@ namespace MashBoxSDK.AnimationStudio
                     showIKControls = GUILayout.Toggle(showIKControls, new GUIContent("IK", "Show inverse-kinematics controls"), StudioTheme.Styles.overlayButton, GUILayout.Width(32), GUILayout.Height(24));
                     GUILayout.Space(6);
                     showFKControls = GUILayout.Toggle(showFKControls, new GUIContent("FK", "Show forward-kinematics controls"), StudioTheme.Styles.overlayButton, GUILayout.Width(32), GUILayout.Height(24));
-                    if (EditorGUI.EndChangeCheck()) viewport?.Repaint();
+                    GUILayout.Space(6);
+                    showVehicleControls = GUILayout.Toggle(showVehicleControls, RigIcon("WheelCollider Icon", "Show vehicle rig controls (independent of human IK / FK)"), StudioTheme.Styles.overlayButton, GUILayout.Width(24), GUILayout.Height(24));
+                    GUILayout.Space(6);
+                    StudioSymbolIcons.TryGet("Animation/Rig Bones", out var bonesIcon);
+                    showSkeleton = GUILayout.Toggle(showSkeleton, new GUIContent(bonesIcon, "Show rig bones — human and vehicle. Controls remain visible when bones are hidden."), StudioTheme.Styles.overlayButton, GUILayout.Width(24), GUILayout.Height(24));
+                    if (EditorGUI.EndChangeCheck()) { SaveAnimationConfiguration(); viewport?.Repaint(); }
                     GUILayout.Space(10);
                     DrawRigOptionButtons();
                     GUILayout.Space(8);

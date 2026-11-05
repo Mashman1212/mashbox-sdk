@@ -1,3 +1,29 @@
+## Selected transform panel (2026-11-04)
+
+Full editor compilation passes. Observed the top-right panel in the running Studio viewport with LeftPedal_Curve selected: control/actor labels, disabled driven position, editable Rotation X and Auto Key state are visible below the actor choices. Numeric edits use PreviewSceneEdit/FinishSceneEdit with outer actor-aware unkeyed capture/record. Live typing and Undo were not exercised on the user's pose during this layout check.
+
+## Character visibility (2026-11-04)
+
+`StudioVisibilityValidation.cs` exercises the production character-toggle and renderer-visibility methods in the disposable Unity host. Ten hide/show cycles preserve root/bone/mesh identity, outfit source references, root activation and renderer enabled flags without invoking appearance rebuilding. Full editor compilation passes. Vehicle activation updates are skipped when their state has not changed.
+
+## BMX anchor constraints (2026-11-04)
+
+The native BMX fixture also checks drivetrain-to-BB position matching, each pedal joint matching its own resolved pedal mount, preservation of pedal rotation, and repeated evaluation without position drift.
+
+`StudioBmxAnimatorValidation.cs` passes with the production anchor resolver, outfit builder and local rotation constraint evaluator in the disposable Unity host. Checks cover headset yaw without pivot orbit, steering propagation to bars, rear-wheel isolation, BB pitch at its anchor, independent left/right pedal pitch and 180-degree crank rotation without Euler flips. Full editor compilation passes. The Maya parent-constraint connections and SDK channel mapping are documented in `MayaBikeRigMapping.md`; exact visual parity with Maya has not been checked in the live viewport.
+
+## Actor Undo preview reuse (2026-11-04)
+
+`StudioActorUndoValidation.cs` passes in the disposable `BmxAnimatorValidation` host using production EnsureActors, ReleaseActors, RefreshActorPreviewsAfterUndo, SampleActors, appearance comparison and vehicle assembly methods, with lightweight scene/renderer adapters. Native Unity Undo/Redo restores a BMX bars rotation while preserving rig identity, all vehicle visual objects and selected control. Vehicle outfit Undo/Redo restores default/custom assembly counts, and actor removal disposes its preview. Full editor compilation passes. The measured pose Undo was about 2 ms in this isolated host; this is not a live ProjectX profiler measurement.
+
+## BMX rotation gizmos (2026-11-04)
+
+Selected constrained BMX controls now draw an axis-colored rotation disc using the existing SetBikeAngle/PreviewSceneEdit path. Production compilation passes. In the running Studio viewport, selected a joint, observed the red rotation ring with bones and human FK hidden, dragged the ring and observed wheel/spoke rotation, then undid the temporary pose. Wheel controls were subsequently removed at the user's request from scene drawing/picking, retained selections and the inspector selector, preserving legacy indices and wheel bones. No clip was saved during the UI check. Bars/frame share the same gizmo path with local Y instead of X; drivetrain retains its existing pedal counter-rotation setter.
+
+## Actor clip loading and rig visibility (2026-11-04)
+
+`StudioActorClipImportValidation.cs` runs in the disposable `BmxAnimatorValidation` host with production importer, drop resolver and constrained sampler methods. Native checks pass for independent actor motion/source references on one shared timeline, shared-rate sampling and export duration, failed-import preservation, role classification, actual multi-clip BMX Barspin FBX extraction, explicit-child precedence, mixed drops and FBX write protection. Full editor compilation passes. The dual timeline UI was removed. In the running ProjectX Studio viewport, verified one timeline, visible BMX curves with human FK off, and the bone toggle removing both human and vehicle bone lines while preserving control curves. Left bones hidden and vehicle controls enabled. Save dialogs and clip file overwrites were not exercised in the live project.
+
 ## Panel-to-viewport input recovery (2026-11-04)
 
 Viewport wrappers now observe raw releases even when panel controls consume events, reclassify fresh canvas presses, and track mouse captures per IMGUI container. A capture left behind after release is cleared only when the same owner receives its release, button-free movement or a new press of the same button. Root retained pointer movement with zero pressed buttons clears stale camera ownership and menu-shield capture; held UI-to-canvas drags keep their owner. Pointer cancellation releases navigation. This extends the earlier application-focus-loss cleanup to panel transitions within Studio.
@@ -1258,3 +1284,6 @@ Square-adjacent label correction (2026-11-03): prior native capture interpretati
 Orientation text side flip (2026-11-03): OrientationLabel/build.log passes; existing native fixture rotated to(8,150,0), Component, for the left-side square case. Tests the same shared overlay/width-based placement; no new session or broad suite.
 
 Left-side label native result: inspected enabled/disabled Component captures; text lies entirely left of the blue plane square, aligned vertically. Square GUI(584.21,405.67), left=True; native text pixel bounds (513, 437, 569, 448). One focused opposite-camera case; previous right-side screenshot accepted by user.
+## Full BMX animator and legacy data channels (2026-11-04)
+
+`StudioBmxAnimatorValidation.cs` runs only in the disposable `BmxAnimatorValidation` project. The host uses SDK FBX models and rules with lightweight model-import/rig-preview adapters; full assembly generation, live solving, joint binding, take evaluation and clip baking use production source. Native checks pass for paired parts, six stem bolts, mag exclusion, frame rest placement, separate pedal joints, steering isolation, stable bone counts, repeat builds, PID channel presence, full/sparse/layer ID holds, weight interpolation, generic ID export, all eight legacy human channels, and humanoid data-channel export. Full editor compilation also passes. This fixture does not exercise mouse interaction, rendered overlay layout, or native UI Undo.

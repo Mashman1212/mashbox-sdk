@@ -115,7 +115,8 @@ namespace MashBoxSDK.AnimationStudio
             StudioPreferenceStore.SetString("Studio.Mode", modelingMode ? "Modeling" : "Animation");
             if (modelingMode) modelEditor.BindModelCommands(viewport, LoadStudioModel);
             viewport.BindModes(DrawStudioModes, modelingMode);
-            viewport.BindAttachments(modelingMode ? null : (System.Action)DrawAttachmentRows);
+            viewport.BindAttachments(modelingMode ? null : (System.Action)DrawAttachmentRows,
+                modelingMode ? null : (System.Action)DrawViewportSelectedTransform);
             viewport.BindViewportControls(
                 DrawStudioMenuBar, null, null);
             viewport.BindWorkspaceStatistics();

@@ -11,6 +11,133 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private int inspectorTab;
         private Vector2 inspectorScroll;
         private bool selectionTransformsDrawn;
+        private bool selectedTransformEditing;
+        private static Vector3 SelectedTransformVector(string label, Vector3 value)
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label(label, GUILayout.Width(65));
+                for (int axis = 0; axis < 3; axis++)
+                {
+                    GUILayout.Label(axis == 0 ? "X" : axis == 1 ? "Y" : "Z", GUILayout.Width(12));
+                    EditorGUI.BeginChangeCheck();
+                    float next = EditorGUILayout.FloatField(Mathf.Abs(value[axis]) < .000001f ? 0 : value[axis], GUILayout.MinWidth(42));
+                    if (EditorGUI.EndChangeCheck()) value[axis] = next;
+                }
+            }
+            return value;
+        }
+        private void DrawViewportSelectedTransform()
+        {
+            if (!take || rig == null || pose == null || (rigSelectionExplicit && rigSelection.Count == 0)) return;
+            if (quickCorrectionMode != QuickCorrectionMode.None) return;
+            var actor = activeActor >= 0 && activeActor < actorPreviews.Count ? actorPreviews[activeActor] : null;
+            bool drewBikeBalance = false;
+            System.Action edit = null;
+            System.Action draw = () =>
+            {
+                using (new GUILayout.VerticalScope(StudioTheme.Styles.helpBox))
+                {
+                    string name = IsBike ? BikeControlNames[Mathf.Clamp(control, 0, BikeControlNames.Length - 1)] :
+                        ikMode ? (poleMode ? PoleNames : LimbNames)[Mathf.Clamp(control, 0, 3)] : rig.Bones[Mathf.Clamp(control, 0, rig.Bones.Length - 1)].name;
+                    GUILayout.Label(name, StudioTheme.Styles.boldLabel);
+                    using (new EditorGUI.DisabledScope(playing))
+                    {
+                        if (IsBike)
+                        {
+                            int selected = control; var joint = BikeJoint(selected); if (!joint) return;
+                            EditorGUI.BeginChangeCheck();
+                            Vector3 p = joint.localPosition;
+                            if (selected == 0) p = SelectedTransformVector("Position", p);
+                            var r = joint.localEulerAngles; float angle = 0;
+                            if (selected == 0) r = SelectedTransformVector("Rotation", r);
+                            else if (selected > 0 && selected < 8)
+                                angle = EditorGUILayout.FloatField(BikeAxis(selected) == Vector3.up ? "Rotation Y" : "Rotation X", BikeAngle(selected));
+                            if (EditorGUI.EndChangeCheck()) edit = () =>
+                            {
+                                if (selected == 0) { joint.localPosition = p; joint.localRotation = Quaternion.Euler(r); }
+                                else if (selected < 8) SetBikeAngle(selected, angle);
+                                pose = rig.Capture();
+                            };
+                        }
+                        else if (ikMode)
+                        {
+                            int selected = Mathf.Clamp(control, 0, 3); bool pole = poleMode;
+                            var e = pose.effectors[selected];
+                            if (rig.HasIK)
+                            {
+                                EditorGUI.BeginChangeCheck();
+                                var p = SelectedTransformVector("Position", pole ? e.pole : e.position);
+                                Vector3 r = e.rotation.eulerAngles;
+                                if (!pole) r = SelectedTransformVector("Rotation", r);
+                                if (EditorGUI.EndChangeCheck()) edit = () =>
+                                {
+                                    if (pole) { e.pole = p; if (e.pinPole) e.pinnedPole = rig.Root.transform.TransformPoint(p); }
+                                    else
+                                    {
+                                        e.position = p; e.rotation = Quaternion.Euler(r);
+                                        if (e.pinPosition) e.pinnedPosition = rig.Root.transform.TransformPoint(p);
+                                        if (e.pinRotation) e.pinnedRotation = rig.Root.transform.rotation * e.rotation;
+                                    }
+                                    e.weight = 1; pose.effectors[selected] = e;
+                                };
+                            }
+                        }
+                        else
+                        {
+                            int selected = Mathf.Clamp(control, 0, rig.Bones.Length - 1);
+                            var bone = rig.Bones[selected]; int kind = BodyIKKind(selected);
+                            var original = BonePose.Read(bone);
+                            EditorGUI.BeginChangeCheck(); Vector3 p = original.position;
+                            if (CanTranslateBone(selected)) p = SelectedTransformVector("Position", p);
+                            var r = SelectedTransformVector("Rotation", original.rotation.eulerAngles);
+                            if (EditorGUI.EndChangeCheck()) edit = () =>
+                            {
+                                if (kind >= 0)
+                                {
+                                    if (p != original.position) rig.PoseBodyControl(pose, kind, bone.parent ? bone.parent.TransformPoint(p) : p, bone.rotation, false);
+                                    if (Quaternion.Angle(Quaternion.Euler(r), original.rotation) > .0001f)
+                                        rig.PoseBodyControl(pose, kind, bone.position, (bone.parent ? bone.parent.rotation : Quaternion.identity) * Quaternion.Euler(r), true);
+                                }
+                                else { PrepareFKEdit(selected); original.position = p; original.rotation = Quaternion.Euler(r); pose.bones[selected] = original; }
+                            };
+                        }
+                    }
+                }
+                if (IsBike)
+                {
+                    pendingRigChannels.Clear();
+                    drewBikeBalance = true;
+                    DrawCompactBikeBalance();
+                }
+            };
+            float labelWidth = EditorGUIUtility.labelWidth;
+            try
+            {
+                EditorGUIUtility.labelWidth = 100;
+                if (actor == null) draw(); else InActor(actor, draw);
+                if (edit != null)
+                {
+                    if (!selectedTransformEditing)
+                    {
+                        FinishSceneEdit(); FinishActorEdits();
+                        if (!autoKey) CaptureUnkeyedPoseUndo();
+                        selectedTransformEditing = true;
+                    }
+                    System.Action apply = () => { edit(); PreviewSceneEdit("Edit control transform"); };
+                    if (actor == null) Guard(apply); else InActor(actor, () => Guard(apply));
+                }
+                if (selectedTransformEditing &&
+                    (Event.current.rawType == EventType.MouseUp || GUIUtility.hotControl == 0))
+                {
+                    if (actor == null) FinishSceneEdit(); else InActor(actor, FinishSceneEdit);
+                    if (!autoKey) RecordUnkeyedPoseUndo();
+                    selectedTransformEditing = false;
+                }
+                if (drewBikeBalance) ApplyPendingRigChannels();
+            }
+            finally { EditorGUIUtility.labelWidth = labelWidth; }
+        }
         [SerializeField] private bool workspaceExpanded;
         private static readonly string[] InspectorTabs = { "Session", "Selection", "Outfit", "Clip", "Actors", "Layers" };
         private static readonly string[] PrivateInspectorTabs = { "Session", "Selection", "Outfit", "Clip", "Actors", "Layers", "Generate" };

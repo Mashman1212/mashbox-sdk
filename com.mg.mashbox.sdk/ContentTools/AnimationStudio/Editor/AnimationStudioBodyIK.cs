@@ -90,7 +90,7 @@ namespace MashBoxSDK.AnimationStudio
                 float actorScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
                 float radius = (kind == 0 ? .13f : kind == 1 ? .16f : .09f)
                     * rig.Animator.humanScale * actorScale * controlSize;
-                bool clicked = Handles.Button(bone.position, facing, radius, radius, Handles.CircleHandleCap);
+                bool clicked = Handles.Button(bone.position, facing, radius, radius, RigPickerCircleCap);
                 if (clicked && canPick) SelectBone(bone);
                 if (selected && rigSelection.Count <= 1) Handles.Label(bone.position, BodyIKNames[kind]);
             }

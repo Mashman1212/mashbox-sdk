@@ -13,6 +13,28 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool rigDiagram = true;
         [SerializeField] private bool localHandleSpace;
         private int globalRotationControl;
+        private bool rotationGizmoOwnsPointer;
+        private void UpdateRotationGizmoPicking()
+        {
+            rotationGizmoOwnsPointer = false;
+            if (!rotate || playing || Event.current.alt || Event.current.shift || rigSelection.Count > 1 ||
+                (rigSelectionExplicit && rigSelection.Count == 0)) return;
+            Action inspect = () =>
+            {
+                if (!IsBike || !showVehicleControls || control != 0 || IsAttachmentHidden(take)) return;
+                var joint = BikeJoint(0);
+                var center = BikeHandlePosition(0, joint);
+                rotationGizmoOwnsPointer = HandleUtility.DistanceToCircle(center, HandleUtility.GetHandleSize(center) * 1.1f) <= 0;
+            };
+            if (activeActor >= 0 && activeActor < actorPreviews.Count) InActor(actorPreviews[activeActor], inspect);
+            else inspect();
+        }
+        private void RigPickerCircleCap(int id, Vector3 position, Quaternion rotation, float size, EventType type)
+        {
+            // Preserve control-ID allocation and drawing; suppress only hit tests.
+            if (rotationGizmoOwnsPointer && (type == EventType.Layout || type == EventType.MouseMove)) return;
+            Handles.CircleHandleCap(id, position, rotation, size, type);
+        }
         private Quaternion globalRotationPrevious = Quaternion.identity;
 
         private Quaternion HandleOrientation(Quaternion controlRotation) => localHandleSpace ? controlRotation : Quaternion.identity;
@@ -234,7 +256,7 @@ namespace MashBoxSDK.AnimationStudio
             Handles.color = selected ? new Color(1,1,1,color.a) : color;
             // Circle caps use a filled picking area, with a consistently sized screen-space radius.
             return Handles.Button(position, view.camera.transform.rotation, radius, radius,
-                Handles.CircleHandleCap);
+                RigPickerCircleCap);
         }
 
         private void DrawRigPickers(SceneView view)
@@ -243,17 +265,16 @@ namespace MashBoxSDK.AnimationStudio
             var oldDepth = Handles.zTest;
             Handles.zTest = CompareFunction.Always;
             var evt = Event.current;
-            bool canPick = !playing && !evt.alt && (evt.button == 0 || evt.type == EventType.Layout || evt.type == EventType.Repaint);
+            bool canPick = !rotationGizmoOwnsPointer && !playing && !evt.alt && (evt.button == 0 || evt.type == EventType.Layout || evt.type == EventType.Repaint);
             try
             {
                 DrawBodyIKPickers(view, canPick);
-                if (showSkeleton && showFKControls)
+                if (showSkeleton)
                 {
                     foreach (var bone in rig.DisplayBones)
                     {
                         if (!bone.parent || bone == rig.Root.transform || !rig.DisplayBones.Contains(bone.parent)) continue;
-                        float alpha = RigAlpha(false, BoneLimb(bone.parent));
-                        if (alpha <= .001f) continue;
+                        const float alpha = 1;
                         // The segment leaving a joint selects that joint, as in a DCC skeleton.
                         int id = GUIUtility.GetControlID(bone.GetInstanceID(), FocusType.Passive);
                         int boneIndex=Array.IndexOf(rig.Bones,bone.parent);

@@ -42,7 +42,7 @@ namespace MashBoxSDK.AnimationStudio
             public bool workspaceExpanded;
             public bool lockActorMeshes=true;
             public bool ikMode = true, poleMode, rotate, humanoidExport = true;
-            public bool showSkeleton = true, showGroundGrid = true, autoKey, neutralShading = true;
+            public bool showSkeleton, showVehicleControls = true, showGroundGrid = true, autoKey, neutralShading = true;
             public float controlSize = 1.5f;
             public bool showPoles = true, showFKControls = true, inspectorExpanded = true;
         }
@@ -83,7 +83,7 @@ namespace MashBoxSDK.AnimationStudio
                 workspaceExpanded = workspaceExpanded,
                 lockActorMeshes = lockActorMeshes,
                 ikMode = ikMode, poleMode = poleMode, rotate = rotate, humanoidExport = humanoidExport,
-                showSkeleton = showSkeleton, showGroundGrid = showGroundGrid, autoKey = autoKey, neutralShading = neutralShading,
+                showSkeleton = showSkeleton, showVehicleControls = showVehicleControls, showGroundGrid = showGroundGrid, autoKey = autoKey, neutralShading = neutralShading,
                 controlSize = controlSize, showPoles = showPoles, showFKControls = showFKControls, inspectorExpanded = inspectorExpanded
             }));
         }
@@ -129,7 +129,7 @@ namespace MashBoxSDK.AnimationStudio
                 workspaceExpanded = value.workspaceExpanded;
                 lockActorMeshes = value.lockActorMeshes;
                 ikMode = value.ikMode; poleMode = value.poleMode; rotate = value.rotate; humanoidExport = value.humanoidExport;
-                showSkeleton = value.showSkeleton; showGroundGrid = value.showGroundGrid; autoKey = value.autoKey; neutralShading = value.neutralShading;
+                showSkeleton = value.showSkeleton; showVehicleControls = value.showVehicleControls; showGroundGrid = value.showGroundGrid; autoKey = value.autoKey; neutralShading = value.neutralShading;
                 controlSize = float.IsNaN(value.controlSize) || float.IsInfinity(value.controlSize) ? 1.5f : Mathf.Clamp(value.controlSize, .1f, 10);
                 showPoles = value.showPoles; showFKControls = value.showFKControls; inspectorExpanded = value.inspectorExpanded;
                 if (viewport && !modelingMode) viewport.SetInspectorExpanded(inspectorExpanded);

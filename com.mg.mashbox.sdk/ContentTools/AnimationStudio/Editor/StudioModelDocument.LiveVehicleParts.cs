@@ -53,8 +53,9 @@ namespace MashBoxSDK.AnimationStudio
             return new string(value.Where(c => c != '_' && c != '-' && c != '(' && c != ')' && !char.IsWhiteSpace(c)).Select(char.ToLowerInvariant).ToArray());
         }
 
-        internal Dictionary<int, string> SnapLiveVehicleParts(Transform[] transforms, ISet<int> attachedParts = null)
+        internal Dictionary<int, string> SnapLiveVehicleParts(Transform[] transforms, ISet<int> attachedParts = null, IDictionary<int, int> resolvedTargets = null)
         {
+            resolvedTargets?.Clear();
             attachedParts?.Clear();
             var status = new Dictionary<int, string>();
             if (transforms.Length != nodes.Count) return status;
@@ -176,6 +177,7 @@ namespace MashBoxSDK.AnimationStudio
                 status[index] = "Attached to " + nodes[target].name;
                 states[index] = 2;
                 attachedParts?.Add(index);
+                if (resolvedTargets != null) resolvedTargets[index] = target;
                 return true;
             }
             foreach (int index in targets.Keys) Resolve(index);

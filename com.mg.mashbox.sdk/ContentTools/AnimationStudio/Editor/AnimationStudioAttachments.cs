@@ -68,8 +68,10 @@ namespace MashBoxSDK.AnimationStudio
                 var content = new GUIContent(label, "Character appearance on the current skeleton");
                 var rect = GUILayoutUtility.GetRect(content, StudioTheme.Styles.overlayDropdown, GUILayout.Width(110), GUILayout.Height(22));
                 bool open = EditorGUI.DropdownButton(rect, content, FocusType.Passive, StudioTheme.Styles.overlayDropdown);
-                if (DrawAttachmentRowIcon("Character", hasAppearance, defaultCharacter && OutfitRig != null && OutfitRig.Animator))
-                    Guard(() => ToggleCharacterRow(hasAppearance));
+                bool visible = hasAppearance && !hiddenCharacterMeshes.Contains(current);
+                if (DrawAttachmentRowIcon("Character", visible, OutfitRig != null && OutfitRig.Animator &&
+                    (hasAppearance || hiddenCharacterAppearances.Exists(a => a.actor == current))))
+                    Guard(() => ToggleCharacterRow(visible));
                 if (!open) return;
                 var menu = new StudioMenu();
                 menu.AddItem(new GUIContent("None"), !hasAppearance, () => Guard(() => WithCharacterAppearance(() => ToggleDefaultCharacterAppearance(false))));
@@ -101,7 +103,19 @@ namespace MashBoxSDK.AnimationStudio
             public OutfitOptions[] options;
         }
         [SerializeField] private List<HiddenCharacterAppearance> hiddenCharacterAppearances = new List<HiddenCharacterAppearance>();
+        [SerializeField] private List<AnimationTake> hiddenCharacterMeshes = new List<AnimationTake>();
         private void ToggleCharacterRow(bool visible)
+        {
+            // Recover outfits hidden by older Studio versions once. New toggles
+            // never remove outfit data, save a take, or rebuild a rig.
+            if (!visible && hiddenCharacterAppearances.Exists(a => a.actor == OutfitActor))
+                RestoreLegacyCharacterRow(false);
+            hiddenCharacterMeshes.Remove(OutfitActor);
+            if (visible) hiddenCharacterMeshes.Add(OutfitActor);
+            OutfitRig?.SetPreviewMeshesVisible(!visible);
+            viewport?.Repaint();
+        }
+        private void RestoreLegacyCharacterRow(bool visible)
         {
             var actor = OutfitActor;
             if (visible)
@@ -132,6 +146,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawAttachmentRows()
         {
+            using (new GUILayout.HorizontalScope())
+            {
+            GUILayout.FlexibleSpace();
             using (new GUILayout.VerticalScope(GUILayout.Width(146)))
             {
                 GUILayout.Space(4);
@@ -176,6 +193,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (ActorAttachmentToolbarGUI != null) ActorAttachmentToolbarGUI.Invoke(targetTake, target.Animator);
                 else GUILayout.Label("Weapon     None", StudioTheme.Styles.miniLabel);
             }
+            }
         }
         private void SelectQuickVehicle(AnimationTake selected)
         {
@@ -194,10 +212,13 @@ namespace MashBoxSDK.AnimationStudio
         private bool IsAttachmentHidden(AnimationTake actor) => hiddenAttachments.Contains(actor);
         private void ApplyAttachmentVisibility()
         {
+            rig?.SetPreviewMeshesVisible(!hiddenCharacterMeshes.Contains(take));
             for (int i = 0; i < actorPreviews.Count; i++)
             {
                 bool visible = !IsAttachmentHidden(actorPreviews[i].Take);
-                actorPreviews[i].Rig.Root.SetActive(visible);
+                var preview = actorPreviews[i];
+                if (preview.Rig.Root.activeSelf != visible) preview.Rig.Root.SetActive(visible);
+                preview.Rig.SetPreviewMeshesVisible(!hiddenCharacterMeshes.Contains(preview.Take));
                 if (!visible && activeActor == i) activeActor = -1;
             }
         }
@@ -206,7 +227,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var skeleton = AssetDatabase.LoadAssetAtPath<GameObject>(BikePath);
             if (!skeleton) throw new InvalidOperationException("The shared vehicle skeleton is unavailable in this project. Choose a custom rig or actor preset below.");
-            // Vehicle choices add the shared animation skeleton. Meshes are attached explicitly.
+            // BMX previews use the same default full assembly as the modeler.
             // Keep previously outfitted actors available under Existing without changing their parts or keys.
             EnsureActors();
             int existing = actorPreviews.FindIndex(a => a.Take.name == kind && a.Take.character == skeleton
@@ -222,6 +243,8 @@ namespace MashBoxSDK.AnimationStudio
             try
             {
                 added.name = kind;
+                OutfitRig.BuildVehicleParts(added.vehicleParts, kind == "BMX");
+                OutfitRig.SetNeutralShading(neutralShading);
                 SaveOutfitActor(); viewport?.Repaint();
             }
             catch

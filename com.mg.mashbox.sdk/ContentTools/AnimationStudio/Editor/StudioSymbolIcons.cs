@@ -18,6 +18,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             switch (key)
             {
+                case "Animation/Rig Bones": return "rig-bones";
                 case "File/Save Workspace As…": return "save-as";
                 case "File/Export All… (FBX)": return "export-all";
                 case "File/Export Selection… (FBX)": return "export-selection";
@@ -127,6 +128,9 @@ namespace MashBoxSDK.AnimationStudio
             var c=new Canvas();var w=c.White;var a=c.Accent;var g=c.Gold;
             switch(symbol)
             {
+                case "rig-bones":
+                    c.Circle(5,19,2,w);c.Circle(19,5,2,w);
+                    c.Path(w,6,17,9,10,17,6,14,14,6,17);c.Line(6,17,17,6,a);break;
                 case "convert-vertices":case "convert-perimeter-vertices":
                     c.Rect(5,5,14,14,c.Gray);
                     foreach(var p in new[]{new Vector2(5,5),new Vector2(19,5),new Vector2(5,19),new Vector2(19,19)})c.Circle(p.x,p.y,2,a,true);

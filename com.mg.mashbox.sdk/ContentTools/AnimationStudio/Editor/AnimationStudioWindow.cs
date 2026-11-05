@@ -22,7 +22,8 @@ namespace MashBoxSDK.AnimationStudio
         [SerializeField] private bool poleMode;
         [SerializeField] private bool rotate;
         [SerializeField] private bool humanoidExport = true;
-        [SerializeField] private bool showSkeleton = true;
+        [SerializeField] private bool showSkeleton;
+        [SerializeField] private bool showVehicleControls = true;
         [SerializeField] private bool showGroundGrid = true;
         [SerializeField] private bool autoKey;
         private bool unkeyedPose;
@@ -362,6 +363,7 @@ namespace MashBoxSDK.AnimationStudio
             EndCorrectionGizmo(false);
             FlushEdits();
             rigSelection.Clear(); rigSelectionExplicit=false; selectingRig=false;
+            selectedRigChannelActor = null; selectedRigChannelBone = selectedRigChannelAxis = -1;
             playing = false;
             ReleaseActors();
             rig?.Dispose(); rig = null; pose = null;
@@ -376,12 +378,17 @@ namespace MashBoxSDK.AnimationStudio
             if (RestoreUnkeyedPoseUndo()) return;
             sceneDraft = false;
             foreach (var actor in actorPreviews) actor.Draft = false;
-            ReleaseActors();
-            if (rig != null && take && (character != take.character || body != take.body || !clothing.SequenceEqual(take.clothing ?? Array.Empty<GameObject>()) || !outfitOptions.SequenceEqual(take.outfitOptions ?? Array.Empty<OutfitOptions>())))
+            if (rig != null && take && !rig.MatchesAppearance(take))
             {
+                ReleaseActors(); // The primary appearance rebuild replaces their preview scene.
                 character = take.character; body = take.body; clothing = take.clothing ?? Array.Empty<GameObject>(); outfitOptions = take.outfitOptions ?? Array.Empty<OutfitOptions>();
                 Guard(RebuildAppearance);
             }
+            if (rig != null && take) Guard(() =>
+            {
+                rig.RefreshVehiclePartsAfterUndo(take.vehicleParts, take.name != "Scooter" && take.name != "MTB");
+                RefreshActorPreviewsAfterUndo();
+            });
             if (take) Save();
             if (rig != null && take) Guard(() => Seek(Mathf.Clamp(frame, 0, take.lastFrame)));
             Repaint();
@@ -488,7 +495,7 @@ namespace MashBoxSDK.AnimationStudio
             RecoverMissingCharacter();
             ReleaseRig();
             rig = new AuthoringRig(character, body, clothing, outfitOptions);
-            if(take) rig.BuildVehicleParts(take.vehicleParts);
+            if(take) rig.BuildVehicleParts(take.vehicleParts, take.name != "Scooter" && take.name != "MTB");
             cachedBoneSearch = null;
             rig.SetNeutralShading(neutralShading);
             if (take && take.bonePaths.Length > 0 && !take.bonePaths.SequenceEqual(rig.Paths))
@@ -660,6 +667,7 @@ namespace MashBoxSDK.AnimationStudio
             {
             EditorGUI.BeginChangeCheck();
             showSkeleton = EditorGUILayout.Toggle("Show skeleton", showSkeleton);
+            showVehicleControls = EditorGUILayout.Toggle("Vehicle controls", showVehicleControls);
             showGroundGrid = EditorGUILayout.Toggle(new GUIContent("Ground grid", "Ground at Y = 0. Adjust line spacing and opacity in MashBox Studio Settings."), showGroundGrid);
             showFKControls = EditorGUILayout.Toggle("Body / FK rings", showFKControls);
             showPoles = EditorGUILayout.Toggle("Elbow / knee targets", showPoles);
@@ -1051,11 +1059,20 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DrawStudioSceneGUI(SceneView view)
         {
+            // Curve picking consumes the mouse event, and secondary actors re-enter
+            // this method. Keep the gesture boundary before either can change it.
+            bool ownsPoseUndo = view == viewport && !drawingActorControls && !inActorScope;
+            if (ownsPoseUndo) UpdateRotationGizmoPicking();
+            bool finishPoseUndo = ownsPoseUndo && Event.current.rawType == EventType.MouseUp;
             if (view == viewport && !drawingActorControls && !inActorScope && Event.current.type == EventType.MouseDown)
+            {
+                FinishSceneEdit(); FinishActorEdits();
                 CaptureUnkeyedPoseUndo();
+            }
+            try
+            {
             if (DrawActorScene(view))
             {
-                if (!autoKey && !inActorScope && Event.current.rawType == EventType.MouseUp) RecordUnkeyedPoseUndo();
                 return;
             }
             if (view != viewport || rig == null || pose == null) return;
@@ -1124,6 +1141,13 @@ namespace MashBoxSDK.AnimationStudio
             }
             else EditorGUI.EndChangeCheck();
             if (released) FinishSceneEdit();
+            }
+            finally
+            {
+                // Actor scopes have now copied their edited poses back. Record once
+                // even when the control consumed MouseUp or returned early.
+                if (finishPoseUndo && !autoKey) RecordUnkeyedPoseUndo();
+            }
         }
 
         private void CaptureLive()
@@ -1258,7 +1282,7 @@ namespace MashBoxSDK.AnimationStudio
                     Save();
                 }
                 SaveSinglePoseLabel(target, take.singleFramePose); AssetDatabase.SaveAssetIfDirty(target); FlushSave(); EditorGUIUtility.PingObject(target);
-                if (EditingClip) { clipSessionDirty = false; UpdateClipSaveState(); }
+                if (EditingClip && take.actors.Count == 0) { clipSessionDirty = false; UpdateClipSaveState(); }
             }
             catch { if (!EditorUtility.IsPersistent(clip)) DestroyImmediate(clip); throw; }
             finally { rig.Apply(pose); EvaluateConstraints(); }

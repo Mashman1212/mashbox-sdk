@@ -45,6 +45,10 @@ namespace MashBoxSDK.AnimationStudio
                             Add(curves, "", typeof(Animator), MuscleProperty(HumanTrait.MuscleName[m]), time, humanPose.muscles[m]);
                         Vector(curves, "", typeof(Animator), "RootT", time, humanPose.bodyPosition);
                         Rotation(curves, "", typeof(Animator), "RootQ", time, humanPose.bodyRotation);
+                        // Gameplay target selectors and weights are not humanoid muscles.
+                        for (int i = 0; i < rig.Bones.Length; i++)
+                            if (StudioRigChannels.IsDataChannel(rig.Paths[i]))
+                                Vector(curves, rig.Paths[i], typeof(Transform), "m_LocalPosition", time, rig.Bones[i].localPosition);
                     }
                     else
                         for (int i = 0; i < rig.Bones.Length; i++)
@@ -57,7 +61,8 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 foreach (var pair in curves)
                 {
-                    var mode = take.interpolation == PoseInterpolation.Stepped
+                    var mode = take.interpolation == PoseInterpolation.Stepped ||
+                        (StudioRigChannels.IsTargetId(pair.Key.path) && pair.Key.propertyName == "m_LocalPosition.y")
                         ? AnimationUtility.TangentMode.Constant : AnimationUtility.TangentMode.Linear;
                     for (int i = 0; i < pair.Value.length; i++)
                     {

@@ -33,18 +33,61 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!EditingClip) return false;
             if (memoryTakeSession && !saveAs) return SaveMemoryTake();
-            FlushEdits();
-            if (!saveAs && CanOverwriteClip(take.outputClip)) SaveToReferencedClip();
-            else
+            if (!saveAs)
             {
-                string path = StudioFileDialogs.SaveAssetInProject("Save animation", take.name, "anim", "Save the edited animation as a standalone clip.");
-                if (string.IsNullOrEmpty(path)) return false;
-                // Save As never silently replaces another animation.
-                BakeToClip(null, AssetDatabase.GenerateUniqueAssetPath(path));
+                foreach (var actor in new[] { take }.Concat(take.actors))
+                    if (!SaveActorClip(actor)) return false;
+                clipSessionDirty = false; UpdateClipSaveState(); return true;
             }
-            clipSessionDirty = false;
+            FlushEdits();
+            string path = StudioFileDialogs.SaveAssetInProject("Save animation", take.name, "anim", "Save the edited animation as a standalone clip.");
+            if (string.IsNullOrEmpty(path)) return false;
+            // Save As never silently replaces another animation.
+            BakeToClip(null, AssetDatabase.GenerateUniqueAssetPath(path));
+            if (take.actors.Count == 0) clipSessionDirty = false;
             UpdateClipSaveState();
             return true;
+        }
+
+        private bool SaveActorClip(AnimationTake actor)
+        {
+            FlushEdits(); EnsureActors(); playing = false;
+            var actorRig = actor == take ? rig : actorPreviews.First(a => a.Take == actor).Rig;
+            var target = CanOverwriteClip(actor.outputClip) ? actor.outputClip : null;
+            string path = null;
+            if (!target)
+            {
+                path = StudioFileDialogs.SaveAssetInProject("Save " + (actorRig.Animator ? "human" : "vehicle") + " clip",
+                    actor.outputClip ? actor.outputClip.name : actor.name, "anim", "FBX animations are read-only. Save an editable .anim clip.");
+                if (string.IsNullOrEmpty(path)) return false;
+                path = AssetDatabase.GenerateUniqueAssetPath(path);
+            }
+            var sampled = SampleConstrainedTake(actor);
+            AnimationClip baked = null;
+            try
+            {
+                baked = AnimationClipBaker.Bake(sampled, actorRig, actorRig.Animator && actorRig.Animator.isHuman);
+                PreserveClipExtras(actor.outputClip, baked);
+                if (target)
+                {
+                    Undo.RegisterCompleteObjectUndo(target, "Save actor animation");
+                    baked.name = target.name; EditorUtility.CopySerialized(baked, target);
+                    EditorUtility.SetDirty(target);
+                }
+                else { AssetDatabase.CreateAsset(baked, path); target = baked; }
+                Undo.RecordObject(actor, "Set actor output clip"); actor.outputClip = target;
+                SaveSinglePoseLabel(target, actor.singleFramePose);
+                AssetDatabase.SaveAssetIfDirty(target); EditorUtility.SetDirty(actor);
+                if (EditorUtility.IsPersistent(actor)) AssetDatabase.SaveAssetIfDirty(actor);
+                if (EditingClip && take.actors.Count == 0) { clipSessionDirty = false; UpdateClipSaveState(); }
+                EditorGUIUtility.PingObject(target);
+                return true;
+            }
+            finally
+            {
+                if (baked && !EditorUtility.IsPersistent(baked)) DestroyImmediate(baked);
+                DestroyImmediate(sampled); EvaluateConstraints();
+            }
         }
 
         internal void DiscardClipChanges()

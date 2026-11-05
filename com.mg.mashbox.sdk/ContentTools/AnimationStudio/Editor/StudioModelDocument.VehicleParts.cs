@@ -9,7 +9,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     public sealed partial class StudioModelDocument
     {
-        internal int AddFullVehicle(string vehicle)
+        internal int AddFullVehicle(string vehicle, bool recordUndo = true)
         {
             var templates = StudioVehiclePartCatalog.Load().Where(t => t.vehicle == vehicle && t.sourceModel)
                 .Where(t => vehicle != "BMX" || t.part != "Mag")
@@ -77,8 +77,11 @@ namespace MashBoxSDK.AnimationStudio
                 foreach (var node in created) if (node.mesh) DestroyImmediate(node.mesh);
                 throw;
             }
-            Undo.IncrementCurrentGroup();
-            Undo.RegisterCompleteObjectUndo(this, "Create full " + vehicle);
+            if (recordUndo)
+            {
+                Undo.IncrementCurrentGroup();
+                Undo.RegisterCompleteObjectUndo(this, "Create full " + vehicle);
+            }
             nodes.AddRange(created);
             EditorUtility.SetDirty(this);
             return root;

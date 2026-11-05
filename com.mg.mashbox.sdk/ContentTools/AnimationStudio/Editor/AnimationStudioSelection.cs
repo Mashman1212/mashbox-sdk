@@ -33,6 +33,7 @@ namespace MashBoxSDK.AnimationStudio
   }
   private void SetRigControlSelection(int index,bool ik,bool pole,bool add)
   {
+   selectedRigChannelActor=null; selectedRigChannelBone=-1; selectedRigChannelAxis=-1;
    rigSelectionExplicit=true;
    var existing=rigSelection.FirstOrDefault(s=>s.Matches(take,index,ik,pole));
    if(!add) rigSelection.Clear();
@@ -56,6 +57,7 @@ namespace MashBoxSDK.AnimationStudio
   }
   private void SelectRigRectangle(Rect rectangle,bool add)
   {
+   selectedRigChannelActor=null; selectedRigChannelBone=-1; selectedRigChannelAxis=-1;
    rigSelectionExplicit=true;
    if(!add) rigSelection.Clear();
    foreach(var point in rigPickPoints)

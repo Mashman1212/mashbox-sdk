@@ -151,10 +151,11 @@ namespace MashBoxSDK.AnimationStudio
 
         private void DeleteSelectedControlKeys(AnimationTake actor,List<PoseKey> keys,int first,int last)
         {
-            if(rigSelectionExplicit && rigSelection.Count==0) return;
+            if(rigSelectionExplicit && rigSelection.Count==0 && selectedRigChannelActor!=actor) return;
             FlushEdits(); playing=false;
             int sharedFps=take.frameRate;
-            var targets=rigSelection.Count>0 ? rigSelection.Select(s=>s.Actor).Where(a=>a).Distinct().ToArray() : new[]{actor};
+            var targets=selectedRigChannelActor==actor ? new[]{actor} :
+                rigSelection.Count>0 ? rigSelection.Select(s=>s.Actor).Where(a=>a).Distinct().ToArray() : new[]{actor};
             Undo.IncrementCurrentGroup(); Undo.SetCurrentGroupName("Delete selected control keys");
             foreach(var target in targets) InSelectedActor(target,()=>
             {
@@ -168,6 +169,12 @@ namespace MashBoxSDK.AnimationStudio
         private void SelectedControlMasks(out int[] bones,out int[] effectors)
         {
             var boneMask=new int[rig.Bones.Length]; var effectorMask=new int[4];
+            if (selectedRigChannelActor == take && selectedRigChannelBone >= 0 && selectedRigChannelBone < boneMask.Length)
+            {
+                boneMask[selectedRigChannelBone] = 1;
+                bones = boneMask; effectors = effectorMask;
+                return;
+            }
             System.Action<int,bool,bool> select=(index,ik,pole)=>
             {
                 if(ik && !IsBike) { if(index>=0 && index<4) effectorMask[index]|=pole ? 4 : 11; }
@@ -206,7 +213,8 @@ namespace MashBoxSDK.AnimationStudio
         private int[] SelectedTimelineFrames(AnimationTake actor,List<PoseKey> keys)
         {
             int sharedFps=take.frameRate;
-            var targets=rigSelection.Count>0 ? rigSelection.Select(s=>s.Actor).Where(a=>a).Distinct().ToArray() : new[]{actor};
+            var targets=selectedRigChannelActor==actor ? new[]{actor} :
+                rigSelection.Count>0 ? rigSelection.Select(s=>s.Actor).Where(a=>a).Distinct().ToArray() : new[]{actor};
             var frames=new List<int>();
             foreach(var target in targets)
             {

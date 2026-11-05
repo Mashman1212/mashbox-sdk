@@ -40,7 +40,9 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void RecordUnkeyedPoseUndo()
         {
-            if (poseUndoStart == null || inActorScope) return;
+            // The picker pass can finish an edit before the active actor's scope
+            // has published its final pose. The outer scene callback records it.
+            if (poseUndoStart == null || inActorScope || drawingActorControls) return;
             var after = CapturePoseUndoEntries();
             bool changed = poseUndoStart.Count != after.Count;
             for (int i = 0; !changed && i < after.Count; i++)
@@ -51,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
             poseUndoState.poses = poseUndoStart; poseUndoState.frame = poseUndoFrame;
             poseUndoStart = null;
             Undo.IncrementCurrentGroup();
-            Undo.RegisterCompleteObjectUndo(poseUndoState, "Move unkeyed pose");
+            Undo.RegisterCompleteObjectUndo(poseUndoState, "Edit unkeyed rig pose");
             poseUndoState.poses = after; poseUndoState.frame = frame;
             poseUndoState.revision++;
             appliedPoseUndoRevision = poseUndoState.revision;

@@ -199,7 +199,7 @@ namespace MashBoxSDK.AnimationStudio
             if (rigControls != null)
             {
                 rigControls.style.display = FoldablePanels && skinLeftTucked ? DisplayStyle.None : DisplayStyle.Flex;
-                rigControls.style.width = panelsModeling ? widths.x : 398;
+                rigControls.style.width = panelsModeling ? widths.x : 548;
                 rigControls.style.backgroundColor = panelsModeling ? StudioTheme.Current.Panel : Color.clear;
             }
             if (inspector != null)

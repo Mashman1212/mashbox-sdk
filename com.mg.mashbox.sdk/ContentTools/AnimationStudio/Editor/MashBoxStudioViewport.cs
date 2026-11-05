@@ -242,10 +242,15 @@ namespace MashBoxSDK.AnimationStudio
         private IMGUIContainer modelMenuBar, viewportOptions, studioSettings;
         private IMGUIContainer meshStatistics;
         private IMGUIContainer attachments;
-        internal void BindAttachments(System.Action draw)
+        private IMGUIContainer selectedTransform;
+        internal void BindAttachments(System.Action draw, System.Action drawTransform = null)
         {
             BindViewportControl(ref attachments, "mashbox-attachments", draw);
             attachments.style.width = 146;
+            BindViewportControl(ref selectedTransform, "mashbox-selected-transform", drawTransform);
+            selectedTransform.style.width = 280;
+            selectedTransform.style.right = 8;
+            selectedTransform.style.bottom = 148;
             UpdatePanelLayout();
         }
         internal void BindStatistics(System.Action draw)

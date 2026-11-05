@@ -134,6 +134,12 @@ namespace MashBoxSDK.AnimationStudio
         {
             var a=OutfitActor; var r=OutfitRig;
             EditorGUILayout.LabelField(a.name+" · VEHICLE PARTS",StudioTheme.Styles.boldLabel);
+            if (r.IsBmxRig && GUILayout.Button("Load Full BMX from SDK")) Guard(() =>
+            {
+                var parts = AuthoringRig.BuildFullBmxOutfit();
+                Undo.RecordObject(a, "Load Full BMX outfit"); a.vehicleParts = parts;
+                SaveOutfitActor(); ApplyVehicleOutfit();
+            });
             if(!string.IsNullOrEmpty(vehicleOutfitNotice)) EditorGUILayout.HelpBox(vehicleOutfitNotice,MessageType.Info);
             vehicleLoadout=(GameObject)EditorGUILayout.ObjectField("Vehicle prefab",vehicleLoadout,typeof(GameObject),false);
             using(new EditorGUI.DisabledScope(!vehicleLoadout))
