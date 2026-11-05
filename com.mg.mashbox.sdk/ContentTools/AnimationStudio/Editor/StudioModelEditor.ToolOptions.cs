@@ -29,6 +29,7 @@ namespace MashBoxSDK.AnimationStudio
         internal string ToolOptionsTitle => ActiveChannelTool ? ActiveChannelTool.titleContent.text : CameraOptionsVisible ? "Camera Settings"
             : LightingOptionsVisible ? "Viewport Lighting"
             : targetWeldActive ? "Target Weld"
+            : cutTool == CutTool.Polygon ? "Create Polygon"
             : cutTool == CutTool.EdgeLoop ? "Insert Edge Loop"
             : cutTool != CutTool.None ? "Multi-Cut"
             : tool == Tool.None ? "Selection Tool" : tool + " Tool";
@@ -47,6 +48,7 @@ namespace MashBoxSDK.AnimationStudio
         private void FinishToolsForSwitch(ToolChannelPane keep = null)
         {
             if (keep && ActiveChannelTool == keep) return;
+            if (cutTool == CutTool.Polygon && polygonPoints.Count >= 3) Run(CommitPolygon);
             bool pending = livePreview != null || componentLiveTargets != null || previewQueued ||
                 bisectPreview != null || fracturePreview != null;
             if (pending)
@@ -100,6 +102,13 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (CameraOptionsVisible) { DrawViewportCameraOptions(); return; }
             if (LightingOptionsVisible) { DrawViewportLightingOptions(); return; }
+            if (cutTool == CutTool.Polygon)
+            {
+                EditorGUILayout.HelpBox("Click vertices clockwise. Hold the configured vertex, edge or grid snap binding to place exact snapped points; otherwise use the view-facing plane through the view center. W finishes a new polygon object; clicking the first vertex does not close it. Backspace removes the last vertex. Escape cancels. Alt navigation remains available.", MessageType.Info);
+                GUILayout.Label("Vertices: " + polygonPoints.Count);
+                if (GUILayout.Button("Cancel")) { StopCutTool(); repaint(); }
+                return;
+            }
             if (targetWeldActive) { EditorGUILayout.HelpBox("Drag a vertex onto another vertex on the same mesh. The destination stays fixed. Release to weld; Escape cancels the drag, then exits the tool.", MessageType.Info); return; }
             if (cutTool != CutTool.None)
             {

@@ -13,7 +13,7 @@ namespace MashBoxSDK.AnimationStudio
         public StudioPolygonPrimitivesToolbar() => Configure(new StudioCustomToolbarDefinition {
             id = Id, name = "Polygon Primitives", commands = new List<string> {
                 "Create/Polygon Primitives/Cube", "Create/Polygon Primitives/Sphere",
-                "Create/Polygon Primitives/Plane", "Create/Polygon Primitives/Quad", "Create/Polygon Primitives/Cylinder" } });
+                "Create/Polygon Primitives/Plane", "Create/Polygon Primitives/Quad", "Create/Polygon Primitives/Cylinder", "Create/Polygon Primitives/Polygon" } });
     }
     [Overlay(typeof(MashBoxStudioViewport), Id, "Mesh Tools", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,

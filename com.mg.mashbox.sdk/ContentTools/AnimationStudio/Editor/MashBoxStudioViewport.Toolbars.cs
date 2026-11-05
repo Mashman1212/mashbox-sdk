@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.Overlays;
+using UnityEditor.Toolbars;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -378,12 +379,18 @@ namespace MashBoxSDK.AnimationStudio
                     return;
                 }
                 if (element.style.height.value.value != height) element.style.height = height;
-                if (element.ClassListContains("unity-editor-toolbar-toggle") || element.ClassListContains("unity-editor-toolbar-button"))
+                // EditorToolbarButton uses unity-toolbar-button in current Unity;
+                // the old class-name check skipped command/primitive buttons.
+                // Text/dropdown controls keep their intrinsic wider layout.
+                if (element is EditorToolbarToggle || (element is EditorToolbarButton && !(element is EditorToolbarDropdown)))
                 {
                     if (element.style.width.value.value != height) element.style.width = height;
                     element.style.minWidth = element.style.maxWidth = height;
                     element.style.minHeight = element.style.maxHeight = height;
+                    element.style.flexGrow = 0;
                     element.style.flexShrink = 0;
+                    element.style.marginLeft = element.style.marginRight = 1;
+                    element.style.marginTop = element.style.marginBottom = 1;
                     element.style.paddingLeft = element.style.paddingRight = 0;
                     element.style.paddingTop = element.style.paddingBottom = 0;
                     element.style.alignSelf = Align.Center;
@@ -395,8 +402,11 @@ namespace MashBoxSDK.AnimationStudio
                         input.style.flexGrow = 1;
                         input.style.alignItems = Align.Center;
                         input.style.justifyContent = Justify.Center;
+                        input.style.alignSelf = Align.Stretch;
                         input.style.paddingLeft = input.style.paddingRight = 0;
+                        input.style.paddingTop = input.style.paddingBottom = 0;
                         input.style.marginLeft = input.style.marginRight = 0;
+                        input.style.marginTop = input.style.marginBottom = 0;
                     }
                 }
                 else if (element.ClassListContains("unity-dropdown-toggle"))

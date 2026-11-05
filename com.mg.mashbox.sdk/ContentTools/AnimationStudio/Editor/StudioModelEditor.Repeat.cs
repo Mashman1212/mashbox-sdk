@@ -7,7 +7,7 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace, Poke, FillHole, EdgeRingCollapse, FlipNormals }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace, Poke, FillHole, EdgeRingCollapse, FlipNormals, Polygon }
         private sealed class RepeatAction
         {
             internal StudioMeshFracture.Settings fracture; internal Material fractureMaterial;
@@ -66,6 +66,7 @@ namespace MashBoxSDK.AnimationStudio
                     case RepeatKind.Delete:
                         if (!CanDeleteSelection) throw new InvalidOperationException("Select objects or components to repeat Delete.");
                         DeleteSelection(); break;
+                    case RepeatKind.Polygon: BeginPolygon(commandView,commandLoaded); break;
                     case RepeatKind.Primitive: CreatePrimitive((PrimitiveType)Mathf.RoundToInt(action.parameters.x),commandView,commandLoaded); break;
                     case RepeatKind.Empty:
                         if (action.parameters.x >= .5f && Active < 0) throw new InvalidOperationException("Select a parent to repeat Empty Child.");

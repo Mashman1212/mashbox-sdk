@@ -1,4559 +1,4575 @@
-## Orthographic views and 2×2 layout (2026-11-05)
-
-## Floating Studio host recovery after compilation (2026-11-05)
-
-Live failure confirmed: after compilation the open MashBoxStudioViewport retained native Scene toolbars/grid but lost Studio menu, hierarchy, Tool Options and Channels. A temporary read-only observation recorded the same real host with hideFlags=DontSave, a valid serialized AnimationStudioWindow owner, IsEmbeddedView=False and HasStudioBindings=False. The recovery loop incorrectly skipped every DontSave view. It now permits Studio-owned DontSave hosts, while retaining exclusions for embedded quad tiles, unowned temporary DontSave views and already healthy hosts. The existing owner/document restore path handles the rebind; no restart, focus workaround, global window recreation or new idle loop is introduced.
-
-Source: SDK Editor/MashBoxStudioViewport.cs RestoreStudioViewsWhenReady. Current complete SDK compile passes (host obj/StudioControlsValidation/ReloadRecovery/compile.log). Actual live external-source import/reload recovered the same viewport and owner instance IDs: HasStudioBindings changed False to True and the Studio title/content returned. Computer-use screenshots inspected show menus, hierarchy, Tool Options and Channels restored without closing/reopening the window or Unity. live-recovered.txt records the bound state. The current observed workspace was empty; preservation of a nonempty document, animation/painting and four-view reload matrices were not separately replayed. Temporary Assets/Editor/StudioReloadObservation.cs/meta were removed; this was a read-only observation, not a destructive working-project fixture. No global preferences were rewritten.
-
-The host external-SDK refresh helper remains. Unity initially imported an intermediate PackageInfo ambiguity while that helper was being authored; its corrected fully qualified source was subsequently compiled by the real editor. A normal Assets Refresh was performed through Unity UI to import the diagnostic; the successful external SDK recovery edit then compiled without an additional UI refresh/restart. A subsequent external source timestamp event triggered the normal scan and compiled observer cleanup (Assembly-CSharp-Editor.dll updated); the same open Studio retained its complete menus/panels in a second live UI capture. This verifies the observed import/recovery path, not that every prior missed import had the same cause. No sustained diagnostics or source polling remains.
-
-## External SDK source edits and import refresh (2026-11-05)
-
-User clarified that code changes were not appearing because Unity had not compiled them, rather than Studio showing old code after a completed reload. Unity Auto Refresh mode and its legacy flag were both enabled (read-only preference inspection); this host references the SDK through file:D:/MashGames/mashbox-sdk/com.mg.mashbox.sdk/. The precise native external-file detection failure was not reproduced. User subsequently reported things seem fine. The user later retracted that recovery report; the subsequent live DontSave-host investigation and fix are documented above.
-
-Host-only Assets/Editor/MashBoxSdkSourceRefresh.cs now provides event-driven local-package development refresh. It resolves the external local SDK package, watches C#/shader/compute/HLSL/GUI/assembly-definition source changes, ignores hidden and Unity-excluded tilde directories, and coalesces edits after750 ms quiet time. File callbacks only signal a timer; normal AssetDatabase.Refresh runs on Unity's main thread when importing/compiling/play mode permit it. Pending-work update callbacks detach after refresh; no idle filesystem polling/repaint or forced restart/reload-unlock is introduced. Explicit Auto Refresh mode0 remains respected. Watcher/timer resources dispose before assembly reload and on editor exit. This is host development support, not a new SDK product service or scheduled background task; it does not modify global refresh preferences or personal Studio profiles.
-
-Validation: the actual host helper compiles against installed Unity Editor assemblies (obj/StudioControlsValidation/SourceRefresh/compile.rsp and compile.log). Initial PackageInfo namespace ambiguity was corrected with a fully qualified API. No destructive/native fixture, working-scene mutation or new Unity launch. Subsequent external SDK source import and real host recovery were observed live as documented above; the earlier standalone compile check alone did not establish that result. Existing Studio reload/resource recovery remains authoritative.
-
-## Command-toolbar dock transition and side-strip sizing (2026-11-05)
-
-User reported a huge blank left dock pushing hierarchy/canvas right, triggered by docking Mesh Tools. This is a dock-sizing report, not a request to change button orientation manually. StudioCommandToolbar now remembers the native horizontal/vertical content-creation request before creating its panel, consumes layoutChanged's supplied value directly and retains that direction through rebuild/refresh. The previous handler reread layout instead of the event value, allowing a stale horizontal row during a side-dock transition.
-
-Custom command contents have no flex growth/shrink and use intrinsic start alignment. Divider cross dimensions are bounded to the configured icon size plus6 (one styled button including margins), rather than auto sizing with100-percent children that can feed an oversized row back into native dock measurement. Gaps remain8 points along the toolbar; dividers still span that complete button-row/column footprint, remain passive and use the same built-in/custom implementation. Direction changes recalculate spacer dimensions; refresh also reapplies the remembered direction. No saved docking/visibility/configuration reset or personal-profile rewrite is introduced.
-
-Source: Editor/StudioCustomToolbar.cs. Actual installed SDK/native fixture compiles with existing warnings (host obj/StudioControlsValidation/ToolbarDock/fix-build.log). Updated non-exiting StudioToolbarSeparatorValidation passes21 checks, adding production layout-callback/refresh transitions in both directions for Mesh Tools and authored custom spacers to the prior17 checks. Native retained full-height divider bounds/render pixels remain checked. Results/capture in host obj/StudioControlsValidation/ToolbarSeparators; screenshot inspected. The checks invoke the actual layout callbacks while the overlay getter can still hold its previous value; physical docking in the user's workspace was not replayed. An exploratory standalone dock-host probe did not have displayed overlays and is not accepted as dock validation. That probe used a test-only isolated preference-store copy; the production preference root was not changed and personal files were not reset. No new Unity session or working-project fixture.
-
-## Authored spacers in custom toolbar overlays (2026-11-05)
-
-Preferences > Toolbar customization exposes + Spacer beside Toolbar contents. It appends a manual spacer entry; existing row dragging, up/down and remove actions move/delete it. The row is labeled Spacer, not an unavailable function. Its stable Toolbar/Spacer key is retained in the existing command list/JSON and uses existing StudioCustomToolbars.Save; only user edits write the current personal toolbar configuration. No migration, automatic insertion into custom lists or development profile rewrite occurs.
-
-At runtime manual entries share the built-in separator constructor:8-point gap, subtle1-point divider, full toolbar height horizontally/full width vertically (user follow-up), non-focusable/non-pickable and no command/icon/shortcut execution. Explicit leading/trailing/repeated spacers are retained wherever the user places them. Existing custom commands/controls/order remain. Built-in automatic menu-group separators remain separate and unchanged. Radial + Empty Spacer keeps its existing full-slot invisible behavior/key; a toolbar spacer does not become a radial slot or selectable modeling command.
-
-Sources: Editor/StudioCustomToolbar.cs stable key/shared separator rendering and orientation; StudioToolbarCustomization.cs + Spacer and readable row label. Current SDK/fixture compile with existing warnings. Reused disposable native fixture passes17 checks: prior12 built-in checks plus custom JSON order roundtrip, three real buttons/two authored separator elements, matching passive horizontal style, vertical rotation and full rendered divider height. Updated native toolbar-separators.png includes the custom row and was inspected; real retained gap bounds and native pixels remain checked. Host artifacts under obj/StudioControlsValidation/ToolbarSeparators; excluded Tests~/StudioToolbarSeparatorValidation.cs updated. The fixture uses in-memory JSON rather than writing personal profiles. Physical customization clicks/dragging and profile restart were not separately replayed. No new Unity session, working-project fixture or idle loop.
-
-## Menu-group spacers in built-in toolbar overlays (2026-11-05)
-
-The built-in Mesh Tools and Mesh Display overlays now insert an8-point passive gap with a subtle1-point divider wherever adjacent buttons belong to different current menu sections. ToolbarCommand.MenuGroup comes directly from the existing menu tree and separator markers, including canonical/legacy command keys; no second hand-maintained tool grouping table is added. Existing button order is retained, so a menu section can appear in multiple runs in the mixed Mesh Tools overlay. Polygon Primitives stays one uninterrupted group. The native Mesh Display X-ray button is separated from normal operations because its current menu category is View.
-
-Separators are non-focusable/non-pickable visual elements, never commands or unavailable buttons. There is no leading/trailing divider. Dividers span the full toolbar height horizontally and full width vertically, retaining the8-point main-axis gap. Existing event-driven toolbar refresh updates visibility when current menu metadata is available; no polling/repaint loop is introduced. Action count, command IDs, icon/help/shortcut handling and saved docking/visibility/layout remain unchanged. Personal custom-toolbar lists/order/content and radial full-slot spacers are unchanged; this adds no personal-profile writes or new preference.
-
-Sources: Editor/StudioModelEditor.ToolbarCommands.cs menu-section metadata; StudioCustomToolbar.cs shared passive gap construction/orientation/refresh; StudioMeshToolbars.cs opt-in for Mesh Tools and Mesh Display. Current full installed Editor sources and excluded Tests~/StudioToolbarSeparatorValidation.cs compile with existing warnings. The focused non-exiting fixture reuses ThemeIsolationProject and passes12 native checks:21/5 button counts preserved, separator count follows actual menu groups, no leading/interactive gaps, horizontal8-point/1-point dimensions, vertical orientation, unchanged custom-toolbar contents, retained visible gap bounds and native rendered pixels. toolbar-separators.png inspected; builds/report/capture under host obj/StudioControlsValidation/ToolbarSeparators. Its temporary utility is opened without requesting focus and closed after capture; the reusable Unity session remains open. No working-project fixture, settings writes or broad suite. Physical docking and the user's exact window arrangement were not separately replayed.
-
-Window > Layout > 2×2 opens four native viewports sharing the current modeling workspace. Clockwise from upper-left: Front, Perspective, Side, Top (Top bottom-left, Side bottom-right). Front looks from +Z, Side from +X, Top from +Y. Axis views use true orthographic projection with fixed viewing axes and independent pan/zoom. Perspective retains ordinary orbit/navigation. Window > Layout > Single View fills the canvas with the active camera. Both layout choices retain all four camera poses, lighting settings and grid states.
-
-Each viewport has Camera, Lighting and Grid icons. Camera options target that view; orthographic cameras expose View size and disable rotation/FOV edits. Lighting settings are local copies for the four-view session, applied through the existing lighting rig at each native render. Grid icons affect their own view; the regular grid toolbar/menu target the active view. Grid spacing and snapping units remain workspace-wide. Axis-view grids lie in their viewing plane. Geometry, selection, tools, modifiers and Undo remain shared.
-
-Alt+W maximizes the viewport under the cursor within the Studio canvas and repeats to restore the split. Existing shortcut Preferences exposes Maximize / restore hovered viewport; custom assignments remain authoritative. Surrounding Studio panels remain. Hidden views use display:none on their complete retained roots, removing images, headers and input trees; split gutters disappear. View state survives maximize/restore. F11 and Shift+Space retain window maximize behavior. Open Camera/Lighting options retarget the maximized view. Layout changes do not edit geometry or commit tools.
-
-Viewport recovery fix (2026-11-05): the reported toolbar-hover exception came from EditingView directly indexing quadViews[activeQuad] without validating either. Runtime tile arrays and indices are now NonSerialized so Unity reload does not restore stale/empty native view references. EditingView tolerates missing, empty, partially built and destroyed tile entries, falling back to Perspective or the real host. Construction handles incomplete arrays and cleans up on failure; layout/hover/teardown tolerate partial construction. Both queued and deferred maximize targets are validated before updating active/maximized indices. The current SDK compiles and the disposable native fixture passes 39 checks, extending the focus regression with null/empty/partial arrays, negative/oversized active indices, actual toolbar command refresh under those states, invalid queued/deferred targets and Unity serialization exclusion. This reproduces the unsafe lookup conditions; the exact live state at the reported exception was not inspected. No working-scene or personal-profile mutation. Evidence: QuadViews/recovery-native-build.log, recovery-production-build.log and result.txt.
-
-Unified layouts (2026-11-05): Alt+W toggles directly between Single View and 2×2, including from the initial single viewport; no prerequisite layout mode is required. Window > Layout contains only those two choices, showing the current Alt+W binding beside the destination layout. Keyboard input uses the hovered viewport (active viewport fallback over panels); Single View menu activation uses the active viewport. Shared host key handling and deferred layout updates preserve focus transfer. Text editing and active captured gestures keep their normal input ownership. Production and isolated native fixture compilation pass with existing warnings. The reused disposable Unity session passes43 checks, adding initial-single Alt+W and menu-layout camera/lighting/grid retention to the prior39 recovery/focus checks. Evidence: QuadViews/layout-production-build.log, layout-native-build.log and result.txt. No personal preferences or working-scene changes; physical OS keystrokes were not separately replayed.
-
-Focus follow-up (2026-11-05): after Alt+W, transfer retained keyboard focus from any hidden tile to the visible native canvas, without activating an OS window. Track the last panel-space pointer and recompute the hovered tile on tile geometry changes, so maximize/restore under a stationary cursor does not require a click or new pointer movement. The user reported intermittent lockout until refocusing Studio. The disposable native fixture now passes 25 checks, including focus initially in a different tile, Alt+W delivered through the focused retained element, focus on the maximized canvas, restore with no click and stationary-cursor hover recovery. Physical intermittent reproduction in the working session was not separately tested.
-
-Embedded native SceneViews each own a camera and the existing scene/overlay image cache, sharing the owner's model editor and preview scene. Host discovery, tool-pane ownership, hover, painting, snap/radial focus and toolbar/profile reload distinguish embedded views from the real host. Cameras/caches and lighting overrides survive layout changes and release when leaving modeling, rebinding or closing. No continuous render loop or new polling is added. Layout flag uses serialized host window state; per-view camera/light/grid settings are session-local, not new personal profile entries. Perspective-only enforcement now applies to the Perspective view; orthographic tiles use a fixed-axis guard.
-
-Sources: new Editor/MashBoxStudioViewport.QuadViews.cs; viewport Input, Redraw, Panels, Window, Toolbars and core partials; AnimationStudioWindow, AnimationStudioModeling, AnimationStudioSelection; StudioViewportCamera; StudioModelEditor Lighting, Menus, MoveHandles, SelectionHistory, ToolOptions and core; StudioShortcuts, StudioViewportToolbar, StudioControlsPreferences, StudioCustomToolbar and StudioWindowOwnership.
-
-Validation: production and native-fixture compilation pass with existing warnings. Reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 21 checks: distinct native cameras, actual projection/canvas sizes, picking in all four live native GUI callbacks, Camera/Lighting targeting, four scene/overlay caches, independent grids/pan, fixed orthographic axes, retained-UI Alt+W input, maximize/restore, hidden view roots/input trees, canvas fill and retained grid state. split.png, maximized.png and restored.png were inspected. Reports/build inputs/captures: host obj/StudioControlsValidation/QuadViews. The fixture compiles with a test-only substituted StudioPreferenceStore Documents root under QuadViews/IsolatedDocuments; the SDK retains the real resolved Documents root. Personal profiles and working geometry were not used for validation. The original 21-check run is extended by the 25-check focus follow-up above. Physical OS input, broad per-tool drags, all display/HDRP combinations, domain-reload camera-state persistence and dense-scene performance were not separately verified. Per-view state survives both menu and shortcut layout changes; persistence across closing Studio/domain reload is not promised.
-
-
-## User-wide Documents settings (2026-11-05)
-
-## Mesh Display: Flip Normals (2026-11-05)
-
-Mesh Display > Flip Normals reverses actual render-triangle winding and authored polygon winding, and negates affected shading normals/tangent handedness, so backfaces become frontfaces. Face selection affects those faces; Edge selection affects incident faces; Vertex selection affects directly incident faces, using the existing Split Selection/Weld scope. Object selection affects whole selected static meshes, including selected group descendants. Mixed triangles/quads/n-gons and existing source tessellation/material slots are retained; this is orientation reversal, not normal recalculation or a normal-lock operation.
-
-Partial flips keep unselected normal/UV/color/tangent data and triangles intact. Where a render vertex is shared with unselected faces, only the flipped side gets a copied corner; aliases retain the original geometric identity, so authored connectivity stays intact. Selected/unselected smoothing groups separate only where needed. Existing UV0-7 values/dimensions, colors, positions and tangent XYZ are retained; selected tangent W changes sign. Whole-object flips need no added vertices. Repeated flips reverse orientation without accumulating aliases, but do not merge corner aliases introduced by the first partial flip.
-
-The command is immediate, keeps the current component mode/selection and transform tool, and supplies existing embedded selection guidance when needed. Captured StudioMeshToolPreview targets evaluate before publication; linked mesh face selections union and each shared mesh changes once. StudioUndo groups mesh/document/selection changes. Compact fieldless FlipNormals modifier records store face IDs and replay in strict order; G repeats against current selection. Skinning/blend-shape/bone/anchor and broken-history restrictions follow existing static modeling tools. The built-in Mesh Display toolbar now has five buttons: Soften, Harden, Flip Normals, Soften options, X-ray. Existing IDs/order/placement remain; menu discovery adds shortcut and custom toolbar/radial eligibility, initially unassigned. Shared code-native opposing-normal artwork provides the button icon. No personal preferences/layouts or source assets are rewritten and no idle work is added.
-
-Sources: new Editor/StudioMeshCuts.FlipNormals.cs and StudioModelEditor.FlipNormals.cs (+metas); StudioModifierHistory.cs, StudioModelEditor.Menus.cs/.Repeat.cs/.ToolbarCommands.cs, StudioMeshToolbars.cs, StudioSymbolIcons.cs. MODIFIER_HISTORY.md and maintained toolbar fixture inventory assertions are aligned (five Mesh Display/twenty-one Mesh Tools actions); those preference-writing legacy fixtures were not run.
-
-Validation: actual SDK and excluded Tests~/StudioFlipNormalsValidation.cs compile with existing warnings. Reused disposable ThemeIsolationProject passes26 focused native checks: shared-corner partial flips; unchanged neighboring triangles/normals; reversed render winding/shading/tangent handedness; UV7 values/seams/dimension; unchanged positions and genuine quads; repeat-flip alias stability; atomic invalid-selection rejection; real front/back culling swaps from opposite cameras; whole-mesh vertex count; actual Face/Edge/Vertex/Object command execution, retained selection/mode and strict replay; native StudioUndo/Redo and current-face Repeat Last. before-front.png/after-front.png inspected: the formerly culled mesh becomes visible; opposite-camera coverage also checked. Reports/builds/captures: host obj/StudioControlsValidation/FlipNormals. Fixture rendering requires its small excluded StudioFlipNormalsProbe.shader copied into disposable Assets. No new Unity process/exit or working-project fixture. Exact user mesh, physical button input, broad linked/multi-mesh/negative-transform/UV-channel matrices and performance were not separately replayed. Personal profiles remain untouched; disposable session remains open.
-
-## View: non-planar quad diagonals (2026-11-05)
-
-View > Non-planar Quad Diagonals is a saved display toggle, initially on (user follow-up 2026-11-05). It shows the actual hidden render-tessellation diagonal of warped authored quads as a light red-orange line. The user selected fading stronger with greater bend, not an angle-threshold control. User follow-up requests a thicker base line, more red and stronger/thicker lines sooner. Opacity derives from the world-space angle between the two rendered triangle normals: numerical bends at/below .1 degrees are ignored, then .35 + .55*sqrt(angle/25) reaches .9 alpha by25 degrees, quantized into16 cached groups. The stroke uses RGB(1,.2,.13), starts at about2 GUI points and grows to3.25 points over that strength range. Planar quads remain unmarked. Nonuniform transforms participate in the angle measurement. Only authored four-corner faces represented by exactly two source render triangles with a true opposite-corner diagonal qualify; triangles, n-gons and unusual quad tessellations are not marked. No editable edge, triangulation change, selection hit target or modifier is created.
-
-The overlay is independent of general wire visibility/shading choice and applies to visible mesh nodes. It uses the current evaluated geometry, captured source face-triangle mapping, the existing wire cache and shared GPU wire renderer (native Handles fallback), with normal depth/X-ray rules and component isolation masks. Source diagonal indices are captured once per wire cache; opacity groups/world line buffers rebuild only when positions or the object matrix change. GPU batches release through the existing wire lifecycle on rebuild/Undo/load/disposal. No idle repaint/render loop, repeated scene rebuild or picking change is added. Menu discovery exposes shortcut Preferences and custom toolbar/radial eligibility, initially unassigned; no built-in toolbar action is added. Model.NonPlanarQuadDiagonals persists through StudioPreferenceStore with factory default1 and a matching missing-key fallback; explicit saved on/off choices remain authoritative; development does not rewrite personal settings/hotkey profiles.
-
-Default-on follow-up: factory registration and missing-key load fallback changed to1; source checks confirm both. No personal profiles were rewritten. This defaults-only edit did not rerun the rendered fixture.
-
-Sources: new Editor/StudioModelEditor.QuadDiagonals.cs (+meta); StudioModelEditor.Wireframes.cs/.WireBatch.cs cache/draw/cleanup integration; StudioModelEditor.Display.cs load, StudioPreferenceStore.cs factory entry, StudioModelEditor.Menus.cs and .ToolbarCommands.cs entry/help.
-
-The diagnostic batches now carry both real supporting triangle vertices into the existing wire shader's per-pixel face-depth correction. Earlier batches had zero adjacency, which could let stroke pixels disappear into an inward/outward fold differently. This fixes the overlay data rather than weakening depth testing or changing the shared shader; unrelated surfaces still occlude the line normally. Native fallback uses matching-width antialiased segments. 
-
-Follow-up validation (2026-11-05): current SDK and updated excluded fixture compile with existing warnings. The reused disposable native session passes13 checks, including matched inward/outward mild/steep opacity and actual rendered line coverage at20 interior samples per folded diagonal (at least18 required), plus the earlier planar, discovery, geometry/history and cache checks. Updated on.png was inspected with one planar and four mild/steep inward/outward quads. Original eight-check evidence predates this style/depth correction. Reports/captures remain in host obj/StudioControlsValidation/QuadDiagonals. Exact supplied geometry, all grazing camera/occluder combinations and unsupported-GPU native fallback were not individually replayed. No new Unity session, personal profile writes or mesh edits.
-
-Validation: installed SDK and excluded Tests~/StudioQuadDiagonalValidation.cs compile with existing warnings. Reused disposable ThemeIsolationProject passes eight focused native checks: planar suppression, stronger-bend opacity, command discovery, actual GPU red-orange diagonal pixels, unchanged source vertices/render tessellation/authored faces, no selection/modifier mutation, identical cached native redraw and unchanged line-buffer identities. Native off/on/cached captures under host obj/StudioControlsValidation/QuadDiagonals; on.png inspected and shows no diagonal on the planar quad, a faint gentle-bend line and a stronger steep-bend line. Native fixture sets the display field directly to avoid writing personal preferences. Reports result.txt/native-build.log. An initial capture used native Handles outside an IMGUI context and failed to render; final implementation uses the existing shared batched wire shader and the inspected native camera render passes. No new Unity process/exit or working-project fixture. Physical menu input, profile reload, isolation/X-ray/subdivision/skinned matrices, exact supplied mesh and large-scene performance were source-integrated but not separately replayed. Existing unrelated edge-padding investigation remains unresolved.
-
-## Rejected edge-padding conversion rolled back (2026-11-05)
-
-The user reports the attempted centered-padding change made preview and selection badly displaced from the cursor. The entire custom explicit-camera/canvas-screen-origin conversion is rolled back. CanvasScreenOrigin and StudioModelEditor.EdgePicking.cs/meta are removed. Normal hover bounds, target ranking, hit projection and occlusion again use their pre-change native HandleUtility GUI coordinate path. The experimental scoped Camera.current follow-up was also removed rather than leaving another unverified camera change. Whole-loop traversal, Shift-add anchor consumption and the earlier near-plane/perspective-correct hovered-point visibility changes remain.
-
-The original uneven-padding complaint remains unresolved. Do not restore the rejected conversion, apply arbitrary offsets or claim symmetric offscreen query results validate a displayed Studio viewport. The previous 41 checks bypassed the live GUI coordinate conversion and were insufficient; the scoped-camera follow-up agreed between hover/click but failed its pixel-reference expectation because that reference also lacked live GUI clipping. Its fixture is retired from SDK Tests~; host SymmetricEdgePick retains the historical staging/reports for diagnosis. A future fix must establish cursor, drawn edge and hover/click coordinates inside actual Studio GUI callbacks before changing coordinate math.
-
-Validation: actual installed SDK rollback compiles with existing warnings (host obj/StudioControlsValidation/SymmetricEdgePick/rollback-build.log). No claim of physical cursor alignment or resolution of the original asymmetry is made from compilation. No personal settings, assets or working-scene changes; no new Unity process. The user's live report supersedes the earlier apparent test success.
-
-## Single-edge double-click: whole connected loops (2026-11-05)
-
-User corrected the earlier similar-angle/length request: a single-edge double-click should select a whole loop when a continuation can be resolved, including across triangles. SelectConnectedEdgeLoop now prefers the existing authored quad-loop/unbranched-border continuation. At irregular junctions it uses a unique incident edge that does not share a face with the entered edge; otherwise a clearly straightest forward continuation resolves triangle fans (at least .5 direction cosine, tied directions within .00001 stop). Traversal is bidirectional and terminates at visited edges, hidden edges, unresolved branches or non-manifold junctions. It follows existing authored edges only, never render diagonals or disconnected matches. Topological continuation can turn sharp corners; the former 30-degree and half-to-double-length restrictions are removed entirely. This is a deterministic loop heuristic at irregular triangle poles, not a unique topological loop guarantee on arbitrary triangulations.
-
-Fresh single-click A then double-click B retains the existing directional loop/ring gesture, or endpoint path with Contiguous Path on. Single-edge whole-loop expansion applies in either Contiguous Path state. Completed edge expansions consume both anchors so the next Shift-add loop starts on its first double-click. Shift-add/Ctrl-Cmd-subtract, selection StudioUndo, isolation traversal blocks and Weld alias semantics remain. No geometry, shortcut, preference or Repeat Last record is changed and no idle work is added. The prior hovered-edge visibility fix remains.
-
-Sources: Editor/StudioSelectionTopology.cs SelectConnectedEdgeLoop and StudioModelEditor.LoopSelection.cs dispatch. Current installed SDK compilation passes with existing warnings. Nineteen standalone checks execute production topology traversal: closed loops with sharp quad corners and 19x edge-length changes; a split triangular band cell; loops crossing both dense triangle-fan caps; all at scales .001/1/1000; hidden-edge blocking and an ambiguous triangle fork. Host obj/StudioControlsValidation/WholeEdgeLoop contains fixture/response files, result.txt and compile.log. Tests report caught failures without crash dialogs. Physical double-click delivery, the exact pictured mesh and native selection Undo/Redo were not replayed. No new Unity session or personal-profile writes. Earlier ConnectedEdges/15-check evidence describes the superseded angle/length implementation, not current whole-loop behavior.
-
-## Shift-add edge chains and visible edge picking (2026-11-05)
-
-Completed edge double-click expansions now consume/reset both edge direction anchors. The next Shift-double-click starts its new connected edge loop immediately, instead of treating the last expanded chain as a two-edge direction and requiring another double-click. A fresh single-click A then double-click B still establishes an explicit directional loop/ring or Contiguous Path pair. Shift-add/Ctrl-Cmd-subtract remain in the existing selection transaction; no geometry or settings change.
-
-Edge picking clips world endpoints to the camera near plane, finds the closest point along the projected visible segment, and perspective-corrects that fraction back to world space. Visibility/occlusion tests use that hovered world point rather than the edge midpoint. A hidden midpoint or midpoint behind the camera no longer rejects another visible part of the edge. The existing 18-point pick radius, isolation, X-ray bypass, paint candidate infrastructure and authored edges remain; no larger hit radius, idle work or through-surface selection is introduced. Vertex/face picking is unchanged.
-
-Sources: Editor/StudioModelEditor.LoopSelection.cs anchor consumption, StudioModelEditor.cs shared FindComponentAt, new StudioEdgePickGeometry.cs (+meta). Actual SDK compilation passes with existing warnings. 49 standalone pointer geometry checks pass for hovered-point fractions, endpoint clamping, collapsed screen segments and perspective reprojection across endpoint depths .01/1/100 (tolerance .001 in screen fraction for float precision at extreme depth ratios). Fixture/build/report: host obj/StudioControlsValidation/EdgePicking. Failures are caught and logged without a native crash dialog. Physical Shift-double-click delivery, the user's exact missed edge, native occlusion scenes and selection Undo/Redo were not replayed; no new Unity session or personal-profile writes. This addresses observed source defects, not a measured guarantee that every reported miss had this cause.
-
-## Collapse Edge Ring (2026-11-05)
-
-User-requested label rename: Collapse Edge Ring. The existing Edit Mesh/To Edge Ring and Collapse command key and EdgeRingCollapse modifier kind remain stable for saved bindings, toolbar/radial entries and history. Installed SDK compilation checks the label-only change; the previous 24 native geometry checks were not rerun.
-
-
-
-
-
-
-## Fill Hole from selected boundary edges (2026-11-05)
-
-
-
-Edit Mesh > Fill Hole fills each complete selected closed boundary edge loop with one authored n-gon. Every segment endpoint is retained, including uneven and collinear vertices along straight sides. Cap render corners share the original boundary geometric identities, preserving connectivity across source UV/normal seams; no center or geometric vertex is added. Rendering triangulates the cap while retaining every segmented boundary edge. Original positions, source polygon boundaries, render triangles and populated attribute streams remain intact. Caps receive outward winding opposite adjacent boundary faces, planar UV0 and separate cap normals; higher UV channels/colors retain source corner values. Material comes from the first ordered adjacent face.
-
-
-
-The new caps are selected in Face mode, ready for Edit Mesh > Poke. Missing/wrong selection uses the shared embedded Execute/Apply/Cancel guidance pane. Complete separate loops are supported independently; open, branched, touching, interior/non-manifold edge selections and boundaries without valid projected tessellation are rejected before publication. This does not bridge chains, create compound faces with inner holes or repair crossing boundaries. Poke retains its separately approved permissive overlapping-fan behavior.
-
-
-
-Captured StudioMeshToolPreview evaluation validates targets before grouped StudioUndo publication; linked mesh selections are unioned and each shared mesh changes once. Compact FillHole edge-pair modifier records replay in strict creation order; successful completion records G/Repeat Last against current edge selection. Menu discovery exposes shortcut Preferences (initially unassigned) and toolbar/radial customization. The built-in Mesh Tools overlay includes Fill Hole immediately before Poke, with 21 actions including Collapse Edge Ring. Shared cached fill-hole artwork supplies the icon. No personal settings, hotkeys, layouts or presets are rewritten and no idle work is added.
-
-
-
-Sources: Editor/StudioMeshCuts.FillHole.cs, StudioModelEditor.FillHole.cs and their metas; StudioModelEditor.Menus.cs/.ToolbarCommands.cs/.Repeat.cs, StudioModifierHistory.cs, StudioMeshToolbars.cs and StudioSymbolIcons.cs.
-
-
-
-Validation: installed SDK sources and excluded Tests~/StudioFillHoleValidation.cs compile with existing warnings. The reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 18 focused native checks: uneven ten-vertex segmented caps at scales .001/1/1000, authored endpoint/geometric identity retention, closed top connectivity, unchanged source geometry/tessellation/UV7 dimensions and seams, atomic invalid-chain/interior-edge rejection, actual shared command cap selection, compact modifier recording, Fill Hole then Poke fan connectivity and exact strict modifier replay. Shaded/authored-wire fill-hole.png and fill-hole-poke.png were inspected. Reports/builds/captures live under host obj/StudioControlsValidation/FillHole. The initial fixture incorrectly expected the unchosen material buffer to stay exact despite cap material selection; final checks correctly require both original triangle prefixes unchanged. Physical input, native Undo/Redo, broader multiple-loop/shared-instance matrices and performance were not separately tested. No new Unity launch or working-project fixture; the disposable session remains open.
-
-
-
-
-
-
-**Edit Mesh > Collapse Edge Ring** is an immediate Edge-selection command following the user's three specified phases and before/after quad-band reference. CaptureEdgeRings builds dense authored-edge IDs; EdgeRingTopology.Collect(startingEdgeId) walks both adjacent directions through quads using opposite = (i + 2) % 4. It includes the seed and each exit edge once, stopping at boundaries, non-quads or a visited edge. Multiple selected seeds union their rings before mutation. No render-triangle diagonals or direction/position heuristics participate.
-
-
-
-
-
-FuseRingMidpoints moves each independent endpoint pair to its captured arithmetic midpoint and remaps its geometric B identity to A in every incident face. Compatible render pointers merge too; distinct UV0–7, color, tangent, normal and explicit normal-group corners retain separate render copies sharing the fused geometric identity. Explicit geometric IDs keep coincident detached surfaces separate. PurgeCollapsedRing deletes entire authored faces containing duplicate geometric indices, rather than reducing crushed quads to triangles. Retained faces carry their existing source render tessellation through the index remap. All surviving streams compact together, retaining material IDs, UV dimensions and source attributes; all unreferenced vertices are removed, including when every face is crushed. Normals/tangents are retained source attributes, not a new normal-recalculation operation. This is a local topological contraction, without collision repair or general zero-area detection beyond duplicate identities.
-
-
-
-
-
-Collected edges must have independent endpoint pairs; intersecting rings sharing endpoints reject atomically rather than choosing an order-dependent midpoint. Non-manifold crossings, invalid edges, nonfinite affected positions, skinning and blend shapes reject. Non-quad faces stop traversal but may themselves be removed if the boundary edge contraction gives them duplicate indices, as required by the purge rule. Multiple meshes evaluate independently before publication; linked-instance selections union into one mesh edit. Objects, transforms, pivots, children and external source assets retain their existing scope.
-
-
-
-
-
-Publication uses captured StudioMeshToolPreview work and grouped StudioUndo for mesh, topology, selection and compact EdgeRingCollapse modifier history. Strict replay stores source seed endpoint pairs, recomputes the ring against the bound input, and fails through existing downstream dependency rules. G repeats successful completion on fresh current edges. Deleted edge IDs clear while Edge mode stays active; Move is restored unless Rotate/Scale was active. Missing/wrong selection routes through shared PrepareMeshSelection and the embedded Execute/Apply/Cancel guidance pane; selecting later never edits automatically. Menu discovery exposes shortcuts (initially unassigned), toolbar and radial customization. The built-in Mesh Tools overlay includes the new command before Weld, retaining all existing relative order, stable IDs and saved layout; it now has 21 actions including the concurrently added Fill Hole. The shared cached neutral/amber ring-collapse symbol supplies its icon. Personal settings, bindings, presets and layouts were not rewritten; no idle polling/render loop.
-
-
-
-
-
-Sources: new Editor/StudioMeshCuts.EdgeRingCollapse.cs and StudioModelEditor.EdgeRingCollapse.cs (+metas); StudioModelEditor.Menus.cs/.ToolbarCommands.cs/.Repeat.cs; StudioModifierHistory.cs replay; StudioMeshToolbars.cs; StudioSymbolIcons.cs. Core entry point: CollapseEdgeRings(node, seedEndpointPairs), with traversal, fusion and purge as separate modules.
-
-
-
-
-
-Validation: installed production SDK and excluded Tests~/StudioEdgeRingCollapseValidation.cs compile with existing warnings. Reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 24 native checks for bidirectional/boundary/non-quad/closed traversal, seed deduplication, per-edge midpoints and neighboring quads/caps, whole-face purge, orphan compaction including full collapse, UV/color streams and seam aliases, invalid/intersecting/non-manifold atomic rejection, compact modifier replay, linked mesh publication, actual StudioUndo/Redo with selection restoration and current-selection G. Reports/builds: host obj/StudioControlsValidation/EdgeRingCollapse/result.txt, compile.log and native-build.log. No new Unity launch or working-project fixture. The supplied screenshots establish the requested target; the original pictured mesh, physical menu/key input, native rendered appearance, broad multi-object/rollback matrices and performance were not separately tested. The disposable session remains open. Final shared-file integration also preserves the concurrent Fill Hole menu, toolbar, icon, replay and Repeat Last additions; the combined installed SDK/fixture builds pass.
-
-
-
-
-
-## Poke selected faces (2026-11-05)
-
-
-
-
-
-Edit Mesh > Poke is an immediate face command. For each selected authored face it adds one vertex at the arithmetic mean of its boundary corners and replaces that face with one genuine triangle per perimeter edge, sharing the new center. Original boundary vertices/edges, material slot and per-corner source attributes stay in place; unselected polygons keep their source render tessellation. The new center's UV0–7, colors, normals and tangents are averaged from that face, retaining UV dimensions and source attribute seams. Each center has an independent geometric identity and normal group. New center vertices are selected in Vertex mode with Move active, ready for artist adjustment.
-
-
-
-
-
-Explicit user decision: always create the center fan for concave, non-star-shaped, warped or otherwise awkward finite faces. Do not reject/reposition the center to prevent overlap or silently substitute an ear-clipped triangulation. Some concave fans can overlap, reverse or collapse triangles; the artist accepts this and can hand-move the center. Basic readable-static-mesh, valid face-index/boundary and finite-coordinate checks remain. This is not an automatic n-gon repair/collision solver. Behavioral reference: Autodesk's Poke description (https://help.autodesk.com/cloudhelp/2022/ENU/Maya-Modeling/files/GUID-2A05FB2F-2CB2-4FE7-B828-240931A58BDE.htm); permissive concave behavior is the user's explicit instruction and screenshot, not a newly measured Maya parity claim.
-
-
-
-
-
-Missing/wrong selection uses shared PrepareMeshSelection and the existing embedded Execute/Apply/Cancel guidance pane; there are no Poke parameters or new standalone window. Selected static meshes evaluate through captured StudioMeshToolPreview work before one grouped StudioUndo commit; selections on linked meshes are unioned and the shared mesh is changed once. Poke uses its own compact face-index modifier record with strict input matching, normal modifier enable/delete/clear behavior, and successful completion records G/Repeat Last against current face selection. Menu discovery supplies shortcut Preferences and custom toolbar/radial eligibility, initially unassigned. The built-in Mesh Tools overlay gains Poke after Extrude (21 actions, including Fill Hole and Collapse Edge Ring), preserving all existing relative order, IDs and saved layout. Its icon uses the shared cached code-native fan symbol. No idle polling, personal-profile changes or source-asset writes.
-
-
-
-
-
-Sources: new Editor/StudioMeshCuts.Poke.cs and StudioModelEditor.Poke.cs (+metas); StudioModifierHistory.cs replay, StudioModelEditor.Repeat.cs/.Menus.cs/.ToolbarCommands.cs, StudioMeshToolbars.cs and StudioSymbolIcons.cs. Validation: installed production sources and excluded Tests~/StudioPokeValidation.cs compile with existing warnings (obj/StudioControlsValidation/Poke/compile.log, native-build.log). Reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 20 focused native checks: convex 12-gon, non-star concave eight-gon and warped 12-gon arithmetic centers; exact fan count/shared connectivity; original positions and unrelated material tessellation; UV7 dimension/interpolation/prefix preservation; actual shared menu multi-mesh execution; Vertex/Move center selection; compact modifier records/replay; current-selection Repeat Last. Report Poke/result.txt. Actual shaded/authored-wire captures poke-convex.png and poke-concave.png inspected; the latter is cropped by the existing capture camera but clearly retains the allowed outside/overlapping fan. Initial editor-fixture setup omitted node names and hit the unrelated vehicle-snap path; final named-node run passes. No new Unity launch or working-project fixture. Physical input, native Undo/Redo, shared-instance edit matrix, coincident-center weld-selection behavior and performance were not separately replayed. Personal settings, hotkeys, presets and working scene untouched; reusable disposable session left running.
-
-
-
-
-
-## Move texture preservation (2026-11-05)
-
-
-
-
-
-Move Tool Options now has Preserve UVs, default off. When enabled, moving selected vertices, edges or faces updates their existing UV coordinates to reduce texture stretching and preserve source texture scale as the surface changes. Geometry remains free to move; this does not constrain handles, reproject/repack islands or change editable topology. Whole-object moves, Edit Pivot, Rotate/Scale, Shift-handle extrusion and the active Extrude-distance gizmo retain their existing behavior. The setting is a durable StudioPreferenceStore choice (Model.PreserveMoveUVs, factory 0); loading is read-only and only user configuration changes persist it.
-
-
-
-
-
-Preserve UVs prioritizes reduced texture stretch and consistent source texel scale; slight texture movement is acceptable (user clarification 2026-11-05). Ordinary and multi-mesh Move gestures capture source geometry, affected triangle charts and all populated UV0–7 streams once at drag start. Each sample transports a source chart onto the current triangle plane using the minimal normal rotation, retaining its original UV scale/shear. An unselected corner anchors each chart when available; otherwise its source origin provides a stable placement reference. Selected UV corrections are area-weighted across incident source triangles, independently per render vertex/channel, retaining seams and unselected UV values. Coplanar sliding retains the original affine behavior, while face tilts use actual surface lengths instead of compressing UVs onto old face planes. Rigid hinges keep their source mapping scale. All samples evaluate from the same captured source and zero displacement restores source UVs exactly. This is a local fit, not a whole-island relaxation or a guarantee of zero distortion on warped/folded/shared charts. Degenerate source triangles contribute no chart; a collapsed moved triangle temporarily falls back to source-plane projection. Finite validation, UV dimensionality, missing-channel behavior and cached typed upload lists remain; no new mode, preference or idle work is added.
-
-
-
-
-
-UV-preserving moves register document/mesh changes through existing grouped StudioUndo and record strict Direct replacement history, preventing the position-only Transform optimization from discarding changed UVs. Existing ordinary transforms retain their prior compact history. Multi-mesh targets share their existing captured world/local transforms; linked selections union into one per-mesh edit. All UV targets evaluate before publication. Existing normals/tangent refresh, snapping, pivot updates, native Undo/Redo rebinding and parameter-tool transitions remain in place.
-
-
-
-
-
-Contiguous Path is a general selection setting under Select > Contiguous Path. Its checkbox and path-mode helper text were removed from ordinary Tool Options. The menu remains checked/synchronized with the existing saved Model.ContiguousPath value, custom shortcut/radial command identity and selection implementation; there is no migration, duplicated setting or automatic geometry edit.
-
-
-
-
-
-## Animation clip loading and rig visibility (2026-11-04)
-
-
-
-
-
-The compact transform panel sits at the bottom-right above the timeline, showing only the active control's name and editable numeric channels. Root/FK transforms use local coordinates; limb IK targets use character coordinates. BMX curves expose their supported rotation axis; driven channels are omitted. Enter or focus loss commits a typed value using the pose-edit path, respecting Auto Key and unkeyed Undo. With multiple controls selected, it edits the active control only.
-
-
-
-
-
-The character icon hides/shows loaded preview renderers without removing outfit data or rebuilding rigs. Its selected preset stays displayed while hidden. Vehicle visibility retains the loaded actor and only changes its active state. A character hidden using the older outfit-removal behavior is restored once from the saved appearance, after which visibility uses the lightweight path. Appearance dropdown choices still explicitly replace/remove outfits.
-
-
-
-
-
-Pose Undo/Redo reuses actor rigs, vehicle meshes and control selections. Preview rigs are rebuilt only when actor membership or source/body/clothing changes; vehicle outfit changes rebuild the affected rig's vehicle visuals. Ordinary rotation Undo no longer reassembles the full BMX from SDK models.
-
-
-
-
-
-Drop `.anim` clips or animated FBX models into the Animation viewport to load human or vehicle motion into the current session. Recognizable clips route to the matching actor; ambiguous clips and FBXs containing multiple animations open a picker. Loading one actor's clip preserves the other actor's motion. Both actors use one timeline, frame rate and playback range; selecting their controls determines which actor's keys are edited. Imported motion is sampled at the session frame rate. Saving a clip session saves each actor's clip; FBX animations require standalone `.anim` outputs. Saving a new in-memory take retains the combined editable actor setup.
-
-
-
-
-
-The top toolbar has separate **vehicle controls** (wheel icon) and **rig bones** (bone icon) toggles. Bone visibility applies to human and vehicle rigs independently of IK/FK controls. Vehicle controls remain available when human FK is hidden. New configurations start with bones hidden; visibility choices are saved in Studio preferences.
-
-
-
-
-
-Selecting a BMX bars, frame, drivetrain or pedal control displays a rotation ring at its pivot. Bars/frame rotate about their local Y axis; drivetrain and pedals rotate about local X. These constrained controls always expose rotation, including when W is active; the BMX root retains W/E move/rotate switching. Dragging a control curve still works, and drivetrain rotation retains pedal counter-rotation. Front/rear wheel controls are omitted from the viewport and control selector; wheel bones and imported animation remain intact. Press S to key an unkeyed edit, or use Auto Key.
-
-
-
-
-
-## Live vehicle parts (2026-11-04)
-
-
-
-
-
-Marked parts validate their names and hierarchy against the SDK content rules. A warning badge beside the hierarchy row shows issues on hover and selects the part when clicked. Channels lists each issue under Naming & Hierarchy. Vehicle and Part selectors use the allowed SDK pairs; marking an existing root infers these from its name where possible. Modeler names use four tags, Vehicle_Part_Brand_Name (for example BMX_Frame_Vanilla_Bean). New parts omit color suffixes; color tags and color validation belong to the prefabs created later. Checks cover the four naming tags, selected-type mismatch, exact child paths, required descendants, unexpected/duplicate paths and anchor orientation, including brand-specific rules. A valid four-tag name can be updated to the selected vehicle and part with the explicit rename button. These are authoring checks, not a replacement for full export validation.
-
-
-
-
-
-Created vehicle parts carry editable metadata and the green wheel hierarchy icon. Use a hierarchy row's **Mark as Vehicle Part** action for existing objects; **Unmark Vehicle Part** removes the metadata. The Channels panel exposes Vehicle, Part, Target Anchor and Live. Live uses a bright green wheel and follows the target anchor's world position and rotation while preserving authored scale. Switch Live off to keep the current pose and edit freely. Metadata is saved in the workspace and copied independently on duplication.
-
-
-
-
-
-Anchor IDs follow Project X's prefix/suffix and separator conventions. Parts exclude their own descendants, inactive anchors and anchors owned by other vehicle categories. A unique matching anchor is required; missing or ambiguous matches show status without moving the part. Group each assembled vehicle under a common parent to isolate it from other vehicles. Dependency chains resolve in order; cycles and zero-scale parents pause snapping. This is modeler pose attachment, without Project X's runtime physics, offsets or renderer-hiding behaviors.
-
-
-
-
-
-## Update imported source from the hierarchy (2026-11-04)
-
-
-
-
-
-Imported FBX, prefab and standalone Mesh assets now expose **Update Source** in the hierarchy context menu. A clicked descendant resolves its nearest imported source root; only that branch is written, independently of other selected/workspace models. The explicit action overwrites the remembered source without a save-path dialog. Missing, read-only, unsupported or non-standalone mesh sources are disabled/rejected. Primitives/raw scene objects without file provenance have no action. Model subobjects dropped independently do not acquire a whole-file overwrite link. Asset paths resolve against Application.dataPath's project root; external FBX imports remember their original path instead of their Assets/Studio Imports cache copy.
-
-
-
-
-
-FBX reuses current evaluated export geometry, attributes, quads/UV preparation and skeleton filtering, exports to a unique hidden staging file beside the destination, then replaces the source while preserving its .meta/GUID/importer settings. Replacement/import failure attempts restoration from a temporary backup; staging files are cleaned. Existing export normalization/unit behavior remains, with no newly verified arbitrary importer-scale/unit/rig matrix. Standalone .asset Mesh updates copy the evaluated mesh into the existing main Mesh object, keeping its GUID/local identity/name; a mesh asset cannot represent a child hierarchy. Prefabs load their existing contents and retain components on matched nodes, while updating hierarchy, names, local transforms, visibility, render meshes/materials, skin references and matching MeshColliders. Persistent mesh copies live in an owned sibling `<Prefab>.StudioMeshes.asset`; repeated updates retain its GUID/subasset identities. An occupied companion path without the matching ownership marker is rejected. Existing unused companion meshes are retained for reference safety. Prefab and companion file backups support failure recovery; exotic I/O/checkout failures are not a fully verified transaction matrix.
-
-
-
-
-
-Provenance uses existing Node.sourcePath plus portable sourceNodePath and sourceMeshAsset fields, retained in workspace text and duplication. Successful prefab writes refresh node paths for subsequent reordered/reparented updates. Source paths are remembered strings, not GUID-following asset-move links; moved/deleted files require reimport/relink. Nodes moved/split outside the imported branch are not implicitly gathered back into the source file. Studio source geometry, selection, camera and modifier history are not replaced/cleared by write-back. Source-file overwrites are external saves, not modeling Undo actions. Finalizing a pending valid preview uses existing completion before writing. No personal preference/hotkey writes or background source synchronization.
-
-
-
-
-
-Sources: new Editor/StudioModelEditor.UpdateSource.cs (+meta); StudioModelEditor.cs scoped FBX export/import provenance, .Objects.cs standalone mesh path, .Files.cs explicit export-root filtering, .HierarchyVisibility.cs menu; StudioModelDocument.cs capture/path metadata, .Duplicate.cs and StudioWorkspaceText.cs persistence. The UI remains a direct hierarchy action, without extra Export variants.
-
-
-
-
-
-Validation: actual installed Editor sources and excluded Tests~/StudioUpdateSourceValidation.cs compile. Final reused disposable ThemeIsolationProject/Unity 6000.4.12f1 run passes **21 native checks** (host obj/StudioControlsValidation/UpdateSource/result.txt, native-build.log/compile.log): Mesh path/overwrite/GUID; unchanged Studio geometry; prefab descendant resolution, collider preservation after rename/reorder, refreshed source-node paths, persistent companion GUID/mesh local IDs on repeat, correct components after repeat/reorder, workspace provenance roundtrip, enabled hierarchy command, actual FBX exporter roundtrip/scoped output/evaluated dimensions/GUID/material-import policy, selection preservation, missing-source rejection, and original external FBX overwrite leaving its cache untouched. Initial checks exposed a real project-relative-path conversion issue, fixed with explicit project-root normalization. Exporter/Timeline assemblies and the native FBX plugin were supplied only to the disposable test project; its initial missing-native-plugin failure is superseded. Non-exiting test uses a one-shot EditorApplication.update hook because that reused session has no visible window; no replacement editor or working-project fixture was launched. Assets were generated only under unique disposable Assets/SourceUpdate_* folders. Physical drag/context-click, native rendered menu, source-file Undo, arbitrary scripts/nested-prefab/skin/scale/collision/checkout/rollback families and performance were not broadly tested. Personal profiles and working scene untouched; reusable disposable session remains running.
-
-
-
-
-
-## Center orientation replaces the Pivot/Center toolbar (2026-11-04)
-
-
-
-
-
-Center is now a fourth exclusive orientation choice in the native Orientation toolbar and Tool Options beside World/Object/Component. It uses world axes at selection geometry with existing shared-center transforms and Edit Pivot restriction. Other orientations return to ordinary pivots without changing geometry. Center Pivot and Frame Selection style stay independent. The separate Center & Pivot overlay/control are removed from discovery; stale saved custom-control references are skipped without rewriting layouts. Existing orientation IDs, personal presets/bindings and profile storage remain; default orientation can also be Center (factory Component). The generated Orientation radial preset adds the appended CenterAxes function, while saved personal presets remain unchanged.
-
-
-
-
-
-Installed SDK sources compile (host obj/StudioControlsValidation/CenterOrientation/compile.log). Source checks cover removed UI types, exclusive checks, dropdown entries and factory/action identities. No new Unity session/native UI, profile-reload or transform/Undo regression was run for this reorganization. Existing centerTransformMode/CenterMode internals preserve geometry behavior/profile compatibility rather than exposing an independent mode. See host STUDIO_HANDOFF for current source/scope details; old Center/Pivot-toolbar evidence predates the replacement UI.
-
-
-
-
-
-## Hierarchy selection visibility shortcut (2026-11-04)
-
-
-
-
-
-With modeling hierarchy focus, the current Hide Selection binding (factory H) toggles selected objects: any visible -> hide the set; all hidden -> show the set/required ancestors. Selection is retained, including component IDs when component mode is active. Rename/search text and captured drags are guarded. The existing hierarchy visibility/StudioUndo path is reused, independently of the viewport last-hidden stack. Viewport H and Ctrl/Cmd+H retain their existing hide/restore behavior; personal shortcuts/profiles are unchanged.
-
-
-
-
-
-Excluded `StudioHierarchyVisibilityToggleValidation.cs` is guarded to ThemeIsolationProject plus `HierarchyToggle/request.txt`, writes `HierarchyToggle/result.txt`, and passes eight native state checks covering document/render visibility, selection retention, repeated/mixed/ancestor toggles, component-mode scope, geometry preservation and empty selection. Production/fixture builds pass under host obj/StudioControlsValidation/HierarchyToggle. Compile with the current SDK and retained MaterialPerformanceValidation / StudioMaterialSlotValidation bridge. The reused editor window became unavailable during follow-up; physical H delivery/rendered row tint, native Undo/Redo and custom-binding input were not checked. No replacement session/working-project test or personal-profile writes. See host STUDIO_HANDOFF for scope/source details.
-
-
-
-
-
-## Extrude distance through the Move gizmo (2026-11-04)
-
-
-
-
-
-The existing Move gizmo edits Normal distance while a captured Extrude preview is active. Signed world movement projects onto its cached source extrusion direction with object rotation/scale compensation; field values update and the captured preview coalesces/re-evaluates without commit on pointer-down/release. Existing snapping precedes the projection. Negative/zero distance, cancellation, modifiers, Repeat Last and grouped StudioUndo use the established paths. Other transform gizmos retain normal completion behavior; an idle pane after Apply needs a fresh preview via a field edit/reinvocation before using this distance gesture.
-
-
-
-
-
-Excluded non-exiting `StudioExtrudeDistanceGizmoValidation.cs` runs only in ThemeIsolationProject with `ExtrudeGizmo/request.txt`, writing `ExtrudeGizmo/result.txt`. Current run passes 20 native checks for source direction, rotated/nonuniform scale, field sync/projection, positive/negative/zero/repeated previews, correct modifier commit and cancellation. Compile with current SDK and existing MaterialPerformanceValidation / StudioMaterialSlotValidation refresh bridge. Actual native arrow drag was inspected: distance 0 -> 0.3341956 m, visible extrusion, pane still open and no committed modifier. Production/fixture builds pass under host obj/StudioControlsValidation/ExtrudeGizmo. No broad edge/multi-target/curved/snap/Undo-Redo/timing matrix. Reused disposable session stays open; working scene and personal profiles untouched. Full scope and sources are in host STUDIO_HANDOFF.md.
-
-
-
-
-
-## Parameter-tool gizmos and tool-change completion (2026-11-04)
-
-
-
-
-
-Opening Extrude and other compatible parameter tools retains the active Move/Rotate/Scale gizmo; Select supplies Move. Missing selection still uses Select guidance. Choosing a transform/tool completes valid pending work and cancels invalid previews, then resets/closes the outgoing session. Clicking the already-active transform toolbar button completes its open operation too. An idle pane after Apply closes without repeating the operation. Same-pane reentry and explicit Execute/Apply retain their behavior. Shared FinishToolsForSwitch uses existing ToolChannelPane transactions; no profile writes or idle renderer work.
-
-
-
-
-
-Updated excluded `StudioToolSwitchValidation.cs` is guarded to ThemeIsolationProject plus `GizmoCompletion/request.txt`; it writes `GizmoCompletion/result.txt` and passes 73 native checks for retained transform state/handle selection, valid completion, failed-inset cancellation, reset/cleanup, committed modifiers, Apply preservation and procedure replacement. This supersedes the earlier 56-check cancel-every-preview expectation. Production/fixture compilation passes; inputs/logs live under host obj/StudioControlsValidation/GizmoCompletion. Compile the fixture with the current SDK and retained MaterialPerformanceValidation / StudioMaterialSlotValidation refresh bridge. The fixture leaves a temporary cube with Extrude options and Move gizmo in the disposable native viewport; actual rendered arrows/planes and controls were inspected together. No physical drag/shortcut matrix, Rotate/Scale pixel capture, native Undo/Redo, broad procedure/multi-target/async coverage or performance claim. Leave the reused disposable session open; never run this fixture in the working project. Full current behavior/source limitations are in host STUDIO_HANDOFF.md.
-
-
-
-
-
-## Circularize components (2026-11-04)
-
-
-
-
-
-Edit Mesh > Circularize… opens the existing embedded ToolChannelPane for Vertex, Edge or Face selection on editable static meshes. It is automatically eligible for shortcut Preferences, custom toolbars and radial menus, with no assigned factory hotkey. Missing selection switches Object mode to Vertex/Select guidance and keeps the tool pane available; selection alone does not apply an edit. Reopening an existing pane preserves its captured preview, including a failed preview awaiting correction or cancellation.
-
-
-
-
-
-The six controls are Radial Offset (0, mesh-local length displayed in scene units), Normal Orientation (Face or Edge Loop, initially Face), Twist (0 degrees), Alignment (Automatic, Surface (average), Surface (vertex); initially Surface (average)), Add Divisions (0, supported 0–32 per perimeter edge), and Supporting Edges (Off, Inside, Outside, Both; initially Off). No Normal Offset field. Automatic produces a planar, evenly spaced circle at the perimeter centroid with mean projected source radius plus Radial Offset; phase minimizes angular displacement before Twist. Face orientation averages incident authored-face area normals; Edge Loop uses the perimeter area normal. Surface alignment intersects captured source render triangles along the average or source vertex normal; beyond the captured footprint it extends the nearest scored source triangle's tangent plane. This is local surface projection, not arbitrary collision continuation or a guarantee against folds/self-intersections.
-
-
-
-
-
-Faces circularize each edge-connected region's perimeter independently, preserving interior connectivity; interior points scale with radial offset and rotate with twist. Face regions require one perimeter without holes: use closed edge loops for multiple borders. Edges require closed, unbranched authored loops with at least three geometric vertices. Vertex mode accepts three or more geometric vertices; complete selected face patches use their perimeter and retain interior points, authored loops retain their order, and otherwise an angularly ordered vertex cloud forms one circle. Collinear/degenerate fits and nonpositive resulting radii fail explicitly. A divided vertex cloud needs actual authored perimeter edges. Separate selected meshes use the shared multi-target transaction and are never combined; shared meshes keep the existing shared-instance semantics. These multi-target paths are integrated but were not separately exercised by this fixture.
-
-
-
-
-
-Divisions insert evenly spaced circle samples and propagate matching geometric IDs into both incident faces, interpolating each side's UV0–7, colors, tangents and normal continuity separately. Supporting Edges publishes genuine triangulated faces on the chosen side of divided perimeter edges; Off leaves expanded authored n-gons. With no divisions, source authored topology and render tessellation are retained. Unaffected faces keep their source render triangles even when other faces divide. Face/edge component IDs are cleared when divisions change their indexing; vertex IDs remain selected. Cancel restores captured geometry/topology/selection. Execute/Apply, grouped StudioUndo, strict creation-order editable Circularize modifiers and G/Repeat Last use existing shared infrastructure. Values reset on pane reopening; no durable preference/profile writes or idle renderer loop was added.
-
-
-
-
-
-Sources: new Editor/StudioMeshCuts.Circularize.cs and StudioModelEditor.Circularize.cs (+metas); integration in .LiveTools.cs, .MultiComponentTools.cs, .EdgeFlow.cs (shared extra parameter transport), .ToolOptions.cs, .Menus.cs, .ToolbarCommands.cs, .Modifiers.cs and StudioModifierHistory.cs. A missing UnityEditor import in the current StudioModelEditor.Split.cs was also repaired to allow current-source compilation.
-
-
-
-
-
-Validation: installed SDK production compilation passes with existing warnings (obj/StudioControlsValidation/Circularize/compile.log). Non-exiting excluded Tests~/StudioCircularizeValidation.cs passes 26 focused native checks in the reused ThemeIsolationProject/Unity 6000.4.12f1: vertex/edge/face radius, twist with loop orientation, face perimeter and fixed interior/unselected positions, seamed/unseamed UV/quad preservation, all four supporting-edge modes with conforming geometric boundaries and interpolated attributes, captured preview publication/cancellation, saved modifier replay and atomic rejection of open edge chains. Report Circularize/result.txt and native-build.log; circularize-render.png inspected for actual shaded surface plus authored wires with divisions/support Both. Initial BevelJunctionProject request did not execute because that session was not running; validation reused the open ThemeIsolationProject instead. No new Unity launch or fixture in the working project. Physical tool controls, native Undo/Redo sequence, multi-object execution, nonplanar projection matrix, collision/inversion families and dense-mesh performance were not separately verified. Personal profiles and working scene untouched; disposable session left open.
-
-
-
-
-
-## Index-only material assignment for larger scenes (2026-11-03)
-
-
-
-
-
-User reported assignment still stalls on fighterJetCutTest and expects scenes with at least six such meshes. Replaced ChangeSelectionMaterialSlot's general StudioMeshToolPreview transaction with StudioMeshCuts.MaterialSlotIndexEdit: prepare only old/new submesh index lists, authored face material IDs and compact history, validate all selected meshes before publication, then register Document plus affected meshes through StudioUndo and write only index lists. Existing vertex buffers, positions, normals, UVs, tangents, colors and geometric IDs are neither copied to working meshes nor restored/reuploaded by this path. It does not construct source/working preview meshes. Initial history-base capture and native complete-object Undo snapshots remain; this change does not claim those costs are free.
-
-
-
-
-
-Object/add/remove edits use index lists directly. Face edits reuse cached authored faces and triangle ownership. After publication, cached face Submesh values update in place and existing edge, vertex marker, selection-wire and triangle caches remain valid; only tool topology references/statistics for affected meshes invalidate. Unrelated meshes keep their geometry caches. Display material refresh remains scoped to affected meshes. Assignment/add/remove and compact MaterialSlot replay retain their established behavior, grouping and rollback; removal still maps to Slot 0 and compacts later IDs. Source assets and user presets/profiles are unchanged.
-
-
-
-
-
-Sources: StudioMeshCuts.MaterialSlots.cs (index edit plan and commit/restore), StudioModelEditor.Materials.cs (atomic application, compact history and cache retention). Current SDK and focused fixtures compile (material-index-build.log). Disposable ThemeIsolationProject was upgraded once with a persistent event-driven test bridge and left running; no repeated launch loop or working-project execution. Benchmark copied the source Assets/Catalog/tests/fighterJetCutTest.fbx into that disposable project, with six independent meshes: 4,625 vertices/4,672 faces each, 27,750 scene vertices. This is a source-asset workload, not the user's edited workspace with its exact history/materials.
-
-
-
-
-
-Before reports material-performance-before.txt and material-performance-before-final.txt versus index-only after/after-final: repeat whole-scene assignment measured 47.47–64.93 ms before and 34.39–35.16 ms after; one-mesh warm samples varied 8.89–9.01 ms before versus 5.07–28.79 ms after. First all-six edits still incurred history/source-capture costs (175.67–180.22 ms before, 217.47–262.63 ms after); no universal first-use speedup or sub-frame guarantee is claimed. A single edit with six populated history bases measured 33.49 ms before and 37.32 ms after. Timings are noisy wall-clock samples in concurrent editor sessions, not a controlled throughput claim. The full reported 450 ms pause was not reproduced here. The deterministic improvement is removal of whole-mesh clones/uploads and broad cache destruction. Native source-stream checks and all eleven material checks pass, including actual red/green renderer output, Undo/Redo, object/face assignment, add/remove, replay and last-slot protection. material-slots.png inspected earlier and renderer color assertions rerun on this implementation.
-
-
-
-
-
-Fixtures: Tests~/StudioMaterialPerformanceValidation.cs and StudioMaterialSlotValidation.cs. Host reports under obj/StudioControlsValidation/material-performance-*.txt and material-slot-result.txt. Remaining performance risks: first history source serialization/native Undo cost, and the user's exact edited workspace/frame workload. Do not claim the original 450 ms has been measured away.
-
-
-
-
-
-## Material slot removal and assignment work reduction (2026-11-03)
-
-
-
-
-
-User confirmed the reported approximately 450 ms assignment delay stalls the whole editor. The previous local-preview transaction triggered automatic modifier capture as well as explicit full-mesh Direct records, serialized a deep copy of prior history, published the preview before restoring/committing it, and cleared/recreated display materials across the entire scene. Slot changes now suppress automatic capture while recording exactly one compact MaterialSlot operation (slot ID, selected faces, assignment/removal mode and source slot count). Existing history records/source snapshots are retained with a copied operation list instead of JSON deep-copying their mesh strings; only a first history base needs its normal source capture. Existing Direct records remain compatible. The subsequent index-only transaction replaces the general preview clone/restore/publication path entirely. Whole-object and Add Slot operations avoid face-triangle ownership mapping; face assignments reuse the editor's existing face-triangle map. Display material caches are retained and only affected mesh renderers/material arrays/back-face draws refresh. Changed(false) avoids another scene-wide geometry dirty pass. StudioUndo registration and strict modifier input checks remain.
-
-
-
-
-
-Materials rows now have a minus button to Remove Slot on the active mesh (and linked mesh instances). Removing an occupied slot retains its faces at resulting Slot 0; if Slot 0 itself is removed, the former Slot 1 becomes the fallback. Higher IDs and corresponding material-array entries shift down together. Empty slots can be removed too; at least one slot remains. Geometry, authored face IDs/boundaries, UVs/normals and selection remain. Removal shares captured atomic publication, compact operation replay and grouped StudioUndo. Add Slot still creates an unused slot; assignment and radial New Slot retain their existing scopes. Explicit removal is the only operation that compacts IDs.
-
-
-
-
-
-Sources: StudioModelEditor.Materials.cs, StudioMeshCuts.MaterialSlots.cs, StudioModifierHistory.cs and StudioModelEditor.Display.cs. Installed-source compilation passes (material-slots-fast-build.log). The focused material-slot fixture is updated for compact records, occupied-slot removal, replay and last-slot protection, and compiles; it has not been rerun natively for this revision. The earlier eight-check render/Undo pass predates these changes. No measured new latency on the reported mesh, no claimed millisecond target, and no idle/repeated profiling. Source inspection verifies the removed duplicate captures/publication, cached-material preservation and slot remapping. Working scene and personal profiles untouched.
-
-
-
-
-
-## Material assignment radial function (2026-11-03)
-
-
-
-
-
-Preferences > Radial Menus now offers Material/Assign Selection in the function catalog, rendered as Assign Material with the material icon and submenu indicator. Add this stable function key (RadialPreset/context-material-assign-selection) to any user preset. Existing user preset contents, order and shortcuts are not rewritten. The preset stores only that function reference; its slot choices are transient context data, never persisted as stale mesh-specific preset files.
-
-
-
-
-
-Opening a radial builds the assignment submenu from current selected Object/Face targets. It lists every existing zero-based slot ID across those targets, with material names from the active selected mesh where available, followed by New Slot with an add icon. Choosing an ID reuses AssignSelectionMaterialSlot. New Slot chooses the first ID beyond every selected mesh's existing mesh/material table and assigns the selection in the same transaction; it does not create an empty slot as a separate action. Object assignment affects all selected mesh faces, Face assignment only selected eligible faces; Vertex/Edge or absent selections disable the function. Groups use their selected mesh descendants. Missing IDs on other selected meshes grow using the existing assignment rules. Per-object material assets at an existing ID are retained.
-
-
-
-
-
-The runtime-only context definition is added to a copied opening-context list, leaving cached/persisted preset command lists constant. It uses the existing rectangle layout/hit tests, submenu hover delay, Back arming and initiating-gesture release cleanup. Leaf commands resolve again against the current selection on release and use the same captured publication, compact slot history, StudioUndo and Repeat Last path as Materials-row assignment. No alternative pie renderer, page/overflow limit, idle work or preference setting is added.
-
-
-
-
-
-Sources: StudioModelEditor.Materials.cs, StudioModelEditor.MarkingMenus.cs, StudioRadialMenus.cs (reserved context ID), StudioCommandIcons.cs. Validation: installed Editor sources compile (material-radial-build.log); inspected the catalog entry, copied context definition, dynamic ID range/New Slot, fresh release resolution and existing assignment dispatch. Earlier material-slot native render/Undo checks cover the reused assignment path; this new radial interaction has not been physically or visually rechecked. No native test launch or personal preset/profile edits.
-
-
-
-
-
-## Material-slot assignment (2026-11-03)
-
-
-
-
-
-Channels > Materials now places Assign beside every zero-based Slot ID. In Object mode, Assign moves all faces of selected mesh objects (including selected group descendants) to that ID independently per mesh. In Face mode it moves only selected eligible faces across the selected mesh cohort. Vertex/Edge modes disable Assign. The slot's Material field still chooses/replaces the material asset; Assign changes which faces use that slot. Add Slot creates the next empty slot on the active mesh without moving any faces; choose its material and Assign afterward. Slots can remain empty; only explicit Remove Slot compacts and renumbers later IDs. Other selected meshes grow their slot table as needed for the chosen ID, preserving existing materials and using the existing last-material fallback for new rows.
-
-
-
-
-
-Assignment republishes only submesh triangle lists and authored face material IDs. It preserves source render triangles, editable face order/boundaries, positions, normals, UVs, normal groups, geometric IDs and component selections. Shared meshes retain existing linked-geometry behavior: face-slot data changes on shared instances together and their material arrays grow without replacing existing entries. Source assets are not edited. Per-target work is evaluated before publication, then document/mesh/material-table/direct-history changes commit with grouped StudioUndo; failure rolls back. New slot changes use compact MaterialSlot modifier records with existing strict input checks; old Direct slot records remain supported. G repeats the completed slot ID on the current selection. Add Slot does not replace the repeat record. The existing component-isolation topology lifecycle releases temporary component masks before changing their submesh buffers.
-
-
-
-
-
-Sources: new StudioMeshCuts.MaterialSlots.cs; StudioModelEditor.Materials.cs (Assign/Add Slot controls and transaction), StudioModelEditor.Repeat.cs. Existing ToolChannelPane, Materials header/inset, material preview refresh, StudioMeshToolPreview and modifier infrastructure remain. No new preference, popup, polling or personal profile changes.
-
-
-
-
-
-Validation: installed Editor sources compile (material-slots-build.log). Eight focused checks passed in disposable ThemeIsolationProject: selected face versus neighboring quad; unchanged positions/UVs/normals; retained face selection/direct history; actual renderer red/green slots; Undo; Redo; whole-object assignment/growing the slot table; and empty Add Slot without reassignment. Actual renderer capture material-slots.png inspected. Fixture Tests~/StudioMaterialSlotValidation.cs; report obj/StudioControlsValidation/material-slot-result.txt. Physical Materials-row clicks, a multi-object/shared-instance fixture and full workspace save/load were not separately replayed. Disposable Unity session is left open; working scene/profiles untouched.
-
-
-
-
-
-## Weld pane and tessellation correction (2026-11-03)
-
-
-
-
-
-Fixed two integration failures in range Weld. StudioModelEditor.ToolOptions.ActiveChannelTool now includes rangeWeldToolPane, so the embedded title, Range field and Execute/Apply/Cancel actions actually render instead of leaving Selection Tool visible. The Weld menu opens with finishPreview:false, allowing an existing failed Weld preview to remain accessible for parameter correction/cancellation rather than blocking re-entry while trying to commit it.
-
-
-
-
-
-The shared merge kernel no longer retriangulates every retained polygon through the cut ear-clipper. It maps captured source render triangles through the vertex contraction, removes collapsed/duplicate triangles and retains genuine authored polygon boundaries. Unrelated tiny or warped faces keep their source tessellation instead of blocking a local weld with Cannot triangulate this face safely; cut was not applied. Only affected collapsed faces use the existing area cleanup. Target Weld and Merge to Center share this publication improvement. UV/material/render-corner seam handling and atomic beforeWrite publication remain.
-
-
-
-
-
-Sources: StudioModelEditor.ToolOptions.cs, StudioModelEditor.Menus.cs, StudioMeshCuts.Merge.cs. Installed-source compile passes (weld-fix-build.log). Current verification is compilation and source inspection; the earlier six-check native pass predates this correction. Physical UI input and the reported mesh have not been rechecked. Personal profiles and the working scene are untouched.
-
-
-
-
-
-## Weld by range (2026-11-03)
-
-
-
-
-
-Edit Mesh > Weld… exposes the existing distance-based merge kernel alongside Merge to Center (M) and Target Weld. Select two or more geometric vertices on editable static meshes; the embedded Weld options has a nonnegative Range (initial .001 m), displayed in current scene units. Range is a world-space distance, accounting for object scale. Only selected geometric vertices participate (including their existing render-seam aliases); nearby pairs form transitive clusters and each cluster moves to its own average position. Separate objects run independently and are never combined or welded across objects. Exact coincident but explicitly separate geometric IDs are eligible. Vertices outside the threshold remain unchanged; UV/material and render-corner seam handling uses the existing merge engine. This is not merge-all-to-one-center or target snapping.
-
-
-
-
-
-The shared ToolChannelPane/live-preview path evaluates from captured geometry, coalesces edits, supports Execute/Apply/Cancel, restores source selection on cancellation and groups mesh/selection history through StudioUndo. Weld has its own appended LiveTool kind; Merge remains merge-all and Target Weld retains its fixed destination. Repeat Last stores the completed range. Saved Weld modifiers replay the distance and captured world matrix and expose editable Range in Channels; existing strict topology dependencies apply. The Range is a tool-session value, using current ToolChannelPane parameter storage rather than a new durable profile setting. The shared menu registry exposes Weld to shortcut Preferences, toolbar and radial customization; no default shortcut is assigned and M retains Merge to Center.
-
-
-
-
-
-Sources: StudioModelEditor.Merge.cs, .LiveTools.cs, .MultiComponentTools.cs, .Menus.cs, .Modifiers.cs, .ToolbarCommands.cs and StudioModifierHistory.cs. Kernel reuse: StudioMeshCuts.Merge.cs. Validation: actual installed Editor sources compile (range-weld-build.log). Six focused native checks passed in the reused disposable BevelJunctionProject: below-threshold no-op; two independent clusters; preservation of unselected point/authored faces; captured preview cancellation; scaled world-space threshold; saved modifier replay. Fixture Tests~/StudioRangeWeldValidation.cs; report obj/StudioControlsValidation/range-weld-result.txt. Physical option input, UI rendering and a broad regression suite were not rechecked. Personal profiles and the working Unity project were not used for validation; disposable session remains open.
-
-
-
-
-
-## Procedural Fracture (2026-11-03)
-
-
-
-
-
-Mesh Tools > Fracture provides explicit Compute/Recompute on the active evaluated static mesh, with seeded count/variation, directional bias, geometric roughness/detail, interior material/UV scale, Weld tolerance and Piece Gap. Settings edits do not compute. The existing embedded pane shows real progress/cancellation; workers operate on copied arrays. Exploded inspection affects preview only. Piece Gap slightly contracts fragments, is committed in the mesh and is included by ordinary exports; its slider runs from 0 to 2% of the source's shortest bounding dimension, default 0. Reopening resets defaults and Repeat Last recalls completed parameters for explicit Compute.
-
-
-
-
-
-Closed, consistently wound concave manifold solids and section cavity loops are supported, including the exact fighterJetCutTest. Source boundary welding precedes shared quad-patch construction. Structured grids are preferred, with genuine triangle/quad fallback; exterior authored-face provenance and attribute seams are preserved. This replaces the initial convex-only tetrahedral surface fragmentation. Counts are 2–64 seeds; disconnected components can yield extra fragments. Invalid/open/non-manifold geometry and unsafe parameters reject explicitly. Execute/Apply uses grouped StudioUndo, centered pivots and independent history bases; Undo restores the source stack. See [FRACTURE_ENGINE.md](FRACTURE_ENGINE.md) for details and limits, including concave convex-collider overlap.
-
-
-
-
-
-Validation: installed production/test sources compile. Focused disposable Unity checks cover the exact jet (13 fragments, 10,397 polygons; 5,918 of 6,242 interior faces are quads), a .001 m gap, seam welding/source immutability and rendered output. The cube drops from 10,155 to 329 polygons. The integration fixture checks compute/cancel/recompute, interfaces, rendering, commit and native Undo/Redo. No exhaustive mesh/setting matrix, physics simulation or user visual acceptance is claimed. Personal profiles and working scenes are untouched.
-
-
-
-
-
-## Bevel fan-anchor connections (2026-11-03)
-
-
-
-
-
-User clarified the red markup: connect neighboring fan apex vertices to one another around the opening, forming the inset perimeter; do not connect them to the outer corners, weld them away or remove the terminal triangle bands. The terminal cap builder records the actual source-side apex identities. Retained planar source faces containing multiple apexes split along their ordered connections using those same geometric and render-corner identities. Existing adjacent connections are retained; invalid splits and warped source faces retain their previous topology. Source coordinates, fan/strip faces, UV/normal seams and material provenance remain. These are authored modeling edges, not display-only triangulation lines. Exact contacts keep the existing shared-event policy.
-
-
-
-
-
-Unlock width range now continues the bevel past its first face/contact limit with the pre-contact connectivity and explicit render triangles retained. It permits overlapping/inverted faces in unlocked mode, matching the purpose of disabling an overlap clamp (Blender manual terminology: https://docs.blender.org/manual/en/4.4/modeling/meshes/editing/edge/bevel.html). It does not attempt collision remeshing. Subdivision count rebuilds the same template and extends that result; no retry sequence or proximity weld is introduced. Locked construction remains on the existing kernel/contact path.
-
-
-
-
-
-Sources: StudioMeshCuts.Bevel.cs (terminal anchors, planar source-face partitioning, continuation template), StudioMeshCuts.BevelPublication.cs (retained render triangulation). Validation: actual installed Editor sources compile (bevel-loop-build.log). Reused the existing disposable BevelJunctionProject session for three focused evaluations: locked fraction .6 with 4 subdivisions, unlocked 1.2 with 4 subdivisions, and unlocked 1.2 with 20 subdivisions. The marked loop has 8 real edges total (four per end) on the locked source. Applied widths are .3 and .6000001 respectively, establishing actual extension beyond the .5 source limit. All three have zero open authored and render-triangle boundaries. Inspected actual surface/authored-edge renderer captures bevel-loop-connected.png and bevel-loop-unlocked.png; terminal fans remain and the inset loop is visible. Report: obj/StudioControlsValidation/bevel-loop-result.txt; fixture: BevelHoleProbe.RunLoop. No broad suite, physical UI gesture test or collision-cleanup claim. Personal profiles and the working Unity project are untouched; disposable Unity session left open for reuse.
-
-
-
-
-
-## Selection hiding and default orientation (2026-11-03)
-
-
-
-
-
-Select now includes Hide Selection (default H) and Unhide Last Hidden (default Ctrl+H / Cmd+H). Both are shared menu commands available to shortcut, toolbar and radial customization. Custom assignments and explicit unassignment retain precedence. Each successful hide pushes one set; unhide restores only that set, in reverse order, across mode changes. Object hiding uses document visibility and StudioUndo; unhide enables required ancestors. Component hiding is a non-destructive session mask using the existing isolation rendering/picking path, preserving original geometry, authored edges and material/normal/UV attributes. Face mode hides selected faces; vertex/edge modes hide directly incident faces. Hidden geometry is excluded from drawing and component picking/selection; successful hides clear the consumed selection. Show All resets masks and hide history. As with existing isolation, rebuild/history reconstruction and topology edits release component masks; component hide history is session-only, not serialized or independently registered in geometry Undo. Isolation reset also clears hide history. This limitation is intentional reuse of the current mask lifecycle, not topology continuation.
-
-
-
-
-
-General > Editing has a mutually exclusive Default orientation row (World/Object/Component, factory Component), persisted through StudioPreferenceStore as Model.DefaultOrientation=2 and applied to new editor sessions. Modeling starts in Object selection mode; the unwanted Default components preference and its factory entry were removed. Existing session selection history still restores its saved mode, and explicit mode changes retain normal behavior. Legacy Model.DefaultComponents profile entries are ignored without rewriting personal files. No personal profile or State files were replaced.
-
-
-
-
-
-Sources: StudioModelEditor.Hiding.cs, .Isolation.cs, .Menus.cs, .Display.cs, StudioModelCommands.cs, StudioSettings.cs, StudioModelEditor.cs and StudioPreferenceStore.cs. Validation: installed SDK Editor sources compile with existing warnings (hiding-build.log); source checked mask ownership/cleanup, LIFO restoration, authored triangle filtering and standard shortcut declaration. No new Unity session or rendered-output/physical-shortcut test was run; those behaviors reuse existing isolation paths and have not been newly verified visually.
-
-
-
-
-
-## Unlock bevel width range (2026-11-03)
-
-
-
-
-
-Bevel Tool Options has Unlock width range, default OFF. Locked retains dimensionless width 0..1 and existing contact behavior. Unlocked permits finite nonnegative fractions above 1; 1 remains the same captured source-range reference, so 1.2 requests 120% of it. Beyond first contact, construction uses the analytic pre-contact limit as a connectivity template, preserving its triangle indices and extending generated points along their source-corner trajectories to the requested width. Overlap and face inversion are allowed in this explicit mode, rather than passing crossing polygons to the simple-polygon validator/triangulator. This is overlap continuation, not automatic Boolean cleanup, collision remeshing or welding beyond contact. Finite-coordinate checks, source topology and attribute seams, atomic publication, Undo and preview cancellation remain. Relocking clamps the visible stored fraction back to 1. The earlier implementation only bypassed numeric clamps and could still reject crossing inset faces; that behavior is superseded.
-
-
-
-
-
-UnlockWidthRange persists through the existing ToolChannelPane/StudioPreferenceStore tool-default path, factory 0. The saved live parameter vector uses W bit 0 for the existing Grid/Cap junction and bit 1 for unlock; shared helpers decode it so modifier recording, replay, editing, component contexts and Repeat Last preserve the choice. Old W=0/1 records remain locked. Modifier Channels exposes the same checkbox. No mesh asset edits, new windows, idle work, personal profile reset or geometry algorithm replacement.
-
-
-
-
-
-Sources: StudioModelEditor.Bevel.cs, .LiveTools.cs, .Modifiers.cs, StudioModifierHistory.cs, StudioMeshCuts.Bevel.cs and StudioPreferenceStore.cs. Validation: actual installed SDK Editor sources compile with existing warnings (unlock-bevel-build.log). Source checked UI maximum/relock, normalized conversion, both automatic core clamp sites and saved junction/unlock decoding. No native session/physical checkbox test or beyond-contact geometry matrix was run for this small toggle change. Personal profiles/State and working scene untouched.
-
-
-
-
-
-
-
-
-## Bevel neighboring-face range and solo cap orientation (2026-11-03)
-
-
-
-
-
-Normalized width 1 must include the cuts constructed on unselected neighboring faces, not just events from faces that contain selected edges. Added BevelNeighborContactLimit to the cached source analysis. Every unselected source edge receives the actual corner-cut rates from both endpoints: source-fan cuts use distance/edge length; wavefront corners use their projected source-edge velocity. The earliest meeting bounds the same wavefront limit before contact classification. Normalized mapping now takes the minimum of the clipping range and this full source limit instead of letting a larger clipping limit override it. This prevents a fraction of 1 from crossing the source polygon's adjacent corner cuts when subdivision count changes. Existing proven contacts can weld; unsupported events retain the existing safety margin rather than claiming a supported weld transaction.
-
-
-
-
-
-User confirmed the solo-edge fan direction: use the perpendicular neighboring source corner as apex (the marked 90-degree connectivity change), with the long strip unchanged. Planar terminal triangulation now identifies profile-boundary vertices and selects a valid non-profile source-side fan anchor. Only triangle connections change; no band absorption, boundary movement, strip rotation or source-seam rerouting. Irregular non-star-shaped caps retain guarded triangulation.
-
-
-
-
-
-Sources: StudioMeshCuts.BevelWavefront.cs BevelNeighborContactLimit and cached limit integration; StudioMeshCuts.Bevel.cs normalized range minimum and terminal fan connectivity. Focused validation: installed Editor compilation passes (bevel-neighbor-range-build.log). Reused captured preview at Width=1 through subdivisions 1->20->4 on the inner-plus-outer longitudinal edge selection, without restoring/recreating the source between changes. All three succeed with closed authored/render boundaries. For this source the corrected physical maximum is .3535434, below the previous selected-face-only .5; dimensions differ from the user's ~.26 source. Report bevel-width-captured-result.txt. Actual 20-subdivision capture bevel-neighbor-range-20.png checks the resulting bands/fans. This is the shown boundary workflow, not a broad suite or proof of every unsupported collision family. No new Unity session; personal settings/hotkeys and working scenes untouched.
-
-
-
-
-
-
-
-
-## Normalized bevel width (2026-11-03)
-
-
-
-
-
-User requirement supersedes the earlier meter-based Width UI: new Bevel width is dimensionless, clamped 0..1 while Unlock width range is off. Zero is no bevel; one is the captured selection's available contact limit. The UI uses WidthFraction, a separate preference/default key, so prior physical-width defaults are not silently reinterpreted. Scene units do not scale this fraction. Geometry remains meter-based internally. BevelOptions.NormalizedWidth resolves the fraction through the captured wavefront/clipping and neighboring-face corner-cut range before construction; direct absolute-distance callers retain their original behavior. Subdivision edits reevaluate the same fraction against that source rather than retaining an oversized meter request. Repeat Last and new modifier records preserve the fraction; serialized normalizedBevel marks new records, while older unmarked records retain physical-width replay. New modifier width controls clamp to 0..1.
-
-
-
-
-
-The proven first-event source-edge contact transaction is restored for normalized maximum: corresponding source-edge cut identities merge, collapsed faces are removed, and the current terminal bands/triangles and general manifold-fan miter solver remain. No seam-rerouting helper returns. Eligible contacts derive from the captured trajectories and source-edge provenance, not proximity welding across the mesh. Unsupported simultaneous split/collapse families still use their existing guarded limit; do not claim complete collision continuation or guaranteed weld support for every topology.
-
-
-
-
-
-Sources: StudioMeshCuts.Bevel.cs NormalizedWidth option/range conversion and contact dispatch; .BevelWavefront.cs/.BevelContacts.cs analytic contact; StudioModelEditor.Bevel.cs and .LiveTools.cs normalized input; ToolChannelPane uses generic unitless WidthFraction field; StudioModifierHistory.cs normalizedBevel serialization/replay and StudioModelEditor.Modifiers.cs record/edit; StudioPreferenceStore.cs generated default. Obsolete physical-width UI-ceiling feedback is removed; no personal profiles/State files are replaced.
-
-
-
-
-
-Focused validation: actual installed Editor sources compile with existing warnings (normalized-bevel-build.log). Existing disposable native session checks normalized fraction 1 on the square-hole inner-edge selection while changing subdivisions 1/4/11. All three cases succeed, with actual distance about .5000001 for that source, zero open authored/render boundaries, and eight meeting-point pairs merged. Report bevel-hole-result.txt. This specifically verifies normalized maximum/subdivision reevaluation, not physical UI pointer scrubbing or every bevel topology. No new Unity launch or broad suite. Fixture snapshot Tests~/StudioBevelWidthFractionValidation.cs (guarded entry StudioBevelWidthFractionValidation.Run).
-
-
-
-
-
-
-
-
-## Shared face-offset miter constraints (2026-11-03)
-
-
-
-
-
-Corrected a shared construction restriction, not a shape-specific patch. BalancedBevelEdgeSpeeds previously ran only at vertices with exactly three incident edges. At higher-valence manifold fans, adjoining face offsets could therefore reach the same stationary edge at different points, creating the extra corner/sliver geometry reported for partial selections. It now enumerates every stationary manifold edge in the selected vertex fan, finds the selected supporting edge in each incident face corner, and applies the offset-intersection constraint to that pair. Travel along the shared edge is offset/sin(face-corner angle); matching the two intersections supplies the existing graph solve's width ratio. The prior three-edge constraint is the corresponding special case. Shared offsets remain cached; no per-drag graph rebuilding or unrelated mesh cleanup.
-
-
-
-
-
-Uses the existing vendored straight-skeleton trajectories, conic profiles, shared profile identities, Grid junctions, publication and Undo. Terminal bands and real triangle caps remain; no source-seam rerouting or feature removal. Existing unsupported collapse/split guards and mathematical compatibility limits remain. This follows the established offset/miter construction model rather than selecting a new profile rule for each pictured shape. Reference terminology and expected controls: Blender Bevel manual https://docs.blender.org/manual/en/4.4/modeling/meshes/editing/edge/bevel.html . No Blender source code was copied and no claim of complete Blender/Maya numerical parity is made.
-
-
-
-
-
-Source: Editor/StudioMeshCuts.BevelWavefront.cs BalancedBevelEdgeSpeeds. Focused validation only, as requested: actual installed sources compile (general-offset-build.log); one native disposable rendered case selects the outer longitudinal edge and adjoining coplanar radial face edge at a four-edge frame vertex, width .1, subdivisions 2. Output has 26 authored faces/27 geometric points and zero open authored or render-triangle edges. Actual renderer capture bevel-hole-quad-0.10.png was inspected and shows continuous profile lines through the selected corner without the prior separated corner construction. Report bevel-hole-result.txt; same existing BevelJunctionProject/D3D12 session reused, no new launch or broad suite. Other partial/mixed/complex selections were not individually replayed and unrestricted robustness is not established. Working scene, source assets and personal profiles untouched.
-
-
-
-
-
-
-
-
-## Bevel rollback, geometric path selection and width feedback (2026-11-03)
-
-
-
-
-
-The user requires the intentional bevel bands and editable terminal triangle connections to remain, including inner-only, inner-plus-outer, full outer corner and partial/mixed selections. Removing those features is not an acceptable fix. Rejected seam-rerouting and new maximum-contact topology transactions remain removed; earlier established flat-clipping contact handling stays intact. StudioMeshCuts.Bevel.cs now retains eligible planar single-edge terminal surfaces before absorption and emits real triangles using the existing guarded triangulator. Boundary coordinates, strip profiles and source-side anchors are not changed. The receiving coplanar source face supplies material, UV sampling and shading normals, avoiding the prior forced-flat terminal normal. Linear-end handling, multi-way Grid junctions and other existing construction remain. The two rejected helper files are still removed. Proven source-edge contacts are now restored for normalized maximum as described above; general unsupported events remain unresolved.
-
-
-
-
-
-Focused corrected validation: installed SDK sources compile (retained-caps-build.log). The existing disposable session rendered one combined case: all twelve outer box edges plus the four inner longitudinal hole edges, width .1, subdivisions 2, Grid junctions. It produces 144 authored faces/136 geometric points, with zero open authored or render-triangle boundaries. The actual renderer capture bevel-hole-quad-0.10.png was inspected: rounded outer corner patches and explicit inner terminal triangle bands are both present. No broad suite was run. The shared miter correction above now verifies one two-edge partial selection at a four-edge fan. Remaining partial/mixed reference images are requirements, not individually replayed cases; one render does not establish arbitrary bevel robustness. The earlier inner-only success claims and rollback-without-triangulation response did not satisfy the requested feature set.
-
-
-
-
-
-Contiguous Path now uses cached component positions and geometry-weighted Dijkstra, replacing minimum-hop BFS. Cost is geometric transition length, with endpoint-chord deviation and alignment penalties to favor a shorter, straighter route even when it contains more edges. Edge transition length uses half the lengths of the adjoining edges. This is a geometric preference, not a guarantee of following any particular crease or camera-drawn guide; triangles/n-gons remain traversable through authored adjacency, and isolation/welded identity rules are retained. Ordinary directional loop/ring mode is unchanged. No new preference or gesture. The original 79 minimum-hop checks describe the superseded BFS behavior, not a current weighted-path pass.
-
-
-
-
-
-Bevel width UI is now normalized 0..1 as described above; the earlier physical-width ceiling feedback is superseded.
-
-
-
-
-
-Sources: StudioSelectionTopology.cs geometry-weighted path; StudioModelEditor.Bevel.cs, .LiveTools.cs, .ComponentLiveContexts.cs, .MultiComponentTools.cs width feedback; StudioModelEditor.ToolOptions.cs gesture help. Bevel rollback: StudioMeshCuts.Bevel.cs and .BevelWavefront.cs. Validation: actual installed production source compilation passes with existing warnings (path-width-build.log; restored.rsp). Six managed actual-topology route checks pass (WeightedPathCheck.cs, weighted-path-result.txt): fine straight vertex/edge paths beat coarse detours, isolation forces valid detours, same and missing endpoints. No claim of native click replay on the user's pictured mesh. Full-corner native probe reuses disposable BevelJunctionProject with all eight depth edges, width .1 and subdivision 1 on quad/triangle source ends; report bevel-hole-result.txt and captures bevel-hole-quad-0.10.png / -tri-0.10.png. Width UI physical scrubbing/subdivision replay is not yet verified natively. No new Unity session was launched for this correction. Working scenes/source assets and personal Settings/Hotkeys profiles untouched.
-
-
-
-
-
-
-
-
-## Contiguous Path selection (2026-11-03)
-
-
-
-
-
-Select > Contiguous Path controls one saved general selection choice; it is not a tool option. Default OFF preserves directional loop/ring selection. For two-component gestures, both modes use the existing SINGLE-click start, then DOUBLE-click second component gesture; in directional mode the pair establishes a loop/ring direction, and in contiguous mode it defines start/end. Shift adds and Ctrl/Cmd subtracts through the existing selection transaction. Merely selecting a second component with a normal single click does not expand a path. Selection actions are not Repeat Last actions.
-
-
-
-
-
-Contiguous mode supports Vertex, Edge and Face selection. Geometry-weighted Dijkstra favors shorter, straighter routes using length and endpoint-chord deviation/alignment; it no longer minimizes component count. Vertices connect through authored edges; edges connect end-to-end at vertices; faces connect across authored shared edges. Paths include both endpoints and stop there, without quad-only continuation or a loop/ring extension. Triangles, quads, n-gons and branch/pole junctions are allowed; equally short alternatives resolve deterministically through cached adjacency order. This does not infer a visually preferred crease or curvature-following route from two endpoints. No render-only diagonal is introduced. Non-manifold adjacency may provide branches; this is connected topology selection, not a topology repair operation.
-
-
-
-
-
-The existing per-mesh StudioSelectionTopology cache supplies compressed canonical adjacency. Per-request BFS uses bounded arrays and expands each vertex/edge incidence group once, avoiding high-valence adjacency cliques. Welded editing follows existing exact-position seam canonicalization; unwelded editing retains disconnected raw indices. Isolation eligibility blocks traversal through hidden components and filters returned aliases. Missing initial anchor selects only the clicked component for Vertex/Face modes; Edge mode follows the connected edge loop described above; disconnected/hidden-blocked endpoints select only the clicked destination with a Studio status message rather than falling back to an unrelated loop or bridging shells. Mode toggling/reloading a changed choice resets directional anchors; ordinary selection and other mesh targets are retained. Existing press capture, mouse release, selection snapshots and StudioUndo paths remain unchanged; no idle work, mesh mutation or competing selection-history system.
-
-
-
-
-
-Preference Model.ContiguousPath persists via StudioPreferenceStore, with a zero factory entry. Only actual user changes write the selected settings profile; loading remains read-only. Development did not replace personal Profiles/State or hotkey files. Select menu declaration makes the toggle automatically shortcut/custom-toolbar eligible, initially unassigned. Existing directional commands and bindings are unchanged.
-
-
-
-
-
-Sources: Editor/StudioSelectionTopology.cs shortest-path core; StudioModelEditor.LoopSelection.cs gesture dispatch/choice; .Menus.cs and .ToolOptions.cs controls; .Display.cs load/save and StudioPreferenceStore.cs factory default. Validation: full current production source compilation passes with existing warnings (host obj/StudioControlsValidation/contiguous-path.rsp and contiguous-path-build.log). 79 managed checks execute the actual production topology class with fixture authored-face data, covering all three component graphs on a warped triangle grid, independent BFS minimal-step comparison, endpoint inclusion, isolation detours/disconnection, missing/same endpoints, disconnected shell, welded/unwelded seams and returned edge aliases. Fixture ContiguousPathCheck.cs, report contiguous-path-check-result.txt. No new Unity session, native checkbox/double-click delivery, Undo/Redo or profile restart test was run; the earlier 502 native directional checks predate this addition and are not a new path-mode pass. Initial managed fixture had local-name compilation conflicts, corrected before the passing run. Working scenes and personal profiles untouched.
-
-
-
-
-
-
-
-
-Display customization entry removal (2026-11-03): removed Display > Toolbars > Customize Toolbars and Display > Radial Menus > Customize Radial Menus from AddStudioToolbarMenu. Customization remains in the dedicated Settings/Preferences Toolbars and Radial Menus categories. Toolbar visibility toggles and Restore Default Layout remain in Display. Do not reintroduce customization launchers there. Source-only verification for this two-entry removal; no new Unity session.
-
-
-
-
-
-## Convert Selection (2026-11-02)
-
-
-
-
-
-## Retained World Rotation after Freeze (2026-11-02)
-
-
-
-
-
-World Rotation now retains the object's reference orientation through Freeze, rather than simply mirroring the reset Unity Transform. Node.frozenRotation stores the retained frame relative to the current world transform. Freeze captures current world rotation multiplied by the previous retained offset, then compensates geometry/children and zeros Rotation/scale as before. The resulting offset preserves the World Rotation readout, including parent rotation. Ordinary subsequent rotations compose with it; another Freeze retains the accumulated frame. This is recorded orientation metadata, not an inferred rotation from mesh shape or bounds. Existing world-aligned Freeze pivot/handle behavior is preserved; the retained offset is not applied to the mesh a second time.
-
-
-
-
-
-Bake Pivot restores the retained frame into editable Rotation channels when the pivot is still at its frozen baseline. Node.frozenPivotBaseline distinguishes that baseline from a later explicit pivot orientation edit; an explicitly changed pivot remains the requested bake frame, without double-applying the frozen rotation. Baking clears frozen position/rotation/baseline offsets, preserves world geometry/children and allows zeroing Position/Rotation to return the mesh to the parent frame/origin. Existing active-object scope, shared-instance compensation in Bake and unsupported shear/skin/blend restrictions remain. No menu/shortcut/default change.
-
-
-
-
-
-Both frozen quaternion fields save/load in text workspaces, serialize in document Undo and copy with duplicates. Missing/zero frozen metadata is treated as identity for readout/baking. Previously frozen meshes cannot reliably recover the discarded orientation from their shape; Undo to before Freeze and re-freeze is needed to capture that old pose. Existing stored geometry is not automatically reinterpreted. The shared Compensate helper now registers document and affected mesh together in one StudioUndo snapshot, fixing the observed Freeze Redo metadata mismatch from separate native registrations.
-
-
-
-
-
-Sources: StudioModelDocument.cs Node.FrozenFrame/RetainedWorldRotation/BakeRotation, Freeze/BakePivot and atomic Compensate registration; StudioModelEditor.ComponentPivot.cs bake selection/no-op; StudioModelEditor.cs readout; StudioModelDocument.Duplicate.cs and StudioWorkspaceText.cs metadata persistence. No new idle work or personal-profile writes.
-
-
-
-
-
-Validation: production and focused-fixture compilation pass with existing warnings. Native Unity 6000.4.12f1 / Direct3D12 in disposable SelectionUndoProject passes **60 assertions**, covering root-equivalent and rotated-parent frames, frozen zero channels with retained world orientation, actual bound mesh world positions, child matrices, Freeze Undo/Redo, subsequent rotation/repeated Freeze, workspace offset/baseline roundtrip, Bake/restored channels, Bake Undo/Redo and zeroing Position/Rotation back to the parent frame/origin. Initial Freeze Redo failure with separate document/mesh registrations is superseded by the atomic passing run. One recovery of the unavailable-window disposable editor was needed; it remains running. Duplication field copying was source-reviewed, not independently replayed. No new physical GUI input, rendered-pixel comparison, arbitrary nonuniform/shear or deformation matrix was run. Working scene/personal profiles untouched.
-
-
-
-
-
-Maintained excluded fixture: Tests~/StudioFrozenRotationValidation.cs. Host inputs/logs under obj/StudioControlsValidation/FrozenRotation: build.log, test.rsp and test-build.log; report frozen-rotation-result.txt (PASS 60) and native log frozen-rotation-native.log under obj/StudioControlsValidation.
-
-
-
-
-
-
-
-
-Bake Pivot position follow-up (2026-11-02): Bake Pivot now clears the frozen positionOffset while preserving the actual local/world origin, transferring the complete parent-relative pivot position into Position channels. Zeroing Position afterward moves to the parent origin (world origin for roots). Position already present in ordinary channels remains intact. Position-only bakes no longer return early for identity orientation; they update only document channels without cloning/touching mesh geometry or adding a direct geometry record. Combined position/orientation bakes retain the prior compensation/shared-instance/grouped Undo behavior. Source compilation checked; prior 27 native assertions cover orientation only, and no new native session was run for this localized follow-up.
-
-
-
-
-
-
-
-
-## Bake Pivot and World Rotation (2026-11-02)
-
-
-
-
-
-Modify > **Bake Pivot** transfers the active object's pivot position/orientation into parent-relative Position/Rotation channels, clearing positionOffset and pivotRotation. It preserves the current world-space mesh, object origin/position/scale and child world poses. Confirmed example: Rotation 0 plus an edited pivot at X=45° becomes Rotation X=45° with no surface movement; setting Rotation to zero afterward rotates the surface by −45°. This is distinct from Freeze, which zeroes channels by baking the existing transform. Scope follows the current Freeze operation: active object in Object mode, not a new multi-object/component bake. Unskinned meshless groups are allowed where child compensation is representable. Bones, skins/live blend shapes, broken modifier stacks, non-finite frames, singular scales and compensation requiring child shear reject before mutation using existing restrictions.
-
-
-
-
-
-Shared/persistent meshes receive an independent copy before compensation. Document references and affected mesh are registered atomically in a grouped StudioUndo action; the original shared instance stays fixed. Bake compensation is a named direct modifier record, preserving strict history ordering and explicit exact-input dependencies. It does not clear history. Re-editing earlier geometry may invalidate that direct record, as for other exact-input edits. Bake exits pivot editing, updates a held pivot-lock frame, and records Repeat Last on successful completion. Modify/Bake Pivot is automatically shortcut/custom-toolbar eligible, initially unassigned.
-
-
-
-
-
-Channels shows read-only **World Rotation** immediately beneath editable Rotation, matching World Position. It displays the retained object reference orientation (including parent rotation and the frozen rotation offset), expressed as signed canonical Euler degrees. It remains separate from an explicitly edited pivot frame and does not retain extra Euler turns. Rotation channels retain their existing authored-value semantics. Scene length units do not affect either rotation row.
-
-
-
-
-
-Sources: StudioModelDocument.cs ValidateBakePivot/BakePivot, StudioModelEditor.ComponentPivot.cs BakeEditingPivot, .Menus.cs, .Repeat.cs, .Channels.cs and main .cs inspector. Maintained excluded fixture: Tests~/StudioBakePivotValidation.cs. AGENTS/README/Tests README aligned; factory Hotkeys only updated, personal profiles untouched.
-
-
-
-
-
-Validation: production and focused-fixture compilations pass with existing warnings. Disposable SelectionUndoProject / Unity 6000.4.12f1 / Direct3D12 passes **27 native assertions** covering the exact 45°/zero workflow, world positions read through the actual bound MeshFilter, child world-matrix preservation, independent shared instances and native Undo/Redo. Final finite-matrix and precise no-op checks were source-reviewed/compile-checked afterward. The unavailable-window disposable editor required one targeted recovery; the session remains open. No fresh native panel/rendered-pixel capture, physical drag/keyboard input, rotated-parent/nonuniform/shear matrix or workspace/FBX roundtrip was run. Existing compensation restrictions apply; no broader support claim. Host inputs/logs: obj/StudioControlsValidation/BakePivot/build.log, test.rsp/test-build.log; bake-pivot-result.txt (PASS 27) and bake-pivot-native.log under obj/StudioControlsValidation. Working scene/personal profiles untouched.
-
-
-
-
-
-
-
-
-Select > Convert Selection matches the radial exactly: To Vertices submenu (To Vertices, To Perimeter Vertices), To Edges submenu (To Edges, To Perimeter Edges), To Faces submenu (To Faces, To Perimeter Faces), then To Objects at the root. Labels, order and icons match. Never flatten this into rows or separator-only groups. Existing four command keys remain stable despite the To labels; perimeter actions have new keys. All use shared menu execution and automatic shortcut/custom-toolbar discovery, initially unassigned. Selection actions are excluded from Repeat Last Action. Ordinary component-mode switches still clear incompatible IDs rather than implicitly converting.
-
-
-
-
-
-To Vertices selects selection corners/endpoints. To Edges selects contained authored edges: vertex sources require BOTH endpoints, face sources include all face boundary edges (including shared interior edges), edge sources retain their selected edges, and object sources include every eligible edge. To Faces selects directly incident faces from vertices/edges; it requires an actual selected authored edge for edge sources rather than a shared endpoint. To Objects selects mesh owners with eligible selected components.
-
-
-
-
-
-Perimeter conversion derives fully contained face regions (selected faces, faces with all selected vertices, or faces with every boundary edge selected). Edges shared by multiple included faces are removed; remaining region edges and loose selected/contained edges form the perimeter. To Perimeter Vertices selects the endpoints of that perimeter, additionally retaining selected vertices adjacent to unselected vertices and isolated selected vertices. Thus holes contribute boundaries, shared edges inside a face region are excluded, and a closed complete surface has no face-region perimeter. Perimeter commands operate even in the current target mode. No triangulation diagonals, topology edits or face flood-fill are introduced. Welded aliases follow existing coincident-position selection semantics; unwelded editing retains raw IDs. Isolation filters source/result components and visible-face perimeter incidences.
-
-
-
-
-
-To Perimeter Faces first captures the ordinary To Faces result, then keeps only faces with an authored edge used once within that captured region. This returns the boundary face ring, including holes and open mesh boundaries, and excludes interior faces; a complete closed surface yields none. Works from Object/Vertex/Edge/Face and within Face mode; source/result isolation, welded identities, multi-mesh publication and selection Undo are retained. Its separate cached icon is a highlighted face ring with a dim center. Existing command keys remain unchanged; new key Select/Convert Selection/To Perimeter Faces is initially unassigned and available in shortcut/custom-toolbar discovery.
-
-
-
-
-
-Object conversion includes selected group mesh descendants. Other component conversions retain the selected visible/editable mesh cohort, including empty converted targets. To Objects drops empty component targets. Existing editability restrictions apply; entirely invalid/empty source selection gets Studio status guidance. Results are prepared per mesh before publication; active mesh, existing selection snapshots, StudioUndo and tool/pivot lifecycle routes are reused. Geometry is unchanged.
-
-
-
-
-
-The Convert Selection radial has To Vertices, To Edges and To Faces submenus plus one To Objects action directly on the root. Vertices contains To Vertices and To Perimeter Vertices; Edges contains To Edges and To Perimeter Edges; Faces contains To Faces and To Perimeter Faces. Never duplicate To Objects inside component submenus. Uses existing preset-driven navigation, Back and gesture lifecycle. New factory preset IDs: convert-selection, convert-vertices, convert-edges, convert-faces. Existing active preset 8e912b9b50274f31b2a787d56ed430f6 is the user's Convert Selection menu: its ID/name/shortcut are retained with three branches and the root To Objects action. Three child presets and their manifest order entries were explicitly added for this request. Other custom presets/settings/hotkeys remain unchanged. New factories seed only fresh storage; loading existing radial storage does not silently add/reset menus deleted by the user.
-
-
-
-
-
-Conversion icons: menu actions and radial child branches share semantic cached icons through StudioCommandIcons/StudioSymbolIcons. Vertices use a dot grid, edges a line grid, faces a filled quad, and Objects the existing object-mode cube. Perimeter variants highlight the boundary while dimming the interior. Canonical radial preset IDs map to the matching conversion icon; no preset/settings rewrite. Production compilation passes (conversion-icons-build.log). The extracted production Canvas drawing code was rasterized in a managed harness and inspected in conversion-icons-preview.png at 16px and enlarged. This verifies artwork shape, not native menu delivery; no Unity session/render capture was run.
-
-
-
-
-
-Sources: Editor/StudioModelEditor.SelectionGrowth.cs, StudioModelEditor.Menus.cs, StudioRadialMenus.cs; working Preferences/RadialMenus Presets, Defaults and manifest. Validation: current SDK Editor production compilation passes with existing warnings (host obj/StudioControlsValidation/selection-conversion-build.log). 19 managed checks exercise the actual extracted production conversion method with fixture topology/visibility lookups: contained endpoints, shared/interior edges, perimeter vertices, same-mode perimeter, object open borders, incident faces, loose edges, welded/unwelded identities, isolation and temporary mode restoration. Report conversion-check-result.txt. Radial JSON branches/manifest and stable action keys source/schema checked. No new Unity session, native Undo/Redo, rendered radial or physical menu test; those runtime paths remain unverified. Working scenes and personal Settings/Hotkeys profiles untouched.
-
-
-
-
-
-
-
-
-Menu grouping correction: the earlier flat reordered menu was rejected. Both interfaces now use identical component submenus. Leaf command keys and callbacks remain unchanged, including explicit keys for the relocated perimeter actions. Submenu display names also carry To, retaining their stable preset IDs. To Objects was then moved from all radial child menus to one root action, updating active and factory JSON. Submenu source checked and production compilation passes (conversion-submenus-build.log); no native menu capture/session rerun.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Perimeter Faces validation: current production compilation passes (perimeter-faces-build.log). Managed production-method checks now pass 27 assertions, including object/vertex/edge/same-mode face rings, interior-face exclusion, single-face regions, hole boundaries, visible isolation and closed surfaces. Active and factory convert-faces JSON include the new command after To Faces. New icon raster inspected at 16px/enlarged in perimeter-faces-icon.png using extracted production drawing code; no native Unity session/menu/Undo test was run.
-
-
-
-
-
-
-
-
-## Recalculate Normals (2026-11-02)
-
-
-
-
-
-Mesh Display > Recalculate Normals appears immediately after Soften… . It replaces custom/imported shading directions with angle-weighted authored-face normals while preserving existing hard/soft edge continuity (normal groups when present, otherwise inferred from existing endpoint normals). Studio has no separate locked-normal flag. It does not force all edges soft or hard, reverse face winding, weld disconnected geometry or repair topology. UV/color seams, authored polygon boundaries, original render triangulation and material slots are retained; tangents refresh through the existing normal-editing publisher.
-
-
-
-
-
-Uses the existing Object/Vertex/Edge/Face normal-action scope, static-mesh restrictions, shared-mesh propagation, selection restoration, grouped StudioUndo and strict-order direct modifier recording. Component scope follows the same incident-edge neighborhood as Harden/Soften; boundary-only selections also rebuild their normals. Repeat Last Action is supported; automatic shortcut/custom-toolbar discovery exposes the command, initially unassigned. Existing built-in toolbar layout and personal profiles are unchanged. Missing/invalid selection uses shared selection guidance and returns before mesh access.
-
-
-
-
-
-User reports that Harden/Soften leave the particular mesh completely unchanged. Those actions already replace normals, so an imported lock is not established as the cause and this command is not a verified fix for that mesh. Inspect the mesh target/connectivity and material/shader if the problem persists. No claim of numerical Maya parity.
-
-
-
-
-
-Sources: Editor/StudioMeshCuts.Normals.cs, StudioModelEditor.Normals.cs, .Menus.cs, .ToolbarCommands.cs and .Repeat.cs. Validation: current SDK Editor production compilation passes with existing warnings using host obj/StudioControlsValidation/recalculate-normals.rsp. Source-reviewed selection, Undo/history and attribute-preservation reuse. No new Unity session, rendered comparison, native Undo/Redo fixture or failing-mesh check. Initial compile harness lacked current Cloth/Culling references; the current reference list resolved it.
-
-
-
-
-
-
-
-
-Status prompt background (2026-11-02): Studio status notifications use the theme Header color lightened 18% toward white, with background alpha 0.8 (20% transparent). Text retains its existing color/opacity and existing lifetime/fade behavior. Source: MashBoxStudioViewport.cs ShowStatusMessage. Source-reviewed style-only change; no new Unity session/capture.
-
-
-
-
-
-Preferences title/divider layout (2026-11-02): Settings page titles now use bold 17px text; shared section titles use bold 14px across General/Viewport/Themes/Profiles/Shortcuts and the Toolbar/Radial Menu editors. Customization list/detail panes have a solid 1px gray vertical divider (#6B6B6B), with 4px spacing on each side, stretching through their available content height. Sidebar navigation and command/body text retain existing sizing. Shared styles are cached; no new windows, settings writes or input lifecycle changes. Sources: StudioControlsPreferences.cs, StudioSettings.cs, StudioToolbarCustomization.cs. Production compilation checked; no new native visual capture/session for this UI-only change.
-
-
-
-
-
-
-
-
-Themes Settings integration (2026-11-02): removed Window > Themes. Preferences now has its own Themes category (replacing the former Appearance launcher at stable page index 3) containing the existing palette cards, custom Primary/Secondary colors, Scene background and Restore Theme Defaults directly, with the shared Settings scroll/theme/ownership. No separate theme popup or Open Themes button. Existing non-menu theme entry points redirect to that same Settings category via StudioSettingsWindow.Open; Toolbars/Radial Menus/Shortcuts page indices and customization input lifecycles remain unchanged. Existing saved theme settings and profile persistence are preserved. Sources: StudioControlsPreferences.cs, StudioSettings.cs and StudioModelEditor.Menus.cs. Current-source compilation checked; no new Unity session or native UI capture for this relocation.
-
-
-
-
-
-
-
-
-Workspace-only unit correction (2026-11-02): removed scene units from portable Preferences data and stopped unit/grid edits from changing global defaults. New document initializers always use Meters and 0.25 m grid spacing. Existing saved workspace units remain intact; old profile sceneUnits fields are ignored without rewriting personal profiles. Source compilation checked; no new Unity session for this follow-up. Prior 123 native unit checks predate the new-workspace reset policy.
-
-
-
-
-
-
-
-
-Polygon primitive creation scaling (2026-11-02): new Cube/Sphere/Plane/Quad/Cylinder dimensions are multiplied by the creating workspace unit size. Default cube/plane/quad dimensions and sphere diameter are one selected unit; cylinder diameter is one selected unit and height two. Only dimensional parameters scale; subdivision counts remain unchanged. The exact converted parameters initialize both the mesh and its creation modifier/source so replay and Clear History agree. Existing objects/modifiers are not rescaled when units change. Vehicle Parts are explicitly excluded: their source and shared BuildPrimitive/DefaultPrimitiveParameters contracts are unchanged; conversion occurs only in AddPrimitive via CreationPrimitiveParameters(type, sceneUnits). Source review and current production compilation; no new native session for this localized follow-up. Prior 123 unit checks predate the creation multiplier.
-
-
-
-
-
-
-
-
-## Scene units (2026-11-02)
-
-
-
-
-
-Preferences > General > Scene Units offers Meters (initial default), Millimeters, Centimeters and Inches. Units and physical grid spacing are workspace-specific. Every new workspace starts in Meters with 0.25 m grid spacing, independently of previous workspaces or loaded preference profiles. Preferences edits only the currently open workspace; its unit control is disabled without one. Reopening a saved workspace restores its own unit/grid values. Existing text workspaces without these fields read as meters with the meter grid default. Importing/reloading settings does not rewrite a current workspace's units or physical geometry. One internal Studio/Unity distance unit remains one meter; 1 m = 100 cm = 1000 mm = 39.3700787 in. Scene-unit switches never rescale geometry, node transforms, existing modifier parameters or exported geometry.
-
-
-
-
-
-Length entry/readout conversion is shared by Position/World Position channels (including pivot editing), primitive dimensions, live and recorded Bevel/Extrude, Bisect distance, grid spacing, camera position/orbit distance/near/far clips and lighting ground height/size. Untouched fields return their exact stored floats rather than repeatedly round-tripping displayed values; numeric channel scrubs convert their delta before applying sensitivity. Angles, scale factors, subdivision counts, UVs, profiles/curvature, AO relative settings and other dimensionless values are unchanged. Bevel and extrusion distances remain mesh-local: object scale still affects their world-space size. Existing objects and saved tool parameters keep their physical values. New polygon primitives start at the selected unit scale (e.g. a default cube is 1 mm wide in millimeter mode); Vehicle Parts retain their existing fixed sizes.
-
-
-
-
-
-View > Grid contains checked **Toggle**, then **Reset**. Toggle retains its previous View/Grid command key and shares the toolbar state. Reset is automatically shortcut/custom-toolbar eligible and initially unassigned. Unit changes reset the minor-grid spacing to 0.25 m, 1 mm, 1 cm or 1 inch respectively; Reset restores that unit's spacing after customization. Grid drawing, all constrained/free grid snaps and quick pivot snaps consume the same workspace spacing. The existing 40-step extent and major-line pattern remain; physical grid extent changes with spacing. Workspace grid/unit edits use isolated StudioUndo actions and save through the existing document workflow. New settings/defaults use StudioPreferenceStore, with no new EditorPrefs or idle loop.
-
-
-
-
-
-Camera clipping distances display in the chosen units but preserve their physical values when units change. Existing automatic clipping remains camera/geometry driven. Manual clipping permits a near distance down to 0.000001 m and a positive far separation of max(0.000001 m, near * 0.001), removing the former fixed 1 mm separation. Grid spacing accepts down to 0.000001 m instead of the former 1 cm minimum. Primitive minimum dimensions remain 0.0001 m (0.1 mm). Tool geometric tolerances and supported topology restrictions remain unchanged; unit conversion is not an arbitrary-scale precision guarantee.
-
-
-
-
-
-Sources: new Editor/StudioSceneUnits.cs; StudioModelDocument.cs and StudioWorkspaceText.cs persistence; StudioSettings.cs Preferences; StudioModelCommands.cs active-document access; StudioModelEditor.Menus.cs, .Modifiers.cs, .ToolOptions.cs, .Extrude.cs, .Bisect.cs, .MoveHandles.cs, .Pivot.cs and .Lighting.cs; StudioViewportCamera.cs and ToolChannelPane.cs. Factory references are currently Preferences/Defaults/Settings.json and Hotkeys.json, as defined by StudioPreferenceStore; personal Profiles and State files were not replaced.
-
-
-
-
-
-Validation: installed production and focused-fixture compilation pass with existing warnings. Native Unity 6000.4.12f1 / Direct3D12 passes **123 focused assertions**: conversion roundtrips including negative/zero distances, unchanged geometry and authored creation parameters through unit switches, grid defaults/snapping/reset, small valid camera clip range and no unit-switch clip mutation, workspace unit/grid/geometry persistence, StudioUndo/Redo of unit changes. Bevel, Extrude and filled Bisect run on 1 m and 1 cm cubes in all four display units (24 operations), producing equivalent geometry/topology. Initial fixture compared null inline-history JSON and was corrected to verify real authored creation parameters/source; that initial failure is not a product failure or a final pass. No exhaustive tool/scale matrix, FBX roundtrip, physical numeric scrubs, rendered grid/Preferences capture or separate automatic-clipping redesign was run. Existing engine precision/topology restrictions remain. The unavailable-window disposable editor required one recovery before the focused run; the passing run reused that session after fixture reload and leaves it open. Working scene and personal profiles untouched.
-
-
-
-
-
-Maintained excluded test: Tests~/StudioSceneUnitsValidation.cs (non-exiting, disposable SelectionUndoProject only). Host build inputs/logs: obj/StudioControlsValidation/SceneUnits/production.rsp, build.log, test.rsp and test-build.log; native report scene-units-result.txt (PASS 123), cumulative scene-units-native.log under obj/StudioControlsValidation.
-
-
-
-
-
-
-
-
-Pivot restriction notification (2026-11-02): TogglePivotEdit now assigns its existing CENTER-mode restriction message through the shared error/StatusMessage callback, which AnimationStudioModeling routes to Studio viewport status notifications. Removed the Unity SceneView.ShowNotification path. D, menu, marking menu and Tool Options share this entry point. Message and restriction are unchanged. Source-only verification; no new Unity session for this small routing change.
-
-
-
-
-
-# MashBox Studio
-
-
-
-
-
-Measured icon correction (2026-11-02): user screenshots show Unity mesh artwork at x21–33/y104–116 (13×13 visible pixels), versus Studio x35–44/y180–189 (10×10). The earlier guessed 12px slot was too small. Category icons now use a 16×16 slot within the 20px row (2px vertical padding), allowing for texture-internal transparency. This replaces the previous 12px instruction. Input screenshot pixel bounds measured with Pillow; source-only size correction, no fresh native after-capture. Refresh Material Preview remains removed.
-
-
-
-
-
-
-
-
-Channel category cleanup (2026-11-02): Transform, Materials and Modifiers share a scoped 16×16 icon size in their existing 20px foldout rows, leaving two pixels of vertical padding on either side; the previous icon size is restored immediately. Removed Refresh Material Preview from Materials. Assignments and material/shader asset changes retain their existing automatic refresh path; opening Materials no longer exposes a manual refresh or implicitly enables textures. Sources: StudioModelEditor.Channels.cs shared DrawChannelCategoryFoldout, .Materials.cs and .Modifiers.cs. Current-source compilation checked; no new native visual capture or Unity session for this small UI change.
-
-
-
-
-
-
-
-
-Materials category (2026-11-02): Channels now places Materials directly after Transform and before Modifiers, with the same full-width 20px themed foldout header, Material icon and body inset. Material slots and array Preview Sub-ID remain inside its collapsible body; material updates refresh automatically. Expansion defaults on and persists via StudioPreferenceStore (Model.MaterialChannelsExpanded); profile reload remains read-only. Existing assignment/preview behavior is unchanged. Sources: StudioModelEditor.cs, .Materials.cs, .Display.cs. Source compilation checked; no new Unity session or visual capture for this layout-only change.
-
-
-
-
-
-
-
-
-## Editable polygon primitives (2026-11-02)
-
-
-
-
-
-Cube axis follow-up (2026-11-02): Width (X), Height (Y) and Depth (Z) subdivision counts are independent and default to 1. Opposite faces use the same axis counts, preserving conforming boundaries. Counts serialize in the creation modifier and reuse its existing edit/Undo path; earlier uniform records retain their count on all axes until edited. Current production-source compilation checked; no new Unity session/render/Undo run. The excluded fixture now includes a 2×3×4 cube (52 authored quad faces and closed shared boundaries), but that addition was not run natively.
-
-
-
-
-
-Newly created Cube, Sphere, Plane, Quad and Cylinder objects start with an editable creation entry in Channels > Modifiers. Creation still happens immediately at world zero, preserving the camera and normal grouped creation Undo. Expand the shape entry to edit its mesh-local dimensions and counts:
-
-
-
-
-
-| Shape | Controls |
-
-
-| --- | --- |
-
-
-| Cube | Width, Height, Depth, Width subdivisions, Height subdivisions, Depth subdivisions |
-
-
-| Sphere | Radius, Segments, Rings |
-
-
-| Plane (XZ) | Width, Length, Width divisions, Length divisions |
-
-
-| Quad (XY) | Width, Height, Width divisions, Height divisions |
-
-
-| Cylinder | Radius, Height, Sides, Cap rings (both top and bottom) |
-
-
-
-
-
-Defaults retain the existing one-unit cube/sphere/plane/quad and one-unit-wide, two-unit-high cylinder. Cube and planar divisions default to 1; sphere defaults to 32 segments/16 rings; cylinder defaults to 32 sides/1 cap ring. Dimensions are at least 0.0001 local units; Cube subdivisions are independently 1–64 per axis, planar divisions 1–128, sphere segments 3–128/rings 2–128, cylinder sides 3–128/cap rings 1–64. Cylinder cap rings are radial subdivisions, not a top-only face count or an open-cap toggle.
-
-
-
-
-
-The generator retains genuine quad grids/bands, sphere pole triangles and cylinder cap-center triangle fans; additional cylinder cap rings are quads. UV0, explicit normals, render triangles and seam-connected geometric IDs are generated deterministically. Counts do not hide triangulation edges as a substitute for authored faces. Oppositely traversed cube boundary samples use symmetric fractions to keep exact shared geometric identity.
-
-
-
-
-
-Creation parameters save with workspace modifier history, copy with duplicates and replay before later operations. Edits use existing modifier publication, numeric sensitivity and StudioUndo, retaining the live mesh binding and object transforms. Compatible topology replays downstream tools; changed topology retains explicit downstream failures instead of remapping component IDs. Clear History freezes the current result and removes the creation fields. Deleting the creation record alone restores its captured default base, rather than deleting the object. Existing imported meshes and already-created workspace objects do not acquire a guessed primitive generator. No new mode, tool popup, menu command, shortcut, idle update loop or personal-profile write.
-
-
-
-
-
-Sources: Editor/StudioModelDocument.Primitives.cs (creation/defaults/generation), StudioModifierHistory.cs (serialized primitive type and replay), StudioModelEditor.Modifiers.cs (fields); maintained excluded fixture Tests~/StudioPrimitiveParametersValidation.cs.
-
-
-
-
-
-Validation: installed SDK production and focused-fixture sources compile with existing warnings. Native Unity 6000.4.12f1 / Direct3D12 exercised all five generators (face counts, finite attributes, winding and closed Cube/Sphere/Cylinder boundaries), creation records, dimension replay and workspace type roundtrip. The corrected cylinder cap boundary reuses exact side-wall positions. The final native fixture reached rendering but its render/async Undo continuation did not produce a completion report in the hidden disposable editor; rendered correctness, native Undo/Redo and physical numeric-field interaction are not newly verified. Do not treat the old primitive-parameters-result.txt failure as a final pass. Earlier startup dependency, workspace-path and readback-lifetime failures were fixture issues; no broad suite run. Production build log: obj/StudioControlsValidation/PivotMode/primitive-build.log; fixture build: primitive-test-build.log; latest native log: obj/StudioControlsValidation/primitive-parameters-verified.log. Disposable SelectionUndoProject remains running; working scene and personal profiles untouched.
-
-
-
-
-
-
-
-
-## Center/Pivot and framing
-
-
-
-
-
-Center transform behavior is now the Center orientation choice described in the 2026-11-04 entry above; its former independent Pivot/Center toolbar has been removed. Selection-centered geometry behavior and pivot-edit restrictions remain.
-
-
-
-
-
-General > Editing > **Frame selection style** has side-by-side, mutually exclusive **Pivot** and **Selection Average** toggles; exactly one remains enabled. Pivot is the default. F / Frame Selection first frames the selected mesh geometry, then focuses the exact editing pivot at the current zoom and rotation; repeated presses alternate mesh → pivot → mesh. A different selection or viewport restarts at the mesh. Choosing Selection Average retains regular selection-average framing on every press: equal average of selected object geometry centers, or geometric component average across selected meshes. This preference remains independent of the Center orientation choice. The style row reuses the existing `focusSelectionAverage` field through StudioPreferenceStore, preserving saved choices without migration or personal-profile writes; `centerTransformMode` now stores the Center orientation choice internally. Empty-workspace camera reset and custom shortcut bindings are preserved. Alternation state is session-only, outside settings and Undo.
-
-
-
-
-
-View > **Grid** toggles the same saved modeling grid state as the Grid toolbar button, with a synchronized checkmark, event-driven redraw and automatic shortcut/custom-toolbar registration (initially unassigned).
-
-
-
-
-
-Sources: Editor/StudioModelEditor.Menus.cs; Editor/StudioSettings.cs; StudioViewportToolbar.cs; MashBoxStudioViewport.Toolbars.cs; StudioModelEditor.cs, .ComponentPivot.cs, .PivotLock.cs, .IndividualRotation.cs, .MultiComponentTransform.cs, .Display.cs, .Shortcuts.cs, .MarkingMenus.cs and .ToolOptions.cs.
-
-
-
-
-
-Validation for this addition: current-source compilation only; no new Unity session, native capture or physical gesture test. Existing pivot/rotation test results predate this mode.
-
-
-
-
-
-
-
-
-Subdivision preview retains evaluated mesh edges in Shaded Wireframe, ordinary selection highlighting and component overlays. Subdivision does not force an additional cage overlay or force X-ray depth.
-
-
-
-
-
-## Through-slice correction
-
-
-
-
-
-Multi-Cut and Bisect share a surface-plane cutter that supports warped authored quads/n-gons. Start and release off the actual active mesh surface at any line angle. Empty space inside projected bounds is valid, including close-up views; the finite drawn segment must cross the mesh. Clipped render cells merge back into authored boundaries, keeping render diagonals hidden by actual topology rather than wire suppression. Placed point/path Multi-Cut retains its separate planar-interior validation. Bounds and input use common canvas coordinates; no-intersection messages no longer masquerade as bounds failures. Bisect prefers structured, relaxed quad cap grids while preserving exact section boundaries; irregular sections retain a conforming quad fallback. See Bisect below for layout limits.
-
-
-
-
-
-Verified on fighterJetCutTest.fbx with four geometric plane directions and six native horizontal/diagonal outside drags, plus actual before/after bound-renderer output. See Tests~/README.md for scope.
-
-
-
-
-
-## Bisect
-
-
-
-
-
-Mesh Tools > Bisect: drag a viewport line starting and ending off the actual active static mesh surface (empty space inside its bounds is allowed), then adjust **Bisect Distance** (full world-space gap, default **0.01 m**) and **Fill** (default on). Apply/Execute separates the halves into independent mesh objects; retained geometry stays fixed. Both half pivots center on their own cut surfaces, including with Fill off; world geometry and source children stay fixed. With a gap, each pivot lies on its own section plane. Shared instances keep the original source. Zero separates without a gap. Apply keeps the pane open, Execute finishes, and Cancel restores the captured source. Fill first fits a structured quad grid to four boundary arcs, compares aspect/corner layouts, relaxes interior spacing and optimizes quad shape while rejecting folded cells. Even section loops keep their boundary vertices and edges; odd loops add one shared midpoint when a grid is possible. Flat UV0 projects along each cap normal. Sections that cannot form a valid grid use the existing conforming quad matching/refinement with interior quality relaxation. Cap faces remain genuine quads, not n-gons with hidden triangulation. Side attributes/seams and conforming boundaries remain intact. Open/branched, nested-hole or invalid sections reject Fill. Highly uneven boundary spacing and concave features can still produce tapered/thin quads; this is not global optimal retopology or boundary decimation. The grid search is bounded to 512 section vertices and 16,384 cells per candidate; larger loops use the fallback. Boundary midpoint propagation can still add corners to adjacent side faces, especially on fallback fills. G reopens the completed tool settings for a new line. Uses grouped StudioUndo; evaluates the current strict-order result and starts independent generated history bases for the two halves. Output normal-group IDs are compacted. New cuts are blocked by broken history. No default shortcut; automatic shortcut/custom-toolbar registration applies.
-
-
-
-
-
-
-
-
-Fresh FBX subdivision imports now preserve source connectivity across UV/normal splits and restore original polygons when unambiguously matched through the installed Autodesk FBX SDK. Reimport existing Studio models to obtain the correction. No automatic position welding; unmatched inputs retain the conservative fallback. See SUBDIVISION_ENGINE.md.
-
-
-
-
-
-Modifier history (2026-10-29): Channels has a collapsible Modifiers group with a Transform-style icon header, Clear History first, and applied operations displayed newest first. Fields use Channels sensitivity; there are no generic Enabled toggles or explanatory mini descriptions. Bevel/Extrude/Bridge/Soften/Edge Flow parameters remain editable; delete operations and replay later ones. Strict creation order means tools after Subdivision edit its denser result. Modify > Clear History commits the current result and removes records; no visible Bake Subdivision command. F3 adds the first Subdivision or toggles the last; Add Subdivision explicitly appends another. Other mesh edits have conservative direct records; invalid downstream inputs show failures. Workspaces use v2, with no legacy compatibility requirement. See [MODIFIER_HISTORY.md](MODIFIER_HISTORY.md) and [SUBDIVISION_ENGINE.md](SUBDIVISION_ENGINE.md).
-
-
-
-
-
-Right-click an FBX model or mesh sub-asset in Unity's Project browser and choose **Open in MashBox Modeler**. Studio opens in Modeling mode and imports the selection into the current workspace, preserving existing objects and the viewport camera. Source assets remain unchanged.
-
-
-
-
-
-The current Studio camera viewport is **perspective-only**. Camera Settings no longer offers Orthographic, and native/restored 2D or orthographic states are corrected on camera events/rendering. Separate orthographic views are future work. Camera gesture ownership is fixed at the initial press: a click begun in Lighting, Tool Options, Channels or other panel/toolbar UI stays UI-owned when dragged into the camera canvas, until release/cancel. It cannot start camera movement or take over the camera cursor. A drag begun in the camera canvas may continue over UI until release. Panel controls retain normal editing/scrolling.
-
-
-
-
-
-
-
-
-## Group selected objects
-
-
-
-
-
-**Modify > Group** (**Ctrl/Cmd+G**) creates a new parent at the equal average of the selected items' geometry centers, with its pivot/origin at that point. It preserves their world placement, mesh data and children, and selects the new group. Selected descendants stay nested and count once. Siblings keep their shared parent; selections from different parents form a root group. Empty transforms use their positions; meshless groups use their descendant bounds. Unsupported shear/invalid scales warn without changing the document. Supports grouped Undo/Redo and G repeat; custom shortcut assignments remain authoritative.
-
-
-
-
-
-
-
-
-## Pivot editing and rotation
-
-
-
-
-
-Edit Pivot places all selected object pivots at one exact world-space destination. Dragging, snapping and Translate channels preserve geometry and children in world space while compensating each object's local data independently. Object/Component orientation rotation uses each selected object's own pivot and axes; multi-mesh component rotation uses each mesh's component center and frame. World orientation keeps group rotation. Undo/Redo restores the complete operation.
-
-
-
-
-
-## Choosing mesh tools
-
-
-
-
-
-Implemented mesh commands stay callable and set the required selection/tool mode, with Studio notifications explaining missing or invalid selection. Bridge uses Edge; Split preserves Vertex/Edge/Face or chooses Face from Object mode. Split retains ready Tool Options when selection is missing/invalid and can execute valid selections directly. Bridge always opens parameterized live Tool Options: choose borders, adjust Divisions/Curvature, then Apply or Execute. Cancel restores the unapplied preview. Other tools retain their embedded parameter options and command preparation. Stable command keys/custom shortcuts and geometry restrictions remain.
-
-
-
-
-
-## Bridge Edges
-
-
-
-
-
-Bridge two non-touching boundary chains or two loops with equal edge counts on the SAME mesh. Divisions adds rows across the gap: 0 creates one flat band, N creates N+1 bands. Curvature -1 is concave, 0 flat, +1 convex; add divisions to see the curve. It uses the same cubic Hermite interpolation as Edge Flow, guided by adjacent face tangents, with an explicit arch for coplanar neighbors. Source borders remain fixed. Curvature scrubbing reuses cached trajectories/topology; divisions rebuild from the captured source. New curved normals are smoothed, UV0 spans the strip, and source faces/attributes/materials are preserved. Apply keeps Tool Options open, Execute closes, and Cancel restores the source. Defaults are 0 divisions/0 curvature and persist independently through the normal settings profile. Ctrl/Cmd+Shift+B is the default shortcut. Touching/branched/interior/mismatched/invalid selections warn without publication. Never combines objects. Supports grouped Undo/Redo and G repeat.
-
-
-
-
-
-## Current bevel contact and viewport tools
-
-
-
-
-
-Eligible flat bevel clipping reaches the exact analytic first boundary contact through the existing junction vertex, preserving attribute seams; it does not proximity-weld nearby vertices. Width is mesh-local distance, without a normalized 0–1 maximum. General post-event 3D continuation and unsupported compatibility paths retain their documented limits (BEVEL_ENGINE.md).
-
-
-
-
-
-Modeling ToolChannelPane controls are hosted inside the existing Tool Options panel with defaults, preview, Execute/Apply/Cancel and history callbacks. Multi-Cut snaps to its pending vertices/segments and closes a loop after three distinct placed vertices; W applies. StudioPreviewScenes owns persistent preview scenes and active-mode resources; inactive workspaces keep documents while preview resources are recreated on return. Existing cached mesh-tool cursors stay scoped to the camera canvas and yield to navigation/panels. Instant/ready selection actions retain the normal Select cursor.
-
-
-
-
-
-Prototyping texture correction: Solid retains its original cool palette. Large uses the same light field (211,214,217), fine line (204,207,210) and major line (162,165,167), with its original dark field lifted 10% toward white to (196,198,200) and dark fine line (190,192,194). Pattern locations, dimensions and import metadata remain unchanged; neutral grayscale/average-brightness matching is superseded.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## Repeat Last Action (2026-10-28)
-
-
-
-
-
-Press **G**, or choose **Edit > Repeat Last Action**, to repeat the last completed supported modeling action on the current selection using its completed settings. Move/Rotate/Scale drags, selection changes, view/navigation, Undo/Redo and file operations do not replace it. It appears in shortcut Preferences/custom toolbar discovery; existing conflicting custom G assignments take priority, and the command can be rebound or unassigned.
-
-
-
-
-
-Supported actions include Group, Duplicate/Delete, polygon primitives and empty objects, Combine/Split/Bridge, Center Pivot/Freeze, editable Blend Shape creation/baking, Soften/Harden and applied Bevel/Extrude/Merge/Edit Edge Flow. Pointer-based cuts and Target Weld reactivate their completed tool for a new gesture. Other contexts such as UV editor gestures, AO/material workflows, anchor/vehicle creation and Shift-handle transforms are not replayed. Opening/canceling a pane does not record an action. G commits an active live preview once; otherwise parameterized tools apply directly without reopening a pane. Focused modeling panes defer the repeat shortcut outside drawing and preserve text-field input. Repeats retain standard validation and grouped Undo/Redo. Changed defaults are not overwritten; no old selection/mesh is retained. The last action is session-only and clears on workspace change/reload.
-
-
-
-
-
-The additional cost is a small constant-size record at action completion and ordinary shortcut dispatch, with no new idle polling, render loop or scene traversal. Running G still costs whatever the selected operation normally costs; no FPS benchmark is claimed.
-
-
-
-
-
-
-
-
-## Split component selection (2026-10-28)
-
-
-
-
-
-Mesh Tools now has three immediate commands: **Duplicate Face**, **Duplicate Face as New Object**, and **Detach Face**. Duplicate Face appends selected faces on the same mesh and selects the copies. Duplicate Face as New Object creates independent sibling objects, centers only their new pivots and leaves the source unchanged. There is no Duplicate options pane or As new object toggle. Both copies start at the original positions; Move is active immediately afterward (or the previous Rotate/Scale tool is retained), so the selected result can be moved away. Detach Face disconnects the selected region from neighboring faces on the same object without moving it. Connections within a selected region, authored polygon boundaries/render triangles, material slots and vertex attributes remain. Both whole-source duplication and all-face detachment are allowed.
-
-
-
-
-
-Face selection on ordinary readable static meshes is required. Missing/invalid selection uses existing Face-mode preparation and ready selection-action guidance; no implicit component-ID conversion or delayed automatic edit. Same-mesh linked selections publish once through the existing captured preview transaction, StudioUndo and strict Direct modifier history. New-object outputs have independent history bases. Repeat Last retains whether duplication was on the same object or as a new object. All three commands are eligible for shortcut, toolbar and radial customization, initially unassigned; the existing same-mesh Duplicate Face command ID is preserved. No personal profiles or presets were rewritten.
-
-
-
-
-
-Detached/coincident regions retain independent explicit geometric identities. Welded component selection, Convert Selection and Grow/Shrink now use valid explicit geometric IDs when available, rather than rejoining separate regions solely because their positions coincide. Meshes without explicit IDs retain their legacy positional alias selection; the active bevel publication's specialized weld map remains unchanged. Newly unused detached vertices are removed while preexisting loose vertices remain.
-
-
-
-
-
-Detached and coincident duplicated boundaries now remain independent in SelectionWireframeLines. Wire canonicalization uses a dense mapping of (explicit geometric identity, position), rather than position alone. This prevents coincident edges from being collapsed into one cached edge before the faces are moved apart. Both source and moved patch keep complete authored boundary outlines. Position remains part of the key for unwelded seam editing; meshes without explicit identities retain their legacy positional deduplication and skinned meshes retain raw indices. No geometry, transform, selection, modifier or camera behavior is changed by this display fix. The user confirmed the reported problem was visual only and the affected mesh had no Subdivision modifier.
-
-
-
-
-
-**Mesh Tools > Split Selection** runs immediately for valid selection; missing/invalid selection retains ready embedded Tool Options with Execute/Apply/Cancel. In Face mode it cuts the selected faces out of the source; in Vertex mode it takes all faces directly touching the initially selected vertices, matching Isolate Selection without expanding through the whole island. In Edge mode it takes faces directly incident to selected authored edges (both faces of a shared edge). Welded/raw seam behavior follows the existing selection setting. Unattached points/edges do not create surface objects.
-
-
-
-
-
-Each source produces one new sibling mesh with its pivot centered in the extracted mesh bounds. Geometry stays in the same world position; orientation, scale and parent are retained, and outputs are selected in Object mode. The source keeps its existing node, name, transform, pivot, parent and children; only its reduced mesh/topology data changes. If any source would lose every face, the entire operation is rejected with a Studio notification. Leave at least one face on each source: empty meshes are never created. Multiple-source extraction is one atomic StudioUndo action, including component-selection restoration. Source assets and unselected shared instances remain untouched. Authored triangles/quads/n-gons, original render diagonals, material slots, UVs/dimensions, colors, normals/tangents and smoothing identities survive. Static readable meshes with complete face/render correspondence are required; skinning/bones/anchors and blend shapes are excluded. No cap surfaces are added. The command appears automatically in shortcut Preferences and custom toolbar discovery, initially unassigned.
-
-
-
-
-
-
-
-
-## Combine mesh objects (2026-10-28)
-
-
-
-
-
-In Object mode, select two or more static meshes (or groups containing them), then choose **Mesh Tools > Combine Meshes…**. The shared ToolChannelPane offers **Combine UV channels** (default on, matching numbered UV 0–7 slots) and **Pivot: First Selected / Average Center**. Separate channels allocate populated input sets independently and fail atomically if they exceed eight output slots. Custom UV names remain future work. **Use first selected name** (default off) retains the first input mesh name instead of adding Combined; existing root-name collisions still receive a unique numeric suffix. The setting persists with the other tool defaults. Average Center equally averages the input mesh bounds centers in world space; orientation follows the first selected mesh.
-
-
-
-
-
-Apply combines and keeps the pane open; Execute combines and closes. Options apply on execution, without a hierarchy preview. The output is one selected root object: consumed mesh nodes and newly emptied ancestor groups are removed, while unrelated children retain their world transforms under a surviving parent. One StudioUndo action restores hierarchy, meshes and selection. Authored polygon boundaries, render triangulation, materials, UV dimensions, colors, normals/tangents and smoothing identities are preserved; mirrored transforms are baked with corrected winding. Source meshes remain untouched. The operation does not weld or boolean-union surfaces. Skinning/bones, live/native blend shapes, incompatible preview texture slices, non-polygon surfaces and invalid transforms are excluded; child reparenting that requires shear fails before changing the document. Shortcut/custom-toolbar discovery includes the command, initially unassigned.
-
-
-
-
-
-
-
-
-## Checker Map viewport toggle (2026-10-27)
-
-
-
-
-
-Viewport Shading includes Checker Map, using the supplied MashBoxStudio_Checkerboard material. It overrides material/neutral display temporarily and restores that view when disabled; object assignments remain unchanged. Camera Lighting displays the target _CheckerboardMap texture through computed shading when _Checkerboard is enabled; Studio Lights uses the target material shader. The toggle is saved through StudioPreferenceStore and defaults off. No new shortcut or source material/graph edits.
-
-
-
-
-
-
-
-
-## Camera Lighting and material defaults (2026-10-27)
-
-
-
-
-
-HDRP textured Camera Lighting uses the authored shader and an adjustable camera-relative physical rig; neutral shading and non-HDRP fallback retain computed shading. Studio Lights material view uses the real assigned materials. Neutral shading always uses fixed white-gray computed camera lighting, regardless of the assigned material. The material-texture toggle changes preview appearance without changing source assignments. Neutral preview ignores assigned/default RGB tint. Material view refreshes existing meshes when their assigned material changes. Vehicle preview uses its graph's RGB tint without clipping on the unused tint-alpha channel; base-map alpha cutoff remains active. Camera Lighting now has preview-scene physical lights for authored HDRP materials. Lower lighting work is expected, but no FPS comparison was measured.
-
-
-
-
-
-## Creation materials (2026-10-27)
-
-
-
-
-
-Ordinary polygon primitives and bare-Mesh imports use the packaged MashBoxStudio_Default material. Studio Lights uses the real default or assigned shader. HDRP textured Camera Lighting uses the assigned shader; neutral and non-HDRP paths use the lightweight preview shader. Texture-off neutral shading is always fixed gray, not the default-material tint. Toggling preview preserves imported and explicitly assigned source materials. Vehicle Parts are the exception: each creation uses MG_Vehicle with untouched shader defaults, shared by its generated mesh nodes. The vehicle material is retained by workspace save/load. Existing user material assignments are preserved.
-
-
-
-
-
-
-
-
-## Axis and plane move snapping (2026-10-26)
-
-
-
-
-
-Arrow handles snap only X, Y or Z; plane squares snap only their two axes, in the captured World/Local orientation. Constrained vertex targets are chosen by distance along those axes from the unsnapped world handle position, independently of camera angle or cursor proximity. Locked coordinates only break target ties and remain unchanged in the result. Grid snapping rounds only the allowed coordinates. Single- and multi-mesh component moves share the resolver and exclude all moving selected vertices. The free center and instant middle-click retain cursor-based vertex picking; free grid movement retains the world X/Z ground plane. Vertex snap takes precedence over grid; no eligible vertex keeps the previous position. No new setting or shortcut.
-
-
-
-
-
-
-
-
-## Painting workspace — shared 3D / 2D color documents (2026-10-26)
-
-
-
-
-
-Painting's neutral key/fill lights follow the camera as you orbit, keeping the visible surface illuminated from both sides. **Preview brightness** adjusts viewport exposure (default +0.75 stops) without changing paint colors, exported textures, source materials or Modeling's saved lights.
-
-
-
-
-
-New Painting imports use model-local space like Skinner: each newly appended model root starts at zero position, identity rotation and unit scale. Internal mesh/bone transforms and source assets remain unchanged. **Zero Selected** resets the selected mesh's owning model root; **Zero All Models** repairs all existing model roots. These explicit placement edits support workspace Undo and preserve child alignment; they do not center individual meshes by their bounds.
-
-
-
-
-
-Painting's left panel uses a Skinner-style mesh list with selected-row highlighting, mesh icons and independent visibility toggles. Click a row to choose its paint target; double-click to frame it. **Add FBX**, **Add model**, and dropping one or more model/mesh assets onto the list or viewport append to the shared workspace. Existing meshes and paint documents remain; the first newly added mesh becomes active. **Frame Selected** and **Frame All** are separate controls. Visibility is stored on the corresponding Modeling workspace node.
-
-
-
-
-
-Painting uses Studio's native-material preview rig: enabled key/fill lights, fixed HDRP exposure and a neutral reflection environment. Modeling's default camera-lit display shader does not require real lights, so carrying its unlit scene rig into Painting made original lit materials render black. Leaving Painting rebuilds the original Modeling rig, removes the Painting reflection probe and preserves the saved lighting preferences.
-
-
-
-
-
-Choose **Painting** from the Studio workspace selector. It uses the Modeling workspace's preview meshes, FBX import path, source materials, camera navigation and lighting. Import an FBX, add a model asset, or bring the meshes already in Modeling. Choose a mesh, material and color texture in the left panel. Each material/texture pair owns a separate Imager document; switching back to a pair restores its layers and history. The initial stack contains the existing map and a transparent paint layer. A corresponding 2D canvas opens with its own save-on-close prompt.
-
-
-
-
-
-Paint directly on the mesh with **B**, erase with **E**, sample with **I**, and frame with **F**. **Ctrl+middle-drag** adjusts size horizontally or strength vertically; brackets also adjust radius. Camera navigation keeps Studio's bindings. Each stroke is one image Undo action; Escape cancels the current stroke. The inspector and the 2D window edit the same document, including brush/smudge/dodge/burn, RGB or individual channels, selections, transformed layers, opacity and blend modes. Use the 2D canvas for image placement, warping and adjustments. Save editable layers as `.mashimage`; export PNG through the existing Imager export flow. Modeling workspace saves and image-document saves remain separate.
-
-
-
-
-
-Picking uses cached triangle BVHs, material-slot identity, barycentric UV0–UV3 interpolation, transformed meshes and baked skinned preview poses. All imported visible parts participate in geometric occlusion. Screen-space stroke samples are raycast independently; crossing a UV seam or background does not draw a line between unrelated UV coordinates. The cursor ring reflects the local UV footprint and material texture scale. Live preview uses per-renderer property blocks and restores their previous contents on mode changes. Painting leaves source mesh data and material assets unchanged until the existing explicit export/assignment command is used.
-
-
-
-
-
-This is the first **UV color-painting** implementation, not a complete material authoring system. Only the active map previews at once. Radius is in texture pixels; UV density affects its world size. The brush footprint remains in texture space, can reach adjacent UV islands, and mirrors onto overlapping UVs. The 0–1 tile is supported; out-of-tile samples are rejected. Picking uses geometric surfaces, not alpha-cutout visibility, and skinned poses are cached until Refresh Meshes. Linear data maps and normal maps are excluded from the slot picker because the shared Imager currently uses an sRGB color pipeline. Seam-aware projection/dilation, UDIMs, multi-map PBR stacks, normal/height painting, bakers, generators and project-wide paint-session packaging remain future work.
-
-
-
-
-
-The extension points are `AnimationStudioPainting.cs` (workspace and target binding), `StudioPaintingSurface.cs` (geometry queries), and `StudioImagingWindow.Surface.cs` (shared image input). Future projection brushes should feed the same document/history/compositor instead of introducing a second layer system.
-
-
-
-
-
-## Shared selection mode (2026-10-26)
-
-
-
-
-
-Selection-mode changes apply to all selected meshes together, whether invoked over a mesh or from a control without a hovered target. They preserve the selected object cohort, acquire the hovered target as before, and use one grouped selection Undo action. Component types cannot diverge through modified viewport picking. The previous plain-click rule still selects a different mesh exclusively in Object mode.
-
-
-
-
-
-
-
-
-## Vertex visibility and object clicks (2026-10-26)
-
-
-
-
-
-Unselected modeling vertices use purple 5-point squares; selected vertices remain orange at 6 points and hover remains gold at 10. The GPU and cached-quad fallback share sizes/colors. Marquee overlap follows the visible footprint; the existing click radius is unchanged. Plain-clicking a different mesh from a component mode selects only that object and enters Object mode. Hover and mode-command multi-object acquisition are unchanged.
-
-
-
-
-
-
-
-
-Directional component selection: **single-click one component, then double-click another** to establish the loop or row direction. Vertices follow their connecting edge flow; connected edge pairs follow quad loops or resolve a turning face perimeter; unconnected opposite edges across a quad follow an edge ring through opposite face edges; adjacent face pairs follow a quad strip. Double-clicking the same face without a directional pair selects its connected manifold hull. Shift adds; Ctrl/Cmd subtracts. Other acquired meshes retain their selections. Boundaries form border loops; unresolved poles, nonmanifold branches and triangle/nonquad strip ends stop traversal. Authored triangles/n-gons and render seams are respected; Weld editing joins coincident seam aliases for selection, while disabling it preserves split boundaries.
-
-
-
-
-
-Modelling captures compact adjacency once per mesh/context revision and traverses only the selected loop on repeated requests. It reuses existing picking, grouped selection Undo/Redo and multi-object contexts; the retopology implementation is unchanged. No new shortcut binding, preference or idle update is introduced.
-
-
-
-
-
-
-
-
-The hierarchy panel always has a square top-left corner. Lower corner rounding still follows the existing toolbar docking rules.
-
-
-
-
-
-Edit > Preferences opens **Modelling Studio Preferences**. A left sidebar separates General, Viewport, UV Editor, Appearance, Shortcuts and Profiles. Categories have no idle button backgrounds; only hover and selection are highlighted. A subtly lighter continuous background separates the full category strip from the settings content. Native Unity fields and buttons remain, with aligned labels and settings groups outlined at 2 pixels with 4-pixel rounded corners. Groups use an 8-pixel content inset, with 4 additional bottom pixels to account for native control artwork and the outline. Appearance opens the existing Themes window. Profiles retains independent settings/hotkey import and export. Changes save immediately; browsing does not write configuration files. Object wireframe is removed from this Preferences UI; its display behavior and saved preference remain available to existing display controls.
-
-
-
-
-
-
-
-
-Three or more selected edges meeting at a vertex retain a vertex patch at zero subdivisions: three cube edges produce three chamfer strips around one triangular face. Single-edge and two-edge flat miters retain local clipping. Rounded Grid junctions carry the incoming strip directions into the first interior grid row; compatible rulings align directly. Shared seam points and the common even-step center remain connected. When skew tangent constraints cannot meet, the existing shared surface placement is retained rather than splitting the corner. Cap junctions keep their n-gon behavior.
-
-
-
-
-
-
-
-
-Component hover previews work across the selected component-target meshes, using each mesh's vertex/edge/face mode. Hovering another selected mesh displays its component preview without making it active or changing selection. Only the best hit previews; leaving the meshes clears it.
-
-
-
-
-
-
-
-
-Selected and hovered modeling edges use cached subsets of the GPU polygon wire batch, with the same incident-surface depth correction as the cyan mesh wires. Orange highlights remain visible on inward folds as the camera moves, while foreground geometry still occludes them outside X-ray. The existing native line path remains a fallback for unsupported GPU shaders. Selection colors, width and interaction stay unchanged.
-
-
-
-
-
-
-
-
-Shaded-wireframe outlines retain incident-face depth support across the camera/near plane, including inward creases viewed close up. A one-unit 24-bit raster-depth adjustment handles orthographic precision. Actual triangle coverage still bounds the correction, preserving occlusion by unrelated faces; X-ray is unchanged.
-
-
-
-
-
-
-
-
-Modeling face selection and hover use the retopology preview palette: amber selected fill at 28% opacity and cyan hover at 40%. Hovering a selected face retains amber. Face fills render before the existing polygon wire outlines, so editable boundaries remain visible. X-ray changes occlusion, not these fill opacities. Vertex and edge styling is unchanged.
-
-
-
-
-
-
-
-
-**MashBox â†’ MashBox Studio** opens a shared viewport with **Animation** and **Modeling** icon tabs. Animation takes and modeling documents stay independent when switching modes.
-
-
-
-
-
-## Modelling controls
-
-
-
-
-
-Open **Edit â†’ Preferencesâ€¦** from Studio's modelling menu to open the **Modelling Studio Preferences** popup. The Studio settings window also provides a **Controls and Shortcutsâ€¦** button. These controls stay inside Studio and do not register a Unity Preferences or Project Settings page.
-
-
-
-
-
-Search for an action, click a binding to record its replacement, use **+** to add an alternative, or **Ã—** to unassign one. Conflicting bindings are rejected with the conflicting action's name. Reset one action or restore all defaults. Settings save in the project-root `<Documents>/MashBoxStudio` folder and survive editor restarts; Unity's shortcut profile stays unchanged. Menu shortcut hints and tooltips follow the configured bindings.
-
-
-
-
-
-The defaults retain Q/W/E/R tools, 1â€“4 component modes, D pivot editing, F framing, V vertex snapping, X grid snapping, plus/minus handle sizing, Ctrl/Cmd+S saving, Ctrl/Cmd+Shift+S Save As, Ctrl/Cmd+D duplication, Delete/Backspace deletion, Ctrl/Cmd+E extrusion, Ctrl/Cmd+Z undo, Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z redo, Escape cancellation, Enter/numpad Enter applying cuts, Backspace removing a cut segment, and F11 maximization. Shift+Space also maximizes the Studio window.
-
-
-
-
-
-Camera navigation and the marking-menu mouse button are independent of Unity's bindings too: Alt+left mouse orbits, middle mouse (with or without Alt) pans, and Alt+right mouse zooms. The mouse wheel zooms. **Ctrl+Shift+right-click** opens the editable Orientation radial preset. Components, Object and World choices use the same preset-driven radial system as other menus. The UV editor shares tool, framing, save, undo and cancel bindings, and has its own configurable Frame All action (A by default).
-
-
-
-
-
-Modelling captures unassigned viewport keys so Unity actions such as the backtick overlay menu do not fire through Studio. Switching back to Animation restores its normal input routing. Text fields retain standard editing keys; selection modifiers (Shift adds, Ctrl/Cmd subtracts) and cut/pivot precision modifiers keep their existing meaning.
-
-
-## Modeling
-
-
-
-
-
-The right **Channels** panel shows the selected object's Translate, Rotate and Scale X/Y/Z channels and Visibility. Numeric channel values update the preview while typing or dragging. Numeric rotation channels retain their authored Euler values, including negative angles and multiple turns, instead of converting the quaternion back into different axis values after each edit. Typed rotation values retain the other two entered Euler components. Dragging rotation channels applies angular increments around the selected World or Local axis, allowing the displayed Euler components to change together to represent the resulting orientation; gizmo rotations still update the channels. Field scrubbing follows relative pointer movement through screen-edge wrapping. Rotation channel values are retained by Undo/Redo and workspace save/load. A complete numeric drag or focused text edit is one Undo step; Ctrl+Z, Ctrl+Y/Ctrl+Shift+Z and Edit â†’ Undo/Redo restore the channels and viewport together. Typed values are parent-relative object channels. The top-bar orientation dropdown offers **World**, **Object**, and **Component**, also available in Tool Options and Ctrl+Shift+right-click (Component at the top, Object left, World right). Object follows the active object/pivot axes even with vertices, edges or faces selected. Component derives its frame from the selected geometry, including an explicitly edited component pivot; without components it falls back to the object frame. World uses global axes. Numeric Position/Rotation channel scrubs remain object-local for either Object or Component orientation. The choice is saved in Studio settings. Scale channels edit the scale components of the object. **Grid** beside it toggles the modeling ground reference independently of animation.
-
-
-The Channels header has 6 additional points of space before the name row. An unlabeled visibility checkbox sits immediately left of the object name, including anchors. The collapsible **Transform** header uses a lighter theme fill extending to both panel edges, with 4 points before its indented contents. The group contains compact Position, read-only World Position, Rotation and Scale rows, with a wider label column and aligned X/Y/Z fields. Its expansion state is saved through StudioPreferenceStore. Numeric/text/object fields use subtle 3-point rounded, outlined backgrounds derived from the current theme; these shared field styles also apply to other Studio panels. Existing numeric editing, drag sensitivity, authored Euler values and grouped Undo/Redo are retained.
-
-
-
-
-
-
-
-
-The dockable **Transform Tools** toolbar selects **Select / Move / Rotate / Scale** (Q/W/E/R). **Tool Options** appears above **Channels** in the right column, with its own scroll area. Drag the centered horizontal handle between them to resize both panes; the height is remembered. Double-click a transform tool or toggle **Display â†’ Tool Options** to focus these settings. Through selection lives in **Select** and tool options. Coincident vertices across UV/normal seams continue to move together; there is no Keep Seams Together UI toggle. Pivot commands remain in **Modify** and the marking menu; UV, Save and Export remain in the top menus. During pivot editing, Translate changes the pivot while Rotate/Scale channels are disabled.
-
-
-
-
-
-The Modeling menu order is **File, Edit, View, Select, Create, Modify, Window, Display, Mesh Tools, Edit Mesh, Mesh Display, UV, Render**. **Create â†’ Polygon Primitives** adds a **Cube, Sphere, Plane, Quad, or Cylinder** at world (0, 0, 0) and selects it without moving or focusing the camera. Empty transforms, empty children, anchors and vehicle-part roots also start at world zero, including under transformed parents. Creating the first primitive starts a saved workspace file in the project-root `MashBoxStudio/Workspaces` folder (outside `Assets`); additional primitives join the current document as independent root objects. Creation supports Undo/Redo. Each primitive owns its editable mesh, normals and UV 0. Cube, sphere, plane and quad are one unit across; cylinders are one unit across and two units tall. Plane lies on XZ; Quad lies on XY.
-
-
-
-
-
-The menus expose the current selection, pivot, transform, UV and export commands, plus selection inversion, normal recalculation and shaded/wireframe display. FBX export includes every root object in the document. Mesh Tools includes Extrude, Bevel, Merge to Center (M), Target Weld, Insert Edge Loop, Multi-Cut and the Deform submenu. Boolean modeling is not implemented.
-
-
-
-
-
-The **Hierarchy** represents a workspace containing multiple models. Drag one or more FBX files into the viewport or use **Import FBXâ€¦** to add model roots alongside existing models and primitives. Each imported model retains its children, materials, skin weights and blend shapes, with independent editable mesh copies and remapped bone references. Duplicate model roots get unique names. Import is not an Undo action and never replaces existing models. A successful import establishes a document baseline: incompatible earlier document snapshots and selection history are retired so they cannot remove imported nodes; earlier mesh-only edits and unrelated Unity history remain available. Automatic root selection after import adds no history entry. Source FBX assets are unchanged. External FBX files are copied into `Assets/Studio Imports`; external texture dependencies must also be available to Unity.
-
-
-
-
-
-The first import or primitive creates a saved `Untitled Workspace.workspace` in `MashBoxStudio/Workspaces`. **Openâ€¦** switches to another saved workspace, rather than appending it. Existing Studio model assets can be opened and are converted to independent `.workspace` files in that folder; the original asset is preserved. Edits autosave after gestures; **Mesh â†’ Save Workspace** saves immediately. FBX export includes all workspace roots.
-
-
-
-
-
-Select objects in the hierarchy or viewport. **Hold right-click** in the modeling canvas, drag toward a choice, and release to apply it. The marking menu places **Edge** above, **Vertex** left, **Object Mode** right, and **Face** below. Drag onto a branch marked **â€º** to open its submenu without releasing: **UV â†’ UV Sets â†’ UV 0â€“7**, **Transform**, **Pivot**, or **Selection**. Hovering toward a branch also opens it after a short delay. Drag onto **Back** to return; release in the center or press **Escape** to cancel. **Shift + right-click** opens Transform directly; **Ctrl/Command + right-click** opens Selection. Alt + mouse camera navigation stays available.
-
-
-
-
-
-**1 / 2 / 3 / 4** also choose Object / Vertex / Edge / Face. **W / E / R** choose Move / Rotate / Scale; **F** frames the selection. Drag empty space for a marquee, **Shift** adds and **Ctrl/Command** subtracts. **Through selection** includes hidden components. **Keep seams together** moves coincident vertices across UV and normal splits together. Face and edge modes follow the preserved triangle, quad and n-gon modeling boundaries. Component deformation recalculates normals and tangents; it does not add or remove topology.
-
-
-
-
-
-In Object mode, **D** toggles pivot editing. Move the pivot handle to place every selected object origin at the same world-space point, then press **D** again to finish editing; geometry and children stay in world space. **Center pivot** centers each selected object independently on its own renderer bounds; meshless groups use their own hierarchy bounds. Geometry and children stay in world space. **Freeze transforms** bakes the local transform into the mesh and compensates children. **Ctrl/Command+Z** undoes edits; **Escape** cancels an active handle drag. Skin-bone origins cannot be repivoted/frozen. Skinned component edits require the bind pose; object and UV edits are still available when posed. Freeze rejects transforms that would introduce shear into children.
-
-
-
-
-
-**Open UV Editor** opens a separate window for the selected mesh. Choose **UV 0â€“7**, create an empty set, duplicate to another channel, or initialize using **Planar XZ**. Select points with click/marquee, use **All** or expand to connected **Shell**, then move, rotate or scale by dragging a selected point or using numeric fields. Shift adds and Ctrl/Command subtracts. Middle mouse pans and the wheel zooms. An optional texture can be shown behind the UV wireframe. UV edits and set duplication support Undo. This editor manipulates existing UV topology; automatic unwrap, seam cutting/sewing and packing are not included.
-
-
-
-
-
-**Export All… (FBX)** and **Export Selected… (FBX)** write the current edited geometry, including modifier results, without changing Studio history. There are no Cage/Evaluated export variants. Export writes the model through Unity's `com.unity.formats.fbx` package. Hierarchy, mesh geometry and UV sets are exported; missing lower UV channels are padded on the temporary export copy to preserve channel numbers. Modeling export does not carry the original FBX animation clips or Maya construction history. Animation export remains available in the Animation tab.
-
-
-
-
-
-## Animation
-
-
-
-
-
-Correction mode also uses the viewport gizmos: **W** moves the hips and **E** rotates hips, shoulders or arms. Enabling a correction mode selects its joint automatically. With **Both** selected, dragging either rotation gizmo mirrors that adjustment to its partner; Left/Right edits only that side. The existing Local/Global handle setting applies. Each drag updates the whole clip without Auto Key or S, is one Undo step, and can be cancelled with Escape. **Reset correction** reverses both slider and gizmo adjustments. **Done** restores ordinary pose editing; **Ctrl+S** saves the edited clip.
-
-
-
-
-
-In **Selection â†’ Whole-clip corrections**, click **Hips correction**, **Shoulders**, or **Arms**. Hips exposes position offsets in parent-local metres plus bend, side bend and twist. Shoulders and arms have lift, forward/back and twist controls; choose Left, Right or Both, and Upper arms or Elbows / forearms. A Humanoid bone mapping is required. Both sides use mirrored limb axes.
-
-
-
-
-
-These controls update the existing motion across the entire clip immediately, including between keys, without creating a layer or requiring S / Auto Key. **Done** closes the controls and keeps the adjustment. **Reset correction** reverses the selected joint/group's current correction; Unity Undo/Redo restores both motion and control values. Existing key times, sparse channel masks and unrelated local bone channels stay intact. Existing layers are adjusted consistently; IK pins and attachments still solve afterward and can limit visible limb changes. Ordinary pose edits outside these controls still need keying. In-memory clip edits stay in RAM until **Save animation / Ctrl+S**. Reopening a saved `.anim` starts the controls at zero because the correction is already in the motion; saved take assets retain the control values.
-
-
-
-
-
-Right-click an animation clip in the Project browser (including a clip inside an expanded FBX) and choose **Open Clip in MashBox Studio**. Studio opens an editable working copy in memory immediately; no take asset or save dialog is required. Right-clicking an FBX with multiple clips opens a clip picker. Humanoid clips use the current Studio character when available; generic FBX clips use their source model skeleton. Standalone generic clips need a matching character selected in Studio.
-
-
-
-
-
-Press **S** to key pose edits, or enable **Auto Key**. Choose **File â†’ Save animation**, press **Ctrl+S**, or use **Save animation** in the Session tab to overwrite the original standalone `.anim` while preserving its asset identity, animation events and non-skeletal curves. **Save animation asâ€¦** (Ctrl+Shift+S) creates a separate `.anim`. Embedded FBX clips and clips outside Assets require Save As. Editing, scrubbing, preview rebuilding and Play Mode transitions never write the source clip automatically. Closing or replacing an unsaved clip offers Save, Discard and Cancel. The working document is held in memory; save before ending the editor session. Saving bakes recorded keys and layers into the clip; it does not key a temporary pose or preserve editable layer/actor setup in the `.anim`. Saved takes remain available for that workflow through **New takeâ€¦** and **Import clip into a new takeâ€¦**.
-
-
-
-
-
-**MashBox â†’ MashBox Studio** opens the viewport directly. Select an Animation Take and click **Open in MashBox Studio** in its asset inspector, or double-click the take, to load it in that viewport. The project remembers the last saved take locally for reopening. The viewport inspector's **Character & take** section contains character selection, body/outfit setup, take switching, new-take creation and the example entry point; Selection, Outfit, Clip and the workstation-private Generate tab hold the editing tools. The old standalone setup window is no longer required. Animation Takes use the supplied teal film/play icon, assigned persistently on their script importer.
-
-
-
-
-
-Open **MashBox â†’ MashBox Studio** (also linked from the SDK Content Tools).
-
-
-
-
-
-1. Click **Use MashBox SM base** to load `Skeleton.fbx` and `SM_Body_01.fbx`. For other characters, select the GameObject with the Humanoid Animator at its root. Optional body meshes are remapped by unique bone names, ignoring namespaces.
-
-
-2. **New takeâ€¦** saves an editable `.asset`. The separate Animation Viewport uses normal Unity orbit, pan, zoom and transform handles. It owns an isolated preview scene, so it does not dirty your gameplay scene or instantiate gameplay scripts.
-
-
-3. Choose a hand or foot, then **Match â†’ IK**. Move the target with **W**, rotate with **E**, or click a gold elbow/knee target to steer the bend. Increase **Control size** for larger screen-space pick areas. The IK blend goes from FK at 0 to full IK at 1.
-
-
-4. **Pin both feet**, click the green hips ring, and move or rotate the pelvis. Green rings also select spine sections; blue rings select other FK joints. Clicking a skeleton segment selects its parent joint for rotation. Editing an IK-driven limb matches its solved pose and releases only that limb; the other pins remain active. Final IK solves the body against the foot targets. Spine, head and fingers are available through the FK bone picker.
-
-
-5. Scrub the numbered timeline along the bottom of the Animation Viewport. Drag the playhead, use the frame/key step buttons, or type a frame number. Playback, Auto Key and Key [S] are beside the ruler; timing and Delete key remain in the Animation Studio settings window. **Auto Key** defaults OFF: move controls freely, then press **S** or **Key pose** to insert or replace a whole-pose key. Unkeyed changes are temporary; scrubbing, playback, closing or reloading the workspace discards them. **Save now** saves recorded keys and does not key a temporary pose. With **Auto Key** ON, dragging commits one key on release, with one Undo step. For saved take assets, key saving runs after a one-second idle debounce, outside the mouse event; closing, switching takes, baking and Play Mode transitions flush pending keyed edits. **Space** plays/pauses. Use previous/next key, delete, copy/paste and Unity Undo/Redo for keys. **Match all â†’ FK** captures the solved skeleton and releases all IK targets without changing the pose.
-
-
-6. **Bake Unity animation clipâ€¦** creates a uniquely named `.anim`; use Humanoid muscles for your Humanoid Animator/Animancer setup, or turn that option off for explicit transform curves on an identical Generic hierarchy. The output does not require the authoring rig or Final IK.
-
-
-
-
-
-## Existing animations and Play Mode
-
-
-
-
-
-An open animation stays loaded and editable when entering and leaving Play Mode, with domain and scene reload enabled or disabled. Studio rebuilds its isolated preview automatically and keeps the in-memory clip, recorded edits, correction settings, actor references, current frame and viewport camera. Pose keying, whole-clip corrections and correction gizmos work while gameplay runs. Recorded edits made in Play Mode remain when returning to Edit Mode. **Save animation / Ctrl+S** explicitly writes the `.anim`; changing Play Mode never overwrites it automatically. Closing Studio still leaves it closed across transitions.
-
-
-
-
-
-Assign a source animation and **Import clip into a new takeâ€¦** to sample it at the take's frame rate. The source remains unchanged. Import produces FK keys in Base motion. Use the Layers tab for corrections that preserve those imported keys.
-
-
-
-
-
-The workspace can be opened during Play Mode. Select the live character's Animator root and **Capture selected live character pose** to copy its local bone pose into the current frame. Editing and playback occur on the isolated preview, while gameplay continues independently. Take assets and explicitly baked clips persist after leaving Play Mode. The tool does not override the live Animator or record a continuous gameplay stream.
-
-
-
-
-
-## Scope and conventions
-
-
-
-
-
-- Full Body Biped IK uses an existing licensed Final IK installation, discovered at editor runtime. No Final IK code is shipped with this tool. Without Final IK, FK authoring remains available; takes containing IK keys refuse to open instead of silently changing their motion.
-
-
-- Takes require a persistent character prefab/model with an unoptimized, uniquely named transform hierarchy and a Humanoid Avatar for IK. Generic rigs support FK and transform export. Changing the source hierarchy requires a new take.
-
-
-- All targets/poles use character-root coordinates. Moving the FK character root moves the entire rig and its targets. Move the hips to work against planted feet. To animate moving contact surfaces, key the target positions along with the motion.
-
-
-- Smooth interpolation uses eased position interpolation and quaternion slerp between whole-pose keys. Linear and stepped modes are also available. Bake samples every frame; it does not preserve editable rig controls in the exported clip.
-
-
-- Humanoid export writes muscle and body-root curves. Generic export writes local position, quaternion rotation and scale. Humanoid retargeting can introduce differences from the precise solved bone pose. Validate the resulting clip on the intended avatar and root-motion configuration.
-
-
-- This release provides an IK/FK authoring workflow, not feature parity with Maya HumanIK: no editable tangent graph, animation events/blendshape authoring, continuous motion capture or FBX export.
-
-
-- Files are editor-only. Take assets are authoring data; reference the baked `.anim` from gameplay.
-
-
-
-
-
-## Rider, bike and additional actors
-
-
-
-
-
-Open the viewport's **Actors** tab. **Add vehicle Â· BMX** loads the project's Bike Skeleton; **Actor / vehicle source** and **Add actor** accept additional character or generic model assets. Companion takes are saved as subassets of the primary take and reopen together.
-
-
-
-
-
-Choose **Primary** in **Edit actor**, assign the Player FBX animation subclip, and click **Import clip on shared timeline**. Select the bike and repeat with the matching BMX subclip. Scrubbing and playback share time in seconds; each actor retains independent pose keys. Shorter motion holds its final pose. Select the actor before editing or pressing **S**; Auto Key applies to the selected actor. Import extends the shared timeline when needed.
-
-
-
-
-
-The bike exposes the source Maya control names and sampled curve shapes for BMX, bars, frame, drivetrain and pedals. Bars/frame use their mapped rotation axes; rotating the crank counter-rotates the pedals, preserving their orientation. Wheels and PID balance also have controls. See **MayaBikeRigMapping.md** for the exact source mapping and limitations. This is a specific recreation of the BMX rig; it does not import arbitrary Maya constraints or automatically attach rider hands/feet to the bike.
-
-
-
-
-
-**Export all actors as separate clipsâ€¦** writes independent Unity `.anim` assets at the same frame rate and duration. Bike output contains the Joints hierarchy, excluding authoring controls. FBX files are supported as import sources; export produces Unity animation clips.
-
-
-
-
-
-## Attach hands, props and other controls
-
-
-
-
-
-In **Actors â†’ Attachment Constraints**, set **Constrain actor / control** to the rider and **IK / Left hand** or **IK / Right hand**. Set **Follow actor / bone / IK** to the vehicle and its steering or door joint. For the BMX bars control, choose `Bars_Joint`; the Maya control shapes drive those joints. Generic bones and other actors' hand/foot IK targets are also available as endpoints.
-
-
-
-
-
-Position the hand where you want it, then use **Attach with current offset**. Turn off **Keep current offset** to snap directly to the target. Offsets use the target's orientation, in metres, and follow its translation and rotation without inheriting its scale. Select the attached control in the viewport to move/rotate its attachment offset, or edit the numeric offset in Actors. Offset edits change the saved constraint, independently of Auto Key; pose keys remain separate.
-
-
-
-
-
-Each attachment has Enabled, Weight, position/rotation switches, First/Last frame and Blend in/out frames. The default range starts at the current frame. Zero blend gives an immediate attachment/release; a nonzero blend fades influence to/from the underlying pose at the range edges. Match the underlying hand pose for a smooth release. Weight/offset settings are constant within this range, not individually animated channels. Circular dependencies and missing endpoints are reported; disable or remove the invalid constraint. Same-actor constraints cannot target their own driven limb or descendants.
-
-
-
-
-
-Constraints evaluate after all actors sample the shared clock and while posing a target. Both normal clip baking and **Export all actors as separate clips** sample the resolved motion into the exported clips, so no Studio constraint component is needed in gameplay. Humanoid retargeting and IK reach limits still apply: an unreachable target cannot force a limb to stretch. Exported contacts assume the same relative actor alignment and synchronized playback. This is an authoring attachment system, not a runtime steering/grab interaction component.
-
-
-
-
-
-## Manual key shortcuts
-
-
-
-
-
-With the viewport focused, **Shift+W** keys the selected control's position and **Shift+E** keys its rotation. **W/E** still select Move/Rotate; **S** retains the Studio's full-pose key action. Manual shortcuts work with Auto Key off and on, and follow the selected actor. Text fields and Ctrl/Alt/Command combinations are ignored.
-
-
-
-
-
-Channel keys preserve the animation of other channels and controls, including interpolation between existing full-pose keys. Unkeyed edits remain visible and marked unkeyed until you key them or scrub away. Hand/foot IK channel keys also retain the IK weight needed to activate the target. Knee/elbow pole targets accept position keys only. A BMX crank rotation key includes the linked pedal counter-rotations. Attachment offsets remain saved constraint settings; these shortcuts key the underlying actor pose, not animated attachment offsets.
-
-
-
-
-
-## Vehicle parts and actor presets
-
-
-
-
-
-Select the bike in **Actors**, then open **Outfit**. Assign `Proto_Bike`, `PJX_BMX` or `PJX_MTB` to **Vehicle prefab** and click **Read equipped defaults / anchors**. This reads the first/default child in each vehicle equip slot, builds isolated renderer copies, and matches named anchors where available. The result reports how many mounts matched; other parts retain their authored prefab rest placement. Runtime equip logic, physics and procedural MTB suspension are not executed.
-
-
-
-
-
-Use **Add vehicle part** to assign a frame, fork, wheel or other part directly. **Driven by joint** chooses the animated joint. **Mount on part / Mount anchor** positions it from an earlier part's anchor at rest, then attaches it to the selected animated joint (so steering follows Bars_Joint). **Preserve model rest** retains model-space placement; disable it to use the joint's local space. Adjust position, rotation and scale, then **Apply vehicle outfit**. Part appearance never adds animation bones or modifies source prefabs.
-
-
-
-
-
-**Save selected actor presetâ€¦** stores the skeleton, character outfit, vehicle parts and handle layout in a reusable asset. Choose that asset and **Add from preset** to create an independent actor. Presets store setup, not motion or inter-actor constraints.
-
-
-
-
-
-The **Session** tab contains the current clip or saved take. **Selection** shows the selected actor's transforms first; actor setup and attachments remain in **Actors**. For the bike, enable **Edit handle layout** to move/rotate control graphics without editing animation. Layout offsets save with takes and presets. The original curve extraction omitted the Maya joint root's driven 35 cm height; the display now removes that extra offset. Preview construction also preserves the source root transform. Already sampled takes keep their saved root keys; reimport matching rider/bike clips if those keys were created with the old root handling.
-
-
-
-
-
-## Animation layers and human corrections
-
-
-
-
-
-Select an actor and open **Layers**. **Add correction layer + selected control** creates a layer above Base motion and includes the selected bone or IK control. Select other controls in the viewport/body diagram and use **Add selected bone / IK control to layer** to include them. Bone memberships cover their transform channels; IK memberships cover the target and required IK/FK blend. Removing a membership disables its contribution without deleting stored keys.
-
-
-
-
-
-Choose **Additive** for deltas relative to the underlying animation or **Override** for absolute values blended over it. Layer weight, Mute, Solo and Move earlier/later control evaluation. Solo keeps Base motion and the solo correction layers. The last enabled layer is the one to key; to edit a lower layer, mute the layers above it. Base motion keying requires correction layers to be muted. This avoids accidentally recording the visible correction stack back into the base or another layer.
-
-
-
-
-
-**Key on layer** in Selection chooses the editing destination. S, Shift+W, Shift+E and Auto Key write to that layer's assigned controls. The timeline shows the selected actor/layer's keys. Keys hold their first/last value outside their keyed range; add neutral keys around a correction to localize it. Layer weights are constant settings, not animated weight curves. Switching layers or changing layer settings resamples the pose, so key wanted edits first. Additive/Override changes resample existing layer channels at the take frame rate to preserve the result at those frames.
-
-
-
-
-
-**Human Â· Whole-clip rotation offsets** provides a mapped joint picker, Lift/lower or Bend, Forward/back or Side bend, and Twist sliders. Choose shoulders, upper/lower arms, spine, head or another mapped joint. The controls use axes derived from the character's rest orientation, with mirrored directions for left/right limbs. Offsets affect the entire clip, require no pose keys, and are additive rotations after that layer's keyed channels. Layer weight/mute also affect these offsets. Reset a joint to zero to remove its constant correction. Final IK and attachment constraints solve afterward and can restrict visible motion of pinned limbs.
-
-
-
-
-
-The take stores Base motion and each layer separately; Undo, saving and reloading preserve them. Normal baking and paired actor export sample the composed pose once into ordinary animation clips. Foot cleanup and endpoint tools operate on the base motion while retaining correction layers; endpoint captures that already contain corrections may need adjustment when reused. Actor presets remain setup-only and do not include animation layers.
-
-
-
-
-
-## Validation
-
-
-
-
-
-The implementation is compiled against Unity 6000.4.12f1. The isolated validation fixture exercises the real MashBox skeleton/body, optional Final IK bridge, deterministic pose evaluation, pinned feet and baked clip playback. It lives outside the SDK's runtime assemblies.
-
-
-
-
-
-
-
-
-
-
-
-## Dressing the preview
-
-
-
-
-
-Keep the current skeleton and take loaded. Change **Preview body / bust**, then use **Add clothing / skinned mesh** for shirts, trousers and other compatible skinned prefab/model assets. Click **Apply outfit** to rebuild only the appearance while keeping the working pose, camera and pose keys. The outfit references save with the take. Base textures, tints, texture transforms and standard alpha cutouts use fixed studio preview shading automatically; the Neutral preview material toggle switches to grey shading. This preview does not reproduce custom shader effects, metallic response or full HDRP lighting.
-
-
-
-
-
-Meshes must be skinned to compatible, uniquely named bones on this skeleton. Existing blendshape weights on the supplied prefabs are copied. Skinned pieces must fit the skeleton. Rigid hats and optional body cutouts are configured with Piece type as described below.
-
-
-
-
-
-## Viewport inspector
-
-
-
-
-
-The Animation Inspector is pinned to the viewport's top-right corner. Selection follows picked bones and IK controls and exposes local FK transforms or character-space IK targets, rig options and pose actions. Outfit and Clip tabs provide appearance, timing, import and bake controls beside the animation. Collapse the inspector with its header arrow for more viewport space. Numeric edits follow the same Auto Key setting as scene handles.
-
-
-
-
-
-
-
-
-
-
-
-## Outfit roles and body cutouts
-
-
-
-
-
-Each clothing slot has a **Piece type**:
-
-
-- **Skinned Clothing** maps to the skeleton. Enable **Cut body underneath** to remove covered body triangles in the preview. **Coverage distance (m)** defaults to 0.03 m; increase carefully for loose clothing.
-
-
-- **Body** marks extra skin meshes (for example a bust) as cutout targets. The main Preview body / bust slot is always a target.
-
-
-- **Hat** attaches the prefab's renderers to the Humanoid Head bone, with local Head offset, Head rotation and Hat scale. Gameplay scripts and colliders are not copied.
-
-
-
-
-
-Click **Apply outfit** after changing roles, offsets or coverage. Coverage is calculated once in the source pose by checking the clothing surface near body vertices, then conservatively removing triangles whose three vertices are covered. The displayed triangle count confirms the operation. Check cuffs/collars and test the animation: this geometric approximation can leave boundary slivers or hide exposed skin at excessive distances; it is not cloth simulation or a perfect automatic garment fit.
-
-
-
-
-
-Cutouts modify temporary mesh copies only. Skin weights, blendshapes, vertices and source meshes are retained. Disabling cutout or removing a garment and applying again restores the body. Roles and cutout settings save in the take. Exported animation clips contain motion only; hats and body masking must be configured separately on the gameplay character.
-
-
-
-
-
-Enable **Double-sided** on an outfit piece and click **Apply outfit** to show its inside faces in both textured and neutral preview shading. This setting saves with the take and uses temporary preview materials; source materials are unchanged.
-
-
-
-
-
-
-
-
-## Local motion generation
-
-
-
-
-
-Step transitions now include a two-foot anticipation phase before each lift, pelvis transfer toward the support foot, support-knee loading, a small torso counter-lean and a landing/settling phase. **Body weight shift** controls lateral pelvis/torso movement (default 0.8). These are kinematic animation cues, not a physical center-of-mass solver or learned transition model. Feet are solved after the body shift. Unchanged stances do not add artificial sway. Try 1.2â€“1.5 seconds per end for slower weight transfers. Use **Apply result to current take** again to rebuild from the raw generated result with the new transitions; older untracked transitions must be rebuilt from the raw result once.
-
-
-
-
-
-**Update current take** defaults on. **Apply result to current take** replaces the active take's motion, frame rate and length (including endpoint transitions), retaining its asset identity, character and outfit. Cleanup and endpoint matching also update the active take in this mode. Changes are undoable and saved through the existing deferred save system with no Save As prompt. Turn the toggle off to save separate take assets. Results are fully prepared before the existing take is modified. New step transitions track their added frame ranges, so applying them again replaces those ranges instead of stacking them. Older takes have no transition metadata: use Apply result to current take once to rebuild those from the raw generation.
-
-
-
-
-
-To source an endpoint directly from an animation asset, assign **Start animation clip** or **End animation clip**, choose **Sample time (seconds)**, then click **Use clip pose as start/end**. Embedded clips in FBX assets are supported. The sampled pose is stored as a snapshot; changing the clip or time requires clicking the button again. Humanoid clips use the selected character's avatar; generic clips require matching skeleton transform paths. Sampling runs in an isolated preview rig and does not replace the current take or working pose. The existing **Use start pose for end too** button also works with clip-sampled poses.
-
-
-
-
-
-The Selection inspector's **Body picker** selects individual humanoid joints, hands, feet, toes and elbow/knee targets; finger buttons select each mapped finger segment. Click a limb joint or IK target to expose its arm/leg IK blend. The current solver has four limb blends, not independent blends for every bone; torso and fingers remain FK. **Show IK** and **Show FK** control viewport visibility, **Fade by IK/FK blend** dims inactive controls, and **Hide inactive controls** removes them at zero influence. The diagram stays selectable when viewport controls are hidden. Visibility changes do not key poses. Blend edits follow Auto Key / S key behavior. Enabling a fully FK limb's IK blend first matches the current end-effector pose.
-
-
-
-
-
-**Start / end poses:** open an idle take and scrub to the desired pose, then use **Capture current as start** or **Capture current as end** in Generate. **Use start pose for end too** returns to the same idle. Captures are independent of the currently loaded take and include all local bone transforms, including hips position and orientation; different skeletons are rejected. **Step between stances** defaults on: adds a sequential two-foot transition at each captured end (default 0.9 seconds each), preserving all original dance frames. Adjust transition duration and foot lift. Use the original dance take with **Match current take to these posesâ€¦** to save a corrected copy; older untracked blends require rebuilding from the raw result. Turn stepping off for the original overlapping pose blends. Grounded, reachable poses on a flat floor are required; large ankle-height differences are rejected. Matching runs after import foot cleanup to preserve exact endpoints. Clear captures to import unconstrained motion. These are procedural steps or pose blends after generation, not AI pose conditioning: the installed HY-Motion sampler has no endpoint pose input. Large pose differences may require longer blends/manual cleanup, and exact pose matching does not guarantee matching idle velocity or foot contact through the transition.
-
-
-
-
-
-On the private Generate panel, **Plant feet on import** is enabled by default. It detects sustained low, slow ankle motion after retargeting and bakes position corrections into FK keys, preserving root travel and authored foot rotations. **Clean up feet in current takeâ€¦** saves a separate corrected copy of an existing take. **Contact sensitivity** controls the maximum speed treated as contact; reduce it for intentional shuffles or increase it cautiously for sliding. Contacts blend in and out; leg reach limits still apply. This heuristic is for a flat floor and does not infer stairs or guarantee perfect contact. Leave **Keep motion in place** off for travelling dances; removing root travel can introduce sliding.
-
-
-
-
-
-The viewport inspector's Generate tab launches local text-to-motion (HY-Motion Lite, CUDA) or video pose capture (MediaPipe, CPU on Windows). Generate, then Import result as a new take; FK/IK editing and baking remain available. Install the separate Tools/MotionGeneration environment in the Unity project, or locate it with Local tools. No prompts or videos are uploaded. Cancellation and progress run without AssetDatabase refreshes.
-
-
-
-
-
-HY-Motion has territorial restrictions on its model AND outputs (including the EU, UK and South Korea); read its upstream license before using generated content. The video option estimates grounded, in-place body motion only. See Tools/MotionGeneration/README.md for setup, licensing, model limitations and validation. Model weights and Python dependencies are not included in the SDK package.
-
-
-
-
-
-
-
-
-
-
-
-All actor controls: the toggle above the viewport inspector tabs shows selectable rig controls for every actor. Clicking a control selects its actor for transforms and keying. Turn it off to show controls only for the selected actor. Existing IK/FK visibility and blend fading still apply.
-
-
-
-
-
-
-
-
-Timeline key editing: Shift-drag selects an inclusive frame range. Right-click for Copy, Delete, or Paste at the clicked frame. With timeline focus, Delete removes selected keys, Ctrl+C copies, and Ctrl+V pastes at the playhead. Paste preserves spacing and replaces existing keys at matching frames. Clipboard is limited to the same actor and layer; base motion retains at least one key. Layer keys can be deleted completely. Undo is supported for edits.
-
-
-
-
-
-
-
-
-AI in-betweens (private workstation): Shift-drag a timeline range, right-click Generate AI in-betweens, then choose Add result as override layer in Generate. Pose-only Kimodo runs locally on CUDA with endpoint/neighboring-pose conditioning and contact correction. Intervals are 0.2â€“7.8 seconds; no timeline duration is added. The generated layer preserves endpoints and affects only the selected interval. Source animation must remain unchanged until import. This first version requires a Humanoid actor without active attachment constraints or layer Solo; it does not generate vehicle motion or accept text prompts. Review feet after retargeting. Details and reproducible validation are in the local Tools/MotionGeneration/README.md.
-
-
-
-
-
-
-
-
-Rig selection: Lock actor meshes (above the inspector tabs) defaults on. Drag empty viewport space to marquee-select visible rig controls; Shift-drag adds, Shift-click toggles controls, and clicking empty space clears. All actor controls enables selecting across actors. W/E manipulate the group (rotations use each control's own pivot; bike axes stay constrained). Shift+W/Shift+E key the selected channels on each actor's current layer. Add selected controls to layer uses members of that layer's actor. Unlock meshes to restore Unity mesh selection. Hidden controls are excluded from marquee selection.
-
-
-
-
-
-Modeling wireframes stay visible on all visible meshes, including unselected meshes and while using component or cut tools. Object wireframe edges use cached GPU position/index buffers, one draw per visible mesh, with unlit antialiasing at 1.25-pixel nominal width. In object mode, all visible polygon edges of selected objects use the amber component-selection line style at 1.2-pixel nominal width, including when regular object wireframes are hidden. Selected edges share the batched wire renderer and its surface depth testing; no separate silhouette pass is used. Camera movement and object transforms reuse the buffers; mesh edits upload changed positions, and topology changes rebuild and dispose the affected buffers. A small viewing-ray offset and adjacent-face depth correction across the expanded stroke prevent surface depth fighting at close and shallow camera angles without shifting the screen position. Line width and edge coverage are computed on the GPU without per-edge editor calls, per-frame CPU line expansion or fragment-depth reconstruction. The native editor outline path remains a fallback on unsupported graphics hardware. Shaded Wireframe and Wireframe use the Studio edge renderer without a native Unity wire overlay; Wireframe-only suppresses surfaces so the grid and rear edges remain visible. Normal display retains back-facing edges and depth-tests outlines and component overlays against visible surfaces, so edges show through openings but not through solid faces. **Alt+X** toggles **X-ray Mode**: preview meshes become transparent and all edges draw at full opacity through surfaces. Toggle it in **View**, or remap it in **Edit â†’ Preferences**. Saved materials are unchanged. Through Selection controls picking independently of display. The Object wireframe toggle controls regular edges; object-selection highlights and active component overlays stay visible. The mesh-statistics HUD shows scene totals on the left and the current selection on the right. Object mode counts selected objects and their children. Vertex, edge and face modes count only selected components and their geometry; a selected face includes its boundary vertices/edges, render triangles and UV corners.
-
-
-
-
-
-The small stats icon at the top right of the modeling viewport toolbar toggles a compact workspace FPS box. It tracks actual viewport renders over a half-second sample, rounds up to whole FPS, and follows the Channels/Tool Options column when resized. The FPS box never requests frames itself and retains its last reading while idle; idle gaps are excluded from the next sample.
-
-
-
-
-
-Studio requests redraws from explicit dirty state: user action â†’ mark affected state dirty â†’ invalidate dependent overlays/UI â†’ request a native Unity repaint. **Cache unchanged viewport** in Studio Preferences reuses the last modelling scene/overlay image on unchanged repaints, including shared redraws requested by other Unity views. Selection, component previews, geometry, visibility, camera/lens and viewport-size changes invalidate it; native input/layout events always run. Active handle/camera drags render natively without copying cache textures. Unity's own scene-color and premultiplied-overlay materials preserve brightness and line appearance. The FPS box shows **Cached (idle)** while reusing the image. Turn the option off for the full native rendering path. The neutral modelling preview skips HDRP lighting, reflection, fog and motion-buffer passes that its preview materials do not use. Enabling Studio lights restores the lighting path. Camera overrides update when lighting or AA settings change; stable hierarchy traversal, labels and visibility tooltips are reused until their inputs change. Studio imposes no FPS cap or rendering timer. **VSync** applies only to Studio's host window. Unity's global Preferences â†’ General â†’ Interaction Mode can independently throttle editor updates (16 ms corresponds to roughly 63 FPS); No Throttling removes that interval. Scene and Game views retain their own refresh behavior and asset-import updates.
-
-
-
-
-
-Moving, rotating, or scaling mesh components updates existing outline and component-overlay position buffers instead of rebuilding scene-wide topology. Only statistics for the edited mesh are invalidated; object transforms retain mesh counts. Outlines use connected native AA polyline batches, bounded to 4,096 points per call, with reusable world-position and stroke buffers. Every source edge is retained; disconnected trails and separated seams are submitted separately. Topology edits and Undo still rebuild the affected mesh data as required.
-
-
-
-
-
-Workspace files include their editable meshes and retain references to project materials and textures. New workspaces, Save As, autosaves and reopen all use the project-root MashBoxStudio/Workspaces folder; workspace files are not imported into Unity's AssetDatabase. Saves replace the previous file atomically after serialization succeeds.
-
-
-
-
-
-Workspace storage format v1 uses compact, uncompressed UTF-8 JSON with the `MashBoxStudio.Workspace` format marker. Geometry is stored as numeric text arrays, without Unity's native mesh headers or hexadecimal vertex-buffer dumps. Identical geometry payloads are stored once; separate mesh-instance records retain independent editable objects on load. Optional attribute tuple maps and per-mesh numeric dictionaries reduce repeated values without welding vertices, merging UV seams, or reducing float precision. When a mesh has a nonempty `numbers` table, its float-buffer entries are integer indices into that table; optional `vm`/`nm`/`tm`/`cm` and UV `map` arrays then expand repeated attribute tuples. Empty maps/tables mean direct values. Submesh index arrays remain direct integer vertex indices. Float numbers use round-trip single-precision notation; asset local IDs retain 64-bit integer precision.
-
-
-
-
-
-Transforms, hierarchy, visibility, anchors, lighting, editable polygon boundaries, all eight UV channels (including their dimensions), vertex colors/AO, skinning influences/bind poses, mesh blend-shape frames and live modelling blend snapshots are retained. Project materials use asset references; exceptional transient materials/textures remain self-contained in an embedded text resource section. The workspace stores the current editable state, not a persistent action/undo history. Legacy native workspaces still open and upgrade on their next save; the original is retained as `<name>.workspace.legacy.bak`. Saves remain atomic, unsupported format versions and malformed geometry are rejected, and no workspace is created inside Assets. The format stays plain text and can be compressed by standard archival tools; saves do not automatically turn it into a binary/compressed file. This storage change does not establish a high-poly viewport/editing performance limit.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Object move, rotate, scale and ordinary numeric-channel Undo/Redo restore the existing preview transforms without rebuilding the scene or re-uploading unchanged wireframe geometry. Geometry-changing operations, including pivot compensation, retain the full restore path. Mesh dirty versions and preview hierarchy identity guard the transform-only path.
-
-
-
-
-
-
-
-
-## Editable polygon topology
-
-
-
-
-
-Studio stores actual triangle, quad and n-gon boundaries separately from its render triangle buffers. Modeling edges, face selection, wireframes and cut adjacency use those boundaries. A real triangle keeps all three edges; only the extra diagonals derived to render a quad or n-gon are excluded. Deforming a quad preserves its face identity, and workspaces save the polygon boundaries. Quad-strip traversal follows four-sided faces and stops at triangles/n-gons.
-
-
-
-
-
-New primitives record their intended topology directly: cube/plane faces and sphere/cylinder bands are quads, while sphere poles and cylinder cap fans retain genuine triangle faces. New scene/model/FBX drops automatically convert suitable triangle pairs into editable quads when the mesh is triangle-only. Candidates must be convex and near-planar with well-shaped corners; material boundaries, separate vertex/UV seams, sharp folds and unmatched triangles remain intact. Native mixed triangle/quad topology is preserved. Render triangles, vertex attributes, source assets and importer settings are unchanged, including base-vertex offsets. Auto-quad is a conservative conversion, not guaranteed recovery of polygons lost during upstream triangulation. Existing workspaces retain their saved topology; legacy meshes without metadata retain their previous inference behavior.
-
-
-
-
-
-## Edge bevel
-
-
-
-
-
-In **Edge mode**, select polygon edges and choose **Mesh Tools â†’ Bevelâ€¦**. The compact **ToolChannelPane** supplies:
-
-
-
-
-
-- **Width offset** (minimum 0, default 0.1): distance in mesh-local model units. Values above 1 are allowed. Nearby short edges do not normalize the value. Zero is a no-op; clipping handles supported local topology changes, while compatibility paths retain geometric event limits.
-
-
-- **Subdivisions** (0â€“32, default 1): the number of internal profile loops. Zero produces one chamfer strip; one produces two strips.
-
-
-- **Profile tension** (âˆ’1â€“1, default 1): zero gives a straight chamfer, positive values bulge toward the original sharp edge, and negative values inset the profile.
-
-
-- **Intersect junction style**: **Grid (Uniform)** connects matching subdivided profiles through a rounded junction. Two incident beveled paths connect sample-to-sample; three or more form adjoining quad grids. Even profile segment counts meet at a shared center; odd counts retain one central polygon and connect it with subdivided quad strips. These are real editable polygon boundaries, not render triangulation edges.
-
-
-- **Cap (N-gon)** keeps each non-coplanar junction as one face without interior fan vertices or radial subdivision; users can retopologize it later.
-
-
-
-
-
-**Zero subdivisions always makes a flat chamfer**, with no extra junction grid. Single-edge planar ends merge into the adjacent original face; regular multiple-edge junctions share and heal their profile boundaries. Profile controls follow the inset endpoint cross-sections instead of pulling back along the old edge toward its original vertex. Corner curvature follows the profile tension, including linear and concave profiles. The source asset and existing bevels are not rewritten; undo/reapply a previous bevel to obtain the corrected junction geometry.
-
-
-
-
-
-Values become the saved defaults for subsequent bevel operations. The pane retains its standard sensitivity control. **Apply** runs one operation and retains the pane; **Execute** runs it and closes the pane. Each operation has grouped Undo/Redo and selects a resulting longitudinal edge for each source edge; editing a parameter previews the current operation immediately from its captured source mesh.
-
-
-
-
-
-The geometry pass maps polygon half-edges across coincident render vertices, offsets the affected face boundaries, builds profile strips, and orders and seals the resulting vertex-corner loops. Coincident junction points are welded in geometric space. Straight, subdivided profile ends split adjacent face boundaries instead of leaving T-junctions or zero-area caps. Render vertices remain split where UVs, colors or normals require a seam. Polygon metadata and smoothing groups are stored with the workspace and mirrored across nodes sharing the mesh.
-
-
-
-
-
-Existing material slots, vertex colors and all eight UV channels (including their dimensions) are retained. New surface attributes interpolate from incident faces; new bevel surfaces may still benefit from a subsequent UV layout. Normals are calculated from the profile and corner geometry, original face normals are interpolated, and tangents regenerate when UV0 exists. Large output switches to 32-bit indices.
-
-
-
-
-
-Selected edges must have two consistently oriented incident faces on an editable static mesh. Incident polygons must be planar. Selected boundary edges, non-manifold/disconnected affected fans, skinning and live blend shapes are rejected. Interior edges ending on a regular open boundary remain supported. Collision limiting protects the local wavefront; unrelated-surface intersections and post-collision topology merging are outside the current solver.
-
-
-
-
-
-
-
-
-## Modeling toolbar and tool-pane workflow
-
-
-
-
-
-The native **Selection Modes** toolbar contains Object, Vertex, Edge and Face radio buttons. On a fresh layout it docks first in the top toolbar, before Grid and World & Local; Unity retains saved placements. The buttons follow keyboard/menu changes and retain the current 16px/24px toolbar sizing. **Display** populates visibility toggles from the native overlay canvas for every registered Studio toolbar, including hidden toolbars and World & Local. New Studio toolbar overlays need no separate menu registration.
-
-
-
-
-
-**Extrude** is in **Mesh Tools**; selection modes are also accessible through Select and their existing shortcuts. Edit Mesh contains Edit Edge Flow; Extrude stays in Mesh Tools.
-
-
-
-
-
-All **ToolChannelPane** tools share a padded footer outside the scrolling fields: **Apply** executes while keeping the pane open, **Execute** executes then closes it, the header **X** or **Escape** cancels the unapplied preview. There is no Close footer button. A failed Execute leaves the pane open. Merely changing focus does not dismiss a pane. Completing a pending preview by selecting again or starting another editing action closes its pane. Object mode closes active and idle tool panes; Apply retains its pane. Applied operations remain ordinary Undo/Redo actions after closing the pane. Bevel, Extrude and Soften use this shared command infrastructure; future tools can supply an execute action and a selection-validity predicate when opening their pane.
-
-
-
-
-
-
-
-
-Hierarchy eye buttons: **Alt-click** isolates the clicked item and its branch. If the clicked item belongs to a multi-selection, its selected group is isolated. Alt-click the same eye again to restore the exact prior visibility, including objects that were already hidden. Alt-click another eye to switch the isolated target while retaining the original restore state. Ordinary eye clicks remain Show/Hide, and visibility changes support Undo/Redo. The list uses a lightly inset themed background. Selection-mode icons retain their enlarged geometry with blue component highlights.
-
-
-
-
-
-Standalone fallback ToolChannelPane windows stay above their Studio host without taking keyboard focus back when you work in the viewport. On Windows this preserves the existing compact borderless header through native window ownership; other platforms use Unity's native utility window host.
-
-
-
-
-
-
-
-
-Planar bevel terminations merge into the adjacent original face: the profile curve becomes part of that face's n-gon boundary, with no artificial straight divider or separate coplanar end-cap polygon. This retains each profile endpoint, the receiving face's materials/UVs/normals and seam closure. Curved multi-edge grid junctions remain editable grids; unrelated source-face boundaries are preserved. Existing bevel geometry requires undo/reapply for this change.
-
-
-
-
-
-
-
-
-Mesh tool parameters in **ToolChannelPane** now preview as you type or scrub: **Bevel**, **Soften Edges**, and **Extrude**. Apply commits one Undo step and keeps the pane open; Execute commits and closes it. Header X/Escape cancels only the unapplied preview, retaining previous Applies. Edits always evaluate from the operation's captured starting mesh rather than repeatedly beveling or extruding the result. Switching selection or starting another editing action commits the current valid preview; Undo inside Studio cancels an unapplied preview before stepping through committed history. Invalid parameters leave the last valid preview visible and cannot be applied.
-
-
-
-
-
-Extrusion preserves the authored render triangles of existing faces and selected caps, triangulating only the new walls. This allows local extrusion on imported preserved-quad meshes without retriangulating unrelated faces; editable polygon boundaries remain separate from rendering.
-
-
-
-
-
-**Mesh Tools → Extrude** (or its assigned shortcut) opens live extrusion options in ToolChannelPane. Extrude controls are not shown in mesh object Channels, including Edge and Face modes. Normal distance defaults to **0.01** for a small visible opening preview; entering zero leaves the source unchanged. Keep Faces Together remains available in the Face-mode tool pane. Existing Shift-drag handle extrusion remains available. Extrusion parameters, like the other pane attributes, become the saved tool defaults; existing personal defaults are preserved.
-
-
-
-
-
-The shared preview transaction captures only affected meshes and retains the live Mesh and scene-object identities. Parameter events coalesce into one pending one-shot EditorApplication.update callback, removed before evaluation, with no idle polling or rendering timer. Extrusion distance changes reuse expanded topology; bevel reuses immutable source adjacency. Unchanged index layouts upload vertex streams and refresh existing wire/component position buffers; topology changes invalidate only affected geometry caches. Normals, UV dimensions, polygon metadata, shared meshes, cancellation and Undo are retained. Large topology rebuilds still cost more than distance-only edits; interactive performance depends on selected geometry and subdivisions.
-
-
-
-
-
-
-
-
-## Bounded modeling Undo history
-
-
-
-
-
-**Edit → Preferences → Maximum undo actions** sets the per-user Studio modeling history limit. The default is **50**, the minimum is **1**, and any positive 32-bit integer is accepted. The field commits on Enter/focus change, so typing a replacement does not prematurely prune history. Older preference profiles inherit 50; the value survives reload and Restore MashBox Studio Defaults restores 50.
-
-
-
-
-
-The limit covers retained Studio Undo and Redo actions together. A complete handle drag, channel edit, UV gesture, or grouped tool operation counts as one action. Lowering the limit discards the oldest retained Studio records; raising it cannot recover records already discarded. Starting a new edit after Undo abandons that redo branch normally. Unapplied live mesh previews do not create history entries.
-
-
-
-
-
-`StudioUndo` uses Unity's native complete-object history with a tiny per-action identifier as the first recorded object. Trimming clears only those identifiers and releases their native snapshots; it does not call global ClearAll, change Unity's history preferences, or delete unrelated scene/animation history. Group metadata survives assembly reload through SessionState. This applies to modeling documents/meshes/channels, UVs, lighting/material edits, AO, and foliage rebuilds routed through the shared history facade. New modeling Undo call sites must use the same facade rather than bypassing it.
-
-
-
-
-
-The budget applies to tagged records created after this implementation becomes active. Pre-existing untagged Unity history is not retroactively erased. This is an action-count budget, not a RAM-size guarantee: large meshes can still make an individual snapshot expensive, and retained workspace meshes/materials are separate from Undo storage. The main benefit is bounded history memory; FPS improvements depend on the workload.
-
-
-
-
-
-## Preferences and portable shortcuts
-
-
-
-
-
-All durable Studio configuration uses `StudioPreferenceStore`. Initial files live outside Assets in `<Documents>/MashBoxStudio/`; loaded personal profiles can also live elsewhere:
-
-
-
-
-
-- `Profiles/Settings.json` and `Profiles/Hotkeys.json` are the initial personal files. Existing contents are retained. Settings include themes, tool values/sensitivities, panels, display/selection options, animation controls, recent files/mode and window bounds; hotkeys remain separate.
-
-
-- `State/LastLoaded.json` independently records `settingsFile` and `hotkeysFile`. Files under Preferences use relative paths; other selected files use absolute paths. Startup/domain reload reads these selections. Missing selected files fall back to the initial personal file with a warning, retaining the remembered path for recovery.
-
-
-- `Defaults/Settings.json` and `Defaults/Hotkeys.json` are generated factory presets. Only these files are regenerated from code defaults. They never capture current user colors, tool values or assigned bindings. The default hotkey catalog expands when modeling menu metadata registers; Bevel and Shaded Wireframe defaults are included even before that catalog exists.
-
-
-- **Import Settings** and **Import Hotkeys** load/select the chosen file and remember it, instead of copying over a fixed personal file. Edits save to the active file shown in Preferences. Importing either kind leaves the other active file alone. **Export** writes an independent snapshot and does not select it. Settings exports contain settings only; hotkey exports contain all current resolved action bindings.
-
-
-- Loading/reloading does not rewrite an existing profile or persist fallback values. Hotkey reload preserves entries for unregistered commands, including legacy dynamic IDs without command paths. Factory files load read-only; the first edit creates a unique `Profiles/Custom_Settings.json` or `Profiles/Custom_Hotkeys.json` (numbered if occupied), leaving presets and other personal files intact.
-
-
-
-
-
-Legacy EditorPrefs are read only for first-file migration; subsequent files take precedence. Actual settings changes debounce for 0.4 seconds and flush on close/reload/quit/export; hotkey edits save immediately. Writes use atomic replacement and a `.bak` backup. Imports validate before selecting their path; invalid input leaves configuration and remembered paths intact. Failed pending settings saves block switching files. Importing settings closes tool panes/cancels unapplied previews, reloads tool caches and reapplies open Studio configuration without writing the imported file during application. Import/reset does not change PlayerSettings.gcIncremental.
-
-
-
-
-
-Standard defaults are Ctrl/Cmd+B for Bevel and BackQuote (also Shift+BackQuote/tilde) for Shaded Wireframe. Their existing command IDs are unchanged. Explicit overrides/unassignments win; a new default yields when its chord is already explicitly assigned elsewhere. Other new commands remain unassigned unless given a declared default.
-
-
-
-
-
-Only one ToolChannelPane is open at a time. Opening another closes the previous pane with its existing cancellation semantics (earlier Applies remain). Every tool reuses the shared bounds, respecting its own minimum size. Native Windows ownership continues to keep the pane above Studio. Normal floating Studio bounds and last mode restore when opening Studio normally; explicitly opening a take or model still selects its corresponding mode. Unity owns the placement/sizing of docked host tabs in its global editor layout; Studio preserves its last floating bounds separately.
-
-
-
-
-
-Workspace meshes, lighting/material/document data, takes, and actor assets remain authored files, rather than preferences. Native Undo identifiers, clipboard contents and running-job process state remain session-only. They must not be exported as portable user configuration.
-
-
-
-
-
-Sources: `Editor/StudioPreferenceStore.cs`, `StudioSettings.cs`, `StudioShortcuts.cs`, `AnimationStudioPreferences.cs`, viewport `.Window.cs`/`.Panels.cs`/`.Toolbars.cs`, `ToolChannelPane.cs`, and the migrated Studio EditorPrefs callers.
-
-
-
-
-
-
-
-
-
-
-
-Preferences hover updates are driven by mouse-move and mouse enter/leave events. Only the Preferences utility window requests a repaint; hovering does not import/export or write configuration and does not start an idle repaint loop. Preferences and ToolChannelPane share `StudioWindowOwnership` for native ownership above the Studio host on Windows. This is scoped to the Studio window rather than a global topmost flag or repeated focus-stealing callback.
-
-
-
-
-
-## Unified modeling command and shortcut registry
-
-
-
-
-
-All executable top-menu entries except Display register automatically in Preferences, grouped by menu category, including disabled actions. Display controls stay in their menu/toolbars and do not register shortcut rows. Recent-file navigation, Preferences, Themes, Lighting Settings, vehicle-part creation and Create Foliage Morph Set are also excluded. Menu declarations mark UI-only entries with shortcutEligible: false; actual working tools such as Bevel, Soften options and the UV editor remain eligible. World/Local lives in its toolbar; the duplicate Modify > Local Axes entry is removed. This includes Bevel, Merge to Center, Target Weld, Insert Edge Loop, Multi-Cut, primitives, UV commands, display toggles, and lighting actions. New commands start unassigned unless they declare a standard default; Merge to Center defaults to M and retains the former merge command ID. Existing custom bindings remain authoritative. Expand a category or search to find a command. A remapped command executes the same callback and availability checks as the menu item. Soften and Soften options have separate bindings.
-
-
-
-
-
-Menu declarations are the source of truth: use a categorized `StudioMenu` and its normal AddItem/AddDisabledItem calls. Metadata and key lookup are cached; callbacks are rebuilt for the affected category only when a shortcut executes. No idle catalog rebuild or new action enum entry is required. Eligible dynamic labels should supply a stable commandKey. Recent-file navigation is not registered. Hotkey JSON retains stable command paths and IDs through independent import/export.
-
-
-
-
-
-Numeric drag sensitivity cycles .1x, 1x, 2x, 4x. Fill grows clockwise from the top-left quarter through the top half; fuller means faster. Channels and ToolChannelPane use the shared control.
-
-
-
-
-
-Configuration import/export dialogs are queued after the Preferences GUI event, so native file dialogs do not interrupt open IMGUI layout groups. All four transfer buttons share this path.
-
-
-
-
-
-The Grid toolbar visibility entry is Display > Toolbars > Grid. Mesh Display has no Grid entry; the toolbar button controls viewport grid visibility.
-
-
-
-
-
-Automatically discovered toolbar visibility controls are grouped under Display > Toolbars. Viewport Shading names the wireframe/shading/lighting/texture toolbar. Labels come from each Overlay declaration, so old saved layout titles cannot override current names; stable IDs preserve docking/visibility. Duplicate IDs are listed once, and slash characters in toolbar names remain literal leaf text. These entries are excluded from keyboard shortcuts.
-
-
-
-
-
-Modify groups Select, Move, Rotate, Scale, Edit/Lock Pivot, Center Pivot and Freeze Transforms. Future reset-transform, pivot-zeroing and alignment commands belong here. Mesh Tools contains geometry operations only; UV Editor appears only under UV. The existing Q/W/E/R binding IDs and overrides are preserved when regrouping commands.
-
-
-
-
-
-Create Foliage Morph Set is under Create in its own separator-delimited section above Empty Transform, Empty Child and Anchor Point. It remains excluded from keyboard shortcuts. The now-empty Mesh top menu is removed.
-
-
-
-
-
-While the shortcut recorder has keyboard focus, Unity shortcut dispatch is temporarily suspended so combinations such as Ctrl+B are recorded without invoking Unity menu actions. Previous dispatch state restores on completion, cancellation, focus loss and assembly reload; Unity shortcut profiles are unchanged. Keyboard input is consumed before recorder GUI controls, including modifiers, releases, and command events.
-
-
-
-
-
-Save and Save As preserve the modeling viewport camera. Save As adopts the new document in the existing editor/preview scene without Bind or Frame; opening a workspace retains its normal framing behavior. This also covers the first Save of the temporary workspace.
-
-
-
-
-
-New/empty workspaces and fresh Modeling Studio openings start in perspective at the grid origin, pitched down 37 degrees with 38-degree Y rotation from 10m away; SceneView framing size accounts for its configured field of view. Empty-view framing uses this same default, while Save/Save As continue preserving the camera.
-
-
-
-
-
-Studio recalls the selected Modeling/Animation mode through reload/reset. Window persistence reads the serialized mode flag, never temporary modeling-editor availability; focus/layout events during teardown cannot save Animation merely because the modeling preview was released.
-
-
-
-
-
-Scene binding preserves existing camera rotation. Fresh viewport initialization frames the Modeling scene once, and re-opening/rebinding an existing Studio does not reframe it. Modeling openings do not apply animation-rig bounds. Host migration retains its explicit camera restoration.
-
-
-
-
-
-Shortcut recording retains its focus/dispatch guard through the primary key release. A valid press is staged, the release is consumed, and recorder closure is deferred beyond that input event; Unity shortcuts are restored afterward. This avoids restoring native menu accelerators while processing the recorded chord. Conflicts remain open and guarded.
-
-
-
-
-
-Mesh statistics use only the Scene and Selected columns; the redundant Selected vertex/edge/face footer is removed.
-
-
-
-
-
-Focused ToolChannelPanes share the shortcut recorder focus guard. The pane root intercepts modified keys before IMGUI/global dispatch, while fields retain text editing shortcuts. Undo/Redo are routed to Studio history after GUI drawing completes; unapplied previews cancel first. Native Undo during a preview disposes it and rebuilds from restored document state instead of refreshing stale render caches.
-
-
-
-
-
-On/off commands must toggle on repeated menu/shortcut presses. Shaded Wireframe toggles with Shaded; Wireframe-only toggles back to Shaded Wireframe, matching the toolbar. All shading inputs share SetModelDrawModeEnabled; fixed state setters remain available for initialization. Ordinary operations execute once per press; selection/tool mode choices retain their explicit behavior.
-
-
-
-
-
-The gray free-rotation center sphere works in World orientation as well as Local. World object rotation distinguishes the center sphere's per-event increments from axis rings' total drag rotation; repeated movement no longer cancels or jitters.
-
-
-
-
-
-Bevel width changes evaluate cached straight-skeleton trajectories. The earliest collapse/split event sets the collision limit before draft construction; repeated half-width retries and bisection are removed. Invalid profile/junction construction fails before publication. See BEVEL_ENGINE.md for scope and remaining work.
-
-
-
-
-
-Bevel completion clears selected edges while retaining the active object and Edge mode. Apply keeps its pane open; select edges again to start another bevel. Preview still shows selected result edges, and cancellation restores the source selection. Bevel uses model-unit offsets and shared junction constraints; an earlier short edge no longer normalizes the requested width. Disconnected constrained regions retain independent miter budgets.
-
-
-
-
-
-Studio auxiliary windows share its lifetime through StudioWindowOwnership. Closing Studio closes registered tool/settings windows; hiding or minimizing its native owner chain explicitly hides them through process-scoped Windows events and restores only automatically hidden panes without activation. Pending tools survive minimization. Managed ownership/hidden flags are session-only; native handles are transient. Viewport-owned modeling ToolChannelPanes use embedded Tool Options; standalone fallback retains its borderless utility container. Production compilation, 12 managed lifecycle checks and 14 isolated native visibility checks passed; actual working-Studio minimize/restore remains unconfirmed. See Tests~/README.md for verification limits.
-
-
-
-
-
-Straight-skeleton wavefront integration (2026-10-22): the user rejected further local endpoint patches and explicitly requested an established bevel foundation. Editor/StudioMeshCuts.BevelWavefront.cs now uses the MIT-licensed Briganti Unity straight-skeleton wavefront kernel, vendored under Editor/ThirdParty/BrigantiStraightSkeleton at upstream commit 2d26dc6fe1ff1f08f12305625ab54fd46e12d1ea. Local extensions support weighted and stationary boundaries. Selected edges move as parallel face-plane lines; unselected boundaries remain stationary. Corners follow intersections of those moving lines. Distinct face-plane cuts on a shared edge retain separate identities, with matching subdivisions inserted along retained edge spans before the existing strip/corner stitching. A single-segment chamfer now uses its geometric flat normal rather than curved-profile endpoint normals.
-
-
-
-
-
-The immutable source/selection caches trajectories and the earliest edge-collapse or reflex split event. Width edits evaluate this cached plan; topology/selection changes reconstruct it. Width is now a mesh-local propagation distance, without shortest-edge normalization or a maximum of 1. Eligible clipping/profile construction updates its local topology through clipping events and respects the actual unaffected-patch interface; unsupported compatibility paths retain first-event stopping. The old repeated half-width draft retries and bisection fallback are removed. Atomic inset validation remains; an unsafe profile/junction reports an error instead of silently substituting a smaller shape. Planar source faces use their own charts; incident non-planar polygons now use local authored-triangle charts as detailed under Imported frame bevel and component-drag correction. Face coordinates are normalized to approximately 0..100 for upstream floating-point predicates.
-
-
-
-
-
-Scope is deliberately precise: this replaces offset construction and collision limiting with an actual straight-skeleton wavefront interval. It clamps immediately before the first event. Beyond the proven source-edge contact transaction, it does not advance the 3D mesh through general collapse/split events or implement global post-collision topology merging. Existing profile interpolation, Grid/Cap junction generation, attribute transfer and publication remain. It is not a global 3D straight-skeleton solver or global self-intersection solver. Rounded high-valence junction construction is still the existing implementation. Offsets now use mesh-local model-unit distances; object-scale compensation in world space is not implemented. Do not describe the entire bevel engine as a complete full-featured replacement. See BEVEL_ENGINE.md for the architectural analysis and remaining work.
-
-
-
-
-
-Validation: production compilation passed with the pre-existing CS1701 reference warning. Final disposable checks passed 27 analytic event/high-valence collision-clamping cases (including manifold pyramid seams at 20 widths), 15 independently applied sequential-bevel edge cases with zero rail skew and zero warped faces, and 196 representative selection/attribute/manifold/width-continuity cases. Cached plan identity is checked across 100 cube width evaluations. Timing below is computation/publication only, excludes rendering/input, and is not an FPS claim. An isolated shading render fixture produced inconclusive uniform shading despite distinct CPU normals; no successful native viewport/shading verification is claimed. User visual verification remains pending. No desktop input was used; disposable test editors exited.
-
-
-
-
-
-Final run: Cached cube evaluations mean ms=2.997 (geometry/publication only)
-
-
-
-
-
-Architecture, upstream attribution and remaining implementation work: [BEVEL_ENGINE.md](BEVEL_ENGINE.md).
-
-
-
-
-
-
-
-
-ToolChannelPane modal workflow correction (2026-10-22): the user confirmed Apply must keep the pane open and Execute must close it. The redundant Close footer button is removed; header X and Escape still cancel only the unapplied preview. All modeling state repaint requests also invalidate the editor's open live-tool panes, so selection-dependent Apply/Execute availability is redrawn without waiting for pane hover. This is event-driven and adds no idle polling or repaint loop.
-
-
-
-
-
-Reopening Bevel, Extrude or Soften with an existing pane queues a preview for the current selection, using the current stored parameter values, instead of only focusing the pane. Modal menu commands defer preview completion to their tool handler, so invoking the same tool does not first commit its preview and clear its selection. Apply commits through CommitLiveTool(false), preserving the pane. Execute closes through its existing successful-command path. Implicit completion from selection changes or non-tool editing actions closes the completed pane after releasing its preview state. Deliberate tool changes complete valid pending previews and cancel invalid ones as documented in the final 2026-11-04 gizmo/completion correction. Object mode explicitly closes all live modeling tool panes, including idle panes left after Apply; an invalid pending preview is canceled on that mode transition. Bevel still clears edge selection after committing and retains the object.
-
-
-
-
-
-Validation: production compilation passed (existing CS1701 warning). Tests~/StudioModalPaneValidation.cs passed 16 focused assertions in a disposable graphics-capable Unity editor: first preview, Apply retention/selection clearing, new-selection eligibility, repeat command queuing/evaluation without parameter changes, Execute closure, implicit completion, Object mode with active/idle panes, and cancellation of invalid preview on Object mode. The test checks immediate availability predicates and lifecycle; actual mouse-hover repaint timing was not physically tested. No desktop input automation was used; the disposable process exited. Existing shortcut shield and deferred Undo callbacks are unchanged.
-
-
-
-
-
-Fine ToolChannelPane dragging correction (2026-10-22): the user reported chunky Bevel Width scrubbing at 0.1x and then confirmed the applied fix works. StudioDragSensitivity.DragScope previously scaled Event.delta before Unity's native numeric field handled it. Native floating-point fields still rounded increments using their original drag sensitivity, discarding small movements. The shared scope now temporarily scales EditorGUI's cached numeric drag sensitivity, so native floating-point rounding precision follows the selected ratio too. Mouse delta is left intact on supported editors. The original native sensitivity is restored on scope disposal, including consumed events; typed input and unrelated windows retain their normal behavior. Reflection metadata is cached once and guarded by field existence/type; older incompatible editor implementations retain the prior delta-scaling fallback.
-
-
-
-
-
-All ToolChannelPane numeric content uses this shared scope; the reported Bevel field does not have a special-case scrub implementation. Integer fields remain discrete native integer controls; no new fractional integer accumulator was added. Production compilation passed with the existing CS1701 reference warning. The user's confirmation establishes the reported interactive width problem is fixed; no additional automated UI/performance suite was run for this correction. No desktop control or extra Unity test process was used. Unity's reference explains the sensitivity-based rounding: https://github.com/Unity-Technologies/UnityCsReference/blob/master/Editor/Mono/EditorGUI.cs (DragNumberValue).
-
-
-
-
-
-Modeling menu and bottom docking update (2026-10-22): top menus are File, Edit, View, Select, Create, Modify, Window, Display, Mesh Tools, Edit Mesh, Mesh Display, UV, Render. Deform is a submenu inside Mesh Tools containing Blend Shape and Bake Current Pose. The former Deform/... command keys and IDs remain the serialized identity, preserving existing hotkey assignments/import/export. Their current Preferences group and dispatch menu are Mesh Tools, with Deform shown in the action path; there is no separate top-level Deform menu.
-
-
-
-
-
-MashBoxStudioViewport reuses its existing native-toolbar docking detection for the bottom dock. A displayed non-floating toolbar in the enabled bottom dock suppresses outer bottom panel corner rounding, covering Hierarchy, Channels, and Tool Options when Channels is hidden. Top corners and existing left/right docking rules retain their current behavior. Hidden/floating overlays do not count. Existing toolbar geometry/layout events recompute the radii; there is no polling or added redraw loop.
-
-
-
-
-
-Validation: production compilation passed (existing CS1701 reference warning). The maintained command-registry suite passed 168 assertions across 64 eligible menu actions, including the exact menu order, nested Deform entries and preserved identity/current shortcut category. Bottom-corner behavior was checked in source against the shared dock/layout path; actual rendered docked corners have not been visually verified in this task. No desktop automation was used; the isolated command-validation editor exited.
-
-
-
-
-
-Theme redesign (2026-10-22): Graphite, Charcoal, High Contrast, Ocean and Porcelain retain their IDs and exact palette values. The other fifteen presets use explicit surface-role palettes, rather than one generic tint formula. Twenty presets: Graphite, Charcoal, High Contrast, Ocean, Porcelain, Silver, Concrete, Gunmetal, Blue Steel, Violet Smoke, Ink and Crimson, Chalk and Vermilion, Pearl and Teal, Warm Ivory, Linen and Ink, Graphite Amber, Neutral Contrast, Slate Contrast, Silver Contrast, Violet Contrast. Tonal families include silver/concrete neutrals, blue/gunmetal, violet-gray, charcoal/red, ivory and warm linen; four contrast variants use lifted surfaces and distinct field/panel hierarchy. Accents are restrained selection/emphasis colors. Custom is an additional option with Primary (base surface) and Secondary (accent) color pickers; text, panels, fields, hover, selection, rails, borders and viewport colors are derived automatically. Main custom text chooses black/white using sRGB luminance contrast; derived surfaces are adjusted to preserve at least 4.5:1 main text contrast. Custom colors persist in the existing Settings.json preferences and settings import/export.
-
-
-
-
-
-Neutral marking menus is removed from the Themes UI, stored Preferences schema and marking-menu drawing paths. Marking-menu items and Back now use the current palette. Older imported JSON containing the obsolete flag is accepted by JsonUtility and ignores that unknown field; the next settings save omits it. Existing preferences for retired theme IDs use the existing Graphite fallback; the four retained theme IDs remain stable. Restore Theme Defaults selects Graphite and resets both custom colors to their Preferences defaults (Primary RGB .18/.22/.25; Secondary RGB .85/.70/.47), preserving unrelated settings. Existing lazy theme resource/style caches and immediate apply behavior remain.
-
-
-
-
-
-Validation: actual SDK production compilation passed (existing CS1701 reference warning). One focused disposable Unity run passed 1,124 assertions covering twenty unique presets, main-text contrast across eight surfaces for all fifteen redesigned presets, 100 custom primary/secondary combinations, muted custom text, custom palette reuse/invalidation and Save/Reload persistence. A contact sheet rendered from actual exported Unity palette values was visually inspected. This covers color roles and settings, not native Studio control rendering or every disabled state. No desktop automation was used. Preview: host obj/StudioControlsValidation/studio-theme-preview.png; focused fixture/result: host obj/StudioControlsValidation/StudioCustomThemeValidation.cs and obj/custom-theme-result.txt.
-
-
-
-
-
-
-
-
-Tool Options/Channels divider (2026-10-22): the full-width ten-pixel resize band (2 px backing above and below the 6 px bars) has a centered single row of five short vertical bars (each 1 x 6 px), with tooltip "drag to resize". The backing uses the lighter Button surface at rest and Hover surface while hovered/dragged, rather than the dark Header surface. The previous continuous center rule is removed. Full-width hit area, drag limits, persisted split height, hover feedback and Escape cancellation remain unchanged. Production compilation passed; the previous dot glyph was visually checked in the palette contact sheet; the five-bar revision has not been checked in native Studio rendering.
-
-
-
-
-
-
-
-
-
-
-
-Custom theme resources: Editor/StudioTheme.Custom.cs adds explicit preset roles and contrast-aware two-color generation. Unchanged custom colors reuse the palette. Color changes retire old custom skins/textures through one coalesced deferred cleanup after GUI drawing; preset caches remain lazy and reusable. No idle repaint loop is added.
-
-
-
-
-
-Field surface theming and Unity isolation (2026-10-23): Studio scopes apply palette foregrounds and backgrounds to implicit numeric/text/object fields, popups and help boxes. Fields use Header, popups Button and help boxes Panel; explicit numberField/objectField styles also receive field surfaces. Native Unity numberField and textField alias the same GUIStyle. The former save-and-mutate loop captured the later alias after it was themed, restoring Studio textures into Unity's Inspector when it next repainted (the user observed this on hover). StudioTheme.cs now snapshots every field/state before mutating any field, snapshots label/foldout/toggle/bold text before applying fields, and copies RectOffset border values into independent snapshots rather than retaining live native wrappers. Scope exit restores all original foregrounds, backgrounds, high-DPI arrays and borders at each nesting level.
-
-
-
-
-
-Validation: Tests~/StudioThemeIsolationValidation.cs passed 9,020 assertions against actual native EditorStyles across all 20 presets and nested scopes, explicitly confirming numberField/textField aliasing. Earlier 2,944 isolated-style checks did not cover that native alias and were insufficient to establish isolation. Current production compilation passed with the existing CS1701 warning. Native tests ran in a dedicated disposable ThemeIsolationProject because the other disposable project was in use. Reports: host obj/StudioControlsValidation/theme-isolation-result.txt and theme-isolation-native.log; production response file: theme-isolation-production.rsp. Off-screen IMGUI pixel capture produced no usable field image; native normal backgrounds were null in that runner, so background-only GPU capture was also inconclusive. Neither attempt is a rendered pass. The working Inspector hover/repaint appearance remains unautomated; no user theme/settings/hotkeys or other Unity windows were changed during validation.
-
-
-
-
-
-Component picking filters by screen-space tolerance or marquee rectangle before testing visibility. Local-space visibility now reuses the existing SDK Vertex AO BVH through VDPrecisionBaker.RayIndex, cached per Mesh and EditorUtility dirty version. Mesh edits/previews replace the affected index; rebuild/load/Undo clear indices. Transform-only changes reuse immutable geometry with fresh matrices, and hidden nodes are excluded. Geometry is copied/indexed lazily after a bounds hit. Marquee release projects candidate points/rays on the editor thread, prepares intersected indices there, then runs immutable ray batches on CPU workers (small batches stay serial). Workers never read Unity Mesh/Transform/Camera objects or mutate selection. Selection changes apply on the editor thread after the batch. Hover/click retain the same tolerance, two-sided triangle rule, midpoint visibility and 0.001 world-space endpoint bias. No selection-through substitution, frame cap, timer or idle work is introduced. Shared BVH construction uses median partitioning instead of recursive full sorting; the existing AO nearest-hit behavior retains its original intersection tolerance.
-
-
-
-
-
-Picking validation result (2026-10-22): disposable Unity run passed 526 assertions, including 500 accelerated/reference occlusion comparisons (164 ms combined correctness loop), transformed mesh visibility, bounds-miss lazy loading and array reuse. This is not an interactive hover benchmark. Result: host obj/StudioControlsValidation/picking-result.txt.
-
-
-
-
-
-### Imported frame bevel and component-drag correction (2026-10-22)
-
-
-
-
-
-Reproduced with Assets/Catalog/MTB/Frame/Mesh/MTB_Frame_Bestial_Lynx.fbx, using its original ModelImporter metadata (Read/Write off, Preserve Quads on), in the disposable project. The initial default-import probe exposed small triangle precision failures too, but final frame validation must use the original metadata.
-
-
-
-
-
-- Import previously used Instantiate(mesh), retaining isReadable=false from the FBX. The UI disabled Bevel despite editable static geometry being available to the Editor. Import and preview targets now reuse StudioWorkspaceText.ReadableSnapshot, which copies all vertex streams, indices, submeshes, bounds, bind poses, weights and morph frames using MeshUtility.AcquireReadOnlyMeshData. No source importer setting changes. Existing unreadable workspace-owned meshes keep their identities; editor eligibility for Bevel/Cut/Normals no longer treats the runtime flag as an editability test. Preview publication and Undo refresh use the Editor data-access path for those legacy meshes. Skin/live-blend topology restrictions remain.
-
-
-- Warped quads/n-gons incident to selected edges are partitioned locally along their authored render triangles into planar surface charts before wavefront construction. Their actual piecewise surface is retained; unrelated editable polygons and render diagonals remain untouched. The derived charts are cached with the captured source/selection and publish only with the bevel result. Committing such a bevel can create explicit triangle boundaries on the affected warped faces; cancellation restores the source polygons. This is a defined faceted-surface treatment, not a general smooth non-planar skeleton.
-
-
-- Publication preserves untouched source faces, authored triangle diagonals and exact source vertex attributes, including retained normals/tangents. Only changed/generated faces are triangulated. No unrelated source-geometry cleanup is performed. Source triangle membership is cached per captured topology. Missing authored normals receive area-weighted fallback normals.
-
-
-- Ear convexity, point-in-triangle and final-triangle validity now use a filtered orient2d predicate: a double determinant/error bound, followed by exact BigInteger arithmetic on binary32 coordinates when ambiguous. Geometric offset tolerances no longer classify tiny valid triangulation ears as degenerate. This follows the filtered-exact predicate approach described by Shewchuk (https://www.cs.cmu.edu/~quake/robust.html); it does not make the whole bevel kernel exact arithmetic. True degenerate/new invalid faces still fail atomically.
-
-
-- Component Move/Rotate/Scale gestures retain statistics caches while dragging, then invalidate them at MouseUp or the next idle-handle SceneGUI event. Geometry, normals, tangents and overlays continue updating with every edit. Ordinary non-gesture position edits invalidate immediately. Recalculation now reads stored polygon boundaries directly, rather than building a StudioMeshCuts neighbour graph just to count. On the Body probe the old count rebuild averaged about 56 ms; corrected samples were about 2.7–4.3 ms, and that rebuild is absent from continuous drag samples. Counts can temporarily retain the pre-drag welded totals if points coincide/separate during a gesture; they refresh on completion. No timer, frame cap, hover throttling or idle repaint loop was added.
-
-
-
-
-
-Files: Editor/StudioModelDocument.cs, StudioWorkspaceText.Meshes.cs, StudioMeshToolPreview.cs, StudioModelEditor.Bevel.cs, StudioModelEditor.CutTools.cs, StudioModelEditor.Normals.cs, StudioModelEditor.cs, StudioModelEditor.Statistics.cs, StudioModelEditor.Wireframes.cs, StudioModelEditor.ScaleDrag.cs, StudioMeshCuts.Bevel.cs.
-
-
-
-
-
-Validation source/report: Tests~/StudioFrameValidation.cs and host obj/StudioControlsValidation/frame-validation.txt. Production response file now points to actual SDK files throughout; eleven prior stale staged Editor paths were replaced. Production compilation passes with the existing CS1701 warning. The checks are CPU geometry/state checks; no claim of interactive viewport FPS or native rendered appearance is made. Post-collision topology continuation and existing rounded high-valence junction limitations remain as documented.
-
-
-
-
-
-Final original-importer frame run: all eight sampled individual edges passed; both detected sharp 40-edge rim loops passed at 0, 1 and 3 subdivisions; 60 cube geometry cases, missing-normal input, 162 scale/collinearity predicate cases, statistics/reference equivalence and drag cache lifecycle passed. Legacy unreadable publication/cancellation preserved the original mesh and restored source coordinates. Latest count-rebuild mean: 2.81 ms versus about 56 ms before the fix; counts do not rebuild during continuous drags. These are isolated CPU/state results, not measured viewport FPS. Four additional continuous 40-edge cycles passed at zero subdivisions in the earlier default-importer probe; that probe is supplemental and does not replace the original Preserve Quads configuration.
-
-
-
-
-
-
-
-
-### Captured component translation (2026-10-23)
-
-
-
-
-
-The user confirmed that large vertex selections translate slowly through both axis and free-move handles, in World and Local, while rotation/scaling feel responsive. The previous synthetic mutation/statistics benchmark did not exercise native Move control processing and did not establish a user-visible movement gain. Do not attribute the earlier bevel-computation multiplier to translation.
-
-
-
-
-
-Move now has a captured component gesture, following the existing Scale drag architecture. StudioModelEditor.MoveDrag.cs captures the selected render indices, source/working positions, moving handle position/orientation and world-to-local linear transform once. Each native target is a total displacement from the captured source; one local displacement is added to each selected source point. This replaces repeated selection/center setup, per-point native TransformPoint/InverseTransformPoint calls and incremental point updates on the normal component-Move path. Equal targets perform no mesh/normal/tangent/Undo/publication work. Undo is registered once; returning to the original target restores exact original coordinates. Rebuild/Undo, active node/mesh changes, component mode changes and control loss invalidate the context. Native axes, planes, center drag and snapping still determine the world target. Shift handle extrusion and pivot/object movement retain their existing paths; rotation was not rewritten. Source arrays and CPU/native meshes remain current on every actual update.
-
-
-
-
-
-Verified with 110 focused assertions for translated selected points, unchanged unselected points, rotated/mirrored/nonuniform object transforms, exact reversal, no-op/finite guards, context changes and one grouped Undo/Redo. Native axis and center MouseDown/MouseDrag/MouseUp tests captured the actual gizmo controls, moved all 6,489 selected Body render vertices uniformly and released capture. A separate native comparison used the same frame/selection/1500x950 HDRP viewport and forced native MouseDrag/Layout/Repaint in disposable Unity 6000.4.12f1 on D3D12/RTX4090. Captured pre-change source measured Move 5.659 ms drag / 22.412 ms combined median; the final captured path measured World Move 3.744 / 16.980 ms (combined p95 24.631 ms), Rotate 4.914 / 15.485 ms, Scale 3.207 / 9.743 ms, and Local Move 3.620 / 16.047 ms. A prior after-run gave World Move 16.354 ms combined. This is about a 1.3x warmed native-event improvement for World Move, not a displayed-FPS multiplier or proof of 200 FPS. Input is injected in the native handle's GUI coordinate space by test-only callbacks; no physical desktop control was used. Other rendering/UI costs remain, and the broader bevel geometry limitations above are unchanged.
-
-
-
-
-
-Sources: StudioModelEditor.cs, StudioModelEditor.MoveDrag.cs and test-only probes in StudioModelEditor.MoveHandles.cs. Fixtures: Tests~/StudioMoveDragValidation.cs, StudioNativeMoveValidation.cs and StudioNativeTransformPerformance.cs. Reports in host obj/StudioControlsValidation: move-drag-validation.txt (110 assertions), native-move-validation.txt (axis/center), native-transform-before.txt, native-transform-after.txt and native-transform-final.txt (four-gesture final run). Production response files must include the new MoveDrag partial. Tests create assets and exit only in the disposable project; no user settings or hotkeys were changed.
-
-
-
-
-
-### Bevel profile constraints and large-selection movement follow-up (2026-10-23)
-
-
-
-
-
-The user reproduced unwanted thin geometry in several further configurations, including three independently committed bevels (top edge, adjacent side edge, then a corner edge). The earlier first-bevel/three-edge-chain correction and manifold-only chain checks did not establish general join correctness. The exact reported screenshot sequence has not been independently matched; do not describe all reported bevel defects as resolved.
-
-
-
-
-
-Two construction rules are now corrected in StudioMeshCuts.Bevel.cs. A terminating profile uses the original vertex as its control, preserving its untouched supporting face rather than projecting the control independently along the selected edge. Two strips sharing the same profile boundary use one control/curve identity. Independent profiles at a multi-way junction keep their cross-section controls. Coplanar end absorption tests ring and face points against the original source supporting plane; using a tiny generated cap's normalized normal magnified float error across a distant face corner and incorrectly retained coplanar divider faces. This changes construction and plane classification, without deleting thin faces or proximity-welding unrelated vertices. Flat offsets and their straight-skeleton trajectories are unchanged.
-
-
-
-
-
-StudioBevelProfileValidation passes 1,296 cases: an initial top chamfer, an independent adjacent vertical chamfer, then each resulting geometric edge at three Width values and 0/1/3/8 subdivisions, on uniform and baked nonuniform cubes. It checks expected face/vertex counts, planar source/strip faces, two uses per geometric edge and referenced render vertices. Nine additional two-strip miter cases check one shared profile at 1/3/8 subdivisions. The 3,360 existing chain cases, imported-frame checks, 162 publication/attribute/cancel checks, 16 GPU lifecycle/Undo checks, picking, scaling and rendered silhouette suites pass again. These are explicit invariants and sampled configurations; general high-valence joins, 3D event continuation and cross-application parity remain unproven.
-
-
-
-
-
-Large component movement is a separate unfinished performance issue. A synthetic 1500x950 HDRP viewport probe on 6,489 selected Body render vertices measured 23.78 ms median / 31.64 ms p95 before a captured-gesture selection-count cache. That initial probe had no native hot control, so scene statistics flushed every sample and it is not an exact active-drag baseline. CountSelectedComponents now caches by mesh dirty version, component mode, weld setting and the exact selection set. Existing position-gesture deferral retains position-dependent counts while dragging; release invalidates them. Selection, non-gesture geometry edits and topology/Undo cache resets invalidate correctly. Twenty-three focused assertions pass, including coincident-position recount on release. The half-Body count alone measured 1.325 ms reference versus 0.070 ms cached median. A follow-up synthetic mutation plus native Layout/Repaint with a captured control measured 19.65 ms median / 20.83 ms p95, with statistics at 0.081 ms. Capture conditions differ between these viewport probes: do not present their ratio as a controlled whole-application speedup. Actual physical-input FPS, 200 FPS movement and the one-million-vertex 240 FPS target remain unverified and unmet by these measurements.
-
-
-
-
-
-Algorithm assessment: the production kernel is an existing MIT 2D straight-skeleton wavefront with Studio weighted/stationary extensions; the 3D strip/fan/profile/event integration is custom and incomplete. No medial-axis implementation has been integrated. CGAL documents that straight skeleton and medial axis coincide for convex 2D polygons and differ at reflex features (https://doc.cgal.org/latest/Straight_skeleton_2/index.html). A medial-axis/local-feature-clearance layer is a possible way to analyze distance limits and rounded offsets; this is an architectural option, not an implemented fix. Neither construction supplies Studio's 3D joins or removes component-rendering overhead by itself. Do not equate use of a named kernel with a complete established 3D bevel implementation.
-
-
-
-
-
-Sources: StudioMeshCuts.Bevel.cs, StudioModelEditor.Statistics.cs and StudioModelEditor.ComponentDrawing.cs. Excluded fixtures: StudioBevelProfileValidation.cs, StudioSelectionStatisticsValidation.cs and StudioMoveViewportPerformance.cs. Reports beside the disposable project: bevel-profile-validation.txt, selection-statistics-validation.txt, move-viewport-before.txt and move-viewport-performance.txt. Full combined regression log: bevel-corner-final.log; shared-profile follow-up: profile-shared-final.log. Production compilation retains the existing CS1701 warning. No user settings/hotkeys or physical desktop input were changed.
-
-
-
-
-
-### Dense-mesh live bevel and GPU publication (2026-10-23)
-
-
-
-
-
-The user confirmed Width dragging, rather than opening the pane, was slow. Selection stutter was on marquee release; indexed/batched visibility remains as described below. Performance is a requirement for every live sample, with no throttling or release-only preview.
-
-
-
-
-
-- The captured straight-skeleton plan owns immutable source positions, selected/affected/static face lists and weighted trajectories. Width edits retain source prefixes and construct only the affected neighborhood. Static polygons no longer enter per-sample corner-fan/stitching loops.
-
-
-- Publication assigns stable render slots to dynamic polygon corners. Hashing evaluated normal/UV floats previously alternated the frame's vertex count and invalidated whole-mesh wire/face/statistics caches in 13 of 50 warmed samples. The corrected test has zero topology changes. Geometric identities and smoothing groups preserve editable seams; untouched source polygons, triangles, materials and attributes are retained.
-
-
-- Only dynamic positions, normals, colors, tangents and UVs are packed into a reusable stream-update packet. Working and live CPU meshes receive the same suffix. Bounds combine a cached static bound with the dynamic patch. Native Unity tangent calculation runs on the disconnected dynamic render corners. Missing source tangents are generated for the retained prefix once, rather than falling back to a whole-mesh recalculation on every sample. Canonical attributes and native tangent results are checked independently.
-
-
-- Renderer MeshFilters temporarily use one GPU-only render mirror per touched mesh, shared by its instances. Its CPU vertex data stays unchanged during stable drags; direct GraphicsBuffer.SetData range writes update only changed GPU attributes. CPU Work/Live meshes remain current for editing, visibility/picking, metadata, saving and Undo. Source/render topology changes rebuild the mirror once. Reset, zero width, commit, cancel, Undo and disposal restore the authoritative MeshFilter bindings and release owned buffers/meshes. Unsupported GPU access falls back to the current CPU-published mesh. No compute shader is required for these already-computed sparse updates. The design follows Unity's GPU-buffer API: https://docs.unity3d.com/ScriptReference/Mesh.GetVertexBuffer.html and https://docs.unity3d.com/ScriptReference/GraphicsBuffer.SetData.html .
-
-
-- Querying vertexBufferCount on dirty working/live meshes forced source-sized native GPU preparation, including the off-scene work copy. Stable packets validate vertex descriptors without that getter. The render mirror prevents deferring that same full upload into drawing: the million-vertex rendered regression dropped native draw preparation/submission from about 7 ms to about 0.007 ms, with changed GPU attributes verified by readback.
-
-
-- Selection remapping uses a cached render-edge index and generated edge IDs. Live welded membership uses static/dynamic geometric links. Handle centers/statistics reuse published positions, and Component orientation uses incident-face adjacency. Ordinary polygon wireframes use their existing GPU position buffer with suffix uploads; unused duplicate whole-mesh CPU line geometry is not built. These remove source-sized scans/uploads from stable Width edits.
-
-
-
-
-
-Measured with Unity 6000.4.12f1, Direct3D 12, RTX 4090, and the original Preserve Quads Lynx import: Body has 13,446 render vertices; the selected arc is 21 geometric edges (42 seam/render indices). The latest 90 warmed EvaluateLiveTool samples measured 0.695 ms median / 0.813 ms p95 / 0.857 ms maximum, versus 5.92 ms median before this revision and 39.94 ms before the earlier neighborhood optimization. This excludes drawing. A real 1500x950 HDRP Studio viewport, 50 warmed samples with both World/Local handles, measured evaluation 0.864 ms median; forced Layout + Repaint + evaluation combined 7.188 ms median / 11.238 ms p95 / 28.058 ms maximum. World-only samples were 6.889 ms median / 7.232 ms p95. These native event timings include viewport work but are not displayed FPS or end-to-end physical-input measurements.
-
-
-
-
-
-Sparse scaling fixture: three connected selected edges, 34 changed render vertices, isolated cube islands in a single mesh. At 24,000 / 240,000 / 1,000,008 source render vertices, warmed CPU evaluation/publication plus mirror update measured 0.106 / 0.105 / 0.115 ms median; million-vertex p95 0.246 ms. Native draw preparation/submission was about 0.007 ms at one million. Actual GPU attribute readback, rendered width changes and cancellation passed. This establishes sparse-update scaling, not a one-million-vertex 240 FPS HDRP viewport guarantee: initial capture/topology construction, full viewport/UI, GPU execution/present time and large selected regions are not represented by that number. The mirror costs an additional render mesh for the lifetime of the gesture. Backend validation here is Direct3D 12; other graphics backends are not independently measured.
-
-
-
-
-
-Final validation: 3,360 sequential one/two/three-edge chain/width cases on uniform and baked nonuniform cubes remain manifold and fully referenced; the reproduced three-edge join is checked separately for ten faces, fourteen geometric vertices and planar straight faces. 162 publication/native-tangent/GPU-attribute/cancellation assertions pass, including colors and all eight UV channels with dimensions 2/3/4; 16 GPU lifecycle assertions cover shared instances, stable Width identity, topology replacement, commit, Undo/Redo, cancel and disposal. Both 40-edge Lynx rims pass at 0/1/3 subdivisions, eight sampled single edges, 60 cube geometry cases, 162 orientation predicates, missing normals and legacy unreadable input pass. Zero-width/restart/cancel, 1,527 visibility correctness assertions and 13 persistent-index assertions pass. Native viewport wire/mesh GPU readback and 12 native integer-scrub assertions pass. Production compile uses the existing CS1701 warning. No physical desktop input was used; all exiting/mutating fixtures ran in a disposable project. No allocation-zero, cross-application parity or universal-perfection claim is made.
-
-
-
-
-
-Visibility retains the existing dirty-versioned Vertex AO BVH and immutable worker batches on marquee release. Prior full-Body warm visibility was about 13 ms for 13,446 rays, preserving 8,355 hidden results. Projection/native input/rendering are separate costs. Source: StudioMeshCuts.Bevel*.cs, StudioMeshToolPreview.cs and .BevelGpu.cs, StudioModelEditor.LiveTools.cs, .ComponentDrawing.cs, .ComponentPivot.cs, .ComponentOrientation.cs, .Wireframes.cs, .WireBatch.cs and .Statistics.cs. Fixture sources are in Tests~; reports in the host obj/StudioControlsValidation include interaction-performance.txt, live-viewport-performance.txt, bevel-scaling-result.txt, bevel-chain-result.txt, publication-validation.txt, bevel-gpu-lifecycle-result.txt, bevel-render-validation.txt and integer-native-result.txt. Post-collision 3D skeleton continuation and broader high-valence limitations remain as documented.
-
-
-
-
-
-
-
-
-### Sequential bevel miter agreement and integer scrubbing (2026-10-23)
-
-
-
-
-
-The earlier two-operation report had a closed surface with an extra thin face/doubled edge. Reproducing that first chamfer followed by its three-edge border gave fifteen geometric vertices/eleven faces, including an artificial corner triangle. An installed Blender operator reference produced fourteen vertices/ten faces; its exact positions differ because of its width/loop-slide policy. No GPL implementation was copied.
-
-
-
-
-
-At a manifold three-face corner with exactly two selected edges, their outer face offsets must reach the same point on the stationary edge. For face angle theta, travel is offset/sin(theta). The engine solves those exact offset ratios over linked selected edges before building weighted straight-skeleton face trajectories, normalizing the largest edge speed to the existing region budget. Each selected edge keeps one constant speed at both endpoints: rails remain parallel, source supporting planes remain fixed, and the corner shares one geometric point without a filler sliver. Inconsistent ratio cycles keep their separate fans; this is not a global high-valence miter solution or post-event collapse merger. Width normalization is still fractional local space, with an upper region budget based on 45% of the smallest incident edge. The reproduced case now has fourteen vertices/ten faces with planar faces at second widths .074, .449 and 1. No final-mesh proximity welding or thin-face deletion was introduced.
-
-
-
-
-
-ToolChannelPane integer label scrubs now accumulate unscaled logical pointer movement at twelve pixels per step at 1x, independent of the starting integer or Unity's native integer acceleration. The shared 0.1x/1x/2x/4x multiplier applies linearly. Fractional motion accumulates; bounds discard overshoot, reversing responds immediately, Escape restores the captured start, and focus loss/Undo/disposal release capture. Numeric text entry remains native. Floating fields retain their existing precision path. Validation passed 64 accumulation/rate/clamp checks and 12 native label-scrub checks. Source: StudioDragSensitivity.cs and ToolChannelPane.cs.
-
-
-
-
-
-
-
-
-### Marquee cancellation at viewport boundaries (2026-10-23)
-
-
-
-
-
-Dragging a selection marquee outside the modeling canvas cancels the pending gesture immediately. MouseLeaveWindow and outside MouseDrag/MouseMove/MouseUp cancel before native handles/picking process the event. Studio requests enter/leave events explicitly. Cancellation releases only its own captured control, clears the rectangle/modifier state, ends the empty gesture group, preserves existing object/component selection, and requests the normal dirty redraw. Re-entering with the button held does not resume the canceled marquee; a fresh press starts a new one. Pointer checks run only on pointer events, never from Layout/Repaint coordinates. Source: StudioModelEditor.cs (CancelMarqueeOutside, gesture capture) and StudioModelEditor.MarkingMenus.cs (early native input hook). Production compilation passed with the existing CS1701 warning; native pointer-boundary behavior has not been exercised through desktop automation. No polling or extra update loop was added.
-
-
-
-
-
-
-
-
-Profile-preservation validation (2026-10-23): the disposable fixture passed 33 assertions covering read-only load/reload and exact file timestamps, independent last-loaded paths, autosave to selected files, preserved legacy/unregistered commands, invalid-file rejection, missing-file recovery, separate factory defaults, personal copies on factory edits, standard Ctrl+B/backtick/tilde defaults and priority for existing custom chords/explicit unassignment. A separate fresh Unity process passed 8 assertions restoring selected filenames, edited settings/bindings and custom default overrides while leaving initial personal files intact. Production compilation passed with the existing CS1701 warning. These are storage/dispatch checks; native file-dialog clicks were not automated. The working project's Hotkeys.json and Settings.json were left unchanged during this task. Fixture: Tests~/StudioProfilePersistenceValidation.cs; reports: host obj/StudioControlsValidation/profile-persistence-result.txt and profile-persistence-fresh-result.txt.
-
-
-
-
-
-
-
-
-### Notification limits
-
-
-
-
-
-Studio shows at most six viewport notifications, keeping the newest and removing the oldest when full. Repeated text has a two-second cooldown and cannot duplicate a still-visible message. Suppressed repeats do not restart its fade/expiry timer. Existing reading time, fades and the Notifications display toggle remain available; tool evaluation continues normally.
-
-
-
-
-
-
-
-
-### Selection Undo (2026-10-23)
-
-
-
-
-
-Completed object, vertex, edge and face selections support Undo/Redo, including click/marquee, add/subtract, Select All, Deselect, Invert and component-mode changes. Each changed selection is one bounded StudioUndo action; unchanged selections add none. Session-only snapshots contain component/object indices and transient identities, never mesh buffers or portable preferences. Selection-only history refreshes overlays and tool readiness without recreating the preview scene. Ordinary native transform drags do not capture selection sets per sample. Topology actions record changed selection in their geometry group; Bevel restores its captured source selection on Undo and its cleared result selection on Redo. The first workspace Undo still cancels an unapplied preview.
-
-
-
-
-
-StudioSelectionUndoValidation passes 71 assertions in a disposable Unity 6000.4.12f1 editor using current .workspace storage, real FBX import, actual native Undo/Redo, marquee selection, combined bevel/selection ordering, retained unrelated history, failed import, session history restoration, workspace reopening and the configured selection history budget. Production compilation passes with the existing CS1701 warning. Physical desktop input was not used. Direct editing of legacy .asset documents produced native Unity Undo assertions in an exploratory fixture; that path is not validated by this pass. Normal OpenFile converts legacy assets into .workspace documents before editing.
-
-
-
-
-
-
-
-
-### Import camera preservation (2026-10-23)
-
-
-
-
-
-Mesh and FBX imports preserve the current viewport position, rotation, zoom, projection and 2D mode. Viewport drag/drop no longer frames imported geometry automatically. Imports creating the first backing workspace also preserve the view across the load callback; use Frame explicitly to focus imported objects. The shared creation camera scope now retains 2D mode as well. Production compilation passes; StudioImportCameraValidation passes 68 checks covering first model import, existing-workspace FBX and mesh append, and actual DragPerform delivery in perspective, orthographic and 2D views. All checks ran in a disposable Unity editor without physical desktop control.
-
-
-
-
-
-### Vertex marker rendering
-
-
-
-
-
-Vertex-selection squares use one shared GPU position buffer for the unselected, selected and hovered layers. A procedural vertex shader generates the square corners at the existing screen/DPI size; selected markers use a reusable vertex-ID buffer and hover uses one ID. Captured Move uploads changed position ranges from its working data, without rebuilding all marker squares. Other edits compare positions and update their dirty range. Selection-buffer capacity is retained between selection changes. Shader/hardware support checks retain the previous cached-mesh path as fallback. CPU mesh data remains current for picking, editing, saving and Undo; existing depth/X-ray behavior and repaint caching are preserved.
-
-
-
-
-
-The disposable D3D12 validation matched actual rendered marker pixels against the legacy path, checked occlusion/X-ray, GPU readback, sparse updates/reversal, buffer reuse/reset and Move Undo/Redo. At 262,144 source points with 131,072 moved points, isolated marker-refresh CPU time measured 3.73 ms median on the retained legacy path versus 0.83 ms with GPU buffers. Eight-point updates measured 2.84 ms versus under 0.01 ms. These exclude edit computation, cold setup, drawing/GPU completion and the rest of the viewport; they are not whole-editor FPS measurements. One-million-point buffer updates also passed. Other graphics backends remain unmeasured.
-
-
-
-
-
-### Permanent viewport camera control (2026-10-23)
-
-
-
-
-
-A permanent 24px **Camera settings** icon is anchored directly above the vertex/edge/face statistics at the upper left of the modeling canvas, matching the fixed workspace-statistics control. It stays accessible when toolbar overlays or mesh statistics are hidden, and follows the hierarchy divider when resized. It has no drag handle, docking, close/visibility entry or native toolbar-overlay registration. The earlier Viewport Actions toolbar is removed; obsolete saved entries are ignored.
-
-
-
-
-
-The icon switches the existing **Tool Options** panel to camera controls: Perspective projection, FOV, automatic/manual clipping, world position and Euler rotation, and orbit distance/view size. Choosing a modeling tool restores its options. Camera edits leave document/mesh data unchanged; transform edits from locked 2D leave that lock while retaining orthographic projection. Lens/projection edits preserve entered pose. There is no new timer, idle redraw or position preference for this fixed icon.
-
-
-
-
-
-Production compilation passes with the existing CS1701 warning. The updated StudioCameraOptionsValidation passes 44 fixed-control/camera checks in a disposable Unity editor: fixed alignment/size, no native overlay registration, independent visibility, divider resizing, controller activation and existing native-camera behavior. Camera activation was called programmatically; physical pointer delivery and pixel screenshots were not verified in this pass.
-
-
-
-
-
-
-
-
-
-
-
-The modeling workspace outer perimeter uses 4px padding on all four sides (halved from 8px on 2026-10-23). Internal panel spacing, divider hit areas and saved panel widths are unchanged.
-
-
-
-
-
-
-
-
-Camera Settings includes **Reset to Defaults**. It restores Unity's native camera lens/clipping/navigation defaults, exits 2D/orthographic mode, and returns to Studio's standard grid-origin view: perspective, 10-unit orbit distance, 37-degree pitch and 38-degree yaw. The starting-view pose is shared with empty-workspace framing; ordinary framing retains the current lens. Reset leaves document and mesh data unchanged. Production compilation passes; the camera/control suite now passes 50 checks including actual native camera reset and repeated reset.
-
-
-
-
-
-### Shared component-handle preparation
-
-
-
-
-
-Studio reuses resolved component selection, source positions and the geometric handle center while the selection and mesh are unchanged, including camera-only redraws. Selection contents, mode/weld changes, mesh edits/publication, object transforms, rebuild and Undo/Redo invalidate that cache. Custom pivots, native rotation handles, captured Move/Scale and Shift-extrusion keep their existing behavior. Empty transforms/anchors remain safe targets. This does not add an idle repaint loop or change modeling topology.
-
-
-
-
-
-A bounded same-build HDRP/D3D12 probe on the Lynx Body with all 13,446 vertices selected measured handle setup at 2.38 ms median uncached versus 0.18 ms cached. Forced native Layout+Repaint measured 17.2 ms versus 9.6 ms, with camera state advanced between samples. These are native event timings, not physical pointer latency or displayed FPS. The FPS widget counts naturally requested repaints, so slow input can lower its displayed number. Actual reported slow free-drag/orbit jitter still needs working-window confirmation. The focused cache suite passed 68 assertions, including native Undo/Redo; production compilation passed with the existing CS1701 warning.
-
-
-
-
-
-### Viewport statistics display (2026-10-23)
-
-
-
-
-
-Scene/Selected statistics now show only Verts, Edges, Faces and Tris. The UV row and its counting work are removed, including UV-buffer reads and seam expansion previously done solely for the selected UV total.
-
-
-
-
-
-FPS is shown directly at the upper-right position formerly occupied by the stats button. There is no button, popup or WORKSPACE box; the compact text is click-through and follows the Tool Options/Channels boundary. It is visible by default in Modeling and can be toggled with Display > FPS Display, immediately after Orientation Gizmo. Visibility is saved as hideViewportFps in settings JSON; older profiles remain visible because the new field defaults false. The legacy showWorkspaceFps popup preference remains ignored. It hides in Animation and stops sampling when hidden. Existing natural viewport frames supply the sample; idle retains the last reading, with — FPS before a valid sample. No timer or continuous render loop is added. Production compilation passes; 23 focused counter/FPS/menu/visibility assertions pass in the disposable editor.
-
-
-
-
-
-FPS and Scene/Selected statistics use an explicit 11pt font, soft light-gray text (#D1D1D1) and a 1px dark shadow independent of the theme. Presentation is reapplied to cached styles on each draw so editor hot reload cannot retain an old size/color. Readouts bypass disabled GUI dimming and restore the GUI state afterward. No per-frame style allocations; existing row spacing and sampling behavior are unchanged.
-
-
-
-
-
-Camera Settings also offers **Navigation sensitivity**, 0.05x–4x, default 1x, shared by orbit, pan, drag zoom and mouse-wheel zoom. Lower it for fine close-up work. Existing distance scaling and pivot behavior remain in place. It is saved in the active Studio settings profile; missing entries preserve standard speed. Camera Reset to Defaults restores 1x alongside the camera pose/lens defaults. This affects Studio input only, not Unity Scene views or explicit numeric camera edits.
-
-
-
-
-
-Mesh statistics omit the Scene/Selected column headers; the four rows start directly at the top. Both statistics and FPS draw in a fixed passive state, with no hover highlight or interactive label controls. Count columns remain scene totals followed by selected totals.
-
-
-
-
-
-Camera Settings numeric readouts (position, rotation, clipping and orbit distance/view size) display up to four decimal places. Drawing preserves full underlying camera precision; editing one vector axis preserves the other axes.
-
-
-
-
-
-### Viewport Overlay
-
-
-
-
-
-Fixed Camera settings, Viewport lighting, Isolate selected and Show all icons above the component statistics share the Viewport Overlay button template: 24px targets, 16px artwork, 4px rounded corners, always-visible backgrounds at 50% alpha under the 70% overall opacity (35% effective background opacity), at rest. These are ordinary action buttons. Camera and lighting open Tool Options; Isolate selected and Show all control temporary viewport visibility. They have no persistent selected/toggled appearance or click-to-close behavior. Theme Header and Button colors provide resting and hover backgrounds; icons retain 70% opacity. Pointer enter/leave requests a one-off redraw. This category is independent of toolbar overlays and remains visible when toolbars or statistics are hidden. The four targets have 4px gaps, in Camera, Lighting, Isolate selected, Show all order. Isolate selected is a toggle, also available under Select with default Shift+W; press again to Show all. It is disabled without a selection only when isolation is inactive. Custom bindings and explicit unassignment remain authoritative. Object mode retains selected objects/branches; Vertex mode retains faces directly touching selected vertices, with their boundary vertices/edges; it does not flood the connected island. Current weld-selection semantics determine the selected logical vertices. Edge mode retains selected edges without faces; Face mode retains selected faces. All three support multiple meshes. Show all restores component previews and reveals all workspace objects. Isolation changes no authored mesh topology and is not saved in the workspace. Hidden components are excluded from ordinary component picking, marquee and paint selection; GPU vertex markers and cached authored-wire drawing use visibility subsets. Native transforms update isolated face previews. Topology/live mesh tools restore full components on the isolated objects before publishing new component identities; scene rebuild/Undo reconstruction clears temporary isolation.
-
-
-
-
-
-Camera and lighting settings open mutually exclusive views in the existing Tool Options area. Viewport Lighting Settings is accessed through the fixed lighting icon. Render replaces the former Lighting menu and contains only Bake Vertex AO (Red); Camera Lighting/Studio Lights, Shadows and Ground Plane are in Viewport Lighting Settings. The separate Viewport Lighting window has been removed. Existing exposure, key/fill lights, shadows, ground and reset settings still edit/persist workspace lighting with the existing preview/Undo path. Activating a modeling tool returns Tool Options to that tool. The AO command retains its previous shortcut identity under the renamed Render category.
-
-
-
-
-
-The embedded options panel uses the active tool's name as its sole header (Move Tool, Rotate Tool, Scale Tool, Selection Tool, Insert Edge Loop or Multi-Cut). Camera Settings and Viewport Lighting use their own names in the same header. Duplicate introductory titles are removed; lighting subsection labels remain. The auxiliary options window uses the same dynamic title. Display > Tool Options retains its stable panel visibility name.
-
-
-
-
-
-Viewport Shading includes a **Backface culling** cube-icon toggle (enabled by default). On hides back-facing shaded surfaces; off draws both sides with black back faces. It also controls transparent X-ray surfaces; wire and selection overlays retain their existing behavior. The preference is saved as Model.BackfaceCulling in Studio settings. Native lit/textured material previews use cached, disposable material clones, preserving the source assets and shader appearance. Studio preview and neutral materials use the same culling choice. Supported material cull properties cover Studio, built-in, URP and HDRP naming; shaders that hard-code their raster culling cannot be overridden through a material property. This is viewport display only and does not change topology, picking or mesh/document Undo.
-
-
-
-
-
-### Live component selection painting
-
-
-
-
-
-In Vertex, Edge or Face mode, hold **Tab + left mouse button** and drag over the active mesh to add crossed components live. **Ctrl+Tab + left drag** removes crossed components (the action modifier maps to Cmd on macOS). Tab alone arms the gesture and never changes selection. Release the mouse to complete one Undo stroke; keep Tab held to start another drag. Escape restores the source selection. Releasing Tab, leaving the canvas, losing focus or changing tools safely finishes/disarms the stroke. While the paint key remains held in the focused viewport, marquee input stays suppressed even if the stroke has disarmed or cannot start; a valid canvas drag can rearm painting. Key-up or focus loss releases that reservation. Escape cancels the stroke and keeps marquee suppressed until key-up. Existing click-pick tolerance and through-selection/occlusion rules apply; object mode is excluded. Configurable hold shortcuts appear under Select; personal profiles are preserved.
-
-
-
-
-
-Painting captures mouse input in BeforeSceneGUI before native handles or marquee can claim it. Captured positions stay in camera-canvas coordinates from the native canvas IMGUI entry through repaint; direct camera projection/rays avoid Unity GUIClip conversions between callbacks. The initial click and queued drag endpoints survive multiple events before a frame. A reusable queue holds up to 16 points with at most 32 hit samples per repaint, sharing per-frame occluders and stroke-captured vertex positions. A cached screen-space bounds tree limits paint/armed-hover queries to nearby components and reuses identical-point results; geometry/camera/mode changes invalidate it. Selection-only changes retain geometry/GPU position buffers and refresh only selection/hover layers. Very large/high-frequency jumps therefore have coarser interpolation. No-op strokes add no history; selection-only Undo/Redo avoids rebuilding the scene or editing mesh buffers. No idle rendering loop is added.
-
-
-
-
-
-Retained root key interception reserves Tab before native focus traversal. Actual pointer boundaries are used instead of broadcast panel mouse moves, and pointer retargeting during IMGUI capture is not treated as leaving the window. The native input fixture checks camera-projected clicked and dragged target IDs across all three component modes. Tab-armed movement and active painting retain yellow hover feedback, including over selected components; hover draws above selection during painting.
-
-
-
-
-
-### Shaded-wireframe depth occlusion
-
-
-
-
-
-Object wires, including unselected dark outlines, correct their expanded screen-space stroke depth per fragment only where the real incident render triangle covers that pixel. Depth is no longer extrapolated from unbounded adjacent-face planes at the stroke vertices, which could reveal hidden edges through distant faces and flicker during camera motion. Authored render triangles supply adjacency; editable quad/n-gon boundaries still determine the visible edges, so render diagonals are not introduced. The small view-ray bias is reduced from .001 to .00001 of eye distance on GPU and native fallback paths. X-ray retains its explicit through-surface behavior.
-
-
-
-
-
-The GPU batch, geometry buffers and camera-only no-upload behavior remain. Triangle adjacency is prepared when the wire cache is built; no per-frame CPU visibility scan, mesh readback or new render loop is added. The fragment shader writes corrected depth, so this is a rendering correctness change, not a measured FPS improvement. Render regression covers distant/near foreground covers, camera jitter, perspective/orthographic, own-surface wire visibility and authored quad/concave polygon triangles.
-
-
-
-
-
-Marquee selection includes overlapping geometry rather than requiring an edge midpoint or face center inside the rectangle. Any clipped edge portion or authored face triangle can select that component; a rectangle entirely inside a large face works too. Vertex selection also includes partial overlap of the visible marker footprint. Object marquee uses surface overlap, so an object can be selected without enclosing one of its vertices. The same rule applies in both drag directions and perspective/orthographic views. Shift-add, Ctrl/Cmd-subtract, Through Selection, existing selection Undo and leaving-canvas cancellation remain. Visibility rays are sampled within the clipped overlap (per intersected face triangle), rather than from a potentially distant component center. This retains sampled CPU visibility, not pixel-perfect GPU coverage. Straight-line drags use a one-pixel minimum strip.
-
-
-
-
-
-Anchor viewport gizmos follow Preferences > Handle size and the existing increase/decrease handle-size shortcuts. The ring, three crosshair axes and click-pick radius start at a 2.5x base size before applying the same preference multiplier as modeling handles. The star arms extend 60% farther relative to the ring. Ring and arm strokes use Unity antialiased polylines at 1.5 UI-point width, including when viewport MSAA is off; cached circle/point buffers are reused. The preference value itself is unchanged. The existing settings JSON stores this preference. No additional setting, mesh change or redraw loop is introduced.
-
-
-
-
-
-Only the positive anchor Z arm uses Unity's Z-axis color (blue by default). Negative Z, the ring and X/Y arms are orange, with lighter orange for selection. Their antialiased strokes are 2 UI points wide. The hierarchy anchor icon uses a native 16-pixel raster, thin pixel-aligned opaque muted-orange arms, an antialiased ring, and a deep-blue left arm. All hierarchy items use fixed 16-point icon slots and a gap measured as two spaces in the current label font. Anchor marker RGB colors are darkened 15%, preserving opacity and Unity axis directions.
-
-
-
-
-
-Modeling Move, Rotate, Scale and pivot gizmos receive localized GPU edge-adaptive antialiasing after native handle drawing. It filters a bounded overlay region around the handle, preserving native layout/picking/dragging and the scene depth buffer. Two grow-only reusable textures handle the small crop; there is no full-scene rerender, CPU pixel readback, idle loop or viewport AA preference change. Overlay strokes within that same small region are also smoothed. Unsupported copy/shader or already-multisampled targets retain the native path. This is independent of the scene camera FXAA/SMAA setting. No end-to-end FPS improvement is claimed.
-
-
-
-
-
-
-
-
-### Sequential flat bevel requirement (2026-10-25)
-
-
-
-
-
-Reported workflow: bevel two connected cube edges with Subdivisions 0, commit, then bevel BOTH the remaining original cube edge and the diagonal join produced by the first pass. The former single-third-edge fixture was not the reported selection. Both the small separate corner patch and its nearly doubled divider were rejected. The previous terminal-patch repair passed its synthetic cube-family fixtures but failed user verification; those results do not establish the reported defect was fixed.
-
-
-
-
-
-Eligible flat patches now use the cached local clipping construction documented below and in SDK BEVEL_ENGINE.md. The earlier StudioMeshCuts.BevelTerminations.cs implementation remains only in the compatibility path, deriving stationary terminal intersections and width limits from supporting planes. Its fixed expected face counts are legacy regression checks, not a universal bevel specification. The initial clipping implementation also failed user verification. Shared miter constraints and the corrected junction-reference selection now address that topology; User confirmed the corrected bevel works on 2026-10-25. Do not add screenshot-specific topology exceptions or claim full industry parity.
-
-
-
-
-
-Studio themed scrollbars use continuous horizontal/vertical tracks with no reserved arrow-button blocks. Thumbs reach both track ends; tracks and thumb hover/drag states follow the active palette. Native scroll-wheel, page-click and thumb controls are retained.
-
-
-
-
-
-Studio preview parent materials are Editor/Resources/MashBoxStudio_Default.mat (GUID 410de6c3c565a5b459045246f998f390) and MashBoxStudio_XRay.mat (GUID 0d08d9ca74c59e940a654b9ca078d478). The default parent uses Shaders/HDRP/Lit/MashBoxStudio/MashBoxStudio_Default_Modeling_Shader.shadergraph (GUID 409bba92b9fbb904cbfd7cf58b9531a6), initially matte gray with zero metallic/smoothness remaps. X-ray uses MashBox/Studio/Preview from SDK Shaders/HDRP/Lit/MashBoxStudio/AnimationStudioPreview.shader, beside the default Shader Graph, initially white tint and .22 opacity with transparent blending and depth writes off. Studio creates transient native Material Variants parented to these assets; existing children inherit parent color/surface/opacity changes. Viewport culling, lighting mode and per-source texture/array inputs remain child overrides. X-ray tint is inherited from its parent rather than baked from source material tint. The assets and original mesh materials are never modified by preview drawing. Default applies to HDRP Studio Lights with textures off; camera-light/unlit paths remain unchanged. Missing templates retain the previous shader/pipeline fallback. The modeling graph now exposes ordinary _BaseMap. Checker Map uses its own shader.
-
-
-
-
-
-
-
-
-Flat bevel construction (2026-10-25): eligible zero-subdivision local patches now use cached supporting-halfspace clipping with shared edge-cut identities and balanced 3D planes. No node system was introduced. Source-face topology and attribute publication remain separate from render triangulation. Native shade/wire and full-controller viewport-cache refresh checks pass alongside oblique/order/repeated and existing regression matrices. Rounded/unsupported domains retain the existing path; arbitrary post-collision 3D bevel continuation remains unfinished. The initial clipping attempt failed user verification; the corrected shared miter constraints now pass the independent junction reference graph. User confirmed the corrected bevel works on 2026-10-25. See BEVEL_ENGINE.md, Cached local clipping for flat bevels, for exact scope, sources and validation.
-
-
-
-
-
-
-
-
-
-
-
-Shared flat-bevel miters (2026-10-25): corrected the two-edge second pass (remaining cube edge plus generated diagonal). Captured plane-gradient constraints prevent the extra junction cuts before topology is built. Native Studio rendering and 360 oblique/width/order tests match an independent four-sided junction reference graph (14 vertices, 10 faces). Previous single-third-edge fixture results did not reproduce the selection. No node system or external runtime dependency was added. General rounded/post-event 3D limitations remain, and the user confirmed the corrected bevel works on 2026-10-25. See BEVEL_ENGINE.md for exact scope and validation.
-
-
-
-
-
-Subdivided bevels and width (2026-10-26): eligible rounded strips now share the flat clipping junction topology and one sampled cross-section between adjacent strips. Both subdivision orders and Grid/Cap pass 890 geometry/distance and 264 rendered checks. Width offset now uses mesh-local model units, minimum zero with no maximum of 1; the former shortest-edge fraction is removed. Existing saved numbers are retained and therefore have a different physical meaning. Supporting-patch/interface limits and unsupported compatibility-path limits still apply. New source: Editor/StudioMeshCuts.BevelClipProfiles.cs. See BEVEL_ENGINE.md for construction, scope and verification.
-
-
-
-
-
-Vertex and edge hover/click/paint picking uses an 18-screen-point radius (formerly 12), without enlarging rendered dots or lines. Nearest-component ranking and visibility tests remain in effect. The paint bounds index shares the same tolerance; face ray picking and marquee bounds are unchanged.
-
-
-
-
-
-Object, Vertex, Edge and Face modes can be chosen before selecting an object, including in empty workspaces and on protected targets. A viewport mode command immediately acquires the mesh under the starting cursor, even when choosing the current mode again. No Shift is required to retain other acquired meshes. Selected meshes share one Object/Vertex/Edge/Face mode. Changing mode applies to every selected mesh, including the hovered mesh acquired by the command. Repeating the same mode preserves per-mesh component IDs; changing type clears incompatible IDs. Modified component clicks use the shared mode. A plain viewport click on a different mesh in Vertex/Edge/Face mode enters Object mode, clears component selections and selects only that mesh in one Undo action. Clicking the active mesh still picks components. Hover and mode-command object acquisition remain available; modified clicks, marquee, Select All, Invert, Deselect, statistics and Frame retain multi-object component editing. Shared Move/Rotate/Scale and Delete edit components across meshes. Bevel, Extrude and Soften keep captured per-target previews and grouped Undo; a failed target rolls back the preview cohort. Merge to Center immediately commits a captured per-mesh transaction; Target Weld edits the picked mesh. Shift-handle extrusion also supports compatible targets together. Merge stays within each mesh. Existing geometry/bind-pose/blend-shape restrictions remain. UV editing, cutting, paint strokes and other object-specific workflows still use their active target. GPU marker/overlay and handle-frame caches are retained per mesh, with no idle redraw loop.
-
-
-
-
-
-
-
-
-Toolbar defaults (2026-10-26): all Studio toolbars are on when no toolbar preferences have been saved, including when Unity restores a hidden native layout. Existing saved toolbar visibility, docking and disabled-canvas choices are preserved. Defaults apply after toolbar discovery through the existing registry; no profile reset is required.
-
-
-
-
-
-
-
-
-Pivot edit uses a solid triangular center handle at 1.5 times its original size to distinguish it from the ordinary Move tool's square center. Existing center dragging, snapping, sizing and axis/plane controls are retained.
-
-
-
-
-
-Hierarchy dragging uses Unity-style placement: drop on a row to make the selected roots children; drop on its top/bottom insertion guide to reorder siblings; move left at a gap to outdent to an ancestor level. The guide indentation shows the target level. Dropping into the blank area moves items to the root. Left and middle mouse drags work, and Escape cancels. Moves preserve world placement, move selected subtrees once, reject cycles/unsafe transforms, and form one Undo/Redo action. Sibling order is saved in the workspace without reindexing nodes or mesh/bone references; old workspaces retain their stored order.
-
-
-
-
-
-Create menu order: Polygon Primitives appears first, followed by the Vehicle Part submenu in its own section with separators above and below. The existing separated foliage section and empty-transform/anchor actions follow.
-
-
-
-
-
-
-
-
-### Weld tools
-
-
-
-
-
-Edit Mesh > Target Weld (default T) enters a persistent Vertex-mode tool: click-drag a source vertex, follow the snapping line, and release over another vertex to weld to its exact fixed location. No source-object preselection is needed. Escape cancels the drag, then exits when idle; release outside cancels, and choosing a transform tool exits. Weld again without reopening the tool. It works within the picked editable static mesh.
-
-
-
-
-
-Edit Mesh > Merge to Center immediately collapses any selection of two or more geometric vertex positions to their arithmetic center, with M as its standard default. There is no distance field or floating Merge Vertices pane. On multiple meshes, it merges compatible selections within each mesh and groups Undo; it does not combine objects. A whole-mesh collapse retains one loose vertex. UV/material seams are preserved. The previous merge command identity survives for personal shortcut bindings; explicit custom assignments/unassignment and conflict handling remain respected. Generated defaults omit the removed distance/pane sensitivity entries; personal profiles are untouched.
-
-
-
-
-
-### Mesh-transform Undo refresh
-
-
-
-
-
-Undo/Redo for static mesh component Move/Rotate/Scale reuses the existing preview objects, lighting/materials, wire topology and GPU marker buffers when the document hierarchy, renderer bindings and vertex layout remain stable. Only changed meshes are uploaded and their position-dependent caches refreshed. Selection history restores IDs/modes without discarding per-mesh drawing caches. Native renderer data is explicitly refreshed; CPU restoration alone is insufficient. Structural/topology actions, pending previews, changed layouts, unreadable/skinned meshes and live blend shapes retain the full rebuild path. Grouped StudioUndo history, its configured action budget and unrelated Unity history are preserved.
-
-
-### Edge-loop placement controls
-
-
-
-
-
-Insert Edge Loop (default Ctrl/Cmd+Shift+X) keeps its description in Tool Options, with no duplicate viewport instruction overlay. It offers a Loop count slider in Tool Options (1–64, default 1). Ctrl/Cmd + wheel over the viewport increases/decreases that count, including during a drag, without zooming. The count persists in Studio settings. Drag positions the loop group; Shift snaps its anchor to tenths. Middle-click a face or its strip to insert centered, evenly spaced loops immediately. A single loop uses edge midpoints; multiple loops use evenly spaced fractions across the strip. Placement is one grouped Undo action.
-
-
-
-
-
-Unapplied cut previews and pending Multi-Cut paths are blue, with warm yellow hover markers; committed cuts use normal mesh wire/selection colors. Ctrl/Cmd loop mode within Multi-Cut shares the count. Existing quad-strip traversal, active static-mesh restrictions, boundary/nonmanifold stops, source-topology capture, cancellation and attribute preservation remain. Count edits change preview data only and add no mesh Undo or scene rebuild. There is no continuous idle redraw loop.
-
-
-
-
-
-### Custom toolbar overlays
-
-
-
-
-
-Open **Preferences > Toolbars**, or **Display > Toolbars > Customize Toolbars…** to select that tab. Create named custom toolbars in the left column. The right side shows the selected toolbar's ordered contents and a searchable categorized function list. Use + or drag a function into the contents; drag existing rows or use the arrow buttons to reorder, and × to remove. Names and contents save automatically in Layouts/ToolbarOverlays.json. Deleting a custom toolbar removes that toolbar; built-in toolbars are retained.
-
-
-
-
-
-The function list comes from the same menu declarations as Studio commands, including disabled functions, UI-only actions and available dynamic vehicle-part entries. Native Studio toolbar controls are discovered separately and reused directly, including dropdowns/toggles such as orientation, textures and backface culling. Camera/lighting options are also available. Hold gestures and individual settings fields are not standalone commands. Missing functions retain their stored keys and display a disabled warning icon with an unavailable tooltip until they are available again.
-
-
-
-
-
-These are native dockable/floating ToolbarOverlay instances, separate from the permanent Viewport Overlay camera/lighting icons. They participate in existing Display > Toolbars visibility, docking, modeling-mode hiding and saved layout restoration. Definitions are in Studio.CustomToolbars; positions/visibility remain in Studio.Toolbars, both routed through StudioPreferenceStore into Layouts/ToolbarOverlays.json. Stable IDs survive renaming and contents edits; general settings import/export and hotkeys remain independent of the toolbar file. Buttons resolve current context again immediately before execution and use the existing command callbacks/Undo/tool restrictions. No idle repaint loop or scene rebuild is added. Dynamic overlay registration uses a narrowly scoped Unity Overlay.Initialize metadata bridge, validated on Unity 6000.4.12f1; other native API versions are not claimed.
-
-
-
-
-
-Built-in and custom command toolbar buttons are icon-only. Tooltips show the action name, current assigned shortcut and a short description on the next line, without a menu/category path. Customization lists retain searchable paths and icon previews. Unity built-in icons are preferred; existing Studio selection artwork is reused. Plane, Quad and Cylinder have distinct antialiased 24px silhouette icons, while Cube and Sphere use Unity artwork. Custom orientation dropdowns show only their icon/arrow and retain the current space in the tooltip; built-in orientation controls keep their labels. Icons share the existing cached 16/24px toolbar sizing and resource cleanup.
-
-
-
-
-
-Toolbar layout persistence: built-in and custom toolbar dock side, dock section/order, horizontal/vertical layout, floating position, collapsed/visible state and canvas visibility autosave to Studio.Toolbars in Layouts/ToolbarOverlays.json. Names/function order remain in Studio.CustomToolbars in that same independent file. Native docking/reordering and state events coalesce into one save after the native operation, so unchanged bounds do not prevent a save. Loading cancels pending saves and applies layouts without rewriting intermediate states. Window close flushes the current settings. No new preference or reset is required. Fresh-process restoration is verified on Unity 6000.4.12f1.
-
-
-
-
-
-Primitive creation menu catalogs reuse parsed vehicle-rule templates until the rules asset revision or project assets change. This avoids repeated SerializedObject rule traversal during toolbar/menu refresh without caching command execution context. Primitive preview-scene rebuilding remains unchanged; isolated timings do not establish the full reported working-scene delay is resolved.
-
-
-
-
-
-New custom toolbars append to the left-aligned section of the top dock. They never default to the right dock or right-aligned/trailing top section. Saved user positions remain authoritative; creating, renaming or changing contents does not relocate existing toolbars or reset their layout.
-
-
-
-
-
-Deleting a custom toolbar asks for confirmation with its name and Delete/Cancel buttons. Cancel leaves the toolbar and saved configuration unchanged.
-
-
-
-
-
-Studio action icons now use neutral gray geometry plus one amber action accent, consistent 1.6px master strokes and reduced internal detail. Mesh Tools symbols were simplified into compact flat silhouettes/outlines; all 18 Select-menu actions have dedicated artwork, including Contiguous Path, Hide/Unhide, Grow/Shrink, Isolate and conversion/perimeter variants. Convert Selection to Objects has its own action symbol rather than aliasing the Object mode icon. Object/Vertex/Edge/Face selection-mode icons and the user-circled primitive and shading/lighting/texture/checker artwork remain unchanged. Code-native auxiliary menu symbols share the single accent. Light skin uses dark neutral geometry and a darker amber; symbol cache keys distinguish skins. Existing antialiasing, cached texture ownership, command identities and menu/toolbar/radial reuse remain.
-
-
-
-
-
-Built-in **Mesh Tools** and **Mesh Display** icon toolbars default on, horizontal and left-aligned at the top. Mesh Tools contains Combine Meshes, Duplicate Face, Duplicate Face as New Object, Detach Face, Split Selection, Bridge Edges, Extrude, Fill Hole, Poke, Bevel, Circularize, Collapse Edge Ring, Weld, Merge to Center, Target Weld, Insert Edge Loop, Bisect, Fracture, Multi-Cut and both current Deform actions, in its established toolbar order. Mesh Display contains Soften/Harden/Flip Normals/Soften options and X-ray. They share the same menu command execution/availability and toolbar icons/persistence as custom toolbars, and appear under Display > Toolbars. Existing settings without the new toolbar IDs receive these defaults without moving other toolbars; subsequently saved visibility and positions remain authoritative, including a disabled overlay canvas. Viewport Shading stays separate.
-
-
-
-
-
-### Skinner export lighting
-
-
-
-
-
-Skinner's Save FBX and Save FBX As set every exported skinned renderer's light-probe Anchor Override to the imported model root. The policy is stored in the FBX's Unity `.meta` file and reapplied on reimport by the SDK. Keep that metadata when transferring the asset between Unity projects. Studio's prefab export also sets the anchor to its prefab root.
-
-
-
-
-
-### Scene background color
-
-
-
-
-
-Themes includes an independent **Scene background** color picker, saved in the settings profile. It defaults to the existing Modeling gray (#474747); older profiles inherit that default. Changes apply immediately, without changing the chosen UI palette or Unity's normal Scene view. Restore Theme Defaults restores this color too. The shared Studio background path uses it in other workspaces; those paths previously used a separate .35 gray. HDRP clear-color updates are cached independently of the lighting/AA configuration.
-
-
-
-
-
-## Modeling toolbar arrangement and icons (2026-10-27)
-
-
-
-
-
-The built-in Polygon Primitives toolbar contains Cube, Sphere, Plane, Quad and Cylinder. Fresh/default top order is Grid, orientation, Viewport Shading, Polygon Primitives, Mesh Tools, Mesh Display, with transform and selection controls at the left. Mesh Tools comes before Mesh Display. Existing saved layouts remain authoritative; **Display > Toolbars > Restore Default Layout** explicitly applies this built-in arrangement. Custom definitions and positions are retained.
-
-
-
-
-
-Toolbar definitions, visibility/collapse and placement/order now share **<Documents>/MashBoxStudio/Layouts/ToolbarOverlays.json**, independent of general settings and hotkeys. Existing legacy general-profile entries are used as a read-only migration fallback until the first toolbar save creates the file; the combined file then takes precedence. Reading does not rewrite personal profiles, and general settings exports exclude deprecated toolbar entries. Profiles displays the path.
-
-
-
-
-
-Main menu actions/submenu branches use cached icons except Display, which retains checkmarks. Icons match their semantic toolbar actions; geometry-tool symbols show extrusion, chamfering, merge/weld targets, edge loops and cuts rather than unrelated stock component icons. Vehicle parts share art for now. Unity's stock Shaded, Wireframe and Shaded Wireframe artwork is retained by explicit user preference. Recalculate Normals controls are retired, including legacy custom-button display, while internal geometry normal updates remain.
-
-
-
-
-
-Wire color follows the viewport background with a dark-first policy. Unselected wires retain their original dark blue-gray on the default gray and lighter backgrounds. On very dark backgrounds they lift only enough for a restrained 1.5:1 background contrast; they do not use a bright inverse color. Selected and hover wire colors preserve their semantic tint where possible, adjusting only below 3:1 contrast. Derived colors are cached by background/tint; color changes reuse existing wire geometry and GPU position/index buffers. The GPU batch and native fallback share the colors.
-
-
-
-
-
-Shift+W is the standard default for Select > Isolate Selected. The shared menu, shortcut, custom-toolbar command and permanent viewport action toggle the same temporary state. Existing plain-W Move bindings that tolerate Shift yield to this exact chord; explicitly assigned Shift+W bindings elsewhere suppress the new default. Personal hotkey files are not rewritten to install it.
-
-
-
-
-
-Mesh Display toolbar has four controls: Soften, Harden, Soften options and X-ray. Its duplicate Shaded/Wireframe/Shaded Wireframe buttons were removed; the two existing Viewport Shading toggles already provide all three modes. Shading menu commands, shortcuts and optional custom buttons remain available. Saved toolbar IDs/positions are retained.
-
-
-
-
-
-The Material textures toggle uses Unity's material artwork (texture-image fallback), not a settings gear; the same image is used in custom toolbar/control previews. Its display-toggle behavior and saved state are unchanged.
-
-
-
-
-
-Move and Scale both expose XY/XZ/YZ plane squares. Scale planes scale the chosen pair uniformly while preserving the third axis; Ctrl/Cmd uses the scale snapping increment. Plane squares are outlined at rest and solid on hover or during capture. Single/multi-component editing shares these handles and the existing captured-source transform history.
-
-
-
-
-
-### Component pivot Undo ordering
-
-
-
-
-
-Custom component pivot state restores at its actual Undo/Redo step. Restoring selection history redraws the selection without resetting the native-restored pivot; temporary context queries do not invalidate stored state. Genuine selection changes still invalidate a pivot belonging to a different selection, with its state recorded in the same selection Undo action. Shift handle extrusion carries the custom pivot to its new cap/rim selection, translating it for Move or rotating its orientation for Rotate. Document, mesh and carried pivot are captured together in one extrusion Undo snapshot. Pivot state remains session-only; model geometry and saved object pivots are unchanged by component-pivot edits.
-
-
-
-
-
-Invert Selection defaults to Ctrl/Cmd+I through the shared command registry. Custom assignments, conflicts and explicit unassignment remain authoritative; generated Defaults/Hotkeys.json is separate from the last-loaded personal hotkey profile.
-
-
-
-
-
-With welded editing enabled, Invert Selection complements logical vertices and edges across coincident UV/hard-normal render seams, so all copies of the original component are deselected. Unwelded editing uses raw component indices. Inversion remains per selected mesh, respects component isolation and shares one selection Undo action.
-
-
-
-
-
-### Lock pivot
-
-
-
-
-
-Move, Rotate and Scale Tool Options share a **Lock pivot** checkbox, off by default. It holds the current tool pivot in world space through Undo/Redo, selection changes, component transforms and topology rebuilds. Deliberate Edit Pivot moves/alignment still update the locked pose. World orientation remains World; Object/Component handles use the held orientation. Object and component handles share the lock, including multiple component targets. A Move handle follows its active drag and returns to the held point when released; object displacement remains incremental. Unlocking restores normal pivot behavior.
-
-
-
-
-
-The enabled preference is stored through StudioPreferenceStore (`Model.LockPivot`); the world pose is session-only and is freshly captured for another document/editor session. It is not written into portable settings or workspaces and is not changed by native geometry history. The old button/menu action that ends Edit Pivot is now labeled **Finish Pivot Edit**, retaining its existing command identity and shortcut. It does not toggle this new lock.
-
-
-
-
-
-Extrude includes a live **Inset** boundary offset: positive moves outward, negative inward; Normal distance independently sets height. Zero-height inset is supported, and both-zero restores the source. Keep Faces Together offsets planar region boundaries, including holes; turn it off for independent faces. Connected curved boundaries use shared local surface-tangent offsets, allowing a selected curved band to narrow while keeping its faces connected. Degenerate or unstable surface corners still reject; inset-zero extrusion keeps existing compatibility. Open boundary edge chains offset within adjacent source face planes. Planar face offsets reuse the vendored straight-skeleton kernel; curved loops cache local conormal/tangent trajectories; live scrubs retain topology/index buffers. Collapse/split limits or cap reversal report an error rather than silently clamping. Wall UV height includes the inset displacement. Apply/Execute, grouped Undo, cancellation, attributes and multi-target editing use existing infrastructure. Inset defaults to zero; operation values reset when the tool closes and reopens. Shift-handle extrusion keeps its existing transform-driven behavior.
-
-
-
-
-
-### Edit Mesh > Edit Edge Flow
-
-
-
-
-
-Select one or more authored polygon edges on editable static meshes, then choose **Edit Mesh > Edit Edge Flow…**. The shared ToolChannelPane exposes **Influence** (−1–1, default .5) and **Iterations** (1–64, default 4), live preview, Apply/Execute and cancellation. It automatically appears under Edit Mesh in shortcut Preferences and custom-toolbar command discovery; its initial shortcut is unassigned. Multiple editable meshes and shared instances use the existing multi-component transaction path.
-
-
-
-
-
-The mesh operator fits across selected edges using cubic Hermite interpolation from fixed surrounding tangent segments. Coplanar supports give a flat target; convex or concave profiles can move outward or inward. Displacement is perpendicular to the selected edge direction, preserving its longitudinal extent instead of pinching its endpoints inward. Only selected vertices and joined seam aliases move; all unselected supports stay exact. Open multi-edge endpoints and branches remain fixed; a lone selected edge can adjust both ends. Two manifold incident faces are needed for a transverse stencil. Unsupported/boundary vertices stay unchanged instead of falling back to along-edge shrinkage. Neighbor continuation prefers topologically opposite edges, then deterministic forward-boundary candidates with equal-angle ties averaged. Topology, UV0–7, colors, IDs and materials remain unchanged. Affected-triangle collapse/inversion is rejected; global intersections/topology repair are not solved. Cached source fit targets blend with amount = sign(Influence) × (1 - (1 - abs(Influence))^Iterations), with O(vertex count + affected triangles) reevaluation and no accumulated deformation. Negative mesh-tool Influence mirrors the positive fit displacement for concave shaping; zero is unchanged. Signed strength remains bounded at high iteration counts. Standalone and Bevel controls share this range, while the separate public array relaxation helper keeps its 0–1 range.
-
-
-
-
-
-**Bevel** additionally has an **Edge Flow** checkbox, **off by default**. Enabling it reveals independent Influence/Iterations controls and smooths the generated selected rails using the same implementation. Original stationary source points remain fixed. Disabling it restores the raw bevel output, including normals; the default wavefront/clipping construction and its existing topology limits remain unchanged. Flow changes are evaluated from the immutable bevel result, never accumulated back into its construction cache.
-
-
-
-
-
-Reusable array API in `Editor/StudioEdgeFlow.cs`:
-
-
-
-
-
-```csharp
-
-
-Vector3[] smooth = StudioEdgeFlow.Smooth(points, influence: .5f, iterations: 4, closed: false);
-
-
-```
-
-
-
-
-
-This returns a new array of the same length without modifying the input. Open endpoints are exact; zero influence/iterations are exact no-ops. It uses simultaneous, source-arc-length-weighted Laplacian half-steps, two reusable iteration buffers and double intermediate arithmetic. Complexity is O(point count × iterations), with O(point count) storage and no allocations inside an iteration. Closed paths can use either unique points or a repeated endpoint. No resampling/subdivision is added. Standalone mesh previews reuse a captured adjacency plan and existing mesh publication/normal-group handling, StudioUndo, ownership, dirty redraw and cancellation infrastructure. No node system, extra idle loop or compute-shader dispatch was introduced.
-
-
-
-
-
-
-
-
-### Rounded three-edge bevel transitions (2026-10-27)
-
-
-
-
-
-Rounded profile/corner revision (2026-10-27): shared rational conic strip profiles and their analytic derivatives remain. Compatible three-sided Grid junctions now sample a rational quadratic triangular patch, matching all three strip conic boundaries in one barycentric control net. Interior vertices follow this boundary patch instead of being projected onto a sphere, which protruded at coarse subdivisions. The compatible sphere fit supplies conic controls and a boundary check; it is not an interior-radius assertion. Even/odd Grid layouts and shared IDs are retained. Compatible higher-valence junctions keep their spherical path; skew/incompatible fans keep existing compatibility construction. Boundary normals retain the strip values; interior normals use shared face sums. Flat/cap topology and width semantics are unchanged. This is a standard rational triangular patch, not a claim to reproduce any external application implementation: see [A Subdivision Scheme for Rational Triangular Bezier Surfaces](https://jcst.ict.ac.cn/article/id/356) for the established patch representation. Bevel Edge Flow skips its position postprocess at zero subdivisions because the selected rail is a chamfer boundary, not an interior profile rail. Enabling it at zero leaves raw geometry/normals unchanged; its preference and behavior at positive subdivisions remain.
-
-
-
-
-
-Sources: Editor/StudioMeshCuts.Bevel.cs and StudioMeshCuts.BevelClipProfiles.cs. The optional Edge Flow tool/toggle remains separate and off by default. Tests~/StudioBevelRoundedValidation.cs checks the constructed surface and actual native renders; see Tests~/README.md for scope.
-
-
-
-
-
-Mesh Display contains Soften, Harden and Soften options. View contains current viewport shading toggles and X-ray Mode. The existing Mesh Display toolbar keeps its X-ray button through the retained canonical key.
-
-
-
-
-
-**Window → Material Library** toggles an independent material-only browser, initially docked to the Modeler's right. It remembers dock side/tab or floating bounds, offers a filtered folder tree with All Materials, name/path search and adjustable native material previews. Clicks select only the library tile, without changing Unity Project/Inspector selection or opening assets. Drag a tile onto a Studio mesh or material slot to assign through the existing handler. The gear popup includes Assets and Packages independently (either or both), plus Rescan; type/tag filtering controls are intentionally absent. Project-open scanning builds a generated session index in bounded batches, while manual rescans update it after project changes. Only visible tiles request thumbnails; there is no idle preview/render loop. Preferences use StudioPreferenceStore. A non-dockable utility Modeler gets an adjacent floating library instead of changing its host mode. Native docking restoration depends on Unity's internal dock/split APIs and is verified on Unity 6000.4.
-
-
-
-
-
-Material Library pins **Standard** and **Prototyping** above All Materials. Standard references the existing Studio Default and Checker assets, regardless of the Assets/Packages scan scope. Prototyping is initially empty; its folder scaffolding lives at `Editor/Resources/MaterialLibrary/Prototyping` for future authored materials. Both pinned categories remain visible when empty or while the project tree scrolls. Original default/checker asset paths and contents are unchanged.
-
-
-
-
-
-Modeling shader naming (2026-10-27): MashBoxStudio_Default_Modeling_Shader.shadergraph is the modeling default graph. Its .meta/GUID (409bba92b9fbb904cbfd7cf58b9531a6) and graph contents were preserved during the rename. Generated shader name is MGShaders/HDRP/Lit/MashBoxStudio_Default_Modeling_Shader. Existing Default/Checkerboard materials retain their names, properties and shader bindings. Native disposable import/binding validation passes five checks; no shading behavior changed.
-
-
-
-
-
-
-
-
-### View menu and shortcut bindings (2026-10-27)
-
-
-
-
-
-View, after Edit, contains Wireframe, Shaded Wireframe, Viewport Lighting, Material Textures, Checker Map, Backface Culling and X-ray Mode. These mirror the current viewport controls and are assignable under View in shortcut Preferences. X-ray is removed from the Mesh Display menu. The two wire toggles preserve the existing return-to-shading behavior; there is no additional standalone Shaded item. Toolbar/menu/shortcut actions share the same current display state. Legacy wire command keys and the built-in X-ray ID are retained, preserving custom assignments, backtick/tilde and Alt+X. New entries are initially unassigned. Custom and built-in toolbar references keep resolving their canonical IDs. Display menu visibility controls stay excluded from shortcut discovery.
-
-
-
-
-
-Material Library defaults to the **right** when no placement is saved; existing saved placements are retained. Its minimum zoom switches to compact icon-and-name list rows, with horizontal scrolling for long names. Raising zoom restores thumbnails. List mode uses metadata/native icons without large-preview requests and is remembered through the existing thumbnail preference.
-
-
-
-
-
-Material Library uses one compact search row with Rescan and the options gear. The duplicate Materials caption and custom lock/three-dot buttons are removed; Inspector locking is available in options.
-
-
-
-
-
-Wireframe-only visibility (2026-10-27): surface suppression is tracked separately from logical renderer visibility. Wires and picking remain eligible while surfaces are off; preexisting hidden states and ancestor/component isolation survive shading switches and Show All. Captured flags restore on display-cache teardown. Existing GPU edge rendering is reused without a depth/surface prepass, mesh changes or idle work.
-
-
-
-
-
-Command tooltip descriptions (2026-10-27) are shared by built-in Mesh Tools/Mesh Display/Polygon Primitives and custom command buttons. Shortcut changes refresh tooltip labels through existing lifecycle events. Missing actions retain a leaf-name/unavailable explanation; embedded native controls keep their control-specific hints. No button contents, bindings or action behavior changed.
-
-
-
-
-
-
-
-
-### Grow and Shrink Selection
-
-
-
-
-
-Select > Grow Selection expands selected vertices, edges or faces by one connected ring; Shrink Selection removes the boundary adjacent to unselected components. Defaults: plain period (.) to grow and plain comma (,) to shrink, without Shift or other modifiers. Bindings are assignable under Select and preserve custom overrides/conflict handling. Vertex growth follows authored polygon edges, edges connect through vertices, and faces connect through shared vertices, including corner-touching faces. Face mode therefore expands a center face to all nine faces of a 3x3 quad block, then to 5x5, and shrinks using the same square neighborhood. Welded seam aliases are treated together; unwelded seams remain separate. Isolation limits eligible components. Multiple component-editing targets share one selection Undo/Redo action; geometry and render triangulation stay unchanged. Object mode and empty selections disable the commands. A fully selected closed component set is unchanged by Shrink.
-
-
-
-
-
-Modeling/checker separation (2026-10-27): MashBoxStudio_Default_Modeling_Shader contains BaseColor × BaseMap, Metallic and Smoothness, with no checker properties/nodes. MashBoxStudio_Default.mat retains its shader GUID. MashBoxStudio_Checkerboard.mat instead uses MashBoxStudio_Default_Modeling_CheckerMap_Shader (f495d7739232e7b4b96ac1ee1dbbceb2), retaining its existing texture/material identity. Camera/unlit previews sample the dedicated _CheckerboardMap directly; Studio Lights uses that graph. Neutral shading and the separate prototype graph are unchanged. No extra preview shader controls were introduced.
-
-
-
-
-
-### Dynamic Checker Map tile labels (2026-10-28)
-
-
-
-
-
-MashBoxStudio_Default_Modeling_CheckerMap_Shader now draws centered U/V tile labels entirely on the GPU. Tile numbers are floor(UV0)+1: [0,1) is U1 V1; the next horizontal tile is U2 V1, and the tile above that is U2 V2. Signed values through +/-9999 are supported; labels outside that range are omitted rather than showing an incorrect clamped value. Islands in the same tile share its label; geometry must cover the tile center to display it. Labels naturally follow UV mirroring/distortion.
-
-
-
-
-
-StudioCheckerLabels.hlsl implements original packed 5x7 bitmap glyphs with no font atlas, extra texture samples, CPU label updates, scene text objects or per-tile materials. It decodes only the character under the current fragment, skips work outside the centered label region, and fades labels below readable pixel resolution. White glyphs blend directly over the checker texture, with no background panel. Letter/number pairs are tightly spaced (U1 and V1), with a small gap only between the two groups. The 5x7 glyphs make U, V and digits more distinct. No GPU timing claim is made. Studio camera/unlit/X-ray previews reuse the same include with a local checker-only shader variant; other preview materials do not enable that variant. Studio Lights uses the checker graph directly. Source mesh materials and the ordinary modeling shader remain unchanged.
-
-
-
-
-
-The existing uvtexture.png contains baked U1 V1 lettering and is preserved unchanged. The checker material and graph texture default now use the small mipmapped, repeating StudioCheckerGrid.png, preventing baked text from repeating under the dynamic labels. The checker graph/material GUIDs remain stable.
-
-
-
-
-
-The Shader Graph is already wired; no manual changes are needed. To recreate the wiring: add a File Custom Function named StudioCheckerLabels, source StudioCheckerLabels.hlsl, Float precision, inputs UV (Vector2) and CheckerColor (Vector3), output Out (Vector3). Connect raw UV0 to UV, the existing checker texture sample RGB to CheckerColor, and Out to Fragment Base Color. Keep raw UV0 before Fraction/tiling for tile numbering. The include's pixel scale controls label size (up to 0.035 tile units per glyph pixel); label height is seven pixels, and long coordinates shrink to fit 90% of a tile. Keep this function in the fragment stage because it uses screen derivatives.
-
-
-UV channel clarification: checker labels read UV0 without writing mesh data or reserving a UV channel. UV7 remains available for game data. Minus signs appear only for genuinely negative tile coordinates; there are no decorative dashes or spaces between letters and their numbers.
-
-
-
-
-
-
-
-
-Selected-mesh vertex/edge clicks share hover’s 18-point, occlusion-aware hit area on both sides of exposed boundaries, including outside the face silhouette. Face/object picking remains exact; through-selection off still rejects genuinely occluded components.
-
-
-
-
-
-
-
-
-Component clicks over transform gizmos: releasing without a drag still performs the normal component selection or Ctrl/Cmd deselection. Native drags and snapping retain ownership. With welded editing enabled, Ctrl/Cmd-click clears selected coincident vertex/edge seam aliases together; raw topology and weld-off behavior remain unchanged.
-
-
-
-
-
-
-
-
-Material preview contract: use `_BaseColorMap` or `_BaseMap` for the shader reference of a base/albedo texture; its display label may be GridTexture. Camera/unlit previews also honor MainTexture shader metadata and the prototype `_GridTexture` compatibility alias, preserving texture tiling/offset. Studio Lights renders the authored graph directly.
-
-
-
-
-
-## Mesh-tool cursor style (2026-10-29)
-
-
-
-
-
-Active mesh-tool cursors share clean vector artwork: white surfaces, approximately .7-native-pixel RGB 64 dark-grey outlines/internal details and transparent exterior backgrounds. Color is confined to cyan tool badges. Multi-Cut retains the approved source-traced utility knife, rounded butt and aligned slot/slider. The seven other cursors retain a compact Aero-style arrow and newly drawn semantic badges: looped cube, target-weld vertices/arrow, extruded face, chamfer, bowed edge, softened corner and combined boxes. These identify existing active tools/panes, not new commands. Transform/Select and instant actions retain the native default cursor.
-
-
-
-
-
-StudioMeshToolCursors.cs rasterizes all vector masters once per used kind at 8x8 coverage samples into cached, readable 32x32 RGBA textures with Point filtering, transparent padding and hotspot (2,2). Badges fit a uniform 14-pixel longest dimension, preserving aspect ratio and centering within a common square. Target Weld uses a diagonal vertex pair/arrow for a readable footprint. The pointer and hotspot are unchanged; the arrow draws in front of the badge. All artwork fits the native 32px canvas. The rejected 64px canvas was removed because it can cause native cursor downscaling; actual OS scaling was not measured. No toolbar texture readbacks, temporary render targets, per-move generation, settings or mesh changes. Cached textures are destroyed before reload/shutdown. Multi-Cut pixels match the previously approved knife exactly (all 1,024 native pixels).
-
-
-
-
-
-Cursor assignment remains scoped to the viewport camera IMGUI container. Existing native current-view reset is retained when returning to Move/Rotate/Scale/Select; navigation, Alt, selection painting, panels and other hot controls take priority. Ctrl/Cmd temporarily shows Insert Edge Loop only before a pending Multi-Cut gesture. Input restoration/disposal clears the cursor. No global OS replacement or idle render loop.
-
-
-
-
-
-Validation (2026-10-29): current SDK Editor sources and updated StudioMeshCursorValidation fixture compile with existing warnings and the established test-only AO stand-in (AO untested). The source-generated textures were checked for dimensions, transparency, contour alpha, distinct artwork, compact bounds and grayscale bodies; source-derived vector-tool-cursors-preview.png inspected at native size. Approved Multi-Cut pixel comparison passes. Build/source-art inputs: obj/StudioControlsValidation/vector-cursors-build.rsp, vector-cursors-build.log and render-tool-art.ps1. These establish source artwork/compilation, not physical pointer/DPI appearance. The earlier 92-check native report (mesh-cursors-compact-reset.log) covers the previous artwork's routing, registered UI Toolkit styles and explicit native reset; it is not a new artwork pass. Subsequent disposable SelectionUndoProject runs exited during Unity startup before the fixture, so no fresh native/physical run is claimed. Working scene and personal profiles untouched.
-
-
-
-
-
-
-
-
-HDRP Camera Lighting now renders authored textured materials with camera-following physical key/fill lights and a neutral reflection environment, so Metallic, Smoothness and shader surface features respond. Asset preview variants inherit source material edits. Unlit/Xray and non-HDRP fallback remain diagnostic shaders. The two prototyping grid textures use High Quality compression; their source pixels/resolution and prior filtering are preserved.
-
-
-
-
-
-
-
-
-The two current prototype grid textures keep their 512×512 layouts and High Quality imports; minor lines use approximately 14–15 RGB levels of contrast against their local backgrounds for better visibility after tinting. Major divisions, backgrounds and line widths are preserved.
-
-
-
-
-
-
-
-
-Current prototype grid strokes at 512×512: Regular uses a 2px center cross and 4px minor grid; Alternating uses a 4px center cross and 4px minor grid. Both keep 4px outer borders, current colors and High Quality imports.
-
-
-
-
-
-## Camera Lighting adjustments (2026-10-29)
-
-
-
-
-
-Camera Lighting's authored HDRP material path now honors the existing document exposure, key intensity/color/elevation/azimuth and fill intensity/color controls. These controls are enabled for Camera Lighting when the physical-material backend is available; Shadows/Ground sections are hidden in Camera Lighting and shown only in Studio Lights; their saved values are retained when switching modes. The key direction is relative to the viewport camera. The fill retains its fixed camera-relative direction. Exposure offsets the material rig's EV6 baseline (positive values brighten). Default key/fill are the existing document values 1.3/.3 rather than a hardcoded 1.3/.6 white pair. Both default light colors are white; existing workspace colors are preserved until Reset Lighting. New camera-only Reflections strength (0–2, default .35) scales the neutral reflection environment independently; the old hardcoded value was 1. This addresses the fixed flat balance and lets the user tune reflective/rough materials; the exact working-scene smoky appearance remains subject to user confirmation.
-
-
-
-
-
-cameraReflectionIntensity is serialized with StudioLightingSettings in the workspace document, edited/reset through the existing EditLighting/StudioUndo path. No personal settings/hotkey file or source material is overwritten. Camera rig parameters are applied on existing invalidation, not continuously rebuilt on camera movement. Orbit updates only light rotations as before. Studio Lights calibration, Skinning/Cloth/Retopology material rigs, Painting exposure and texture-off computed neutral/unlit/Xray/non-HDRP paths are unchanged. The new camera controls affect the authored textured HDRP path; they do not redesign neutral diagnostic shading. No global contrast/postprocessing override or project-lighting change was added.
-
-
-
-
-
-Sources: StudioLightingSettings.cs, StudioModelEditor.Lighting.cs and StudioPreviewLighting.cs. Validation: actual SDK Editor sources and excluded Tests~/StudioCameraLightingControlsValidation.cs compile with existing warnings. Disposable CameraLightingControlsProject/Unity 6000.4.12f1 passes 22 native HDRP checks, including framebuffer changes from exposure, key/fill strength and reflections, camera-relative direction, source shader/assignment retention and JSON roundtrip. Report camera-lighting-controls-result.txt; log camera-lighting-controls-native.log; native default camera-lighting-controls-0.png inspected. Build/fixture inputs under host obj/StudioControlsValidation. Initial sandboxed launch stalled on licensing; only this task's verified disposable process was stopped and rerun with normal licensing/cache access. No physical slider gesture, every custom material/backend, full lighting suite or performance measurement. Working project/personal profiles preserved.
-
-
-
-
-
-Material Library grid labels are inset within thumbnail cards and use two explicitly measured lines, retaining the name prefix and adding an end ellipsis only after the second line overflows, retaining full-name/path tooltips. The left category/folder list uses a slightly lighter, theme-derived background for separation.
-
-
-
-
-
-Material Library settings include **Hide trailing _Mat**, default off. Enabling it hides the suffix in grid/list labels; asset names and full-name tooltips remain unchanged.
-
-
-
-
-
-Material Library thumbnails use flat plane previews filling the thumbnail square without the native gray border, via transient material copies; source materials and Inspector previews are not modified.
-
-
-
-
-
-Workspace file dialogs default to MashBoxStudio/Workspaces; model import/export dialogs default to Assets. Each category remembers its own last chosen folder across open/save dialogs through Studio settings. Cancel preserves the previous location; missing folders fall back to the default.
-
-
-
-
-
-Material Library plane thumbnails render at 256×256 and cache results until the source changes, avoiding enlargement of the small native thumbnail. The cache is bounded and released with the library preview resources.
-
-
-
-
-
-Prototyping library thumbnails use unlit 256×256 BaseMap thumbnails with mipmaps/trilinear filtering and the material tint/tiling. Both these thumbnails and other material-plane previews remain cached across category switches; only source changes or bounded LRU eviction regenerate them.
-
-
-
-
-
-New Subdivision modifiers default to level 1; existing modifier levels are preserved.
-
-
-
-
-
-Subdivision crease support is removed from Studio: UI, stored settings, workspace validation, edge remapping and native descriptor input. The upstream OpenSubdiv library retains its required boundary-sharpness internals.
-
-
-
-
-
-Pivot orientation editing (2026-11-02): Edit Pivot displays one combined gizmo: translation arrows/plane squares/center plus the standard native rotation rings and free-rotation control, all in the edited pivot frame. Ring drags edit orientation; translation controls retain V/C/X snapping. Geometry and children stay fixed. Choosing any ordinary tool (including Move/Rotate) finishes pivot editing, as does D/Finish Pivot Edit. Ctrl/Cmd enables rotation increment snapping. No separate pivot Move/Rotate mode, new shortcut or preference. Object/component/locked pivot orientation continues through the shared Orient and StudioUndo paths.
-
-
-
-
-
-Freeze Transforms also resets the effective object pivot orientation to world space. Rotation channels become exactly zero; the pivot offset compensates a rotated parent so its world frame remains identity. Existing geometry/child compensation and restrictions remain. A locked pivot receives the reset orientation through the shared command and Repeat Last paths. Invalid pivot positions are rejected before compensation; combined gizmo publication requires a valid value and the owning handle channel.
-
-
-
-
-
-Pivot target feedback updates immediately on modifier transitions with a stationary pointer: plain Align, Shift Position, Ctrl/Cmd Orient, Ctrl/Cmd+Shift Aim X. The target remains hovered while the label changes; existing key routing and dirty redraw are reused without polling.
-
-
-
-
-
-### Radial menu presets
-
-
-
-
-
-Open **Preferences > Radial Menus**, or **Display > Radial Menus > Customize Radial Menus…** to select that tab. Both customization tabs share the Preferences window and reuse the custom-toolbar editor: create/rename/delete presets, search the same command catalog, add/remove commands, and drag rows to reorder. The first row is at 12 o’clock and the rest follow clockwise. **Assign Shortcut…** opens the preset’s entry in Preferences > Shortcuts > Radial Menus. Every preset has a stable, independently assignable keyboard or mouse shortcut and a constant command list; object/component mode does not choose another preset. Each preset saves immediately to its own JSON file under <Documents>/MashBoxStudio/RadialMenus/Presets; generated factory copies live under RadialMenus/Defaults. Bindings remain in the independently loaded hotkey profile.
-
-
-
-
-
-Components and Orientation retain their original shortcut identities and defaults (including the shared Apply Cut binding). Transform, Pivot, Selection, UV and UV Sets are also editable default presets. New presets start unassigned. Existing custom bindings and explicit unassignment are preserved. Initial setup/migration creates the preset files; later edits write only the individual changed preset files and ordering manifest. Unknown command keys are retained and shown unavailable.
-
-
-
-
-
-Only a visible button is a hit target. Compact 24-point buttons have gaps, and directional wedges never activate an item. Submenus open after hovering the same button for 250 ms; leaving the button cancels that delay. Hold the assigned mouse/key shortcut, move onto a button and release to run it; releasing in a gap cancels. Submenus can open on a 250 ms hover without clicking; releasing the trigger always closes the radial gesture, including when Back/submenu navigation occurs on the same event. After entering, child hover must be reacquired by fresh pointer movement and has its own delay, avoiding stationary cascades. Back uses the same 250 ms hover delay and requires leaving/re-entering after context changes; Escape/focus loss cancels. Every command appears in one pie, with no pages or fixed item-count limit; the radius grows only as needed for separation. Commands retain their shared enable/execute behavior. Native toolbar controls use their existing widgets in an owned auxiliary window when selected from a radial menu.
-
-
-
-
-
-All presets use StudioRadialMenus data/layout and StudioModelEditor.MarkingMenus input/rendering; no per-context menu implementations. The old hovered-object acquisition, fixed directional sectors and automatic submenu transitions are superseded. Rendering is event-driven.
-
-
-
-
-
-The Components default is exactly Edge → Object Mode → UV → Face → Vertex, clockwise from north. Its UV submenu contains Select UVs and Select UV Shells as disabled placeholders. These will select directly in the 3D modeling viewport when UV-editor development implements them; they do not open editors. Existing saved custom presets are preserved.
-
-
-
-
-
-Radial gestures retain a thin cursor tether from the current radial context’s opening point: a one-point palette-text line with a two-point dark backing, drawn behind buttons. Back uses the same 250 ms same-button hover timing/reset rules as submenu entry; returning clears hover to avoid cascading across parents.
-
-
-
-
-
-Entering a submenu or returning with Back opens the new radial context centered on the current cursor and resets its tether origin there. The new context stays centered exactly on that cursor position. Hover resets on transition, preserving the same per-level delay.
-
-
-
-
-
-Radial command buttons are compact rounded rectangles, placed outward from equally spaced anchors on one circular radius. Each context uses one common 80–128-point width and a 24-point height. The radius grows only enough to keep buttons and center navigation separated. Fill is dark but lightened, with a darker outline and accent hover; the existing StudioTheme cache/disposal is reused.
-
-
-
-
-
-Radial command buttons are 24 points high with 16×16 icons inset four points from the left/top/bottom. Labels start four points after the icon, are left-aligned and retain a four-point right inset. Back/page controls stay compact rounded rectangles. Checked state is marked on the icon. Existing StudioCommandIcons artwork is reused.
-
-
-
-
-
-
-
-
-The large curved-segment experiment was rejected and removed. Rectangular button hits and compact bounds are restored; placement equalizes visible edge gaps around one circle; current order remains Edge → Object Mode → UV → Face → Vertex. Hover timing, cursor-centered submenus, thin tether and presets are unchanged.
-
-
-
-
-
-
-
-
-
-
-
-Button anchors use exact 360°/count angular spacing. Rectangles extend outward from their anchors so wide labels do not squeeze the circular middle. The visible command group’s bounding-box center is pinned to the opening pointer for root menus, submenus and Back transitions. Layout cannot move the opening pointer. Near viewport edges, buttons may extend outside the canvas instead of displacing the menu away from the cursor.
-
-
-
-
-
-Visible-group centering: after computing the preferred relative spacing, Layout subtracts the command rectangles’ combined bounds center from every rectangle. This moves odd-count groups down where necessary instead of placing their mathematical circumcenter at the cursor. The rendered group has equal left/right and top/bottom extents around its opening pointer; relative button spacing is unchanged. The underlying circle may consequently be offset from that visual anchor.
-
-
-
-
-
-Radial release lifecycle: releasing the initiating mouse/key gesture always closes the menu and clears its control/tether after processing the release, including release over Back, a submenu or a page arrow. Navigation through hover remains available while held. A release arriving at the same time as Back hover cannot leave a captured menu behind.
-
-
-
-
-
-Radial positions receive a modest proportional tightening of up to 6%, preserving button dimensions and visible-group centering. Minimum five-point button gaps and center navigation clearance take priority; dense menus use a smaller reduction or keep their radius if needed.
-
-
-
-
-
-Customization insertion markers appear only during a drag owned by that customization window. Drop, mouse release, Escape, drag exit, focus loss and window close clear its drag payload/marker; ordinary mouse movement cannot display stale reorder lines. This applies to both toolbar and radial list editing.
-
-
-
-
-
-Radial center breathing room scales with command dimensions and count: minimum distance from the opening point to a command rectangle is max(1.6 × row height, 0.3 × largest width) × (1 + 0.15 / sqrt(item count)). Sparse menus therefore retain room around Back instead of collapsing into the center. The final small inward tightening is allowed only when it preserves that clearance. The decorative circular guide was rejected and removed.
-
-
-
-
-
-Uniform-size radial layouts are cached by item count/width/height (up to 64 entries), with a copy returned to each caller. Reopening or returning to the same geometry reuses its spacing result; changed count/dimensions compute a new result. The approved proportional center padding is retained. No guide texture/draw work remains; hover/release/input behavior is unchanged.
-
-
-
-
-
-After a submenu or Back context opens at the cursor, Back is initially unarmed. Move outside its visible hit rectangle once, then re-enter to begin its 250ms hover delay. Tiny movement while still inside cannot activate Back. Root/context changes and closing reset this guard; trigger release still closes the gesture.
-
-
-
-
-
-Radial menus never use pages, overflow arrows or a viewport item cap. All configured commands appear in the same pie, in list order. The circular radius grows as necessary to prevent overlap; very large pies can extend beyond the viewport rather than hiding commands.
-
-
-
-
-
-### Individual radial JSON files
-
-
-
-
-
-- `<Documents>/MashBoxStudio/RadialMenus/Presets/<stable-id>.json`: editable presets, saved immediately when you rename, add/remove commands or reorder them.
-
-
-- `<Documents>/MashBoxStudio/RadialMenus/Defaults/<stable-id>.json`: generated factory references, kept separate from edits.
-
-
-- `<Documents>/MashBoxStudio/RadialMenus/manifest.json`: preset list order, with deleted presets staying deleted.
-
-
-
-
-
-Preset files are in **<Documents>/MashBoxStudio/RadialMenus/Presets**; the customization editor has no help/footer strip or folder-opening button. Each preset contains `format: MashBoxStudio.RadialMenu`, `version: 1`, `id`, `name` and ordered `commands`. Filenames match stable IDs; rename the displayed `name` rather than changing an ID, so shortcuts/submenu links remain valid. Unknown command keys are preserved. New valid preset JSON files appear automatically; external edits reload through filesystem events on Unity's main thread, without idle polling. Invalid files are left intact with a warning and keep their last valid in-memory entry where available.
-
-
-
-
-
-Existing embedded `Studio.RadialMenus` settings migrate to individual files without changing names, order, commands or IDs. Only after the new files load does the old settings entry become an empty migration tombstone. Files are the source of truth thereafter; radial presets are user-wide separately from Settings/Hotkeys profiles, like toolbar layouts. Copy the RadialMenus folder when transferring presets; copy/export hotkeys independently. Atomic writes reuse StudioPreferenceStore, including recovery backups. Generated Defaults may be regenerated; edit Presets for personal changes. Only recognized preset files intentionally removed in the UI are deleted; unrelated/invalid files are preserved.
-
-
-
-
-
-### Preferences folder organization
-
-
-
-
-
-`<Documents>/MashBoxStudio` contains only categories: `Profiles` (editable Settings/Hotkeys and new custom copies), `Defaults` (generated Settings/Hotkeys), `Layouts` (ToolbarOverlays.json), `State` (LastLoaded.json), and `RadialMenus` (its existing Presets/Defaults/manifest tree). Import/export dialogs start in Profiles; arbitrary independently loaded profile paths remain supported.
-
-
-
-
-
-Startup safely relocates the previous known root files and their backups and updates remembered paths to moved personal or factory profiles. It never replaces a different destination file: conflicts keep both copies and warn. Identical duplicate legacy files can be removed. Custom/external selected profiles are not relocated. This explicit organization migration is the exception to ordinary read-only profile loading; after migration, normal loading remains read-only and factory generation remains separate from personal profiles.
-
-
-
-
-
-Single circular pie layout (2026-11-02): the old iterative rectangle-gap angle optimizer has been removed. Anchor directions are exactly 360°/item-count apart. Each card sits outside its circular anchor: horizontal half-width is added outward on left/right, vertical half-height on top/bottom. This makes the inner boundary read as a circle, instead of using wide card centers as the ring. Approved proportional padding, upright icon/text rows and visible-group midpoint centering remain. Radius grows uniformly and refines to a non-overlapping fit; there is no pagination, fixed visible count or viewport-fit hiding. Layout cache still returns immutable copies. One-entry submenu Back sits below the single centered card to avoid overlap.
-
-
-
-
-
-Radial packing refinement (2026-11-02): circular anchors retain equal angular spacing; smooth outward button offsets and a row-height/clearance-based minimum radius reduce unnecessary central gaps. Existing padding, visible-group centering and single-pie behavior remain. Large command lists can extend beyond the viewport.
-
-
-
-
-
-Radial spacing correction (2026-11-02): superseding outward-anchor placement, button centers share a true circle. Neighboring visible rectangle gaps are balanced through angular adjustment with north pinned, preserving circularity, center clearance and a single pie. Equal angle steps alone are not required for wide horizontal labels.
-
-
-
-
-
-Round radial envelope correction (2026-11-02): current placement supersedes the button-center circle/angle relaxation. Equal angular spokes compensate for half label width/height inside the shared outer radius, making the overall visible footprint round instead of stretching it by label dimensions. Existing padding, centered opening and single pie remain. Native appearance acceptance pending.
-
-
-
-
-
-Radial arrangement (2026-11-02, current): Studio keeps its own button styling. Layout uses equal-angle circular spokes with horizontal labels extending away from each spoke; north/south centered. No vertical half-height offset, elliptical compression, square footprint constraint or angular relaxation. This supersedes the prior center-circle and round-envelope corrections. The supplied Blender image guides arrangement, not an exact visual copy. Native appearance acceptance pending.
-
-
-
-
-
-Approved radial arrangement tightened (2026-11-02): compact minimum spoke radius now max(2.5*rowHeight,.5*buttonWidth,requiredClearance). Keeps approved equal-angle/outward-label placement; non-overlap still grows crowded pies as needed. Six104px buttons move37.5% closer to the origin, without resizing buttons.
-
-
-
-
-
-Further radial tightening (2026-11-02): user permits overlapping horizontal spans, but explicitly rejects visually overlapping buttons. Horizontal offset .35 width, minimum radius max(2 rows,.4 width,clearance), pairwise visible separation at least1px instead of a mandatory5px gap. Equal angular spokes and existing behavior retained. Production compile and targeted geometry checks pass (radial-tight-overlap-build.log/result.txt,22114 assertions including updated visible-separation checks); computed preview inspected, native input/rendering not replayed.
-
-
-
-
-
-Six-pixel radial spacing (2026-11-02): current layout packs matching spoke rows at6px vertical gaps for six or more items, retaining horizontal placement and visible-bounds centering; all pies require6px visible pair separation. This supersedes final equal-angle expectations after vertical packing. Inner clearance for packed pies capped at1.25 row heights. Production compile and targeted actual-assembly checks pass (radial-six-pixel-rows-build.log/result.txt,21348 assertions including exact row/pair gaps). Computed eight-item preview inspected; native render/input not replayed.
-
-
-
-
-
-Radial spacers (2026-11-02): use **Preferences > Radial Menus > + Empty Spacer**, or find **Layout/Empty Spacer** in Available functions. Drag the spacer row to separate groups; add/remove multiple spacers as needed. Each reserves one normal slot but draws no button and accepts no input. It saves immediately in the existing preset JSON as `Radial/EmptySpacer`; releasing on a spacer cancels the pie.
-
-
-
-
-
-Preferences heading cleanup (2026-11-02): Themes, Toolbars and Radial Menus retain their main page titles; redundant Color theme/Custom toolbars/Radial menus inner headings are removed.
-
-
-
-
-
-Customization list margins (2026-11-02): Toolbars and Radial Menus lists balance total visible left/right gutters, including the embedded Preferences parent inset.
-
-
-
-
-
-Shortcut recording (2026-11-02): remap windows accept keyboard keys or mouse buttons with Ctrl/Cmd, Shift and Alt, including newly created radial menus. Existing conflicts are reported and must be cleared/remapped explicitly; no assignment is silently replaced.
-
-
-
-
-
-Curved connected inset (2026-11-02): preserves local seam-coherent trajectories, boundary-collapse and cap-reversal guards. It is a local linear surface offset, not general3D collision/remeshing continuation. Production and focused-fixture compilation pass; actual compiled boundary-math checks pass2016 assertions. Full native mesh/input/Undo verification remains pending because the reusable disposable editor was unavailable.
-
-
-
-
-
-Tool sessions (2026-11-03): operation options reset to their declared defaults on each reopening; last-used values are no longer saved to profiles. Extrude starts with Normal distance0 and Inset0. Apply retains edits while the tool stays open. Meaningful nonzero defaults remain, and Repeat Last Action uses its separately recorded values. Pane bounds/drag sensitivity and durable selection preferences still persist; existing profile files are not rewritten to remove legacy values.
-
-
-
-
-
-Hide no-op behavior (2026-11-03): Hide Selection with no eligible visible target leaves the last-hidden set intact and does not finish a tool preview. Object targets already hidden through ancestors are ignored; only successful hides enter hide history.
-
-
-
-
-
-Hidden hierarchy text (2026-11-03): hidden nodes and descendants hidden by ancestors use dimmed theme-relative names while remaining selectable/draggable. Icons and eye controls unchanged. Source/compile verification only; native rendered confirmation pending.
-
-
-
-
-
-Hidden hierarchy tint correction (2026-11-03): user screenshot showed the style-only text color edit did not dim names. Current code uses scoped GUI.contentColor RGB*.45 during hidden row content rendering, restoring it afterward. Production compile hidden-hierarchy-tint-build.log passes; native rendered confirmation remains pending.
-
-
-
-
-
-Hidden hierarchy icons (2026-11-03): object/group/anchor artwork now matches the approved hidden-name45% RGB tint, including ancestor-hidden nodes. Separate scoped texture/text tint avoids double darkening; visibility controls and row input stay unchanged. Source/production compile checked (hidden-hierarchy-icons-build.log); native icon appearance confirmation pending.
-
-
-
-
-
-User-approved radial factory defaults (2026-11-03): Standard, Pivot, UVs, Orientation, Convert Selection, To Vertices, To Edges, To Faces, in that order. Standard (stable components ID) contains Edge, Object Mode, UVs, Face, Vertex, Pivot and Assign Material. Factory definitions and generated Preferences/RadialMenus/Defaults JSON now match the active authored presets, preserving their stable IDs; active preset and shortcut files were not rewritten.
-
-
-
-
-
-
-
-
-Transform orientation feedback (2026-11-03): Move/Rotate/Scale show a small gizmo-anchored label containing only World, Object or Component, using the same shadowed style as pivot target feedback. It reflects the current orientation selection and is scoped to an active selected transform over the camera canvas, yielding to navigation/panels/special tools.
-
-
-
-
-
-Orientation label placement/toggle (2026-11-03): World/Object/Component text is attached to the transform gizmo, not the mouse. Settings > General > Editing > Show orientation label disables it; default enabled, saved through the existing settings profile. Single/object and multi-component handles share the same display. Pivot target labels are unchanged.
-
-
-
-
-
-Orientation text overlay correction (2026-11-03): handle rendering captures its gizmo screen position; the existing viewport overlay draws World/Object/Component afterward, avoiding scene-image compositing over the text. The Settings toggle remains unchanged.
-
-
-
-
-
-Orientation gizmo projection fix (2026-11-03): label anchors use the explicit viewport camera rather than HandleUtility’s implicit Camera.current, which can be cleared by gizmo antialiasing. Native cube captures verify World beside the Move gizmo and its disappearance with Show orientation label disabled.
-
-
-
-
-
-Orientation label placement (2026-11-03): the orientation word sits beside the most camera-facing XY/XZ/YZ combo-plane square, following actual gizmo orientation/size, with a10px right offset and vertically centered text. Settings visibility toggle and orientation-only text remain.
-
-
-
-
-
-Plane-square placement correction (2026-11-03): keep the camera-projected GUI anchor directly; scene and retained-overlay screen conversions have different origins and previously shifted the word above the arrow. Native near-side Component capture now verifies text directly beside the facing red square, vertically centered.
-
-
-
-
-
-Orientation text side (2026-11-03): the word automatically sits on the square’s outer side—left when the square projects left of the gizmo origin, right otherwise—keeping it clear of the central axes.
-
-
-
-
-
-Edit Mesh now owns component construction (Extrude, Fill Hole, Poke, Bevel, Bridge), shaping (Circularize, Edit Edge Flow), weld/merge (Weld, Merge to Center, Target Weld), edge insertion/cutting (Insert Edge Loop, Multi-Cut), face duplication/detachment (Duplicate Face, Duplicate Face as New Object, Detach Face), and Subdivision (Subdivision Preview, Add Subdivision). Six related groups use five horizontal separators. Mesh Tools now contains Combine Meshes/Split Selection, then Bisect/Fracture, then its existing Deform submenu, with two separators. Mesh Display contains Soften, Harden, Soften options, Recalculate Normals and Flip Normals. No new submenus, operations or selection behavior were introduced. Fourteen relocated actions retain their original Mesh Tools or Mesh Display command keys through an explicit Edit Mesh presentation-to-legacy-key map in StudioModelCommands. Shortcut Preferences groups them under Edit Mesh while retaining existing bindings/defaults, including Extrude and the legacy Merge Vertices identity. Command dispatch, icons, custom toolbar/radial references and the existing 18-button Mesh Tools overlay continue to resolve their established keys. The overlay order/layout is independent of the reorganized menus and was not changed. No personal profile/preset/default-hotkey file was rewritten.
-
-
-
-
-
-
+## Toolbar button boxes and padding (2026-11-05)
+
+The current correction targets shared button backgrounds and insets, not icon artwork bounds. Shared styling now matches actual EditorToolbarButton/EditorToolbarToggle types (command buttons use unity-toolbar-button), enforces identical square boxes and symmetric margins/padding, and preserves text/dropdown widths and native states. Production compilation passes; actual live control classes/24px icon rectangles were observed before correction. See host IconSizing/button-boxes-compile.log and live-toolbar.txt. No further desktop or native fixture was run after the user's request to reduce computer interaction; final rendered padding remains for user confirmation. The temporary observer and obsolete StudioIconSizingValidation.cs alpha-bound gallery fixture were removed. Its earlier43 checks established texture bounds only and do not validate button sizing. Original icon artwork/cache rasterization is restored. Existing menu/toolbar fixtures remain unchanged; no personal profiles, docking state or geometry were rewritten.
+
+## Polygon primitive drawn vertex by vertex (2026-11-05)
+
+Create > Polygon Primitives > Polygon starts an interactive new-object primitive. It also appears as the sixth Polygon Primitives toolbar button, with a cached polygon silhouette icon, and in the shared customization/shortcut catalog (no default activation shortcut). It never adds a face to the selected mesh. Click vertices clockwise to face the placing camera; click order controls winding. Unsnapped placement uses one view-facing plane through the view pivot, fixed when the tool starts. Polygon now accepts the shared configured vertex (factory V), finite-edge (C) and grid (X) holds. Vertex/edge targets retain their exact world depth rather than being projected back onto that plane, including targets on the selected source mesh; existing geometry is never moved. Vertex/edge takes precedence over grid and a missing held target never falls back to unsnapped placement. Each placed vertex resets finite-edge capture for the next placement; one capture stays on its finite segment and clamps at endpoints. Grid uses workspace spacing and the active perspective/top XZ, Front XY or Side YZ grid plane. Keys, releases, focus-loss cleanup and status use the existing snap lifecycle, not new hardcoded bindings. Unsnapped/grid rays and vertex/edge picking share native HandleUtility GUI coordinates; hover target and committed point use the same resolver. Key changes refresh the target even under a stationary cursor; a hover dot shows it before the first point. Exit clears holds/capture. Alt camera navigation remains available. The camera is preserved when creating the first workspace.
+
+W finishes the polygon and returns to Move. Clicking the first vertex does not finish it (explicit user decision); duplicate positions are ignored. Backspace/Delete removes the last point, Escape or Tool Options Cancel discards the pending outline. Tool Options shows the point count and guidance. Ordinary tool switches finish a valid pending polygon through the shared transition path and discard an invalid outline. G after completed creation reopens Polygon placement; it does not duplicate the previous outline. Preview shows placed vertex dots, perimeter, translucent triangulated fill and a dotted closing segment; its render triangles are cached when points change, without idle rendering.
+
+Completion creates a separate root object with a centered pivot, fixed world vertex positions, planar UV0, normals/tangents and one genuine authored n-gon retaining every perimeter vertex. Concave simple outlines use the shared cap triangulator; render triangles do not become editable diagonals. Fewer than three vertices, zero-area and unsupported self-intersecting outlines report through the existing error route and remain editable after a failed W. This primitive starts as authored mesh geometry, without the parameterized creation modifier used by Cube/Sphere/Plane/Quad/Cylinder; subsequent tools use ordinary modifier history. Existing unit-based generator dimensions and personal profiles are unchanged.
+
+Sources: Editor/StudioModelEditor.Polygon.cs (input, preview, completion), StudioModelDocument.Polygon.cs (mesh/publication/StudioUndo), StudioMeshCuts.Bisect.cs (existing shared triangulator made internal), plus Menus, CutTools, Shortcuts, ToolOptions, Repeat, StudioMeshToolbars and StudioCommandIcons. Production compilation passes with existing warnings. The reused disposable ThemeIsolationProject passes13 focused native checks: concave n-2 triangulation/area, authored perimeter, centered world positions, clockwise normals and actual front/back renderer culling, short-outline rejection, standalone object topology, StudioUndo/Redo, Backspace, Escape and toolbar inclusion. Render capture front.png inspected. Evidence: host obj/StudioControlsValidation/PolygonCreate compile.log, native-build.log, result.txt and front.png/back.png; reusable excluded test source Tests~/StudioPolygonCreateValidation.cs. An initial fixture used an invalid workspace extension/path and was corrected to the disposable project's Workspaces path. Initial primitive validation did not replay physical pointer placement, the filled Handles preview or four-view interaction; the snapping follow-up below adds focused native input/picker checks. No new Unity launch, working-scene fixture or personal-profile reset.
+
+## Orthographic views and 2×2 layout (2026-11-05)
+
+Polygon snapping follow-up (2026-11-05): the initial tool omitted snapping and its shared hold handler only admitted Move/Edit Pivot. Editor/StudioModelEditor.Pivot.cs now admits Polygon hold input without any transform gesture, while MoveHandles.cs retains all stationary meshes as eligible targets in this creation mode. Its grid helper has a frame overload shared by Polygon; existing callers retain the identity/XZ path. Polygon.cs resolves both preview and placement through those existing target pickers and shared precedence; CutTools clears the snap lifecycle on exit, and ToolOptions guidance reflects the controls. Production compilation passes. Focused native snap validation results are recorded in host obj/StudioControlsValidation/PolygonSnap/result.txt and native-build.log, with excluded reusable source Tests~/StudioPolygonSnapValidation.cs. Checks exercise native GUI rays/vertex and finite-edge pickers, selected-source eligibility, exact world depth, precedence, misses, release/exit, fixed source geometry and three grid frames. No physical custom-binding/focus-loss or four-tile pointer matrix was replayed; no working-scene fixture, new editor session or personal-profile changes.
+
+## Floating Studio host recovery after compilation (2026-11-05)
+
+Live failure confirmed: after compilation the open MashBoxStudioViewport retained native Scene toolbars/grid but lost Studio menu, hierarchy, Tool Options and Channels. A temporary read-only observation recorded the same real host with hideFlags=DontSave, a valid serialized AnimationStudioWindow owner, IsEmbeddedView=False and HasStudioBindings=False. The recovery loop incorrectly skipped every DontSave view. It now permits Studio-owned DontSave hosts, while retaining exclusions for embedded quad tiles, unowned temporary DontSave views and already healthy hosts. The existing owner/document restore path handles the rebind; no restart, focus workaround, global window recreation or new idle loop is introduced.
+
+Source: SDK Editor/MashBoxStudioViewport.cs RestoreStudioViewsWhenReady. Current complete SDK compile passes (host obj/StudioControlsValidation/ReloadRecovery/compile.log). Actual live external-source import/reload recovered the same viewport and owner instance IDs: HasStudioBindings changed False to True and the Studio title/content returned. Computer-use screenshots inspected show menus, hierarchy, Tool Options and Channels restored without closing/reopening the window or Unity. live-recovered.txt records the bound state. The current observed workspace was empty; preservation of a nonempty document, animation/painting and four-view reload matrices were not separately replayed. Temporary Assets/Editor/StudioReloadObservation.cs/meta were removed; this was a read-only observation, not a destructive working-project fixture. No global preferences were rewritten.
+
+The host external-SDK refresh helper remains. Unity initially imported an intermediate PackageInfo ambiguity while that helper was being authored; its corrected fully qualified source was subsequently compiled by the real editor. A normal Assets Refresh was performed through Unity UI to import the diagnostic; the successful external SDK recovery edit then compiled without an additional UI refresh/restart. A subsequent external source timestamp event triggered the normal scan and compiled observer cleanup (Assembly-CSharp-Editor.dll updated); the same open Studio retained its complete menus/panels in a second live UI capture. This verifies the observed import/recovery path, not that every prior missed import had the same cause. No sustained diagnostics or source polling remains.
+
+## External SDK source edits and import refresh (2026-11-05)
+
+User clarified that code changes were not appearing because Unity had not compiled them, rather than Studio showing old code after a completed reload. Unity Auto Refresh mode and its legacy flag were both enabled (read-only preference inspection); this host references the SDK through file:D:/MashGames/mashbox-sdk/com.mg.mashbox.sdk/. The precise native external-file detection failure was not reproduced. User subsequently reported things seem fine. The user later retracted that recovery report; the subsequent live DontSave-host investigation and fix are documented above.
+
+Host-only Assets/Editor/MashBoxSdkSourceRefresh.cs now provides event-driven local-package development refresh. It resolves the external local SDK package, watches C#/shader/compute/HLSL/GUI/assembly-definition source changes, ignores hidden and Unity-excluded tilde directories, and coalesces edits after750 ms quiet time. File callbacks only signal a timer; normal AssetDatabase.Refresh runs on Unity's main thread when importing/compiling/play mode permit it. Pending-work update callbacks detach after refresh; no idle filesystem polling/repaint or forced restart/reload-unlock is introduced. Explicit Auto Refresh mode0 remains respected. Watcher/timer resources dispose before assembly reload and on editor exit. This is host development support, not a new SDK product service or scheduled background task; it does not modify global refresh preferences or personal Studio profiles.
+
+Validation: the actual host helper compiles against installed Unity Editor assemblies (obj/StudioControlsValidation/SourceRefresh/compile.rsp and compile.log). Initial PackageInfo namespace ambiguity was corrected with a fully qualified API. No destructive/native fixture, working-scene mutation or new Unity launch. Subsequent external SDK source import and real host recovery were observed live as documented above; the earlier standalone compile check alone did not establish that result. Existing Studio reload/resource recovery remains authoritative.
+
+## Command-toolbar dock transition and side-strip sizing (2026-11-05)
+
+User reported a huge blank left dock pushing hierarchy/canvas right, triggered by docking Mesh Tools. This is a dock-sizing report, not a request to change button orientation manually. StudioCommandToolbar now remembers the native horizontal/vertical content-creation request before creating its panel, consumes layoutChanged's supplied value directly and retains that direction through rebuild/refresh. The previous handler reread layout instead of the event value, allowing a stale horizontal row during a side-dock transition.
+
+Custom command contents have no flex growth/shrink and use intrinsic start alignment. Divider cross dimensions are bounded to the configured icon size plus6 (one styled button including margins), rather than auto sizing with100-percent children that can feed an oversized row back into native dock measurement. Gaps remain8 points along the toolbar; dividers still span that complete button-row/column footprint, remain passive and use the same built-in/custom implementation. Direction changes recalculate spacer dimensions; refresh also reapplies the remembered direction. No saved docking/visibility/configuration reset or personal-profile rewrite is introduced.
+
+Source: Editor/StudioCustomToolbar.cs. Actual installed SDK/native fixture compiles with existing warnings (host obj/StudioControlsValidation/ToolbarDock/fix-build.log). Updated non-exiting StudioToolbarSeparatorValidation passes21 checks, adding production layout-callback/refresh transitions in both directions for Mesh Tools and authored custom spacers to the prior17 checks. Native retained full-height divider bounds/render pixels remain checked. Results/capture in host obj/StudioControlsValidation/ToolbarSeparators; screenshot inspected. The checks invoke the actual layout callbacks while the overlay getter can still hold its previous value; physical docking in the user's workspace was not replayed. An exploratory standalone dock-host probe did not have displayed overlays and is not accepted as dock validation. That probe used a test-only isolated preference-store copy; the production preference root was not changed and personal files were not reset. No new Unity session or working-project fixture.
+
+## Authored spacers in custom toolbar overlays (2026-11-05)
+
+Preferences > Toolbar customization exposes + Spacer beside Toolbar contents. It appends a manual spacer entry; existing row dragging, up/down and remove actions move/delete it. The row is labeled Spacer, not an unavailable function. Its stable Toolbar/Spacer key is retained in the existing command list/JSON and uses existing StudioCustomToolbars.Save; only user edits write the current personal toolbar configuration. No migration, automatic insertion into custom lists or development profile rewrite occurs.
+
+At runtime manual entries share the built-in separator constructor:8-point gap, subtle1-point divider, full toolbar height horizontally/full width vertically (user follow-up), non-focusable/non-pickable and no command/icon/shortcut execution. Explicit leading/trailing/repeated spacers are retained wherever the user places them. Existing custom commands/controls/order remain. Built-in automatic menu-group separators remain separate and unchanged. Radial + Empty Spacer keeps its existing full-slot invisible behavior/key; a toolbar spacer does not become a radial slot or selectable modeling command.
+
+Sources: Editor/StudioCustomToolbar.cs stable key/shared separator rendering and orientation; StudioToolbarCustomization.cs + Spacer and readable row label. Current SDK/fixture compile with existing warnings. Reused disposable native fixture passes17 checks: prior12 built-in checks plus custom JSON order roundtrip, three real buttons/two authored separator elements, matching passive horizontal style, vertical rotation and full rendered divider height. Updated native toolbar-separators.png includes the custom row and was inspected; real retained gap bounds and native pixels remain checked. Host artifacts under obj/StudioControlsValidation/ToolbarSeparators; excluded Tests~/StudioToolbarSeparatorValidation.cs updated. The fixture uses in-memory JSON rather than writing personal profiles. Physical customization clicks/dragging and profile restart were not separately replayed. No new Unity session, working-project fixture or idle loop.
+
+## Menu-group spacers in built-in toolbar overlays (2026-11-05)
+
+The built-in Mesh Tools and Mesh Display overlays now insert an8-point passive gap with a subtle1-point divider wherever adjacent buttons belong to different current menu sections. ToolbarCommand.MenuGroup comes directly from the existing menu tree and separator markers, including canonical/legacy command keys; no second hand-maintained tool grouping table is added. Existing button order is retained, so a menu section can appear in multiple runs in the mixed Mesh Tools overlay. Polygon Primitives stays one uninterrupted group. The native Mesh Display X-ray button is separated from normal operations because its current menu category is View.
+
+Separators are non-focusable/non-pickable visual elements, never commands or unavailable buttons. There is no leading/trailing divider. Dividers span the full toolbar height horizontally and full width vertically, retaining the8-point main-axis gap. Existing event-driven toolbar refresh updates visibility when current menu metadata is available; no polling/repaint loop is introduced. Action count, command IDs, icon/help/shortcut handling and saved docking/visibility/layout remain unchanged. Personal custom-toolbar lists/order/content and radial full-slot spacers are unchanged; this adds no personal-profile writes or new preference.
+
+Sources: Editor/StudioModelEditor.ToolbarCommands.cs menu-section metadata; StudioCustomToolbar.cs shared passive gap construction/orientation/refresh; StudioMeshToolbars.cs opt-in for Mesh Tools and Mesh Display. Current full installed Editor sources and excluded Tests~/StudioToolbarSeparatorValidation.cs compile with existing warnings. The focused non-exiting fixture reuses ThemeIsolationProject and passes12 native checks:21/5 button counts preserved, separator count follows actual menu groups, no leading/interactive gaps, horizontal8-point/1-point dimensions, vertical orientation, unchanged custom-toolbar contents, retained visible gap bounds and native rendered pixels. toolbar-separators.png inspected; builds/report/capture under host obj/StudioControlsValidation/ToolbarSeparators. Its temporary utility is opened without requesting focus and closed after capture; the reusable Unity session remains open. No working-project fixture, settings writes or broad suite. Physical docking and the user's exact window arrangement were not separately replayed.
+
+Window > Layout > 2×2 opens four native viewports sharing the current modeling workspace. Clockwise from upper-left: Front, Perspective, Side, Top (Top bottom-left, Side bottom-right). Front looks from +Z, Side from +X, Top from +Y. Axis views use true orthographic projection with fixed viewing axes and independent pan/zoom. Perspective retains ordinary orbit/navigation. Window > Layout > Single View fills the canvas with the active camera. Both layout choices retain all four camera poses, lighting settings and grid states.
+
+Each viewport has Camera, Lighting and Grid icons. Camera options target that view; orthographic cameras expose View size and disable rotation/FOV edits. Lighting settings are local copies for the four-view session, applied through the existing lighting rig at each native render. Grid icons affect their own view; the regular grid toolbar/menu target the active view. Grid spacing and snapping units remain workspace-wide. Axis-view grids lie in their viewing plane. Geometry, selection, tools, modifiers and Undo remain shared.
+
+Alt+W maximizes the viewport under the cursor within the Studio canvas and repeats to restore the split. Existing shortcut Preferences exposes Maximize / restore hovered viewport; custom assignments remain authoritative. Surrounding Studio panels remain. Hidden views use display:none on their complete retained roots, removing images, headers and input trees; split gutters disappear. View state survives maximize/restore. F11 and Shift+Space retain window maximize behavior. Open Camera/Lighting options retarget the maximized view. Layout changes do not edit geometry or commit tools.
+
+Viewport recovery fix (2026-11-05): the reported toolbar-hover exception came from EditingView directly indexing quadViews[activeQuad] without validating either. Runtime tile arrays and indices are now NonSerialized so Unity reload does not restore stale/empty native view references. EditingView tolerates missing, empty, partially built and destroyed tile entries, falling back to Perspective or the real host. Construction handles incomplete arrays and cleans up on failure; layout/hover/teardown tolerate partial construction. Both queued and deferred maximize targets are validated before updating active/maximized indices. The current SDK compiles and the disposable native fixture passes 39 checks, extending the focus regression with null/empty/partial arrays, negative/oversized active indices, actual toolbar command refresh under those states, invalid queued/deferred targets and Unity serialization exclusion. This reproduces the unsafe lookup conditions; the exact live state at the reported exception was not inspected. No working-scene or personal-profile mutation. Evidence: QuadViews/recovery-native-build.log, recovery-production-build.log and result.txt.
+
+Unified layouts (2026-11-05): Alt+W toggles directly between Single View and 2×2, including from the initial single viewport; no prerequisite layout mode is required. Window > Layout contains only those two choices, showing the current Alt+W binding beside the destination layout. Keyboard input uses the hovered viewport (active viewport fallback over panels); Single View menu activation uses the active viewport. Shared host key handling and deferred layout updates preserve focus transfer. Text editing and active captured gestures keep their normal input ownership. Production and isolated native fixture compilation pass with existing warnings. The reused disposable Unity session passes43 checks, adding initial-single Alt+W and menu-layout camera/lighting/grid retention to the prior39 recovery/focus checks. Evidence: QuadViews/layout-production-build.log, layout-native-build.log and result.txt. No personal preferences or working-scene changes; physical OS keystrokes were not separately replayed.
+
+Focus follow-up (2026-11-05): after Alt+W, transfer retained keyboard focus from any hidden tile to the visible native canvas, without activating an OS window. Track the last panel-space pointer and recompute the hovered tile on tile geometry changes, so maximize/restore under a stationary cursor does not require a click or new pointer movement. The user reported intermittent lockout until refocusing Studio. The disposable native fixture now passes 25 checks, including focus initially in a different tile, Alt+W delivered through the focused retained element, focus on the maximized canvas, restore with no click and stationary-cursor hover recovery. Physical intermittent reproduction in the working session was not separately tested.
+
+Embedded native SceneViews each own a camera and the existing scene/overlay image cache, sharing the owner's model editor and preview scene. Host discovery, tool-pane ownership, hover, painting, snap/radial focus and toolbar/profile reload distinguish embedded views from the real host. Cameras/caches and lighting overrides survive layout changes and release when leaving modeling, rebinding or closing. No continuous render loop or new polling is added. Layout flag uses serialized host window state; per-view camera/light/grid settings are session-local, not new personal profile entries. Perspective-only enforcement now applies to the Perspective view; orthographic tiles use a fixed-axis guard.
+
+Sources: new Editor/MashBoxStudioViewport.QuadViews.cs; viewport Input, Redraw, Panels, Window, Toolbars and core partials; AnimationStudioWindow, AnimationStudioModeling, AnimationStudioSelection; StudioViewportCamera; StudioModelEditor Lighting, Menus, MoveHandles, SelectionHistory, ToolOptions and core; StudioShortcuts, StudioViewportToolbar, StudioControlsPreferences, StudioCustomToolbar and StudioWindowOwnership.
+
+Validation: production and native-fixture compilation pass with existing warnings. Reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 21 checks: distinct native cameras, actual projection/canvas sizes, picking in all four live native GUI callbacks, Camera/Lighting targeting, four scene/overlay caches, independent grids/pan, fixed orthographic axes, retained-UI Alt+W input, maximize/restore, hidden view roots/input trees, canvas fill and retained grid state. split.png, maximized.png and restored.png were inspected. Reports/build inputs/captures: host obj/StudioControlsValidation/QuadViews. The fixture compiles with a test-only substituted StudioPreferenceStore Documents root under QuadViews/IsolatedDocuments; the SDK retains the real resolved Documents root. Personal profiles and working geometry were not used for validation. The original 21-check run is extended by the 25-check focus follow-up above. Physical OS input, broad per-tool drags, all display/HDRP combinations, domain-reload camera-state persistence and dense-scene performance were not separately verified. Per-view state survives both menu and shortcut layout changes; persistence across closing Studio/domain reload is not promised.
+
+
+## User-wide Documents settings (2026-11-05)
+
+## Mesh Display: Flip Normals (2026-11-05)
+
+Mesh Display > Flip Normals reverses actual render-triangle winding and authored polygon winding, and negates affected shading normals/tangent handedness, so backfaces become frontfaces. Face selection affects those faces; Edge selection affects incident faces; Vertex selection affects directly incident faces, using the existing Split Selection/Weld scope. Object selection affects whole selected static meshes, including selected group descendants. Mixed triangles/quads/n-gons and existing source tessellation/material slots are retained; this is orientation reversal, not normal recalculation or a normal-lock operation.
+
+Partial flips keep unselected normal/UV/color/tangent data and triangles intact. Where a render vertex is shared with unselected faces, only the flipped side gets a copied corner; aliases retain the original geometric identity, so authored connectivity stays intact. Selected/unselected smoothing groups separate only where needed. Existing UV0-7 values/dimensions, colors, positions and tangent XYZ are retained; selected tangent W changes sign. Whole-object flips need no added vertices. Repeated flips reverse orientation without accumulating aliases, but do not merge corner aliases introduced by the first partial flip.
+
+The command is immediate, keeps the current component mode/selection and transform tool, and supplies existing embedded selection guidance when needed. Captured StudioMeshToolPreview targets evaluate before publication; linked mesh face selections union and each shared mesh changes once. StudioUndo groups mesh/document/selection changes. Compact fieldless FlipNormals modifier records store face IDs and replay in strict order; G repeats against current selection. Skinning/blend-shape/bone/anchor and broken-history restrictions follow existing static modeling tools. The built-in Mesh Display toolbar now has five buttons: Soften, Harden, Flip Normals, Soften options, X-ray. Existing IDs/order/placement remain; menu discovery adds shortcut and custom toolbar/radial eligibility, initially unassigned. Shared code-native opposing-normal artwork provides the button icon. No personal preferences/layouts or source assets are rewritten and no idle work is added.
+
+Sources: new Editor/StudioMeshCuts.FlipNormals.cs and StudioModelEditor.FlipNormals.cs (+metas); StudioModifierHistory.cs, StudioModelEditor.Menus.cs/.Repeat.cs/.ToolbarCommands.cs, StudioMeshToolbars.cs, StudioSymbolIcons.cs. MODIFIER_HISTORY.md and maintained toolbar fixture inventory assertions are aligned (five Mesh Display/twenty-one Mesh Tools actions); those preference-writing legacy fixtures were not run.
+
+Validation: actual SDK and excluded Tests~/StudioFlipNormalsValidation.cs compile with existing warnings. Reused disposable ThemeIsolationProject passes26 focused native checks: shared-corner partial flips; unchanged neighboring triangles/normals; reversed render winding/shading/tangent handedness; UV7 values/seams/dimension; unchanged positions and genuine quads; repeat-flip alias stability; atomic invalid-selection rejection; real front/back culling swaps from opposite cameras; whole-mesh vertex count; actual Face/Edge/Vertex/Object command execution, retained selection/mode and strict replay; native StudioUndo/Redo and current-face Repeat Last. before-front.png/after-front.png inspected: the formerly culled mesh becomes visible; opposite-camera coverage also checked. Reports/builds/captures: host obj/StudioControlsValidation/FlipNormals. Fixture rendering requires its small excluded StudioFlipNormalsProbe.shader copied into disposable Assets. No new Unity process/exit or working-project fixture. Exact user mesh, physical button input, broad linked/multi-mesh/negative-transform/UV-channel matrices and performance were not separately replayed. Personal profiles remain untouched; disposable session remains open.
+
+## View: non-planar quad diagonals (2026-11-05)
+
+View > Non-planar Quad Diagonals is a saved display toggle, initially on (user follow-up 2026-11-05). It shows the actual hidden render-tessellation diagonal of warped authored quads as a light red-orange line. The user selected fading stronger with greater bend, not an angle-threshold control. User follow-up requests a thicker base line, more red and stronger/thicker lines sooner. Opacity derives from the world-space angle between the two rendered triangle normals: numerical bends at/below .1 degrees are ignored, then .35 + .55*sqrt(angle/25) reaches .9 alpha by25 degrees, quantized into16 cached groups. The stroke uses RGB(1,.2,.13), starts at about2 GUI points and grows to3.25 points over that strength range. Planar quads remain unmarked. Nonuniform transforms participate in the angle measurement. Only authored four-corner faces represented by exactly two source render triangles with a true opposite-corner diagonal qualify; triangles, n-gons and unusual quad tessellations are not marked. No editable edge, triangulation change, selection hit target or modifier is created.
+
+The overlay is independent of general wire visibility/shading choice and applies to visible mesh nodes. It uses the current evaluated geometry, captured source face-triangle mapping, the existing wire cache and shared GPU wire renderer (native Handles fallback), with normal depth/X-ray rules and component isolation masks. Source diagonal indices are captured once per wire cache; opacity groups/world line buffers rebuild only when positions or the object matrix change. GPU batches release through the existing wire lifecycle on rebuild/Undo/load/disposal. No idle repaint/render loop, repeated scene rebuild or picking change is added. Menu discovery exposes shortcut Preferences and custom toolbar/radial eligibility, initially unassigned; no built-in toolbar action is added. Model.NonPlanarQuadDiagonals persists through StudioPreferenceStore with factory default1 and a matching missing-key fallback; explicit saved on/off choices remain authoritative; development does not rewrite personal settings/hotkey profiles.
+
+Default-on follow-up: factory registration and missing-key load fallback changed to1; source checks confirm both. No personal profiles were rewritten. This defaults-only edit did not rerun the rendered fixture.
+
+Sources: new Editor/StudioModelEditor.QuadDiagonals.cs (+meta); StudioModelEditor.Wireframes.cs/.WireBatch.cs cache/draw/cleanup integration; StudioModelEditor.Display.cs load, StudioPreferenceStore.cs factory entry, StudioModelEditor.Menus.cs and .ToolbarCommands.cs entry/help.
+
+The diagnostic batches now carry both real supporting triangle vertices into the existing wire shader's per-pixel face-depth correction. Earlier batches had zero adjacency, which could let stroke pixels disappear into an inward/outward fold differently. This fixes the overlay data rather than weakening depth testing or changing the shared shader; unrelated surfaces still occlude the line normally. Native fallback uses matching-width antialiased segments. 
+
+Follow-up validation (2026-11-05): current SDK and updated excluded fixture compile with existing warnings. The reused disposable native session passes13 checks, including matched inward/outward mild/steep opacity and actual rendered line coverage at20 interior samples per folded diagonal (at least18 required), plus the earlier planar, discovery, geometry/history and cache checks. Updated on.png was inspected with one planar and four mild/steep inward/outward quads. Original eight-check evidence predates this style/depth correction. Reports/captures remain in host obj/StudioControlsValidation/QuadDiagonals. Exact supplied geometry, all grazing camera/occluder combinations and unsupported-GPU native fallback were not individually replayed. No new Unity session, personal profile writes or mesh edits.
+
+Validation: installed SDK and excluded Tests~/StudioQuadDiagonalValidation.cs compile with existing warnings. Reused disposable ThemeIsolationProject passes eight focused native checks: planar suppression, stronger-bend opacity, command discovery, actual GPU red-orange diagonal pixels, unchanged source vertices/render tessellation/authored faces, no selection/modifier mutation, identical cached native redraw and unchanged line-buffer identities. Native off/on/cached captures under host obj/StudioControlsValidation/QuadDiagonals; on.png inspected and shows no diagonal on the planar quad, a faint gentle-bend line and a stronger steep-bend line. Native fixture sets the display field directly to avoid writing personal preferences. Reports result.txt/native-build.log. An initial capture used native Handles outside an IMGUI context and failed to render; final implementation uses the existing shared batched wire shader and the inspected native camera render passes. No new Unity process/exit or working-project fixture. Physical menu input, profile reload, isolation/X-ray/subdivision/skinned matrices, exact supplied mesh and large-scene performance were source-integrated but not separately replayed. Existing unrelated edge-padding investigation remains unresolved.
+
+## Rejected edge-padding conversion rolled back (2026-11-05)
+
+The user reports the attempted centered-padding change made preview and selection badly displaced from the cursor. The entire custom explicit-camera/canvas-screen-origin conversion is rolled back. CanvasScreenOrigin and StudioModelEditor.EdgePicking.cs/meta are removed. Normal hover bounds, target ranking, hit projection and occlusion again use their pre-change native HandleUtility GUI coordinate path. The experimental scoped Camera.current follow-up was also removed rather than leaving another unverified camera change. Whole-loop traversal, Shift-add anchor consumption and the earlier near-plane/perspective-correct hovered-point visibility changes remain.
+
+The original uneven-padding complaint remains unresolved. Do not restore the rejected conversion, apply arbitrary offsets or claim symmetric offscreen query results validate a displayed Studio viewport. The previous 41 checks bypassed the live GUI coordinate conversion and were insufficient; the scoped-camera follow-up agreed between hover/click but failed its pixel-reference expectation because that reference also lacked live GUI clipping. Its fixture is retired from SDK Tests~; host SymmetricEdgePick retains the historical staging/reports for diagnosis. A future fix must establish cursor, drawn edge and hover/click coordinates inside actual Studio GUI callbacks before changing coordinate math.
+
+Validation: actual installed SDK rollback compiles with existing warnings (host obj/StudioControlsValidation/SymmetricEdgePick/rollback-build.log). No claim of physical cursor alignment or resolution of the original asymmetry is made from compilation. No personal settings, assets or working-scene changes; no new Unity process. The user's live report supersedes the earlier apparent test success.
+
+## Single-edge double-click: whole connected loops (2026-11-05)
+
+User corrected the earlier similar-angle/length request: a single-edge double-click should select a whole loop when a continuation can be resolved, including across triangles. SelectConnectedEdgeLoop now prefers the existing authored quad-loop/unbranched-border continuation. At irregular junctions it uses a unique incident edge that does not share a face with the entered edge; otherwise a clearly straightest forward continuation resolves triangle fans (at least .5 direction cosine, tied directions within .00001 stop). Traversal is bidirectional and terminates at visited edges, hidden edges, unresolved branches or non-manifold junctions. It follows existing authored edges only, never render diagonals or disconnected matches. Topological continuation can turn sharp corners; the former 30-degree and half-to-double-length restrictions are removed entirely. This is a deterministic loop heuristic at irregular triangle poles, not a unique topological loop guarantee on arbitrary triangulations.
+
+Fresh single-click A then double-click B retains the existing directional loop/ring gesture, or endpoint path with Contiguous Path on. Single-edge whole-loop expansion applies in either Contiguous Path state. Completed edge expansions consume both anchors so the next Shift-add loop starts on its first double-click. Shift-add/Ctrl-Cmd-subtract, selection StudioUndo, isolation traversal blocks and Weld alias semantics remain. No geometry, shortcut, preference or Repeat Last record is changed and no idle work is added. The prior hovered-edge visibility fix remains.
+
+Sources: Editor/StudioSelectionTopology.cs SelectConnectedEdgeLoop and StudioModelEditor.LoopSelection.cs dispatch. Current installed SDK compilation passes with existing warnings. Nineteen standalone checks execute production topology traversal: closed loops with sharp quad corners and 19x edge-length changes; a split triangular band cell; loops crossing both dense triangle-fan caps; all at scales .001/1/1000; hidden-edge blocking and an ambiguous triangle fork. Host obj/StudioControlsValidation/WholeEdgeLoop contains fixture/response files, result.txt and compile.log. Tests report caught failures without crash dialogs. Physical double-click delivery, the exact pictured mesh and native selection Undo/Redo were not replayed. No new Unity session or personal-profile writes. Earlier ConnectedEdges/15-check evidence describes the superseded angle/length implementation, not current whole-loop behavior.
+
+## Shift-add edge chains and visible edge picking (2026-11-05)
+
+Completed edge double-click expansions now consume/reset both edge direction anchors. The next Shift-double-click starts its new connected edge loop immediately, instead of treating the last expanded chain as a two-edge direction and requiring another double-click. A fresh single-click A then double-click B still establishes an explicit directional loop/ring or Contiguous Path pair. Shift-add/Ctrl-Cmd-subtract remain in the existing selection transaction; no geometry or settings change.
+
+Edge picking clips world endpoints to the camera near plane, finds the closest point along the projected visible segment, and perspective-corrects that fraction back to world space. Visibility/occlusion tests use that hovered world point rather than the edge midpoint. A hidden midpoint or midpoint behind the camera no longer rejects another visible part of the edge. The existing 18-point pick radius, isolation, X-ray bypass, paint candidate infrastructure and authored edges remain; no larger hit radius, idle work or through-surface selection is introduced. Vertex/face picking is unchanged.
+
+Sources: Editor/StudioModelEditor.LoopSelection.cs anchor consumption, StudioModelEditor.cs shared FindComponentAt, new StudioEdgePickGeometry.cs (+meta). Actual SDK compilation passes with existing warnings. 49 standalone pointer geometry checks pass for hovered-point fractions, endpoint clamping, collapsed screen segments and perspective reprojection across endpoint depths .01/1/100 (tolerance .001 in screen fraction for float precision at extreme depth ratios). Fixture/build/report: host obj/StudioControlsValidation/EdgePicking. Failures are caught and logged without a native crash dialog. Physical Shift-double-click delivery, the user's exact missed edge, native occlusion scenes and selection Undo/Redo were not replayed; no new Unity session or personal-profile writes. This addresses observed source defects, not a measured guarantee that every reported miss had this cause.
+
+## Collapse Edge Ring (2026-11-05)
+
+User-requested label rename: Collapse Edge Ring. The existing Edit Mesh/To Edge Ring and Collapse command key and EdgeRingCollapse modifier kind remain stable for saved bindings, toolbar/radial entries and history. Installed SDK compilation checks the label-only change; the previous 24 native geometry checks were not rerun.
+
+
+
+
+
+
+## Fill Hole from selected boundary edges (2026-11-05)
+
+
+
+Edit Mesh > Fill Hole fills each complete selected closed boundary edge loop with one authored n-gon. Every segment endpoint is retained, including uneven and collinear vertices along straight sides. Cap render corners share the original boundary geometric identities, preserving connectivity across source UV/normal seams; no center or geometric vertex is added. Rendering triangulates the cap while retaining every segmented boundary edge. Original positions, source polygon boundaries, render triangles and populated attribute streams remain intact. Caps receive outward winding opposite adjacent boundary faces, planar UV0 and separate cap normals; higher UV channels/colors retain source corner values. Material comes from the first ordered adjacent face.
+
+
+
+The new caps are selected in Face mode, ready for Edit Mesh > Poke. Missing/wrong selection uses the shared embedded Execute/Apply/Cancel guidance pane. Complete separate loops are supported independently; open, branched, touching, interior/non-manifold edge selections and boundaries without valid projected tessellation are rejected before publication. This does not bridge chains, create compound faces with inner holes or repair crossing boundaries. Poke retains its separately approved permissive overlapping-fan behavior.
+
+
+
+Captured StudioMeshToolPreview evaluation validates targets before grouped StudioUndo publication; linked mesh selections are unioned and each shared mesh changes once. Compact FillHole edge-pair modifier records replay in strict creation order; successful completion records G/Repeat Last against current edge selection. Menu discovery exposes shortcut Preferences (initially unassigned) and toolbar/radial customization. The built-in Mesh Tools overlay includes Fill Hole immediately before Poke, with 21 actions including Collapse Edge Ring. Shared cached fill-hole artwork supplies the icon. No personal settings, hotkeys, layouts or presets are rewritten and no idle work is added.
+
+
+
+Sources: Editor/StudioMeshCuts.FillHole.cs, StudioModelEditor.FillHole.cs and their metas; StudioModelEditor.Menus.cs/.ToolbarCommands.cs/.Repeat.cs, StudioModifierHistory.cs, StudioMeshToolbars.cs and StudioSymbolIcons.cs.
+
+
+
+Validation: installed SDK sources and excluded Tests~/StudioFillHoleValidation.cs compile with existing warnings. The reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 18 focused native checks: uneven ten-vertex segmented caps at scales .001/1/1000, authored endpoint/geometric identity retention, closed top connectivity, unchanged source geometry/tessellation/UV7 dimensions and seams, atomic invalid-chain/interior-edge rejection, actual shared command cap selection, compact modifier recording, Fill Hole then Poke fan connectivity and exact strict modifier replay. Shaded/authored-wire fill-hole.png and fill-hole-poke.png were inspected. Reports/builds/captures live under host obj/StudioControlsValidation/FillHole. The initial fixture incorrectly expected the unchosen material buffer to stay exact despite cap material selection; final checks correctly require both original triangle prefixes unchanged. Physical input, native Undo/Redo, broader multiple-loop/shared-instance matrices and performance were not separately tested. No new Unity launch or working-project fixture; the disposable session remains open.
+
+
+
+
+
+
+**Edit Mesh > Collapse Edge Ring** is an immediate Edge-selection command following the user's three specified phases and before/after quad-band reference. CaptureEdgeRings builds dense authored-edge IDs; EdgeRingTopology.Collect(startingEdgeId) walks both adjacent directions through quads using opposite = (i + 2) % 4. It includes the seed and each exit edge once, stopping at boundaries, non-quads or a visited edge. Multiple selected seeds union their rings before mutation. No render-triangle diagonals or direction/position heuristics participate.
+
+
+
+
+
+FuseRingMidpoints moves each independent endpoint pair to its captured arithmetic midpoint and remaps its geometric B identity to A in every incident face. Compatible render pointers merge too; distinct UV0–7, color, tangent, normal and explicit normal-group corners retain separate render copies sharing the fused geometric identity. Explicit geometric IDs keep coincident detached surfaces separate. PurgeCollapsedRing deletes entire authored faces containing duplicate geometric indices, rather than reducing crushed quads to triangles. Retained faces carry their existing source render tessellation through the index remap. All surviving streams compact together, retaining material IDs, UV dimensions and source attributes; all unreferenced vertices are removed, including when every face is crushed. Normals/tangents are retained source attributes, not a new normal-recalculation operation. This is a local topological contraction, without collision repair or general zero-area detection beyond duplicate identities.
+
+
+
+
+
+Collected edges must have independent endpoint pairs; intersecting rings sharing endpoints reject atomically rather than choosing an order-dependent midpoint. Non-manifold crossings, invalid edges, nonfinite affected positions, skinning and blend shapes reject. Non-quad faces stop traversal but may themselves be removed if the boundary edge contraction gives them duplicate indices, as required by the purge rule. Multiple meshes evaluate independently before publication; linked-instance selections union into one mesh edit. Objects, transforms, pivots, children and external source assets retain their existing scope.
+
+
+
+
+
+Publication uses captured StudioMeshToolPreview work and grouped StudioUndo for mesh, topology, selection and compact EdgeRingCollapse modifier history. Strict replay stores source seed endpoint pairs, recomputes the ring against the bound input, and fails through existing downstream dependency rules. G repeats successful completion on fresh current edges. Deleted edge IDs clear while Edge mode stays active; Move is restored unless Rotate/Scale was active. Missing/wrong selection routes through shared PrepareMeshSelection and the embedded Execute/Apply/Cancel guidance pane; selecting later never edits automatically. Menu discovery exposes shortcuts (initially unassigned), toolbar and radial customization. The built-in Mesh Tools overlay includes the new command before Weld, retaining all existing relative order, stable IDs and saved layout; it now has 21 actions including the concurrently added Fill Hole. The shared cached neutral/amber ring-collapse symbol supplies its icon. Personal settings, bindings, presets and layouts were not rewritten; no idle polling/render loop.
+
+
+
+
+
+Sources: new Editor/StudioMeshCuts.EdgeRingCollapse.cs and StudioModelEditor.EdgeRingCollapse.cs (+metas); StudioModelEditor.Menus.cs/.ToolbarCommands.cs/.Repeat.cs; StudioModifierHistory.cs replay; StudioMeshToolbars.cs; StudioSymbolIcons.cs. Core entry point: CollapseEdgeRings(node, seedEndpointPairs), with traversal, fusion and purge as separate modules.
+
+
+
+
+
+Validation: installed production SDK and excluded Tests~/StudioEdgeRingCollapseValidation.cs compile with existing warnings. Reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 24 native checks for bidirectional/boundary/non-quad/closed traversal, seed deduplication, per-edge midpoints and neighboring quads/caps, whole-face purge, orphan compaction including full collapse, UV/color streams and seam aliases, invalid/intersecting/non-manifold atomic rejection, compact modifier replay, linked mesh publication, actual StudioUndo/Redo with selection restoration and current-selection G. Reports/builds: host obj/StudioControlsValidation/EdgeRingCollapse/result.txt, compile.log and native-build.log. No new Unity launch or working-project fixture. The supplied screenshots establish the requested target; the original pictured mesh, physical menu/key input, native rendered appearance, broad multi-object/rollback matrices and performance were not separately tested. The disposable session remains open. Final shared-file integration also preserves the concurrent Fill Hole menu, toolbar, icon, replay and Repeat Last additions; the combined installed SDK/fixture builds pass.
+
+
+
+
+
+## Poke selected faces (2026-11-05)
+
+
+
+
+
+Edit Mesh > Poke is an immediate face command. For each selected authored face it adds one vertex at the arithmetic mean of its boundary corners and replaces that face with one genuine triangle per perimeter edge, sharing the new center. Original boundary vertices/edges, material slot and per-corner source attributes stay in place; unselected polygons keep their source render tessellation. The new center's UV0–7, colors, normals and tangents are averaged from that face, retaining UV dimensions and source attribute seams. Each center has an independent geometric identity and normal group. New center vertices are selected in Vertex mode with Move active, ready for artist adjustment.
+
+
+
+
+
+Explicit user decision: always create the center fan for concave, non-star-shaped, warped or otherwise awkward finite faces. Do not reject/reposition the center to prevent overlap or silently substitute an ear-clipped triangulation. Some concave fans can overlap, reverse or collapse triangles; the artist accepts this and can hand-move the center. Basic readable-static-mesh, valid face-index/boundary and finite-coordinate checks remain. This is not an automatic n-gon repair/collision solver. Behavioral reference: Autodesk's Poke description (https://help.autodesk.com/cloudhelp/2022/ENU/Maya-Modeling/files/GUID-2A05FB2F-2CB2-4FE7-B828-240931A58BDE.htm); permissive concave behavior is the user's explicit instruction and screenshot, not a newly measured Maya parity claim.
+
+
+
+
+
+Missing/wrong selection uses shared PrepareMeshSelection and the existing embedded Execute/Apply/Cancel guidance pane; there are no Poke parameters or new standalone window. Selected static meshes evaluate through captured StudioMeshToolPreview work before one grouped StudioUndo commit; selections on linked meshes are unioned and the shared mesh is changed once. Poke uses its own compact face-index modifier record with strict input matching, normal modifier enable/delete/clear behavior, and successful completion records G/Repeat Last against current face selection. Menu discovery supplies shortcut Preferences and custom toolbar/radial eligibility, initially unassigned. The built-in Mesh Tools overlay gains Poke after Extrude (21 actions, including Fill Hole and Collapse Edge Ring), preserving all existing relative order, IDs and saved layout. Its icon uses the shared cached code-native fan symbol. No idle polling, personal-profile changes or source-asset writes.
+
+
+
+
+
+Sources: new Editor/StudioMeshCuts.Poke.cs and StudioModelEditor.Poke.cs (+metas); StudioModifierHistory.cs replay, StudioModelEditor.Repeat.cs/.Menus.cs/.ToolbarCommands.cs, StudioMeshToolbars.cs and StudioSymbolIcons.cs. Validation: installed production sources and excluded Tests~/StudioPokeValidation.cs compile with existing warnings (obj/StudioControlsValidation/Poke/compile.log, native-build.log). Reused disposable ThemeIsolationProject/Unity 6000.4.12f1 passes 20 focused native checks: convex 12-gon, non-star concave eight-gon and warped 12-gon arithmetic centers; exact fan count/shared connectivity; original positions and unrelated material tessellation; UV7 dimension/interpolation/prefix preservation; actual shared menu multi-mesh execution; Vertex/Move center selection; compact modifier records/replay; current-selection Repeat Last. Report Poke/result.txt. Actual shaded/authored-wire captures poke-convex.png and poke-concave.png inspected; the latter is cropped by the existing capture camera but clearly retains the allowed outside/overlapping fan. Initial editor-fixture setup omitted node names and hit the unrelated vehicle-snap path; final named-node run passes. No new Unity launch or working-project fixture. Physical input, native Undo/Redo, shared-instance edit matrix, coincident-center weld-selection behavior and performance were not separately replayed. Personal settings, hotkeys, presets and working scene untouched; reusable disposable session left running.
+
+
+
+
+
+## Move texture preservation (2026-11-05)
+
+
+
+
+
+Move Tool Options now has Preserve UVs, default off. When enabled, moving selected vertices, edges or faces updates their existing UV coordinates to reduce texture stretching and preserve source texture scale as the surface changes. Geometry remains free to move; this does not constrain handles, reproject/repack islands or change editable topology. Whole-object moves, Edit Pivot, Rotate/Scale, Shift-handle extrusion and the active Extrude-distance gizmo retain their existing behavior. The setting is a durable StudioPreferenceStore choice (Model.PreserveMoveUVs, factory 0); loading is read-only and only user configuration changes persist it.
+
+
+
+
+
+Preserve UVs prioritizes reduced texture stretch and consistent source texel scale; slight texture movement is acceptable (user clarification 2026-11-05). Ordinary and multi-mesh Move gestures capture source geometry, affected triangle charts and all populated UV0–7 streams once at drag start. Each sample transports a source chart onto the current triangle plane using the minimal normal rotation, retaining its original UV scale/shear. An unselected corner anchors each chart when available; otherwise its source origin provides a stable placement reference. Selected UV corrections are area-weighted across incident source triangles, independently per render vertex/channel, retaining seams and unselected UV values. Coplanar sliding retains the original affine behavior, while face tilts use actual surface lengths instead of compressing UVs onto old face planes. Rigid hinges keep their source mapping scale. All samples evaluate from the same captured source and zero displacement restores source UVs exactly. This is a local fit, not a whole-island relaxation or a guarantee of zero distortion on warped/folded/shared charts. Degenerate source triangles contribute no chart; a collapsed moved triangle temporarily falls back to source-plane projection. Finite validation, UV dimensionality, missing-channel behavior and cached typed upload lists remain; no new mode, preference or idle work is added.
+
+
+
+
+
+UV-preserving moves register document/mesh changes through existing grouped StudioUndo and record strict Direct replacement history, preventing the position-only Transform optimization from discarding changed UVs. Existing ordinary transforms retain their prior compact history. Multi-mesh targets share their existing captured world/local transforms; linked selections union into one per-mesh edit. All UV targets evaluate before publication. Existing normals/tangent refresh, snapping, pivot updates, native Undo/Redo rebinding and parameter-tool transitions remain in place.
+
+
+
+
+
+Contiguous Path is a general selection setting under Select > Contiguous Path. Its checkbox and path-mode helper text were removed from ordinary Tool Options. The menu remains checked/synchronized with the existing saved Model.ContiguousPath value, custom shortcut/radial command identity and selection implementation; there is no migration, duplicated setting or automatic geometry edit.
+
+
+
+
+
+## Animation clip loading and rig visibility (2026-11-04)
+
+
+
+
+
+The compact transform panel sits at the bottom-right above the timeline, showing only the active control's name and editable numeric channels. Root/FK transforms use local coordinates; limb IK targets use character coordinates. BMX curves expose their supported rotation axis; driven channels are omitted. Enter or focus loss commits a typed value using the pose-edit path, respecting Auto Key and unkeyed Undo. With multiple controls selected, it edits the active control only.
+
+
+
+
+
+The character icon hides/shows loaded preview renderers without removing outfit data or rebuilding rigs. Its selected preset stays displayed while hidden. Vehicle visibility retains the loaded actor and only changes its active state. A character hidden using the older outfit-removal behavior is restored once from the saved appearance, after which visibility uses the lightweight path. Appearance dropdown choices still explicitly replace/remove outfits.
+
+
+
+
+
+Pose Undo/Redo reuses actor rigs, vehicle meshes and control selections. Preview rigs are rebuilt only when actor membership or source/body/clothing changes; vehicle outfit changes rebuild the affected rig's vehicle visuals. Ordinary rotation Undo no longer reassembles the full BMX from SDK models.
+
+
+
+
+
+Drop `.anim` clips or animated FBX models into the Animation viewport to load human or vehicle motion into the current session. Recognizable clips route to the matching actor; ambiguous clips and FBXs containing multiple animations open a picker. Loading one actor's clip preserves the other actor's motion. Both actors use one timeline, frame rate and playback range; selecting their controls determines which actor's keys are edited. Imported motion is sampled at the session frame rate. Saving a clip session saves each actor's clip; FBX animations require standalone `.anim` outputs. Saving a new in-memory take retains the combined editable actor setup.
+
+
+
+
+
+The top toolbar has separate **vehicle controls** (wheel icon) and **rig bones** (bone icon) toggles. Bone visibility applies to human and vehicle rigs independently of IK/FK controls. Vehicle controls remain available when human FK is hidden. New configurations start with bones hidden; visibility choices are saved in Studio preferences.
+
+
+
+
+
+Selecting a BMX bars, frame, drivetrain or pedal control displays a rotation ring at its pivot. Bars/frame rotate about their local Y axis; drivetrain and pedals rotate about local X. These constrained controls always expose rotation, including when W is active; the BMX root retains W/E move/rotate switching. Dragging a control curve still works, and drivetrain rotation retains pedal counter-rotation. Front/rear wheel controls are omitted from the viewport and control selector; wheel bones and imported animation remain intact. Press S to key an unkeyed edit, or use Auto Key.
+
+
+
+
+
+## Live vehicle parts (2026-11-04)
+
+
+
+
+
+Marked parts validate their names and hierarchy against the SDK content rules. A warning badge beside the hierarchy row shows issues on hover and selects the part when clicked. Channels lists each issue under Naming & Hierarchy. Vehicle and Part selectors use the allowed SDK pairs; marking an existing root infers these from its name where possible. Modeler names use four tags, Vehicle_Part_Brand_Name (for example BMX_Frame_Vanilla_Bean). New parts omit color suffixes; color tags and color validation belong to the prefabs created later. Checks cover the four naming tags, selected-type mismatch, exact child paths, required descendants, unexpected/duplicate paths and anchor orientation, including brand-specific rules. A valid four-tag name can be updated to the selected vehicle and part with the explicit rename button. These are authoring checks, not a replacement for full export validation.
+
+
+
+
+
+Created vehicle parts carry editable metadata and the green wheel hierarchy icon. Use a hierarchy row's **Mark as Vehicle Part** action for existing objects; **Unmark Vehicle Part** removes the metadata. The Channels panel exposes Vehicle, Part, Target Anchor and Live. Live uses a bright green wheel and follows the target anchor's world position and rotation while preserving authored scale. Switch Live off to keep the current pose and edit freely. Metadata is saved in the workspace and copied independently on duplication.
+
+
+
+
+
+Anchor IDs follow Project X's prefix/suffix and separator conventions. Parts exclude their own descendants, inactive anchors and anchors owned by other vehicle categories. A unique matching anchor is required; missing or ambiguous matches show status without moving the part. Group each assembled vehicle under a common parent to isolate it from other vehicles. Dependency chains resolve in order; cycles and zero-scale parents pause snapping. This is modeler pose attachment, without Project X's runtime physics, offsets or renderer-hiding behaviors.
+
+
+
+
+
+## Update imported source from the hierarchy (2026-11-04)
+
+
+
+
+
+Imported FBX, prefab and standalone Mesh assets now expose **Update Source** in the hierarchy context menu. A clicked descendant resolves its nearest imported source root; only that branch is written, independently of other selected/workspace models. The explicit action overwrites the remembered source without a save-path dialog. Missing, read-only, unsupported or non-standalone mesh sources are disabled/rejected. Primitives/raw scene objects without file provenance have no action. Model subobjects dropped independently do not acquire a whole-file overwrite link. Asset paths resolve against Application.dataPath's project root; external FBX imports remember their original path instead of their Assets/Studio Imports cache copy.
+
+
+
+
+
+FBX reuses current evaluated export geometry, attributes, quads/UV preparation and skeleton filtering, exports to a unique hidden staging file beside the destination, then replaces the source while preserving its .meta/GUID/importer settings. Replacement/import failure attempts restoration from a temporary backup; staging files are cleaned. Existing export normalization/unit behavior remains, with no newly verified arbitrary importer-scale/unit/rig matrix. Standalone .asset Mesh updates copy the evaluated mesh into the existing main Mesh object, keeping its GUID/local identity/name; a mesh asset cannot represent a child hierarchy. Prefabs load their existing contents and retain components on matched nodes, while updating hierarchy, names, local transforms, visibility, render meshes/materials, skin references and matching MeshColliders. Persistent mesh copies live in an owned sibling `<Prefab>.StudioMeshes.asset`; repeated updates retain its GUID/subasset identities. An occupied companion path without the matching ownership marker is rejected. Existing unused companion meshes are retained for reference safety. Prefab and companion file backups support failure recovery; exotic I/O/checkout failures are not a fully verified transaction matrix.
+
+
+
+
+
+Provenance uses existing Node.sourcePath plus portable sourceNodePath and sourceMeshAsset fields, retained in workspace text and duplication. Successful prefab writes refresh node paths for subsequent reordered/reparented updates. Source paths are remembered strings, not GUID-following asset-move links; moved/deleted files require reimport/relink. Nodes moved/split outside the imported branch are not implicitly gathered back into the source file. Studio source geometry, selection, camera and modifier history are not replaced/cleared by write-back. Source-file overwrites are external saves, not modeling Undo actions. Finalizing a pending valid preview uses existing completion before writing. No personal preference/hotkey writes or background source synchronization.
+
+
+
+
+
+Sources: new Editor/StudioModelEditor.UpdateSource.cs (+meta); StudioModelEditor.cs scoped FBX export/import provenance, .Objects.cs standalone mesh path, .Files.cs explicit export-root filtering, .HierarchyVisibility.cs menu; StudioModelDocument.cs capture/path metadata, .Duplicate.cs and StudioWorkspaceText.cs persistence. The UI remains a direct hierarchy action, without extra Export variants.
+
+
+
+
+
+Validation: actual installed Editor sources and excluded Tests~/StudioUpdateSourceValidation.cs compile. Final reused disposable ThemeIsolationProject/Unity 6000.4.12f1 run passes **21 native checks** (host obj/StudioControlsValidation/UpdateSource/result.txt, native-build.log/compile.log): Mesh path/overwrite/GUID; unchanged Studio geometry; prefab descendant resolution, collider preservation after rename/reorder, refreshed source-node paths, persistent companion GUID/mesh local IDs on repeat, correct components after repeat/reorder, workspace provenance roundtrip, enabled hierarchy command, actual FBX exporter roundtrip/scoped output/evaluated dimensions/GUID/material-import policy, selection preservation, missing-source rejection, and original external FBX overwrite leaving its cache untouched. Initial checks exposed a real project-relative-path conversion issue, fixed with explicit project-root normalization. Exporter/Timeline assemblies and the native FBX plugin were supplied only to the disposable test project; its initial missing-native-plugin failure is superseded. Non-exiting test uses a one-shot EditorApplication.update hook because that reused session has no visible window; no replacement editor or working-project fixture was launched. Assets were generated only under unique disposable Assets/SourceUpdate_* folders. Physical drag/context-click, native rendered menu, source-file Undo, arbitrary scripts/nested-prefab/skin/scale/collision/checkout/rollback families and performance were not broadly tested. Personal profiles and working scene untouched; reusable disposable session remains running.
+
+
+
+
+
+## Center orientation replaces the Pivot/Center toolbar (2026-11-04)
+
+
+
+
+
+Center is now a fourth exclusive orientation choice in the native Orientation toolbar and Tool Options beside World/Object/Component. It uses world axes at selection geometry with existing shared-center transforms and Edit Pivot restriction. Other orientations return to ordinary pivots without changing geometry. Center Pivot and Frame Selection style stay independent. The separate Center & Pivot overlay/control are removed from discovery; stale saved custom-control references are skipped without rewriting layouts. Existing orientation IDs, personal presets/bindings and profile storage remain; default orientation can also be Center (factory Component). The generated Orientation radial preset adds the appended CenterAxes function, while saved personal presets remain unchanged.
+
+
+
+
+
+Installed SDK sources compile (host obj/StudioControlsValidation/CenterOrientation/compile.log). Source checks cover removed UI types, exclusive checks, dropdown entries and factory/action identities. No new Unity session/native UI, profile-reload or transform/Undo regression was run for this reorganization. Existing centerTransformMode/CenterMode internals preserve geometry behavior/profile compatibility rather than exposing an independent mode. See host STUDIO_HANDOFF for current source/scope details; old Center/Pivot-toolbar evidence predates the replacement UI.
+
+
+
+
+
+## Hierarchy selection visibility shortcut (2026-11-04)
+
+
+
+
+
+With modeling hierarchy focus, the current Hide Selection binding (factory H) toggles selected objects: any visible -> hide the set; all hidden -> show the set/required ancestors. Selection is retained, including component IDs when component mode is active. Rename/search text and captured drags are guarded. The existing hierarchy visibility/StudioUndo path is reused, independently of the viewport last-hidden stack. Viewport H and Ctrl/Cmd+H retain their existing hide/restore behavior; personal shortcuts/profiles are unchanged.
+
+
+
+
+
+Excluded `StudioHierarchyVisibilityToggleValidation.cs` is guarded to ThemeIsolationProject plus `HierarchyToggle/request.txt`, writes `HierarchyToggle/result.txt`, and passes eight native state checks covering document/render visibility, selection retention, repeated/mixed/ancestor toggles, component-mode scope, geometry preservation and empty selection. Production/fixture builds pass under host obj/StudioControlsValidation/HierarchyToggle. Compile with the current SDK and retained MaterialPerformanceValidation / StudioMaterialSlotValidation bridge. The reused editor window became unavailable during follow-up; physical H delivery/rendered row tint, native Undo/Redo and custom-binding input were not checked. No replacement session/working-project test or personal-profile writes. See host STUDIO_HANDOFF for scope/source details.
+
+
+
+
+
+## Extrude distance through the Move gizmo (2026-11-04)
+
+
+
+
+
+The existing Move gizmo edits Normal distance while a captured Extrude preview is active. Signed world movement projects onto its cached source extrusion direction with object rotation/scale compensation; field values update and the captured preview coalesces/re-evaluates without commit on pointer-down/release. Existing snapping precedes the projection. Negative/zero distance, cancellation, modifiers, Repeat Last and grouped StudioUndo use the established paths. Other transform gizmos retain normal completion behavior; an idle pane after Apply needs a fresh preview via a field edit/reinvocation before using this distance gesture.
+
+
+
+
+
+Excluded non-exiting `StudioExtrudeDistanceGizmoValidation.cs` runs only in ThemeIsolationProject with `ExtrudeGizmo/request.txt`, writing `ExtrudeGizmo/result.txt`. Current run passes 20 native checks for source direction, rotated/nonuniform scale, field sync/projection, positive/negative/zero/repeated previews, correct modifier commit and cancellation. Compile with current SDK and existing MaterialPerformanceValidation / StudioMaterialSlotValidation refresh bridge. Actual native arrow drag was inspected: distance 0 -> 0.3341956 m, visible extrusion, pane still open and no committed modifier. Production/fixture builds pass under host obj/StudioControlsValidation/ExtrudeGizmo. No broad edge/multi-target/curved/snap/Undo-Redo/timing matrix. Reused disposable session stays open; working scene and personal profiles untouched. Full scope and sources are in host STUDIO_HANDOFF.md.
+
+
+
+
+
+## Parameter-tool gizmos and tool-change completion (2026-11-04)
+
+
+
+
+
+Opening Extrude and other compatible parameter tools retains the active Move/Rotate/Scale gizmo; Select supplies Move. Missing selection still uses Select guidance. Choosing a transform/tool completes valid pending work and cancels invalid previews, then resets/closes the outgoing session. Clicking the already-active transform toolbar button completes its open operation too. An idle pane after Apply closes without repeating the operation. Same-pane reentry and explicit Execute/Apply retain their behavior. Shared FinishToolsForSwitch uses existing ToolChannelPane transactions; no profile writes or idle renderer work.
+
+
+
+
+
+Updated excluded `StudioToolSwitchValidation.cs` is guarded to ThemeIsolationProject plus `GizmoCompletion/request.txt`; it writes `GizmoCompletion/result.txt` and passes 73 native checks for retained transform state/handle selection, valid completion, failed-inset cancellation, reset/cleanup, committed modifiers, Apply preservation and procedure replacement. This supersedes the earlier 56-check cancel-every-preview expectation. Production/fixture compilation passes; inputs/logs live under host obj/StudioControlsValidation/GizmoCompletion. Compile the fixture with the current SDK and retained MaterialPerformanceValidation / StudioMaterialSlotValidation refresh bridge. The fixture leaves a temporary cube with Extrude options and Move gizmo in the disposable native viewport; actual rendered arrows/planes and controls were inspected together. No physical drag/shortcut matrix, Rotate/Scale pixel capture, native Undo/Redo, broad procedure/multi-target/async coverage or performance claim. Leave the reused disposable session open; never run this fixture in the working project. Full current behavior/source limitations are in host STUDIO_HANDOFF.md.
+
+
+
+
+
+## Circularize components (2026-11-04)
+
+
+
+
+
+Edit Mesh > Circularize… opens the existing embedded ToolChannelPane for Vertex, Edge or Face selection on editable static meshes. It is automatically eligible for shortcut Preferences, custom toolbars and radial menus, with no assigned factory hotkey. Missing selection switches Object mode to Vertex/Select guidance and keeps the tool pane available; selection alone does not apply an edit. Reopening an existing pane preserves its captured preview, including a failed preview awaiting correction or cancellation.
+
+
+
+
+
+The six controls are Radial Offset (0, mesh-local length displayed in scene units), Normal Orientation (Face or Edge Loop, initially Face), Twist (0 degrees), Alignment (Automatic, Surface (average), Surface (vertex); initially Surface (average)), Add Divisions (0, supported 0–32 per perimeter edge), and Supporting Edges (Off, Inside, Outside, Both; initially Off). No Normal Offset field. Automatic produces a planar, evenly spaced circle at the perimeter centroid with mean projected source radius plus Radial Offset; phase minimizes angular displacement before Twist. Face orientation averages incident authored-face area normals; Edge Loop uses the perimeter area normal. Surface alignment intersects captured source render triangles along the average or source vertex normal; beyond the captured footprint it extends the nearest scored source triangle's tangent plane. This is local surface projection, not arbitrary collision continuation or a guarantee against folds/self-intersections.
+
+
+
+
+
+Faces circularize each edge-connected region's perimeter independently, preserving interior connectivity; interior points scale with radial offset and rotate with twist. Face regions require one perimeter without holes: use closed edge loops for multiple borders. Edges require closed, unbranched authored loops with at least three geometric vertices. Vertex mode accepts three or more geometric vertices; complete selected face patches use their perimeter and retain interior points, authored loops retain their order, and otherwise an angularly ordered vertex cloud forms one circle. Collinear/degenerate fits and nonpositive resulting radii fail explicitly. A divided vertex cloud needs actual authored perimeter edges. Separate selected meshes use the shared multi-target transaction and are never combined; shared meshes keep the existing shared-instance semantics. These multi-target paths are integrated but were not separately exercised by this fixture.
+
+
+
+
+
+Divisions insert evenly spaced circle samples and propagate matching geometric IDs into both incident faces, interpolating each side's UV0–7, colors, tangents and normal continuity separately. Supporting Edges publishes genuine triangulated faces on the chosen side of divided perimeter edges; Off leaves expanded authored n-gons. With no divisions, source authored topology and render tessellation are retained. Unaffected faces keep their source render triangles even when other faces divide. Face/edge component IDs are cleared when divisions change their indexing; vertex IDs remain selected. Cancel restores captured geometry/topology/selection. Execute/Apply, grouped StudioUndo, strict creation-order editable Circularize modifiers and G/Repeat Last use existing shared infrastructure. Values reset on pane reopening; no durable preference/profile writes or idle renderer loop was added.
+
+
+
+
+
+Sources: new Editor/StudioMeshCuts.Circularize.cs and StudioModelEditor.Circularize.cs (+metas); integration in .LiveTools.cs, .MultiComponentTools.cs, .EdgeFlow.cs (shared extra parameter transport), .ToolOptions.cs, .Menus.cs, .ToolbarCommands.cs, .Modifiers.cs and StudioModifierHistory.cs. A missing UnityEditor import in the current StudioModelEditor.Split.cs was also repaired to allow current-source compilation.
+
+
+
+
+
+Validation: installed SDK production compilation passes with existing warnings (obj/StudioControlsValidation/Circularize/compile.log). Non-exiting excluded Tests~/StudioCircularizeValidation.cs passes 26 focused native checks in the reused ThemeIsolationProject/Unity 6000.4.12f1: vertex/edge/face radius, twist with loop orientation, face perimeter and fixed interior/unselected positions, seamed/unseamed UV/quad preservation, all four supporting-edge modes with conforming geometric boundaries and interpolated attributes, captured preview publication/cancellation, saved modifier replay and atomic rejection of open edge chains. Report Circularize/result.txt and native-build.log; circularize-render.png inspected for actual shaded surface plus authored wires with divisions/support Both. Initial BevelJunctionProject request did not execute because that session was not running; validation reused the open ThemeIsolationProject instead. No new Unity launch or fixture in the working project. Physical tool controls, native Undo/Redo sequence, multi-object execution, nonplanar projection matrix, collision/inversion families and dense-mesh performance were not separately verified. Personal profiles and working scene untouched; disposable session left open.
+
+
+
+
+
+## Index-only material assignment for larger scenes (2026-11-03)
+
+
+
+
+
+User reported assignment still stalls on fighterJetCutTest and expects scenes with at least six such meshes. Replaced ChangeSelectionMaterialSlot's general StudioMeshToolPreview transaction with StudioMeshCuts.MaterialSlotIndexEdit: prepare only old/new submesh index lists, authored face material IDs and compact history, validate all selected meshes before publication, then register Document plus affected meshes through StudioUndo and write only index lists. Existing vertex buffers, positions, normals, UVs, tangents, colors and geometric IDs are neither copied to working meshes nor restored/reuploaded by this path. It does not construct source/working preview meshes. Initial history-base capture and native complete-object Undo snapshots remain; this change does not claim those costs are free.
+
+
+
+
+
+Object/add/remove edits use index lists directly. Face edits reuse cached authored faces and triangle ownership. After publication, cached face Submesh values update in place and existing edge, vertex marker, selection-wire and triangle caches remain valid; only tool topology references/statistics for affected meshes invalidate. Unrelated meshes keep their geometry caches. Display material refresh remains scoped to affected meshes. Assignment/add/remove and compact MaterialSlot replay retain their established behavior, grouping and rollback; removal still maps to Slot 0 and compacts later IDs. Source assets and user presets/profiles are unchanged.
+
+
+
+
+
+Sources: StudioMeshCuts.MaterialSlots.cs (index edit plan and commit/restore), StudioModelEditor.Materials.cs (atomic application, compact history and cache retention). Current SDK and focused fixtures compile (material-index-build.log). Disposable ThemeIsolationProject was upgraded once with a persistent event-driven test bridge and left running; no repeated launch loop or working-project execution. Benchmark copied the source Assets/Catalog/tests/fighterJetCutTest.fbx into that disposable project, with six independent meshes: 4,625 vertices/4,672 faces each, 27,750 scene vertices. This is a source-asset workload, not the user's edited workspace with its exact history/materials.
+
+
+
+
+
+Before reports material-performance-before.txt and material-performance-before-final.txt versus index-only after/after-final: repeat whole-scene assignment measured 47.47–64.93 ms before and 34.39–35.16 ms after; one-mesh warm samples varied 8.89–9.01 ms before versus 5.07–28.79 ms after. First all-six edits still incurred history/source-capture costs (175.67–180.22 ms before, 217.47–262.63 ms after); no universal first-use speedup or sub-frame guarantee is claimed. A single edit with six populated history bases measured 33.49 ms before and 37.32 ms after. Timings are noisy wall-clock samples in concurrent editor sessions, not a controlled throughput claim. The full reported 450 ms pause was not reproduced here. The deterministic improvement is removal of whole-mesh clones/uploads and broad cache destruction. Native source-stream checks and all eleven material checks pass, including actual red/green renderer output, Undo/Redo, object/face assignment, add/remove, replay and last-slot protection. material-slots.png inspected earlier and renderer color assertions rerun on this implementation.
+
+
+
+
+
+Fixtures: Tests~/StudioMaterialPerformanceValidation.cs and StudioMaterialSlotValidation.cs. Host reports under obj/StudioControlsValidation/material-performance-*.txt and material-slot-result.txt. Remaining performance risks: first history source serialization/native Undo cost, and the user's exact edited workspace/frame workload. Do not claim the original 450 ms has been measured away.
+
+
+
+
+
+## Material slot removal and assignment work reduction (2026-11-03)
+
+
+
+
+
+User confirmed the reported approximately 450 ms assignment delay stalls the whole editor. The previous local-preview transaction triggered automatic modifier capture as well as explicit full-mesh Direct records, serialized a deep copy of prior history, published the preview before restoring/committing it, and cleared/recreated display materials across the entire scene. Slot changes now suppress automatic capture while recording exactly one compact MaterialSlot operation (slot ID, selected faces, assignment/removal mode and source slot count). Existing history records/source snapshots are retained with a copied operation list instead of JSON deep-copying their mesh strings; only a first history base needs its normal source capture. Existing Direct records remain compatible. The subsequent index-only transaction replaces the general preview clone/restore/publication path entirely. Whole-object and Add Slot operations avoid face-triangle ownership mapping; face assignments reuse the editor's existing face-triangle map. Display material caches are retained and only affected mesh renderers/material arrays/back-face draws refresh. Changed(false) avoids another scene-wide geometry dirty pass. StudioUndo registration and strict modifier input checks remain.
+
+
+
+
+
+Materials rows now have a minus button to Remove Slot on the active mesh (and linked mesh instances). Removing an occupied slot retains its faces at resulting Slot 0; if Slot 0 itself is removed, the former Slot 1 becomes the fallback. Higher IDs and corresponding material-array entries shift down together. Empty slots can be removed too; at least one slot remains. Geometry, authored face IDs/boundaries, UVs/normals and selection remain. Removal shares captured atomic publication, compact operation replay and grouped StudioUndo. Add Slot still creates an unused slot; assignment and radial New Slot retain their existing scopes. Explicit removal is the only operation that compacts IDs.
+
+
+
+
+
+Sources: StudioModelEditor.Materials.cs, StudioMeshCuts.MaterialSlots.cs, StudioModifierHistory.cs and StudioModelEditor.Display.cs. Installed-source compilation passes (material-slots-fast-build.log). The focused material-slot fixture is updated for compact records, occupied-slot removal, replay and last-slot protection, and compiles; it has not been rerun natively for this revision. The earlier eight-check render/Undo pass predates these changes. No measured new latency on the reported mesh, no claimed millisecond target, and no idle/repeated profiling. Source inspection verifies the removed duplicate captures/publication, cached-material preservation and slot remapping. Working scene and personal profiles untouched.
+
+
+
+
+
+## Material assignment radial function (2026-11-03)
+
+
+
+
+
+Preferences > Radial Menus now offers Material/Assign Selection in the function catalog, rendered as Assign Material with the material icon and submenu indicator. Add this stable function key (RadialPreset/context-material-assign-selection) to any user preset. Existing user preset contents, order and shortcuts are not rewritten. The preset stores only that function reference; its slot choices are transient context data, never persisted as stale mesh-specific preset files.
+
+
+
+
+
+Opening a radial builds the assignment submenu from current selected Object/Face targets. It lists every existing zero-based slot ID across those targets, with material names from the active selected mesh where available, followed by New Slot with an add icon. Choosing an ID reuses AssignSelectionMaterialSlot. New Slot chooses the first ID beyond every selected mesh's existing mesh/material table and assigns the selection in the same transaction; it does not create an empty slot as a separate action. Object assignment affects all selected mesh faces, Face assignment only selected eligible faces; Vertex/Edge or absent selections disable the function. Groups use their selected mesh descendants. Missing IDs on other selected meshes grow using the existing assignment rules. Per-object material assets at an existing ID are retained.
+
+
+
+
+
+The runtime-only context definition is added to a copied opening-context list, leaving cached/persisted preset command lists constant. It uses the existing rectangle layout/hit tests, submenu hover delay, Back arming and initiating-gesture release cleanup. Leaf commands resolve again against the current selection on release and use the same captured publication, compact slot history, StudioUndo and Repeat Last path as Materials-row assignment. No alternative pie renderer, page/overflow limit, idle work or preference setting is added.
+
+
+
+
+
+Sources: StudioModelEditor.Materials.cs, StudioModelEditor.MarkingMenus.cs, StudioRadialMenus.cs (reserved context ID), StudioCommandIcons.cs. Validation: installed Editor sources compile (material-radial-build.log); inspected the catalog entry, copied context definition, dynamic ID range/New Slot, fresh release resolution and existing assignment dispatch. Earlier material-slot native render/Undo checks cover the reused assignment path; this new radial interaction has not been physically or visually rechecked. No native test launch or personal preset/profile edits.
+
+
+
+
+
+## Material-slot assignment (2026-11-03)
+
+
+
+
+
+Channels > Materials now places Assign beside every zero-based Slot ID. In Object mode, Assign moves all faces of selected mesh objects (including selected group descendants) to that ID independently per mesh. In Face mode it moves only selected eligible faces across the selected mesh cohort. Vertex/Edge modes disable Assign. The slot's Material field still chooses/replaces the material asset; Assign changes which faces use that slot. Add Slot creates the next empty slot on the active mesh without moving any faces; choose its material and Assign afterward. Slots can remain empty; only explicit Remove Slot compacts and renumbers later IDs. Other selected meshes grow their slot table as needed for the chosen ID, preserving existing materials and using the existing last-material fallback for new rows.
+
+
+
+
+
+Assignment republishes only submesh triangle lists and authored face material IDs. It preserves source render triangles, editable face order/boundaries, positions, normals, UVs, normal groups, geometric IDs and component selections. Shared meshes retain existing linked-geometry behavior: face-slot data changes on shared instances together and their material arrays grow without replacing existing entries. Source assets are not edited. Per-target work is evaluated before publication, then document/mesh/material-table/direct-history changes commit with grouped StudioUndo; failure rolls back. New slot changes use compact MaterialSlot modifier records with existing strict input checks; old Direct slot records remain supported. G repeats the completed slot ID on the current selection. Add Slot does not replace the repeat record. The existing component-isolation topology lifecycle releases temporary component masks before changing their submesh buffers.
+
+
+
+
+
+Sources: new StudioMeshCuts.MaterialSlots.cs; StudioModelEditor.Materials.cs (Assign/Add Slot controls and transaction), StudioModelEditor.Repeat.cs. Existing ToolChannelPane, Materials header/inset, material preview refresh, StudioMeshToolPreview and modifier infrastructure remain. No new preference, popup, polling or personal profile changes.
+
+
+
+
+
+Validation: installed Editor sources compile (material-slots-build.log). Eight focused checks passed in disposable ThemeIsolationProject: selected face versus neighboring quad; unchanged positions/UVs/normals; retained face selection/direct history; actual renderer red/green slots; Undo; Redo; whole-object assignment/growing the slot table; and empty Add Slot without reassignment. Actual renderer capture material-slots.png inspected. Fixture Tests~/StudioMaterialSlotValidation.cs; report obj/StudioControlsValidation/material-slot-result.txt. Physical Materials-row clicks, a multi-object/shared-instance fixture and full workspace save/load were not separately replayed. Disposable Unity session is left open; working scene/profiles untouched.
+
+
+
+
+
+## Weld pane and tessellation correction (2026-11-03)
+
+
+
+
+
+Fixed two integration failures in range Weld. StudioModelEditor.ToolOptions.ActiveChannelTool now includes rangeWeldToolPane, so the embedded title, Range field and Execute/Apply/Cancel actions actually render instead of leaving Selection Tool visible. The Weld menu opens with finishPreview:false, allowing an existing failed Weld preview to remain accessible for parameter correction/cancellation rather than blocking re-entry while trying to commit it.
+
+
+
+
+
+The shared merge kernel no longer retriangulates every retained polygon through the cut ear-clipper. It maps captured source render triangles through the vertex contraction, removes collapsed/duplicate triangles and retains genuine authored polygon boundaries. Unrelated tiny or warped faces keep their source tessellation instead of blocking a local weld with Cannot triangulate this face safely; cut was not applied. Only affected collapsed faces use the existing area cleanup. Target Weld and Merge to Center share this publication improvement. UV/material/render-corner seam handling and atomic beforeWrite publication remain.
+
+
+
+
+
+Sources: StudioModelEditor.ToolOptions.cs, StudioModelEditor.Menus.cs, StudioMeshCuts.Merge.cs. Installed-source compile passes (weld-fix-build.log). Current verification is compilation and source inspection; the earlier six-check native pass predates this correction. Physical UI input and the reported mesh have not been rechecked. Personal profiles and the working scene are untouched.
+
+
+
+
+
+## Weld by range (2026-11-03)
+
+
+
+
+
+Edit Mesh > Weld… exposes the existing distance-based merge kernel alongside Merge to Center (M) and Target Weld. Select two or more geometric vertices on editable static meshes; the embedded Weld options has a nonnegative Range (initial .001 m), displayed in current scene units. Range is a world-space distance, accounting for object scale. Only selected geometric vertices participate (including their existing render-seam aliases); nearby pairs form transitive clusters and each cluster moves to its own average position. Separate objects run independently and are never combined or welded across objects. Exact coincident but explicitly separate geometric IDs are eligible. Vertices outside the threshold remain unchanged; UV/material and render-corner seam handling uses the existing merge engine. This is not merge-all-to-one-center or target snapping.
+
+
+
+
+
+The shared ToolChannelPane/live-preview path evaluates from captured geometry, coalesces edits, supports Execute/Apply/Cancel, restores source selection on cancellation and groups mesh/selection history through StudioUndo. Weld has its own appended LiveTool kind; Merge remains merge-all and Target Weld retains its fixed destination. Repeat Last stores the completed range. Saved Weld modifiers replay the distance and captured world matrix and expose editable Range in Channels; existing strict topology dependencies apply. The Range is a tool-session value, using current ToolChannelPane parameter storage rather than a new durable profile setting. The shared menu registry exposes Weld to shortcut Preferences, toolbar and radial customization; no default shortcut is assigned and M retains Merge to Center.
+
+
+
+
+
+Sources: StudioModelEditor.Merge.cs, .LiveTools.cs, .MultiComponentTools.cs, .Menus.cs, .Modifiers.cs, .ToolbarCommands.cs and StudioModifierHistory.cs. Kernel reuse: StudioMeshCuts.Merge.cs. Validation: actual installed Editor sources compile (range-weld-build.log). Six focused native checks passed in the reused disposable BevelJunctionProject: below-threshold no-op; two independent clusters; preservation of unselected point/authored faces; captured preview cancellation; scaled world-space threshold; saved modifier replay. Fixture Tests~/StudioRangeWeldValidation.cs; report obj/StudioControlsValidation/range-weld-result.txt. Physical option input, UI rendering and a broad regression suite were not rechecked. Personal profiles and the working Unity project were not used for validation; disposable session remains open.
+
+
+
+
+
+## Procedural Fracture (2026-11-03)
+
+
+
+
+
+Mesh Tools > Fracture provides explicit Compute/Recompute on the active evaluated static mesh, with seeded count/variation, directional bias, geometric roughness/detail, interior material/UV scale, Weld tolerance and Piece Gap. Settings edits do not compute. The existing embedded pane shows real progress/cancellation; workers operate on copied arrays. Exploded inspection affects preview only. Piece Gap slightly contracts fragments, is committed in the mesh and is included by ordinary exports; its slider runs from 0 to 2% of the source's shortest bounding dimension, default 0. Reopening resets defaults and Repeat Last recalls completed parameters for explicit Compute.
+
+
+
+
+
+Closed, consistently wound concave manifold solids and section cavity loops are supported, including the exact fighterJetCutTest. Source boundary welding precedes shared quad-patch construction. Structured grids are preferred, with genuine triangle/quad fallback; exterior authored-face provenance and attribute seams are preserved. This replaces the initial convex-only tetrahedral surface fragmentation. Counts are 2–64 seeds; disconnected components can yield extra fragments. Invalid/open/non-manifold geometry and unsafe parameters reject explicitly. Execute/Apply uses grouped StudioUndo, centered pivots and independent history bases; Undo restores the source stack. See [FRACTURE_ENGINE.md](FRACTURE_ENGINE.md) for details and limits, including concave convex-collider overlap.
+
+
+
+
+
+Validation: installed production/test sources compile. Focused disposable Unity checks cover the exact jet (13 fragments, 10,397 polygons; 5,918 of 6,242 interior faces are quads), a .001 m gap, seam welding/source immutability and rendered output. The cube drops from 10,155 to 329 polygons. The integration fixture checks compute/cancel/recompute, interfaces, rendering, commit and native Undo/Redo. No exhaustive mesh/setting matrix, physics simulation or user visual acceptance is claimed. Personal profiles and working scenes are untouched.
+
+
+
+
+
+## Bevel fan-anchor connections (2026-11-03)
+
+
+
+
+
+User clarified the red markup: connect neighboring fan apex vertices to one another around the opening, forming the inset perimeter; do not connect them to the outer corners, weld them away or remove the terminal triangle bands. The terminal cap builder records the actual source-side apex identities. Retained planar source faces containing multiple apexes split along their ordered connections using those same geometric and render-corner identities. Existing adjacent connections are retained; invalid splits and warped source faces retain their previous topology. Source coordinates, fan/strip faces, UV/normal seams and material provenance remain. These are authored modeling edges, not display-only triangulation lines. Exact contacts keep the existing shared-event policy.
+
+
+
+
+
+Unlock width range now continues the bevel past its first face/contact limit with the pre-contact connectivity and explicit render triangles retained. It permits overlapping/inverted faces in unlocked mode, matching the purpose of disabling an overlap clamp (Blender manual terminology: https://docs.blender.org/manual/en/4.4/modeling/meshes/editing/edge/bevel.html). It does not attempt collision remeshing. Subdivision count rebuilds the same template and extends that result; no retry sequence or proximity weld is introduced. Locked construction remains on the existing kernel/contact path.
+
+
+
+
+
+Sources: StudioMeshCuts.Bevel.cs (terminal anchors, planar source-face partitioning, continuation template), StudioMeshCuts.BevelPublication.cs (retained render triangulation). Validation: actual installed Editor sources compile (bevel-loop-build.log). Reused the existing disposable BevelJunctionProject session for three focused evaluations: locked fraction .6 with 4 subdivisions, unlocked 1.2 with 4 subdivisions, and unlocked 1.2 with 20 subdivisions. The marked loop has 8 real edges total (four per end) on the locked source. Applied widths are .3 and .6000001 respectively, establishing actual extension beyond the .5 source limit. All three have zero open authored and render-triangle boundaries. Inspected actual surface/authored-edge renderer captures bevel-loop-connected.png and bevel-loop-unlocked.png; terminal fans remain and the inset loop is visible. Report: obj/StudioControlsValidation/bevel-loop-result.txt; fixture: BevelHoleProbe.RunLoop. No broad suite, physical UI gesture test or collision-cleanup claim. Personal profiles and the working Unity project are untouched; disposable Unity session left open for reuse.
+
+
+
+
+
+## Selection hiding and default orientation (2026-11-03)
+
+
+
+
+
+Select now includes Hide Selection (default H) and Unhide Last Hidden (default Ctrl+H / Cmd+H). Both are shared menu commands available to shortcut, toolbar and radial customization. Custom assignments and explicit unassignment retain precedence. Each successful hide pushes one set; unhide restores only that set, in reverse order, across mode changes. Object hiding uses document visibility and StudioUndo; unhide enables required ancestors. Component hiding is a non-destructive session mask using the existing isolation rendering/picking path, preserving original geometry, authored edges and material/normal/UV attributes. Face mode hides selected faces; vertex/edge modes hide directly incident faces. Hidden geometry is excluded from drawing and component picking/selection; successful hides clear the consumed selection. Show All resets masks and hide history. As with existing isolation, rebuild/history reconstruction and topology edits release component masks; component hide history is session-only, not serialized or independently registered in geometry Undo. Isolation reset also clears hide history. This limitation is intentional reuse of the current mask lifecycle, not topology continuation.
+
+
+
+
+
+General > Editing has a mutually exclusive Default orientation row (World/Object/Component, factory Component), persisted through StudioPreferenceStore as Model.DefaultOrientation=2 and applied to new editor sessions. Modeling starts in Object selection mode; the unwanted Default components preference and its factory entry were removed. Existing session selection history still restores its saved mode, and explicit mode changes retain normal behavior. Legacy Model.DefaultComponents profile entries are ignored without rewriting personal files. No personal profile or State files were replaced.
+
+
+
+
+
+Sources: StudioModelEditor.Hiding.cs, .Isolation.cs, .Menus.cs, .Display.cs, StudioModelCommands.cs, StudioSettings.cs, StudioModelEditor.cs and StudioPreferenceStore.cs. Validation: installed SDK Editor sources compile with existing warnings (hiding-build.log); source checked mask ownership/cleanup, LIFO restoration, authored triangle filtering and standard shortcut declaration. No new Unity session or rendered-output/physical-shortcut test was run; those behaviors reuse existing isolation paths and have not been newly verified visually.
+
+
+
+
+
+## Unlock bevel width range (2026-11-03)
+
+
+
+
+
+Bevel Tool Options has Unlock width range, default OFF. Locked retains dimensionless width 0..1 and existing contact behavior. Unlocked permits finite nonnegative fractions above 1; 1 remains the same captured source-range reference, so 1.2 requests 120% of it. Beyond first contact, construction uses the analytic pre-contact limit as a connectivity template, preserving its triangle indices and extending generated points along their source-corner trajectories to the requested width. Overlap and face inversion are allowed in this explicit mode, rather than passing crossing polygons to the simple-polygon validator/triangulator. This is overlap continuation, not automatic Boolean cleanup, collision remeshing or welding beyond contact. Finite-coordinate checks, source topology and attribute seams, atomic publication, Undo and preview cancellation remain. Relocking clamps the visible stored fraction back to 1. The earlier implementation only bypassed numeric clamps and could still reject crossing inset faces; that behavior is superseded.
+
+
+
+
+
+UnlockWidthRange persists through the existing ToolChannelPane/StudioPreferenceStore tool-default path, factory 0. The saved live parameter vector uses W bit 0 for the existing Grid/Cap junction and bit 1 for unlock; shared helpers decode it so modifier recording, replay, editing, component contexts and Repeat Last preserve the choice. Old W=0/1 records remain locked. Modifier Channels exposes the same checkbox. No mesh asset edits, new windows, idle work, personal profile reset or geometry algorithm replacement.
+
+
+
+
+
+Sources: StudioModelEditor.Bevel.cs, .LiveTools.cs, .Modifiers.cs, StudioModifierHistory.cs, StudioMeshCuts.Bevel.cs and StudioPreferenceStore.cs. Validation: actual installed SDK Editor sources compile with existing warnings (unlock-bevel-build.log). Source checked UI maximum/relock, normalized conversion, both automatic core clamp sites and saved junction/unlock decoding. No native session/physical checkbox test or beyond-contact geometry matrix was run for this small toggle change. Personal profiles/State and working scene untouched.
+
+
+
+
+
+
+
+
+## Bevel neighboring-face range and solo cap orientation (2026-11-03)
+
+
+
+
+
+Normalized width 1 must include the cuts constructed on unselected neighboring faces, not just events from faces that contain selected edges. Added BevelNeighborContactLimit to the cached source analysis. Every unselected source edge receives the actual corner-cut rates from both endpoints: source-fan cuts use distance/edge length; wavefront corners use their projected source-edge velocity. The earliest meeting bounds the same wavefront limit before contact classification. Normalized mapping now takes the minimum of the clipping range and this full source limit instead of letting a larger clipping limit override it. This prevents a fraction of 1 from crossing the source polygon's adjacent corner cuts when subdivision count changes. Existing proven contacts can weld; unsupported events retain the existing safety margin rather than claiming a supported weld transaction.
+
+
+
+
+
+User confirmed the solo-edge fan direction: use the perpendicular neighboring source corner as apex (the marked 90-degree connectivity change), with the long strip unchanged. Planar terminal triangulation now identifies profile-boundary vertices and selects a valid non-profile source-side fan anchor. Only triangle connections change; no band absorption, boundary movement, strip rotation or source-seam rerouting. Irregular non-star-shaped caps retain guarded triangulation.
+
+
+
+
+
+Sources: StudioMeshCuts.BevelWavefront.cs BevelNeighborContactLimit and cached limit integration; StudioMeshCuts.Bevel.cs normalized range minimum and terminal fan connectivity. Focused validation: installed Editor compilation passes (bevel-neighbor-range-build.log). Reused captured preview at Width=1 through subdivisions 1->20->4 on the inner-plus-outer longitudinal edge selection, without restoring/recreating the source between changes. All three succeed with closed authored/render boundaries. For this source the corrected physical maximum is .3535434, below the previous selected-face-only .5; dimensions differ from the user's ~.26 source. Report bevel-width-captured-result.txt. Actual 20-subdivision capture bevel-neighbor-range-20.png checks the resulting bands/fans. This is the shown boundary workflow, not a broad suite or proof of every unsupported collision family. No new Unity session; personal settings/hotkeys and working scenes untouched.
+
+
+
+
+
+
+
+
+## Normalized bevel width (2026-11-03)
+
+
+
+
+
+User requirement supersedes the earlier meter-based Width UI: new Bevel width is dimensionless, clamped 0..1 while Unlock width range is off. Zero is no bevel; one is the captured selection's available contact limit. The UI uses WidthFraction, a separate preference/default key, so prior physical-width defaults are not silently reinterpreted. Scene units do not scale this fraction. Geometry remains meter-based internally. BevelOptions.NormalizedWidth resolves the fraction through the captured wavefront/clipping and neighboring-face corner-cut range before construction; direct absolute-distance callers retain their original behavior. Subdivision edits reevaluate the same fraction against that source rather than retaining an oversized meter request. Repeat Last and new modifier records preserve the fraction; serialized normalizedBevel marks new records, while older unmarked records retain physical-width replay. New modifier width controls clamp to 0..1.
+
+
+
+
+
+The proven first-event source-edge contact transaction is restored for normalized maximum: corresponding source-edge cut identities merge, collapsed faces are removed, and the current terminal bands/triangles and general manifold-fan miter solver remain. No seam-rerouting helper returns. Eligible contacts derive from the captured trajectories and source-edge provenance, not proximity welding across the mesh. Unsupported simultaneous split/collapse families still use their existing guarded limit; do not claim complete collision continuation or guaranteed weld support for every topology.
+
+
+
+
+
+Sources: StudioMeshCuts.Bevel.cs NormalizedWidth option/range conversion and contact dispatch; .BevelWavefront.cs/.BevelContacts.cs analytic contact; StudioModelEditor.Bevel.cs and .LiveTools.cs normalized input; ToolChannelPane uses generic unitless WidthFraction field; StudioModifierHistory.cs normalizedBevel serialization/replay and StudioModelEditor.Modifiers.cs record/edit; StudioPreferenceStore.cs generated default. Obsolete physical-width UI-ceiling feedback is removed; no personal profiles/State files are replaced.
+
+
+
+
+
+Focused validation: actual installed Editor sources compile with existing warnings (normalized-bevel-build.log). Existing disposable native session checks normalized fraction 1 on the square-hole inner-edge selection while changing subdivisions 1/4/11. All three cases succeed, with actual distance about .5000001 for that source, zero open authored/render boundaries, and eight meeting-point pairs merged. Report bevel-hole-result.txt. This specifically verifies normalized maximum/subdivision reevaluation, not physical UI pointer scrubbing or every bevel topology. No new Unity launch or broad suite. Fixture snapshot Tests~/StudioBevelWidthFractionValidation.cs (guarded entry StudioBevelWidthFractionValidation.Run).
+
+
+
+
+
+
+
+
+## Shared face-offset miter constraints (2026-11-03)
+
+
+
+
+
+Corrected a shared construction restriction, not a shape-specific patch. BalancedBevelEdgeSpeeds previously ran only at vertices with exactly three incident edges. At higher-valence manifold fans, adjoining face offsets could therefore reach the same stationary edge at different points, creating the extra corner/sliver geometry reported for partial selections. It now enumerates every stationary manifold edge in the selected vertex fan, finds the selected supporting edge in each incident face corner, and applies the offset-intersection constraint to that pair. Travel along the shared edge is offset/sin(face-corner angle); matching the two intersections supplies the existing graph solve's width ratio. The prior three-edge constraint is the corresponding special case. Shared offsets remain cached; no per-drag graph rebuilding or unrelated mesh cleanup.
+
+
+
+
+
+Uses the existing vendored straight-skeleton trajectories, conic profiles, shared profile identities, Grid junctions, publication and Undo. Terminal bands and real triangle caps remain; no source-seam rerouting or feature removal. Existing unsupported collapse/split guards and mathematical compatibility limits remain. This follows the established offset/miter construction model rather than selecting a new profile rule for each pictured shape. Reference terminology and expected controls: Blender Bevel manual https://docs.blender.org/manual/en/4.4/modeling/meshes/editing/edge/bevel.html . No Blender source code was copied and no claim of complete Blender/Maya numerical parity is made.
+
+
+
+
+
+Source: Editor/StudioMeshCuts.BevelWavefront.cs BalancedBevelEdgeSpeeds. Focused validation only, as requested: actual installed sources compile (general-offset-build.log); one native disposable rendered case selects the outer longitudinal edge and adjoining coplanar radial face edge at a four-edge frame vertex, width .1, subdivisions 2. Output has 26 authored faces/27 geometric points and zero open authored or render-triangle edges. Actual renderer capture bevel-hole-quad-0.10.png was inspected and shows continuous profile lines through the selected corner without the prior separated corner construction. Report bevel-hole-result.txt; same existing BevelJunctionProject/D3D12 session reused, no new launch or broad suite. Other partial/mixed/complex selections were not individually replayed and unrestricted robustness is not established. Working scene, source assets and personal profiles untouched.
+
+
+
+
+
+
+
+
+## Bevel rollback, geometric path selection and width feedback (2026-11-03)
+
+
+
+
+
+The user requires the intentional bevel bands and editable terminal triangle connections to remain, including inner-only, inner-plus-outer, full outer corner and partial/mixed selections. Removing those features is not an acceptable fix. Rejected seam-rerouting and new maximum-contact topology transactions remain removed; earlier established flat-clipping contact handling stays intact. StudioMeshCuts.Bevel.cs now retains eligible planar single-edge terminal surfaces before absorption and emits real triangles using the existing guarded triangulator. Boundary coordinates, strip profiles and source-side anchors are not changed. The receiving coplanar source face supplies material, UV sampling and shading normals, avoiding the prior forced-flat terminal normal. Linear-end handling, multi-way Grid junctions and other existing construction remain. The two rejected helper files are still removed. Proven source-edge contacts are now restored for normalized maximum as described above; general unsupported events remain unresolved.
+
+
+
+
+
+Focused corrected validation: installed SDK sources compile (retained-caps-build.log). The existing disposable session rendered one combined case: all twelve outer box edges plus the four inner longitudinal hole edges, width .1, subdivisions 2, Grid junctions. It produces 144 authored faces/136 geometric points, with zero open authored or render-triangle boundaries. The actual renderer capture bevel-hole-quad-0.10.png was inspected: rounded outer corner patches and explicit inner terminal triangle bands are both present. No broad suite was run. The shared miter correction above now verifies one two-edge partial selection at a four-edge fan. Remaining partial/mixed reference images are requirements, not individually replayed cases; one render does not establish arbitrary bevel robustness. The earlier inner-only success claims and rollback-without-triangulation response did not satisfy the requested feature set.
+
+
+
+
+
+Contiguous Path now uses cached component positions and geometry-weighted Dijkstra, replacing minimum-hop BFS. Cost is geometric transition length, with endpoint-chord deviation and alignment penalties to favor a shorter, straighter route even when it contains more edges. Edge transition length uses half the lengths of the adjoining edges. This is a geometric preference, not a guarantee of following any particular crease or camera-drawn guide; triangles/n-gons remain traversable through authored adjacency, and isolation/welded identity rules are retained. Ordinary directional loop/ring mode is unchanged. No new preference or gesture. The original 79 minimum-hop checks describe the superseded BFS behavior, not a current weighted-path pass.
+
+
+
+
+
+Bevel width UI is now normalized 0..1 as described above; the earlier physical-width ceiling feedback is superseded.
+
+
+
+
+
+Sources: StudioSelectionTopology.cs geometry-weighted path; StudioModelEditor.Bevel.cs, .LiveTools.cs, .ComponentLiveContexts.cs, .MultiComponentTools.cs width feedback; StudioModelEditor.ToolOptions.cs gesture help. Bevel rollback: StudioMeshCuts.Bevel.cs and .BevelWavefront.cs. Validation: actual installed production source compilation passes with existing warnings (path-width-build.log; restored.rsp). Six managed actual-topology route checks pass (WeightedPathCheck.cs, weighted-path-result.txt): fine straight vertex/edge paths beat coarse detours, isolation forces valid detours, same and missing endpoints. No claim of native click replay on the user's pictured mesh. Full-corner native probe reuses disposable BevelJunctionProject with all eight depth edges, width .1 and subdivision 1 on quad/triangle source ends; report bevel-hole-result.txt and captures bevel-hole-quad-0.10.png / -tri-0.10.png. Width UI physical scrubbing/subdivision replay is not yet verified natively. No new Unity session was launched for this correction. Working scenes/source assets and personal Settings/Hotkeys profiles untouched.
+
+
+
+
+
+
+
+
+## Contiguous Path selection (2026-11-03)
+
+
+
+
+
+Select > Contiguous Path controls one saved general selection choice; it is not a tool option. Default OFF preserves directional loop/ring selection. For two-component gestures, both modes use the existing SINGLE-click start, then DOUBLE-click second component gesture; in directional mode the pair establishes a loop/ring direction, and in contiguous mode it defines start/end. Shift adds and Ctrl/Cmd subtracts through the existing selection transaction. Merely selecting a second component with a normal single click does not expand a path. Selection actions are not Repeat Last actions.
+
+
+
+
+
+Contiguous mode supports Vertex, Edge and Face selection. Geometry-weighted Dijkstra favors shorter, straighter routes using length and endpoint-chord deviation/alignment; it no longer minimizes component count. Vertices connect through authored edges; edges connect end-to-end at vertices; faces connect across authored shared edges. Paths include both endpoints and stop there, without quad-only continuation or a loop/ring extension. Triangles, quads, n-gons and branch/pole junctions are allowed; equally short alternatives resolve deterministically through cached adjacency order. This does not infer a visually preferred crease or curvature-following route from two endpoints. No render-only diagonal is introduced. Non-manifold adjacency may provide branches; this is connected topology selection, not a topology repair operation.
+
+
+
+
+
+The existing per-mesh StudioSelectionTopology cache supplies compressed canonical adjacency. Per-request BFS uses bounded arrays and expands each vertex/edge incidence group once, avoiding high-valence adjacency cliques. Welded editing follows existing exact-position seam canonicalization; unwelded editing retains disconnected raw indices. Isolation eligibility blocks traversal through hidden components and filters returned aliases. Missing initial anchor selects only the clicked component for Vertex/Face modes; Edge mode follows the connected edge loop described above; disconnected/hidden-blocked endpoints select only the clicked destination with a Studio status message rather than falling back to an unrelated loop or bridging shells. Mode toggling/reloading a changed choice resets directional anchors; ordinary selection and other mesh targets are retained. Existing press capture, mouse release, selection snapshots and StudioUndo paths remain unchanged; no idle work, mesh mutation or competing selection-history system.
+
+
+
+
+
+Preference Model.ContiguousPath persists via StudioPreferenceStore, with a zero factory entry. Only actual user changes write the selected settings profile; loading remains read-only. Development did not replace personal Profiles/State or hotkey files. Select menu declaration makes the toggle automatically shortcut/custom-toolbar eligible, initially unassigned. Existing directional commands and bindings are unchanged.
+
+
+
+
+
+Sources: Editor/StudioSelectionTopology.cs shortest-path core; StudioModelEditor.LoopSelection.cs gesture dispatch/choice; .Menus.cs and .ToolOptions.cs controls; .Display.cs load/save and StudioPreferenceStore.cs factory default. Validation: full current production source compilation passes with existing warnings (host obj/StudioControlsValidation/contiguous-path.rsp and contiguous-path-build.log). 79 managed checks execute the actual production topology class with fixture authored-face data, covering all three component graphs on a warped triangle grid, independent BFS minimal-step comparison, endpoint inclusion, isolation detours/disconnection, missing/same endpoints, disconnected shell, welded/unwelded seams and returned edge aliases. Fixture ContiguousPathCheck.cs, report contiguous-path-check-result.txt. No new Unity session, native checkbox/double-click delivery, Undo/Redo or profile restart test was run; the earlier 502 native directional checks predate this addition and are not a new path-mode pass. Initial managed fixture had local-name compilation conflicts, corrected before the passing run. Working scenes and personal profiles untouched.
+
+
+
+
+
+
+
+
+Display customization entry removal (2026-11-03): removed Display > Toolbars > Customize Toolbars and Display > Radial Menus > Customize Radial Menus from AddStudioToolbarMenu. Customization remains in the dedicated Settings/Preferences Toolbars and Radial Menus categories. Toolbar visibility toggles and Restore Default Layout remain in Display. Do not reintroduce customization launchers there. Source-only verification for this two-entry removal; no new Unity session.
+
+
+
+
+
+## Convert Selection (2026-11-02)
+
+
+
+
+
+## Retained World Rotation after Freeze (2026-11-02)
+
+
+
+
+
+World Rotation now retains the object's reference orientation through Freeze, rather than simply mirroring the reset Unity Transform. Node.frozenRotation stores the retained frame relative to the current world transform. Freeze captures current world rotation multiplied by the previous retained offset, then compensates geometry/children and zeros Rotation/scale as before. The resulting offset preserves the World Rotation readout, including parent rotation. Ordinary subsequent rotations compose with it; another Freeze retains the accumulated frame. This is recorded orientation metadata, not an inferred rotation from mesh shape or bounds. Existing world-aligned Freeze pivot/handle behavior is preserved; the retained offset is not applied to the mesh a second time.
+
+
+
+
+
+Bake Pivot restores the retained frame into editable Rotation channels when the pivot is still at its frozen baseline. Node.frozenPivotBaseline distinguishes that baseline from a later explicit pivot orientation edit; an explicitly changed pivot remains the requested bake frame, without double-applying the frozen rotation. Baking clears frozen position/rotation/baseline offsets, preserves world geometry/children and allows zeroing Position/Rotation to return the mesh to the parent frame/origin. Existing active-object scope, shared-instance compensation in Bake and unsupported shear/skin/blend restrictions remain. No menu/shortcut/default change.
+
+
+
+
+
+Both frozen quaternion fields save/load in text workspaces, serialize in document Undo and copy with duplicates. Missing/zero frozen metadata is treated as identity for readout/baking. Previously frozen meshes cannot reliably recover the discarded orientation from their shape; Undo to before Freeze and re-freeze is needed to capture that old pose. Existing stored geometry is not automatically reinterpreted. The shared Compensate helper now registers document and affected mesh together in one StudioUndo snapshot, fixing the observed Freeze Redo metadata mismatch from separate native registrations.
+
+
+
+
+
+Sources: StudioModelDocument.cs Node.FrozenFrame/RetainedWorldRotation/BakeRotation, Freeze/BakePivot and atomic Compensate registration; StudioModelEditor.ComponentPivot.cs bake selection/no-op; StudioModelEditor.cs readout; StudioModelDocument.Duplicate.cs and StudioWorkspaceText.cs metadata persistence. No new idle work or personal-profile writes.
+
+
+
+
+
+Validation: production and focused-fixture compilation pass with existing warnings. Native Unity 6000.4.12f1 / Direct3D12 in disposable SelectionUndoProject passes **60 assertions**, covering root-equivalent and rotated-parent frames, frozen zero channels with retained world orientation, actual bound mesh world positions, child matrices, Freeze Undo/Redo, subsequent rotation/repeated Freeze, workspace offset/baseline roundtrip, Bake/restored channels, Bake Undo/Redo and zeroing Position/Rotation back to the parent frame/origin. Initial Freeze Redo failure with separate document/mesh registrations is superseded by the atomic passing run. One recovery of the unavailable-window disposable editor was needed; it remains running. Duplication field copying was source-reviewed, not independently replayed. No new physical GUI input, rendered-pixel comparison, arbitrary nonuniform/shear or deformation matrix was run. Working scene/personal profiles untouched.
+
+
+
+
+
+Maintained excluded fixture: Tests~/StudioFrozenRotationValidation.cs. Host inputs/logs under obj/StudioControlsValidation/FrozenRotation: build.log, test.rsp and test-build.log; report frozen-rotation-result.txt (PASS 60) and native log frozen-rotation-native.log under obj/StudioControlsValidation.
+
+
+
+
+
+
+
+
+Bake Pivot position follow-up (2026-11-02): Bake Pivot now clears the frozen positionOffset while preserving the actual local/world origin, transferring the complete parent-relative pivot position into Position channels. Zeroing Position afterward moves to the parent origin (world origin for roots). Position already present in ordinary channels remains intact. Position-only bakes no longer return early for identity orientation; they update only document channels without cloning/touching mesh geometry or adding a direct geometry record. Combined position/orientation bakes retain the prior compensation/shared-instance/grouped Undo behavior. Source compilation checked; prior 27 native assertions cover orientation only, and no new native session was run for this localized follow-up.
+
+
+
+
+
+
+
+
+## Bake Pivot and World Rotation (2026-11-02)
+
+
+
+
+
+Modify > **Bake Pivot** transfers the active object's pivot position/orientation into parent-relative Position/Rotation channels, clearing positionOffset and pivotRotation. It preserves the current world-space mesh, object origin/position/scale and child world poses. Confirmed example: Rotation 0 plus an edited pivot at X=45° becomes Rotation X=45° with no surface movement; setting Rotation to zero afterward rotates the surface by −45°. This is distinct from Freeze, which zeroes channels by baking the existing transform. Scope follows the current Freeze operation: active object in Object mode, not a new multi-object/component bake. Unskinned meshless groups are allowed where child compensation is representable. Bones, skins/live blend shapes, broken modifier stacks, non-finite frames, singular scales and compensation requiring child shear reject before mutation using existing restrictions.
+
+
+
+
+
+Shared/persistent meshes receive an independent copy before compensation. Document references and affected mesh are registered atomically in a grouped StudioUndo action; the original shared instance stays fixed. Bake compensation is a named direct modifier record, preserving strict history ordering and explicit exact-input dependencies. It does not clear history. Re-editing earlier geometry may invalidate that direct record, as for other exact-input edits. Bake exits pivot editing, updates a held pivot-lock frame, and records Repeat Last on successful completion. Modify/Bake Pivot is automatically shortcut/custom-toolbar eligible, initially unassigned.
+
+
+
+
+
+Channels shows read-only **World Rotation** immediately beneath editable Rotation, matching World Position. It displays the retained object reference orientation (including parent rotation and the frozen rotation offset), expressed as signed canonical Euler degrees. It remains separate from an explicitly edited pivot frame and does not retain extra Euler turns. Rotation channels retain their existing authored-value semantics. Scene length units do not affect either rotation row.
+
+
+
+
+
+Sources: StudioModelDocument.cs ValidateBakePivot/BakePivot, StudioModelEditor.ComponentPivot.cs BakeEditingPivot, .Menus.cs, .Repeat.cs, .Channels.cs and main .cs inspector. Maintained excluded fixture: Tests~/StudioBakePivotValidation.cs. AGENTS/README/Tests README aligned; factory Hotkeys only updated, personal profiles untouched.
+
+
+
+
+
+Validation: production and focused-fixture compilations pass with existing warnings. Disposable SelectionUndoProject / Unity 6000.4.12f1 / Direct3D12 passes **27 native assertions** covering the exact 45°/zero workflow, world positions read through the actual bound MeshFilter, child world-matrix preservation, independent shared instances and native Undo/Redo. Final finite-matrix and precise no-op checks were source-reviewed/compile-checked afterward. The unavailable-window disposable editor required one targeted recovery; the session remains open. No fresh native panel/rendered-pixel capture, physical drag/keyboard input, rotated-parent/nonuniform/shear matrix or workspace/FBX roundtrip was run. Existing compensation restrictions apply; no broader support claim. Host inputs/logs: obj/StudioControlsValidation/BakePivot/build.log, test.rsp/test-build.log; bake-pivot-result.txt (PASS 27) and bake-pivot-native.log under obj/StudioControlsValidation. Working scene/personal profiles untouched.
+
+
+
+
+
+
+
+
+Select > Convert Selection matches the radial exactly: To Vertices submenu (To Vertices, To Perimeter Vertices), To Edges submenu (To Edges, To Perimeter Edges), To Faces submenu (To Faces, To Perimeter Faces), then To Objects at the root. Labels, order and icons match. Never flatten this into rows or separator-only groups. Existing four command keys remain stable despite the To labels; perimeter actions have new keys. All use shared menu execution and automatic shortcut/custom-toolbar discovery, initially unassigned. Selection actions are excluded from Repeat Last Action. Ordinary component-mode switches still clear incompatible IDs rather than implicitly converting.
+
+
+
+
+
+To Vertices selects selection corners/endpoints. To Edges selects contained authored edges: vertex sources require BOTH endpoints, face sources include all face boundary edges (including shared interior edges), edge sources retain their selected edges, and object sources include every eligible edge. To Faces selects directly incident faces from vertices/edges; it requires an actual selected authored edge for edge sources rather than a shared endpoint. To Objects selects mesh owners with eligible selected components.
+
+
+
+
+
+Perimeter conversion derives fully contained face regions (selected faces, faces with all selected vertices, or faces with every boundary edge selected). Edges shared by multiple included faces are removed; remaining region edges and loose selected/contained edges form the perimeter. To Perimeter Vertices selects the endpoints of that perimeter, additionally retaining selected vertices adjacent to unselected vertices and isolated selected vertices. Thus holes contribute boundaries, shared edges inside a face region are excluded, and a closed complete surface has no face-region perimeter. Perimeter commands operate even in the current target mode. No triangulation diagonals, topology edits or face flood-fill are introduced. Welded aliases follow existing coincident-position selection semantics; unwelded editing retains raw IDs. Isolation filters source/result components and visible-face perimeter incidences.
+
+
+
+
+
+To Perimeter Faces first captures the ordinary To Faces result, then keeps only faces with an authored edge used once within that captured region. This returns the boundary face ring, including holes and open mesh boundaries, and excludes interior faces; a complete closed surface yields none. Works from Object/Vertex/Edge/Face and within Face mode; source/result isolation, welded identities, multi-mesh publication and selection Undo are retained. Its separate cached icon is a highlighted face ring with a dim center. Existing command keys remain unchanged; new key Select/Convert Selection/To Perimeter Faces is initially unassigned and available in shortcut/custom-toolbar discovery.
+
+
+
+
+
+Object conversion includes selected group mesh descendants. Other component conversions retain the selected visible/editable mesh cohort, including empty converted targets. To Objects drops empty component targets. Existing editability restrictions apply; entirely invalid/empty source selection gets Studio status guidance. Results are prepared per mesh before publication; active mesh, existing selection snapshots, StudioUndo and tool/pivot lifecycle routes are reused. Geometry is unchanged.
+
+
+
+
+
+The Convert Selection radial has To Vertices, To Edges and To Faces submenus plus one To Objects action directly on the root. Vertices contains To Vertices and To Perimeter Vertices; Edges contains To Edges and To Perimeter Edges; Faces contains To Faces and To Perimeter Faces. Never duplicate To Objects inside component submenus. Uses existing preset-driven navigation, Back and gesture lifecycle. New factory preset IDs: convert-selection, convert-vertices, convert-edges, convert-faces. Existing active preset 8e912b9b50274f31b2a787d56ed430f6 is the user's Convert Selection menu: its ID/name/shortcut are retained with three branches and the root To Objects action. Three child presets and their manifest order entries were explicitly added for this request. Other custom presets/settings/hotkeys remain unchanged. New factories seed only fresh storage; loading existing radial storage does not silently add/reset menus deleted by the user.
+
+
+
+
+
+Conversion icons: menu actions and radial child branches share semantic cached icons through StudioCommandIcons/StudioSymbolIcons. Vertices use a dot grid, edges a line grid, faces a filled quad, and Objects the existing object-mode cube. Perimeter variants highlight the boundary while dimming the interior. Canonical radial preset IDs map to the matching conversion icon; no preset/settings rewrite. Production compilation passes (conversion-icons-build.log). The extracted production Canvas drawing code was rasterized in a managed harness and inspected in conversion-icons-preview.png at 16px and enlarged. This verifies artwork shape, not native menu delivery; no Unity session/render capture was run.
+
+
+
+
+
+Sources: Editor/StudioModelEditor.SelectionGrowth.cs, StudioModelEditor.Menus.cs, StudioRadialMenus.cs; working Preferences/RadialMenus Presets, Defaults and manifest. Validation: current SDK Editor production compilation passes with existing warnings (host obj/StudioControlsValidation/selection-conversion-build.log). 19 managed checks exercise the actual extracted production conversion method with fixture topology/visibility lookups: contained endpoints, shared/interior edges, perimeter vertices, same-mode perimeter, object open borders, incident faces, loose edges, welded/unwelded identities, isolation and temporary mode restoration. Report conversion-check-result.txt. Radial JSON branches/manifest and stable action keys source/schema checked. No new Unity session, native Undo/Redo, rendered radial or physical menu test; those runtime paths remain unverified. Working scenes and personal Settings/Hotkeys profiles untouched.
+
+
+
+
+
+
+
+
+Menu grouping correction: the earlier flat reordered menu was rejected. Both interfaces now use identical component submenus. Leaf command keys and callbacks remain unchanged, including explicit keys for the relocated perimeter actions. Submenu display names also carry To, retaining their stable preset IDs. To Objects was then moved from all radial child menus to one root action, updating active and factory JSON. Submenu source checked and production compilation passes (conversion-submenus-build.log); no native menu capture/session rerun.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Perimeter Faces validation: current production compilation passes (perimeter-faces-build.log). Managed production-method checks now pass 27 assertions, including object/vertex/edge/same-mode face rings, interior-face exclusion, single-face regions, hole boundaries, visible isolation and closed surfaces. Active and factory convert-faces JSON include the new command after To Faces. New icon raster inspected at 16px/enlarged in perimeter-faces-icon.png using extracted production drawing code; no native Unity session/menu/Undo test was run.
+
+
+
+
+
+
+
+
+## Recalculate Normals (2026-11-02)
+
+
+
+
+
+Mesh Display > Recalculate Normals appears immediately after Soften… . It replaces custom/imported shading directions with angle-weighted authored-face normals while preserving existing hard/soft edge continuity (normal groups when present, otherwise inferred from existing endpoint normals). Studio has no separate locked-normal flag. It does not force all edges soft or hard, reverse face winding, weld disconnected geometry or repair topology. UV/color seams, authored polygon boundaries, original render triangulation and material slots are retained; tangents refresh through the existing normal-editing publisher.
+
+
+
+
+
+Uses the existing Object/Vertex/Edge/Face normal-action scope, static-mesh restrictions, shared-mesh propagation, selection restoration, grouped StudioUndo and strict-order direct modifier recording. Component scope follows the same incident-edge neighborhood as Harden/Soften; boundary-only selections also rebuild their normals. Repeat Last Action is supported; automatic shortcut/custom-toolbar discovery exposes the command, initially unassigned. Existing built-in toolbar layout and personal profiles are unchanged. Missing/invalid selection uses shared selection guidance and returns before mesh access.
+
+
+
+
+
+User reports that Harden/Soften leave the particular mesh completely unchanged. Those actions already replace normals, so an imported lock is not established as the cause and this command is not a verified fix for that mesh. Inspect the mesh target/connectivity and material/shader if the problem persists. No claim of numerical Maya parity.
+
+
+
+
+
+Sources: Editor/StudioMeshCuts.Normals.cs, StudioModelEditor.Normals.cs, .Menus.cs, .ToolbarCommands.cs and .Repeat.cs. Validation: current SDK Editor production compilation passes with existing warnings using host obj/StudioControlsValidation/recalculate-normals.rsp. Source-reviewed selection, Undo/history and attribute-preservation reuse. No new Unity session, rendered comparison, native Undo/Redo fixture or failing-mesh check. Initial compile harness lacked current Cloth/Culling references; the current reference list resolved it.
+
+
+
+
+
+
+
+
+Status prompt background (2026-11-02): Studio status notifications use the theme Header color lightened 18% toward white, with background alpha 0.8 (20% transparent). Text retains its existing color/opacity and existing lifetime/fade behavior. Source: MashBoxStudioViewport.cs ShowStatusMessage. Source-reviewed style-only change; no new Unity session/capture.
+
+
+
+
+
+Preferences title/divider layout (2026-11-02): Settings page titles now use bold 17px text; shared section titles use bold 14px across General/Viewport/Themes/Profiles/Shortcuts and the Toolbar/Radial Menu editors. Customization list/detail panes have a solid 1px gray vertical divider (#6B6B6B), with 4px spacing on each side, stretching through their available content height. Sidebar navigation and command/body text retain existing sizing. Shared styles are cached; no new windows, settings writes or input lifecycle changes. Sources: StudioControlsPreferences.cs, StudioSettings.cs, StudioToolbarCustomization.cs. Production compilation checked; no new native visual capture/session for this UI-only change.
+
+
+
+
+
+
+
+
+Themes Settings integration (2026-11-02): removed Window > Themes. Preferences now has its own Themes category (replacing the former Appearance launcher at stable page index 3) containing the existing palette cards, custom Primary/Secondary colors, Scene background and Restore Theme Defaults directly, with the shared Settings scroll/theme/ownership. No separate theme popup or Open Themes button. Existing non-menu theme entry points redirect to that same Settings category via StudioSettingsWindow.Open; Toolbars/Radial Menus/Shortcuts page indices and customization input lifecycles remain unchanged. Existing saved theme settings and profile persistence are preserved. Sources: StudioControlsPreferences.cs, StudioSettings.cs and StudioModelEditor.Menus.cs. Current-source compilation checked; no new Unity session or native UI capture for this relocation.
+
+
+
+
+
+
+
+
+Workspace-only unit correction (2026-11-02): removed scene units from portable Preferences data and stopped unit/grid edits from changing global defaults. New document initializers always use Meters and 0.25 m grid spacing. Existing saved workspace units remain intact; old profile sceneUnits fields are ignored without rewriting personal profiles. Source compilation checked; no new Unity session for this follow-up. Prior 123 native unit checks predate the new-workspace reset policy.
+
+
+
+
+
+
+
+
+Polygon primitive creation scaling (2026-11-02): new Cube/Sphere/Plane/Quad/Cylinder dimensions are multiplied by the creating workspace unit size. Default cube/plane/quad dimensions and sphere diameter are one selected unit; cylinder diameter is one selected unit and height two. Only dimensional parameters scale; subdivision counts remain unchanged. The exact converted parameters initialize both the mesh and its creation modifier/source so replay and Clear History agree. Existing objects/modifiers are not rescaled when units change. Vehicle Parts are explicitly excluded: their source and shared BuildPrimitive/DefaultPrimitiveParameters contracts are unchanged; conversion occurs only in AddPrimitive via CreationPrimitiveParameters(type, sceneUnits). Source review and current production compilation; no new native session for this localized follow-up. Prior 123 unit checks predate the creation multiplier.
+
+
+
+
+
+
+
+
+## Scene units (2026-11-02)
+
+
+
+
+
+Preferences > General > Scene Units offers Meters (initial default), Millimeters, Centimeters and Inches. Units and physical grid spacing are workspace-specific. Every new workspace starts in Meters with 0.25 m grid spacing, independently of previous workspaces or loaded preference profiles. Preferences edits only the currently open workspace; its unit control is disabled without one. Reopening a saved workspace restores its own unit/grid values. Existing text workspaces without these fields read as meters with the meter grid default. Importing/reloading settings does not rewrite a current workspace's units or physical geometry. One internal Studio/Unity distance unit remains one meter; 1 m = 100 cm = 1000 mm = 39.3700787 in. Scene-unit switches never rescale geometry, node transforms, existing modifier parameters or exported geometry.
+
+
+
+
+
+Length entry/readout conversion is shared by Position/World Position channels (including pivot editing), primitive dimensions, live and recorded Bevel/Extrude, Bisect distance, grid spacing, camera position/orbit distance/near/far clips and lighting ground height/size. Untouched fields return their exact stored floats rather than repeatedly round-tripping displayed values; numeric channel scrubs convert their delta before applying sensitivity. Angles, scale factors, subdivision counts, UVs, profiles/curvature, AO relative settings and other dimensionless values are unchanged. Bevel and extrusion distances remain mesh-local: object scale still affects their world-space size. Existing objects and saved tool parameters keep their physical values. New polygon primitives start at the selected unit scale (e.g. a default cube is 1 mm wide in millimeter mode); Vehicle Parts retain their existing fixed sizes.
+
+
+
+
+
+View > Grid contains checked **Toggle**, then **Reset**. Toggle retains its previous View/Grid command key and shares the toolbar state. Reset is automatically shortcut/custom-toolbar eligible and initially unassigned. Unit changes reset the minor-grid spacing to 0.25 m, 1 mm, 1 cm or 1 inch respectively; Reset restores that unit's spacing after customization. Grid drawing, all constrained/free grid snaps and quick pivot snaps consume the same workspace spacing. The existing 40-step extent and major-line pattern remain; physical grid extent changes with spacing. Workspace grid/unit edits use isolated StudioUndo actions and save through the existing document workflow. New settings/defaults use StudioPreferenceStore, with no new EditorPrefs or idle loop.
+
+
+
+
+
+Camera clipping distances display in the chosen units but preserve their physical values when units change. Existing automatic clipping remains camera/geometry driven. Manual clipping permits a near distance down to 0.000001 m and a positive far separation of max(0.000001 m, near * 0.001), removing the former fixed 1 mm separation. Grid spacing accepts down to 0.000001 m instead of the former 1 cm minimum. Primitive minimum dimensions remain 0.0001 m (0.1 mm). Tool geometric tolerances and supported topology restrictions remain unchanged; unit conversion is not an arbitrary-scale precision guarantee.
+
+
+
+
+
+Sources: new Editor/StudioSceneUnits.cs; StudioModelDocument.cs and StudioWorkspaceText.cs persistence; StudioSettings.cs Preferences; StudioModelCommands.cs active-document access; StudioModelEditor.Menus.cs, .Modifiers.cs, .ToolOptions.cs, .Extrude.cs, .Bisect.cs, .MoveHandles.cs, .Pivot.cs and .Lighting.cs; StudioViewportCamera.cs and ToolChannelPane.cs. Factory references are currently Preferences/Defaults/Settings.json and Hotkeys.json, as defined by StudioPreferenceStore; personal Profiles and State files were not replaced.
+
+
+
+
+
+Validation: installed production and focused-fixture compilation pass with existing warnings. Native Unity 6000.4.12f1 / Direct3D12 passes **123 focused assertions**: conversion roundtrips including negative/zero distances, unchanged geometry and authored creation parameters through unit switches, grid defaults/snapping/reset, small valid camera clip range and no unit-switch clip mutation, workspace unit/grid/geometry persistence, StudioUndo/Redo of unit changes. Bevel, Extrude and filled Bisect run on 1 m and 1 cm cubes in all four display units (24 operations), producing equivalent geometry/topology. Initial fixture compared null inline-history JSON and was corrected to verify real authored creation parameters/source; that initial failure is not a product failure or a final pass. No exhaustive tool/scale matrix, FBX roundtrip, physical numeric scrubs, rendered grid/Preferences capture or separate automatic-clipping redesign was run. Existing engine precision/topology restrictions remain. The unavailable-window disposable editor required one recovery before the focused run; the passing run reused that session after fixture reload and leaves it open. Working scene and personal profiles untouched.
+
+
+
+
+
+Maintained excluded test: Tests~/StudioSceneUnitsValidation.cs (non-exiting, disposable SelectionUndoProject only). Host build inputs/logs: obj/StudioControlsValidation/SceneUnits/production.rsp, build.log, test.rsp and test-build.log; native report scene-units-result.txt (PASS 123), cumulative scene-units-native.log under obj/StudioControlsValidation.
+
+
+
+
+
+
+
+
+Pivot restriction notification (2026-11-02): TogglePivotEdit now assigns its existing CENTER-mode restriction message through the shared error/StatusMessage callback, which AnimationStudioModeling routes to Studio viewport status notifications. Removed the Unity SceneView.ShowNotification path. D, menu, marking menu and Tool Options share this entry point. Message and restriction are unchanged. Source-only verification; no new Unity session for this small routing change.
+
+
+
+
+
+# MashBox Studio
+
+
+
+
+
+Measured icon correction (2026-11-02): user screenshots show Unity mesh artwork at x21–33/y104–116 (13×13 visible pixels), versus Studio x35–44/y180–189 (10×10). The earlier guessed 12px slot was too small. Category icons now use a 16×16 slot within the 20px row (2px vertical padding), allowing for texture-internal transparency. This replaces the previous 12px instruction. Input screenshot pixel bounds measured with Pillow; source-only size correction, no fresh native after-capture. Refresh Material Preview remains removed.
+
+
+
+
+
+
+
+
+Channel category cleanup (2026-11-02): Transform, Materials and Modifiers share a scoped 16×16 icon size in their existing 20px foldout rows, leaving two pixels of vertical padding on either side; the previous icon size is restored immediately. Removed Refresh Material Preview from Materials. Assignments and material/shader asset changes retain their existing automatic refresh path; opening Materials no longer exposes a manual refresh or implicitly enables textures. Sources: StudioModelEditor.Channels.cs shared DrawChannelCategoryFoldout, .Materials.cs and .Modifiers.cs. Current-source compilation checked; no new native visual capture or Unity session for this small UI change.
+
+
+
+
+
+
+
+
+Materials category (2026-11-02): Channels now places Materials directly after Transform and before Modifiers, with the same full-width 20px themed foldout header, Material icon and body inset. Material slots and array Preview Sub-ID remain inside its collapsible body; material updates refresh automatically. Expansion defaults on and persists via StudioPreferenceStore (Model.MaterialChannelsExpanded); profile reload remains read-only. Existing assignment/preview behavior is unchanged. Sources: StudioModelEditor.cs, .Materials.cs, .Display.cs. Source compilation checked; no new Unity session or visual capture for this layout-only change.
+
+
+
+
+
+
+
+
+## Editable polygon primitives (2026-11-02)
+
+
+
+
+
+Cube axis follow-up (2026-11-02): Width (X), Height (Y) and Depth (Z) subdivision counts are independent and default to 1. Opposite faces use the same axis counts, preserving conforming boundaries. Counts serialize in the creation modifier and reuse its existing edit/Undo path; earlier uniform records retain their count on all axes until edited. Current production-source compilation checked; no new Unity session/render/Undo run. The excluded fixture now includes a 2×3×4 cube (52 authored quad faces and closed shared boundaries), but that addition was not run natively.
+
+
+
+
+
+Newly created Cube, Sphere, Plane, Quad and Cylinder objects start with an editable creation entry in Channels > Modifiers. Creation still happens immediately at world zero, preserving the camera and normal grouped creation Undo. Expand the shape entry to edit its mesh-local dimensions and counts:
+
+
+
+
+
+| Shape | Controls |
+
+
+| --- | --- |
+
+
+| Cube | Width, Height, Depth, Width subdivisions, Height subdivisions, Depth subdivisions |
+
+
+| Sphere | Radius, Segments, Rings |
+
+
+| Plane (XZ) | Width, Length, Width divisions, Length divisions |
+
+
+| Quad (XY) | Width, Height, Width divisions, Height divisions |
+
+
+| Cylinder | Radius, Height, Sides, Cap rings (both top and bottom) |
+
+
+
+
+
+Defaults retain the existing one-unit cube/sphere/plane/quad and one-unit-wide, two-unit-high cylinder. Cube and planar divisions default to 1; sphere defaults to 32 segments/16 rings; cylinder defaults to 32 sides/1 cap ring. Dimensions are at least 0.0001 local units; Cube subdivisions are independently 1–64 per axis, planar divisions 1–128, sphere segments 3–128/rings 2–128, cylinder sides 3–128/cap rings 1–64. Cylinder cap rings are radial subdivisions, not a top-only face count or an open-cap toggle.
+
+
+
+
+
+The generator retains genuine quad grids/bands, sphere pole triangles and cylinder cap-center triangle fans; additional cylinder cap rings are quads. UV0, explicit normals, render triangles and seam-connected geometric IDs are generated deterministically. Counts do not hide triangulation edges as a substitute for authored faces. Oppositely traversed cube boundary samples use symmetric fractions to keep exact shared geometric identity.
+
+
+
+
+
+Creation parameters save with workspace modifier history, copy with duplicates and replay before later operations. Edits use existing modifier publication, numeric sensitivity and StudioUndo, retaining the live mesh binding and object transforms. Compatible topology replays downstream tools; changed topology retains explicit downstream failures instead of remapping component IDs. Clear History freezes the current result and removes the creation fields. Deleting the creation record alone restores its captured default base, rather than deleting the object. Existing imported meshes and already-created workspace objects do not acquire a guessed primitive generator. No new mode, tool popup, menu command, shortcut, idle update loop or personal-profile write.
+
+
+
+
+
+Sources: Editor/StudioModelDocument.Primitives.cs (creation/defaults/generation), StudioModifierHistory.cs (serialized primitive type and replay), StudioModelEditor.Modifiers.cs (fields); maintained excluded fixture Tests~/StudioPrimitiveParametersValidation.cs.
+
+
+
+
+
+Validation: installed SDK production and focused-fixture sources compile with existing warnings. Native Unity 6000.4.12f1 / Direct3D12 exercised all five generators (face counts, finite attributes, winding and closed Cube/Sphere/Cylinder boundaries), creation records, dimension replay and workspace type roundtrip. The corrected cylinder cap boundary reuses exact side-wall positions. The final native fixture reached rendering but its render/async Undo continuation did not produce a completion report in the hidden disposable editor; rendered correctness, native Undo/Redo and physical numeric-field interaction are not newly verified. Do not treat the old primitive-parameters-result.txt failure as a final pass. Earlier startup dependency, workspace-path and readback-lifetime failures were fixture issues; no broad suite run. Production build log: obj/StudioControlsValidation/PivotMode/primitive-build.log; fixture build: primitive-test-build.log; latest native log: obj/StudioControlsValidation/primitive-parameters-verified.log. Disposable SelectionUndoProject remains running; working scene and personal profiles untouched.
+
+
+
+
+
+
+
+
+## Center/Pivot and framing
+
+
+
+
+
+Center transform behavior is now the Center orientation choice described in the 2026-11-04 entry above; its former independent Pivot/Center toolbar has been removed. Selection-centered geometry behavior and pivot-edit restrictions remain.
+
+
+
+
+
+General > Editing > **Frame selection style** has side-by-side, mutually exclusive **Pivot** and **Selection Average** toggles; exactly one remains enabled. Pivot is the default. F / Frame Selection first frames the selected mesh geometry, then focuses the exact editing pivot at the current zoom and rotation; repeated presses alternate mesh → pivot → mesh. A different selection or viewport restarts at the mesh. Choosing Selection Average retains regular selection-average framing on every press: equal average of selected object geometry centers, or geometric component average across selected meshes. This preference remains independent of the Center orientation choice. The style row reuses the existing `focusSelectionAverage` field through StudioPreferenceStore, preserving saved choices without migration or personal-profile writes; `centerTransformMode` now stores the Center orientation choice internally. Empty-workspace camera reset and custom shortcut bindings are preserved. Alternation state is session-only, outside settings and Undo.
+
+
+
+
+
+View > **Grid** toggles the same saved modeling grid state as the Grid toolbar button, with a synchronized checkmark, event-driven redraw and automatic shortcut/custom-toolbar registration (initially unassigned).
+
+
+
+
+
+Sources: Editor/StudioModelEditor.Menus.cs; Editor/StudioSettings.cs; StudioViewportToolbar.cs; MashBoxStudioViewport.Toolbars.cs; StudioModelEditor.cs, .ComponentPivot.cs, .PivotLock.cs, .IndividualRotation.cs, .MultiComponentTransform.cs, .Display.cs, .Shortcuts.cs, .MarkingMenus.cs and .ToolOptions.cs.
+
+
+
+
+
+Validation for this addition: current-source compilation only; no new Unity session, native capture or physical gesture test. Existing pivot/rotation test results predate this mode.
+
+
+
+
+
+
+
+
+Subdivision preview retains evaluated mesh edges in Shaded Wireframe, ordinary selection highlighting and component overlays. Subdivision does not force an additional cage overlay or force X-ray depth.
+
+
+
+
+
+## Through-slice correction
+
+
+
+
+
+Multi-Cut and Bisect share a surface-plane cutter that supports warped authored quads/n-gons. Start and release off the actual active mesh surface at any line angle. Empty space inside projected bounds is valid, including close-up views; the finite drawn segment must cross the mesh. Clipped render cells merge back into authored boundaries, keeping render diagonals hidden by actual topology rather than wire suppression. Placed point/path Multi-Cut retains its separate planar-interior validation. Bounds and input use common canvas coordinates; no-intersection messages no longer masquerade as bounds failures. Bisect prefers structured, relaxed quad cap grids while preserving exact section boundaries; irregular sections retain a conforming quad fallback. See Bisect below for layout limits.
+
+
+
+
+
+Verified on fighterJetCutTest.fbx with four geometric plane directions and six native horizontal/diagonal outside drags, plus actual before/after bound-renderer output. See Tests~/README.md for scope.
+
+
+
+
+
+## Bisect
+
+
+
+
+
+Mesh Tools > Bisect: drag a viewport line starting and ending off the actual active static mesh surface (empty space inside its bounds is allowed), then adjust **Bisect Distance** (full world-space gap, default **0.01 m**) and **Fill** (default on). Apply/Execute separates the halves into independent mesh objects; retained geometry stays fixed. Both half pivots center on their own cut surfaces, including with Fill off; world geometry and source children stay fixed. With a gap, each pivot lies on its own section plane. Shared instances keep the original source. Zero separates without a gap. Apply keeps the pane open, Execute finishes, and Cancel restores the captured source. Fill first fits a structured quad grid to four boundary arcs, compares aspect/corner layouts, relaxes interior spacing and optimizes quad shape while rejecting folded cells. Even section loops keep their boundary vertices and edges; odd loops add one shared midpoint when a grid is possible. Flat UV0 projects along each cap normal. Sections that cannot form a valid grid use the existing conforming quad matching/refinement with interior quality relaxation. Cap faces remain genuine quads, not n-gons with hidden triangulation. Side attributes/seams and conforming boundaries remain intact. Open/branched, nested-hole or invalid sections reject Fill. Highly uneven boundary spacing and concave features can still produce tapered/thin quads; this is not global optimal retopology or boundary decimation. The grid search is bounded to 512 section vertices and 16,384 cells per candidate; larger loops use the fallback. Boundary midpoint propagation can still add corners to adjacent side faces, especially on fallback fills. G reopens the completed tool settings for a new line. Uses grouped StudioUndo; evaluates the current strict-order result and starts independent generated history bases for the two halves. Output normal-group IDs are compacted. New cuts are blocked by broken history. No default shortcut; automatic shortcut/custom-toolbar registration applies.
+
+
+
+
+
+
+
+
+Fresh FBX subdivision imports now preserve source connectivity across UV/normal splits and restore original polygons when unambiguously matched through the installed Autodesk FBX SDK. Reimport existing Studio models to obtain the correction. No automatic position welding; unmatched inputs retain the conservative fallback. See SUBDIVISION_ENGINE.md.
+
+
+
+
+
+Modifier history (2026-10-29): Channels has a collapsible Modifiers group with a Transform-style icon header, Clear History first, and applied operations displayed newest first. Fields use Channels sensitivity; there are no generic Enabled toggles or explanatory mini descriptions. Bevel/Extrude/Bridge/Soften/Edge Flow parameters remain editable; delete operations and replay later ones. Strict creation order means tools after Subdivision edit its denser result. Modify > Clear History commits the current result and removes records; no visible Bake Subdivision command. F3 adds the first Subdivision or toggles the last; Add Subdivision explicitly appends another. Other mesh edits have conservative direct records; invalid downstream inputs show failures. Workspaces use v2, with no legacy compatibility requirement. See [MODIFIER_HISTORY.md](MODIFIER_HISTORY.md) and [SUBDIVISION_ENGINE.md](SUBDIVISION_ENGINE.md).
+
+
+
+
+
+Right-click an FBX model or mesh sub-asset in Unity's Project browser and choose **Open in MashBox Modeler**. Studio opens in Modeling mode and imports the selection into the current workspace, preserving existing objects and the viewport camera. Source assets remain unchanged.
+
+
+
+
+
+The current Studio camera viewport is **perspective-only**. Camera Settings no longer offers Orthographic, and native/restored 2D or orthographic states are corrected on camera events/rendering. Separate orthographic views are future work. Camera gesture ownership is fixed at the initial press: a click begun in Lighting, Tool Options, Channels or other panel/toolbar UI stays UI-owned when dragged into the camera canvas, until release/cancel. It cannot start camera movement or take over the camera cursor. A drag begun in the camera canvas may continue over UI until release. Panel controls retain normal editing/scrolling.
+
+
+
+
+
+
+
+
+## Group selected objects
+
+
+
+
+
+**Modify > Group** (**Ctrl/Cmd+G**) creates a new parent at the equal average of the selected items' geometry centers, with its pivot/origin at that point. It preserves their world placement, mesh data and children, and selects the new group. Selected descendants stay nested and count once. Siblings keep their shared parent; selections from different parents form a root group. Empty transforms use their positions; meshless groups use their descendant bounds. Unsupported shear/invalid scales warn without changing the document. Supports grouped Undo/Redo and G repeat; custom shortcut assignments remain authoritative.
+
+
+
+
+
+
+
+
+## Pivot editing and rotation
+
+
+
+
+
+Edit Pivot places all selected object pivots at one exact world-space destination. Dragging, snapping and Translate channels preserve geometry and children in world space while compensating each object's local data independently. Object/Component orientation rotation uses each selected object's own pivot and axes; multi-mesh component rotation uses each mesh's component center and frame. World orientation keeps group rotation. Undo/Redo restores the complete operation.
+
+
+
+
+
+## Choosing mesh tools
+
+
+
+
+
+Implemented mesh commands stay callable and set the required selection/tool mode, with Studio notifications explaining missing or invalid selection. Bridge uses Edge; Split preserves Vertex/Edge/Face or chooses Face from Object mode. Split retains ready Tool Options when selection is missing/invalid and can execute valid selections directly. Bridge always opens parameterized live Tool Options: choose borders, adjust Divisions/Curvature, then Apply or Execute. Cancel restores the unapplied preview. Other tools retain their embedded parameter options and command preparation. Stable command keys/custom shortcuts and geometry restrictions remain.
+
+
+
+
+
+## Bridge Edges
+
+
+
+
+
+Bridge two non-touching boundary chains or two loops with equal edge counts on the SAME mesh. Divisions adds rows across the gap: 0 creates one flat band, N creates N+1 bands. Curvature -1 is concave, 0 flat, +1 convex; add divisions to see the curve. It uses the same cubic Hermite interpolation as Edge Flow, guided by adjacent face tangents, with an explicit arch for coplanar neighbors. Source borders remain fixed. Curvature scrubbing reuses cached trajectories/topology; divisions rebuild from the captured source. New curved normals are smoothed, UV0 spans the strip, and source faces/attributes/materials are preserved. Apply keeps Tool Options open, Execute closes, and Cancel restores the source. Defaults are 0 divisions/0 curvature and persist independently through the normal settings profile. Ctrl/Cmd+Shift+B is the default shortcut. Touching/branched/interior/mismatched/invalid selections warn without publication. Never combines objects. Supports grouped Undo/Redo and G repeat.
+
+
+
+
+
+## Current bevel contact and viewport tools
+
+
+
+
+
+Eligible flat bevel clipping reaches the exact analytic first boundary contact through the existing junction vertex, preserving attribute seams; it does not proximity-weld nearby vertices. Width is mesh-local distance, without a normalized 0–1 maximum. General post-event 3D continuation and unsupported compatibility paths retain their documented limits (BEVEL_ENGINE.md).
+
+
+
+
+
+Modeling ToolChannelPane controls are hosted inside the existing Tool Options panel with defaults, preview, Execute/Apply/Cancel and history callbacks. Multi-Cut snaps to its pending vertices/segments and closes a loop after three distinct placed vertices; W applies. StudioPreviewScenes owns persistent preview scenes and active-mode resources; inactive workspaces keep documents while preview resources are recreated on return. Existing cached mesh-tool cursors stay scoped to the camera canvas and yield to navigation/panels. Instant/ready selection actions retain the normal Select cursor.
+
+
+
+
+
+Prototyping texture correction: Solid retains its original cool palette. Large uses the same light field (211,214,217), fine line (204,207,210) and major line (162,165,167), with its original dark field lifted 10% toward white to (196,198,200) and dark fine line (190,192,194). Pattern locations, dimensions and import metadata remain unchanged; neutral grayscale/average-brightness matching is superseded.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Repeat Last Action (2026-10-28)
+
+
+
+
+
+Press **G**, or choose **Edit > Repeat Last Action**, to repeat the last completed supported modeling action on the current selection using its completed settings. Move/Rotate/Scale drags, selection changes, view/navigation, Undo/Redo and file operations do not replace it. It appears in shortcut Preferences/custom toolbar discovery; existing conflicting custom G assignments take priority, and the command can be rebound or unassigned.
+
+
+
+
+
+Supported actions include Group, Duplicate/Delete, polygon primitives and empty objects, Combine/Split/Bridge, Center Pivot/Freeze, editable Blend Shape creation/baking, Soften/Harden and applied Bevel/Extrude/Merge/Edit Edge Flow. Pointer-based cuts and Target Weld reactivate their completed tool for a new gesture. Other contexts such as UV editor gestures, AO/material workflows, anchor/vehicle creation and Shift-handle transforms are not replayed. Opening/canceling a pane does not record an action. G commits an active live preview once; otherwise parameterized tools apply directly without reopening a pane. Focused modeling panes defer the repeat shortcut outside drawing and preserve text-field input. Repeats retain standard validation and grouped Undo/Redo. Changed defaults are not overwritten; no old selection/mesh is retained. The last action is session-only and clears on workspace change/reload.
+
+
+
+
+
+The additional cost is a small constant-size record at action completion and ordinary shortcut dispatch, with no new idle polling, render loop or scene traversal. Running G still costs whatever the selected operation normally costs; no FPS benchmark is claimed.
+
+
+
+
+
+
+
+
+## Split component selection (2026-10-28)
+
+
+
+
+
+Mesh Tools now has three immediate commands: **Duplicate Face**, **Duplicate Face as New Object**, and **Detach Face**. Duplicate Face appends selected faces on the same mesh and selects the copies. Duplicate Face as New Object creates independent sibling objects, centers only their new pivots and leaves the source unchanged. There is no Duplicate options pane or As new object toggle. Both copies start at the original positions; Move is active immediately afterward (or the previous Rotate/Scale tool is retained), so the selected result can be moved away. Detach Face disconnects the selected region from neighboring faces on the same object without moving it. Connections within a selected region, authored polygon boundaries/render triangles, material slots and vertex attributes remain. Both whole-source duplication and all-face detachment are allowed.
+
+
+
+
+
+Face selection on ordinary readable static meshes is required. Missing/invalid selection uses existing Face-mode preparation and ready selection-action guidance; no implicit component-ID conversion or delayed automatic edit. Same-mesh linked selections publish once through the existing captured preview transaction, StudioUndo and strict Direct modifier history. New-object outputs have independent history bases. Repeat Last retains whether duplication was on the same object or as a new object. All three commands are eligible for shortcut, toolbar and radial customization, initially unassigned; the existing same-mesh Duplicate Face command ID is preserved. No personal profiles or presets were rewritten.
+
+
+
+
+
+Detached/coincident regions retain independent explicit geometric identities. Welded component selection, Convert Selection and Grow/Shrink now use valid explicit geometric IDs when available, rather than rejoining separate regions solely because their positions coincide. Meshes without explicit IDs retain their legacy positional alias selection; the active bevel publication's specialized weld map remains unchanged. Newly unused detached vertices are removed while preexisting loose vertices remain.
+
+
+
+
+
+Detached and coincident duplicated boundaries now remain independent in SelectionWireframeLines. Wire canonicalization uses a dense mapping of (explicit geometric identity, position), rather than position alone. This prevents coincident edges from being collapsed into one cached edge before the faces are moved apart. Both source and moved patch keep complete authored boundary outlines. Position remains part of the key for unwelded seam editing; meshes without explicit identities retain their legacy positional deduplication and skinned meshes retain raw indices. No geometry, transform, selection, modifier or camera behavior is changed by this display fix. The user confirmed the reported problem was visual only and the affected mesh had no Subdivision modifier.
+
+
+
+
+
+**Mesh Tools > Split Selection** runs immediately for valid selection; missing/invalid selection retains ready embedded Tool Options with Execute/Apply/Cancel. In Face mode it cuts the selected faces out of the source; in Vertex mode it takes all faces directly touching the initially selected vertices, matching Isolate Selection without expanding through the whole island. In Edge mode it takes faces directly incident to selected authored edges (both faces of a shared edge). Welded/raw seam behavior follows the existing selection setting. Unattached points/edges do not create surface objects.
+
+
+
+
+
+Each source produces one new sibling mesh with its pivot centered in the extracted mesh bounds. Geometry stays in the same world position; orientation, scale and parent are retained, and outputs are selected in Object mode. The source keeps its existing node, name, transform, pivot, parent and children; only its reduced mesh/topology data changes. If any source would lose every face, the entire operation is rejected with a Studio notification. Leave at least one face on each source: empty meshes are never created. Multiple-source extraction is one atomic StudioUndo action, including component-selection restoration. Source assets and unselected shared instances remain untouched. Authored triangles/quads/n-gons, original render diagonals, material slots, UVs/dimensions, colors, normals/tangents and smoothing identities survive. Static readable meshes with complete face/render correspondence are required; skinning/bones/anchors and blend shapes are excluded. No cap surfaces are added. The command appears automatically in shortcut Preferences and custom toolbar discovery, initially unassigned.
+
+
+
+
+
+
+
+
+## Combine mesh objects (2026-10-28)
+
+
+
+
+
+In Object mode, select two or more static meshes (or groups containing them), then choose **Mesh Tools > Combine Meshes…**. The shared ToolChannelPane offers **Combine UV channels** (default on, matching numbered UV 0–7 slots) and **Pivot: First Selected / Average Center**. Separate channels allocate populated input sets independently and fail atomically if they exceed eight output slots. Custom UV names remain future work. **Use first selected name** (default off) retains the first input mesh name instead of adding Combined; existing root-name collisions still receive a unique numeric suffix. The setting persists with the other tool defaults. Average Center equally averages the input mesh bounds centers in world space; orientation follows the first selected mesh.
+
+
+
+
+
+Apply combines and keeps the pane open; Execute combines and closes. Options apply on execution, without a hierarchy preview. The output is one selected root object: consumed mesh nodes and newly emptied ancestor groups are removed, while unrelated children retain their world transforms under a surviving parent. One StudioUndo action restores hierarchy, meshes and selection. Authored polygon boundaries, render triangulation, materials, UV dimensions, colors, normals/tangents and smoothing identities are preserved; mirrored transforms are baked with corrected winding. Source meshes remain untouched. The operation does not weld or boolean-union surfaces. Skinning/bones, live/native blend shapes, incompatible preview texture slices, non-polygon surfaces and invalid transforms are excluded; child reparenting that requires shear fails before changing the document. Shortcut/custom-toolbar discovery includes the command, initially unassigned.
+
+
+
+
+
+
+
+
+## Checker Map viewport toggle (2026-10-27)
+
+
+
+
+
+Viewport Shading includes Checker Map, using the supplied MashBoxStudio_Checkerboard material. It overrides material/neutral display temporarily and restores that view when disabled; object assignments remain unchanged. Camera Lighting displays the target _CheckerboardMap texture through computed shading when _Checkerboard is enabled; Studio Lights uses the target material shader. The toggle is saved through StudioPreferenceStore and defaults off. No new shortcut or source material/graph edits.
+
+
+
+
+
+
+
+
+## Camera Lighting and material defaults (2026-10-27)
+
+
+
+
+
+HDRP textured Camera Lighting uses the authored shader and an adjustable camera-relative physical rig; neutral shading and non-HDRP fallback retain computed shading. Studio Lights material view uses the real assigned materials. Neutral shading always uses fixed white-gray computed camera lighting, regardless of the assigned material. The material-texture toggle changes preview appearance without changing source assignments. Neutral preview ignores assigned/default RGB tint. Material view refreshes existing meshes when their assigned material changes. Vehicle preview uses its graph's RGB tint without clipping on the unused tint-alpha channel; base-map alpha cutoff remains active. Camera Lighting now has preview-scene physical lights for authored HDRP materials. Lower lighting work is expected, but no FPS comparison was measured.
+
+
+
+
+
+## Creation materials (2026-10-27)
+
+
+
+
+
+Ordinary polygon primitives and bare-Mesh imports use the packaged MashBoxStudio_Default material. Studio Lights uses the real default or assigned shader. HDRP textured Camera Lighting uses the assigned shader; neutral and non-HDRP paths use the lightweight preview shader. Texture-off neutral shading is always fixed gray, not the default-material tint. Toggling preview preserves imported and explicitly assigned source materials. Vehicle Parts are the exception: each creation uses MG_Vehicle with untouched shader defaults, shared by its generated mesh nodes. The vehicle material is retained by workspace save/load. Existing user material assignments are preserved.
+
+
+
+
+
+
+
+
+## Axis and plane move snapping (2026-10-26)
+
+
+
+
+
+Arrow handles snap only X, Y or Z; plane squares snap only their two axes, in the captured World/Local orientation. Constrained vertex targets are chosen by distance along those axes from the unsnapped world handle position, independently of camera angle or cursor proximity. Locked coordinates only break target ties and remain unchanged in the result. Grid snapping rounds only the allowed coordinates. Single- and multi-mesh component moves share the resolver and exclude all moving selected vertices. The free center and instant middle-click retain cursor-based vertex picking; free grid movement retains the world X/Z ground plane. Vertex snap takes precedence over grid; no eligible vertex keeps the previous position. No new setting or shortcut.
+
+
+
+
+
+
+
+
+## Painting workspace — shared 3D / 2D color documents (2026-10-26)
+
+
+
+
+
+Painting's neutral key/fill lights follow the camera as you orbit, keeping the visible surface illuminated from both sides. **Preview brightness** adjusts viewport exposure (default +0.75 stops) without changing paint colors, exported textures, source materials or Modeling's saved lights.
+
+
+
+
+
+New Painting imports use model-local space like Skinner: each newly appended model root starts at zero position, identity rotation and unit scale. Internal mesh/bone transforms and source assets remain unchanged. **Zero Selected** resets the selected mesh's owning model root; **Zero All Models** repairs all existing model roots. These explicit placement edits support workspace Undo and preserve child alignment; they do not center individual meshes by their bounds.
+
+
+
+
+
+Painting's left panel uses a Skinner-style mesh list with selected-row highlighting, mesh icons and independent visibility toggles. Click a row to choose its paint target; double-click to frame it. **Add FBX**, **Add model**, and dropping one or more model/mesh assets onto the list or viewport append to the shared workspace. Existing meshes and paint documents remain; the first newly added mesh becomes active. **Frame Selected** and **Frame All** are separate controls. Visibility is stored on the corresponding Modeling workspace node.
+
+
+
+
+
+Painting uses Studio's native-material preview rig: enabled key/fill lights, fixed HDRP exposure and a neutral reflection environment. Modeling's default camera-lit display shader does not require real lights, so carrying its unlit scene rig into Painting made original lit materials render black. Leaving Painting rebuilds the original Modeling rig, removes the Painting reflection probe and preserves the saved lighting preferences.
+
+
+
+
+
+Choose **Painting** from the Studio workspace selector. It uses the Modeling workspace's preview meshes, FBX import path, source materials, camera navigation and lighting. Import an FBX, add a model asset, or bring the meshes already in Modeling. Choose a mesh, material and color texture in the left panel. Each material/texture pair owns a separate Imager document; switching back to a pair restores its layers and history. The initial stack contains the existing map and a transparent paint layer. A corresponding 2D canvas opens with its own save-on-close prompt.
+
+
+
+
+
+Paint directly on the mesh with **B**, erase with **E**, sample with **I**, and frame with **F**. **Ctrl+middle-drag** adjusts size horizontally or strength vertically; brackets also adjust radius. Camera navigation keeps Studio's bindings. Each stroke is one image Undo action; Escape cancels the current stroke. The inspector and the 2D window edit the same document, including brush/smudge/dodge/burn, RGB or individual channels, selections, transformed layers, opacity and blend modes. Use the 2D canvas for image placement, warping and adjustments. Save editable layers as `.mashimage`; export PNG through the existing Imager export flow. Modeling workspace saves and image-document saves remain separate.
+
+
+
+
+
+Picking uses cached triangle BVHs, material-slot identity, barycentric UV0–UV3 interpolation, transformed meshes and baked skinned preview poses. All imported visible parts participate in geometric occlusion. Screen-space stroke samples are raycast independently; crossing a UV seam or background does not draw a line between unrelated UV coordinates. The cursor ring reflects the local UV footprint and material texture scale. Live preview uses per-renderer property blocks and restores their previous contents on mode changes. Painting leaves source mesh data and material assets unchanged until the existing explicit export/assignment command is used.
+
+
+
+
+
+This is the first **UV color-painting** implementation, not a complete material authoring system. Only the active map previews at once. Radius is in texture pixels; UV density affects its world size. The brush footprint remains in texture space, can reach adjacent UV islands, and mirrors onto overlapping UVs. The 0–1 tile is supported; out-of-tile samples are rejected. Picking uses geometric surfaces, not alpha-cutout visibility, and skinned poses are cached until Refresh Meshes. Linear data maps and normal maps are excluded from the slot picker because the shared Imager currently uses an sRGB color pipeline. Seam-aware projection/dilation, UDIMs, multi-map PBR stacks, normal/height painting, bakers, generators and project-wide paint-session packaging remain future work.
+
+
+
+
+
+The extension points are `AnimationStudioPainting.cs` (workspace and target binding), `StudioPaintingSurface.cs` (geometry queries), and `StudioImagingWindow.Surface.cs` (shared image input). Future projection brushes should feed the same document/history/compositor instead of introducing a second layer system.
+
+
+
+
+
+## Shared selection mode (2026-10-26)
+
+
+
+
+
+Selection-mode changes apply to all selected meshes together, whether invoked over a mesh or from a control without a hovered target. They preserve the selected object cohort, acquire the hovered target as before, and use one grouped selection Undo action. Component types cannot diverge through modified viewport picking. The previous plain-click rule still selects a different mesh exclusively in Object mode.
+
+
+
+
+
+
+
+
+## Vertex visibility and object clicks (2026-10-26)
+
+
+
+
+
+Unselected modeling vertices use purple 5-point squares; selected vertices remain orange at 6 points and hover remains gold at 10. The GPU and cached-quad fallback share sizes/colors. Marquee overlap follows the visible footprint; the existing click radius is unchanged. Plain-clicking a different mesh from a component mode selects only that object and enters Object mode. Hover and mode-command multi-object acquisition are unchanged.
+
+
+
+
+
+
+
+
+Directional component selection: **single-click one component, then double-click another** to establish the loop or row direction. Vertices follow their connecting edge flow; connected edge pairs follow quad loops or resolve a turning face perimeter; unconnected opposite edges across a quad follow an edge ring through opposite face edges; adjacent face pairs follow a quad strip. Double-clicking the same face without a directional pair selects its connected manifold hull. Shift adds; Ctrl/Cmd subtracts. Other acquired meshes retain their selections. Boundaries form border loops; unresolved poles, nonmanifold branches and triangle/nonquad strip ends stop traversal. Authored triangles/n-gons and render seams are respected; Weld editing joins coincident seam aliases for selection, while disabling it preserves split boundaries.
+
+
+
+
+
+Modelling captures compact adjacency once per mesh/context revision and traverses only the selected loop on repeated requests. It reuses existing picking, grouped selection Undo/Redo and multi-object contexts; the retopology implementation is unchanged. No new shortcut binding, preference or idle update is introduced.
+
+
+
+
+
+
+
+
+The hierarchy panel always has a square top-left corner. Lower corner rounding still follows the existing toolbar docking rules.
+
+
+
+
+
+Edit > Preferences opens **Modelling Studio Preferences**. A left sidebar separates General, Viewport, UV Editor, Appearance, Shortcuts and Profiles. Categories have no idle button backgrounds; only hover and selection are highlighted. A subtly lighter continuous background separates the full category strip from the settings content. Native Unity fields and buttons remain, with aligned labels and settings groups outlined at 2 pixels with 4-pixel rounded corners. Groups use an 8-pixel content inset, with 4 additional bottom pixels to account for native control artwork and the outline. Appearance opens the existing Themes window. Profiles retains independent settings/hotkey import and export. Changes save immediately; browsing does not write configuration files. Object wireframe is removed from this Preferences UI; its display behavior and saved preference remain available to existing display controls.
+
+
+
+
+
+
+
+
+Three or more selected edges meeting at a vertex retain a vertex patch at zero subdivisions: three cube edges produce three chamfer strips around one triangular face. Single-edge and two-edge flat miters retain local clipping. Rounded Grid junctions carry the incoming strip directions into the first interior grid row; compatible rulings align directly. Shared seam points and the common even-step center remain connected. When skew tangent constraints cannot meet, the existing shared surface placement is retained rather than splitting the corner. Cap junctions keep their n-gon behavior.
+
+
+
+
+
+
+
+
+Component hover previews work across the selected component-target meshes, using each mesh's vertex/edge/face mode. Hovering another selected mesh displays its component preview without making it active or changing selection. Only the best hit previews; leaving the meshes clears it.
+
+
+
+
+
+
+
+
+Selected and hovered modeling edges use cached subsets of the GPU polygon wire batch, with the same incident-surface depth correction as the cyan mesh wires. Orange highlights remain visible on inward folds as the camera moves, while foreground geometry still occludes them outside X-ray. The existing native line path remains a fallback for unsupported GPU shaders. Selection colors, width and interaction stay unchanged.
+
+
+
+
+
+
+
+
+Shaded-wireframe outlines retain incident-face depth support across the camera/near plane, including inward creases viewed close up. A one-unit 24-bit raster-depth adjustment handles orthographic precision. Actual triangle coverage still bounds the correction, preserving occlusion by unrelated faces; X-ray is unchanged.
+
+
+
+
+
+
+
+
+Modeling face selection and hover use the retopology preview palette: amber selected fill at 28% opacity and cyan hover at 40%. Hovering a selected face retains amber. Face fills render before the existing polygon wire outlines, so editable boundaries remain visible. X-ray changes occlusion, not these fill opacities. Vertex and edge styling is unchanged.
+
+
+
+
+
+
+
+
+**MashBox â†’ MashBox Studio** opens a shared viewport with **Animation** and **Modeling** icon tabs. Animation takes and modeling documents stay independent when switching modes.
+
+
+
+
+
+## Modelling controls
+
+
+
+
+
+Open **Edit â†’ Preferencesâ€¦** from Studio's modelling menu to open the **Modelling Studio Preferences** popup. The Studio settings window also provides a **Controls and Shortcutsâ€¦** button. These controls stay inside Studio and do not register a Unity Preferences or Project Settings page.
+
+
+
+
+
+Search for an action, click a binding to record its replacement, use **+** to add an alternative, or **Ã—** to unassign one. Conflicting bindings are rejected with the conflicting action's name. Reset one action or restore all defaults. Settings save in the project-root `<Documents>/MashBoxStudio` folder and survive editor restarts; Unity's shortcut profile stays unchanged. Menu shortcut hints and tooltips follow the configured bindings.
+
+
+
+
+
+The defaults retain Q/W/E/R tools, 1â€“4 component modes, D pivot editing, F framing, V vertex snapping, X grid snapping, plus/minus handle sizing, Ctrl/Cmd+S saving, Ctrl/Cmd+Shift+S Save As, Ctrl/Cmd+D duplication, Delete/Backspace deletion, Ctrl/Cmd+E extrusion, Ctrl/Cmd+Z undo, Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z redo, Escape cancellation, Enter/numpad Enter applying cuts, Backspace removing a cut segment, and F11 maximization. Shift+Space also maximizes the Studio window.
+
+
+
+
+
+Camera navigation and the marking-menu mouse button are independent of Unity's bindings too: Alt+left mouse orbits, middle mouse (with or without Alt) pans, and Alt+right mouse zooms. The mouse wheel zooms. **Ctrl+Shift+right-click** opens the editable Orientation radial preset. Components, Object and World choices use the same preset-driven radial system as other menus. The UV editor shares tool, framing, save, undo and cancel bindings, and has its own configurable Frame All action (A by default).
+
+
+
+
+
+Modelling captures unassigned viewport keys so Unity actions such as the backtick overlay menu do not fire through Studio. Switching back to Animation restores its normal input routing. Text fields retain standard editing keys; selection modifiers (Shift adds, Ctrl/Cmd subtracts) and cut/pivot precision modifiers keep their existing meaning.
+
+
+## Modeling
+
+
+
+
+
+The right **Channels** panel shows the selected object's Translate, Rotate and Scale X/Y/Z channels and Visibility. Numeric channel values update the preview while typing or dragging. Numeric rotation channels retain their authored Euler values, including negative angles and multiple turns, instead of converting the quaternion back into different axis values after each edit. Typed rotation values retain the other two entered Euler components. Dragging rotation channels applies angular increments around the selected World or Local axis, allowing the displayed Euler components to change together to represent the resulting orientation; gizmo rotations still update the channels. Field scrubbing follows relative pointer movement through screen-edge wrapping. Rotation channel values are retained by Undo/Redo and workspace save/load. A complete numeric drag or focused text edit is one Undo step; Ctrl+Z, Ctrl+Y/Ctrl+Shift+Z and Edit â†’ Undo/Redo restore the channels and viewport together. Typed values are parent-relative object channels. The top-bar orientation dropdown offers **World**, **Object**, and **Component**, also available in Tool Options and Ctrl+Shift+right-click (Component at the top, Object left, World right). Object follows the active object/pivot axes even with vertices, edges or faces selected. Component derives its frame from the selected geometry, including an explicitly edited component pivot; without components it falls back to the object frame. World uses global axes. Numeric Position/Rotation channel scrubs remain object-local for either Object or Component orientation. The choice is saved in Studio settings. Scale channels edit the scale components of the object. **Grid** beside it toggles the modeling ground reference independently of animation.
+
+
+The Channels header has 6 additional points of space before the name row. An unlabeled visibility checkbox sits immediately left of the object name, including anchors. The collapsible **Transform** header uses a lighter theme fill extending to both panel edges, with 4 points before its indented contents. The group contains compact Position, read-only World Position, Rotation and Scale rows, with a wider label column and aligned X/Y/Z fields. Its expansion state is saved through StudioPreferenceStore. Numeric/text/object fields use subtle 3-point rounded, outlined backgrounds derived from the current theme; these shared field styles also apply to other Studio panels. Existing numeric editing, drag sensitivity, authored Euler values and grouped Undo/Redo are retained.
+
+
+
+
+
+
+
+
+The dockable **Transform Tools** toolbar selects **Select / Move / Rotate / Scale** (Q/W/E/R). **Tool Options** appears above **Channels** in the right column, with its own scroll area. Drag the centered horizontal handle between them to resize both panes; the height is remembered. Double-click a transform tool or toggle **Display â†’ Tool Options** to focus these settings. Through selection lives in **Select** and tool options. Coincident vertices across UV/normal seams continue to move together; there is no Keep Seams Together UI toggle. Pivot commands remain in **Modify** and the marking menu; UV, Save and Export remain in the top menus. During pivot editing, Translate changes the pivot while Rotate/Scale channels are disabled.
+
+
+
+
+
+The Modeling menu order is **File, Edit, View, Select, Create, Modify, Window, Display, Mesh Tools, Edit Mesh, Mesh Display, UV, Render**. **Create â†’ Polygon Primitives** adds a **Cube, Sphere, Plane, Quad, or Cylinder** at world (0, 0, 0) and selects it without moving or focusing the camera. Empty transforms, empty children, anchors and vehicle-part roots also start at world zero, including under transformed parents. Creating the first primitive starts a saved workspace file in the project-root `MashBoxStudio/Workspaces` folder (outside `Assets`); additional primitives join the current document as independent root objects. Creation supports Undo/Redo. Each primitive owns its editable mesh, normals and UV 0. Cube, sphere, plane and quad are one unit across; cylinders are one unit across and two units tall. Plane lies on XZ; Quad lies on XY.
+
+
+
+
+
+The menus expose the current selection, pivot, transform, UV and export commands, plus selection inversion, normal recalculation and shaded/wireframe display. FBX export includes every root object in the document. Mesh Tools includes Extrude, Bevel, Merge to Center (M), Target Weld, Insert Edge Loop, Multi-Cut and the Deform submenu. Boolean modeling is not implemented.
+
+
+
+
+
+The **Hierarchy** represents a workspace containing multiple models. Drag one or more FBX files into the viewport or use **Import FBXâ€¦** to add model roots alongside existing models and primitives. Each imported model retains its children, materials, skin weights and blend shapes, with independent editable mesh copies and remapped bone references. Duplicate model roots get unique names. Import is not an Undo action and never replaces existing models. A successful import establishes a document baseline: incompatible earlier document snapshots and selection history are retired so they cannot remove imported nodes; earlier mesh-only edits and unrelated Unity history remain available. Automatic root selection after import adds no history entry. Source FBX assets are unchanged. External FBX files are copied into `Assets/Studio Imports`; external texture dependencies must also be available to Unity.
+
+
+
+
+
+The first import or primitive creates a saved `Untitled Workspace.workspace` in `MashBoxStudio/Workspaces`. **Openâ€¦** switches to another saved workspace, rather than appending it. Existing Studio model assets can be opened and are converted to independent `.workspace` files in that folder; the original asset is preserved. Edits autosave after gestures; **Mesh â†’ Save Workspace** saves immediately. FBX export includes all workspace roots.
+
+
+
+
+
+Select objects in the hierarchy or viewport. **Hold right-click** in the modeling canvas, drag toward a choice, and release to apply it. The marking menu places **Edge** above, **Vertex** left, **Object Mode** right, and **Face** below. Drag onto a branch marked **â€º** to open its submenu without releasing: **UV â†’ UV Sets â†’ UV 0â€“7**, **Transform**, **Pivot**, or **Selection**. Hovering toward a branch also opens it after a short delay. Drag onto **Back** to return; release in the center or press **Escape** to cancel. **Shift + right-click** opens Transform directly; **Ctrl/Command + right-click** opens Selection. Alt + mouse camera navigation stays available.
+
+
+
+
+
+**1 / 2 / 3 / 4** also choose Object / Vertex / Edge / Face. **W / E / R** choose Move / Rotate / Scale; **F** frames the selection. Drag empty space for a marquee, **Shift** adds and **Ctrl/Command** subtracts. **Through selection** includes hidden components. **Keep seams together** moves coincident vertices across UV and normal splits together. Face and edge modes follow the preserved triangle, quad and n-gon modeling boundaries. Component deformation recalculates normals and tangents; it does not add or remove topology.
+
+
+
+
+
+In Object mode, **D** toggles pivot editing. Move the pivot handle to place every selected object origin at the same world-space point, then press **D** again to finish editing; geometry and children stay in world space. **Center pivot** centers each selected object independently on its own renderer bounds; meshless groups use their own hierarchy bounds. Geometry and children stay in world space. **Freeze transforms** bakes the local transform into the mesh and compensates children. **Ctrl/Command+Z** undoes edits; **Escape** cancels an active handle drag. Skin-bone origins cannot be repivoted/frozen. Skinned component edits require the bind pose; object and UV edits are still available when posed. Freeze rejects transforms that would introduce shear into children.
+
+
+
+
+
+**Open UV Editor** opens a separate window for the selected mesh. Choose **UV 0â€“7**, create an empty set, duplicate to another channel, or initialize using **Planar XZ**. Select points with click/marquee, use **All** or expand to connected **Shell**, then move, rotate or scale by dragging a selected point or using numeric fields. Shift adds and Ctrl/Command subtracts. Middle mouse pans and the wheel zooms. An optional texture can be shown behind the UV wireframe. UV edits and set duplication support Undo. This editor manipulates existing UV topology; automatic unwrap, seam cutting/sewing and packing are not included.
+
+
+
+
+
+**Export All… (FBX)** and **Export Selected… (FBX)** write the current edited geometry, including modifier results, without changing Studio history. There are no Cage/Evaluated export variants. Export writes the model through Unity's `com.unity.formats.fbx` package. Hierarchy, mesh geometry and UV sets are exported; missing lower UV channels are padded on the temporary export copy to preserve channel numbers. Modeling export does not carry the original FBX animation clips or Maya construction history. Animation export remains available in the Animation tab.
+
+
+
+
+
+## Animation
+
+
+
+
+
+Correction mode also uses the viewport gizmos: **W** moves the hips and **E** rotates hips, shoulders or arms. Enabling a correction mode selects its joint automatically. With **Both** selected, dragging either rotation gizmo mirrors that adjustment to its partner; Left/Right edits only that side. The existing Local/Global handle setting applies. Each drag updates the whole clip without Auto Key or S, is one Undo step, and can be cancelled with Escape. **Reset correction** reverses both slider and gizmo adjustments. **Done** restores ordinary pose editing; **Ctrl+S** saves the edited clip.
+
+
+
+
+
+In **Selection â†’ Whole-clip corrections**, click **Hips correction**, **Shoulders**, or **Arms**. Hips exposes position offsets in parent-local metres plus bend, side bend and twist. Shoulders and arms have lift, forward/back and twist controls; choose Left, Right or Both, and Upper arms or Elbows / forearms. A Humanoid bone mapping is required. Both sides use mirrored limb axes.
+
+
+
+
+
+These controls update the existing motion across the entire clip immediately, including between keys, without creating a layer or requiring S / Auto Key. **Done** closes the controls and keeps the adjustment. **Reset correction** reverses the selected joint/group's current correction; Unity Undo/Redo restores both motion and control values. Existing key times, sparse channel masks and unrelated local bone channels stay intact. Existing layers are adjusted consistently; IK pins and attachments still solve afterward and can limit visible limb changes. Ordinary pose edits outside these controls still need keying. In-memory clip edits stay in RAM until **Save animation / Ctrl+S**. Reopening a saved `.anim` starts the controls at zero because the correction is already in the motion; saved take assets retain the control values.
+
+
+
+
+
+Right-click an animation clip in the Project browser (including a clip inside an expanded FBX) and choose **Open Clip in MashBox Studio**. Studio opens an editable working copy in memory immediately; no take asset or save dialog is required. Right-clicking an FBX with multiple clips opens a clip picker. Humanoid clips use the current Studio character when available; generic FBX clips use their source model skeleton. Standalone generic clips need a matching character selected in Studio.
+
+
+
+
+
+Press **S** to key pose edits, or enable **Auto Key**. Choose **File â†’ Save animation**, press **Ctrl+S**, or use **Save animation** in the Session tab to overwrite the original standalone `.anim` while preserving its asset identity, animation events and non-skeletal curves. **Save animation asâ€¦** (Ctrl+Shift+S) creates a separate `.anim`. Embedded FBX clips and clips outside Assets require Save As. Editing, scrubbing, preview rebuilding and Play Mode transitions never write the source clip automatically. Closing or replacing an unsaved clip offers Save, Discard and Cancel. The working document is held in memory; save before ending the editor session. Saving bakes recorded keys and layers into the clip; it does not key a temporary pose or preserve editable layer/actor setup in the `.anim`. Saved takes remain available for that workflow through **New takeâ€¦** and **Import clip into a new takeâ€¦**.
+
+
+
+
+
+**MashBox â†’ MashBox Studio** opens the viewport directly. Select an Animation Take and click **Open in MashBox Studio** in its asset inspector, or double-click the take, to load it in that viewport. The project remembers the last saved take locally for reopening. The viewport inspector's **Character & take** section contains character selection, body/outfit setup, take switching, new-take creation and the example entry point; Selection, Outfit, Clip and the workstation-private Generate tab hold the editing tools. The old standalone setup window is no longer required. Animation Takes use the supplied teal film/play icon, assigned persistently on their script importer.
+
+
+
+
+
+Open **MashBox â†’ MashBox Studio** (also linked from the SDK Content Tools).
+
+
+
+
+
+1. Click **Use MashBox SM base** to load `Skeleton.fbx` and `SM_Body_01.fbx`. For other characters, select the GameObject with the Humanoid Animator at its root. Optional body meshes are remapped by unique bone names, ignoring namespaces.
+
+
+2. **New takeâ€¦** saves an editable `.asset`. The separate Animation Viewport uses normal Unity orbit, pan, zoom and transform handles. It owns an isolated preview scene, so it does not dirty your gameplay scene or instantiate gameplay scripts.
+
+
+3. Choose a hand or foot, then **Match â†’ IK**. Move the target with **W**, rotate with **E**, or click a gold elbow/knee target to steer the bend. Increase **Control size** for larger screen-space pick areas. The IK blend goes from FK at 0 to full IK at 1.
+
+
+4. **Pin both feet**, click the green hips ring, and move or rotate the pelvis. Green rings also select spine sections; blue rings select other FK joints. Clicking a skeleton segment selects its parent joint for rotation. Editing an IK-driven limb matches its solved pose and releases only that limb; the other pins remain active. Final IK solves the body against the foot targets. Spine, head and fingers are available through the FK bone picker.
+
+
+5. Scrub the numbered timeline along the bottom of the Animation Viewport. Drag the playhead, use the frame/key step buttons, or type a frame number. Playback, Auto Key and Key [S] are beside the ruler; timing and Delete key remain in the Animation Studio settings window. **Auto Key** defaults OFF: move controls freely, then press **S** or **Key pose** to insert or replace a whole-pose key. Unkeyed changes are temporary; scrubbing, playback, closing or reloading the workspace discards them. **Save now** saves recorded keys and does not key a temporary pose. With **Auto Key** ON, dragging commits one key on release, with one Undo step. For saved take assets, key saving runs after a one-second idle debounce, outside the mouse event; closing, switching takes, baking and Play Mode transitions flush pending keyed edits. **Space** plays/pauses. Use previous/next key, delete, copy/paste and Unity Undo/Redo for keys. **Match all â†’ FK** captures the solved skeleton and releases all IK targets without changing the pose.
+
+
+6. **Bake Unity animation clipâ€¦** creates a uniquely named `.anim`; use Humanoid muscles for your Humanoid Animator/Animancer setup, or turn that option off for explicit transform curves on an identical Generic hierarchy. The output does not require the authoring rig or Final IK.
+
+
+
+
+
+## Existing animations and Play Mode
+
+
+
+
+
+An open animation stays loaded and editable when entering and leaving Play Mode, with domain and scene reload enabled or disabled. Studio rebuilds its isolated preview automatically and keeps the in-memory clip, recorded edits, correction settings, actor references, current frame and viewport camera. Pose keying, whole-clip corrections and correction gizmos work while gameplay runs. Recorded edits made in Play Mode remain when returning to Edit Mode. **Save animation / Ctrl+S** explicitly writes the `.anim`; changing Play Mode never overwrites it automatically. Closing Studio still leaves it closed across transitions.
+
+
+
+
+
+Assign a source animation and **Import clip into a new takeâ€¦** to sample it at the take's frame rate. The source remains unchanged. Import produces FK keys in Base motion. Use the Layers tab for corrections that preserve those imported keys.
+
+
+
+
+
+The workspace can be opened during Play Mode. Select the live character's Animator root and **Capture selected live character pose** to copy its local bone pose into the current frame. Editing and playback occur on the isolated preview, while gameplay continues independently. Take assets and explicitly baked clips persist after leaving Play Mode. The tool does not override the live Animator or record a continuous gameplay stream.
+
+
+
+
+
+## Scope and conventions
+
+
+
+
+
+- Full Body Biped IK uses an existing licensed Final IK installation, discovered at editor runtime. No Final IK code is shipped with this tool. Without Final IK, FK authoring remains available; takes containing IK keys refuse to open instead of silently changing their motion.
+
+
+- Takes require a persistent character prefab/model with an unoptimized, uniquely named transform hierarchy and a Humanoid Avatar for IK. Generic rigs support FK and transform export. Changing the source hierarchy requires a new take.
+
+
+- All targets/poles use character-root coordinates. Moving the FK character root moves the entire rig and its targets. Move the hips to work against planted feet. To animate moving contact surfaces, key the target positions along with the motion.
+
+
+- Smooth interpolation uses eased position interpolation and quaternion slerp between whole-pose keys. Linear and stepped modes are also available. Bake samples every frame; it does not preserve editable rig controls in the exported clip.
+
+
+- Humanoid export writes muscle and body-root curves. Generic export writes local position, quaternion rotation and scale. Humanoid retargeting can introduce differences from the precise solved bone pose. Validate the resulting clip on the intended avatar and root-motion configuration.
+
+
+- This release provides an IK/FK authoring workflow, not feature parity with Maya HumanIK: no editable tangent graph, animation events/blendshape authoring, continuous motion capture or FBX export.
+
+
+- Files are editor-only. Take assets are authoring data; reference the baked `.anim` from gameplay.
+
+
+
+
+
+## Rider, bike and additional actors
+
+
+
+
+
+Open the viewport's **Actors** tab. **Add vehicle Â· BMX** loads the project's Bike Skeleton; **Actor / vehicle source** and **Add actor** accept additional character or generic model assets. Companion takes are saved as subassets of the primary take and reopen together.
+
+
+
+
+
+Choose **Primary** in **Edit actor**, assign the Player FBX animation subclip, and click **Import clip on shared timeline**. Select the bike and repeat with the matching BMX subclip. Scrubbing and playback share time in seconds; each actor retains independent pose keys. Shorter motion holds its final pose. Select the actor before editing or pressing **S**; Auto Key applies to the selected actor. Import extends the shared timeline when needed.
+
+
+
+
+
+The bike exposes the source Maya control names and sampled curve shapes for BMX, bars, frame, drivetrain and pedals. Bars/frame use their mapped rotation axes; rotating the crank counter-rotates the pedals, preserving their orientation. Wheels and PID balance also have controls. See **MayaBikeRigMapping.md** for the exact source mapping and limitations. This is a specific recreation of the BMX rig; it does not import arbitrary Maya constraints or automatically attach rider hands/feet to the bike.
+
+
+
+
+
+**Export all actors as separate clipsâ€¦** writes independent Unity `.anim` assets at the same frame rate and duration. Bike output contains the Joints hierarchy, excluding authoring controls. FBX files are supported as import sources; export produces Unity animation clips.
+
+
+
+
+
+## Attach hands, props and other controls
+
+
+
+
+
+In **Actors â†’ Attachment Constraints**, set **Constrain actor / control** to the rider and **IK / Left hand** or **IK / Right hand**. Set **Follow actor / bone / IK** to the vehicle and its steering or door joint. For the BMX bars control, choose `Bars_Joint`; the Maya control shapes drive those joints. Generic bones and other actors' hand/foot IK targets are also available as endpoints.
+
+
+
+
+
+Position the hand where you want it, then use **Attach with current offset**. Turn off **Keep current offset** to snap directly to the target. Offsets use the target's orientation, in metres, and follow its translation and rotation without inheriting its scale. Select the attached control in the viewport to move/rotate its attachment offset, or edit the numeric offset in Actors. Offset edits change the saved constraint, independently of Auto Key; pose keys remain separate.
+
+
+
+
+
+Each attachment has Enabled, Weight, position/rotation switches, First/Last frame and Blend in/out frames. The default range starts at the current frame. Zero blend gives an immediate attachment/release; a nonzero blend fades influence to/from the underlying pose at the range edges. Match the underlying hand pose for a smooth release. Weight/offset settings are constant within this range, not individually animated channels. Circular dependencies and missing endpoints are reported; disable or remove the invalid constraint. Same-actor constraints cannot target their own driven limb or descendants.
+
+
+
+
+
+Constraints evaluate after all actors sample the shared clock and while posing a target. Both normal clip baking and **Export all actors as separate clips** sample the resolved motion into the exported clips, so no Studio constraint component is needed in gameplay. Humanoid retargeting and IK reach limits still apply: an unreachable target cannot force a limb to stretch. Exported contacts assume the same relative actor alignment and synchronized playback. This is an authoring attachment system, not a runtime steering/grab interaction component.
+
+
+
+
+
+## Manual key shortcuts
+
+
+
+
+
+With the viewport focused, **Shift+W** keys the selected control's position and **Shift+E** keys its rotation. **W/E** still select Move/Rotate; **S** retains the Studio's full-pose key action. Manual shortcuts work with Auto Key off and on, and follow the selected actor. Text fields and Ctrl/Alt/Command combinations are ignored.
+
+
+
+
+
+Channel keys preserve the animation of other channels and controls, including interpolation between existing full-pose keys. Unkeyed edits remain visible and marked unkeyed until you key them or scrub away. Hand/foot IK channel keys also retain the IK weight needed to activate the target. Knee/elbow pole targets accept position keys only. A BMX crank rotation key includes the linked pedal counter-rotations. Attachment offsets remain saved constraint settings; these shortcuts key the underlying actor pose, not animated attachment offsets.
+
+
+
+
+
+## Vehicle parts and actor presets
+
+
+
+
+
+Select the bike in **Actors**, then open **Outfit**. Assign `Proto_Bike`, `PJX_BMX` or `PJX_MTB` to **Vehicle prefab** and click **Read equipped defaults / anchors**. This reads the first/default child in each vehicle equip slot, builds isolated renderer copies, and matches named anchors where available. The result reports how many mounts matched; other parts retain their authored prefab rest placement. Runtime equip logic, physics and procedural MTB suspension are not executed.
+
+
+
+
+
+Use **Add vehicle part** to assign a frame, fork, wheel or other part directly. **Driven by joint** chooses the animated joint. **Mount on part / Mount anchor** positions it from an earlier part's anchor at rest, then attaches it to the selected animated joint (so steering follows Bars_Joint). **Preserve model rest** retains model-space placement; disable it to use the joint's local space. Adjust position, rotation and scale, then **Apply vehicle outfit**. Part appearance never adds animation bones or modifies source prefabs.
+
+
+
+
+
+**Save selected actor presetâ€¦** stores the skeleton, character outfit, vehicle parts and handle layout in a reusable asset. Choose that asset and **Add from preset** to create an independent actor. Presets store setup, not motion or inter-actor constraints.
+
+
+
+
+
+The **Session** tab contains the current clip or saved take. **Selection** shows the selected actor's transforms first; actor setup and attachments remain in **Actors**. For the bike, enable **Edit handle layout** to move/rotate control graphics without editing animation. Layout offsets save with takes and presets. The original curve extraction omitted the Maya joint root's driven 35 cm height; the display now removes that extra offset. Preview construction also preserves the source root transform. Already sampled takes keep their saved root keys; reimport matching rider/bike clips if those keys were created with the old root handling.
+
+
+
+
+
+## Animation layers and human corrections
+
+
+
+
+
+Select an actor and open **Layers**. **Add correction layer + selected control** creates a layer above Base motion and includes the selected bone or IK control. Select other controls in the viewport/body diagram and use **Add selected bone / IK control to layer** to include them. Bone memberships cover their transform channels; IK memberships cover the target and required IK/FK blend. Removing a membership disables its contribution without deleting stored keys.
+
+
+
+
+
+Choose **Additive** for deltas relative to the underlying animation or **Override** for absolute values blended over it. Layer weight, Mute, Solo and Move earlier/later control evaluation. Solo keeps Base motion and the solo correction layers. The last enabled layer is the one to key; to edit a lower layer, mute the layers above it. Base motion keying requires correction layers to be muted. This avoids accidentally recording the visible correction stack back into the base or another layer.
+
+
+
+
+
+**Key on layer** in Selection chooses the editing destination. S, Shift+W, Shift+E and Auto Key write to that layer's assigned controls. The timeline shows the selected actor/layer's keys. Keys hold their first/last value outside their keyed range; add neutral keys around a correction to localize it. Layer weights are constant settings, not animated weight curves. Switching layers or changing layer settings resamples the pose, so key wanted edits first. Additive/Override changes resample existing layer channels at the take frame rate to preserve the result at those frames.
+
+
+
+
+
+**Human Â· Whole-clip rotation offsets** provides a mapped joint picker, Lift/lower or Bend, Forward/back or Side bend, and Twist sliders. Choose shoulders, upper/lower arms, spine, head or another mapped joint. The controls use axes derived from the character's rest orientation, with mirrored directions for left/right limbs. Offsets affect the entire clip, require no pose keys, and are additive rotations after that layer's keyed channels. Layer weight/mute also affect these offsets. Reset a joint to zero to remove its constant correction. Final IK and attachment constraints solve afterward and can restrict visible motion of pinned limbs.
+
+
+
+
+
+The take stores Base motion and each layer separately; Undo, saving and reloading preserve them. Normal baking and paired actor export sample the composed pose once into ordinary animation clips. Foot cleanup and endpoint tools operate on the base motion while retaining correction layers; endpoint captures that already contain corrections may need adjustment when reused. Actor presets remain setup-only and do not include animation layers.
+
+
+
+
+
+## Validation
+
+
+
+
+
+The implementation is compiled against Unity 6000.4.12f1. The isolated validation fixture exercises the real MashBox skeleton/body, optional Final IK bridge, deterministic pose evaluation, pinned feet and baked clip playback. It lives outside the SDK's runtime assemblies.
+
+
+
+
+
+
+
+
+
+
+
+## Dressing the preview
+
+
+
+
+
+Keep the current skeleton and take loaded. Change **Preview body / bust**, then use **Add clothing / skinned mesh** for shirts, trousers and other compatible skinned prefab/model assets. Click **Apply outfit** to rebuild only the appearance while keeping the working pose, camera and pose keys. The outfit references save with the take. Base textures, tints, texture transforms and standard alpha cutouts use fixed studio preview shading automatically; the Neutral preview material toggle switches to grey shading. This preview does not reproduce custom shader effects, metallic response or full HDRP lighting.
+
+
+
+
+
+Meshes must be skinned to compatible, uniquely named bones on this skeleton. Existing blendshape weights on the supplied prefabs are copied. Skinned pieces must fit the skeleton. Rigid hats and optional body cutouts are configured with Piece type as described below.
+
+
+
+
+
+## Viewport inspector
+
+
+
+
+
+The Animation Inspector is pinned to the viewport's top-right corner. Selection follows picked bones and IK controls and exposes local FK transforms or character-space IK targets, rig options and pose actions. Outfit and Clip tabs provide appearance, timing, import and bake controls beside the animation. Collapse the inspector with its header arrow for more viewport space. Numeric edits follow the same Auto Key setting as scene handles.
+
+
+
+
+
+
+
+
+
+
+
+## Outfit roles and body cutouts
+
+
+
+
+
+Each clothing slot has a **Piece type**:
+
+
+- **Skinned Clothing** maps to the skeleton. Enable **Cut body underneath** to remove covered body triangles in the preview. **Coverage distance (m)** defaults to 0.03 m; increase carefully for loose clothing.
+
+
+- **Body** marks extra skin meshes (for example a bust) as cutout targets. The main Preview body / bust slot is always a target.
+
+
+- **Hat** attaches the prefab's renderers to the Humanoid Head bone, with local Head offset, Head rotation and Hat scale. Gameplay scripts and colliders are not copied.
+
+
+
+
+
+Click **Apply outfit** after changing roles, offsets or coverage. Coverage is calculated once in the source pose by checking the clothing surface near body vertices, then conservatively removing triangles whose three vertices are covered. The displayed triangle count confirms the operation. Check cuffs/collars and test the animation: this geometric approximation can leave boundary slivers or hide exposed skin at excessive distances; it is not cloth simulation or a perfect automatic garment fit.
+
+
+
+
+
+Cutouts modify temporary mesh copies only. Skin weights, blendshapes, vertices and source meshes are retained. Disabling cutout or removing a garment and applying again restores the body. Roles and cutout settings save in the take. Exported animation clips contain motion only; hats and body masking must be configured separately on the gameplay character.
+
+
+
+
+
+Enable **Double-sided** on an outfit piece and click **Apply outfit** to show its inside faces in both textured and neutral preview shading. This setting saves with the take and uses temporary preview materials; source materials are unchanged.
+
+
+
+
+
+
+
+
+## Local motion generation
+
+
+
+
+
+Step transitions now include a two-foot anticipation phase before each lift, pelvis transfer toward the support foot, support-knee loading, a small torso counter-lean and a landing/settling phase. **Body weight shift** controls lateral pelvis/torso movement (default 0.8). These are kinematic animation cues, not a physical center-of-mass solver or learned transition model. Feet are solved after the body shift. Unchanged stances do not add artificial sway. Try 1.2â€“1.5 seconds per end for slower weight transfers. Use **Apply result to current take** again to rebuild from the raw generated result with the new transitions; older untracked transitions must be rebuilt from the raw result once.
+
+
+
+
+
+**Update current take** defaults on. **Apply result to current take** replaces the active take's motion, frame rate and length (including endpoint transitions), retaining its asset identity, character and outfit. Cleanup and endpoint matching also update the active take in this mode. Changes are undoable and saved through the existing deferred save system with no Save As prompt. Turn the toggle off to save separate take assets. Results are fully prepared before the existing take is modified. New step transitions track their added frame ranges, so applying them again replaces those ranges instead of stacking them. Older takes have no transition metadata: use Apply result to current take once to rebuild those from the raw generation.
+
+
+
+
+
+To source an endpoint directly from an animation asset, assign **Start animation clip** or **End animation clip**, choose **Sample time (seconds)**, then click **Use clip pose as start/end**. Embedded clips in FBX assets are supported. The sampled pose is stored as a snapshot; changing the clip or time requires clicking the button again. Humanoid clips use the selected character's avatar; generic clips require matching skeleton transform paths. Sampling runs in an isolated preview rig and does not replace the current take or working pose. The existing **Use start pose for end too** button also works with clip-sampled poses.
+
+
+
+
+
+The Selection inspector's **Body picker** selects individual humanoid joints, hands, feet, toes and elbow/knee targets; finger buttons select each mapped finger segment. Click a limb joint or IK target to expose its arm/leg IK blend. The current solver has four limb blends, not independent blends for every bone; torso and fingers remain FK. **Show IK** and **Show FK** control viewport visibility, **Fade by IK/FK blend** dims inactive controls, and **Hide inactive controls** removes them at zero influence. The diagram stays selectable when viewport controls are hidden. Visibility changes do not key poses. Blend edits follow Auto Key / S key behavior. Enabling a fully FK limb's IK blend first matches the current end-effector pose.
+
+
+
+
+
+**Start / end poses:** open an idle take and scrub to the desired pose, then use **Capture current as start** or **Capture current as end** in Generate. **Use start pose for end too** returns to the same idle. Captures are independent of the currently loaded take and include all local bone transforms, including hips position and orientation; different skeletons are rejected. **Step between stances** defaults on: adds a sequential two-foot transition at each captured end (default 0.9 seconds each), preserving all original dance frames. Adjust transition duration and foot lift. Use the original dance take with **Match current take to these posesâ€¦** to save a corrected copy; older untracked blends require rebuilding from the raw result. Turn stepping off for the original overlapping pose blends. Grounded, reachable poses on a flat floor are required; large ankle-height differences are rejected. Matching runs after import foot cleanup to preserve exact endpoints. Clear captures to import unconstrained motion. These are procedural steps or pose blends after generation, not AI pose conditioning: the installed HY-Motion sampler has no endpoint pose input. Large pose differences may require longer blends/manual cleanup, and exact pose matching does not guarantee matching idle velocity or foot contact through the transition.
+
+
+
+
+
+On the private Generate panel, **Plant feet on import** is enabled by default. It detects sustained low, slow ankle motion after retargeting and bakes position corrections into FK keys, preserving root travel and authored foot rotations. **Clean up feet in current takeâ€¦** saves a separate corrected copy of an existing take. **Contact sensitivity** controls the maximum speed treated as contact; reduce it for intentional shuffles or increase it cautiously for sliding. Contacts blend in and out; leg reach limits still apply. This heuristic is for a flat floor and does not infer stairs or guarantee perfect contact. Leave **Keep motion in place** off for travelling dances; removing root travel can introduce sliding.
+
+
+
+
+
+The viewport inspector's Generate tab launches local text-to-motion (HY-Motion Lite, CUDA) or video pose capture (MediaPipe, CPU on Windows). Generate, then Import result as a new take; FK/IK editing and baking remain available. Install the separate Tools/MotionGeneration environment in the Unity project, or locate it with Local tools. No prompts or videos are uploaded. Cancellation and progress run without AssetDatabase refreshes.
+
+
+
+
+
+HY-Motion has territorial restrictions on its model AND outputs (including the EU, UK and South Korea); read its upstream license before using generated content. The video option estimates grounded, in-place body motion only. See Tools/MotionGeneration/README.md for setup, licensing, model limitations and validation. Model weights and Python dependencies are not included in the SDK package.
+
+
+
+
+
+
+
+
+
+
+
+All actor controls: the toggle above the viewport inspector tabs shows selectable rig controls for every actor. Clicking a control selects its actor for transforms and keying. Turn it off to show controls only for the selected actor. Existing IK/FK visibility and blend fading still apply.
+
+
+
+
+
+
+
+
+Timeline key editing: Shift-drag selects an inclusive frame range. Right-click for Copy, Delete, or Paste at the clicked frame. With timeline focus, Delete removes selected keys, Ctrl+C copies, and Ctrl+V pastes at the playhead. Paste preserves spacing and replaces existing keys at matching frames. Clipboard is limited to the same actor and layer; base motion retains at least one key. Layer keys can be deleted completely. Undo is supported for edits.
+
+
+
+
+
+
+
+
+AI in-betweens (private workstation): Shift-drag a timeline range, right-click Generate AI in-betweens, then choose Add result as override layer in Generate. Pose-only Kimodo runs locally on CUDA with endpoint/neighboring-pose conditioning and contact correction. Intervals are 0.2â€“7.8 seconds; no timeline duration is added. The generated layer preserves endpoints and affects only the selected interval. Source animation must remain unchanged until import. This first version requires a Humanoid actor without active attachment constraints or layer Solo; it does not generate vehicle motion or accept text prompts. Review feet after retargeting. Details and reproducible validation are in the local Tools/MotionGeneration/README.md.
+
+
+
+
+
+
+
+
+Rig selection: Lock actor meshes (above the inspector tabs) defaults on. Drag empty viewport space to marquee-select visible rig controls; Shift-drag adds, Shift-click toggles controls, and clicking empty space clears. All actor controls enables selecting across actors. W/E manipulate the group (rotations use each control's own pivot; bike axes stay constrained). Shift+W/Shift+E key the selected channels on each actor's current layer. Add selected controls to layer uses members of that layer's actor. Unlock meshes to restore Unity mesh selection. Hidden controls are excluded from marquee selection.
+
+
+
+
+
+Modeling wireframes stay visible on all visible meshes, including unselected meshes and while using component or cut tools. Object wireframe edges use cached GPU position/index buffers, one draw per visible mesh, with unlit antialiasing at 1.25-pixel nominal width. In object mode, all visible polygon edges of selected objects use the amber component-selection line style at 1.2-pixel nominal width, including when regular object wireframes are hidden. Selected edges share the batched wire renderer and its surface depth testing; no separate silhouette pass is used. Camera movement and object transforms reuse the buffers; mesh edits upload changed positions, and topology changes rebuild and dispose the affected buffers. A small viewing-ray offset and adjacent-face depth correction across the expanded stroke prevent surface depth fighting at close and shallow camera angles without shifting the screen position. Line width and edge coverage are computed on the GPU without per-edge editor calls, per-frame CPU line expansion or fragment-depth reconstruction. The native editor outline path remains a fallback on unsupported graphics hardware. Shaded Wireframe and Wireframe use the Studio edge renderer without a native Unity wire overlay; Wireframe-only suppresses surfaces so the grid and rear edges remain visible. Normal display retains back-facing edges and depth-tests outlines and component overlays against visible surfaces, so edges show through openings but not through solid faces. **Alt+X** toggles **X-ray Mode**: preview meshes become transparent and all edges draw at full opacity through surfaces. Toggle it in **View**, or remap it in **Edit â†’ Preferences**. Saved materials are unchanged. Through Selection controls picking independently of display. The Object wireframe toggle controls regular edges; object-selection highlights and active component overlays stay visible. The mesh-statistics HUD shows scene totals on the left and the current selection on the right. Object mode counts selected objects and their children. Vertex, edge and face modes count only selected components and their geometry; a selected face includes its boundary vertices/edges, render triangles and UV corners.
+
+
+
+
+
+The small stats icon at the top right of the modeling viewport toolbar toggles a compact workspace FPS box. It tracks actual viewport renders over a half-second sample, rounds up to whole FPS, and follows the Channels/Tool Options column when resized. The FPS box never requests frames itself and retains its last reading while idle; idle gaps are excluded from the next sample.
+
+
+
+
+
+Studio requests redraws from explicit dirty state: user action â†’ mark affected state dirty â†’ invalidate dependent overlays/UI â†’ request a native Unity repaint. **Cache unchanged viewport** in Studio Preferences reuses the last modelling scene/overlay image on unchanged repaints, including shared redraws requested by other Unity views. Selection, component previews, geometry, visibility, camera/lens and viewport-size changes invalidate it; native input/layout events always run. Active handle/camera drags render natively without copying cache textures. Unity's own scene-color and premultiplied-overlay materials preserve brightness and line appearance. The FPS box shows **Cached (idle)** while reusing the image. Turn the option off for the full native rendering path. The neutral modelling preview skips HDRP lighting, reflection, fog and motion-buffer passes that its preview materials do not use. Enabling Studio lights restores the lighting path. Camera overrides update when lighting or AA settings change; stable hierarchy traversal, labels and visibility tooltips are reused until their inputs change. Studio imposes no FPS cap or rendering timer. **VSync** applies only to Studio's host window. Unity's global Preferences â†’ General â†’ Interaction Mode can independently throttle editor updates (16 ms corresponds to roughly 63 FPS); No Throttling removes that interval. Scene and Game views retain their own refresh behavior and asset-import updates.
+
+
+
+
+
+Moving, rotating, or scaling mesh components updates existing outline and component-overlay position buffers instead of rebuilding scene-wide topology. Only statistics for the edited mesh are invalidated; object transforms retain mesh counts. Outlines use connected native AA polyline batches, bounded to 4,096 points per call, with reusable world-position and stroke buffers. Every source edge is retained; disconnected trails and separated seams are submitted separately. Topology edits and Undo still rebuild the affected mesh data as required.
+
+
+
+
+
+Workspace files include their editable meshes and retain references to project materials and textures. New workspaces, Save As, autosaves and reopen all use the project-root MashBoxStudio/Workspaces folder; workspace files are not imported into Unity's AssetDatabase. Saves replace the previous file atomically after serialization succeeds.
+
+
+
+
+
+Workspace storage format v1 uses compact, uncompressed UTF-8 JSON with the `MashBoxStudio.Workspace` format marker. Geometry is stored as numeric text arrays, without Unity's native mesh headers or hexadecimal vertex-buffer dumps. Identical geometry payloads are stored once; separate mesh-instance records retain independent editable objects on load. Optional attribute tuple maps and per-mesh numeric dictionaries reduce repeated values without welding vertices, merging UV seams, or reducing float precision. When a mesh has a nonempty `numbers` table, its float-buffer entries are integer indices into that table; optional `vm`/`nm`/`tm`/`cm` and UV `map` arrays then expand repeated attribute tuples. Empty maps/tables mean direct values. Submesh index arrays remain direct integer vertex indices. Float numbers use round-trip single-precision notation; asset local IDs retain 64-bit integer precision.
+
+
+
+
+
+Transforms, hierarchy, visibility, anchors, lighting, editable polygon boundaries, all eight UV channels (including their dimensions), vertex colors/AO, skinning influences/bind poses, mesh blend-shape frames and live modelling blend snapshots are retained. Project materials use asset references; exceptional transient materials/textures remain self-contained in an embedded text resource section. The workspace stores the current editable state, not a persistent action/undo history. Legacy native workspaces still open and upgrade on their next save; the original is retained as `<name>.workspace.legacy.bak`. Saves remain atomic, unsupported format versions and malformed geometry are rejected, and no workspace is created inside Assets. The format stays plain text and can be compressed by standard archival tools; saves do not automatically turn it into a binary/compressed file. This storage change does not establish a high-poly viewport/editing performance limit.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Object move, rotate, scale and ordinary numeric-channel Undo/Redo restore the existing preview transforms without rebuilding the scene or re-uploading unchanged wireframe geometry. Geometry-changing operations, including pivot compensation, retain the full restore path. Mesh dirty versions and preview hierarchy identity guard the transform-only path.
+
+
+
+
+
+
+
+
+## Editable polygon topology
+
+
+
+
+
+Studio stores actual triangle, quad and n-gon boundaries separately from its render triangle buffers. Modeling edges, face selection, wireframes and cut adjacency use those boundaries. A real triangle keeps all three edges; only the extra diagonals derived to render a quad or n-gon are excluded. Deforming a quad preserves its face identity, and workspaces save the polygon boundaries. Quad-strip traversal follows four-sided faces and stops at triangles/n-gons.
+
+
+
+
+
+New primitives record their intended topology directly: cube/plane faces and sphere/cylinder bands are quads, while sphere poles and cylinder cap fans retain genuine triangle faces. New scene/model/FBX drops automatically convert suitable triangle pairs into editable quads when the mesh is triangle-only. Candidates must be convex and near-planar with well-shaped corners; material boundaries, separate vertex/UV seams, sharp folds and unmatched triangles remain intact. Native mixed triangle/quad topology is preserved. Render triangles, vertex attributes, source assets and importer settings are unchanged, including base-vertex offsets. Auto-quad is a conservative conversion, not guaranteed recovery of polygons lost during upstream triangulation. Existing workspaces retain their saved topology; legacy meshes without metadata retain their previous inference behavior.
+
+
+
+
+
+## Edge bevel
+
+
+
+
+
+In **Edge mode**, select polygon edges and choose **Mesh Tools â†’ Bevelâ€¦**. The compact **ToolChannelPane** supplies:
+
+
+
+
+
+- **Width offset** (minimum 0, default 0.1): distance in mesh-local model units. Values above 1 are allowed. Nearby short edges do not normalize the value. Zero is a no-op; clipping handles supported local topology changes, while compatibility paths retain geometric event limits.
+
+
+- **Subdivisions** (0â€“32, default 1): the number of internal profile loops. Zero produces one chamfer strip; one produces two strips.
+
+
+- **Profile tension** (âˆ’1â€“1, default 1): zero gives a straight chamfer, positive values bulge toward the original sharp edge, and negative values inset the profile.
+
+
+- **Intersect junction style**: **Grid (Uniform)** connects matching subdivided profiles through a rounded junction. Two incident beveled paths connect sample-to-sample; three or more form adjoining quad grids. Even profile segment counts meet at a shared center; odd counts retain one central polygon and connect it with subdivided quad strips. These are real editable polygon boundaries, not render triangulation edges.
+
+
+- **Cap (N-gon)** keeps each non-coplanar junction as one face without interior fan vertices or radial subdivision; users can retopologize it later.
+
+
+
+
+
+**Zero subdivisions always makes a flat chamfer**, with no extra junction grid. Single-edge planar ends merge into the adjacent original face; regular multiple-edge junctions share and heal their profile boundaries. Profile controls follow the inset endpoint cross-sections instead of pulling back along the old edge toward its original vertex. Corner curvature follows the profile tension, including linear and concave profiles. The source asset and existing bevels are not rewritten; undo/reapply a previous bevel to obtain the corrected junction geometry.
+
+
+
+
+
+Values become the saved defaults for subsequent bevel operations. The pane retains its standard sensitivity control. **Apply** runs one operation and retains the pane; **Execute** runs it and closes the pane. Each operation has grouped Undo/Redo and selects a resulting longitudinal edge for each source edge; editing a parameter previews the current operation immediately from its captured source mesh.
+
+
+
+
+
+The geometry pass maps polygon half-edges across coincident render vertices, offsets the affected face boundaries, builds profile strips, and orders and seals the resulting vertex-corner loops. Coincident junction points are welded in geometric space. Straight, subdivided profile ends split adjacent face boundaries instead of leaving T-junctions or zero-area caps. Render vertices remain split where UVs, colors or normals require a seam. Polygon metadata and smoothing groups are stored with the workspace and mirrored across nodes sharing the mesh.
+
+
+
+
+
+Existing material slots, vertex colors and all eight UV channels (including their dimensions) are retained. New surface attributes interpolate from incident faces; new bevel surfaces may still benefit from a subsequent UV layout. Normals are calculated from the profile and corner geometry, original face normals are interpolated, and tangents regenerate when UV0 exists. Large output switches to 32-bit indices.
+
+
+
+
+
+Selected edges must have two consistently oriented incident faces on an editable static mesh. Incident polygons must be planar. Selected boundary edges, non-manifold/disconnected affected fans, skinning and live blend shapes are rejected. Interior edges ending on a regular open boundary remain supported. Collision limiting protects the local wavefront; unrelated-surface intersections and post-collision topology merging are outside the current solver.
+
+
+
+
+
+
+
+
+## Modeling toolbar and tool-pane workflow
+
+
+
+
+
+The native **Selection Modes** toolbar contains Object, Vertex, Edge and Face radio buttons. On a fresh layout it docks first in the top toolbar, before Grid and World & Local; Unity retains saved placements. The buttons follow keyboard/menu changes and retain the current 16px/24px toolbar sizing. **Display** populates visibility toggles from the native overlay canvas for every registered Studio toolbar, including hidden toolbars and World & Local. New Studio toolbar overlays need no separate menu registration.
+
+
+
+
+
+**Extrude** is in **Mesh Tools**; selection modes are also accessible through Select and their existing shortcuts. Edit Mesh contains Edit Edge Flow; Extrude stays in Mesh Tools.
+
+
+
+
+
+All **ToolChannelPane** tools share a padded footer outside the scrolling fields: **Apply** executes while keeping the pane open, **Execute** executes then closes it, the header **X** or **Escape** cancels the unapplied preview. There is no Close footer button. A failed Execute leaves the pane open. Merely changing focus does not dismiss a pane. Completing a pending preview by selecting again or starting another editing action closes its pane. Object mode closes active and idle tool panes; Apply retains its pane. Applied operations remain ordinary Undo/Redo actions after closing the pane. Bevel, Extrude and Soften use this shared command infrastructure; future tools can supply an execute action and a selection-validity predicate when opening their pane.
+
+
+
+
+
+
+
+
+Hierarchy eye buttons: **Alt-click** isolates the clicked item and its branch. If the clicked item belongs to a multi-selection, its selected group is isolated. Alt-click the same eye again to restore the exact prior visibility, including objects that were already hidden. Alt-click another eye to switch the isolated target while retaining the original restore state. Ordinary eye clicks remain Show/Hide, and visibility changes support Undo/Redo. The list uses a lightly inset themed background. Selection-mode icons retain their enlarged geometry with blue component highlights.
+
+
+
+
+
+Standalone fallback ToolChannelPane windows stay above their Studio host without taking keyboard focus back when you work in the viewport. On Windows this preserves the existing compact borderless header through native window ownership; other platforms use Unity's native utility window host.
+
+
+
+
+
+
+
+
+Planar bevel terminations merge into the adjacent original face: the profile curve becomes part of that face's n-gon boundary, with no artificial straight divider or separate coplanar end-cap polygon. This retains each profile endpoint, the receiving face's materials/UVs/normals and seam closure. Curved multi-edge grid junctions remain editable grids; unrelated source-face boundaries are preserved. Existing bevel geometry requires undo/reapply for this change.
+
+
+
+
+
+
+
+
+Mesh tool parameters in **ToolChannelPane** now preview as you type or scrub: **Bevel**, **Soften Edges**, and **Extrude**. Apply commits one Undo step and keeps the pane open; Execute commits and closes it. Header X/Escape cancels only the unapplied preview, retaining previous Applies. Edits always evaluate from the operation's captured starting mesh rather than repeatedly beveling or extruding the result. Switching selection or starting another editing action commits the current valid preview; Undo inside Studio cancels an unapplied preview before stepping through committed history. Invalid parameters leave the last valid preview visible and cannot be applied.
+
+
+
+
+
+Extrusion preserves the authored render triangles of existing faces and selected caps, triangulating only the new walls. This allows local extrusion on imported preserved-quad meshes without retriangulating unrelated faces; editable polygon boundaries remain separate from rendering.
+
+
+
+
+
+**Mesh Tools → Extrude** (or its assigned shortcut) opens live extrusion options in ToolChannelPane. Extrude controls are not shown in mesh object Channels, including Edge and Face modes. Normal distance defaults to **0.01** for a small visible opening preview; entering zero leaves the source unchanged. Keep Faces Together remains available in the Face-mode tool pane. Existing Shift-drag handle extrusion remains available. Extrusion parameters, like the other pane attributes, become the saved tool defaults; existing personal defaults are preserved.
+
+
+
+
+
+The shared preview transaction captures only affected meshes and retains the live Mesh and scene-object identities. Parameter events coalesce into one pending one-shot EditorApplication.update callback, removed before evaluation, with no idle polling or rendering timer. Extrusion distance changes reuse expanded topology; bevel reuses immutable source adjacency. Unchanged index layouts upload vertex streams and refresh existing wire/component position buffers; topology changes invalidate only affected geometry caches. Normals, UV dimensions, polygon metadata, shared meshes, cancellation and Undo are retained. Large topology rebuilds still cost more than distance-only edits; interactive performance depends on selected geometry and subdivisions.
+
+
+
+
+
+
+
+
+## Bounded modeling Undo history
+
+
+
+
+
+**Edit → Preferences → Maximum undo actions** sets the per-user Studio modeling history limit. The default is **50**, the minimum is **1**, and any positive 32-bit integer is accepted. The field commits on Enter/focus change, so typing a replacement does not prematurely prune history. Older preference profiles inherit 50; the value survives reload and Restore MashBox Studio Defaults restores 50.
+
+
+
+
+
+The limit covers retained Studio Undo and Redo actions together. A complete handle drag, channel edit, UV gesture, or grouped tool operation counts as one action. Lowering the limit discards the oldest retained Studio records; raising it cannot recover records already discarded. Starting a new edit after Undo abandons that redo branch normally. Unapplied live mesh previews do not create history entries.
+
+
+
+
+
+`StudioUndo` uses Unity's native complete-object history with a tiny per-action identifier as the first recorded object. Trimming clears only those identifiers and releases their native snapshots; it does not call global ClearAll, change Unity's history preferences, or delete unrelated scene/animation history. Group metadata survives assembly reload through SessionState. This applies to modeling documents/meshes/channels, UVs, lighting/material edits, AO, and foliage rebuilds routed through the shared history facade. New modeling Undo call sites must use the same facade rather than bypassing it.
+
+
+
+
+
+The budget applies to tagged records created after this implementation becomes active. Pre-existing untagged Unity history is not retroactively erased. This is an action-count budget, not a RAM-size guarantee: large meshes can still make an individual snapshot expensive, and retained workspace meshes/materials are separate from Undo storage. The main benefit is bounded history memory; FPS improvements depend on the workload.
+
+
+
+
+
+## Preferences and portable shortcuts
+
+
+
+
+
+All durable Studio configuration uses `StudioPreferenceStore`. Initial files live outside Assets in `<Documents>/MashBoxStudio/`; loaded personal profiles can also live elsewhere:
+
+
+
+
+
+- `Profiles/Settings.json` and `Profiles/Hotkeys.json` are the initial personal files. Existing contents are retained. Settings include themes, tool values/sensitivities, panels, display/selection options, animation controls, recent files/mode and window bounds; hotkeys remain separate.
+
+
+- `State/LastLoaded.json` independently records `settingsFile` and `hotkeysFile`. Files under Preferences use relative paths; other selected files use absolute paths. Startup/domain reload reads these selections. Missing selected files fall back to the initial personal file with a warning, retaining the remembered path for recovery.
+
+
+- `Defaults/Settings.json` and `Defaults/Hotkeys.json` are generated factory presets. Only these files are regenerated from code defaults. They never capture current user colors, tool values or assigned bindings. The default hotkey catalog expands when modeling menu metadata registers; Bevel and Shaded Wireframe defaults are included even before that catalog exists.
+
+
+- **Import Settings** and **Import Hotkeys** load/select the chosen file and remember it, instead of copying over a fixed personal file. Edits save to the active file shown in Preferences. Importing either kind leaves the other active file alone. **Export** writes an independent snapshot and does not select it. Settings exports contain settings only; hotkey exports contain all current resolved action bindings.
+
+
+- Loading/reloading does not rewrite an existing profile or persist fallback values. Hotkey reload preserves entries for unregistered commands, including legacy dynamic IDs without command paths. Factory files load read-only; the first edit creates a unique `Profiles/Custom_Settings.json` or `Profiles/Custom_Hotkeys.json` (numbered if occupied), leaving presets and other personal files intact.
+
+
+
+
+
+Legacy EditorPrefs are read only for first-file migration; subsequent files take precedence. Actual settings changes debounce for 0.4 seconds and flush on close/reload/quit/export; hotkey edits save immediately. Writes use atomic replacement and a `.bak` backup. Imports validate before selecting their path; invalid input leaves configuration and remembered paths intact. Failed pending settings saves block switching files. Importing settings closes tool panes/cancels unapplied previews, reloads tool caches and reapplies open Studio configuration without writing the imported file during application. Import/reset does not change PlayerSettings.gcIncremental.
+
+
+
+
+
+Standard defaults are Ctrl/Cmd+B for Bevel and BackQuote (also Shift+BackQuote/tilde) for Shaded Wireframe. Their existing command IDs are unchanged. Explicit overrides/unassignments win; a new default yields when its chord is already explicitly assigned elsewhere. Other new commands remain unassigned unless given a declared default.
+
+
+
+
+
+Only one ToolChannelPane is open at a time. Opening another closes the previous pane with its existing cancellation semantics (earlier Applies remain). Every tool reuses the shared bounds, respecting its own minimum size. Native Windows ownership continues to keep the pane above Studio. Normal floating Studio bounds and last mode restore when opening Studio normally; explicitly opening a take or model still selects its corresponding mode. Unity owns the placement/sizing of docked host tabs in its global editor layout; Studio preserves its last floating bounds separately.
+
+
+
+
+
+Workspace meshes, lighting/material/document data, takes, and actor assets remain authored files, rather than preferences. Native Undo identifiers, clipboard contents and running-job process state remain session-only. They must not be exported as portable user configuration.
+
+
+
+
+
+Sources: `Editor/StudioPreferenceStore.cs`, `StudioSettings.cs`, `StudioShortcuts.cs`, `AnimationStudioPreferences.cs`, viewport `.Window.cs`/`.Panels.cs`/`.Toolbars.cs`, `ToolChannelPane.cs`, and the migrated Studio EditorPrefs callers.
+
+
+
+
+
+
+
+
+
+
+
+Preferences hover updates are driven by mouse-move and mouse enter/leave events. Only the Preferences utility window requests a repaint; hovering does not import/export or write configuration and does not start an idle repaint loop. Preferences and ToolChannelPane share `StudioWindowOwnership` for native ownership above the Studio host on Windows. This is scoped to the Studio window rather than a global topmost flag or repeated focus-stealing callback.
+
+
+
+
+
+## Unified modeling command and shortcut registry
+
+
+
+
+
+All executable top-menu entries except Display register automatically in Preferences, grouped by menu category, including disabled actions. Display controls stay in their menu/toolbars and do not register shortcut rows. Recent-file navigation, Preferences, Themes, Lighting Settings, vehicle-part creation and Create Foliage Morph Set are also excluded. Menu declarations mark UI-only entries with shortcutEligible: false; actual working tools such as Bevel, Soften options and the UV editor remain eligible. World/Local lives in its toolbar; the duplicate Modify > Local Axes entry is removed. This includes Bevel, Merge to Center, Target Weld, Insert Edge Loop, Multi-Cut, primitives, UV commands, display toggles, and lighting actions. New commands start unassigned unless they declare a standard default; Merge to Center defaults to M and retains the former merge command ID. Existing custom bindings remain authoritative. Expand a category or search to find a command. A remapped command executes the same callback and availability checks as the menu item. Soften and Soften options have separate bindings.
+
+
+
+
+
+Menu declarations are the source of truth: use a categorized `StudioMenu` and its normal AddItem/AddDisabledItem calls. Metadata and key lookup are cached; callbacks are rebuilt for the affected category only when a shortcut executes. No idle catalog rebuild or new action enum entry is required. Eligible dynamic labels should supply a stable commandKey. Recent-file navigation is not registered. Hotkey JSON retains stable command paths and IDs through independent import/export.
+
+
+
+
+
+Numeric drag sensitivity cycles .1x, 1x, 2x, 4x. Fill grows clockwise from the top-left quarter through the top half; fuller means faster. Channels and ToolChannelPane use the shared control.
+
+
+
+
+
+Configuration import/export dialogs are queued after the Preferences GUI event, so native file dialogs do not interrupt open IMGUI layout groups. All four transfer buttons share this path.
+
+
+
+
+
+The Grid toolbar visibility entry is Display > Toolbars > Grid. Mesh Display has no Grid entry; the toolbar button controls viewport grid visibility.
+
+
+
+
+
+Automatically discovered toolbar visibility controls are grouped under Display > Toolbars. Viewport Shading names the wireframe/shading/lighting/texture toolbar. Labels come from each Overlay declaration, so old saved layout titles cannot override current names; stable IDs preserve docking/visibility. Duplicate IDs are listed once, and slash characters in toolbar names remain literal leaf text. These entries are excluded from keyboard shortcuts.
+
+
+
+
+
+Modify groups Select, Move, Rotate, Scale, Edit/Lock Pivot, Center Pivot and Freeze Transforms. Future reset-transform, pivot-zeroing and alignment commands belong here. Mesh Tools contains geometry operations only; UV Editor appears only under UV. The existing Q/W/E/R binding IDs and overrides are preserved when regrouping commands.
+
+
+
+
+
+Create Foliage Morph Set is under Create in its own separator-delimited section above Empty Transform, Empty Child and Anchor Point. It remains excluded from keyboard shortcuts. The now-empty Mesh top menu is removed.
+
+
+
+
+
+While the shortcut recorder has keyboard focus, Unity shortcut dispatch is temporarily suspended so combinations such as Ctrl+B are recorded without invoking Unity menu actions. Previous dispatch state restores on completion, cancellation, focus loss and assembly reload; Unity shortcut profiles are unchanged. Keyboard input is consumed before recorder GUI controls, including modifiers, releases, and command events.
+
+
+
+
+
+Save and Save As preserve the modeling viewport camera. Save As adopts the new document in the existing editor/preview scene without Bind or Frame; opening a workspace retains its normal framing behavior. This also covers the first Save of the temporary workspace.
+
+
+
+
+
+New/empty workspaces and fresh Modeling Studio openings start in perspective at the grid origin, pitched down 37 degrees with 38-degree Y rotation from 10m away; SceneView framing size accounts for its configured field of view. Empty-view framing uses this same default, while Save/Save As continue preserving the camera.
+
+
+
+
+
+Studio recalls the selected Modeling/Animation mode through reload/reset. Window persistence reads the serialized mode flag, never temporary modeling-editor availability; focus/layout events during teardown cannot save Animation merely because the modeling preview was released.
+
+
+
+
+
+Scene binding preserves existing camera rotation. Fresh viewport initialization frames the Modeling scene once, and re-opening/rebinding an existing Studio does not reframe it. Modeling openings do not apply animation-rig bounds. Host migration retains its explicit camera restoration.
+
+
+
+
+
+Shortcut recording retains its focus/dispatch guard through the primary key release. A valid press is staged, the release is consumed, and recorder closure is deferred beyond that input event; Unity shortcuts are restored afterward. This avoids restoring native menu accelerators while processing the recorded chord. Conflicts remain open and guarded.
+
+
+
+
+
+Mesh statistics use only the Scene and Selected columns; the redundant Selected vertex/edge/face footer is removed.
+
+
+
+
+
+Focused ToolChannelPanes share the shortcut recorder focus guard. The pane root intercepts modified keys before IMGUI/global dispatch, while fields retain text editing shortcuts. Undo/Redo are routed to Studio history after GUI drawing completes; unapplied previews cancel first. Native Undo during a preview disposes it and rebuilds from restored document state instead of refreshing stale render caches.
+
+
+
+
+
+On/off commands must toggle on repeated menu/shortcut presses. Shaded Wireframe toggles with Shaded; Wireframe-only toggles back to Shaded Wireframe, matching the toolbar. All shading inputs share SetModelDrawModeEnabled; fixed state setters remain available for initialization. Ordinary operations execute once per press; selection/tool mode choices retain their explicit behavior.
+
+
+
+
+
+The gray free-rotation center sphere works in World orientation as well as Local. World object rotation distinguishes the center sphere's per-event increments from axis rings' total drag rotation; repeated movement no longer cancels or jitters.
+
+
+
+
+
+Bevel width changes evaluate cached straight-skeleton trajectories. The earliest collapse/split event sets the collision limit before draft construction; repeated half-width retries and bisection are removed. Invalid profile/junction construction fails before publication. See BEVEL_ENGINE.md for scope and remaining work.
+
+
+
+
+
+Bevel completion clears selected edges while retaining the active object and Edge mode. Apply keeps its pane open; select edges again to start another bevel. Preview still shows selected result edges, and cancellation restores the source selection. Bevel uses model-unit offsets and shared junction constraints; an earlier short edge no longer normalizes the requested width. Disconnected constrained regions retain independent miter budgets.
+
+
+
+
+
+Studio auxiliary windows share its lifetime through StudioWindowOwnership. Closing Studio closes registered tool/settings windows; hiding or minimizing its native owner chain explicitly hides them through process-scoped Windows events and restores only automatically hidden panes without activation. Pending tools survive minimization. Managed ownership/hidden flags are session-only; native handles are transient. Viewport-owned modeling ToolChannelPanes use embedded Tool Options; standalone fallback retains its borderless utility container. Production compilation, 12 managed lifecycle checks and 14 isolated native visibility checks passed; actual working-Studio minimize/restore remains unconfirmed. See Tests~/README.md for verification limits.
+
+
+
+
+
+Straight-skeleton wavefront integration (2026-10-22): the user rejected further local endpoint patches and explicitly requested an established bevel foundation. Editor/StudioMeshCuts.BevelWavefront.cs now uses the MIT-licensed Briganti Unity straight-skeleton wavefront kernel, vendored under Editor/ThirdParty/BrigantiStraightSkeleton at upstream commit 2d26dc6fe1ff1f08f12305625ab54fd46e12d1ea. Local extensions support weighted and stationary boundaries. Selected edges move as parallel face-plane lines; unselected boundaries remain stationary. Corners follow intersections of those moving lines. Distinct face-plane cuts on a shared edge retain separate identities, with matching subdivisions inserted along retained edge spans before the existing strip/corner stitching. A single-segment chamfer now uses its geometric flat normal rather than curved-profile endpoint normals.
+
+
+
+
+
+The immutable source/selection caches trajectories and the earliest edge-collapse or reflex split event. Width edits evaluate this cached plan; topology/selection changes reconstruct it. Width is now a mesh-local propagation distance, without shortest-edge normalization or a maximum of 1. Eligible clipping/profile construction updates its local topology through clipping events and respects the actual unaffected-patch interface; unsupported compatibility paths retain first-event stopping. The old repeated half-width draft retries and bisection fallback are removed. Atomic inset validation remains; an unsafe profile/junction reports an error instead of silently substituting a smaller shape. Planar source faces use their own charts; incident non-planar polygons now use local authored-triangle charts as detailed under Imported frame bevel and component-drag correction. Face coordinates are normalized to approximately 0..100 for upstream floating-point predicates.
+
+
+
+
+
+Scope is deliberately precise: this replaces offset construction and collision limiting with an actual straight-skeleton wavefront interval. It clamps immediately before the first event. Beyond the proven source-edge contact transaction, it does not advance the 3D mesh through general collapse/split events or implement global post-collision topology merging. Existing profile interpolation, Grid/Cap junction generation, attribute transfer and publication remain. It is not a global 3D straight-skeleton solver or global self-intersection solver. Rounded high-valence junction construction is still the existing implementation. Offsets now use mesh-local model-unit distances; object-scale compensation in world space is not implemented. Do not describe the entire bevel engine as a complete full-featured replacement. See BEVEL_ENGINE.md for the architectural analysis and remaining work.
+
+
+
+
+
+Validation: production compilation passed with the pre-existing CS1701 reference warning. Final disposable checks passed 27 analytic event/high-valence collision-clamping cases (including manifold pyramid seams at 20 widths), 15 independently applied sequential-bevel edge cases with zero rail skew and zero warped faces, and 196 representative selection/attribute/manifold/width-continuity cases. Cached plan identity is checked across 100 cube width evaluations. Timing below is computation/publication only, excludes rendering/input, and is not an FPS claim. An isolated shading render fixture produced inconclusive uniform shading despite distinct CPU normals; no successful native viewport/shading verification is claimed. User visual verification remains pending. No desktop input was used; disposable test editors exited.
+
+
+
+
+
+Final run: Cached cube evaluations mean ms=2.997 (geometry/publication only)
+
+
+
+
+
+Architecture, upstream attribution and remaining implementation work: [BEVEL_ENGINE.md](BEVEL_ENGINE.md).
+
+
+
+
+
+
+
+
+ToolChannelPane modal workflow correction (2026-10-22): the user confirmed Apply must keep the pane open and Execute must close it. The redundant Close footer button is removed; header X and Escape still cancel only the unapplied preview. All modeling state repaint requests also invalidate the editor's open live-tool panes, so selection-dependent Apply/Execute availability is redrawn without waiting for pane hover. This is event-driven and adds no idle polling or repaint loop.
+
+
+
+
+
+Reopening Bevel, Extrude or Soften with an existing pane queues a preview for the current selection, using the current stored parameter values, instead of only focusing the pane. Modal menu commands defer preview completion to their tool handler, so invoking the same tool does not first commit its preview and clear its selection. Apply commits through CommitLiveTool(false), preserving the pane. Execute closes through its existing successful-command path. Implicit completion from selection changes or non-tool editing actions closes the completed pane after releasing its preview state. Deliberate tool changes complete valid pending previews and cancel invalid ones as documented in the final 2026-11-04 gizmo/completion correction. Object mode explicitly closes all live modeling tool panes, including idle panes left after Apply; an invalid pending preview is canceled on that mode transition. Bevel still clears edge selection after committing and retains the object.
+
+
+
+
+
+Validation: production compilation passed (existing CS1701 warning). Tests~/StudioModalPaneValidation.cs passed 16 focused assertions in a disposable graphics-capable Unity editor: first preview, Apply retention/selection clearing, new-selection eligibility, repeat command queuing/evaluation without parameter changes, Execute closure, implicit completion, Object mode with active/idle panes, and cancellation of invalid preview on Object mode. The test checks immediate availability predicates and lifecycle; actual mouse-hover repaint timing was not physically tested. No desktop input automation was used; the disposable process exited. Existing shortcut shield and deferred Undo callbacks are unchanged.
+
+
+
+
+
+Fine ToolChannelPane dragging correction (2026-10-22): the user reported chunky Bevel Width scrubbing at 0.1x and then confirmed the applied fix works. StudioDragSensitivity.DragScope previously scaled Event.delta before Unity's native numeric field handled it. Native floating-point fields still rounded increments using their original drag sensitivity, discarding small movements. The shared scope now temporarily scales EditorGUI's cached numeric drag sensitivity, so native floating-point rounding precision follows the selected ratio too. Mouse delta is left intact on supported editors. The original native sensitivity is restored on scope disposal, including consumed events; typed input and unrelated windows retain their normal behavior. Reflection metadata is cached once and guarded by field existence/type; older incompatible editor implementations retain the prior delta-scaling fallback.
+
+
+
+
+
+All ToolChannelPane numeric content uses this shared scope; the reported Bevel field does not have a special-case scrub implementation. Integer fields remain discrete native integer controls; no new fractional integer accumulator was added. Production compilation passed with the existing CS1701 reference warning. The user's confirmation establishes the reported interactive width problem is fixed; no additional automated UI/performance suite was run for this correction. No desktop control or extra Unity test process was used. Unity's reference explains the sensitivity-based rounding: https://github.com/Unity-Technologies/UnityCsReference/blob/master/Editor/Mono/EditorGUI.cs (DragNumberValue).
+
+
+
+
+
+Modeling menu and bottom docking update (2026-10-22): top menus are File, Edit, View, Select, Create, Modify, Window, Display, Mesh Tools, Edit Mesh, Mesh Display, UV, Render. Deform is a submenu inside Mesh Tools containing Blend Shape and Bake Current Pose. The former Deform/... command keys and IDs remain the serialized identity, preserving existing hotkey assignments/import/export. Their current Preferences group and dispatch menu are Mesh Tools, with Deform shown in the action path; there is no separate top-level Deform menu.
+
+
+
+
+
+MashBoxStudioViewport reuses its existing native-toolbar docking detection for the bottom dock. A displayed non-floating toolbar in the enabled bottom dock suppresses outer bottom panel corner rounding, covering Hierarchy, Channels, and Tool Options when Channels is hidden. Top corners and existing left/right docking rules retain their current behavior. Hidden/floating overlays do not count. Existing toolbar geometry/layout events recompute the radii; there is no polling or added redraw loop.
+
+
+
+
+
+Validation: production compilation passed (existing CS1701 reference warning). The maintained command-registry suite passed 168 assertions across 64 eligible menu actions, including the exact menu order, nested Deform entries and preserved identity/current shortcut category. Bottom-corner behavior was checked in source against the shared dock/layout path; actual rendered docked corners have not been visually verified in this task. No desktop automation was used; the isolated command-validation editor exited.
+
+
+
+
+
+Theme redesign (2026-10-22): Graphite, Charcoal, High Contrast, Ocean and Porcelain retain their IDs and exact palette values. The other fifteen presets use explicit surface-role palettes, rather than one generic tint formula. Twenty presets: Graphite, Charcoal, High Contrast, Ocean, Porcelain, Silver, Concrete, Gunmetal, Blue Steel, Violet Smoke, Ink and Crimson, Chalk and Vermilion, Pearl and Teal, Warm Ivory, Linen and Ink, Graphite Amber, Neutral Contrast, Slate Contrast, Silver Contrast, Violet Contrast. Tonal families include silver/concrete neutrals, blue/gunmetal, violet-gray, charcoal/red, ivory and warm linen; four contrast variants use lifted surfaces and distinct field/panel hierarchy. Accents are restrained selection/emphasis colors. Custom is an additional option with Primary (base surface) and Secondary (accent) color pickers; text, panels, fields, hover, selection, rails, borders and viewport colors are derived automatically. Main custom text chooses black/white using sRGB luminance contrast; derived surfaces are adjusted to preserve at least 4.5:1 main text contrast. Custom colors persist in the existing Settings.json preferences and settings import/export.
+
+
+
+
+
+Neutral marking menus is removed from the Themes UI, stored Preferences schema and marking-menu drawing paths. Marking-menu items and Back now use the current palette. Older imported JSON containing the obsolete flag is accepted by JsonUtility and ignores that unknown field; the next settings save omits it. Existing preferences for retired theme IDs use the existing Graphite fallback; the four retained theme IDs remain stable. Restore Theme Defaults selects Graphite and resets both custom colors to their Preferences defaults (Primary RGB .18/.22/.25; Secondary RGB .85/.70/.47), preserving unrelated settings. Existing lazy theme resource/style caches and immediate apply behavior remain.
+
+
+
+
+
+Validation: actual SDK production compilation passed (existing CS1701 reference warning). One focused disposable Unity run passed 1,124 assertions covering twenty unique presets, main-text contrast across eight surfaces for all fifteen redesigned presets, 100 custom primary/secondary combinations, muted custom text, custom palette reuse/invalidation and Save/Reload persistence. A contact sheet rendered from actual exported Unity palette values was visually inspected. This covers color roles and settings, not native Studio control rendering or every disabled state. No desktop automation was used. Preview: host obj/StudioControlsValidation/studio-theme-preview.png; focused fixture/result: host obj/StudioControlsValidation/StudioCustomThemeValidation.cs and obj/custom-theme-result.txt.
+
+
+
+
+
+
+
+
+Tool Options/Channels divider (2026-10-22): the full-width ten-pixel resize band (2 px backing above and below the 6 px bars) has a centered single row of five short vertical bars (each 1 x 6 px), with tooltip "drag to resize". The backing uses the lighter Button surface at rest and Hover surface while hovered/dragged, rather than the dark Header surface. The previous continuous center rule is removed. Full-width hit area, drag limits, persisted split height, hover feedback and Escape cancellation remain unchanged. Production compilation passed; the previous dot glyph was visually checked in the palette contact sheet; the five-bar revision has not been checked in native Studio rendering.
+
+
+
+
+
+
+
+
+
+
+
+Custom theme resources: Editor/StudioTheme.Custom.cs adds explicit preset roles and contrast-aware two-color generation. Unchanged custom colors reuse the palette. Color changes retire old custom skins/textures through one coalesced deferred cleanup after GUI drawing; preset caches remain lazy and reusable. No idle repaint loop is added.
+
+
+
+
+
+Field surface theming and Unity isolation (2026-10-23): Studio scopes apply palette foregrounds and backgrounds to implicit numeric/text/object fields, popups and help boxes. Fields use Header, popups Button and help boxes Panel; explicit numberField/objectField styles also receive field surfaces. Native Unity numberField and textField alias the same GUIStyle. The former save-and-mutate loop captured the later alias after it was themed, restoring Studio textures into Unity's Inspector when it next repainted (the user observed this on hover). StudioTheme.cs now snapshots every field/state before mutating any field, snapshots label/foldout/toggle/bold text before applying fields, and copies RectOffset border values into independent snapshots rather than retaining live native wrappers. Scope exit restores all original foregrounds, backgrounds, high-DPI arrays and borders at each nesting level.
+
+
+
+
+
+Validation: Tests~/StudioThemeIsolationValidation.cs passed 9,020 assertions against actual native EditorStyles across all 20 presets and nested scopes, explicitly confirming numberField/textField aliasing. Earlier 2,944 isolated-style checks did not cover that native alias and were insufficient to establish isolation. Current production compilation passed with the existing CS1701 warning. Native tests ran in a dedicated disposable ThemeIsolationProject because the other disposable project was in use. Reports: host obj/StudioControlsValidation/theme-isolation-result.txt and theme-isolation-native.log; production response file: theme-isolation-production.rsp. Off-screen IMGUI pixel capture produced no usable field image; native normal backgrounds were null in that runner, so background-only GPU capture was also inconclusive. Neither attempt is a rendered pass. The working Inspector hover/repaint appearance remains unautomated; no user theme/settings/hotkeys or other Unity windows were changed during validation.
+
+
+
+
+
+Component picking filters by screen-space tolerance or marquee rectangle before testing visibility. Local-space visibility now reuses the existing SDK Vertex AO BVH through VDPrecisionBaker.RayIndex, cached per Mesh and EditorUtility dirty version. Mesh edits/previews replace the affected index; rebuild/load/Undo clear indices. Transform-only changes reuse immutable geometry with fresh matrices, and hidden nodes are excluded. Geometry is copied/indexed lazily after a bounds hit. Marquee release projects candidate points/rays on the editor thread, prepares intersected indices there, then runs immutable ray batches on CPU workers (small batches stay serial). Workers never read Unity Mesh/Transform/Camera objects or mutate selection. Selection changes apply on the editor thread after the batch. Hover/click retain the same tolerance, two-sided triangle rule, midpoint visibility and 0.001 world-space endpoint bias. No selection-through substitution, frame cap, timer or idle work is introduced. Shared BVH construction uses median partitioning instead of recursive full sorting; the existing AO nearest-hit behavior retains its original intersection tolerance.
+
+
+
+
+
+Picking validation result (2026-10-22): disposable Unity run passed 526 assertions, including 500 accelerated/reference occlusion comparisons (164 ms combined correctness loop), transformed mesh visibility, bounds-miss lazy loading and array reuse. This is not an interactive hover benchmark. Result: host obj/StudioControlsValidation/picking-result.txt.
+
+
+
+
+
+### Imported frame bevel and component-drag correction (2026-10-22)
+
+
+
+
+
+Reproduced with Assets/Catalog/MTB/Frame/Mesh/MTB_Frame_Bestial_Lynx.fbx, using its original ModelImporter metadata (Read/Write off, Preserve Quads on), in the disposable project. The initial default-import probe exposed small triangle precision failures too, but final frame validation must use the original metadata.
+
+
+
+
+
+- Import previously used Instantiate(mesh), retaining isReadable=false from the FBX. The UI disabled Bevel despite editable static geometry being available to the Editor. Import and preview targets now reuse StudioWorkspaceText.ReadableSnapshot, which copies all vertex streams, indices, submeshes, bounds, bind poses, weights and morph frames using MeshUtility.AcquireReadOnlyMeshData. No source importer setting changes. Existing unreadable workspace-owned meshes keep their identities; editor eligibility for Bevel/Cut/Normals no longer treats the runtime flag as an editability test. Preview publication and Undo refresh use the Editor data-access path for those legacy meshes. Skin/live-blend topology restrictions remain.
+
+
+- Warped quads/n-gons incident to selected edges are partitioned locally along their authored render triangles into planar surface charts before wavefront construction. Their actual piecewise surface is retained; unrelated editable polygons and render diagonals remain untouched. The derived charts are cached with the captured source/selection and publish only with the bevel result. Committing such a bevel can create explicit triangle boundaries on the affected warped faces; cancellation restores the source polygons. This is a defined faceted-surface treatment, not a general smooth non-planar skeleton.
+
+
+- Publication preserves untouched source faces, authored triangle diagonals and exact source vertex attributes, including retained normals/tangents. Only changed/generated faces are triangulated. No unrelated source-geometry cleanup is performed. Source triangle membership is cached per captured topology. Missing authored normals receive area-weighted fallback normals.
+
+
+- Ear convexity, point-in-triangle and final-triangle validity now use a filtered orient2d predicate: a double determinant/error bound, followed by exact BigInteger arithmetic on binary32 coordinates when ambiguous. Geometric offset tolerances no longer classify tiny valid triangulation ears as degenerate. This follows the filtered-exact predicate approach described by Shewchuk (https://www.cs.cmu.edu/~quake/robust.html); it does not make the whole bevel kernel exact arithmetic. True degenerate/new invalid faces still fail atomically.
+
+
+- Component Move/Rotate/Scale gestures retain statistics caches while dragging, then invalidate them at MouseUp or the next idle-handle SceneGUI event. Geometry, normals, tangents and overlays continue updating with every edit. Ordinary non-gesture position edits invalidate immediately. Recalculation now reads stored polygon boundaries directly, rather than building a StudioMeshCuts neighbour graph just to count. On the Body probe the old count rebuild averaged about 56 ms; corrected samples were about 2.7–4.3 ms, and that rebuild is absent from continuous drag samples. Counts can temporarily retain the pre-drag welded totals if points coincide/separate during a gesture; they refresh on completion. No timer, frame cap, hover throttling or idle repaint loop was added.
+
+
+
+
+
+Files: Editor/StudioModelDocument.cs, StudioWorkspaceText.Meshes.cs, StudioMeshToolPreview.cs, StudioModelEditor.Bevel.cs, StudioModelEditor.CutTools.cs, StudioModelEditor.Normals.cs, StudioModelEditor.cs, StudioModelEditor.Statistics.cs, StudioModelEditor.Wireframes.cs, StudioModelEditor.ScaleDrag.cs, StudioMeshCuts.Bevel.cs.
+
+
+
+
+
+Validation source/report: Tests~/StudioFrameValidation.cs and host obj/StudioControlsValidation/frame-validation.txt. Production response file now points to actual SDK files throughout; eleven prior stale staged Editor paths were replaced. Production compilation passes with the existing CS1701 warning. The checks are CPU geometry/state checks; no claim of interactive viewport FPS or native rendered appearance is made. Post-collision topology continuation and existing rounded high-valence junction limitations remain as documented.
+
+
+
+
+
+Final original-importer frame run: all eight sampled individual edges passed; both detected sharp 40-edge rim loops passed at 0, 1 and 3 subdivisions; 60 cube geometry cases, missing-normal input, 162 scale/collinearity predicate cases, statistics/reference equivalence and drag cache lifecycle passed. Legacy unreadable publication/cancellation preserved the original mesh and restored source coordinates. Latest count-rebuild mean: 2.81 ms versus about 56 ms before the fix; counts do not rebuild during continuous drags. These are isolated CPU/state results, not measured viewport FPS. Four additional continuous 40-edge cycles passed at zero subdivisions in the earlier default-importer probe; that probe is supplemental and does not replace the original Preserve Quads configuration.
+
+
+
+
+
+
+
+
+### Captured component translation (2026-10-23)
+
+
+
+
+
+The user confirmed that large vertex selections translate slowly through both axis and free-move handles, in World and Local, while rotation/scaling feel responsive. The previous synthetic mutation/statistics benchmark did not exercise native Move control processing and did not establish a user-visible movement gain. Do not attribute the earlier bevel-computation multiplier to translation.
+
+
+
+
+
+Move now has a captured component gesture, following the existing Scale drag architecture. StudioModelEditor.MoveDrag.cs captures the selected render indices, source/working positions, moving handle position/orientation and world-to-local linear transform once. Each native target is a total displacement from the captured source; one local displacement is added to each selected source point. This replaces repeated selection/center setup, per-point native TransformPoint/InverseTransformPoint calls and incremental point updates on the normal component-Move path. Equal targets perform no mesh/normal/tangent/Undo/publication work. Undo is registered once; returning to the original target restores exact original coordinates. Rebuild/Undo, active node/mesh changes, component mode changes and control loss invalidate the context. Native axes, planes, center drag and snapping still determine the world target. Shift handle extrusion and pivot/object movement retain their existing paths; rotation was not rewritten. Source arrays and CPU/native meshes remain current on every actual update.
+
+
+
+
+
+Verified with 110 focused assertions for translated selected points, unchanged unselected points, rotated/mirrored/nonuniform object transforms, exact reversal, no-op/finite guards, context changes and one grouped Undo/Redo. Native axis and center MouseDown/MouseDrag/MouseUp tests captured the actual gizmo controls, moved all 6,489 selected Body render vertices uniformly and released capture. A separate native comparison used the same frame/selection/1500x950 HDRP viewport and forced native MouseDrag/Layout/Repaint in disposable Unity 6000.4.12f1 on D3D12/RTX4090. Captured pre-change source measured Move 5.659 ms drag / 22.412 ms combined median; the final captured path measured World Move 3.744 / 16.980 ms (combined p95 24.631 ms), Rotate 4.914 / 15.485 ms, Scale 3.207 / 9.743 ms, and Local Move 3.620 / 16.047 ms. A prior after-run gave World Move 16.354 ms combined. This is about a 1.3x warmed native-event improvement for World Move, not a displayed-FPS multiplier or proof of 200 FPS. Input is injected in the native handle's GUI coordinate space by test-only callbacks; no physical desktop control was used. Other rendering/UI costs remain, and the broader bevel geometry limitations above are unchanged.
+
+
+
+
+
+Sources: StudioModelEditor.cs, StudioModelEditor.MoveDrag.cs and test-only probes in StudioModelEditor.MoveHandles.cs. Fixtures: Tests~/StudioMoveDragValidation.cs, StudioNativeMoveValidation.cs and StudioNativeTransformPerformance.cs. Reports in host obj/StudioControlsValidation: move-drag-validation.txt (110 assertions), native-move-validation.txt (axis/center), native-transform-before.txt, native-transform-after.txt and native-transform-final.txt (four-gesture final run). Production response files must include the new MoveDrag partial. Tests create assets and exit only in the disposable project; no user settings or hotkeys were changed.
+
+
+
+
+
+### Bevel profile constraints and large-selection movement follow-up (2026-10-23)
+
+
+
+
+
+The user reproduced unwanted thin geometry in several further configurations, including three independently committed bevels (top edge, adjacent side edge, then a corner edge). The earlier first-bevel/three-edge-chain correction and manifold-only chain checks did not establish general join correctness. The exact reported screenshot sequence has not been independently matched; do not describe all reported bevel defects as resolved.
+
+
+
+
+
+Two construction rules are now corrected in StudioMeshCuts.Bevel.cs. A terminating profile uses the original vertex as its control, preserving its untouched supporting face rather than projecting the control independently along the selected edge. Two strips sharing the same profile boundary use one control/curve identity. Independent profiles at a multi-way junction keep their cross-section controls. Coplanar end absorption tests ring and face points against the original source supporting plane; using a tiny generated cap's normalized normal magnified float error across a distant face corner and incorrectly retained coplanar divider faces. This changes construction and plane classification, without deleting thin faces or proximity-welding unrelated vertices. Flat offsets and their straight-skeleton trajectories are unchanged.
+
+
+
+
+
+StudioBevelProfileValidation passes 1,296 cases: an initial top chamfer, an independent adjacent vertical chamfer, then each resulting geometric edge at three Width values and 0/1/3/8 subdivisions, on uniform and baked nonuniform cubes. It checks expected face/vertex counts, planar source/strip faces, two uses per geometric edge and referenced render vertices. Nine additional two-strip miter cases check one shared profile at 1/3/8 subdivisions. The 3,360 existing chain cases, imported-frame checks, 162 publication/attribute/cancel checks, 16 GPU lifecycle/Undo checks, picking, scaling and rendered silhouette suites pass again. These are explicit invariants and sampled configurations; general high-valence joins, 3D event continuation and cross-application parity remain unproven.
+
+
+
+
+
+Large component movement is a separate unfinished performance issue. A synthetic 1500x950 HDRP viewport probe on 6,489 selected Body render vertices measured 23.78 ms median / 31.64 ms p95 before a captured-gesture selection-count cache. That initial probe had no native hot control, so scene statistics flushed every sample and it is not an exact active-drag baseline. CountSelectedComponents now caches by mesh dirty version, component mode, weld setting and the exact selection set. Existing position-gesture deferral retains position-dependent counts while dragging; release invalidates them. Selection, non-gesture geometry edits and topology/Undo cache resets invalidate correctly. Twenty-three focused assertions pass, including coincident-position recount on release. The half-Body count alone measured 1.325 ms reference versus 0.070 ms cached median. A follow-up synthetic mutation plus native Layout/Repaint with a captured control measured 19.65 ms median / 20.83 ms p95, with statistics at 0.081 ms. Capture conditions differ between these viewport probes: do not present their ratio as a controlled whole-application speedup. Actual physical-input FPS, 200 FPS movement and the one-million-vertex 240 FPS target remain unverified and unmet by these measurements.
+
+
+
+
+
+Algorithm assessment: the production kernel is an existing MIT 2D straight-skeleton wavefront with Studio weighted/stationary extensions; the 3D strip/fan/profile/event integration is custom and incomplete. No medial-axis implementation has been integrated. CGAL documents that straight skeleton and medial axis coincide for convex 2D polygons and differ at reflex features (https://doc.cgal.org/latest/Straight_skeleton_2/index.html). A medial-axis/local-feature-clearance layer is a possible way to analyze distance limits and rounded offsets; this is an architectural option, not an implemented fix. Neither construction supplies Studio's 3D joins or removes component-rendering overhead by itself. Do not equate use of a named kernel with a complete established 3D bevel implementation.
+
+
+
+
+
+Sources: StudioMeshCuts.Bevel.cs, StudioModelEditor.Statistics.cs and StudioModelEditor.ComponentDrawing.cs. Excluded fixtures: StudioBevelProfileValidation.cs, StudioSelectionStatisticsValidation.cs and StudioMoveViewportPerformance.cs. Reports beside the disposable project: bevel-profile-validation.txt, selection-statistics-validation.txt, move-viewport-before.txt and move-viewport-performance.txt. Full combined regression log: bevel-corner-final.log; shared-profile follow-up: profile-shared-final.log. Production compilation retains the existing CS1701 warning. No user settings/hotkeys or physical desktop input were changed.
+
+
+
+
+
+### Dense-mesh live bevel and GPU publication (2026-10-23)
+
+
+
+
+
+The user confirmed Width dragging, rather than opening the pane, was slow. Selection stutter was on marquee release; indexed/batched visibility remains as described below. Performance is a requirement for every live sample, with no throttling or release-only preview.
+
+
+
+
+
+- The captured straight-skeleton plan owns immutable source positions, selected/affected/static face lists and weighted trajectories. Width edits retain source prefixes and construct only the affected neighborhood. Static polygons no longer enter per-sample corner-fan/stitching loops.
+
+
+- Publication assigns stable render slots to dynamic polygon corners. Hashing evaluated normal/UV floats previously alternated the frame's vertex count and invalidated whole-mesh wire/face/statistics caches in 13 of 50 warmed samples. The corrected test has zero topology changes. Geometric identities and smoothing groups preserve editable seams; untouched source polygons, triangles, materials and attributes are retained.
+
+
+- Only dynamic positions, normals, colors, tangents and UVs are packed into a reusable stream-update packet. Working and live CPU meshes receive the same suffix. Bounds combine a cached static bound with the dynamic patch. Native Unity tangent calculation runs on the disconnected dynamic render corners. Missing source tangents are generated for the retained prefix once, rather than falling back to a whole-mesh recalculation on every sample. Canonical attributes and native tangent results are checked independently.
+
+
+- Renderer MeshFilters temporarily use one GPU-only render mirror per touched mesh, shared by its instances. Its CPU vertex data stays unchanged during stable drags; direct GraphicsBuffer.SetData range writes update only changed GPU attributes. CPU Work/Live meshes remain current for editing, visibility/picking, metadata, saving and Undo. Source/render topology changes rebuild the mirror once. Reset, zero width, commit, cancel, Undo and disposal restore the authoritative MeshFilter bindings and release owned buffers/meshes. Unsupported GPU access falls back to the current CPU-published mesh. No compute shader is required for these already-computed sparse updates. The design follows Unity's GPU-buffer API: https://docs.unity3d.com/ScriptReference/Mesh.GetVertexBuffer.html and https://docs.unity3d.com/ScriptReference/GraphicsBuffer.SetData.html .
+
+
+- Querying vertexBufferCount on dirty working/live meshes forced source-sized native GPU preparation, including the off-scene work copy. Stable packets validate vertex descriptors without that getter. The render mirror prevents deferring that same full upload into drawing: the million-vertex rendered regression dropped native draw preparation/submission from about 7 ms to about 0.007 ms, with changed GPU attributes verified by readback.
+
+
+- Selection remapping uses a cached render-edge index and generated edge IDs. Live welded membership uses static/dynamic geometric links. Handle centers/statistics reuse published positions, and Component orientation uses incident-face adjacency. Ordinary polygon wireframes use their existing GPU position buffer with suffix uploads; unused duplicate whole-mesh CPU line geometry is not built. These remove source-sized scans/uploads from stable Width edits.
+
+
+
+
+
+Measured with Unity 6000.4.12f1, Direct3D 12, RTX 4090, and the original Preserve Quads Lynx import: Body has 13,446 render vertices; the selected arc is 21 geometric edges (42 seam/render indices). The latest 90 warmed EvaluateLiveTool samples measured 0.695 ms median / 0.813 ms p95 / 0.857 ms maximum, versus 5.92 ms median before this revision and 39.94 ms before the earlier neighborhood optimization. This excludes drawing. A real 1500x950 HDRP Studio viewport, 50 warmed samples with both World/Local handles, measured evaluation 0.864 ms median; forced Layout + Repaint + evaluation combined 7.188 ms median / 11.238 ms p95 / 28.058 ms maximum. World-only samples were 6.889 ms median / 7.232 ms p95. These native event timings include viewport work but are not displayed FPS or end-to-end physical-input measurements.
+
+
+
+
+
+Sparse scaling fixture: three connected selected edges, 34 changed render vertices, isolated cube islands in a single mesh. At 24,000 / 240,000 / 1,000,008 source render vertices, warmed CPU evaluation/publication plus mirror update measured 0.106 / 0.105 / 0.115 ms median; million-vertex p95 0.246 ms. Native draw preparation/submission was about 0.007 ms at one million. Actual GPU attribute readback, rendered width changes and cancellation passed. This establishes sparse-update scaling, not a one-million-vertex 240 FPS HDRP viewport guarantee: initial capture/topology construction, full viewport/UI, GPU execution/present time and large selected regions are not represented by that number. The mirror costs an additional render mesh for the lifetime of the gesture. Backend validation here is Direct3D 12; other graphics backends are not independently measured.
+
+
+
+
+
+Final validation: 3,360 sequential one/two/three-edge chain/width cases on uniform and baked nonuniform cubes remain manifold and fully referenced; the reproduced three-edge join is checked separately for ten faces, fourteen geometric vertices and planar straight faces. 162 publication/native-tangent/GPU-attribute/cancellation assertions pass, including colors and all eight UV channels with dimensions 2/3/4; 16 GPU lifecycle assertions cover shared instances, stable Width identity, topology replacement, commit, Undo/Redo, cancel and disposal. Both 40-edge Lynx rims pass at 0/1/3 subdivisions, eight sampled single edges, 60 cube geometry cases, 162 orientation predicates, missing normals and legacy unreadable input pass. Zero-width/restart/cancel, 1,527 visibility correctness assertions and 13 persistent-index assertions pass. Native viewport wire/mesh GPU readback and 12 native integer-scrub assertions pass. Production compile uses the existing CS1701 warning. No physical desktop input was used; all exiting/mutating fixtures ran in a disposable project. No allocation-zero, cross-application parity or universal-perfection claim is made.
+
+
+
+
+
+Visibility retains the existing dirty-versioned Vertex AO BVH and immutable worker batches on marquee release. Prior full-Body warm visibility was about 13 ms for 13,446 rays, preserving 8,355 hidden results. Projection/native input/rendering are separate costs. Source: StudioMeshCuts.Bevel*.cs, StudioMeshToolPreview.cs and .BevelGpu.cs, StudioModelEditor.LiveTools.cs, .ComponentDrawing.cs, .ComponentPivot.cs, .ComponentOrientation.cs, .Wireframes.cs, .WireBatch.cs and .Statistics.cs. Fixture sources are in Tests~; reports in the host obj/StudioControlsValidation include interaction-performance.txt, live-viewport-performance.txt, bevel-scaling-result.txt, bevel-chain-result.txt, publication-validation.txt, bevel-gpu-lifecycle-result.txt, bevel-render-validation.txt and integer-native-result.txt. Post-collision 3D skeleton continuation and broader high-valence limitations remain as documented.
+
+
+
+
+
+
+
+
+### Sequential bevel miter agreement and integer scrubbing (2026-10-23)
+
+
+
+
+
+The earlier two-operation report had a closed surface with an extra thin face/doubled edge. Reproducing that first chamfer followed by its three-edge border gave fifteen geometric vertices/eleven faces, including an artificial corner triangle. An installed Blender operator reference produced fourteen vertices/ten faces; its exact positions differ because of its width/loop-slide policy. No GPL implementation was copied.
+
+
+
+
+
+At a manifold three-face corner with exactly two selected edges, their outer face offsets must reach the same point on the stationary edge. For face angle theta, travel is offset/sin(theta). The engine solves those exact offset ratios over linked selected edges before building weighted straight-skeleton face trajectories, normalizing the largest edge speed to the existing region budget. Each selected edge keeps one constant speed at both endpoints: rails remain parallel, source supporting planes remain fixed, and the corner shares one geometric point without a filler sliver. Inconsistent ratio cycles keep their separate fans; this is not a global high-valence miter solution or post-event collapse merger. Width normalization is still fractional local space, with an upper region budget based on 45% of the smallest incident edge. The reproduced case now has fourteen vertices/ten faces with planar faces at second widths .074, .449 and 1. No final-mesh proximity welding or thin-face deletion was introduced.
+
+
+
+
+
+ToolChannelPane integer label scrubs now accumulate unscaled logical pointer movement at twelve pixels per step at 1x, independent of the starting integer or Unity's native integer acceleration. The shared 0.1x/1x/2x/4x multiplier applies linearly. Fractional motion accumulates; bounds discard overshoot, reversing responds immediately, Escape restores the captured start, and focus loss/Undo/disposal release capture. Numeric text entry remains native. Floating fields retain their existing precision path. Validation passed 64 accumulation/rate/clamp checks and 12 native label-scrub checks. Source: StudioDragSensitivity.cs and ToolChannelPane.cs.
+
+
+
+
+
+
+
+
+### Marquee cancellation at viewport boundaries (2026-10-23)
+
+
+
+
+
+Dragging a selection marquee outside the modeling canvas cancels the pending gesture immediately. MouseLeaveWindow and outside MouseDrag/MouseMove/MouseUp cancel before native handles/picking process the event. Studio requests enter/leave events explicitly. Cancellation releases only its own captured control, clears the rectangle/modifier state, ends the empty gesture group, preserves existing object/component selection, and requests the normal dirty redraw. Re-entering with the button held does not resume the canceled marquee; a fresh press starts a new one. Pointer checks run only on pointer events, never from Layout/Repaint coordinates. Source: StudioModelEditor.cs (CancelMarqueeOutside, gesture capture) and StudioModelEditor.MarkingMenus.cs (early native input hook). Production compilation passed with the existing CS1701 warning; native pointer-boundary behavior has not been exercised through desktop automation. No polling or extra update loop was added.
+
+
+
+
+
+
+
+
+Profile-preservation validation (2026-10-23): the disposable fixture passed 33 assertions covering read-only load/reload and exact file timestamps, independent last-loaded paths, autosave to selected files, preserved legacy/unregistered commands, invalid-file rejection, missing-file recovery, separate factory defaults, personal copies on factory edits, standard Ctrl+B/backtick/tilde defaults and priority for existing custom chords/explicit unassignment. A separate fresh Unity process passed 8 assertions restoring selected filenames, edited settings/bindings and custom default overrides while leaving initial personal files intact. Production compilation passed with the existing CS1701 warning. These are storage/dispatch checks; native file-dialog clicks were not automated. The working project's Hotkeys.json and Settings.json were left unchanged during this task. Fixture: Tests~/StudioProfilePersistenceValidation.cs; reports: host obj/StudioControlsValidation/profile-persistence-result.txt and profile-persistence-fresh-result.txt.
+
+
+
+
+
+
+
+
+### Notification limits
+
+
+
+
+
+Studio shows at most six viewport notifications, keeping the newest and removing the oldest when full. Repeated text has a two-second cooldown and cannot duplicate a still-visible message. Suppressed repeats do not restart its fade/expiry timer. Existing reading time, fades and the Notifications display toggle remain available; tool evaluation continues normally.
+
+
+
+
+
+
+
+
+### Selection Undo (2026-10-23)
+
+
+
+
+
+Completed object, vertex, edge and face selections support Undo/Redo, including click/marquee, add/subtract, Select All, Deselect, Invert and component-mode changes. Each changed selection is one bounded StudioUndo action; unchanged selections add none. Session-only snapshots contain component/object indices and transient identities, never mesh buffers or portable preferences. Selection-only history refreshes overlays and tool readiness without recreating the preview scene. Ordinary native transform drags do not capture selection sets per sample. Topology actions record changed selection in their geometry group; Bevel restores its captured source selection on Undo and its cleared result selection on Redo. The first workspace Undo still cancels an unapplied preview.
+
+
+
+
+
+StudioSelectionUndoValidation passes 71 assertions in a disposable Unity 6000.4.12f1 editor using current .workspace storage, real FBX import, actual native Undo/Redo, marquee selection, combined bevel/selection ordering, retained unrelated history, failed import, session history restoration, workspace reopening and the configured selection history budget. Production compilation passes with the existing CS1701 warning. Physical desktop input was not used. Direct editing of legacy .asset documents produced native Unity Undo assertions in an exploratory fixture; that path is not validated by this pass. Normal OpenFile converts legacy assets into .workspace documents before editing.
+
+
+
+
+
+
+
+
+### Import camera preservation (2026-10-23)
+
+
+
+
+
+Mesh and FBX imports preserve the current viewport position, rotation, zoom, projection and 2D mode. Viewport drag/drop no longer frames imported geometry automatically. Imports creating the first backing workspace also preserve the view across the load callback; use Frame explicitly to focus imported objects. The shared creation camera scope now retains 2D mode as well. Production compilation passes; StudioImportCameraValidation passes 68 checks covering first model import, existing-workspace FBX and mesh append, and actual DragPerform delivery in perspective, orthographic and 2D views. All checks ran in a disposable Unity editor without physical desktop control.
+
+
+
+
+
+### Vertex marker rendering
+
+
+
+
+
+Vertex-selection squares use one shared GPU position buffer for the unselected, selected and hovered layers. A procedural vertex shader generates the square corners at the existing screen/DPI size; selected markers use a reusable vertex-ID buffer and hover uses one ID. Captured Move uploads changed position ranges from its working data, without rebuilding all marker squares. Other edits compare positions and update their dirty range. Selection-buffer capacity is retained between selection changes. Shader/hardware support checks retain the previous cached-mesh path as fallback. CPU mesh data remains current for picking, editing, saving and Undo; existing depth/X-ray behavior and repaint caching are preserved.
+
+
+
+
+
+The disposable D3D12 validation matched actual rendered marker pixels against the legacy path, checked occlusion/X-ray, GPU readback, sparse updates/reversal, buffer reuse/reset and Move Undo/Redo. At 262,144 source points with 131,072 moved points, isolated marker-refresh CPU time measured 3.73 ms median on the retained legacy path versus 0.83 ms with GPU buffers. Eight-point updates measured 2.84 ms versus under 0.01 ms. These exclude edit computation, cold setup, drawing/GPU completion and the rest of the viewport; they are not whole-editor FPS measurements. One-million-point buffer updates also passed. Other graphics backends remain unmeasured.
+
+
+
+
+
+### Permanent viewport camera control (2026-10-23)
+
+
+
+
+
+A permanent 24px **Camera settings** icon is anchored directly above the vertex/edge/face statistics at the upper left of the modeling canvas, matching the fixed workspace-statistics control. It stays accessible when toolbar overlays or mesh statistics are hidden, and follows the hierarchy divider when resized. It has no drag handle, docking, close/visibility entry or native toolbar-overlay registration. The earlier Viewport Actions toolbar is removed; obsolete saved entries are ignored.
+
+
+
+
+
+The icon switches the existing **Tool Options** panel to camera controls: Perspective projection, FOV, automatic/manual clipping, world position and Euler rotation, and orbit distance/view size. Choosing a modeling tool restores its options. Camera edits leave document/mesh data unchanged; transform edits from locked 2D leave that lock while retaining orthographic projection. Lens/projection edits preserve entered pose. There is no new timer, idle redraw or position preference for this fixed icon.
+
+
+
+
+
+Production compilation passes with the existing CS1701 warning. The updated StudioCameraOptionsValidation passes 44 fixed-control/camera checks in a disposable Unity editor: fixed alignment/size, no native overlay registration, independent visibility, divider resizing, controller activation and existing native-camera behavior. Camera activation was called programmatically; physical pointer delivery and pixel screenshots were not verified in this pass.
+
+
+
+
+
+
+
+
+
+
+
+The modeling workspace outer perimeter uses 4px padding on all four sides (halved from 8px on 2026-10-23). Internal panel spacing, divider hit areas and saved panel widths are unchanged.
+
+
+
+
+
+
+
+
+Camera Settings includes **Reset to Defaults**. It restores Unity's native camera lens/clipping/navigation defaults, exits 2D/orthographic mode, and returns to Studio's standard grid-origin view: perspective, 10-unit orbit distance, 37-degree pitch and 38-degree yaw. The starting-view pose is shared with empty-workspace framing; ordinary framing retains the current lens. Reset leaves document and mesh data unchanged. Production compilation passes; the camera/control suite now passes 50 checks including actual native camera reset and repeated reset.
+
+
+
+
+
+### Shared component-handle preparation
+
+
+
+
+
+Studio reuses resolved component selection, source positions and the geometric handle center while the selection and mesh are unchanged, including camera-only redraws. Selection contents, mode/weld changes, mesh edits/publication, object transforms, rebuild and Undo/Redo invalidate that cache. Custom pivots, native rotation handles, captured Move/Scale and Shift-extrusion keep their existing behavior. Empty transforms/anchors remain safe targets. This does not add an idle repaint loop or change modeling topology.
+
+
+
+
+
+A bounded same-build HDRP/D3D12 probe on the Lynx Body with all 13,446 vertices selected measured handle setup at 2.38 ms median uncached versus 0.18 ms cached. Forced native Layout+Repaint measured 17.2 ms versus 9.6 ms, with camera state advanced between samples. These are native event timings, not physical pointer latency or displayed FPS. The FPS widget counts naturally requested repaints, so slow input can lower its displayed number. Actual reported slow free-drag/orbit jitter still needs working-window confirmation. The focused cache suite passed 68 assertions, including native Undo/Redo; production compilation passed with the existing CS1701 warning.
+
+
+
+
+
+### Viewport statistics display (2026-10-23)
+
+
+
+
+
+Scene/Selected statistics now show only Verts, Edges, Faces and Tris. The UV row and its counting work are removed, including UV-buffer reads and seam expansion previously done solely for the selected UV total.
+
+
+
+
+
+FPS is shown directly at the upper-right position formerly occupied by the stats button. There is no button, popup or WORKSPACE box; the compact text is click-through and follows the Tool Options/Channels boundary. It is visible by default in Modeling and can be toggled with Display > FPS Display, immediately after Orientation Gizmo. Visibility is saved as hideViewportFps in settings JSON; older profiles remain visible because the new field defaults false. The legacy showWorkspaceFps popup preference remains ignored. It hides in Animation and stops sampling when hidden. Existing natural viewport frames supply the sample; idle retains the last reading, with — FPS before a valid sample. No timer or continuous render loop is added. Production compilation passes; 23 focused counter/FPS/menu/visibility assertions pass in the disposable editor.
+
+
+
+
+
+FPS and Scene/Selected statistics use an explicit 11pt font, soft light-gray text (#D1D1D1) and a 1px dark shadow independent of the theme. Presentation is reapplied to cached styles on each draw so editor hot reload cannot retain an old size/color. Readouts bypass disabled GUI dimming and restore the GUI state afterward. No per-frame style allocations; existing row spacing and sampling behavior are unchanged.
+
+
+
+
+
+Camera Settings also offers **Navigation sensitivity**, 0.05x–4x, default 1x, shared by orbit, pan, drag zoom and mouse-wheel zoom. Lower it for fine close-up work. Existing distance scaling and pivot behavior remain in place. It is saved in the active Studio settings profile; missing entries preserve standard speed. Camera Reset to Defaults restores 1x alongside the camera pose/lens defaults. This affects Studio input only, not Unity Scene views or explicit numeric camera edits.
+
+
+
+
+
+Mesh statistics omit the Scene/Selected column headers; the four rows start directly at the top. Both statistics and FPS draw in a fixed passive state, with no hover highlight or interactive label controls. Count columns remain scene totals followed by selected totals.
+
+
+
+
+
+Camera Settings numeric readouts (position, rotation, clipping and orbit distance/view size) display up to four decimal places. Drawing preserves full underlying camera precision; editing one vector axis preserves the other axes.
+
+
+
+
+
+### Viewport Overlay
+
+
+
+
+
+Fixed Camera settings, Viewport lighting, Isolate selected and Show all icons above the component statistics share the Viewport Overlay button template: 24px targets, 16px artwork, 4px rounded corners, always-visible backgrounds at 50% alpha under the 70% overall opacity (35% effective background opacity), at rest. These are ordinary action buttons. Camera and lighting open Tool Options; Isolate selected and Show all control temporary viewport visibility. They have no persistent selected/toggled appearance or click-to-close behavior. Theme Header and Button colors provide resting and hover backgrounds; icons retain 70% opacity. Pointer enter/leave requests a one-off redraw. This category is independent of toolbar overlays and remains visible when toolbars or statistics are hidden. The four targets have 4px gaps, in Camera, Lighting, Isolate selected, Show all order. Isolate selected is a toggle, also available under Select with default Shift+W; press again to Show all. It is disabled without a selection only when isolation is inactive. Custom bindings and explicit unassignment remain authoritative. Object mode retains selected objects/branches; Vertex mode retains faces directly touching selected vertices, with their boundary vertices/edges; it does not flood the connected island. Current weld-selection semantics determine the selected logical vertices. Edge mode retains selected edges without faces; Face mode retains selected faces. All three support multiple meshes. Show all restores component previews and reveals all workspace objects. Isolation changes no authored mesh topology and is not saved in the workspace. Hidden components are excluded from ordinary component picking, marquee and paint selection; GPU vertex markers and cached authored-wire drawing use visibility subsets. Native transforms update isolated face previews. Topology/live mesh tools restore full components on the isolated objects before publishing new component identities; scene rebuild/Undo reconstruction clears temporary isolation.
+
+
+
+
+
+Camera and lighting settings open mutually exclusive views in the existing Tool Options area. Viewport Lighting Settings is accessed through the fixed lighting icon. Render replaces the former Lighting menu and contains only Bake Vertex AO (Red); Camera Lighting/Studio Lights, Shadows and Ground Plane are in Viewport Lighting Settings. The separate Viewport Lighting window has been removed. Existing exposure, key/fill lights, shadows, ground and reset settings still edit/persist workspace lighting with the existing preview/Undo path. Activating a modeling tool returns Tool Options to that tool. The AO command retains its previous shortcut identity under the renamed Render category.
+
+
+
+
+
+The embedded options panel uses the active tool's name as its sole header (Move Tool, Rotate Tool, Scale Tool, Selection Tool, Insert Edge Loop or Multi-Cut). Camera Settings and Viewport Lighting use their own names in the same header. Duplicate introductory titles are removed; lighting subsection labels remain. The auxiliary options window uses the same dynamic title. Display > Tool Options retains its stable panel visibility name.
+
+
+
+
+
+Viewport Shading includes a **Backface culling** cube-icon toggle (enabled by default). On hides back-facing shaded surfaces; off draws both sides with black back faces. It also controls transparent X-ray surfaces; wire and selection overlays retain their existing behavior. The preference is saved as Model.BackfaceCulling in Studio settings. Native lit/textured material previews use cached, disposable material clones, preserving the source assets and shader appearance. Studio preview and neutral materials use the same culling choice. Supported material cull properties cover Studio, built-in, URP and HDRP naming; shaders that hard-code their raster culling cannot be overridden through a material property. This is viewport display only and does not change topology, picking or mesh/document Undo.
+
+
+
+
+
+### Live component selection painting
+
+
+
+
+
+In Vertex, Edge or Face mode, hold **Tab + left mouse button** and drag over the active mesh to add crossed components live. **Ctrl+Tab + left drag** removes crossed components (the action modifier maps to Cmd on macOS). Tab alone arms the gesture and never changes selection. Release the mouse to complete one Undo stroke; keep Tab held to start another drag. Escape restores the source selection. Releasing Tab, leaving the canvas, losing focus or changing tools safely finishes/disarms the stroke. While the paint key remains held in the focused viewport, marquee input stays suppressed even if the stroke has disarmed or cannot start; a valid canvas drag can rearm painting. Key-up or focus loss releases that reservation. Escape cancels the stroke and keeps marquee suppressed until key-up. Existing click-pick tolerance and through-selection/occlusion rules apply; object mode is excluded. Configurable hold shortcuts appear under Select; personal profiles are preserved.
+
+
+
+
+
+Painting captures mouse input in BeforeSceneGUI before native handles or marquee can claim it. Captured positions stay in camera-canvas coordinates from the native canvas IMGUI entry through repaint; direct camera projection/rays avoid Unity GUIClip conversions between callbacks. The initial click and queued drag endpoints survive multiple events before a frame. A reusable queue holds up to 16 points with at most 32 hit samples per repaint, sharing per-frame occluders and stroke-captured vertex positions. A cached screen-space bounds tree limits paint/armed-hover queries to nearby components and reuses identical-point results; geometry/camera/mode changes invalidate it. Selection-only changes retain geometry/GPU position buffers and refresh only selection/hover layers. Very large/high-frequency jumps therefore have coarser interpolation. No-op strokes add no history; selection-only Undo/Redo avoids rebuilding the scene or editing mesh buffers. No idle rendering loop is added.
+
+
+
+
+
+Retained root key interception reserves Tab before native focus traversal. Actual pointer boundaries are used instead of broadcast panel mouse moves, and pointer retargeting during IMGUI capture is not treated as leaving the window. The native input fixture checks camera-projected clicked and dragged target IDs across all three component modes. Tab-armed movement and active painting retain yellow hover feedback, including over selected components; hover draws above selection during painting.
+
+
+
+
+
+### Shaded-wireframe depth occlusion
+
+
+
+
+
+Object wires, including unselected dark outlines, correct their expanded screen-space stroke depth per fragment only where the real incident render triangle covers that pixel. Depth is no longer extrapolated from unbounded adjacent-face planes at the stroke vertices, which could reveal hidden edges through distant faces and flicker during camera motion. Authored render triangles supply adjacency; editable quad/n-gon boundaries still determine the visible edges, so render diagonals are not introduced. The small view-ray bias is reduced from .001 to .00001 of eye distance on GPU and native fallback paths. X-ray retains its explicit through-surface behavior.
+
+
+
+
+
+The GPU batch, geometry buffers and camera-only no-upload behavior remain. Triangle adjacency is prepared when the wire cache is built; no per-frame CPU visibility scan, mesh readback or new render loop is added. The fragment shader writes corrected depth, so this is a rendering correctness change, not a measured FPS improvement. Render regression covers distant/near foreground covers, camera jitter, perspective/orthographic, own-surface wire visibility and authored quad/concave polygon triangles.
+
+
+
+
+
+Marquee selection includes overlapping geometry rather than requiring an edge midpoint or face center inside the rectangle. Any clipped edge portion or authored face triangle can select that component; a rectangle entirely inside a large face works too. Vertex selection also includes partial overlap of the visible marker footprint. Object marquee uses surface overlap, so an object can be selected without enclosing one of its vertices. The same rule applies in both drag directions and perspective/orthographic views. Shift-add, Ctrl/Cmd-subtract, Through Selection, existing selection Undo and leaving-canvas cancellation remain. Visibility rays are sampled within the clipped overlap (per intersected face triangle), rather than from a potentially distant component center. This retains sampled CPU visibility, not pixel-perfect GPU coverage. Straight-line drags use a one-pixel minimum strip.
+
+
+
+
+
+Anchor viewport gizmos follow Preferences > Handle size and the existing increase/decrease handle-size shortcuts. The ring, three crosshair axes and click-pick radius start at a 2.5x base size before applying the same preference multiplier as modeling handles. The star arms extend 60% farther relative to the ring. Ring and arm strokes use Unity antialiased polylines at 1.5 UI-point width, including when viewport MSAA is off; cached circle/point buffers are reused. The preference value itself is unchanged. The existing settings JSON stores this preference. No additional setting, mesh change or redraw loop is introduced.
+
+
+
+
+
+Only the positive anchor Z arm uses Unity's Z-axis color (blue by default). Negative Z, the ring and X/Y arms are orange, with lighter orange for selection. Their antialiased strokes are 2 UI points wide. The hierarchy anchor icon uses a native 16-pixel raster, thin pixel-aligned opaque muted-orange arms, an antialiased ring, and a deep-blue left arm. All hierarchy items use fixed 16-point icon slots and a gap measured as two spaces in the current label font. Anchor marker RGB colors are darkened 15%, preserving opacity and Unity axis directions.
+
+
+
+
+
+Modeling Move, Rotate, Scale and pivot gizmos receive localized GPU edge-adaptive antialiasing after native handle drawing. It filters a bounded overlay region around the handle, preserving native layout/picking/dragging and the scene depth buffer. Two grow-only reusable textures handle the small crop; there is no full-scene rerender, CPU pixel readback, idle loop or viewport AA preference change. Overlay strokes within that same small region are also smoothed. Unsupported copy/shader or already-multisampled targets retain the native path. This is independent of the scene camera FXAA/SMAA setting. No end-to-end FPS improvement is claimed.
+
+
+
+
+
+
+
+
+### Sequential flat bevel requirement (2026-10-25)
+
+
+
+
+
+Reported workflow: bevel two connected cube edges with Subdivisions 0, commit, then bevel BOTH the remaining original cube edge and the diagonal join produced by the first pass. The former single-third-edge fixture was not the reported selection. Both the small separate corner patch and its nearly doubled divider were rejected. The previous terminal-patch repair passed its synthetic cube-family fixtures but failed user verification; those results do not establish the reported defect was fixed.
+
+
+
+
+
+Eligible flat patches now use the cached local clipping construction documented below and in SDK BEVEL_ENGINE.md. The earlier StudioMeshCuts.BevelTerminations.cs implementation remains only in the compatibility path, deriving stationary terminal intersections and width limits from supporting planes. Its fixed expected face counts are legacy regression checks, not a universal bevel specification. The initial clipping implementation also failed user verification. Shared miter constraints and the corrected junction-reference selection now address that topology; User confirmed the corrected bevel works on 2026-10-25. Do not add screenshot-specific topology exceptions or claim full industry parity.
+
+
+
+
+
+Studio themed scrollbars use continuous horizontal/vertical tracks with no reserved arrow-button blocks. Thumbs reach both track ends; tracks and thumb hover/drag states follow the active palette. Native scroll-wheel, page-click and thumb controls are retained.
+
+
+
+
+
+Studio preview parent materials are Editor/Resources/MashBoxStudio_Default.mat (GUID 410de6c3c565a5b459045246f998f390) and MashBoxStudio_XRay.mat (GUID 0d08d9ca74c59e940a654b9ca078d478). The default parent uses Shaders/HDRP/Lit/MashBoxStudio/MashBoxStudio_Default_Modeling_Shader.shadergraph (GUID 409bba92b9fbb904cbfd7cf58b9531a6), initially matte gray with zero metallic/smoothness remaps. X-ray uses MashBox/Studio/Preview from SDK Shaders/HDRP/Lit/MashBoxStudio/AnimationStudioPreview.shader, beside the default Shader Graph, initially white tint and .22 opacity with transparent blending and depth writes off. Studio creates transient native Material Variants parented to these assets; existing children inherit parent color/surface/opacity changes. Viewport culling, lighting mode and per-source texture/array inputs remain child overrides. X-ray tint is inherited from its parent rather than baked from source material tint. The assets and original mesh materials are never modified by preview drawing. Default applies to HDRP Studio Lights with textures off; camera-light/unlit paths remain unchanged. Missing templates retain the previous shader/pipeline fallback. The modeling graph now exposes ordinary _BaseMap. Checker Map uses its own shader.
+
+
+
+
+
+
+
+
+Flat bevel construction (2026-10-25): eligible zero-subdivision local patches now use cached supporting-halfspace clipping with shared edge-cut identities and balanced 3D planes. No node system was introduced. Source-face topology and attribute publication remain separate from render triangulation. Native shade/wire and full-controller viewport-cache refresh checks pass alongside oblique/order/repeated and existing regression matrices. Rounded/unsupported domains retain the existing path; arbitrary post-collision 3D bevel continuation remains unfinished. The initial clipping attempt failed user verification; the corrected shared miter constraints now pass the independent junction reference graph. User confirmed the corrected bevel works on 2026-10-25. See BEVEL_ENGINE.md, Cached local clipping for flat bevels, for exact scope, sources and validation.
+
+
+
+
+
+
+
+
+
+
+
+Shared flat-bevel miters (2026-10-25): corrected the two-edge second pass (remaining cube edge plus generated diagonal). Captured plane-gradient constraints prevent the extra junction cuts before topology is built. Native Studio rendering and 360 oblique/width/order tests match an independent four-sided junction reference graph (14 vertices, 10 faces). Previous single-third-edge fixture results did not reproduce the selection. No node system or external runtime dependency was added. General rounded/post-event 3D limitations remain, and the user confirmed the corrected bevel works on 2026-10-25. See BEVEL_ENGINE.md for exact scope and validation.
+
+
+
+
+
+Subdivided bevels and width (2026-10-26): eligible rounded strips now share the flat clipping junction topology and one sampled cross-section between adjacent strips. Both subdivision orders and Grid/Cap pass 890 geometry/distance and 264 rendered checks. Width offset now uses mesh-local model units, minimum zero with no maximum of 1; the former shortest-edge fraction is removed. Existing saved numbers are retained and therefore have a different physical meaning. Supporting-patch/interface limits and unsupported compatibility-path limits still apply. New source: Editor/StudioMeshCuts.BevelClipProfiles.cs. See BEVEL_ENGINE.md for construction, scope and verification.
+
+
+
+
+
+Vertex and edge hover/click/paint picking uses an 18-screen-point radius (formerly 12), without enlarging rendered dots or lines. Nearest-component ranking and visibility tests remain in effect. The paint bounds index shares the same tolerance; face ray picking and marquee bounds are unchanged.
+
+
+
+
+
+Object, Vertex, Edge and Face modes can be chosen before selecting an object, including in empty workspaces and on protected targets. A viewport mode command immediately acquires the mesh under the starting cursor, even when choosing the current mode again. No Shift is required to retain other acquired meshes. Selected meshes share one Object/Vertex/Edge/Face mode. Changing mode applies to every selected mesh, including the hovered mesh acquired by the command. Repeating the same mode preserves per-mesh component IDs; changing type clears incompatible IDs. Modified component clicks use the shared mode. A plain viewport click on a different mesh in Vertex/Edge/Face mode enters Object mode, clears component selections and selects only that mesh in one Undo action. Clicking the active mesh still picks components. Hover and mode-command object acquisition remain available; modified clicks, marquee, Select All, Invert, Deselect, statistics and Frame retain multi-object component editing. Shared Move/Rotate/Scale and Delete edit components across meshes. Bevel, Extrude and Soften keep captured per-target previews and grouped Undo; a failed target rolls back the preview cohort. Merge to Center immediately commits a captured per-mesh transaction; Target Weld edits the picked mesh. Shift-handle extrusion also supports compatible targets together. Merge stays within each mesh. Existing geometry/bind-pose/blend-shape restrictions remain. UV editing, cutting, paint strokes and other object-specific workflows still use their active target. GPU marker/overlay and handle-frame caches are retained per mesh, with no idle redraw loop.
+
+
+
+
+
+
+
+
+Toolbar defaults (2026-10-26): all Studio toolbars are on when no toolbar preferences have been saved, including when Unity restores a hidden native layout. Existing saved toolbar visibility, docking and disabled-canvas choices are preserved. Defaults apply after toolbar discovery through the existing registry; no profile reset is required.
+
+
+
+
+
+
+
+
+Pivot edit uses a solid triangular center handle at 1.5 times its original size to distinguish it from the ordinary Move tool's square center. Existing center dragging, snapping, sizing and axis/plane controls are retained.
+
+
+
+
+
+Hierarchy dragging uses Unity-style placement: drop on a row to make the selected roots children; drop on its top/bottom insertion guide to reorder siblings; move left at a gap to outdent to an ancestor level. The guide indentation shows the target level. Dropping into the blank area moves items to the root. Left and middle mouse drags work, and Escape cancels. Moves preserve world placement, move selected subtrees once, reject cycles/unsafe transforms, and form one Undo/Redo action. Sibling order is saved in the workspace without reindexing nodes or mesh/bone references; old workspaces retain their stored order.
+
+
+
+
+
+Create menu order: Polygon Primitives appears first, followed by the Vehicle Part submenu in its own section with separators above and below. The existing separated foliage section and empty-transform/anchor actions follow.
+
+
+
+
+
+
+
+
+### Weld tools
+
+
+
+
+
+Edit Mesh > Target Weld (default T) enters a persistent Vertex-mode tool: click-drag a source vertex, follow the snapping line, and release over another vertex to weld to its exact fixed location. No source-object preselection is needed. Escape cancels the drag, then exits when idle; release outside cancels, and choosing a transform tool exits. Weld again without reopening the tool. It works within the picked editable static mesh.
+
+
+
+
+
+Edit Mesh > Merge to Center immediately collapses any selection of two or more geometric vertex positions to their arithmetic center, with M as its standard default. There is no distance field or floating Merge Vertices pane. On multiple meshes, it merges compatible selections within each mesh and groups Undo; it does not combine objects. A whole-mesh collapse retains one loose vertex. UV/material seams are preserved. The previous merge command identity survives for personal shortcut bindings; explicit custom assignments/unassignment and conflict handling remain respected. Generated defaults omit the removed distance/pane sensitivity entries; personal profiles are untouched.
+
+
+
+
+
+### Mesh-transform Undo refresh
+
+
+
+
+
+Undo/Redo for static mesh component Move/Rotate/Scale reuses the existing preview objects, lighting/materials, wire topology and GPU marker buffers when the document hierarchy, renderer bindings and vertex layout remain stable. Only changed meshes are uploaded and their position-dependent caches refreshed. Selection history restores IDs/modes without discarding per-mesh drawing caches. Native renderer data is explicitly refreshed; CPU restoration alone is insufficient. Structural/topology actions, pending previews, changed layouts, unreadable/skinned meshes and live blend shapes retain the full rebuild path. Grouped StudioUndo history, its configured action budget and unrelated Unity history are preserved.
+
+
+### Edge-loop placement controls
+
+
+
+
+
+Insert Edge Loop (default Ctrl/Cmd+Shift+X) keeps its description in Tool Options, with no duplicate viewport instruction overlay. It offers a Loop count slider in Tool Options (1–64, default 1). Ctrl/Cmd + wheel over the viewport increases/decreases that count, including during a drag, without zooming. The count persists in Studio settings. Drag positions the loop group; Shift snaps its anchor to tenths. Middle-click a face or its strip to insert centered, evenly spaced loops immediately. A single loop uses edge midpoints; multiple loops use evenly spaced fractions across the strip. Placement is one grouped Undo action.
+
+
+
+
+
+Unapplied cut previews and pending Multi-Cut paths are blue, with warm yellow hover markers; committed cuts use normal mesh wire/selection colors. Ctrl/Cmd loop mode within Multi-Cut shares the count. Existing quad-strip traversal, active static-mesh restrictions, boundary/nonmanifold stops, source-topology capture, cancellation and attribute preservation remain. Count edits change preview data only and add no mesh Undo or scene rebuild. There is no continuous idle redraw loop.
+
+
+
+
+
+### Custom toolbar overlays
+
+
+
+
+
+Open **Preferences > Toolbars**, or **Display > Toolbars > Customize Toolbars…** to select that tab. Create named custom toolbars in the left column. The right side shows the selected toolbar's ordered contents and a searchable categorized function list. Use + or drag a function into the contents; drag existing rows or use the arrow buttons to reorder, and × to remove. Names and contents save automatically in Layouts/ToolbarOverlays.json. Deleting a custom toolbar removes that toolbar; built-in toolbars are retained.
+
+
+
+
+
+The function list comes from the same menu declarations as Studio commands, including disabled functions, UI-only actions and available dynamic vehicle-part entries. Native Studio toolbar controls are discovered separately and reused directly, including dropdowns/toggles such as orientation, textures and backface culling. Camera/lighting options are also available. Hold gestures and individual settings fields are not standalone commands. Missing functions retain their stored keys and display a disabled warning icon with an unavailable tooltip until they are available again.
+
+
+
+
+
+These are native dockable/floating ToolbarOverlay instances, separate from the permanent Viewport Overlay camera/lighting icons. They participate in existing Display > Toolbars visibility, docking, modeling-mode hiding and saved layout restoration. Definitions are in Studio.CustomToolbars; positions/visibility remain in Studio.Toolbars, both routed through StudioPreferenceStore into Layouts/ToolbarOverlays.json. Stable IDs survive renaming and contents edits; general settings import/export and hotkeys remain independent of the toolbar file. Buttons resolve current context again immediately before execution and use the existing command callbacks/Undo/tool restrictions. No idle repaint loop or scene rebuild is added. Dynamic overlay registration uses a narrowly scoped Unity Overlay.Initialize metadata bridge, validated on Unity 6000.4.12f1; other native API versions are not claimed.
+
+
+
+
+
+Built-in and custom command toolbar buttons are icon-only. Tooltips show the action name, current assigned shortcut and a short description on the next line, without a menu/category path. Customization lists retain searchable paths and icon previews. Unity built-in icons are preferred; existing Studio selection artwork is reused. Plane, Quad and Cylinder have distinct antialiased 24px silhouette icons, while Cube and Sphere use Unity artwork. Custom orientation dropdowns show only their icon/arrow and retain the current space in the tooltip; built-in orientation controls keep their labels. Icons share the existing cached 16/24px toolbar sizing and resource cleanup.
+
+
+
+
+
+Toolbar layout persistence: built-in and custom toolbar dock side, dock section/order, horizontal/vertical layout, floating position, collapsed/visible state and canvas visibility autosave to Studio.Toolbars in Layouts/ToolbarOverlays.json. Names/function order remain in Studio.CustomToolbars in that same independent file. Native docking/reordering and state events coalesce into one save after the native operation, so unchanged bounds do not prevent a save. Loading cancels pending saves and applies layouts without rewriting intermediate states. Window close flushes the current settings. No new preference or reset is required. Fresh-process restoration is verified on Unity 6000.4.12f1.
+
+
+
+
+
+Primitive creation menu catalogs reuse parsed vehicle-rule templates until the rules asset revision or project assets change. This avoids repeated SerializedObject rule traversal during toolbar/menu refresh without caching command execution context. Primitive preview-scene rebuilding remains unchanged; isolated timings do not establish the full reported working-scene delay is resolved.
+
+
+
+
+
+New custom toolbars append to the left-aligned section of the top dock. They never default to the right dock or right-aligned/trailing top section. Saved user positions remain authoritative; creating, renaming or changing contents does not relocate existing toolbars or reset their layout.
+
+
+
+
+
+Deleting a custom toolbar asks for confirmation with its name and Delete/Cancel buttons. Cancel leaves the toolbar and saved configuration unchanged.
+
+
+
+
+
+Studio action icons now use neutral gray geometry plus one amber action accent, consistent 1.6px master strokes and reduced internal detail. Mesh Tools symbols were simplified into compact flat silhouettes/outlines; all 18 Select-menu actions have dedicated artwork, including Contiguous Path, Hide/Unhide, Grow/Shrink, Isolate and conversion/perimeter variants. Convert Selection to Objects has its own action symbol rather than aliasing the Object mode icon. Object/Vertex/Edge/Face selection-mode icons and the user-circled primitive and shading/lighting/texture/checker artwork remain unchanged. Code-native auxiliary menu symbols share the single accent. Light skin uses dark neutral geometry and a darker amber; symbol cache keys distinguish skins. Existing antialiasing, cached texture ownership, command identities and menu/toolbar/radial reuse remain.
+
+
+
+
+
+Built-in **Mesh Tools** and **Mesh Display** icon toolbars default on, horizontal and left-aligned at the top. Mesh Tools contains Combine Meshes, Duplicate Face, Duplicate Face as New Object, Detach Face, Split Selection, Bridge Edges, Extrude, Fill Hole, Poke, Bevel, Circularize, Collapse Edge Ring, Weld, Merge to Center, Target Weld, Insert Edge Loop, Bisect, Fracture, Multi-Cut and both current Deform actions, in its established toolbar order. Mesh Display contains Soften/Harden/Flip Normals/Soften options and X-ray. They share the same menu command execution/availability and toolbar icons/persistence as custom toolbars, and appear under Display > Toolbars. Existing settings without the new toolbar IDs receive these defaults without moving other toolbars; subsequently saved visibility and positions remain authoritative, including a disabled overlay canvas. Viewport Shading stays separate.
+
+
+
+
+
+### Skinner export lighting
+
+
+
+
+
+Skinner's Save FBX and Save FBX As set every exported skinned renderer's light-probe Anchor Override to the imported model root. The policy is stored in the FBX's Unity `.meta` file and reapplied on reimport by the SDK. Keep that metadata when transferring the asset between Unity projects. Studio's prefab export also sets the anchor to its prefab root.
+
+
+
+
+
+### Scene background color
+
+
+
+
+
+Themes includes an independent **Scene background** color picker, saved in the settings profile. It defaults to the existing Modeling gray (#474747); older profiles inherit that default. Changes apply immediately, without changing the chosen UI palette or Unity's normal Scene view. Restore Theme Defaults restores this color too. The shared Studio background path uses it in other workspaces; those paths previously used a separate .35 gray. HDRP clear-color updates are cached independently of the lighting/AA configuration.
+
+
+
+
+
+## Modeling toolbar arrangement and icons (2026-10-27)
+
+
+
+
+
+The built-in Polygon Primitives toolbar contains Cube, Sphere, Plane, Quad and Cylinder. Fresh/default top order is Grid, orientation, Viewport Shading, Polygon Primitives, Mesh Tools, Mesh Display, with transform and selection controls at the left. Mesh Tools comes before Mesh Display. Existing saved layouts remain authoritative; **Display > Toolbars > Restore Default Layout** explicitly applies this built-in arrangement. Custom definitions and positions are retained.
+
+
+
+
+
+Toolbar definitions, visibility/collapse and placement/order now share **<Documents>/MashBoxStudio/Layouts/ToolbarOverlays.json**, independent of general settings and hotkeys. Existing legacy general-profile entries are used as a read-only migration fallback until the first toolbar save creates the file; the combined file then takes precedence. Reading does not rewrite personal profiles, and general settings exports exclude deprecated toolbar entries. Profiles displays the path.
+
+
+
+
+
+Main menu actions/submenu branches use cached icons except Display, which retains checkmarks. Icons match their semantic toolbar actions; geometry-tool symbols show extrusion, chamfering, merge/weld targets, edge loops and cuts rather than unrelated stock component icons. Vehicle parts share art for now. Unity's stock Shaded, Wireframe and Shaded Wireframe artwork is retained by explicit user preference. Recalculate Normals controls are retired, including legacy custom-button display, while internal geometry normal updates remain.
+
+
+
+
+
+Wire color follows the viewport background with a dark-first policy. Unselected wires retain their original dark blue-gray on the default gray and lighter backgrounds. On very dark backgrounds they lift only enough for a restrained 1.5:1 background contrast; they do not use a bright inverse color. Selected and hover wire colors preserve their semantic tint where possible, adjusting only below 3:1 contrast. Derived colors are cached by background/tint; color changes reuse existing wire geometry and GPU position/index buffers. The GPU batch and native fallback share the colors.
+
+
+
+
+
+Shift+W is the standard default for Select > Isolate Selected. The shared menu, shortcut, custom-toolbar command and permanent viewport action toggle the same temporary state. Existing plain-W Move bindings that tolerate Shift yield to this exact chord; explicitly assigned Shift+W bindings elsewhere suppress the new default. Personal hotkey files are not rewritten to install it.
+
+
+
+
+
+Mesh Display toolbar has four controls: Soften, Harden, Soften options and X-ray. Its duplicate Shaded/Wireframe/Shaded Wireframe buttons were removed; the two existing Viewport Shading toggles already provide all three modes. Shading menu commands, shortcuts and optional custom buttons remain available. Saved toolbar IDs/positions are retained.
+
+
+
+
+
+The Material textures toggle uses Unity's material artwork (texture-image fallback), not a settings gear; the same image is used in custom toolbar/control previews. Its display-toggle behavior and saved state are unchanged.
+
+
+
+
+
+Move and Scale both expose XY/XZ/YZ plane squares. Scale planes scale the chosen pair uniformly while preserving the third axis; Ctrl/Cmd uses the scale snapping increment. Plane squares are outlined at rest and solid on hover or during capture. Single/multi-component editing shares these handles and the existing captured-source transform history.
+
+
+
+
+
+### Component pivot Undo ordering
+
+
+
+
+
+Custom component pivot state restores at its actual Undo/Redo step. Restoring selection history redraws the selection without resetting the native-restored pivot; temporary context queries do not invalidate stored state. Genuine selection changes still invalidate a pivot belonging to a different selection, with its state recorded in the same selection Undo action. Shift handle extrusion carries the custom pivot to its new cap/rim selection, translating it for Move or rotating its orientation for Rotate. Document, mesh and carried pivot are captured together in one extrusion Undo snapshot. Pivot state remains session-only; model geometry and saved object pivots are unchanged by component-pivot edits.
+
+
+
+
+
+Invert Selection defaults to Ctrl/Cmd+I through the shared command registry. Custom assignments, conflicts and explicit unassignment remain authoritative; generated Defaults/Hotkeys.json is separate from the last-loaded personal hotkey profile.
+
+
+
+
+
+With welded editing enabled, Invert Selection complements logical vertices and edges across coincident UV/hard-normal render seams, so all copies of the original component are deselected. Unwelded editing uses raw component indices. Inversion remains per selected mesh, respects component isolation and shares one selection Undo action.
+
+
+
+
+
+### Lock pivot
+
+
+
+
+
+Move, Rotate and Scale Tool Options share a **Lock pivot** checkbox, off by default. It holds the current tool pivot in world space through Undo/Redo, selection changes, component transforms and topology rebuilds. Deliberate Edit Pivot moves/alignment still update the locked pose. World orientation remains World; Object/Component handles use the held orientation. Object and component handles share the lock, including multiple component targets. A Move handle follows its active drag and returns to the held point when released; object displacement remains incremental. Unlocking restores normal pivot behavior.
+
+
+
+
+
+The enabled preference is stored through StudioPreferenceStore (`Model.LockPivot`); the world pose is session-only and is freshly captured for another document/editor session. It is not written into portable settings or workspaces and is not changed by native geometry history. The old button/menu action that ends Edit Pivot is now labeled **Finish Pivot Edit**, retaining its existing command identity and shortcut. It does not toggle this new lock.
+
+
+
+
+
+Extrude includes a live **Inset** boundary offset: positive moves outward, negative inward; Normal distance independently sets height. Zero-height inset is supported, and both-zero restores the source. Keep Faces Together offsets planar region boundaries, including holes; turn it off for independent faces. Connected curved boundaries use shared local surface-tangent offsets, allowing a selected curved band to narrow while keeping its faces connected. Degenerate or unstable surface corners still reject; inset-zero extrusion keeps existing compatibility. Open boundary edge chains offset within adjacent source face planes. Planar face offsets reuse the vendored straight-skeleton kernel; curved loops cache local conormal/tangent trajectories; live scrubs retain topology/index buffers. Collapse/split limits or cap reversal report an error rather than silently clamping. Wall UV height includes the inset displacement. Apply/Execute, grouped Undo, cancellation, attributes and multi-target editing use existing infrastructure. Inset defaults to zero; operation values reset when the tool closes and reopens. Shift-handle extrusion keeps its existing transform-driven behavior.
+
+
+
+
+
+### Edit Mesh > Edit Edge Flow
+
+
+
+
+
+Select one or more authored polygon edges on editable static meshes, then choose **Edit Mesh > Edit Edge Flow…**. The shared ToolChannelPane exposes **Influence** (−1–1, default .5) and **Iterations** (1–64, default 4), live preview, Apply/Execute and cancellation. It automatically appears under Edit Mesh in shortcut Preferences and custom-toolbar command discovery; its initial shortcut is unassigned. Multiple editable meshes and shared instances use the existing multi-component transaction path.
+
+
+
+
+
+The mesh operator fits across selected edges using cubic Hermite interpolation from fixed surrounding tangent segments. Coplanar supports give a flat target; convex or concave profiles can move outward or inward. Displacement is perpendicular to the selected edge direction, preserving its longitudinal extent instead of pinching its endpoints inward. Only selected vertices and joined seam aliases move; all unselected supports stay exact. Open multi-edge endpoints and branches remain fixed; a lone selected edge can adjust both ends. Two manifold incident faces are needed for a transverse stencil. Unsupported/boundary vertices stay unchanged instead of falling back to along-edge shrinkage. Neighbor continuation prefers topologically opposite edges, then deterministic forward-boundary candidates with equal-angle ties averaged. Topology, UV0–7, colors, IDs and materials remain unchanged. Affected-triangle collapse/inversion is rejected; global intersections/topology repair are not solved. Cached source fit targets blend with amount = sign(Influence) × (1 - (1 - abs(Influence))^Iterations), with O(vertex count + affected triangles) reevaluation and no accumulated deformation. Negative mesh-tool Influence mirrors the positive fit displacement for concave shaping; zero is unchanged. Signed strength remains bounded at high iteration counts. Standalone and Bevel controls share this range, while the separate public array relaxation helper keeps its 0–1 range.
+
+
+
+
+
+**Bevel** additionally has an **Edge Flow** checkbox, **off by default**. Enabling it reveals independent Influence/Iterations controls and smooths the generated selected rails using the same implementation. Original stationary source points remain fixed. Disabling it restores the raw bevel output, including normals; the default wavefront/clipping construction and its existing topology limits remain unchanged. Flow changes are evaluated from the immutable bevel result, never accumulated back into its construction cache.
+
+
+
+
+
+Reusable array API in `Editor/StudioEdgeFlow.cs`:
+
+
+
+
+
+```csharp
+
+
+Vector3[] smooth = StudioEdgeFlow.Smooth(points, influence: .5f, iterations: 4, closed: false);
+
+
+```
+
+
+
+
+
+This returns a new array of the same length without modifying the input. Open endpoints are exact; zero influence/iterations are exact no-ops. It uses simultaneous, source-arc-length-weighted Laplacian half-steps, two reusable iteration buffers and double intermediate arithmetic. Complexity is O(point count × iterations), with O(point count) storage and no allocations inside an iteration. Closed paths can use either unique points or a repeated endpoint. No resampling/subdivision is added. Standalone mesh previews reuse a captured adjacency plan and existing mesh publication/normal-group handling, StudioUndo, ownership, dirty redraw and cancellation infrastructure. No node system, extra idle loop or compute-shader dispatch was introduced.
+
+
+
+
+
+
+
+
+### Rounded three-edge bevel transitions (2026-10-27)
+
+
+
+
+
+Rounded profile/corner revision (2026-10-27): shared rational conic strip profiles and their analytic derivatives remain. Compatible three-sided Grid junctions now sample a rational quadratic triangular patch, matching all three strip conic boundaries in one barycentric control net. Interior vertices follow this boundary patch instead of being projected onto a sphere, which protruded at coarse subdivisions. The compatible sphere fit supplies conic controls and a boundary check; it is not an interior-radius assertion. Even/odd Grid layouts and shared IDs are retained. Compatible higher-valence junctions keep their spherical path; skew/incompatible fans keep existing compatibility construction. Boundary normals retain the strip values; interior normals use shared face sums. Flat/cap topology and width semantics are unchanged. This is a standard rational triangular patch, not a claim to reproduce any external application implementation: see [A Subdivision Scheme for Rational Triangular Bezier Surfaces](https://jcst.ict.ac.cn/article/id/356) for the established patch representation. Bevel Edge Flow skips its position postprocess at zero subdivisions because the selected rail is a chamfer boundary, not an interior profile rail. Enabling it at zero leaves raw geometry/normals unchanged; its preference and behavior at positive subdivisions remain.
+
+
+
+
+
+Sources: Editor/StudioMeshCuts.Bevel.cs and StudioMeshCuts.BevelClipProfiles.cs. The optional Edge Flow tool/toggle remains separate and off by default. Tests~/StudioBevelRoundedValidation.cs checks the constructed surface and actual native renders; see Tests~/README.md for scope.
+
+
+
+
+
+Mesh Display contains Soften, Harden and Soften options. View contains current viewport shading toggles and X-ray Mode. The existing Mesh Display toolbar keeps its X-ray button through the retained canonical key.
+
+
+
+
+
+**Window → Material Library** toggles an independent material-only browser, initially docked to the Modeler's right. It remembers dock side/tab or floating bounds, offers a filtered folder tree with All Materials, name/path search and adjustable native material previews. Clicks select only the library tile, without changing Unity Project/Inspector selection or opening assets. Drag a tile onto a Studio mesh or material slot to assign through the existing handler. The gear popup includes Assets and Packages independently (either or both), plus Rescan; type/tag filtering controls are intentionally absent. Project-open scanning builds a generated session index in bounded batches, while manual rescans update it after project changes. Only visible tiles request thumbnails; there is no idle preview/render loop. Preferences use StudioPreferenceStore. A non-dockable utility Modeler gets an adjacent floating library instead of changing its host mode. Native docking restoration depends on Unity's internal dock/split APIs and is verified on Unity 6000.4.
+
+
+
+
+
+Material Library pins **Standard** and **Prototyping** above All Materials. Standard references the existing Studio Default and Checker assets, regardless of the Assets/Packages scan scope. Prototyping is initially empty; its folder scaffolding lives at `Editor/Resources/MaterialLibrary/Prototyping` for future authored materials. Both pinned categories remain visible when empty or while the project tree scrolls. Original default/checker asset paths and contents are unchanged.
+
+
+
+
+
+Modeling shader naming (2026-10-27): MashBoxStudio_Default_Modeling_Shader.shadergraph is the modeling default graph. Its .meta/GUID (409bba92b9fbb904cbfd7cf58b9531a6) and graph contents were preserved during the rename. Generated shader name is MGShaders/HDRP/Lit/MashBoxStudio_Default_Modeling_Shader. Existing Default/Checkerboard materials retain their names, properties and shader bindings. Native disposable import/binding validation passes five checks; no shading behavior changed.
+
+
+
+
+
+
+
+
+### View menu and shortcut bindings (2026-10-27)
+
+
+
+
+
+View, after Edit, contains Wireframe, Shaded Wireframe, Viewport Lighting, Material Textures, Checker Map, Backface Culling and X-ray Mode. These mirror the current viewport controls and are assignable under View in shortcut Preferences. X-ray is removed from the Mesh Display menu. The two wire toggles preserve the existing return-to-shading behavior; there is no additional standalone Shaded item. Toolbar/menu/shortcut actions share the same current display state. Legacy wire command keys and the built-in X-ray ID are retained, preserving custom assignments, backtick/tilde and Alt+X. New entries are initially unassigned. Custom and built-in toolbar references keep resolving their canonical IDs. Display menu visibility controls stay excluded from shortcut discovery.
+
+
+
+
+
+Material Library defaults to the **right** when no placement is saved; existing saved placements are retained. Its minimum zoom switches to compact icon-and-name list rows, with horizontal scrolling for long names. Raising zoom restores thumbnails. List mode uses metadata/native icons without large-preview requests and is remembered through the existing thumbnail preference.
+
+
+
+
+
+Material Library uses one compact search row with Rescan and the options gear. The duplicate Materials caption and custom lock/three-dot buttons are removed; Inspector locking is available in options.
+
+
+
+
+
+Wireframe-only visibility (2026-10-27): surface suppression is tracked separately from logical renderer visibility. Wires and picking remain eligible while surfaces are off; preexisting hidden states and ancestor/component isolation survive shading switches and Show All. Captured flags restore on display-cache teardown. Existing GPU edge rendering is reused without a depth/surface prepass, mesh changes or idle work.
+
+
+
+
+
+Command tooltip descriptions (2026-10-27) are shared by built-in Mesh Tools/Mesh Display/Polygon Primitives and custom command buttons. Shortcut changes refresh tooltip labels through existing lifecycle events. Missing actions retain a leaf-name/unavailable explanation; embedded native controls keep their control-specific hints. No button contents, bindings or action behavior changed.
+
+
+
+
+
+
+
+
+### Grow and Shrink Selection
+
+
+
+
+
+Select > Grow Selection expands selected vertices, edges or faces by one connected ring; Shrink Selection removes the boundary adjacent to unselected components. Defaults: plain period (.) to grow and plain comma (,) to shrink, without Shift or other modifiers. Bindings are assignable under Select and preserve custom overrides/conflict handling. Vertex growth follows authored polygon edges, edges connect through vertices, and faces connect through shared vertices, including corner-touching faces. Face mode therefore expands a center face to all nine faces of a 3x3 quad block, then to 5x5, and shrinks using the same square neighborhood. Welded seam aliases are treated together; unwelded seams remain separate. Isolation limits eligible components. Multiple component-editing targets share one selection Undo/Redo action; geometry and render triangulation stay unchanged. Object mode and empty selections disable the commands. A fully selected closed component set is unchanged by Shrink.
+
+
+
+
+
+Modeling/checker separation (2026-10-27): MashBoxStudio_Default_Modeling_Shader contains BaseColor × BaseMap, Metallic and Smoothness, with no checker properties/nodes. MashBoxStudio_Default.mat retains its shader GUID. MashBoxStudio_Checkerboard.mat instead uses MashBoxStudio_Default_Modeling_CheckerMap_Shader (f495d7739232e7b4b96ac1ee1dbbceb2), retaining its existing texture/material identity. Camera/unlit previews sample the dedicated _CheckerboardMap directly; Studio Lights uses that graph. Neutral shading and the separate prototype graph are unchanged. No extra preview shader controls were introduced.
+
+
+
+
+
+### Dynamic Checker Map tile labels (2026-10-28)
+
+
+
+
+
+MashBoxStudio_Default_Modeling_CheckerMap_Shader now draws centered U/V tile labels entirely on the GPU. Tile numbers are floor(UV0)+1: [0,1) is U1 V1; the next horizontal tile is U2 V1, and the tile above that is U2 V2. Signed values through +/-9999 are supported; labels outside that range are omitted rather than showing an incorrect clamped value. Islands in the same tile share its label; geometry must cover the tile center to display it. Labels naturally follow UV mirroring/distortion.
+
+
+
+
+
+StudioCheckerLabels.hlsl implements original packed 5x7 bitmap glyphs with no font atlas, extra texture samples, CPU label updates, scene text objects or per-tile materials. It decodes only the character under the current fragment, skips work outside the centered label region, and fades labels below readable pixel resolution. White glyphs blend directly over the checker texture, with no background panel. Letter/number pairs are tightly spaced (U1 and V1), with a small gap only between the two groups. The 5x7 glyphs make U, V and digits more distinct. No GPU timing claim is made. Studio camera/unlit/X-ray previews reuse the same include with a local checker-only shader variant; other preview materials do not enable that variant. Studio Lights uses the checker graph directly. Source mesh materials and the ordinary modeling shader remain unchanged.
+
+
+
+
+
+The existing uvtexture.png contains baked U1 V1 lettering and is preserved unchanged. The checker material and graph texture default now use the small mipmapped, repeating StudioCheckerGrid.png, preventing baked text from repeating under the dynamic labels. The checker graph/material GUIDs remain stable.
+
+
+
+
+
+The Shader Graph is already wired; no manual changes are needed. To recreate the wiring: add a File Custom Function named StudioCheckerLabels, source StudioCheckerLabels.hlsl, Float precision, inputs UV (Vector2) and CheckerColor (Vector3), output Out (Vector3). Connect raw UV0 to UV, the existing checker texture sample RGB to CheckerColor, and Out to Fragment Base Color. Keep raw UV0 before Fraction/tiling for tile numbering. The include's pixel scale controls label size (up to 0.035 tile units per glyph pixel); label height is seven pixels, and long coordinates shrink to fit 90% of a tile. Keep this function in the fragment stage because it uses screen derivatives.
+
+
+UV channel clarification: checker labels read UV0 without writing mesh data or reserving a UV channel. UV7 remains available for game data. Minus signs appear only for genuinely negative tile coordinates; there are no decorative dashes or spaces between letters and their numbers.
+
+
+
+
+
+
+
+
+Selected-mesh vertex/edge clicks share hover’s 18-point, occlusion-aware hit area on both sides of exposed boundaries, including outside the face silhouette. Face/object picking remains exact; through-selection off still rejects genuinely occluded components.
+
+
+
+
+
+
+
+
+Component clicks over transform gizmos: releasing without a drag still performs the normal component selection or Ctrl/Cmd deselection. Native drags and snapping retain ownership. With welded editing enabled, Ctrl/Cmd-click clears selected coincident vertex/edge seam aliases together; raw topology and weld-off behavior remain unchanged.
+
+
+
+
+
+
+
+
+Material preview contract: use `_BaseColorMap` or `_BaseMap` for the shader reference of a base/albedo texture; its display label may be GridTexture. Camera/unlit previews also honor MainTexture shader metadata and the prototype `_GridTexture` compatibility alias, preserving texture tiling/offset. Studio Lights renders the authored graph directly.
+
+
+
+
+
+## Mesh-tool cursor style (2026-10-29)
+
+
+
+
+
+Active mesh-tool cursors share clean vector artwork: white surfaces, approximately .7-native-pixel RGB 64 dark-grey outlines/internal details and transparent exterior backgrounds. Color is confined to cyan tool badges. Multi-Cut retains the approved source-traced utility knife, rounded butt and aligned slot/slider. The seven other cursors retain a compact Aero-style arrow and newly drawn semantic badges: looped cube, target-weld vertices/arrow, extruded face, chamfer, bowed edge, softened corner and combined boxes. These identify existing active tools/panes, not new commands. Transform/Select and instant actions retain the native default cursor.
+
+
+
+
+
+StudioMeshToolCursors.cs rasterizes all vector masters once per used kind at 8x8 coverage samples into cached, readable 32x32 RGBA textures with Point filtering, transparent padding and hotspot (2,2). Badges fit a uniform 14-pixel longest dimension, preserving aspect ratio and centering within a common square. Target Weld uses a diagonal vertex pair/arrow for a readable footprint. The pointer and hotspot are unchanged; the arrow draws in front of the badge. All artwork fits the native 32px canvas. The rejected 64px canvas was removed because it can cause native cursor downscaling; actual OS scaling was not measured. No toolbar texture readbacks, temporary render targets, per-move generation, settings or mesh changes. Cached textures are destroyed before reload/shutdown. Multi-Cut pixels match the previously approved knife exactly (all 1,024 native pixels).
+
+
+
+
+
+Cursor assignment remains scoped to the viewport camera IMGUI container. Existing native current-view reset is retained when returning to Move/Rotate/Scale/Select; navigation, Alt, selection painting, panels and other hot controls take priority. Ctrl/Cmd temporarily shows Insert Edge Loop only before a pending Multi-Cut gesture. Input restoration/disposal clears the cursor. No global OS replacement or idle render loop.
+
+
+
+
+
+Validation (2026-10-29): current SDK Editor sources and updated StudioMeshCursorValidation fixture compile with existing warnings and the established test-only AO stand-in (AO untested). The source-generated textures were checked for dimensions, transparency, contour alpha, distinct artwork, compact bounds and grayscale bodies; source-derived vector-tool-cursors-preview.png inspected at native size. Approved Multi-Cut pixel comparison passes. Build/source-art inputs: obj/StudioControlsValidation/vector-cursors-build.rsp, vector-cursors-build.log and render-tool-art.ps1. These establish source artwork/compilation, not physical pointer/DPI appearance. The earlier 92-check native report (mesh-cursors-compact-reset.log) covers the previous artwork's routing, registered UI Toolkit styles and explicit native reset; it is not a new artwork pass. Subsequent disposable SelectionUndoProject runs exited during Unity startup before the fixture, so no fresh native/physical run is claimed. Working scene and personal profiles untouched.
+
+
+
+
+
+
+
+
+HDRP Camera Lighting now renders authored textured materials with camera-following physical key/fill lights and a neutral reflection environment, so Metallic, Smoothness and shader surface features respond. Asset preview variants inherit source material edits. Unlit/Xray and non-HDRP fallback remain diagnostic shaders. The two prototyping grid textures use High Quality compression; their source pixels/resolution and prior filtering are preserved.
+
+
+
+
+
+
+
+
+The two current prototype grid textures keep their 512×512 layouts and High Quality imports; minor lines use approximately 14–15 RGB levels of contrast against their local backgrounds for better visibility after tinting. Major divisions, backgrounds and line widths are preserved.
+
+
+
+
+
+
+
+
+Current prototype grid strokes at 512×512: Regular uses a 2px center cross and 4px minor grid; Alternating uses a 4px center cross and 4px minor grid. Both keep 4px outer borders, current colors and High Quality imports.
+
+
+
+
+
+## Camera Lighting adjustments (2026-10-29)
+
+
+
+
+
+Camera Lighting's authored HDRP material path now honors the existing document exposure, key intensity/color/elevation/azimuth and fill intensity/color controls. These controls are enabled for Camera Lighting when the physical-material backend is available; Shadows/Ground sections are hidden in Camera Lighting and shown only in Studio Lights; their saved values are retained when switching modes. The key direction is relative to the viewport camera. The fill retains its fixed camera-relative direction. Exposure offsets the material rig's EV6 baseline (positive values brighten). Default key/fill are the existing document values 1.3/.3 rather than a hardcoded 1.3/.6 white pair. Both default light colors are white; existing workspace colors are preserved until Reset Lighting. New camera-only Reflections strength (0–2, default .35) scales the neutral reflection environment independently; the old hardcoded value was 1. This addresses the fixed flat balance and lets the user tune reflective/rough materials; the exact working-scene smoky appearance remains subject to user confirmation.
+
+
+
+
+
+cameraReflectionIntensity is serialized with StudioLightingSettings in the workspace document, edited/reset through the existing EditLighting/StudioUndo path. No personal settings/hotkey file or source material is overwritten. Camera rig parameters are applied on existing invalidation, not continuously rebuilt on camera movement. Orbit updates only light rotations as before. Studio Lights calibration, Skinning/Cloth/Retopology material rigs, Painting exposure and texture-off computed neutral/unlit/Xray/non-HDRP paths are unchanged. The new camera controls affect the authored textured HDRP path; they do not redesign neutral diagnostic shading. No global contrast/postprocessing override or project-lighting change was added.
+
+
+
+
+
+Sources: StudioLightingSettings.cs, StudioModelEditor.Lighting.cs and StudioPreviewLighting.cs. Validation: actual SDK Editor sources and excluded Tests~/StudioCameraLightingControlsValidation.cs compile with existing warnings. Disposable CameraLightingControlsProject/Unity 6000.4.12f1 passes 22 native HDRP checks, including framebuffer changes from exposure, key/fill strength and reflections, camera-relative direction, source shader/assignment retention and JSON roundtrip. Report camera-lighting-controls-result.txt; log camera-lighting-controls-native.log; native default camera-lighting-controls-0.png inspected. Build/fixture inputs under host obj/StudioControlsValidation. Initial sandboxed launch stalled on licensing; only this task's verified disposable process was stopped and rerun with normal licensing/cache access. No physical slider gesture, every custom material/backend, full lighting suite or performance measurement. Working project/personal profiles preserved.
+
+
+
+
+
+Material Library grid labels are inset within thumbnail cards and use two explicitly measured lines, retaining the name prefix and adding an end ellipsis only after the second line overflows, retaining full-name/path tooltips. The left category/folder list uses a slightly lighter, theme-derived background for separation.
+
+
+
+
+
+Material Library settings include **Hide trailing _Mat**, default off. Enabling it hides the suffix in grid/list labels; asset names and full-name tooltips remain unchanged.
+
+
+
+
+
+Material Library thumbnails use flat plane previews filling the thumbnail square without the native gray border, via transient material copies; source materials and Inspector previews are not modified.
+
+
+
+
+
+Workspace file dialogs default to MashBoxStudio/Workspaces; model import/export dialogs default to Assets. Each category remembers its own last chosen folder across open/save dialogs through Studio settings. Cancel preserves the previous location; missing folders fall back to the default.
+
+
+
+
+
+Material Library plane thumbnails render at 256×256 and cache results until the source changes, avoiding enlargement of the small native thumbnail. The cache is bounded and released with the library preview resources.
+
+
+
+
+
+Prototyping library thumbnails use unlit 256×256 BaseMap thumbnails with mipmaps/trilinear filtering and the material tint/tiling. Both these thumbnails and other material-plane previews remain cached across category switches; only source changes or bounded LRU eviction regenerate them.
+
+
+
+
+
+New Subdivision modifiers default to level 1; existing modifier levels are preserved.
+
+
+
+
+
+Subdivision crease support is removed from Studio: UI, stored settings, workspace validation, edge remapping and native descriptor input. The upstream OpenSubdiv library retains its required boundary-sharpness internals.
+
+
+
+
+
+Pivot orientation editing (2026-11-02): Edit Pivot displays one combined gizmo: translation arrows/plane squares/center plus the standard native rotation rings and free-rotation control, all in the edited pivot frame. Ring drags edit orientation; translation controls retain V/C/X snapping. Geometry and children stay fixed. Choosing any ordinary tool (including Move/Rotate) finishes pivot editing, as does D/Finish Pivot Edit. Ctrl/Cmd enables rotation increment snapping. No separate pivot Move/Rotate mode, new shortcut or preference. Object/component/locked pivot orientation continues through the shared Orient and StudioUndo paths.
+
+
+
+
+
+Freeze Transforms also resets the effective object pivot orientation to world space. Rotation channels become exactly zero; the pivot offset compensates a rotated parent so its world frame remains identity. Existing geometry/child compensation and restrictions remain. A locked pivot receives the reset orientation through the shared command and Repeat Last paths. Invalid pivot positions are rejected before compensation; combined gizmo publication requires a valid value and the owning handle channel.
+
+
+
+
+
+Pivot target feedback updates immediately on modifier transitions with a stationary pointer: plain Align, Shift Position, Ctrl/Cmd Orient, Ctrl/Cmd+Shift Aim X. The target remains hovered while the label changes; existing key routing and dirty redraw are reused without polling.
+
+
+
+
+
+### Radial menu presets
+
+
+
+
+
+Open **Preferences > Radial Menus**, or **Display > Radial Menus > Customize Radial Menus…** to select that tab. Both customization tabs share the Preferences window and reuse the custom-toolbar editor: create/rename/delete presets, search the same command catalog, add/remove commands, and drag rows to reorder. The first row is at 12 o’clock and the rest follow clockwise. **Assign Shortcut…** opens the preset’s entry in Preferences > Shortcuts > Radial Menus. Every preset has a stable, independently assignable keyboard or mouse shortcut and a constant command list; object/component mode does not choose another preset. Each preset saves immediately to its own JSON file under <Documents>/MashBoxStudio/RadialMenus/Presets; generated factory copies live under RadialMenus/Defaults. Bindings remain in the independently loaded hotkey profile.
+
+
+
+
+
+Components and Orientation retain their original shortcut identities and defaults (including the shared Apply Cut binding). Transform, Pivot, Selection, UV and UV Sets are also editable default presets. New presets start unassigned. Existing custom bindings and explicit unassignment are preserved. Initial setup/migration creates the preset files; later edits write only the individual changed preset files and ordering manifest. Unknown command keys are retained and shown unavailable.
+
+
+
+
+
+Only a visible button is a hit target. Compact 24-point buttons have gaps, and directional wedges never activate an item. Submenus open after hovering the same button for 250 ms; leaving the button cancels that delay. Hold the assigned mouse/key shortcut, move onto a button and release to run it; releasing in a gap cancels. Submenus can open on a 250 ms hover without clicking; releasing the trigger always closes the radial gesture, including when Back/submenu navigation occurs on the same event. After entering, child hover must be reacquired by fresh pointer movement and has its own delay, avoiding stationary cascades. Back uses the same 250 ms hover delay and requires leaving/re-entering after context changes; Escape/focus loss cancels. Every command appears in one pie, with no pages or fixed item-count limit; the radius grows only as needed for separation. Commands retain their shared enable/execute behavior. Native toolbar controls use their existing widgets in an owned auxiliary window when selected from a radial menu.
+
+
+
+
+
+All presets use StudioRadialMenus data/layout and StudioModelEditor.MarkingMenus input/rendering; no per-context menu implementations. The old hovered-object acquisition, fixed directional sectors and automatic submenu transitions are superseded. Rendering is event-driven.
+
+
+
+
+
+The Components default is exactly Edge → Object Mode → UV → Face → Vertex, clockwise from north. Its UV submenu contains Select UVs and Select UV Shells as disabled placeholders. These will select directly in the 3D modeling viewport when UV-editor development implements them; they do not open editors. Existing saved custom presets are preserved.
+
+
+
+
+
+Radial gestures retain a thin cursor tether from the current radial context’s opening point: a one-point palette-text line with a two-point dark backing, drawn behind buttons. Back uses the same 250 ms same-button hover timing/reset rules as submenu entry; returning clears hover to avoid cascading across parents.
+
+
+
+
+
+Entering a submenu or returning with Back opens the new radial context centered on the current cursor and resets its tether origin there. The new context stays centered exactly on that cursor position. Hover resets on transition, preserving the same per-level delay.
+
+
+
+
+
+Radial command buttons are compact rounded rectangles, placed outward from equally spaced anchors on one circular radius. Each context uses one common 80–128-point width and a 24-point height. The radius grows only enough to keep buttons and center navigation separated. Fill is dark but lightened, with a darker outline and accent hover; the existing StudioTheme cache/disposal is reused.
+
+
+
+
+
+Radial command buttons are 24 points high with 16×16 icons inset four points from the left/top/bottom. Labels start four points after the icon, are left-aligned and retain a four-point right inset. Back/page controls stay compact rounded rectangles. Checked state is marked on the icon. Existing StudioCommandIcons artwork is reused.
+
+
+
+
+
+
+
+
+The large curved-segment experiment was rejected and removed. Rectangular button hits and compact bounds are restored; placement equalizes visible edge gaps around one circle; current order remains Edge → Object Mode → UV → Face → Vertex. Hover timing, cursor-centered submenus, thin tether and presets are unchanged.
+
+
+
+
+
+
+
+
+
+
+
+Button anchors use exact 360°/count angular spacing. Rectangles extend outward from their anchors so wide labels do not squeeze the circular middle. The visible command group’s bounding-box center is pinned to the opening pointer for root menus, submenus and Back transitions. Layout cannot move the opening pointer. Near viewport edges, buttons may extend outside the canvas instead of displacing the menu away from the cursor.
+
+
+
+
+
+Visible-group centering: after computing the preferred relative spacing, Layout subtracts the command rectangles’ combined bounds center from every rectangle. This moves odd-count groups down where necessary instead of placing their mathematical circumcenter at the cursor. The rendered group has equal left/right and top/bottom extents around its opening pointer; relative button spacing is unchanged. The underlying circle may consequently be offset from that visual anchor.
+
+
+
+
+
+Radial release lifecycle: releasing the initiating mouse/key gesture always closes the menu and clears its control/tether after processing the release, including release over Back, a submenu or a page arrow. Navigation through hover remains available while held. A release arriving at the same time as Back hover cannot leave a captured menu behind.
+
+
+
+
+
+Radial positions receive a modest proportional tightening of up to 6%, preserving button dimensions and visible-group centering. Minimum five-point button gaps and center navigation clearance take priority; dense menus use a smaller reduction or keep their radius if needed.
+
+
+
+
+
+Customization insertion markers appear only during a drag owned by that customization window. Drop, mouse release, Escape, drag exit, focus loss and window close clear its drag payload/marker; ordinary mouse movement cannot display stale reorder lines. This applies to both toolbar and radial list editing.
+
+
+
+
+
+Radial center breathing room scales with command dimensions and count: minimum distance from the opening point to a command rectangle is max(1.6 × row height, 0.3 × largest width) × (1 + 0.15 / sqrt(item count)). Sparse menus therefore retain room around Back instead of collapsing into the center. The final small inward tightening is allowed only when it preserves that clearance. The decorative circular guide was rejected and removed.
+
+
+
+
+
+Uniform-size radial layouts are cached by item count/width/height (up to 64 entries), with a copy returned to each caller. Reopening or returning to the same geometry reuses its spacing result; changed count/dimensions compute a new result. The approved proportional center padding is retained. No guide texture/draw work remains; hover/release/input behavior is unchanged.
+
+
+
+
+
+After a submenu or Back context opens at the cursor, Back is initially unarmed. Move outside its visible hit rectangle once, then re-enter to begin its 250ms hover delay. Tiny movement while still inside cannot activate Back. Root/context changes and closing reset this guard; trigger release still closes the gesture.
+
+
+
+
+
+Radial menus never use pages, overflow arrows or a viewport item cap. All configured commands appear in the same pie, in list order. The circular radius grows as necessary to prevent overlap; very large pies can extend beyond the viewport rather than hiding commands.
+
+
+
+
+
+### Individual radial JSON files
+
+
+
+
+
+- `<Documents>/MashBoxStudio/RadialMenus/Presets/<stable-id>.json`: editable presets, saved immediately when you rename, add/remove commands or reorder them.
+
+
+- `<Documents>/MashBoxStudio/RadialMenus/Defaults/<stable-id>.json`: generated factory references, kept separate from edits.
+
+
+- `<Documents>/MashBoxStudio/RadialMenus/manifest.json`: preset list order, with deleted presets staying deleted.
+
+
+
+
+
+Preset files are in **<Documents>/MashBoxStudio/RadialMenus/Presets**; the customization editor has no help/footer strip or folder-opening button. Each preset contains `format: MashBoxStudio.RadialMenu`, `version: 1`, `id`, `name` and ordered `commands`. Filenames match stable IDs; rename the displayed `name` rather than changing an ID, so shortcuts/submenu links remain valid. Unknown command keys are preserved. New valid preset JSON files appear automatically; external edits reload through filesystem events on Unity's main thread, without idle polling. Invalid files are left intact with a warning and keep their last valid in-memory entry where available.
+
+
+
+
+
+Existing embedded `Studio.RadialMenus` settings migrate to individual files without changing names, order, commands or IDs. Only after the new files load does the old settings entry become an empty migration tombstone. Files are the source of truth thereafter; radial presets are user-wide separately from Settings/Hotkeys profiles, like toolbar layouts. Copy the RadialMenus folder when transferring presets; copy/export hotkeys independently. Atomic writes reuse StudioPreferenceStore, including recovery backups. Generated Defaults may be regenerated; edit Presets for personal changes. Only recognized preset files intentionally removed in the UI are deleted; unrelated/invalid files are preserved.
+
+
+
+
+
+### Preferences folder organization
+
+
+
+
+
+`<Documents>/MashBoxStudio` contains only categories: `Profiles` (editable Settings/Hotkeys and new custom copies), `Defaults` (generated Settings/Hotkeys), `Layouts` (ToolbarOverlays.json), `State` (LastLoaded.json), and `RadialMenus` (its existing Presets/Defaults/manifest tree). Import/export dialogs start in Profiles; arbitrary independently loaded profile paths remain supported.
+
+
+
+
+
+Startup safely relocates the previous known root files and their backups and updates remembered paths to moved personal or factory profiles. It never replaces a different destination file: conflicts keep both copies and warn. Identical duplicate legacy files can be removed. Custom/external selected profiles are not relocated. This explicit organization migration is the exception to ordinary read-only profile loading; after migration, normal loading remains read-only and factory generation remains separate from personal profiles.
+
+
+
+
+
+Single circular pie layout (2026-11-02): the old iterative rectangle-gap angle optimizer has been removed. Anchor directions are exactly 360°/item-count apart. Each card sits outside its circular anchor: horizontal half-width is added outward on left/right, vertical half-height on top/bottom. This makes the inner boundary read as a circle, instead of using wide card centers as the ring. Approved proportional padding, upright icon/text rows and visible-group midpoint centering remain. Radius grows uniformly and refines to a non-overlapping fit; there is no pagination, fixed visible count or viewport-fit hiding. Layout cache still returns immutable copies. One-entry submenu Back sits below the single centered card to avoid overlap.
+
+
+
+
+
+Radial packing refinement (2026-11-02): circular anchors retain equal angular spacing; smooth outward button offsets and a row-height/clearance-based minimum radius reduce unnecessary central gaps. Existing padding, visible-group centering and single-pie behavior remain. Large command lists can extend beyond the viewport.
+
+
+
+
+
+Radial spacing correction (2026-11-02): superseding outward-anchor placement, button centers share a true circle. Neighboring visible rectangle gaps are balanced through angular adjustment with north pinned, preserving circularity, center clearance and a single pie. Equal angle steps alone are not required for wide horizontal labels.
+
+
+
+
+
+Round radial envelope correction (2026-11-02): current placement supersedes the button-center circle/angle relaxation. Equal angular spokes compensate for half label width/height inside the shared outer radius, making the overall visible footprint round instead of stretching it by label dimensions. Existing padding, centered opening and single pie remain. Native appearance acceptance pending.
+
+
+
+
+
+Radial arrangement (2026-11-02, current): Studio keeps its own button styling. Layout uses equal-angle circular spokes with horizontal labels extending away from each spoke; north/south centered. No vertical half-height offset, elliptical compression, square footprint constraint or angular relaxation. This supersedes the prior center-circle and round-envelope corrections. The supplied Blender image guides arrangement, not an exact visual copy. Native appearance acceptance pending.
+
+
+
+
+
+Approved radial arrangement tightened (2026-11-02): compact minimum spoke radius now max(2.5*rowHeight,.5*buttonWidth,requiredClearance). Keeps approved equal-angle/outward-label placement; non-overlap still grows crowded pies as needed. Six104px buttons move37.5% closer to the origin, without resizing buttons.
+
+
+
+
+
+Further radial tightening (2026-11-02): user permits overlapping horizontal spans, but explicitly rejects visually overlapping buttons. Horizontal offset .35 width, minimum radius max(2 rows,.4 width,clearance), pairwise visible separation at least1px instead of a mandatory5px gap. Equal angular spokes and existing behavior retained. Production compile and targeted geometry checks pass (radial-tight-overlap-build.log/result.txt,22114 assertions including updated visible-separation checks); computed preview inspected, native input/rendering not replayed.
+
+
+
+
+
+Six-pixel radial spacing (2026-11-02): current layout packs matching spoke rows at6px vertical gaps for six or more items, retaining horizontal placement and visible-bounds centering; all pies require6px visible pair separation. This supersedes final equal-angle expectations after vertical packing. Inner clearance for packed pies capped at1.25 row heights. Production compile and targeted actual-assembly checks pass (radial-six-pixel-rows-build.log/result.txt,21348 assertions including exact row/pair gaps). Computed eight-item preview inspected; native render/input not replayed.
+
+
+
+
+
+Radial spacers (2026-11-02): use **Preferences > Radial Menus > + Empty Spacer**, or find **Layout/Empty Spacer** in Available functions. Drag the spacer row to separate groups; add/remove multiple spacers as needed. Each reserves one normal slot but draws no button and accepts no input. It saves immediately in the existing preset JSON as `Radial/EmptySpacer`; releasing on a spacer cancels the pie.
+
+
+
+
+
+Preferences heading cleanup (2026-11-02): Themes, Toolbars and Radial Menus retain their main page titles; redundant Color theme/Custom toolbars/Radial menus inner headings are removed.
+
+
+
+
+
+Customization list margins (2026-11-02): Toolbars and Radial Menus lists balance total visible left/right gutters, including the embedded Preferences parent inset.
+
+
+
+
+
+Shortcut recording (2026-11-02): remap windows accept keyboard keys or mouse buttons with Ctrl/Cmd, Shift and Alt, including newly created radial menus. Existing conflicts are reported and must be cleared/remapped explicitly; no assignment is silently replaced.
+
+
+
+
+
+Curved connected inset (2026-11-02): preserves local seam-coherent trajectories, boundary-collapse and cap-reversal guards. It is a local linear surface offset, not general3D collision/remeshing continuation. Production and focused-fixture compilation pass; actual compiled boundary-math checks pass2016 assertions. Full native mesh/input/Undo verification remains pending because the reusable disposable editor was unavailable.
+
+
+
+
+
+Tool sessions (2026-11-03): operation options reset to their declared defaults on each reopening; last-used values are no longer saved to profiles. Extrude starts with Normal distance0 and Inset0. Apply retains edits while the tool stays open. Meaningful nonzero defaults remain, and Repeat Last Action uses its separately recorded values. Pane bounds/drag sensitivity and durable selection preferences still persist; existing profile files are not rewritten to remove legacy values.
+
+
+
+
+
+Hide no-op behavior (2026-11-03): Hide Selection with no eligible visible target leaves the last-hidden set intact and does not finish a tool preview. Object targets already hidden through ancestors are ignored; only successful hides enter hide history.
+
+
+
+
+
+Hidden hierarchy text (2026-11-03): hidden nodes and descendants hidden by ancestors use dimmed theme-relative names while remaining selectable/draggable. Icons and eye controls unchanged. Source/compile verification only; native rendered confirmation pending.
+
+
+
+
+
+Hidden hierarchy tint correction (2026-11-03): user screenshot showed the style-only text color edit did not dim names. Current code uses scoped GUI.contentColor RGB*.45 during hidden row content rendering, restoring it afterward. Production compile hidden-hierarchy-tint-build.log passes; native rendered confirmation remains pending.
+
+
+
+
+
+Hidden hierarchy icons (2026-11-03): object/group/anchor artwork now matches the approved hidden-name45% RGB tint, including ancestor-hidden nodes. Separate scoped texture/text tint avoids double darkening; visibility controls and row input stay unchanged. Source/production compile checked (hidden-hierarchy-icons-build.log); native icon appearance confirmation pending.
+
+
+
+
+
+User-approved radial factory defaults (2026-11-03): Standard, Pivot, UVs, Orientation, Convert Selection, To Vertices, To Edges, To Faces, in that order. Standard (stable components ID) contains Edge, Object Mode, UVs, Face, Vertex, Pivot and Assign Material. Factory definitions and generated Preferences/RadialMenus/Defaults JSON now match the active authored presets, preserving their stable IDs; active preset and shortcut files were not rewritten.
+
+
+
+
+
+
+
+
+Transform orientation feedback (2026-11-03): Move/Rotate/Scale show a small gizmo-anchored label containing only World, Object or Component, using the same shadowed style as pivot target feedback. It reflects the current orientation selection and is scoped to an active selected transform over the camera canvas, yielding to navigation/panels/special tools.
+
+
+
+
+
+Orientation label placement/toggle (2026-11-03): World/Object/Component text is attached to the transform gizmo, not the mouse. Settings > General > Editing > Show orientation label disables it; default enabled, saved through the existing settings profile. Single/object and multi-component handles share the same display. Pivot target labels are unchanged.
+
+
+
+
+
+Orientation text overlay correction (2026-11-03): handle rendering captures its gizmo screen position; the existing viewport overlay draws World/Object/Component afterward, avoiding scene-image compositing over the text. The Settings toggle remains unchanged.
+
+
+
+
+
+Orientation gizmo projection fix (2026-11-03): label anchors use the explicit viewport camera rather than HandleUtility’s implicit Camera.current, which can be cleared by gizmo antialiasing. Native cube captures verify World beside the Move gizmo and its disappearance with Show orientation label disabled.
+
+
+
+
+
+Orientation label placement (2026-11-03): the orientation word sits beside the most camera-facing XY/XZ/YZ combo-plane square, following actual gizmo orientation/size, with a10px right offset and vertically centered text. Settings visibility toggle and orientation-only text remain.
+
+
+
+
+
+Plane-square placement correction (2026-11-03): keep the camera-projected GUI anchor directly; scene and retained-overlay screen conversions have different origins and previously shifted the word above the arrow. Native near-side Component capture now verifies text directly beside the facing red square, vertically centered.
+
+
+
+
+
+Orientation text side (2026-11-03): the word automatically sits on the square’s outer side—left when the square projects left of the gizmo origin, right otherwise—keeping it clear of the central axes.
+
+
+
+
+
+Edit Mesh now owns component construction (Extrude, Fill Hole, Poke, Bevel, Bridge), shaping (Circularize, Edit Edge Flow), weld/merge (Weld, Merge to Center, Target Weld), edge insertion/cutting (Insert Edge Loop, Multi-Cut), face duplication/detachment (Duplicate Face, Duplicate Face as New Object, Detach Face), and Subdivision (Subdivision Preview, Add Subdivision). Six related groups use five horizontal separators. Mesh Tools now contains Combine Meshes/Split Selection, then Bisect/Fracture, then its existing Deform submenu, with two separators. Mesh Display contains Soften, Harden, Soften options, Recalculate Normals and Flip Normals. No new submenus, operations or selection behavior were introduced. Fourteen relocated actions retain their original Mesh Tools or Mesh Display command keys through an explicit Edit Mesh presentation-to-legacy-key map in StudioModelCommands. Shortcut Preferences groups them under Edit Mesh while retaining existing bindings/defaults, including Extrude and the legacy Merge Vertices identity. Command dispatch, icons, custom toolbar/radial references and the existing 18-button Mesh Tools overlay continue to resolve their established keys. The overlay order/layout is independent of the reorganized menus and was not changed. No personal profile/preset/default-hotkey file was rewritten.
+
+
+
+
+
+

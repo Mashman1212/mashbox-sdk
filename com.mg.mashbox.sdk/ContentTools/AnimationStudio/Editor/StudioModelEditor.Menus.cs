@@ -105,6 +105,7 @@ namespace MashBoxSDK.AnimationStudio
                     });
                     break; }
                 case "Create": {
+                    menu.AddItem(new GUIContent("Polygon Primitives/Polygon"), cutTool == CutTool.Polygon, () => Run(() => BeginPolygon(view, loaded)));
                     foreach (var type in new[] { PrimitiveType.Cube, PrimitiveType.Sphere, PrimitiveType.Plane, PrimitiveType.Quad, PrimitiveType.Cylinder })
                     { var primitive = type; menu.AddItem(new GUIContent("Polygon Primitives/" + type), false, () => Run(() => CreatePrimitive(primitive, view, loaded))); }
                     menu.AddSeparator("");

@@ -156,12 +156,16 @@ namespace MashBoxSDK.AnimationStudio
             return ConstrainMove(origin, orientation * point, orientation, axes);
         }
         internal static bool TrySnapFreeMoveToGrid(Ray ray, float spacing, out Vector3 target)
+            => TrySnapFreeMoveToGrid(ray, spacing, Quaternion.identity, out target);
+        internal static bool TrySnapFreeMoveToGrid(Ray ray, float spacing, Quaternion frame, out Vector3 target)
         {
             target = default;
+            var inverse = Quaternion.Inverse(frame);
+            ray = new Ray(inverse * ray.origin, inverse * ray.direction);
             if (spacing <= 0 || float.IsNaN(spacing) || float.IsInfinity(spacing) ||
                 !new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float distance)) return false;
             var point = ray.GetPoint(distance);
-            target = new Vector3(Mathf.Round(point.x / spacing) * spacing, 0,
+            target = frame * new Vector3(Mathf.Round(point.x / spacing) * spacing, 0,
                 Mathf.Round(point.z / spacing) * spacing);
             return true;
         }
@@ -192,7 +196,7 @@ namespace MashBoxSDK.AnimationStudio
                 {
                     var transform = Transforms[node];
                     if (!Document.nodes[node].mesh || !transform || !transform.gameObject.activeInHierarchy ||
-                        (!pivot && mode == ComponentMode.Object && IsSnapMovingNode(node))) continue;
+                        (cutTool != CutTool.Polygon && !pivot && mode == ComponentMode.Object && IsSnapMovingNode(node))) continue;
                     var renderer = transform.GetComponent<Renderer>();
                     if (!renderer || !renderer.enabled) continue;
                     moving.TryGetValue(node, out var excluded);
@@ -231,7 +235,7 @@ namespace MashBoxSDK.AnimationStudio
         private Dictionary<int,HashSet<int>> MovingSnapVertices()
         {
             var result = new Dictionary<int,HashSet<int>>();
-            if (pivot || mode == ComponentMode.Object) return result;
+            if (cutTool == CutTool.Polygon || pivot || mode == ComponentMode.Object) return result;
             foreach (int node in ComponentTargetNodes(true))
                 using (new ComponentTargetScope(this,node)) result[node] = SelectedVertices();
             return result;

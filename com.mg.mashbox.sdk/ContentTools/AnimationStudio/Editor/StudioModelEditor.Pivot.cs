@@ -60,11 +60,13 @@ namespace MashBoxSDK.AnimationStudio
             }
             bool objectMove = !pivot && mode == ComponentMode.Object && tool == Tool.Move && Document && Active >= 0;
             bool componentMove = !pivot && mode != ComponentMode.Object && tool == Tool.Move && CanAdjustPivot;
-            if (!(pivot && CanAdjustPivot) && !objectMove && !componentMove)
+            if (cutTool != CutTool.Polygon && !(pivot && CanAdjustPivot) && !objectMove && !componentMove)
             { EndPivotSnap(); return false; }
             int id = GUIUtility.GetControlID("MashBoxStudioPivotSnap".GetHashCode(), FocusType.Passive);
             if ((StudioShortcuts.Pressed(StudioShortcut.VertexSnap,evt) || StudioShortcuts.Pressed(StudioShortcut.EdgeSnap,evt)) && !EditorGUIUtility.editingTextField)
             { bool edge = StudioShortcuts.Pressed(StudioShortcut.EdgeSnap,evt); if (!pivotSnapHeld || edgeSnapHeld != edge) edgeSnapLatched = false; edgeSnapHeld = edge; pivotSnapHeld = true; pivotSnapKey = evt.keyCode; vertexSnapView = view; evt.Use(); repaint(); return true; }
+            // Polygon placement consumes the shared hold state without moving existing geometry.
+            if (cutTool == CutTool.Polygon) return false;
             if (pivotSnapControl != 0)
             {
                 if (StudioShortcuts.Pressed(StudioShortcut.Cancel,evt))
