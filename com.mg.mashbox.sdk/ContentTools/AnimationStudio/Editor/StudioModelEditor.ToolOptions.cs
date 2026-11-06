@@ -23,10 +23,10 @@ namespace MashBoxSDK.AnimationStudio
             : bridgeToolPane ? bridgeToolPane : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : selectionActionPane ? selectionActionPane : combineToolPane;
         internal void PrepareEmbeddedChannelTool()
         {
-            FinishSelectionPaint(); StopTargetWeld(); StopCutTool();
+            FinishSelectionPaint(); StopSplineEditing(); StopTargetWeld(); StopCutTool();
             CameraOptionsVisible = LightingOptionsVisible = false; pivot = false;
         }
-        internal string ToolOptionsTitle => ActiveChannelTool ? ActiveChannelTool.titleContent.text : CameraOptionsVisible ? "Camera Settings"
+        internal string ToolOptionsTitle => splineDraft != null && !CameraOptionsVisible && !LightingOptionsVisible ? "Draw Spline" : ActiveChannelTool ? ActiveChannelTool.titleContent.text : CameraOptionsVisible ? "Camera Settings"
             : LightingOptionsVisible ? "Viewport Lighting"
             : targetWeldActive ? "Target Weld"
             : cutTool == CutTool.Polygon ? "Create Polygon"
@@ -47,7 +47,7 @@ namespace MashBoxSDK.AnimationStudio
         // execute the operation again.
         private void FinishToolsForSwitch(ToolChannelPane keep = null)
         {
-            if (keep && ActiveChannelTool == keep) return;
+            if (keep && ActiveChannelTool == keep) return; FinishSplineForSwitch();
             if (cutTool == CutTool.Polygon && polygonPoints.Count >= 3) Run(CommitPolygon);
             bool pending = livePreview != null || componentLiveTargets != null || previewQueued ||
                 bisectPreview != null || fracturePreview != null;
@@ -100,7 +100,7 @@ namespace MashBoxSDK.AnimationStudio
         internal void CloseToolOptions() { if (toolOptions) toolOptions.Close(); toolOptions = null; CloseLiveToolPanes(); CloseCombineToolWindow(); }
         internal void DrawToolOptions()
         {
-            if (CameraOptionsVisible) { DrawViewportCameraOptions(); return; }
+            if (splineDraft != null && !CameraOptionsVisible && !LightingOptionsVisible) { DrawSplineCreationOptions(); return; } if (CameraOptionsVisible) { DrawViewportCameraOptions(); return; }
             if (LightingOptionsVisible) { DrawViewportLightingOptions(); return; }
             if (cutTool == CutTool.Polygon)
             {
@@ -125,25 +125,25 @@ namespace MashBoxSDK.AnimationStudio
             if (tool == Tool.Scale && mode != ComponentMode.Object)
                 preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges and faces cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
             if (EditorGUI.EndChangeCheck()) { SaveDisplayConfiguration(); repaint(); }
-            if(tool==Tool.Move)
+            if(tool==Tool.Move && !SplineInputActive)
             {
                 EditorGUI.BeginChangeCheck();
                 preserveMoveUVs=EditorGUILayout.Toggle(new GUIContent("Preserve UVs","Reduce texture stretch while moving vertices, edges or faces. Preserve source texture scale as faces tilt and anchor stationary corners. Conflicting surface charts use a local best fit; object/pivot moves and extrusion are unaffected."),preserveMoveUVs);
                 if(EditorGUI.EndChangeCheck()){SaveDisplayConfiguration();repaint();}
             }
-            if (tool == Tool.Move || tool == Tool.Rotate || tool == Tool.Scale)
+            if (!SplineInputActive && (tool == Tool.Move || tool == Tool.Rotate || tool == Tool.Scale))
             {
                 EditorGUI.BeginChangeCheck();
                 bool locked = EditorGUILayout.Toggle(new GUIContent("Lock pivot", "Keep the pivot fixed in world space through Undo, selection changes and modeling actions. Edit Pivot can still reposition it."), PivotLocked);
                 if (EditorGUI.EndChangeCheck()) SetPivotLocked(locked);
             }
-            if (tool == Tool.Move || tool == Tool.Rotate || pivot)
+            if (!SplineInputActive && (tool == Tool.Move || tool == Tool.Rotate || pivot))
             {
                 using (new EditorGUI.DisabledScope(!MarkingActionEnabled(MarkingAction.EditPivot)))
                     if (GUILayout.Button(pivot ? "Finish Pivot Edit" : "Edit Pivot")) { TogglePivotEdit(); }
             }
             if (pivot) EditorGUILayout.HelpBox("Drag the arrows or plane squares to move the pivot; drag the colored rings to rotate its orientation. Geometry and children stay fixed. Choose any transform tool or press "+StudioShortcuts.Label(StudioShortcut.Pivot)+" to finish pivot editing.", MessageType.Info);
-            if (!CanEditComponents()) EditorGUILayout.HelpBox("Component editing requires the skin's bind pose. Object transforms and UVs remain available.", MessageType.Info);
+            if (!SplineInputActive && !CanEditComponents()) EditorGUILayout.HelpBox("Component editing requires the skin's bind pose. Object transforms and UVs remain available.", MessageType.Info);
         }
         private void DrawOrientationPopup(bool labelled)
         {

@@ -130,11 +130,11 @@ namespace MashBoxSDK.AnimationStudio
                 if (string.IsNullOrEmpty(raw))
                 {
                     // Unity may restore hidden overlays from its own window layout.
-                    // With no Studio preference, every Studio toolbar starts on.
+                    // With no Studio preference, Studio toolbars use their factory visibility.
                     RestoreFactoryToolbarPlacements(null);
                     NativeOverlaysEnabled = true;
                     foreach (var overlay in studioToolbarOverlays)
-                        if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) overlay.displayed = true;
+                        if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) overlay.displayed = FactoryToolbarVisible(overlay.id);
                     return;
                 }
                 var saved = JsonUtility.FromJson<StoredToolbars>(raw);
@@ -175,10 +175,11 @@ namespace MashBoxSDK.AnimationStudio
             finally { restoringStoredToolbars = false; }
             SaveStoredToolbars(); UpdatePanelLayout(); MarkDirty(DirtyState.UI);
         }
+        internal static bool FactoryToolbarVisible(string id) => id != StudioCurvesToolbar.Id;
         private void RestoreFactoryToolbarPlacements(HashSet<string> savedIds)
         {
             string[] top = { StudioGridToolbar.Id, StudioViewportToolbar.Id, StudioDisplayToolbar.Id,
-                StudioPolygonPrimitivesToolbar.Id, StudioMeshToolsToolbar.Id, StudioMeshDisplayToolbar.Id };
+                StudioPolygonPrimitivesToolbar.Id, StudioMeshToolsToolbar.Id, StudioMeshDisplayToolbar.Id, StudioCurvesToolbar.Id };
             string[] left = { StudioTransformToolbar.Id, StudioSelectionToolbar.Id };
             void Place(string[] ids, string container, int layout)
             {
@@ -187,7 +188,7 @@ namespace MashBoxSDK.AnimationStudio
                         foreach (var overlay in studioToolbarOverlays)
                             if (overlay.id == ids[i])
                             {
-                                string state = "{\"containerId\":\"" + container + "\",\"dockPosition\":0,\"index\":" + (savedIds == null ? i : 1000) + ",\"displayed\":true,\"layout\":" + layout + "}";
+                                string state = "{\"containerId\":\"" + container + "\",\"dockPosition\":0,\"index\":" + (savedIds == null ? i : 1000) + ",\"displayed\":" + (FactoryToolbarVisible(ids[i]) ? "true" : "false") + ",\"layout\":" + layout + "}";
 #if UNITY_6000_0_OR_NEWER
                                 overlayCanvas.RestoreOverlay(overlay, JsonUtility.FromJson<SaveData>(state));
 #else
@@ -271,7 +272,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (studioToolbarVersion < 2)
                 {
                     if (overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) overlay.displayed = false;
-                    else if (overlay.id == DisplayToolbarId) overlay.displayed = true;
+                    else if (overlay.id == DisplayToolbarId) overlay.displayed = FactoryToolbarVisible(overlay.id);
                 }
                 if (!(overlay is ToolbarOverlay)) continue;
                 studioToolbarOverlays.Add(overlay);

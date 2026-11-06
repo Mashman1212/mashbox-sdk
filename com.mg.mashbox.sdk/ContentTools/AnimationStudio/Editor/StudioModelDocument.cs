@@ -15,6 +15,8 @@ namespace MashBoxSDK.AnimationStudio
         public sealed class Node
         {
             public string name;
+            public string constraintId = Guid.NewGuid().ToString("N");
+            public List<StudioModelConstraintData> constraints = new List<StudioModelConstraintData>();
             public string anchorType;
             [SerializeReference] public VehiclePartData vehiclePart;
             public string sourcePath;
@@ -62,7 +64,7 @@ namespace MashBoxSDK.AnimationStudio
             internal Quaternion BakeRotation => SameRotation(pivotRotation,FrozenFrame(frozenPivotBaseline)) ? FrozenFrame(frozenRotation) : pivotRotation;
             internal void ClearBakedOffsets()
             { positionOffset=Vector3.zero;pivotRotation=frozenRotation=frozenPivotBaseline=Quaternion.identity; }
-            public Mesh mesh;
+            [SerializeReference] public StudioSpline spline; public Mesh mesh;
             [SerializeReference] public StudioBlendShape blendShape;
             public int[] cutPolygons, cutTriangles;
             public int[] normalGroups;
@@ -220,6 +222,7 @@ namespace MashBoxSDK.AnimationStudio
                 skin.localBounds = node.mesh.bounds; skin.updateWhenOffscreen = true;
             }
             ApplyHierarchyOrder(result);
+            StudioModelConstraints.Build(this, result);
             return result;
         }
         public void ApplyTransform(int index, Transform target)
@@ -233,6 +236,7 @@ namespace MashBoxSDK.AnimationStudio
             var n = nodes[index]; n.position = source.localPosition - n.positionOffset;
             if (!Node.SameRotation(n.rotation, source.localRotation)) n.RotationChannels = TransformUtils.GetInspectorRotation(source);
             n.rotation = source.localRotation; n.scale = source.localScale;
+            StudioModelConstraints.ReadUnlocked(this, index, source);
             EditorUtility.SetDirty(this);
         }
         public bool IsBone(int index) => nodes.Any(n => n.skinned && (n.rootBone == index || n.bones.Contains(index)));
@@ -320,6 +324,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 TransformMesh(mesh, newWorld.inverse * t.localToWorldMatrix);
             }
+            if(nodes[index].spline != null) { var compensation = newWorld.inverse * t.localToWorldMatrix; foreach(var knot in nodes[index].spline.knots) { knot.position=compensation.MultiplyPoint3x4(knot.position); knot.incoming=compensation.MultiplyVector(knot.incoming); knot.outgoing=compensation.MultiplyVector(knot.outgoing); } }
             change(); ReadTransform(index, t);
             for (int j = 0; j < childIndices.Length; j++)
             {

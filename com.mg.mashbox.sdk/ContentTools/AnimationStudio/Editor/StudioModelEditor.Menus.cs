@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "View", "Select", "Create", "Modify", "Window", "Display", "Mesh Tools", "Edit Mesh", "Mesh Display", "UV", "Render" };
+        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "View", "Select", "Create", "Modify", "Constraints", "Window", "Display", "Mesh Tools", "Edit Mesh", "Curves", "Mesh Display", "UV", "Render" };
         private readonly System.Collections.Generic.Dictionary<string,(GUIContent content,GUILayoutOption[] layout,GUIStyle style)> menuBarContents = new System.Collections.Generic.Dictionary<string,(GUIContent,GUILayoutOption[],GUIStyle)>();
         internal void DrawMenuBar(SceneView view, Action<StudioModelDocument> loaded)
         {
@@ -104,7 +104,7 @@ namespace MashBoxSDK.AnimationStudio
                         StudioSettings.Save();
                     });
                     break; }
-                case "Create": {
+                case "Curves": { PopulateSplineMenu(menu,view,loaded); break; } case "Create": {
                     menu.AddItem(new GUIContent("Polygon Primitives/Polygon"), cutTool == CutTool.Polygon, () => Run(() => BeginPolygon(view, loaded)));
                     foreach (var type in new[] { PrimitiveType.Cube, PrimitiveType.Sphere, PrimitiveType.Plane, PrimitiveType.Quad, PrimitiveType.Cylinder })
                     { var primitive = type; menu.AddItem(new GUIContent("Polygon Primitives/" + type), false, () => Run(() => CreatePrimitive(primitive, view, loaded))); }
@@ -142,6 +142,10 @@ namespace MashBoxSDK.AnimationStudio
                         menu.AddItem(new GUIContent("Isolate Selected"),ViewportIsolationActive,()=>RunViewportIsolation(false));
                     else menu.AddDisabledItem(new GUIContent("Isolate Selected"));
                 
+                    break; }
+                case "Constraints": {
+                    for (int i = 0; i < StudioModelConstraints.Types.Length; i++)
+                    { var kind = (StudioConstraintKind)i; AddCommand(menu, StudioModelConstraints.Labels[i], true, () => AddModelConstraint(kind)); }
                     break; }
                 case "Modify": {
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), !targetWeldActive && cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));

@@ -328,6 +328,6 @@ namespace MashBoxSDK.AnimationStudio
             RecordSelectionChange(before);
             repaint(); toolOptions?.Repaint();
         }
-        private void SetComponentMode(ComponentMode next, SceneView view = null) => ChangeComponentMode(next,view);
+        private void SetComponentMode(ComponentMode next, SceneView view = null) { StopSplineEditing(); ChangeComponentMode(next,view); }
     }
 }

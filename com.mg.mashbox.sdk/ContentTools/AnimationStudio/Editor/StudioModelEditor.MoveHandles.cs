@@ -179,8 +179,9 @@ namespace MashBoxSDK.AnimationStudio
             return TryPivotSnapVertex(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target, null,
                 (node, vertex) => !selected.TryGetValue(node, out var vertices) || !vertices.Contains(vertex));
         }
-        // Capture world endpoints once per gesture. Never traverse adjacency or
+        // Capture a world edge or complete spline once per gesture. Never traverse mesh adjacency or
         // re-query a moving target while sliding along the captured segment.
+        private StudioSpline capturedSnapSpline;
         private bool TryEdgeSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)
         {
             target = default;
@@ -188,15 +189,22 @@ namespace MashBoxSDK.AnimationStudio
             var camera = view.camera;
             float dpi = EditorGUIUtility.pixelsPerPoint;
             var pointer = PivotCameraPoint(view, mouse);
+            return TryCapturedEdgeOrSplineSnap(camera,pointer,dpi,out target);
+        }
+        internal bool TryCapturedEdgeOrSplineSnap(Camera camera, Vector2 pointer, float dpi, out Vector3 target)
+        {
+            target=default;if(!camera||!Document)return false;
             if (!edgeSnapLatched)
             {
+                capturedSnapSpline = null;
                 var moving = MovingSnapVertices();
                 float best = 18 * 18, depth = float.PositiveInfinity;
+                int splineNode = -1;
                 for (int node = 0; node < Transforms.Length; node++)
                 {
                     var transform = Transforms[node];
                     if (!Document.nodes[node].mesh || !transform || !transform.gameObject.activeInHierarchy ||
-                        (cutTool != CutTool.Polygon && !pivot && mode == ComponentMode.Object && IsSnapMovingNode(node))) continue;
+                        (!SplineInputActive && cutTool != CutTool.Polygon && !pivot && mode == ComponentMode.Object && IsSnapMovingNode(node))) continue;
                     var renderer = transform.GetComponent<Renderer>();
                     if (!renderer || !renderer.enabled) continue;
                     moving.TryGetValue(node, out var excluded);
@@ -220,8 +228,23 @@ namespace MashBoxSDK.AnimationStudio
                         best = distance; depth = z; edgeSnapStart = a; edgeSnapEnd = b; edgeSnapLatched = true;
                     }
                 }
+                for(int node=0;node<Transforms.Length;node++)
+                {
+                    var spline=Document.nodes[node].spline;var transform=Transforms[node];
+                    if(spline==null||!transform||!transform.gameObject.activeInHierarchy)continue;
+                    if(splineDraft==null&&splineEditing&&node==Active)continue;
+                    if(!SplineInputActive&&cutTool!=CutTool.Polygon&&!pivot&&mode==ComponentMode.Object&&IsSnapMovingNode(node))continue;
+                    if(!StudioSplineSnap.Closest(camera,pointer,dpi,spline,transform.localToWorldMatrix,out _,out float d,out float z)||d>best||Mathf.Abs(d-best)<.01f&&z>=depth)continue;
+                    best=d;depth=z;splineNode=node;
+                }
+                if(splineNode>=0)
+                {
+                    capturedSnapSpline=Document.nodes[splineNode].spline.Copy();var matrix=Transforms[splineNode].localToWorldMatrix;
+                    foreach(var knot in capturedSnapSpline.knots){knot.position=matrix.MultiplyPoint3x4(knot.position);knot.incoming=matrix.MultiplyVector(knot.incoming);knot.outgoing=matrix.MultiplyVector(knot.outgoing);}
+                    edgeSnapLatched=true;
+                }
             }
-            if (!edgeSnapLatched) return false;
+            if (!edgeSnapLatched || capturedSnapSpline != null) return capturedSnapSpline != null && StudioSplineSnap.Closest(camera,pointer,dpi,capturedSnapSpline,Matrix4x4.identity,out target,out _,out _);
             var start = camera.WorldToScreenPoint(edgeSnapStart);
             var end = camera.WorldToScreenPoint(edgeSnapEnd);
             var first = new Vector2(start.x/dpi,(camera.pixelHeight-start.y)/dpi);
@@ -235,7 +258,7 @@ namespace MashBoxSDK.AnimationStudio
         private Dictionary<int,HashSet<int>> MovingSnapVertices()
         {
             var result = new Dictionary<int,HashSet<int>>();
-            if (cutTool == CutTool.Polygon || pivot || mode == ComponentMode.Object) return result;
+            if (SplineInputActive || cutTool == CutTool.Polygon || pivot || mode == ComponentMode.Object) return result;
             foreach (int node in ComponentTargetNodes(true))
                 using (new ComponentTargetScope(this,node)) result[node] = SelectedVertices();
             return result;
@@ -244,7 +267,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             target = default;
             if (!Document) return false;
-            var moving = MovingSnapVertices();
+            capturedSnapSpline = null;
+                var moving = MovingSnapVertices();
             // Rank in the captured handle frame, never camera/screen space. The
             // locked coordinates only break ties; they cannot select another level.
             var inverse = Quaternion.Inverse(moveDragOrientation);
@@ -303,7 +327,7 @@ namespace MashBoxSDK.AnimationStudio
             get
             {
                 if (!pivotSnapHeld && !gridSnapHeld) return null;
-                string label = edgeSnapHeld ? "Edge Snap · "+StudioShortcuts.Label(StudioShortcut.EdgeSnap) : pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
+                string label = edgeSnapHeld ? "Edge / Spline Snap · "+StudioShortcuts.Label(StudioShortcut.EdgeSnap) : pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
                 if (pivotSnapHeld && gridSnapHeld) label += " (overrides grid)";
                 if (!edgeSnapHeld && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
                     label += moveDragAxes == MoveAxes.Free ? " · Free" : " · " + moveDragAxes + (((int)moveDragAxes & ((int)moveDragAxes - 1)) == 0 ? " axis" : " plane");

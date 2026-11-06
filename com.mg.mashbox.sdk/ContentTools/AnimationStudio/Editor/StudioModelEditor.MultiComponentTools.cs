@@ -123,6 +123,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void DeleteSelection()
         {
+            if(SplineInputActive) { if(splineDraft!=null){if(splineDraft.knots.Count>0)splineDraft.knots.RemoveAt(splineDraft.knots.Count-1);splineDraft.RefreshAutomaticTangents();splineKnots.Clear();repaint();}else RemoveSplineKnots();return; }
             if(mode==ComponentMode.Object){DeleteSelectedObjects();return;}
             FinishLiveTool();var nodes=ComponentTargetNodes(true);if(nodes.Count==0)return;
             foreach(int node in nodes)using(new ComponentTargetScope(this,node))if(!CanEditComponents())throw new InvalidOperationException("Every selected mesh must be editable.");

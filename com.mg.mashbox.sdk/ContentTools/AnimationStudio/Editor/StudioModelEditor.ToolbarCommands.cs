@@ -25,6 +25,12 @@ namespace MashBoxSDK.AnimationStudio
         {
             switch(key)
             {
+                case "Constraints/Aim Constraint": return "Aim a chosen local axis toward weighted source objects, with configurable up direction. Configure sources in Channels.";
+                case "Constraints/Look At Constraint": return "Point the local Z axis toward weighted source objects, with roll or an up object. Configure sources in Channels.";
+                case "Constraints/Parent Constraint": return "Follow source position and rotation without changing the hierarchy or constraining scale. Configure sources in Channels.";
+                case "Constraints/Position Constraint": return "Follow weighted source positions with axis controls and an offset. Configure sources in Channels.";
+                case "Constraints/Rotation Constraint": return "Follow weighted source rotations with axis controls and an offset. Configure sources in Channels.";
+                case "Constraints/Scale Constraint": return "Follow weighted source scales with axis controls and an offset. Configure sources in Channels.";
                 case "Edit/Repeat Last Action": return "Repeat the last completed modeling action on the current selection using its completed settings.";
                 case "Mesh Display/Soften": return "Immediately blend vertex normals across selected edges regardless of angle.";
                 case "Mesh Display/Flip Normals": return "Reverse the orientation of selected faces or faces incident to selected edges and vertices; object selection flips whole meshes.";

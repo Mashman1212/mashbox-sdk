@@ -4,6 +4,21 @@ using UnityEditor.Overlays;
 
 namespace MashBoxSDK.AnimationStudio
 {
+    [Overlay(typeof(MashBoxStudioViewport), Id, "Curves", false,
+        defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
+        defaultDockIndex = 6, defaultLayout = Layout.HorizontalToolbar)]
+    internal sealed class StudioCurvesToolbar : StudioCommandToolbar
+    {
+        internal const string Id = "MashBox/Curves";
+        protected override bool MenuGroupSeparators => true;
+        public StudioCurvesToolbar() => Configure(new StudioCustomToolbarDefinition {
+            id=Id, name="Curves", commands=new List<string> {
+                "Curves/Linear Spline", "Curves/Bezier Spline", "Curves/Edit Knots",
+                "Curves/Finish Drawing", "Curves/Insert Knot", "Curves/Remove Knot", "Curves/Extend Endpoint",
+                "Curves/Open Loop", "Curves/Close Loop", "Curves/Reverse Direction",
+                "Curves/Convert to Linear", "Curves/Convert to Bezier", "Curves/Corner Tangents",
+                "Curves/Aligned Tangents", "Curves/Mirrored Tangents", "Curves/Smooth Knots" } });
+    }
     [Overlay(typeof(MashBoxStudioViewport), Id, "Polygon Primitives", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,
         defaultDockIndex = 3, defaultLayout = Layout.HorizontalToolbar)]

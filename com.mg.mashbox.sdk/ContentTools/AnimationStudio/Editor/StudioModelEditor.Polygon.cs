@@ -26,7 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         private void BeginPolygon(SceneView view, Action<StudioModelDocument> loaded)
         {
             using var camera = new CreationCameraScope(view);
-            FinishToolsForSwitch(); EndPivotSnap(); ClearGridSnap(); CancelMarkingMenu(); EnsureWorkspace(loaded);
+            FinishToolsForSwitch(); StopSplineEditing(); EndPivotSnap(); ClearGridSnap(); CancelMarkingMenu(); EnsureWorkspace(loaded);
             polygonPlane = new Plane(-view.camera.transform.forward, view.pivot);
             polygonPoints.Clear(); polygonPreviewTriangles.Clear(); polygonHover = null;
             cutTool = CutTool.Polygon; tool = Tool.None; pivot = false;

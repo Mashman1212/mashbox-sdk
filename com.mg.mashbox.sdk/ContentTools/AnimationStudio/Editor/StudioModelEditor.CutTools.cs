@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool CanCutMesh => !HasBlendShape && ActiveMesh && !Document.nodes[Active].skinned && ActiveMesh.blendShapeCount == 0 && ActiveMesh.boneWeights.Length == 0;
         internal void ActivateCutTool(CutTool next)
         {
-            FinishToolsForSwitch();
+            FinishToolsForSwitch(); StopSplineEditing();
             if (!CanCutMesh) { error = "Select an editable static mesh to use the cut tools."; repaint(); return; }
 
             StopTargetWeld(); CancelMarkingMenu(); ResetCutGesture(); CameraOptionsVisible = false; LightingOptionsVisible = false; cutTool = next; tool = Tool.None; pivot = false;
