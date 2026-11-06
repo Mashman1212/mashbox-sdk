@@ -165,7 +165,6 @@ namespace MashBoxSDK.AnimationStudio
             if (viewportOptions != null) { viewportOptions.style.left = overlayLeft + 32; viewportOptions.style.top = optionsTop; }
             if (studioSettings != null) { studioSettings.style.left = overlayLeft; studioSettings.style.top = optionsTop; }
             LayoutCameraSettingsButton(overlayLeft, optionsTop);
-            LayoutQuadViews();
             if (meshStatistics != null)
             {
                 meshStatistics.style.left = overlayLeft;
@@ -173,6 +172,8 @@ namespace MashBoxSDK.AnimationStudio
                 meshStatistics.style.top = optionsTop + (retopologyPanels ? 54 : 24) + 8;
             }
             LayoutWorkspaceStatistics(widths.y);
+            LayoutViewDirectionLabel(ModelCanvasRect,panelsModeling&&!quadLayout,"Perspective");
+            LayoutQuadViews();
             if (leftDivider == null || rightDivider == null) return;
             if (FoldablePanels)
             {

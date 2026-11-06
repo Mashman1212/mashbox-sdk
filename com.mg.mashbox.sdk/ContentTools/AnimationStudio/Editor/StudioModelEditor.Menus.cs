@@ -72,6 +72,12 @@ namespace MashBoxSDK.AnimationStudio
                 case "Window": {
                     if (view is MashBoxStudioViewport layoutView) {
                         var owner = layoutView.LayoutOwner;
+                        foreach(var choice in new[]{(name:"Front",kind:0),(name:"Side",kind:2),(name:"Top",kind:3),(name:"Perspective",kind:1)})
+                        {
+                            int kind=choice.kind;
+                            menu.AddItem(new GUIContent("View/"+choice.name), owner.FourViews && !owner.SplitLayout && owner.EditingView.ViewKind==kind,
+                                () => owner.SelectViewportCamera(kind), shortcutEligible:false);
+                        }
                         string singleLabel = owner.SplitLayout ? StudioShortcuts.MenuLabel("Layout/Single View", StudioShortcut.MaximizeViewport) : "Layout/Single View";
                         string splitLabel = owner.SplitLayout ? "Layout/2×2" : StudioShortcuts.MenuLabel("Layout/2×2", StudioShortcut.MaximizeViewport);
                         menu.AddItem(new GUIContent(singleLabel), !owner.SplitLayout, () => owner.SetFourViews(false), shortcutEligible: false);

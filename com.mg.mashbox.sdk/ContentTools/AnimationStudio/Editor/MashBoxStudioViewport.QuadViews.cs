@@ -18,6 +18,7 @@ namespace MashBoxSDK.AnimationStudio
         [NonSerialized] private MashBoxStudioViewport[] quadViews;
         private VisualElement quadRoot;
         private IMGUIContainer quadHeader;
+        private Label viewDirectionLabel;
         [NonSerialized] private int maximizedQuad = -1, activeQuad = 1, hoveredQuad = -1, queuedQuad = -2;
         [NonSerialized] private bool creatingQuadViews;
         private bool layingOutQuad;
@@ -102,11 +103,10 @@ namespace MashBoxSDK.AnimationStudio
                 view.BindModelInput(() => Studio && Studio.IsModelingMode,
                     () => HandleQuadShortcut() || Studio.ToolbarModelEditor.HandleModelKeyboard(view),
                     () => Studio?.ToolbarModelEditor?.ReleaseShortcutHolds());
-                view.quadHeader = new IMGUIContainer(view.DrawQuadHeader) { name = "mashbox-view-header" };
-                view.quadHeader.style.position = Position.Absolute;
-                view.quadHeader.style.left = 4; view.quadHeader.style.top = 4;
-                view.quadHeader.style.width = 200; view.quadHeader.style.height = 24;
-                root.Add(view.quadHeader);
+                view.BindCameraSettingsButton();
+                view.BindViewportOverlayButton(ref view.quadHeader, "mashbox-view-grid", view.DrawQuadHeader);
+                view.LayoutCameraSettingsButton(4,4);
+                view.LayoutViewportOverlayButton(view.quadHeader,116,4);
                 int index = i;
                 root.RegisterCallback<PointerMoveEvent>(e => TrackQuadPointer(e.position));
                 root.RegisterCallback<PointerEnterEvent>(e => TrackQuadPointer(e.position));
@@ -123,24 +123,33 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static Quaternion QuadRotation(int kind) => kind == 0 ? Quaternion.Euler(0, 180, 0) :
             kind == 2 ? Quaternion.Euler(0, -90, 0) : Quaternion.Euler(90, 0, 0);
+        private void LayoutViewDirectionLabel(Rect area,bool visible,string text)
+        {
+            if(viewDirectionLabel==null)
+            {
+                viewDirectionLabel=new Label {name="mashbox-view-direction",pickingMode=PickingMode.Ignore};
+                viewDirectionLabel.style.position=Position.Absolute;
+                viewDirectionLabel.style.width=100;viewDirectionLabel.style.height=18;
+                viewDirectionLabel.style.fontSize=11;
+                viewDirectionLabel.style.unityTextAlign=TextAnchor.MiddleCenter;
+                viewDirectionLabel.style.color=new Color(.82f,.82f,.82f,.9f);
+                rootVisualElement.Add(viewDirectionLabel);
+            }
+            viewDirectionLabel.text=text;
+            viewDirectionLabel.style.display=visible?DisplayStyle.Flex:DisplayStyle.None;
+            viewDirectionLabel.style.left=area.center.x-50;
+            viewDirectionLabel.style.top=area.yMax-24;
+            viewDirectionLabel.BringToFront();
+        }
         private void DrawQuadHeader()
         {
             var editor = Studio?.ToolbarModelEditor;
             if (editor == null) return;
-            for (int i = 0; i < 3; i++)
+            if(DrawViewportOverlayButton(quadHeader, new GUIContent("", "Toggle this view's grid"), "GridLayoutGroup Icon"))
             {
-                var rect = new Rect(i * 28, 0, 24, 24);
-                var content = new GUIContent(StudioToolbarIcons.Get(i == 0 ? "Camera Icon" : i == 1 ? "Light Icon" : "GridLayoutGroup Icon"),
-                    i == 0 ? "Camera settings" : i == 1 ? "Viewport lighting" : "Toggle this view's grid");
-                if (GUI.Button(rect, content, StudioTheme.Styles.overlayButton))
-                {
-                    QuadOwner.activeQuad = ViewKind;
-                    if (i == 0) editor.ShowCameraOptions(this, true);
-                    else if (i == 1) editor.ShowLightingOptions(this, true);
-                    else SetModelGridVisible(!modelGridVisible);
-                }
+                QuadOwner.activeQuad=ViewKind;
+                SetModelGridVisible(!modelGridVisible);
             }
-            GUI.Label(new Rect(88, 2, 112, 22), QuadNames[ViewKind], EditorStyles.boldLabel);
         }
         private bool HandleQuadShortcut()
         {
@@ -154,6 +163,13 @@ namespace MashBoxSDK.AnimationStudio
             if (IsEmbeddedView || !Studio || !Studio.IsModelingMode || EditorGUIUtility.editingTextField || GUIUtility.hotControl != 0) return;
             if (!StudioShortcuts.Pressed(StudioShortcut.MaximizeViewport, new Event { type=EventType.KeyDown, keyCode=e.keyCode, modifiers=e.modifiers })) return;
             QueueQuadMaximize(); e.imguiEvent?.Use(); e.StopImmediatePropagation();
+        }
+        internal void SelectViewportCamera(int kind)
+        {
+            var owner=LayoutOwner;
+            if(kind<0||kind>3)return;
+            owner.queuedQuad=kind;
+            owner.ApplyQueuedQuad();
         }
         private void QueueQuadMaximize(int menuTarget = -1)
         {
@@ -218,13 +234,11 @@ namespace MashBoxSDK.AnimationStudio
                 if (quadRoot == null || !CompleteQuadViews) return;
                 quadRoot.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
                 if (cameraInputCanvas != null) cameraInputCanvas.style.display = visible ? DisplayStyle.None : DisplayStyle.Flex;
-                foreach (var button in new[] { viewportCameraButton, viewportLightingButton })
+                foreach (var button in new[] { viewportCameraButton, viewportLightingButton, viewportIsolateButton, viewportShowAllButton })
                     if (button != null && visible) button.style.display = DisplayStyle.None;
                 if (orientationAxes != null && visible) orientationAxes.style.display = DisplayStyle.None;
                 var area = ModelCanvasRect;
-                // The shared menu occupies the top 24 points even with native toolbars hidden.
-                float inset = Mathf.Max(0, 28 - area.y);
-                area.y += inset; area.height = Mathf.Max(0, area.height - inset);
+                // View controls overlay the scene; do not reserve a separate header strip.
                 quadRoot.style.left = area.x; quadRoot.style.top = area.y;
                 quadRoot.style.width = area.width; quadRoot.style.height = area.height;
                 for (int i = 0; i < 4; i++)
@@ -237,11 +251,19 @@ namespace MashBoxSDK.AnimationStudio
                     root.style.left = maximizedQuad < 0 && (i == 1 || i == 2) ? w + 2 : 0;
                     root.style.top = maximizedQuad < 0 && i >= 2 ? h + 2 : 0;
                     root.style.width = w; root.style.height = h;
+                    quadViews[i].LayoutViewDirectionLabel(new Rect(0,0,w,h),true,QuadNames[i]);
+                    quadViews[i].LayoutCameraSettingsButton(4,4);
+                    quadViews[i].LayoutViewportOverlayButton(quadViews[i].quadHeader,116,4);
                 }
                 quadRoot.BringToFront();
-                // Global editing actions stay above the tiles; camera/light controls live in each tile.
-                if (viewportIsolateButton != null) { viewportIsolateButton.style.left=area.xMax-56; viewportIsolateButton.BringToFront(); }
-                if (viewportShowAllButton != null) { viewportShowAllButton.style.left=area.xMax-28; viewportShowAllButton.BringToFront(); }
+                // These are shared host statistics, not part of the covered host camera.
+                // Keep the full overlay inside the tile canvas, below its camera header.
+                if (meshStatistics != null)
+                {
+                    meshStatistics.style.left=area.x+4; meshStatistics.style.top=area.y+32;
+                    meshStatistics.BringToFront();
+                }
+                workspaceStats?.BringToFront();
                 markingMenu?.BringToFront();
             }
             finally { layingOutQuad = false; }
