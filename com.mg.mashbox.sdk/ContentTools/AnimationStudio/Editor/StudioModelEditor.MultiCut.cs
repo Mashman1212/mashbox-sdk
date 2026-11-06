@@ -67,6 +67,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!CanCutMesh)throw new InvalidOperationException("Select an editable static mesh before applying a cut.");
             if(cutTopology==null||cutMesh!=ActiveMesh){cutTopology=new StudioMeshCuts(Document.nodes[Active]);cutMesh=ActiveMesh;}
+            strokes = SymmetryStrokes(cutTopology, strokes);
             int group=-1;
             try
             {
@@ -265,10 +266,23 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!CanCutMesh)throw new InvalidOperationException("Select an editable static mesh before slicing.");
             var topology=new StudioMeshCuts(Document.nodes[Active]);int group=-1;
+            var symmetry=CaptureSymmetry();
+            Plane? mirrored=null;
+            if(symmetry!=null)
+            {
+                var equation=symmetry.Reflection.transpose * new Vector4(plane.normal.x,plane.normal.y,plane.normal.z,plane.distance);
+                var normal=new Vector3(equation.x,equation.y,equation.z);float length=normal.magnitude;
+                if(length<1e-12f)throw new InvalidOperationException("The symmetry plane cannot be transformed through this object scale.");
+                var other=new Plane(normal/length,equation.w/length);
+                bool same=(other.normal-plane.normal).sqrMagnitude<1e-8f&&Mathf.Abs(other.distance-plane.distance)<symmetry.Tolerance;
+                bool reversed=(other.normal+plane.normal).sqrMagnitude<1e-8f&&Mathf.Abs(other.distance+plane.distance)<symmetry.Tolerance;
+                if(!same&&!reversed)mirrored=other;
+            }
             try
             {
                 bool changed=topology.ApplyPlaneSlice(Document.nodes[Active],plane,()=>{Undo.IncrementCurrentGroup();group=Undo.GetCurrentGroup();Undo.SetCurrentGroupName("Multi-Cut");Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[]{Document,ActiveMesh},"Multi-Cut");});
                 if(!changed)throw new InvalidOperationException("The cutting plane does not cross the active mesh.");
+                if(mirrored.HasValue)new StudioMeshCuts(Document.nodes[Active]).ApplyPlaneSlice(Document.nodes[Active],mirrored.Value);
                 EditorUtility.SetDirty(ActiveMesh);EditorUtility.SetDirty(Document);ResetCutGesture();MeshTopologyChanged();cutTopology=new StudioMeshCuts(Document.nodes[Active]);cutMesh=ActiveMesh;error=null;
             }
             catch{if(group>=0)Undo.RevertAllDownToGroup(group);throw;}

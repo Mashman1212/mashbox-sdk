@@ -34,7 +34,7 @@ internal static class StudioFractureSurfaceValidation
     }
     static void Begin()
     {
-        input=StudioMeshFracture.Capture(source);if(phase==0)cubeInput=input;var settings=new StudioMeshFracture.Settings();
+        input=StudioMeshFracture.Capture(source);if(phase==0)cubeInput=input;var settings=new StudioMeshFracture.Settings{SimplifyInterior=false};
         if(phase==2)settings.Gap=.001f;
         began=EditorApplication.timeSinceStartup;task=Task.Run(()=>StudioMeshFracture.Compute(input,settings,CancellationToken.None,p=>File.WriteAllText(Out("progress.txt"),phase+" "+p.Stage+" "+p.Fraction)));
     }
@@ -75,7 +75,7 @@ internal static class StudioFractureSurfaceValidation
             if(retreat<.000499f)throw new Exception("Gap retreat below half clearance: "+retreat);
             evidence+="Minimum interface retreat per side: "+retreat.ToString("R")+" m.\n";
             cubeInput.Geometry=Enumerable.Range(0,cubeInput.Positions.Length).ToArray();var ids=cubeInput.Geometry.ToArray();var points=cubeInput.Positions.ToArray();
-            var welded=StudioMeshFracture.Compute(cubeInput,new StudioMeshFracture.Settings(),CancellationToken.None,null);
+            var welded=StudioMeshFracture.Compute(cubeInput,new StudioMeshFracture.Settings{SimplifyInterior=false},CancellationToken.None,null);
             if(welded.Pieces.Count!=12||!cubeInput.Geometry.SequenceEqual(ids)||!cubeInput.Positions.SequenceEqual(points))throw new Exception("Seam weld or source immutability failed");
             var weldedMesh=StudioMeshFracture.Publish(welded,welded.Pieces[0]);
             try{if(weldedMesh.mesh.normals.Length!=weldedMesh.mesh.vertexCount||weldedMesh.mesh.uv.Length!=weldedMesh.mesh.vertexCount)throw new Exception("Welded attribute streams missing");}finally{UnityEngine.Object.DestroyImmediate(weldedMesh.mesh);}

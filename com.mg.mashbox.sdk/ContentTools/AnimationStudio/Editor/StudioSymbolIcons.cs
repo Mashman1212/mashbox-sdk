@@ -144,6 +144,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "curve-Object Mode":c.Rect(3,3,18,18,a);c.Arc(12,12,6,0,270,w);break;
                 case "curve-Finish Drawing":c.Path(a,3,12,9,5,21,20);break;
                 case "curve-Insert Knot":c.Arc(12,11,8,15,165,w);c.Plus(12,7,a);break;
+                case "curve-Cut at Point":c.Arc(12,11,8,15,75,w);c.Arc(12,11,8,105,165,w);c.Line(9,3,15,14,a,2);c.Line(15,3,9,14,a,2);break;
                 case "curve-Remove Knot":c.Arc(12,11,8,15,165,w);c.Line(8,7,16,7,a,2);break;
                 case "curve-Extend Endpoint":c.Arc(10,11,7,60,240,w);c.Arrow(13,17,21,21,a);break;
                 case "curve-Open Loop":c.Arc(12,12,8,40,320,w);c.Circle(18,17,2,a,true);c.Circle(18,7,2,a,true);break;
@@ -152,6 +153,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "curve-Corner Tangents":c.Path(w,3,19,12,8,21,15);c.Circle(12,8,2,a,true);break;
                 case "curve-Aligned Tangents":c.Path(w,3,5,12,14,17,19);c.Circle(12,14,2,a,true);break;
                 case "curve-Mirrored Tangents":c.Path(w,3,3,12,12,21,21);c.Circle(12,12,2,a,true);c.Circle(3,3,1.5f,w,true);c.Circle(21,21,1.5f,w,true);break;
+                case "curve-Sweep Mesh":c.Path(w,4,20,4,9,8,4,16,4,20,9);c.Path(w,9,20,9,11,11,9,15,9,16,11);c.Line(4,15,9,15,a);c.Line(4,20,9,20,w);break;
                 case "curve-Smooth Knots":c.Arc(12,9,8,0,180,w);c.Line(3,17,21,17,a);c.Circle(12,17,2,a,true);break;
                 case "constraint-aim":c.Circle(18,17,4,w);c.Plus(18,17,w);c.Rect(2,3,5,5,w);c.Arrow(7,8,16,15,a);break;
                 case "constraint-look":c.Path(w,2,12,7,17,14,17,20,12,14,7,7,7,2,12);c.Circle(10,12,3,a,true);c.Arrow(14,12,23,12,a);break;

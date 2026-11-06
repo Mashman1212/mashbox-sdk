@@ -7,10 +7,10 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace, Poke, FillHole, EdgeRingCollapse, FlipNormals, Polygon, Spline }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace, Poke, FillHole, EdgeRingCollapse, FlipNormals, Polygon, Spline, Sweep }
         private sealed class RepeatAction
         {
-            internal StudioMeshFracture.Settings fracture; internal Material fractureMaterial;
+            internal StudioSweepSettings sweep; internal StudioMeshFracture.Settings fracture; internal Material fractureMaterial;
             internal RepeatKind kind; internal LiveTool live; internal Vector4 parameters; internal Vector3 flow; internal bool welded;
         }
         private RepeatAction lastRepeatAction, repeatingAction;
@@ -66,6 +66,7 @@ namespace MashBoxSDK.AnimationStudio
                     case RepeatKind.Delete:
                         if (!CanDeleteSelection) throw new InvalidOperationException("Select objects or components to repeat Delete.");
                         DeleteSelection(); break;
+                    case RepeatKind.Sweep: OpenSweepTool(null,action.sweep);ApplySweep();break;
                     case RepeatKind.Spline: RepeatSplineAction(Mathf.RoundToInt(action.parameters.x)); break;
                     case RepeatKind.Polygon: BeginPolygon(commandView,commandLoaded); break;
                     case RepeatKind.Primitive: CreatePrimitive((PrimitiveType)Mathf.RoundToInt(action.parameters.x),commandView,commandLoaded); break;

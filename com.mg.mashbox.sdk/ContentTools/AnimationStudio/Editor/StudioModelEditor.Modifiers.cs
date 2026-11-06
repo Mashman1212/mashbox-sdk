@@ -25,7 +25,7 @@ namespace MashBoxSDK.AnimationStudio
         {modifierIntegerScrubber.End();Undo.PreparingObjects-=PrepareModifierObjects;EditorApplication.update-=FinishPendingModifiers;pendingModifiers.Clear();}
         private Object[] PrepareModifierObjects(Object[] targets,string label)
         {
-            if(writingModifiers||!Document||livePreview!=null||componentLiveTargets!=null)return targets;
+            if(writingModifiers||Document&&Document.writingSweepFrame||!Document||livePreview!=null||componentLiveTargets!=null)return targets;
             var meshes=targets.OfType<Mesh>().Where(m=>m&&Document.nodes.Any(n=>n.mesh==m&&!n.skinned&&n.blendShape==null)).ToArray();
             if(meshes.Length==0)return targets;
             foreach(var mesh in meshes)
@@ -89,6 +89,9 @@ namespace MashBoxSDK.AnimationStudio
                 var operation=new StudioModifierOperation{kind=liveTool.ToString(),name=liveTool==LiveTool.EdgeFlow?"Edit Edge Flow":liveTool.ToString(),
                     parameters=liveParameters,normalizedBevel=liveTool==LiveTool.Bevel,flow=liveFlowParameters,weld=weld,world=liveWorld,
                     faces=liveFaces?.ToArray(),edges=liveEdges?.SelectMany(e=>new[]{e.a,e.b}).ToArray(),vertices=liveSelection?.ToArray()};
+                operation.symmetry = liveSymmetryDeformation;
+                if(liveTool==LiveTool.Merge && liveSymmetryMergeMirror!=null){operation.vertices=liveSymmetryMergePrimary;operation.mirroredVertices=liveSymmetryMergeMirror;}
+                if(liveTool==LiveTool.Bridge)operation.mirroredEdges=liveMirroredBridgeEdges?.SelectMany(e=>new[]{e.a,e.b}).ToArray();
                 if(liveTool==LiveTool.Circularize && liveMode!=ComponentMode.Vertex)operation.vertices=null;
                 if(liveTool==LiveTool.Soften)
                 {int index=Array.IndexOf(livePreview.Targets,target);operation.edges=liveNormalEdges[index].SelectMany(e=>new[]{e.Item1,e.Item2}).ToArray();}
@@ -104,8 +107,11 @@ namespace MashBoxSDK.AnimationStudio
         {
             FlushModifierEdits();if(node.modifiers==null)return;
             var history=node.modifiers.Copy();var operation=history.operations.FirstOrDefault(o=>o.id==id);if(operation==null)return;
+            if(remove&&operation.kind=="Sweep")throw new InvalidOperationException("Use Clear History to bake the evaluated sweep and remove its source relationship.");
             if(remove)history.operations.Remove(operation);else edit(operation);
-            var work=StudioModifierEvaluator.Evaluate(history);
+            var previousHistory=node.modifiers;node.modifiers=history;
+            try{StudioSweepDependencies.Validate(Document);}finally{node.modifiers=previousHistory;}
+            var work=StudioModifierEvaluator.Evaluate(history,GenerateSweep);
             writingModifiers=true;
             try
             {
@@ -132,7 +138,7 @@ namespace MashBoxSDK.AnimationStudio
                     if(node.modifiers?.operations.Any(o=>!string.IsNullOrEmpty(o.failure))==true)throw new InvalidOperationException("Repair the broken modifier or Clear History first.");
                     var history=node.modifiers?.HasHistory==true?node.modifiers.Copy():new StudioModifierHistory{source=StudioModifierSource.Capture(node)};
                     var operation=new StudioModifierOperation{kind="Subdivision",name="Subdivision",subdivision=new StudioSubdivisionSettings{preview=true}};operation.Bind(node);history.operations.Add(operation);
-                    var work=StudioModifierEvaluator.Evaluate(history);
+                    var work=StudioModifierEvaluator.Evaluate(history,GenerateSweep);
                     if(history.operations.Any(o=>!string.IsNullOrEmpty(o.failure))){Object.DestroyImmediate(work.mesh);throw new InvalidOperationException(history.operations.First(o=>!string.IsNullOrEmpty(o.failure)).failure);}
                     prepared.Add((node,history,work));
                 }
@@ -151,6 +157,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ClearModifierHistory()
         {
             FlushModifierEdits();var selected=SubdivisionSelection().ToArray();if(selected.Length==0)throw new InvalidOperationException("Select a mesh to Clear History.");
+            if(selected.Any(n=>n.modifiers?.operations.Any(o=>o.kind=="Sweep"&&!string.IsNullOrEmpty(o.failure))==true))throw new InvalidOperationException("Repair the missing or invalid sweep source before baking its geometry.");
             var meshes=new HashSet<Mesh>(selected.Select(n=>n.mesh));writingModifiers=true;
             try
             {
@@ -186,7 +193,8 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawModifierChannels()
         {
-            if(!Document||Active<0||!ActiveMesh)return;var node=Document.nodes[Active];var history=node.modifiers;
+            if(!Document||Active<0||!ActiveMesh)return;
+            var node=Document.nodes[Active];var history=node.modifiers;
             GUILayout.Space(4);var rect=EditorGUILayout.GetControlRect(false,20);
             EditorGUI.DrawRect(new Rect(rect.x-4,rect.y,rect.width+8,rect.height),Color.Lerp(StudioTheme.Current.Panel,StudioTheme.Current.Button,.5f));
             bool expanded=DrawChannelCategoryFoldout(rect, modifiersExpanded, ModifiersChannelHeader);
@@ -200,6 +208,14 @@ namespace MashBoxSDK.AnimationStudio
                 using var sensitivity=new StudioDragSensitivity.DragScope(StudioSettings.Current.channelDragSensitivity);
                 foreach(var operation in history.operations.AsEnumerable().Reverse().ToArray())
                 {
+                    if(operation.kind=="Sweep")
+                    {
+                        EditorGUILayout.LabelField("Sweep Mesh");
+                        DrawSweepModifier(node,operation);
+                        if(!string.IsNullOrEmpty(operation.failure))EditorGUILayout.HelpBox(operation.failure,MessageType.Error);
+
+                        continue;
+                    }
                     bool hasFields=operation.kind is "Primitive" or "Bevel" or "Extrude" or "Bridge" or "Soften" or "EdgeFlow" or "Subdivision" or "Weld" or "Circularize";
                     bool open=hasFields&&!closedModifiers.Contains(operation.id);
                     using(new EditorGUILayout.HorizontalScope())

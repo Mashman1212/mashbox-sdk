@@ -59,7 +59,7 @@ namespace MashBoxSDK.AnimationStudio
         private void UpdateVertexMarkerSelection()
         {
             int count = 0;
-            foreach (int point in Components)
+            foreach (int point in drawnComponents)
                 if (point >= 0 && point < componentPositions.Length && IsolationAllowsComponent(point)) count++;
             if (count > markerSelectionIds.Length)
             {
@@ -68,7 +68,7 @@ namespace MashBoxSDK.AnimationStudio
                 markerSelection = new GraphicsBuffer(GraphicsBuffer.Target.Structured, markerSelectionIds.Length, 4);
             }
             markerSelectionCount = 0;
-            foreach (int point in Components)
+            foreach (int point in drawnComponents)
                 if (point >= 0 && point < componentPositions.Length && IsolationAllowsComponent(point)) markerSelectionIds[markerSelectionCount++] = point;
             if (count == 0 || markerSelection == null) return;
             markerSelection.SetData(markerSelectionIds, 0, 0, count);

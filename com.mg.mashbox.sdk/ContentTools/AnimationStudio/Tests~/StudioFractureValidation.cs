@@ -24,7 +24,7 @@ internal static class StudioFractureValidation
         {
             File.WriteAllText(Out("result.txt"),"RUNNING");checks=phase=0;doc=ScriptableObject.CreateInstance<StudioModelDocument>();doc.SetWorkspacePath(StudioModelDocument.NewWorkspacePath("FractureValidation"));doc.AddPrimitive(PrimitiveType.Cube);original=doc.nodes[0].mesh;originalPoints=original.vertices;
             material=new Material(Shader.Find("Hidden/FrameSubdivisionCheck"));doc.nodes[0].materials=new[]{material};
-            editor=new StudioModelEditor(()=>{});editor.Load(doc);editor.SelectObject(0);Call("OpenFractureTool");
+            editor=new StudioModelEditor(()=>{});editor.Load(doc);editor.SelectObject(0);Call("OpenFractureTool");Get<StudioMeshFracture.Settings>("fractureSettings").SimplifyInterior=false;
             Call("StartFracture");Check(Get<object>("fractureTask")!=null,"background work active");Call("CancelFracture",false);
             Check(Get<object>("fractureTask")==null&&Get<object>("fracturePreview")==null,"cancellation clears busy and preview");Check(original.vertices.SequenceEqual(originalPoints),"cancel preserves source");
             Call("StartFracture");started=EditorApplication.timeSinceStartup;EditorApplication.update+=Tick;

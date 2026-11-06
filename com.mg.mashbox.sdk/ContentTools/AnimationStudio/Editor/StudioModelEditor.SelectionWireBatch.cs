@@ -23,7 +23,7 @@ namespace MashBoxSDK.AnimationStudio
             var node=Document.nodes[Active];
             if(!selectionWireframes.TryGetValue(node,out var wire))
             {SelectionWireframeLines(Active,false);wire=selectionWireframes[node];}
-            var subset=ReferenceEquals(components,Components)?selectedWireSubset:hoverWireSubset;
+            var subset=ReferenceEquals(components,Components)||ReferenceEquals(components,symmetryDisplaySelection)?selectedWireSubset:hoverWireSubset;
             if(!ReferenceEquals(subset.wire,wire)||!subset.components.SetEquals(components))
             {
                 subset.wire=wire;subset.components.Clear();subset.components.UnionWith(components);subset.edges.Clear();

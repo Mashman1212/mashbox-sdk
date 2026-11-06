@@ -14,10 +14,10 @@ namespace MashBoxSDK.AnimationStudio
         public StudioCurvesToolbar() => Configure(new StudioCustomToolbarDefinition {
             id=Id, name="Curves", commands=new List<string> {
                 "Curves/Linear Spline", "Curves/Bezier Spline", "Curves/Edit Knots",
-                "Curves/Finish Drawing", "Curves/Insert Knot", "Curves/Remove Knot", "Curves/Extend Endpoint",
+                "Curves/Finish Drawing", "Curves/Insert Knot", "Curves/Cut at Point", "Curves/Remove Knot", "Curves/Extend Endpoint",
                 "Curves/Open Loop", "Curves/Close Loop", "Curves/Reverse Direction",
                 "Curves/Convert to Linear", "Curves/Convert to Bezier", "Curves/Corner Tangents",
-                "Curves/Aligned Tangents", "Curves/Mirrored Tangents", "Curves/Smooth Knots" } });
+                "Curves/Aligned Tangents", "Curves/Mirrored Tangents", "Curves/Smooth Knots", "Curves/Sweep Mesh" } });
     }
     [Overlay(typeof(MashBoxStudioViewport), Id, "Polygon Primitives", true,
         defaultDockZone = DockZone.TopToolbar, defaultDockPosition = DockPosition.Top,

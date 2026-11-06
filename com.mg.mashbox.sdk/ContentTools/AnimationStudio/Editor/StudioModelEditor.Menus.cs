@@ -148,6 +148,7 @@ namespace MashBoxSDK.AnimationStudio
                     { var kind = (StudioConstraintKind)i; AddCommand(menu, StudioModelConstraints.Labels[i], true, () => AddModelConstraint(kind)); }
                     break; }
                 case "Modify": {
+                    PopulateSymmetryMenu(menu);
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), !targetWeldActive && cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));
                     AddAction(menu, "Move", MarkingAction.Move, view); AddAction(menu, "Rotate", MarkingAction.Rotate, view); AddAction(menu, "Scale", MarkingAction.Scale, view);
                     menu.AddSeparator("");

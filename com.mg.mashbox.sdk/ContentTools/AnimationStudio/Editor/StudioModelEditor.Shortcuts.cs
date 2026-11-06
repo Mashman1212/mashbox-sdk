@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             if (evt == null || !evt.isKey || EditorGUIUtility.editingTextField || hierarchyRenameNode != null) return false;
+            ReconcileSplineEditingSelection();
             UpdatePivotTargetModifiers(evt);
             if (!markingOpen && evt.type == EventType.KeyDown && TryOpenRadial(view,evt,GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(),FocusType.Passive))) return true;
             if (HandleSelectionPaintKey(view)) return true;

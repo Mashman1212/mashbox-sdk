@@ -49,6 +49,14 @@ namespace MashBoxSDK.AnimationStudio
                 throw;
             }
             var constraintIds = sourceIndices.Select((source, i) => (oldId: nodes[source].constraintId, newId: copies[i].constraintId)).Where(p => !string.IsNullOrEmpty(p.oldId)).ToDictionary(p => p.oldId, p => p.newId);
+            foreach(var copy in copies) foreach(var op in copy.modifiers?.operations??new List<StudioModifierOperation>())
+                if(op.kind=="Sweep"&&op.sweep!=null)
+                {
+                    if(!string.IsNullOrEmpty(op.sweep.profileAncestorId)&&constraintIds.TryGetValue(op.sweep.profileAncestorId,out var profileAncestor))op.sweep.profileAncestorId=profileAncestor;
+                    if(!string.IsNullOrEmpty(op.sweep.profileId)&&constraintIds.TryGetValue(op.sweep.profileId,out var profile))op.sweep.profileId=profile;
+                    if(constraintIds.TryGetValue(op.sweep.sourceId,out var source))op.sweep.sourceId=source;
+                    if(!string.IsNullOrEmpty(op.sweep.ancestorId)&&constraintIds.TryGetValue(op.sweep.ancestorId,out var ancestor))op.sweep.ancestorId=ancestor;
+                }
             foreach (var copy in copies) foreach (var c in copy.constraints)
             {
                 foreach (var s in c.sources) if (!string.IsNullOrEmpty(s.nodeId) && constraintIds.TryGetValue(s.nodeId, out var id)) s.nodeId = id;

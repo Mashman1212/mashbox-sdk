@@ -110,7 +110,7 @@ namespace MashBoxSDK.AnimationStudio
                 using (var preview = new StudioMeshToolPreview(Document, new[] { node }))
                 {
                     var target = preview.Targets[0];
-                    var result = target.Topology.MergeVertices(target.Work, new[] { source, destination }, true, 0, Matrix4x4.identity, target: destination);
+                    var result = SymmetryTargetWeld(target, source, destination);
                     if (result == null) { RestoreTargetWeldSelection(before); return; }
                     var previous = livePreview; livePreview = preview;
                     try

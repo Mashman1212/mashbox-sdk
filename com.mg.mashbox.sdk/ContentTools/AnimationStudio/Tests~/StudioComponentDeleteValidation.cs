@@ -26,7 +26,8 @@ public static class StudioComponentDeleteValidation
         string report = Path.GetFullPath(Path.Combine(Application.dataPath, "../../component-delete-result.txt"));
         try
         {
-            foreach (var mode in new[] { StudioModelEditor.ComponentMode.Vertex, StudioModelEditor.ComponentMode.Edge, StudioModelEditor.ComponentMode.Face })
+            // Edge dissolve/endpoint cleanup is covered by StudioEdgeDissolveValidation.
+            foreach (var mode in new[] { StudioModelEditor.ComponentMode.Vertex, StudioModelEditor.ComponentMode.Face })
             foreach (bool weld in new[] { false, true })
             foreach (bool all in new[] { false, true })
                 Case(mode, weld, all);

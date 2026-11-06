@@ -38,6 +38,14 @@ namespace MashBoxSDK.AnimationStudio
 #if MASHBOX_STUDIO_TESTS
         internal static System.Action<Vector3,float> MoveHandleProbe;
 #endif
+        private Vector3 DrawSlidingMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier, Vector3? displayPosition)
+        {
+            // Native input retains its unconstrained frame. Only Repaint follows
+            // the constrained geometry, so changing the display cannot feed back
+            // into the next native Slider/Slider2D mouse sample.
+            if(Event.current.type==EventType.Repaint && displayPosition.HasValue)center=displayPosition.Value;
+            return DrawMoveHandle(center,orientation,sizeMultiplier);
+        }
         private Vector3 DrawMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
             if (GUIUtility.hotControl == 0) { moveDragControl = 0; edgeSnapLatched = false; }
@@ -73,11 +81,29 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 int free = moveHandleIds[6] = GUIUtility.GetControlID(0x4d5320, FocusType.Passive);
                 Handles.color = Color.yellow;
-                var freePosition = Handles.FreeMoveHandle(free, center, size * (pivot ? .1125f : .075f), Vector3.zero, pivot ? PivotTriangleCap : MoveRectangleCap);
+                var freePosition = DrawFreeMoveHandle(free, center, size * (pivot ? .1125f : .075f), pivot ? PivotTriangleCap : MoveRectangleCap);
                 TrackMoveControl(free, MoveAxes.Free, center, orientation);
                 if (GUIUtility.hotControl == free) result = freePosition;
             }
             return result;
+        }
+        private Vector3 freeMoveRight, freeMoveUp;
+        private int freeMoveFrameControl;
+        private Vector3 DrawFreeMoveHandle(int control, Vector3 center, float size, Handles.CapFunction cap)
+        {
+            // Keep screen-plane translation on the same native Slider2D path as the
+            // plane squares. The camera basis is latched for the owning gesture;
+            // constraint/player-loop updates cannot change its drag frame.
+            if (GUIUtility.hotControl != control || freeMoveFrameControl != control)
+            {
+                var camera = Camera.current;
+                var frame = camera ? camera.transform.rotation : Quaternion.identity;
+                freeMoveRight = Handles.inverseMatrix.MultiplyVector(frame * Vector3.right).normalized;
+                freeMoveUp = Handles.inverseMatrix.MultiplyVector(frame * Vector3.up).normalized;
+                freeMoveFrameControl = control;
+            }
+            return Handles.Slider2D(control, center, Vector3.Cross(freeMoveRight, freeMoveUp),
+                freeMoveRight, freeMoveUp, size, cap, Vector2.zero);
         }
         // Preserve native rectangle picking; fill only the hovered or captured plane.
         private static void DrawPlaneRectangleCap(int control, Vector3 position, Quaternion rotation, float size, EventType type)
@@ -418,3 +444,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

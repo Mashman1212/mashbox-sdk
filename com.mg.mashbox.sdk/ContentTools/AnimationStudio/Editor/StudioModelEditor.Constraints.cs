@@ -10,9 +10,50 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
+        private readonly GUIContent[] hierarchyConstraintContents = new GUIContent[6];
+        private StudioConstraintKind? revealHierarchyConstraint;
+        private int VisibleHierarchyConstraintCount(int owner)
+        {
+            var node = Document.nodes[owner];
+            return collapsedHierarchy.Contains(node) && string.IsNullOrEmpty(search) ? 0 : node.constraints?.Count ?? 0;
+        }
+        private void DrawHierarchyConstraints(int owner, int depth, Rect area, float height, GUIStyle style, ref int visibleRow)
+        {
+            int count = VisibleHierarchyConstraintCount(owner);
+            for (int i = 0; i < count; i++)
+            {
+                var data = Document.nodes[owner].constraints[i];
+                int kind = (int)data.kind;
+                var content = hierarchyConstraintContents[kind];
+                if (content == null)
+                    hierarchyConstraintContents[kind] = content = new GUIContent(StudioModelConstraints.Labels[kind],
+                        StudioCommandIcons.Get("Constraints/" + StudioModelConstraints.Labels[kind]), "Edit this constraint in Channels");
+                var row = new Rect(area.x, area.y + visibleRow++ * height + style.margin.top, area.width, height - style.margin.vertical);
+                row.xMin += 34 + Mathf.Min((depth + 1) * 12, 96);
+                if (Event.current.type == EventType.Repaint)
+                {
+                    if (!StudioTheme.HoverSuppressed && row.Contains(Event.current.mousePosition)) EditorGUI.DrawRect(row, StudioTheme.Current.Hover);
+                    bool hidden = !Document.nodes[owner].active || owner < Transforms.Length && Transforms[owner] && !Transforms[owner].gameObject.activeInHierarchy;
+                    var color = GUI.contentColor;
+                    try
+                    {
+                        if (hidden) GUI.contentColor = new Color(color.r * .45f, color.g * .45f, color.b * .45f, color.a);
+                        DrawHierarchyRowContent(row, content, style, hidden);
+                    }
+                    finally { GUI.contentColor = color; }
+                }
+                // These are component links, not document nodes: no object drag,
+                // rename, visibility eye, or synthetic object/mesh selection IDs.
+                if (GUI.Button(row, GUIContent.none, GUIStyle.none))
+                {
+                    Run(() => { SelectObject(owner); constraintChannelsExpanded = true; revealHierarchyConstraint = data.kind; });
+                    repaint();
+                }
+            }
+        }
         private bool constraintChannelsExpanded = true;
         private int constraintCaptureUpdates;
-        private static readonly GUIContent ConstraintHeader = new GUIContent("Constraints", EditorGUIUtility.IconContent("ParentConstraint Icon").image);
+        private static readonly GUIContent ConstraintHeader = new GUIContent("Constraints", StudioCommandIcons.Get("Constraints/Parent Constraint"));
         private IConstraint ConstraintComponent(StudioConstraintKind kind) => (IConstraint)Transforms[Active].GetComponent(StudioModelConstraints.Types[(int)kind]);
         private Transform ConstraintTransform(string id)
         {
@@ -30,7 +71,7 @@ namespace MashBoxSDK.AnimationStudio
             if (!Document || Active < 0 || mode != ComponentMode.Object)
                 throw new InvalidOperationException("Select the object to constrain in Object mode, then choose a constraint. Edit its sources in Channels.");
             var node = Document.nodes[Active];
-            if (node.constraints != null && node.constraints.Any(c => c.kind == kind)) { constraintChannelsExpanded = true; repaint(); return; }
+            if (node.constraints != null && node.constraints.Any(c => c.kind == kind)) { collapsedHierarchy.Remove(node); hierarchyRows = null; constraintChannelsExpanded = true; revealHierarchyConstraint = kind; repaint(); return; }
             Undo.RegisterCompleteObjectUndo(Document, "Add " + StudioModelConstraints.Labels[(int)kind]);
             foreach (var n in Document.nodes) StudioModelConstraints.Id(n);
             var component = (IConstraint)Transforms[Active].gameObject.AddComponent(StudioModelConstraints.Types[(int)kind]);
@@ -43,7 +84,8 @@ namespace MashBoxSDK.AnimationStudio
                 node.constraints.Add(data);
             }
             catch { UnityEngine.Object.DestroyImmediate((UnityEngine.Object)component); throw; }
-            constraintChannelsExpanded = true; Changed(false);
+            collapsedHierarchy.Remove(node); hierarchyRows = null;
+            constraintChannelsExpanded = true; revealHierarchyConstraint = kind; Changed(false);
         }
         private string ConstraintSourcePopup(string label, string id)
         {
@@ -104,7 +146,7 @@ namespace MashBoxSDK.AnimationStudio
             constraintCaptureUpdates = 2;
         }
         private void TickConstraints() { if (constraintCaptureUpdates > 0 && --constraintCaptureUpdates == 0) RepaintConstraints(); }
-        private void RepaintConstraints() { if (Document) { CaptureUnlockedConstraints(false); repaint(); } }
+        private void RepaintConstraints() { if (Document) { CaptureUnlockedConstraints(false); UpdateSweeps(); repaint(); } }
         private void CaptureUnlockedConstraints(bool update)
         {
             if (!Document || Transforms.Length != Document.nodes.Count) return;
@@ -123,16 +165,21 @@ namespace MashBoxSDK.AnimationStudio
         private void DrawConstraintChannels()
         {
             if (!Document || Active < 0 || Document.nodes[Active].constraints == null || Document.nodes[Active].constraints.Count == 0) return;
-            GUILayout.Space(4);
-            constraintChannelsExpanded = DrawChannelCategoryFoldout(EditorGUILayout.GetControlRect(false, 20), constraintChannelsExpanded, ConstraintHeader);
+            constraintChannelsExpanded = DrawChannelCategoryHeader(constraintChannelsExpanded, ConstraintHeader);
             if (!constraintChannelsExpanded) return;
             var constraints = Document.nodes[Active].constraints;
-            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelInset))
+            GUILayout.Space(4);
+            using (new EditorGUILayout.VerticalScope(StudioTheme.Styles.channelTransformInset))
             for (int index = 0; index < constraints.Count; index++)
             {
                 int captured = index;
                 var data = constraints[index].Copy();
                 GUILayout.Label(StudioModelConstraints.Labels[(int)data.kind], EditorStyles.boldLabel);
+                if (Event.current.type == EventType.Repaint && revealHierarchyConstraint == data.kind)
+                {
+                    inspectorScroll.y = Mathf.Max(0, GUILayoutUtility.GetLastRect().y - 4);
+                    revealHierarchyConstraint = null; repaint();
+                }
                 EditorGUI.BeginChangeCheck();
                 data.active = EditorGUILayout.Toggle("Is Active", data.active);
                 data.weight = EditorGUILayout.Slider("Weight", data.weight, 0, 1);

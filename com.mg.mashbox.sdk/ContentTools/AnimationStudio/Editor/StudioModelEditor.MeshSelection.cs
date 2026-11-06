@@ -55,6 +55,7 @@ namespace MashBoxSDK.AnimationStudio
             // Parameter tools keep the current transform gizmo. Starting from
             // Select still needs a usable gizmo once the selection is compatible.
             if (tool != Tool.Move && tool != Tool.Rotate && tool != Tool.Scale) tool = Tool.Move;
+            ExpandSymmetrySelection();
             repaint(); toolOptions?.Repaint();
         }
     }

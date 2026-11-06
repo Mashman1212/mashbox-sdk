@@ -121,6 +121,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal static void ValidateDocument(StudioModelDocument document, IReadOnlyDictionary<int, int> parents = null)
         {
+            StudioSweepDependencies.Validate(document,parents);
             var ids = new HashSet<string>();
             for (int i = 0; i < document.nodes.Count; i++)
             {
@@ -166,6 +167,8 @@ namespace MashBoxSDK.AnimationStudio
                 var node = document.nodes[index];
                 int parent = parents != null && parents.TryGetValue(index, out int replacement) ? replacement : node.parent;
                 if (parent >= 0) Visit(parent);
+                foreach(var op in node.modifiers?.operations??new List<StudioModifierOperation>())
+                    if(op.sweep!=null){if(!string.IsNullOrEmpty(op.sweep.sourceId)&&ids.TryGetValue(op.sweep.sourceId,out int sweepSource))Visit(sweepSource);if(op.sweep.profileShape==3&&!string.IsNullOrEmpty(op.sweep.profileId)&&ids.TryGetValue(op.sweep.profileId,out int profileSource))Visit(profileSource);}
                 foreach (var c in index == owner ? (node.constraints ?? new List<StudioModelConstraintData>()).Where(c => c.kind != data.kind).Concat(new[] { data }) : node.constraints ?? new List<StudioModelConstraintData>())
                 {
                     foreach (var s in c.sources) if (!string.IsNullOrEmpty(s.nodeId) && ids.TryGetValue(s.nodeId, out int dependency)) Visit(dependency);

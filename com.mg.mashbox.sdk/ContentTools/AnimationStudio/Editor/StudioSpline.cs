@@ -52,6 +52,26 @@ namespace MashBoxSDK.AnimationStudio
             }
             knots.Insert(segment+1, k); return segment+1;
         }
+        // Returns the two open pieces, or one opened loop. Never mutates the source.
+        public StudioSpline[] Cut(int segment, float t)
+        {
+            Validate();
+            if(segment<0||segment>=SegmentCount||!float.IsFinite(t)||t<0||t>1)
+                throw new InvalidOperationException("Choose a point on the spline.");
+            var copy=Copy();
+            int knot=t==0?segment:t==1?(segment+1)%knots.Count:copy.Insert(segment,t);
+            if(!closed&&(knot==0||knot==copy.knots.Count-1))
+                throw new InvalidOperationException("Choose an interior point; an open endpoint cannot be split.");
+            StudioSpline Piece(IEnumerable<Knot> source)
+            {
+                var result=new StudioSpline{kind=kind,knots=source.Select(k=>k.Copy()).ToList()};
+                // The cut changes endpoint neighborhoods: retain their exact authored handles.
+                result.knots[0].automatic=result.knots[result.knots.Count-1].automatic=false;
+                result.Validate();return result;
+            }
+            if(closed)return new[]{Piece(Enumerable.Range(0,copy.knots.Count+1).Select(i=>copy.knots[(knot+i)%copy.knots.Count]))};
+            return new[]{Piece(copy.knots.Take(knot+1)),Piece(copy.knots.Skip(knot))};
+        }
         public void Remove(IEnumerable<int> indices)
         {
             var ids = indices.Distinct().OrderByDescending(i=>i).ToArray();

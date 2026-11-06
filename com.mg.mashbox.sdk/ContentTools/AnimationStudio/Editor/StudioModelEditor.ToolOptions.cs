@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
         private readonly GUIContent toolOptionsHeader = new GUIContent();
-        private ToolChannelPane ActiveChannelTool => circularizePane?circularizePane:rangeWeldToolPane ? rangeWeldToolPane : fracturePane ? fracturePane : bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
+        private ToolChannelPane ActiveChannelTool => sweepPane?sweepPane:circularizePane?circularizePane:rangeWeldToolPane ? rangeWeldToolPane : fracturePane ? fracturePane : bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
             : bridgeToolPane ? bridgeToolPane : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : selectionActionPane ? selectionActionPane : combineToolPane;
         internal void PrepareEmbeddedChannelTool()
         {
@@ -47,7 +47,9 @@ namespace MashBoxSDK.AnimationStudio
         // execute the operation again.
         private void FinishToolsForSwitch(ToolChannelPane keep = null)
         {
-            if (keep && ActiveChannelTool == keep) return; FinishSplineForSwitch();
+            if (keep && ActiveChannelTool == keep) return;
+            if(sweepPending){try{ApplySweep();}catch(System.InvalidOperationException){CancelSweep();}}
+            CloseSweepTool(); FinishSplineForSwitch();
             if (cutTool == CutTool.Polygon && polygonPoints.Count >= 3) Run(CommitPolygon);
             bool pending = livePreview != null || componentLiveTargets != null || previewQueued ||
                 bisectPreview != null || fracturePreview != null;
@@ -70,6 +72,13 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ActivateTool(Tool next)
         {
+            if(splineEditing&&splineDraft==null&&SelectedSpline!=null &&
+                (next==Tool.Move||next==Tool.Rotate||next==Tool.Scale||next==Tool.None))
+            {
+                EndSplineGesture(false);splineCut=splineInsert=splineExtend=false;
+                CameraOptionsVisible=LightingOptionsVisible=false;tool=next;pivot=false;
+                EndPivotSnap();repaint();toolOptions?.Repaint();return;
+            }
             if (LiveObjectTransformLocked && (next == Tool.Move || next == Tool.Rotate || next == Tool.Scale))
             { repaint(); return; }
             FinishSelectionPaint();
@@ -122,8 +131,8 @@ namespace MashBoxSDK.AnimationStudio
             EditorGUI.BeginChangeCheck();
             if (tool != Tool.None) DrawOrientationPopup(true);
             xray = EditorGUILayout.Toggle(new GUIContent("Through selection", "Select components behind visible surfaces."), xray);
-            if (tool == Tool.Scale && mode != ComponentMode.Object)
-                preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges and faces cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
+            if (tool == Tool.Scale && (mode != ComponentMode.Object || SplineInputActive))
+                preventNegativeScale = EditorGUILayout.ToggleLeft(new GUIContent("Prevent negative scale", "Stop component scaling at a small positive size so vertices, edges, faces and spline knots cannot flip across the pivot. Object scaling is unaffected."), preventNegativeScale);
             if (EditorGUI.EndChangeCheck()) { SaveDisplayConfiguration(); repaint(); }
             if(tool==Tool.Move && !SplineInputActive)
             {
@@ -133,6 +142,10 @@ namespace MashBoxSDK.AnimationStudio
             }
             if (!SplineInputActive && (tool == Tool.Move || tool == Tool.Rotate || tool == Tool.Scale))
             {
+                EditorGUI.BeginChangeCheck();
+                using(new EditorGUI.DisabledScope(pivot || mode==ComponentMode.Object || mode==ComponentMode.Face))
+                    slideComponents=EditorGUILayout.Toggle(new GUIContent("Slide", "Constrain vertex/edge transforms to neighboring authored edges. Shared by Move, Rotate and Scale. Ctrl/Cmd+Shift-drag temporarily enables Slide."),slideComponents);
+                if(EditorGUI.EndChangeCheck()){SaveDisplayConfiguration();repaint();}
                 EditorGUI.BeginChangeCheck();
                 bool locked = EditorGUILayout.Toggle(new GUIContent("Lock pivot", "Keep the pivot fixed in world space through Undo, selection changes and modeling actions. Edit Pivot can still reposition it."), PivotLocked);
                 if (EditorGUI.EndChangeCheck()) SetPivotLocked(locked);

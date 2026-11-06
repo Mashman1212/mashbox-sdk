@@ -319,7 +319,13 @@ namespace MashBoxSDK.AnimationStudio
             var childIndices = Enumerable.Range(0, nodes.Count).Where(i => nodes[i].parent == index).ToArray();
             var childMatrices = childIndices.Select(i => newWorld.inverse * transforms[i].localToWorldMatrix).ToArray();
             var mesh = nodes[index].mesh;
-            Undo.RegisterCompleteObjectUndo(mesh ? new UnityEngine.Object[] {this,mesh} : new UnityEngine.Object[] {this}, label);
+            writingSweepFrame=nodes[index].modifiers?.operations.FirstOrDefault()?.kind=="Sweep";
+            try{Undo.RegisterCompleteObjectUndo(mesh ? new UnityEngine.Object[] {this,mesh} : new UnityEngine.Object[] {this}, label);}
+            finally{writingSweepFrame=false;}
+            if(nodes[index].modifiers?.operations.FirstOrDefault()?.kind=="Sweep")
+            {
+                var history=nodes[index].modifiers.Copy();var frame=new StudioModifierOperation{kind="SweepFrame",name=label,world=newWorld.inverse*t.localToWorldMatrix};history.operations.Add(frame);nodes[index].modifiers=history;
+            }
             if (mesh)
             {
                 TransformMesh(mesh, newWorld.inverse * t.localToWorldMatrix);
@@ -348,7 +354,7 @@ namespace MashBoxSDK.AnimationStudio
                     throw new InvalidOperationException("Freezing this non-uniform scale would shear children. Freeze the mesh before rotating its children.");
             }
         }
-        private static void TransformMesh(Mesh mesh, Matrix4x4 matrix)
+        internal static void TransformMesh(Mesh mesh, Matrix4x4 matrix)
         {
             var vertices = mesh.vertices; var normals = mesh.normals; var tangents = mesh.tangents;
             var normalMatrix = matrix.inverse.transpose;

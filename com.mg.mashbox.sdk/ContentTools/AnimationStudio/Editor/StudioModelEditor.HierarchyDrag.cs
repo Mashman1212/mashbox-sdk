@@ -211,14 +211,16 @@ namespace MashBoxSDK.AnimationStudio
             {
                 if ((GUIUtility.GUIToScreenPoint(evt.mousePosition) - hierarchyDragStart).sqrMagnitude >= 25)
                 {
-                    SelectHierarchyRow(index, true);
+                    // Reference drags must keep the selected Sweep and its destination field visible.
+                    bool sweepReference=SelectedSweep!=null&&Active!=index;
+                    if(!sweepReference)SelectHierarchyRow(index, true);
                     DragAndDrop.PrepareStartDrag();
                     DragAndDrop.objectReferences = Array.Empty<UnityEngine.Object>(); DragAndDrop.paths = Array.Empty<string>();
-                    var selection = Document.OrderedHierarchy().Where(objects.Contains).ToArray();
+                    var selection = sweepReference?new[]{index}:Document.OrderedHierarchy().Where(objects.Contains).ToArray();
                     DragAndDrop.SetGenericData(HierarchyDragKey, new HierarchyDragPayload { owner = this, document = Document,
                         selection = selection, nodes = selection.Select(i => Document.nodes[i]).ToArray() });
                     GUIUtility.hotControl = 0; hierarchyDragControl = 0;
-                    beginHierarchyDrag(objects.Count == 1 ? Document.nodes[index].name : "MashBox Studio objects");
+                    beginHierarchyDrag(selection.Length == 1 ? Document.nodes[index].name : "MashBox Studio objects");
                 }
                 evt.Use();
             }

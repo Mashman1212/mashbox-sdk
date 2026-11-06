@@ -36,6 +36,7 @@ namespace MashBoxSDK.AnimationStudio
         private void CommitCuts(IList<StudioMeshCuts.Cut> cuts)
         {
             if (cuts.Count == 0) return;
+            cuts = SymmetryCuts(cuts);
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
             string label = cutTool == CutTool.EdgeLoop || loopSeed.HasValue ? "Insert edge loop" : "Multi-Cut";
             Undo.SetCurrentGroupName(label); Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, ActiveMesh }, label);

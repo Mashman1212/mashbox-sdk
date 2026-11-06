@@ -26,6 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static string CanonicalIconKey(string key)
         {
+            if(key == "RadialPreset/symmetry" || key.StartsWith("Modify/Symmetry/", StringComparison.Ordinal)) return "Viewport/Orientation";
             if(key.StartsWith("Legacy/UV",StringComparison.Ordinal))return "UV/UV Sets/UV "+key.Substring("Legacy/UV".Length);
             if(key.StartsWith("RadialPreset/",StringComparison.Ordinal))
             {

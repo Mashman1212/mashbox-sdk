@@ -97,6 +97,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             RefreshComponentPositions(0, markerPositions, markerIndices);
             CaptureUndoMeshVersions();
+            UpdateSweeps();
             componentFrameValid=false;pivotTargetCache.Clear();pivotHover=null;
             if(Document)
             {

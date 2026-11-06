@@ -31,13 +31,21 @@ namespace MashBoxSDK.AnimationStudio
             if (tool == Tool.Scale) scale = ConstrainComponentScale(scale);
             if (tool == Tool.Scale && !InvertibleScale(scale)) throw new InvalidOperationException("The extrusion scale must be finite and non-zero.");
             var t = Transforms[Active];
+            var symmetry = CaptureSymmetry();
+            var symmetryVertices = symmetry == null ? null : ActiveMesh.vertices;
+            float drivingSide = symmetry == null ? 0 : SelectedVertices().Select(i => symmetry.Side(symmetryVertices[i])).FirstOrDefault(v => Mathf.Abs(v) > symmetry.Tolerance);
+            ExpandSymmetrySelection();
             Vector3 TransformPoint(Vector3 source)
             {
-                var world = t.TransformPoint(source);
+                bool reflected = symmetry != null && symmetry.Side(source) * drivingSide < -symmetry.Tolerance * symmetry.Tolerance;
+                var input = reflected ? symmetry.Reflect(source) : source;
+                var world = t.TransformPoint(input);
                 if (tool == Tool.Move) world += position - center;
                 else if (tool == Tool.Rotate) world = center + rotation * Quaternion.Inverse(orientation) * (world - center);
                 else world = center + orientation * Vector3.Scale(Quaternion.Inverse(orientation) * (world - center), scale);
-                return t.InverseTransformPoint(world);
+                var result = t.InverseTransformPoint(world);
+                if (reflected) return symmetry.Reflect(result);
+                return symmetry != null && Mathf.Abs(symmetry.Side(source)) <= symmetry.Tolerance ? (result + symmetry.Reflect(result)) * .5f : result;
             }
             var topology = new StudioMeshCuts(Document.nodes[Active]);
             int[] faces = mode == ComponentMode.Face ? Components.OrderBy(i => i).ToArray() : null;

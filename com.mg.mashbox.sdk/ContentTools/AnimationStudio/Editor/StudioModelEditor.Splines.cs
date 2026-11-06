@@ -10,10 +10,12 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         private StudioSpline splineDraft;
-        private bool splineEditing, splineInsert, splineExtend;
+        private bool splineEditing, splineInsert, splineExtend, splineCut;
         private int splineOwner = -1, splineHandle, splineControl, splineUndo = -1;
         private readonly HashSet<int> splineKnots = new HashSet<int>();
         private StudioSpline splineBeforeDrag;
+        private Vector2 splinePlacementMouse;
+        private bool splinePlacementHandleDrag;
         private Vector3 splineDragStart;
         private Quaternion splineRotation = Quaternion.identity;
         private Vector3 splineScale = Vector3.one;
@@ -21,17 +23,59 @@ namespace MashBoxSDK.AnimationStudio
         private bool splineMarquee;
         private Vector2 splineMarqueeStart, splineMarqueeEnd;
         private StudioSpline SelectedSpline => Document && Active >= 0 && Active < Document.nodes.Count ? Document.nodes[Active].spline : null;
-        private StudioSpline EditingSpline => splineDraft ?? (splineEditing ? SelectedSpline : null);
-        private bool SplineInputActive => splineDraft != null || splineEditing && SelectedSpline != null;
+        private StudioSpline EditingSpline => splineDraft ?? (OwnsSplineEditingSelection ? SelectedSpline : null);
+        private bool OwnsSplineEditingSelection => splineEditing && splineOwner==Active &&
+            mode==ComponentMode.Object && objects.Count==1 && objects.Contains(splineOwner) && SelectedSpline!=null;
+        private bool SplineInputActive => splineDraft != null || OwnsSplineEditingSelection;
+        private void ReconcileSplineEditingSelection()
+        {
+            if(splineEditing && !OwnsSplineEditingSelection)StopSplineEditing();
+        }
+        private bool SelectOtherObjectFromSpline(SceneView view, int knot)
+        {
+            var evt=Event.current;
+            if(splineDraft!=null || !splineEditing || splineInsert || splineExtend || splineCut || knot>=0 ||
+                evt.type!=EventType.MouseDown || evt.button!=0 || evt.alt || GUIUtility.hotControl!=0)return false;
+            // Knot/tangent/gizmo input and the edited curve retain precedence.
+            if(PickSplineSegment(view,SelectedSpline,SplineMatrix,evt.mousePosition,out _,out _,out float currentDistance) && currentDistance<9)return false;
+            int hit=MeshAtModePointer(view,evt.mousePosition);float best=9;
+            for(int n=0;n<Document.nodes.Count;n++)
+                if(n!=splineOwner && Document.nodes[n].spline!=null && SplineVisible(n) &&
+                    PickSplineSegment(view,Document.nodes[n].spline,Transforms[n].localToWorldMatrix,evt.mousePosition,out _,out _,out float distance) && distance<best)
+                {hit=n;best=distance;}
+            if(hit<0 || hit==splineOwner)return false;
+            SelectObject(hit,evt.shift,evt.control||evt.command);evt.Use();return true;
+        }
         private Matrix4x4 SplineMatrix => splineDraft != null ? Matrix4x4.identity : Transforms[Active].localToWorldMatrix;
         private void BeginSpline(SceneView view, Action<StudioModelDocument> loaded, StudioSplineKind kind)
         {
             using var camera = new CreationCameraScope(view);
             FinishToolsForSwitch(); CancelMarkingMenu(); EnsureWorkspace(loaded);
-            splineDraft = new StudioSpline { kind=kind }; splineEditing=false; splineInsert=splineExtend=false;
+            splineDraft = new StudioSpline { kind=kind }; splineEditing=false; splineCut=splineInsert=splineExtend=false;
             splineKnots.Clear(); splineHandle=0; polygonPlane=new Plane(-view.camera.transform.forward,view.pivot);
             tool=Tool.Move; mode=ComponentMode.Object; pivot=false; CameraOptionsVisible=LightingOptionsVisible=false;
             OpenToolOptions(); repaint();
+        }
+        private int SplineSourceFor(int node)
+        {
+            if(!Document||node<0||node>=Document.nodes.Count)return -1;
+            if(Document.nodes[node].spline!=null)return node;
+            var source=Document.nodes[node].modifiers?.operations.FirstOrDefault(o=>o.kind=="Sweep")?.sweep?.sourceId;
+            return string.IsNullOrEmpty(source)?-1:Document.nodes.FindIndex(n=>n.constraintId==source&&n.spline!=null);
+        }
+        private void EditSplineSource(int node)
+        {
+            int source=SplineSourceFor(node);
+            if(source<0)throw new InvalidOperationException("The source spline is missing.");
+            SelectObject(source);EditSpline();
+        }
+        private bool TryEditSweepDoubleClick(SceneView view)
+        {
+            var evt=Event.current;
+            if(mode!=ComponentMode.Object||SplineInputActive||evt.type!=EventType.MouseDown||evt.button!=0||evt.clickCount!=2||evt.alt||evt.shift||evt.control||evt.command||GUIUtility.hotControl!=0)return false;
+            int hit=MeshAtModePointer(view,evt.mousePosition);
+            if(hit<0||Document.nodes[hit].spline!=null||SplineSourceFor(hit)<0)return false;
+            EditSplineSource(hit);evt.Use();return true;
         }
         private void EditSpline()
         {
@@ -52,13 +96,13 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void StopSplineEditing()
         {
-            EndSplineGesture(false); splineDraft=null; splineEditing=splineInsert=splineExtend=false;
-            splineKnots.Clear(); splineHandle=0; splineMarquee=false; polygonHover=null; EndPivotSnap(); ClearGridSnap(); repaint();
+            EndSplineGesture(false); splineDraft=null; splineEditing=splineCut=splineInsert=splineExtend=false;
+            splineKnots.Clear(); splineOwner=-1; splineHandle=0; splineMarquee=false; polygonHover=null; EndPivotSnap(); ClearGridSnap(); repaint();
         }
         private void FinishSplineForSwitch()
         {
             if(splineDraft!=null){if(splineDraft.knots.Count>=2)Run(FinishSpline);else splineDraft=null;}
-            splineInsert=splineExtend=false;
+            splineCut=splineInsert=splineExtend=false;
         }
         private void SplineEdit(string label, Action<StudioSpline> edit)
         {
@@ -78,7 +122,7 @@ namespace MashBoxSDK.AnimationStudio
             else if(action==4||action==5)SplineEdit("Spline Closure",s=>s.closed=action==4);
             else if(action==6||action==7)SplineEdit("Spline Type",s=>s.SetKind((StudioSplineKind)(action-6)));
             else if(action>=8&&action<=10)SetSplineTangent((StudioSplineTangent)(action-8));
-            else if(action==11)SmoothSplineKnots();else if(action==12)SetSplineInsert(false);
+            else if(action==11)SmoothSplineKnots();else if(action==12)SetSplineInsert(false);else if(action==13)SetSplineCut();
         }
         private void RemoveSplineKnots() => SplineEdit("Remove Spline Knots",s=>s.Remove(splineKnots));
         private void ReverseSpline()
@@ -101,17 +145,42 @@ namespace MashBoxSDK.AnimationStudio
         {
             if(!SplineInputActive)EditSpline();
             if(extend){var s=EditingSpline;if(s.closed)throw new InvalidOperationException("Open the spline before extending it.");if(splineKnots.Count!=1||(splineKnots.First()!=0&&splineKnots.First()!=s.knots.Count-1))throw new InvalidOperationException("Select one endpoint to extend.");}
-            splineExtend=extend;splineInsert=!extend;repaint();
+            EndSplineGesture(false);splineCut=false;splineExtend=extend;splineInsert=!extend;repaint();
+        }
+        private void SetSplineCut()
+        {
+            if(splineDraft!=null)FinishSpline();
+            if(!SplineInputActive)EditSpline();
+            EndSplineGesture(false);splineInsert=splineExtend=false;splineCut=true;splineHandle=0;repaint();
+        }
+        private void CutSplineAtPoint(int segment,float t)
+        {
+            EndSplineGesture(false);
+            // Preflight before registering Undo or changing either object.
+            SelectedSpline.Cut(segment,t);
+            Undo.IncrementCurrentGroup();int group=Undo.GetCurrentGroup();int owner=Active;
+            try
+            {
+                Document.CutSpline(owner,segment,t,Transforms);
+                Rebuild();var beforeSelection=CaptureSelection();StopSplineEditing();
+                mode=ComponentMode.Object;objects.Clear();ClearAllComponentSelections();Active=-1;
+                RecordSelectionChange(beforeSelection);
+                Changed(false);RememberAction(RepeatKind.Spline,new Vector4(13,0,0,0));
+            }
+            catch{Undo.RevertAllDownToGroup(group);throw;}
+            finally{Undo.CollapseUndoOperations(group);}
         }
         private void PopulateSplineMenu(StudioMenu menu, SceneView view, Action<StudioModelDocument> loaded)
         {
             AddCommand(menu,"Linear Spline",true,()=>BeginSpline(view,loaded,StudioSplineKind.Linear),finishPreview:false);
             AddCommand(menu,"Bezier Spline",true,()=>BeginSpline(view,loaded,StudioSplineKind.Bezier),finishPreview:false);
             menu.AddSeparator("");
+            AddCommand(menu,"Sweep Mesh",true,()=>OpenSweepTool(),finishPreview:false);
             AddCommand(menu,"Edit Knots",true,EditSpline,finishPreview:false);
 
             AddCommand(menu,"Finish Drawing",splineDraft!=null,FinishSpline,finishPreview:false);
             AddCommand(menu,"Insert Knot",true,()=>SetSplineInsert(false),finishPreview:false);
+            AddCommand(menu,"Cut at Point",true,SetSplineCut,finishPreview:false);
             AddCommand(menu,"Remove Knot",true,RemoveSplineKnots,finishPreview:false);
             AddCommand(menu,"Extend Endpoint",true,()=>SetSplineInsert(true),finishPreview:false);
             menu.AddSeparator("");
@@ -138,6 +207,14 @@ namespace MashBoxSDK.AnimationStudio
             if(!SplineInputActive)return false;
             if(StudioShortcuts.Pressed(StudioShortcut.Cancel,evt)){if(splineBeforeDrag!=null)EndSplineGesture(true);else StopSplineEditing();evt.Use();return true;}
             if(splineDraft!=null && (evt.keyCode==KeyCode.Return || StudioShortcuts.Pressed(StudioShortcut.Move,evt))){Run(FinishSpline);evt.Use();return true;}
+            if(splineDraft==null)
+            {
+                Tool? next=StudioShortcuts.Pressed(StudioShortcut.Move,evt)?Tool.Move:
+                    StudioShortcuts.Pressed(StudioShortcut.Rotate,evt)?Tool.Rotate:
+                    StudioShortcuts.Pressed(StudioShortcut.Scale,evt)?Tool.Scale:
+                    StudioShortcuts.Pressed(StudioShortcut.Select,evt)?Tool.None:(Tool?)null;
+                if(next.HasValue){ActivateTool(next.Value);evt.Use();return true;}
+            }
             if(StudioShortcuts.Pressed(StudioShortcut.Delete,evt)||evt.keyCode==KeyCode.Backspace){if(splineDraft!=null){if(splineDraft.knots.Count>0)splineDraft.knots.RemoveAt(splineDraft.knots.Count-1);splineDraft.RefreshAutomaticTangents();splineKnots.Clear();}else Run(RemoveSplineKnots);evt.Use();repaint();return true;}
             if(StudioShortcuts.Pressed(StudioShortcut.SelectAll,evt)){splineKnots.Clear();for(int i=0;i<EditingSpline.knots.Count;i++)splineKnots.Add(i);splineHandle=0;evt.Use();repaint();return true;}
             if(StudioShortcuts.Pressed(StudioShortcut.Object,evt)){StopSplineEditing();evt.Use();return true;}
@@ -157,7 +234,7 @@ namespace MashBoxSDK.AnimationStudio
             if(splineUndo>=0&&!cancel)Undo.CollapseUndoOperations(splineUndo);
             splineUndo=-1;splineBeforeDrag=null;splineRotation=Quaternion.identity;splineScale=Vector3.one;
             if(splineControl!=0&&GUIUtility.hotControl==splineControl)GUIUtility.hotControl=0;
-            splineControl=0;edgeSnapLatched=false;repaint();
+            splineControl=0;splinePlacementHandleDrag=false;edgeSnapLatched=false;repaint();
         }
         private bool TrySplinePoint(SceneView view, Vector2 mouse, out Vector3 point)
         {
@@ -195,7 +272,8 @@ namespace MashBoxSDK.AnimationStudio
             var evt=Event.current;
             bool over=!(view is MashBoxStudioViewport host)||host.ModelCanvasRect.Contains(evt.mousePosition)&&!host.IsOverViewportControls(evt.mousePosition);
             if(Document)for(int n=0;n<Document.nodes.Count;n++)if(Document.nodes[n].spline!=null&&SplineVisible(n))DrawSpline(Document.nodes[n].spline,Transforms[n].localToWorldMatrix,objects.Contains(n));
-            if(splineEditing && splineOwner!=Active){splineKnots.Clear();splineHandle=0;splineOwner=Active;}
+            ReconcileSplineEditingSelection();
+            if(over&&!markingOpen&&Document&&TryEditSweepDoubleClick(view))return true;
             var s=EditingSpline;
             if(s==null){
                 int pick=GUIUtility.GetControlID("StudioSplineObjectPick".GetHashCode(),FocusType.Passive);
@@ -206,7 +284,8 @@ namespace MashBoxSDK.AnimationStudio
             splineKnots.RemoveWhere(i=>i<0||i>=s.knots.Count);
             if(markingOpen)return false;
             if(HandleModelKeyboard(view))return true;
-            if(evt.alt)return true;
+            // Navigation owns input, but the draft and knot/handle preview must still repaint.
+            if(evt.alt && evt.type!=EventType.Repaint)return true;
             if(splineDraft==null&&!SplineVisible(Active))return false;
             var matrix=SplineMatrix;
             if(splineDraft!=null)DrawSpline(s,matrix,true);
@@ -215,14 +294,18 @@ namespace MashBoxSDK.AnimationStudio
             if(over&&evt.type==EventType.MouseMove&&(splineDraft!=null||splineExtend))polygonHover=TrySplinePoint(view,evt.mousePosition,out var hover)?hover:(Vector3?)null;
             if(evt.type==EventType.Repaint){
                 using(new Handles.DrawingScope(Color.yellow)){
-                    if(splineInsert&&PickSplineSegment(view,s,matrix,evt.mousePosition,out int seg,out float fraction,out _)){var p=matrix.MultiplyPoint3x4(s.Evaluate(seg,fraction));Handles.DotHandleCap(0,p,Quaternion.identity,HandleUtility.GetHandleSize(p)*.06f,EventType.Repaint);}
+                    if((splineInsert||splineCut)&&PickSplineSegment(view,s,matrix,evt.mousePosition,out int seg,out float fraction,out _)){var p=matrix.MultiplyPoint3x4(s.Evaluate(seg,fraction));Handles.DotHandleCap(0,p,Quaternion.identity,HandleUtility.GetHandleSize(p)*.06f,EventType.Repaint);}
                     if((splineDraft!=null||splineExtend)&&polygonHover.HasValue){var p=polygonHover.Value;if(s.knots.Count>0)Handles.DrawDottedLine(matrix.MultiplyPoint3x4(s.knots[splineExtend&&splineKnots.Count==1?splineKnots.First():s.knots.Count-1].position),p,4);Handles.DotHandleCap(0,p,Quaternion.identity,HandleUtility.GetHandleSize(p)*.04f,EventType.Repaint);}
                 }
                 if(splineMarquee){Handles.BeginGUI();GUI.Box(Rect.MinMaxRect(Mathf.Min(splineMarqueeStart.x,splineMarqueeEnd.x),Mathf.Min(splineMarqueeStart.y,splineMarqueeEnd.y),Mathf.Max(splineMarqueeStart.x,splineMarqueeEnd.x),Mathf.Max(splineMarqueeStart.y,splineMarqueeEnd.y)),GUIContent.none);Handles.EndGUI();}
             }
             if(splineBeforeDrag!=null&&splineControl==0&&GUIUtility.hotControl==0)EndSplineGesture(false);
-            if(splineDraft==null&&!splineInsert&&!splineExtend)DrawSplineGizmo(view);
+            if(!evt.alt&&splineDraft==null&&!splineInsert&&!splineExtend&&!splineCut)DrawSplineGizmo(view);
             int knot=-1,handle=0;float nearest=10;
+            var previousDepth=Handles.zTest;
+            try
+            {
+                Handles.zTest=UnityEngine.Rendering.CompareFunction.Always;
             for(int i=0;i<s.knots.Count;i++){
                 var k=s.knots[i];var p=matrix.MultiplyPoint3x4(k.position);
                 void Marker(Vector3 world,int part){float d=Vector2.Distance(evt.mousePosition,HandleUtility.WorldToGUIPoint(world));if(d<nearest){nearest=d;knot=i;handle=part;}if(evt.type==EventType.Repaint){Handles.color=splineKnots.Contains(i)&&(splineHandle==part||part==0)?Color.yellow:part==0?Color.cyan:new Color(1,.3f,.8f);Handles.DotHandleCap(0,world,Quaternion.identity,HandleUtility.GetHandleSize(world)*(part==0?.055f:.035f),EventType.Repaint);}}
@@ -232,13 +315,22 @@ namespace MashBoxSDK.AnimationStudio
                     if(evt.type==EventType.Repaint){Handles.color=new Color(1,.3f,.8f);Handles.DrawAAPolyLine(1,a,p,b);}Marker(a,-1);Marker(b,1);
                 }
             }
+            }
+            finally{Handles.zTest=previousDepth;}
+            if(over && SelectOtherObjectFromSpline(view,knot))return true;
             if(evt.type==EventType.MouseDown&&evt.button==0&&over&&GUIUtility.hotControl==0){
                 if(splineDraft!=null||splineExtend){
                     if(splineExtend)polygonPlane=new Plane(-view.camera.transform.forward,matrix.MultiplyPoint3x4(s.knots[splineKnots.First()].position));
                     if(TrySplinePoint(view,evt.mousePosition,out var point)){
-                        BeginSplineGesture(point);var k=new StudioSpline.Knot{position=matrix.inverse.MultiplyPoint3x4(point),tangent=StudioSplineTangent.Aligned,automatic=s.kind==StudioSplineKind.Bezier};
+                        BeginSplineGesture(point);splinePlacementMouse=evt.mousePosition;splinePlacementHandleDrag=false;var k=new StudioSpline.Knot{position=matrix.inverse.MultiplyPoint3x4(point),tangent=StudioSplineTangent.Aligned,automatic=s.kind==StudioSplineKind.Bezier};
                         int index=splineExtend&&splineKnots.First()==0?0:s.knots.Count;s.knots.Insert(index,k);s.RefreshAutomaticTangents();splineKnots.Clear();splineKnots.Add(index);splineHandle=0;splineControl=control;GUIUtility.hotControl=control;if(splineDraft==null)Changed(false);
                     }evt.Use();repaint();return true;
+                }
+                if(splineCut)
+                {
+                    if(knot>=0&&handle==0){int cutSegment=knot==s.knots.Count-1&&!s.closed?knot-1:knot;float cutT=knot==s.knots.Count-1&&!s.closed?1:0;Run(()=>CutSplineAtPoint(cutSegment,cutT));}
+                    else if(PickSplineSegment(view,s,matrix,evt.mousePosition,out int cutSegment,out float cutT,out _))Run(()=>CutSplineAtPoint(cutSegment,cutT));
+                    evt.Use();repaint();return true;
                 }
                 if((splineInsert||evt.clickCount==2)&&PickSplineSegment(view,s,matrix,evt.mousePosition,out int segment,out float t,out _)){
                     int added=-1;Run(()=>SplineEdit("Insert Spline Knot",c=>added=c.Insert(segment,Mathf.Clamp(t,.001f,.999f))));if(added>=0){splineKnots.Clear();splineKnots.Add(added);splineHandle=0;}evt.Use();return true;
@@ -248,10 +340,22 @@ namespace MashBoxSDK.AnimationStudio
                 }else {if(!evt.shift){splineKnots.Clear();splineHandle=0;}splineMarquee=true;splineMarqueeStart=splineMarqueeEnd=evt.mousePosition;splineControl=control;GUIUtility.hotControl=control;}
                 evt.Use();repaint();
             }
-            if(splineControl!=0&&GUIUtility.hotControl==splineControl&&evt.type==EventType.MouseDrag){if(splineMarquee)splineMarqueeEnd=evt.mousePosition;else if(TrySplinePoint(view,evt.mousePosition,out var point)){if(splineDraft!=null||splineExtend){int i=splineKnots.First();s.knots[i].tangent=StudioSplineTangent.Mirrored;s.SetHandle(i,false,matrix.inverse.MultiplyPoint3x4(point)-s.knots[i].position);}else ApplySplineTranslation(point-splineDragStart);if(splineDraft==null)Changed(false);}evt.Use();repaint();}
+            if(splineControl!=0&&GUIUtility.hotControl==splineControl&&evt.type==EventType.MouseDrag){if(splineMarquee)splineMarqueeEnd=evt.mousePosition;else if(TrySplinePoint(view,evt.mousePosition,out var point)){if(splineDraft!=null||splineExtend){UpdateSplinePlacementHandle(s,matrix,evt.mousePosition,point);}else ApplySplineTranslation(point-splineDragStart);if(splineDraft==null)Changed(false);}evt.Use();repaint();}
             if(splineControl!=0&&evt.rawType==EventType.MouseUp){if(splineMarquee){var rect=Rect.MinMaxRect(Mathf.Min(splineMarqueeStart.x,splineMarqueeEnd.x),Mathf.Min(splineMarqueeStart.y,splineMarqueeEnd.y),Mathf.Max(splineMarqueeStart.x,splineMarqueeEnd.x),Mathf.Max(splineMarqueeStart.y,splineMarqueeEnd.y));for(int i=0;i<s.knots.Count;i++)if(VisiblePoint(view,matrix.MultiplyPoint3x4(s.knots[i].position),rect))splineKnots.Add(i);splineMarquee=false;}EndSplineGesture(false);evt.Use();}
             if(evt.type==EventType.MouseMove)repaint();
             return true;
+        }
+        private void UpdateSplinePlacementHandle(StudioSpline spline, Matrix4x4 matrix, Vector2 mouse, Vector3 point)
+        {
+            if(spline.kind!=StudioSplineKind.Bezier||splineKnots.Count!=1)return;
+            int i=splineKnots.First();var offset=matrix.inverse.MultiplyPoint3x4(point)-spline.knots[i].position;
+            // A placement click may contain tiny native MouseDrag events. Preserve
+            // automatic smoothing until deliberate screen movement produces a handle.
+            // A held snap can also keep the target at the placed knot despite travel.
+            if(!splinePlacementHandleDrag&&((mouse-splinePlacementMouse).sqrMagnitude<16f||offset.sqrMagnitude<1e-16f))return;
+            splinePlacementHandleDrag=true;
+            spline.knots[i].tangent=StudioSplineTangent.Mirrored;
+            spline.SetHandle(i,false,offset);
         }
         private Vector3 SplineSelectionCenter()
         {
@@ -275,7 +379,15 @@ namespace MashBoxSDK.AnimationStudio
             if(!EditorGUI.EndChangeCheck())return;
             BeginSplineGesture(center);var matrix=SplineMatrix;var inverse=matrix.inverse;var s=EditingSpline;
             if(tool==Tool.Move){if(pivotSnapHeld||edgeSnapHeld||gridSnapHeld){if(!TrySplinePoint(view,Event.current.mousePosition,out var snap))return;moved=snap;}ApplySplineTranslation(moved-splineDragStart);}
-            else foreach(int i in splineKnots){var k=splineBeforeDrag.knots[i];Vector3 Map(Vector3 p){var world=matrix.MultiplyPoint3x4(p)-splineDragStart;return inverse.MultiplyPoint3x4(splineDragStart+(tool==Tool.Rotate?rotation*Quaternion.Inverse(splineFrame)*world:splineFrame*Vector3.Scale(Quaternion.Inverse(splineFrame)*world,scale)));}
+            else ApplySplineGizmoTransform(rotation,scale);
+            if(tool==Tool.Move){splineRotation=rotation;splineScale=scale;Changed(false);}
+        }
+        private void ApplySplineGizmoTransform(Quaternion rotation,Vector3 scale)
+        {
+            if(!FiniteScalePoint(scale))return;
+            if(tool==Tool.Scale)scale=ConstrainComponentScale(scale);
+            var matrix=SplineMatrix;var inverse=matrix.inverse;var s=EditingSpline;
+            foreach(int i in splineKnots){var k=splineBeforeDrag.knots[i];Vector3 Map(Vector3 p){var world=matrix.MultiplyPoint3x4(p)-splineDragStart;return inverse.MultiplyPoint3x4(splineDragStart+(tool==Tool.Rotate?rotation*Quaternion.Inverse(splineFrame)*world:splineFrame*Vector3.Scale(Quaternion.Inverse(splineFrame)*world,scale)));}
                 if(splineHandle!=0)s.SetHandle(i,splineHandle<0,Map(k.position+(splineHandle<0?k.incoming:k.outgoing))-s.knots[i].position);
                 else{var pos=Map(k.position);s.knots[i].automatic=false;s.knots[i].position=pos;s.knots[i].incoming=Map(k.position+k.incoming)-pos;s.knots[i].outgoing=Map(k.position+k.outgoing)-pos;}}
             s.RefreshAutomaticTangents();splineRotation=rotation;splineScale=scale;Changed(false);

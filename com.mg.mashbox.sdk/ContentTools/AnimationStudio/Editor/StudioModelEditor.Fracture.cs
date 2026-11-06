@@ -51,8 +51,12 @@ namespace MashBoxSDK.AnimationStudio
                 fractureSettings.Variation=EditorGUILayout.Slider("Size variation",fractureSettings.Variation,0,1);
                 fractureSettings.Direction=EditorGUILayout.Vector3Field("Bias direction",fractureSettings.Direction);
                 fractureSettings.Bias=EditorGUILayout.Slider("Directional bias",fractureSettings.Bias,0,1);
+                fractureSettings.SimplifyInterior=EditorGUILayout.Toggle(new GUIContent("Simplify Interior","Replace dense rough interior patches with planar center fans. Extra centers partition concave sections and holes without overlaps; boundary connectivity is retained."),fractureSettings.SimplifyInterior);
+                using(new EditorGUI.DisabledScope(fractureSettings.SimplifyInterior))
+                {
                 fractureSettings.Roughness=StudioSceneUnits.Field(new GUIContent("Fracture roughness","Mesh-local displacement amplitude. Exterior geometry remains fixed."),fractureSettings.Roughness);
                 fractureSettings.Detail=StudioSceneUnits.Field(new GUIContent("Detail scale","Mesh-local quad-patch sampling and roughness wavelength. Smaller values cost more."),fractureSettings.Detail);
+                }
                 fractureMaterial=(Material)EditorGUILayout.ObjectField("Interior material",fractureMaterial,typeof(Material),false);
                 fractureSettings.UVScale=EditorGUILayout.FloatField(new GUIContent("Interior UV scale","UV repeats per mesh-local meter."),fractureSettings.UVScale);
                 fractureSettings.WeldTolerance=StudioSceneUnits.Field(new GUIContent("Weld tolerance","Weld nearby source boundary identities and clean compatible patch samples; UV and normal seams remain separate."),fractureSettings.WeldTolerance);

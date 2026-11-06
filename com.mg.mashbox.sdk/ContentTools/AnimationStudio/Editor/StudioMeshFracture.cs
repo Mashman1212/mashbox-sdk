@@ -15,6 +15,7 @@ namespace MashBoxSDK.AnimationStudio
         internal sealed class Settings
         {
             internal int Count = 12, Seed = 1;
+            internal bool SimplifyInterior = true;
             internal float Variation = .35f, Bias, Roughness = .015f, Detail = .35f, UVScale = 1;
             internal float WeldTolerance = .00001f, Gap;
             internal Vector3 Direction = Vector3.up;

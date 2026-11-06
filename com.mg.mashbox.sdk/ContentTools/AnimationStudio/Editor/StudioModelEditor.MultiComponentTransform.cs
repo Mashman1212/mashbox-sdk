@@ -13,11 +13,12 @@ namespace MashBoxSDK.AnimationStudio
         private sealed class MultiTransformTarget
         {
             internal int node;internal Mesh mesh;internal int[] indices;internal Vector3[] source,working;
+            internal Dictionary<int,Vector3[]> slideRails;internal StudioMeshSymmetry.Deformation symmetry;
             internal Matrix4x4 localToWorld,worldToLocal;internal Vector3 center;internal Quaternion orientation;internal StudioMoveUVPreservation uvs;
         }
         private sealed class MultiComponentGesture
         {
-            internal int control;internal Tool tool;internal Vector3 center,position,factor=Vector3.one;
+            internal int control;internal Tool tool;internal Vector3 center,position,displayPosition,slideStartCenter,factor=Vector3.one;internal bool slide;
             internal Quaternion orientation,rotation;internal bool registered,pendingExtrude,failed,individualRotation;
             internal readonly List<MultiTransformTarget> targets=new List<MultiTransformTarget>();
         }
@@ -38,9 +39,9 @@ namespace MashBoxSDK.AnimationStudio
             }
             return count==0?Transforms[Active].position:center/count;
         }
-        private MultiComponentGesture CaptureMultiComponentGesture(List<int> nodes,Vector3 center,Quaternion orientation,int control)
+        private MultiComponentGesture CaptureMultiComponentGesture(List<int> nodes,Vector3 center,Quaternion orientation,int control,bool slide=false)
         {
-            var gesture=new MultiComponentGesture{control=control,tool=tool,individualRotation=local && !CenterMode,center=center,position=center,orientation=orientation,rotation=orientation};
+            var gesture=new MultiComponentGesture{control=control,tool=tool,individualRotation=local && !CenterMode,center=center,position=center,displayPosition=center,slide=slide,slideStartCenter=slide?MultiComponentCenter(nodes):center,orientation=orientation,rotation=orientation};
             var byMesh=new Dictionary<Mesh,MultiTransformTarget>();
             foreach(int node in nodes.OrderBy(i=>i==Active?0:1))using(new ComponentTargetScope(this,node))
             {
@@ -51,6 +52,8 @@ namespace MashBoxSDK.AnimationStudio
                 var target=new MultiTransformTarget{node=node,center=!CenterMode && HasComponentPivot?componentPivot.position:ComponentSelectionCenter(),orientation=UnlockedPivotOrientation,mesh=ActiveMesh,indices=indices.OrderBy(i=>i).ToArray(),source=source,working=(Vector3[])source.Clone(),localToWorld=Transforms[node].localToWorldMatrix,worldToLocal=Transforms[node].worldToLocalMatrix};
                 gesture.targets.Add(target);byMesh[target.mesh]=target;
             }
+            if(slide)foreach(var target in gesture.targets)using(new ComponentTargetScope(this,target.node))
+                {target.slideRails=CaptureSlideRails(target.source,target.indices);target.symmetry=CaptureSymmetryDeformation(target.source,target.indices);}
             if(gesture.tool==Tool.Move&&preserveMoveUVs&&!pivot)
                 foreach(var target in gesture.targets)target.uvs=StudioMoveUVPreservation.Capture(target.mesh,target.source,target.indices);
             return gesture;
@@ -72,9 +75,12 @@ namespace MashBoxSDK.AnimationStudio
                 if(gesture.tool==Tool.Move)world+=position-gesture.center;
                 else if(gesture.tool==Tool.Rotate)world=RotateComponentTarget(gesture,target,world,rotation);
                 else world=gesture.center+gesture.orientation*Vector3.Scale(inverse*(world-gesture.center),factor);
-                var local=target.worldToLocal.MultiplyPoint3x4(world);if(!FiniteScalePoint(local))return false;target.working[index]=local;
+                var local=target.slideRails!=null
+                    ?target.source[index]+SlideDisplacement(target.slideRails[index],target.localToWorld,world-target.localToWorld.MultiplyPoint3x4(target.source[index]))
+                    :target.worldToLocal.MultiplyPoint3x4(world);
+                if(!FiniteScalePoint(local))return false;target.working[index]=local;
             }
-            foreach(var target in gesture.targets)target.uvs?.Evaluate(target.working);
+            foreach(var target in gesture.targets){target.symmetry?.Apply(target.working);target.uvs?.Evaluate(target.working);}
             if(!gesture.registered)
             {
                 foreach(var target in gesture.targets)using(new ComponentTargetScope(this,target.node))PreserveFaceTopology();
@@ -84,7 +90,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (EditorUtility.IsPersistent(target.mesh) || Document.nodes.Count(n=>n.mesh==target.mesh)>1)
                         { var copy=UnityEngine.Object.Instantiate(target.mesh);copy.name=target.mesh.name;target.mesh=copy; }
                 var records=gesture.targets.Select(t=>(UnityEngine.Object)t.mesh);
-                Undo.RegisterCompleteObjectUndo(independent?new UnityEngine.Object[]{Document}.Concat(records).ToArray():records.ToArray(),gesture.targets.Any(t=>t.uvs!=null)?PreserveUVMoveLabel:"Transform mesh components");
+                Undo.RegisterCompleteObjectUndo(independent?new UnityEngine.Object[]{Document}.Concat(records).ToArray():records.ToArray(),gesture.slide?"Slide mesh components":gesture.targets.Any(t=>t.uvs!=null)?PreserveUVMoveLabel:"Transform mesh components");
                 if (independent)
                     foreach (var target in gesture.targets)
                     {
@@ -97,9 +103,12 @@ namespace MashBoxSDK.AnimationStudio
             {
                 target.mesh.vertices=target.working;target.uvs?.Publish(target.mesh);RecalculateEditableNormals(target.mesh);target.mesh.RecalculateBounds();
                 if(target.mesh.HasVertexAttribute(VertexAttribute.TexCoord0))target.mesh.RecalculateTangents();EditorUtility.SetDirty(target.mesh);
-                PositionsChanged(deferStatistics:GUIUtility.hotControl!=0,markerPositions:target.working,markerIndices:target.indices);
+                PositionsChanged(deferStatistics:GUIUtility.hotControl!=0,markerPositions:target.working,markerIndices:target.symmetry?.Affected ?? target.indices);
             }
-            UpdateComponentPivotAfterTransform(position,gesture.position,rotation,gesture.rotation);
+            var displayPosition=gesture.slide
+                ?gesture.center+MultiComponentCenter(ComponentTargetNodes(true))-gesture.slideStartCenter:position;
+            UpdateComponentPivotAfterTransform(displayPosition,gesture.displayPosition,rotation,gesture.rotation);
+            gesture.displayPosition=displayPosition;
             gesture.position=position;gesture.rotation=rotation;gesture.factor=factor;return true;
         }
         private void ExtrudeMultiComponentGesture(MultiComponentGesture gesture,Vector3 position,Quaternion rotation,Vector3 factor)
@@ -146,14 +155,20 @@ namespace MashBoxSDK.AnimationStudio
         private bool DrawMultiComponentHandle()
         {
             if(mode==ComponentMode.Object)return false;
-            var nodes=ComponentTargetNodes(true);if(nodes.Count==0||nodes.Count==1&&nodes[0]==Active){multiComponentGesture=null;return false;}
+            var nodes=ComponentTargetNodes(true);
+            bool slideDown=SlideComponentsEnabled || SlideHandleMouseDown;
+            // Single-target Move keeps its optimized MoveDrag path. Rotation and
+            // scale use this existing captured-source evaluator when sliding.
+            bool singleSlide=(tool==Tool.Rotate||tool==Tool.Scale) && (slideDown || multiComponentGesture?.slide==true);
+            if(nodes.Count==0||nodes.Count==1&&nodes[0]==Active&&!singleSlide){multiComponentGesture=null;return false;}
             var evt=Event.current;bool released=evt.rawType==EventType.MouseUp;
             bool moveEvent=evt.type==EventType.MouseDrag;var movePointer=evt.mousePosition;
-            bool shiftDown=(mode==ComponentMode.Edge||mode==ComponentMode.Face)&&evt.type==EventType.MouseDown&&evt.button==0&&evt.shift&&!evt.alt&&!evt.control&&!evt.command;
+            bool shiftDown=(mode==ComponentMode.Edge||mode==ComponentMode.Face)&&evt.type==EventType.MouseDown&&evt.button==0&&evt.shift&&!evt.alt&&!evt.control&&!evt.command&&!slideDown;
             if(multiComponentGesture!=null&&(multiComponentGesture.tool!=tool||!released&&multiComponentGesture.control!=GUIUtility.hotControl))multiComponentGesture=null;
             var gesture=multiComponentGesture;
             var center=gesture?.center??ResolveLockedPivotCenter(!CenterMode && HasComponentPivot?componentPivot.position:MultiComponentCenter(nodes));
             var orientation=gesture?.orientation??(local?PivotOrientation:Quaternion.identity);
+            var drawCenter=Event.current.type==EventType.Repaint && gesture?.slide==true ? gesture.displayPosition : center;
             var position=gesture?.position??center;var rotation=gesture?.rotation??orientation;var factor=Vector3.one;
             float size=StudioSettings.Current.handleSize;
             float gizmoSize=HandleUtility.GetHandleSize(center)*size;
@@ -163,19 +178,19 @@ namespace MashBoxSDK.AnimationStudio
 #if MASHBOX_STUDIO_TESTS
                 TransformHandleProbe?.Invoke(tool,center,orientation,HandleUtility.GetHandleSize(center)*size);
 #endif
-                if(tool==Tool.Move)position=DrawMoveHandle(position,orientation,size);
+                if(tool==Tool.Move)position=DrawSlidingMoveHandle(position,orientation,size,gesture!=null && gesture.slide ? gesture.displayPosition : (Vector3?)null);
                 else if(tool==Tool.Rotate)
                 {
                     var modifiers=evt.modifiers;if(evt.control||evt.command)evt.modifiers=modifiers&~EventModifiers.Shift;
-                    DrawTransformOrientationStatus(center,orientation,gizmoSize);
-                    try{rotation=DrawSizedRotationHandle(Handles.RotationHandleIds.@default,rotation,center,size);}finally{evt.modifiers=modifiers;}
+                    DrawTransformOrientationStatus(drawCenter,orientation,gizmoSize);
+                    try{rotation=DrawSizedRotationHandle(Handles.RotationHandleIds.@default,rotation,drawCenter,size);}finally{evt.modifiers=modifiers;}
                 }
-                else factor=DrawScaleHandle(center,orientation,size);
-                AntialiasTransformGizmo(center,gizmoSize*1.35f);
+                else factor=DrawScaleHandle(drawCenter,orientation,size);
+                AntialiasTransformGizmo(gesture!=null && gesture.slide ? gesture.displayPosition : center,gizmoSize*1.35f);
 
             }
             bool changed=EditorGUI.EndChangeCheck();
-            if(gesture==null&&GUIUtility.hotControl!=0){multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl);gesture.pendingExtrude=shiftDown;}
+            if(gesture==null&&GUIUtility.hotControl!=0){multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl,slideDown);gesture.pendingExtrude=shiftDown;}
             if(tool==Tool.Move&&moveEvent&&moveDragControl!=0&&moveDragControl==GUIUtility.hotControl)
             {
                 position=ResolveMoveSnap(SceneView.currentDrawingSceneView,movePointer,position,gesture?.position??center);
@@ -183,7 +198,7 @@ namespace MashBoxSDK.AnimationStudio
             }
             if(changed)
             {
-                if(gesture==null)multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl);
+                if(gesture==null)multiComponentGesture=gesture=CaptureMultiComponentGesture(nodes,center,orientation,GUIUtility.hotControl,slideDown);
                 Run(()=>ApplyMultiComponentGesture(gesture,position,rotation,factor));
             }
             if(released&&GUIUtility.hotControl==0)multiComponentGesture=null;
@@ -191,3 +206,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

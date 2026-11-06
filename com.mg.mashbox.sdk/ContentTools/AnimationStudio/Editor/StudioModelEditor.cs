@@ -68,6 +68,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void Load(StudioModelDocument document)
         {
+            CloseSweepTool();
             StopSplineEditing();
             CloseFractureTool(); CloseSelectionActionPane();
             if (Document != document) lastRepeatAction = null;
@@ -90,6 +91,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void Rebuild()
         {
+            sweepRevisions.Clear(); sweepTopologies.Clear();
             ClearViewportIsolation();
             ResetTargetWeldGesture(false);
             hierarchyRenameNode = null;
@@ -111,7 +113,7 @@ namespace MashBoxSDK.AnimationStudio
             statisticsCache.Clear(); occlusionIndices.Clear();
             foreach (var go in Scene.GetRootGameObjects()) UnityEngine.Object.DestroyImmediate(go);
             Transforms = Document ? Document.Build(Scene) : Array.Empty<Transform>();
-            UpdateLiveVehicleParts();
+            UpdateLiveVehicleParts(); UpdateSweeps(true);
             previewNodes = Document ? Document.nodes.ToArray() : Array.Empty<StudioModelDocument.Node>();
             edgeMesh = null; cachedEdges = null; cutTopology = null; cutMesh = null;
             faceNode = null; cachedFaces = null;
@@ -133,6 +135,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OnUndoEvent(in UndoRedoInfo info)
         {
+            sweepPending=false; CloseSweepTool();
             pendingModifiers.Clear(); EditorApplication.update-=FinishPendingModifiers; ClearSubdivision();
             bool hadPreview = livePreview != null || previewQueued || bisectPreview != null || fracturePreview != null || FractureBusy;
             CancelFracture(true);
@@ -205,10 +208,11 @@ namespace MashBoxSDK.AnimationStudio
             if (markingOpen && (!markingView || EditorWindow.focusedWindow != MashBoxStudioViewport.HostWindow(markingView))) CancelMarkingMenu();
             TickMarkingMenu();
         }
-        internal void Changed(bool geometryChanged = true) { QueueConstraintEvaluation(); UpdateLiveVehicleParts(); if(geometryChanged)DirtySubdivision(); componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
+        internal void Changed(bool geometryChanged = true) { QueueConstraintEvaluation(); UpdateLiveVehicleParts(); UpdateSweeps(); if(geometryChanged)DirtySubdivision(); componentFrameValid = false; if (geometryChanged) { ClearSelectionWireframes(); statisticsCache.Clear(); CaptureUndoMeshVersions(); } pivotTargetCache.Clear(); pivotHover = null; if (Document) EditorUtility.SetDirty(Document); WorkspaceSaveStateChanged?.Invoke(); repaint(); }
         internal void MeshTopologyChanged() { if (Document) foreach (var node in Document.nodes) if (node.normalGroups != null && (!node.mesh || node.normalGroups.Length != node.mesh.vertexCount)) node.normalGroups = null; if (componentPivot) componentPivot.custom = false; Components.Clear(); Rebuild(); Changed(); }
         internal void Save()
         {
+            if(sweepPending)ApplySweep();
             FinishLiveTool();
             if (!Document) return;
             FinishChannelEdit(); CaptureUnlockedConstraints(false);
@@ -219,6 +223,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public void Dispose()
         {
+            CloseSweepTool();
             StopSplineEditing();
             constraintCaptureUpdates = 0;
             lastRepeatAction = repeatingAction = null;
@@ -299,7 +304,7 @@ namespace MashBoxSDK.AnimationStudio
                 var rows = Document ? HierarchyRows() : null;
                 int visibleRows=0;
                 if(Document)foreach(int i in rows)
-                    if(string.IsNullOrEmpty(search)||Document.nodes[i].name.IndexOf(search,StringComparison.OrdinalIgnoreCase)>=0)visibleRows++;
+                    if(string.IsNullOrEmpty(search)||Document.nodes[i].name.IndexOf(search,StringComparison.OrdinalIgnoreCase)>=0)visibleRows += 1 + VisibleHierarchyConstraintCount(i);
                 float rowHeight=Mathf.Max(EditorGUIUtility.singleLineHeight,rowStyle.fixedHeight)+rowStyle.margin.vertical;
                 var rowArea=Document?GUILayoutUtility.GetRect(0,visibleRows*rowHeight,HierarchyRowLayout):Rect.zero;
                 int visibleRow=0;
@@ -312,7 +317,7 @@ namespace MashBoxSDK.AnimationStudio
                         var visibilityRect = new Rect(fullRow.x, fullRow.y, 18, fullRow.height);
                         fullRow.xMin += 20 + Mathf.Min(depth * 12, 96);
                         var foldoutRect = new Rect(fullRow.x,fullRow.y,14,fullRow.height);
-                        if (hierarchyParents.Contains(i))
+                        if (hierarchyParents.Contains(i) || n.constraints != null && n.constraints.Count > 0)
                         {
                             bool expanded = !collapsedHierarchy.Contains(n);
                             bool nextExpanded = EditorGUI.Foldout(foldoutRect, expanded, GUIContent.none, false);
@@ -344,6 +349,7 @@ namespace MashBoxSDK.AnimationStudio
                             else ChangeHierarchyVisibility(i, !n.active);
                         }
                         GUI.backgroundColor = old;
+                        DrawHierarchyConstraints(i, depth, rowArea, rowHeight, rowStyle, ref visibleRow);
                     }
                 }
                 else EditorGUILayout.HelpBox("Create primitives or import FBX models into this workspace. Each imported model keeps its hierarchy.", MessageType.Info);
@@ -826,18 +832,25 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void DrawHandle()
         {
+            if (GUIUtility.hotControl == 0) rotationSymmetry = null;
             if (handleExtrudeControl != 0 && GUIUtility.hotControl != handleExtrudeControl) ResetHandleExtrusion();
             if (Active >= 0 && !Transforms[Active].gameObject.activeInHierarchy) return;
+            bool slideHandleMouseDown = SlideHandleMouseDown;
             bool moveDragEvent = Event.current.type == EventType.MouseDrag;
             // Native handles consume mouse-down (including rawType). Snapshot the
             // modifier gesture before drawing, then confirm that a handle captured it.
             bool shiftHandleMouseDown = Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
-                Event.current.shift && !Event.current.alt && !Event.current.control && !Event.current.command;
+                Event.current.shift && !Event.current.alt && !Event.current.control && !Event.current.command && !SlideComponentsEnabled;
             var movePointer = Event.current.mousePosition;
             if (!Document || Active < 0 || marquee) return;
             if (LiveObjectTransformLocked) { DrawLiveObjectPivotIcons(); return; }
             if (tool == Tool.None && !pivot) return;
             if (mode != ComponentMode.Object && !CanEditComponents()) return;
+            if (symmetryEnabled && !pivot && mode != ComponentMode.Object)
+            {
+                try { RequireSingleSymmetryObject(); }
+                catch (InvalidOperationException e) { error = e.Message; return; }
+            }
             if (DrawExtrudeDistanceGizmo()) return;
             if (!pivot && DrawMultiComponentHandle()) return;
             var t = Transforms[Active];
@@ -898,7 +911,7 @@ namespace MashBoxSDK.AnimationStudio
                     position = DrawPivotHandle(handleCenter, orientation, handleSize);
                     pivotPositionChanged = EditorGUI.EndChangeCheck();
                 }
-                else if (tool == Tool.Move) position = DrawMoveHandle(handleCenter, orientation, handleSize);
+                else if (tool == Tool.Move) position = DrawSlidingMoveHandle(handleCenter, orientation, handleSize, capturedMove && moveDrag.slideRails!=null ? moveDrag.displayPosition : (Vector3?)null);
                 else if (tool == Tool.Rotate)
                 {
                     DrawTransformOrientationStatus(handleCenter,orientation,gizmoSize);
@@ -913,7 +926,7 @@ namespace MashBoxSDK.AnimationStudio
                     finally { rotationEvent.modifiers = modifiers; }
                 }
                 else scale = DrawScaleHandle(handleCenter, orientation, handleSize);
-                AntialiasTransformGizmo(handleCenter,gizmoSize*1.35f);
+                AntialiasTransformGizmo(capturedMove && moveDrag.slideRails!=null ? moveDrag.displayPosition : handleCenter,gizmoSize*1.35f);
 
             }
             bool handleChanged = EditorGUI.EndChangeCheck();
@@ -947,10 +960,10 @@ namespace MashBoxSDK.AnimationStudio
                 handleExtrudeSourceSelection = Components.ToArray();
             }
             if (scaling && GUIUtility.hotControl != 0 && scaleDrag == null)
-                scaleDrag = CaptureScaleDrag(GUIUtility.hotControl, center, orientation, indices, vertices ?? readVertices?.ToArray());
+                Run(() => scaleDrag = CaptureScaleDrag(GUIUtility.hotControl, center, orientation, indices, vertices ?? readVertices?.ToArray()), false);
             if (!pivot && tool == Tool.Move && indices != null && handleExtrudeControl == 0 &&
                 moveDrag == null && IsMoveHandle(GUIUtility.hotControl))
-                moveDrag = CaptureMoveDrag(GUIUtility.hotControl, center, orientation, indices, vertices ?? readVertices.ToArray());
+                Run(() => moveDrag = CaptureMoveDrag(GUIUtility.hotControl, center, orientation, indices, vertices ?? readVertices.ToArray(), SlideComponentsEnabled || slideHandleMouseDown), false);
             componentRotationControl = rotatingComponents ? GUIUtility.hotControl : 0;
             componentHandleRotation = rotation;
             if ((pivot || tool == Tool.Move) && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl && moveDragEvent)
@@ -984,6 +997,7 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 else if (indices != null)
                 {
+                    var symmetry = CaptureRotationSymmetry(indices);
                     PreserveFaceTopology();
                     Undo.RegisterCompleteObjectUndo(ActiveMesh, "Transform mesh components");
                     foreach (int i in indices)
@@ -994,6 +1008,7 @@ namespace MashBoxSDK.AnimationStudio
                         else world = center + orientation * Vector3.Scale(Quaternion.Inverse(orientation) * (world - center), scale);
                         vertices[i] = t.InverseTransformPoint(world);
                     }
+                    symmetry?.Apply(vertices);
                     ActiveMesh.vertices = vertices; RecalculateEditableNormals(ActiveMesh); ActiveMesh.RecalculateBounds();
                     if (ActiveMesh.uv.Length == ActiveMesh.vertexCount) ActiveMesh.RecalculateTangents(); EditorUtility.SetDirty(ActiveMesh);
                     UpdateComponentPivotAfterTransform(position, center, rotation, orientation);
@@ -1325,3 +1340,5 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+
+

@@ -131,6 +131,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             FinishLiveTool(); FlushModifierEdits();
             if (!Document || (!addOnly && !CanAssignMaterialSlot)) { error = "Select objects or faces to assign a material slot."; return; }
+            if (!addOnly && mode == ComponentMode.Face) ExpandSymmetrySelection();
             var targets = addOnly ? new[] { Active } : MaterialAssignmentTargets();
             var selections = new Dictionary<Mesh, HashSet<int>>(); var facesByMesh = new Dictionary<Mesh, List<StudioMeshCuts.Face>>(); var trianglesByMesh = new Dictionary<Mesh, List<int>[]>();
             foreach (int index in targets)
