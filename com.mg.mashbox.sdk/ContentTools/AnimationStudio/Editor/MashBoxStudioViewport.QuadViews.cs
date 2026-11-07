@@ -19,9 +19,9 @@ namespace MashBoxSDK.AnimationStudio
         private VisualElement quadRoot;
         private IMGUIContainer quadHeader;
         private Label viewDirectionLabel;
-        [NonSerialized] private int maximizedQuad = -1, activeQuad = 1, hoveredQuad = -1, queuedQuad = -2;
+        [NonSerialized] private int maximizedQuad = 1, activeQuad = 1, hoveredQuad = -1, queuedQuad = -2;
         [NonSerialized] private bool creatingQuadViews;
-        private bool layingOutQuad;
+        [NonSerialized] private bool layingOutQuad;
         private Vector2 quadPointer;
         private bool hasQuadPointer;
         private static readonly string[] QuadNames = { "Front", "Perspective", "Side", "Top" };
@@ -71,7 +71,9 @@ namespace MashBoxSDK.AnimationStudio
             if (quadViews != null) ReleaseQuadViews(false);
             creatingQuadViews = true;
             try {
-            activeQuad = 1; maximizedQuad = hoveredQuad = -1; queuedQuad = -2;
+            // New/recreated retained cameras start with Perspective filling the canvas.
+            // Explicit split/camera commands apply their destination after creation.
+            activeQuad = maximizedQuad = 1; hoveredQuad = -1; queuedQuad = -2;
             quadRoot = new VisualElement { name = "mashbox-four-views" };
             quadRoot.style.position = Position.Absolute;
             quadRoot.style.overflow = Overflow.Hidden;
@@ -295,3 +297,5 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+
+

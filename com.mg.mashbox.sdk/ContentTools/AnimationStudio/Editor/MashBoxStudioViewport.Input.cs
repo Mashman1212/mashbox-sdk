@@ -247,6 +247,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         public override void OnDisable()
         {
+            UnbindPanelLayout();
             ReleaseQuadViews(false);
             SaveStoredConfiguration();
             StudioPreferenceStore.Flush();
@@ -415,3 +416,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

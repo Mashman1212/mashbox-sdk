@@ -44,7 +44,7 @@ namespace MashBoxSDK.AnimationStudio
         {subdivisionSuspended=!active;if(!active)ClearSubdivision();else DirtySubdivision();}
         private bool SubdivisionMeshIsEditing(Mesh mesh)=>pendingModifiers.ContainsKey(mesh)||
             (livePreview!=null&&livePreview.Targets.Any(t=>t.Live==mesh))||
-            (bisectPreview!=null&&bisectPreview.Targets.Any(t=>t.Live==mesh))||
+            (holePunchPreview!=null&&holePunchPreview.Targets.Any(t=>t.Live==mesh))||(bisectPreview!=null&&bisectPreview.Targets.Any(t=>t.Live==mesh))||
             (componentLiveTargets!=null&&componentLiveTargets.Any(t=>t.state.livePreview!=null&&t.state.livePreview.Targets.Any(p=>p.Live==mesh)));
         private void UpdateSubdivision()
         {

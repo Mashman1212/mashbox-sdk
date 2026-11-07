@@ -137,9 +137,9 @@ namespace MashBoxSDK.AnimationStudio
         {
             sweepPending=false; CloseSweepTool();
             pendingModifiers.Clear(); EditorApplication.update-=FinishPendingModifiers; ClearSubdivision();
-            bool hadPreview = livePreview != null || previewQueued || bisectPreview != null || fracturePreview != null || FractureBusy;
+            bool hadPreview = holePunchPreview != null || livePreview != null || previewQueued || bisectPreview != null || fracturePreview != null || FractureBusy;
             CancelFracture(true);
-            CancelBisectPreview(true);
+            CancelHolePunch(true); CancelBisectPreview(true);
             CancelLiveTool(true);
             if (hadPreview) { OnUndo(); RestoreSelectionHistory(); return; }
             if (info.undoName == "Select model components" || info.undoName == "Paint selection" || info.undoName == "Unpaint selection") { RestoreSelectionHistory(); return; }

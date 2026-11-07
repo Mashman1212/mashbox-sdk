@@ -61,7 +61,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Tools/Bridge Edges": return "bridge";
                 case "Mesh Tools/Circularize…": return "circularize";
                 case "Mesh Tools/Weld…": return "weld-range";
-                case "Mesh Tools/Bisect": return "bisect";
+                case "Mesh Tools/Hole Puncher": return "bisect"; case "Mesh Tools/Bisect": return "bisect";
                 case "Mesh Tools/Fracture": return "fracture";
                 case "Edit Mesh/Fill Hole": return "fill-hole";
                 case "Edit Mesh/To Edge Ring and Collapse": return "ring-collapse";

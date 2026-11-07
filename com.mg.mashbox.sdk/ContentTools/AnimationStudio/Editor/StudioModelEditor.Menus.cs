@@ -206,7 +206,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Combine Meshes…", true, OpenCombineTool, finishPreview: false);
                     AddCommand(menu, "Split Selection", true, () => ChooseSelectionAction("Split Selection", SplitSelectedComponents, "Select faces, edges or vertices to cut into a new mesh. Leave at least one face in each source mesh."));
                     menu.AddSeparator("");
-                    menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool, false));
+                    menu.AddItem(new GUIContent("Hole Puncher"), cutTool == CutTool.HolePunch, () => Run(OpenHolePunchTool, false)); menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool, false));
                     menu.AddItem(new GUIContent("Fracture"), fracturePane, () => Run(OpenFractureTool, false));
                     menu.AddSeparator("");
                     AddCommand(menu, "Deform/Blend Shape", Document && SelectedBlendMeshes.Length >= 2, CreateSelectedBlendShape);

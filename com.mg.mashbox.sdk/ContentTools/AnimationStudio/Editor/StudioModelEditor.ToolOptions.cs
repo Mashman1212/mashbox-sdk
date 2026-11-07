@@ -19,7 +19,7 @@ namespace MashBoxSDK.AnimationStudio
         internal System.Action FocusToolOptions;
         private Vector2 toolOptionsScroll;
         private readonly GUIContent toolOptionsHeader = new GUIContent();
-        private ToolChannelPane ActiveChannelTool => sweepPane?sweepPane:circularizePane?circularizePane:rangeWeldToolPane ? rangeWeldToolPane : fracturePane ? fracturePane : bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
+        private ToolChannelPane ActiveChannelTool => holePunchPane?holePunchPane:sweepPane?sweepPane:circularizePane?circularizePane:rangeWeldToolPane ? rangeWeldToolPane : fracturePane ? fracturePane : bisectPane ? bisectPane : bevelToolPane ? bevelToolPane : extrudeToolPane ? extrudeToolPane
             : bridgeToolPane ? bridgeToolPane : softenToolPane ? softenToolPane : edgeFlowToolPane ? edgeFlowToolPane : selectionActionPane ? selectionActionPane : combineToolPane;
         internal void PrepareEmbeddedChannelTool()
         {
@@ -52,7 +52,7 @@ namespace MashBoxSDK.AnimationStudio
             CloseSweepTool(); FinishSplineForSwitch();
             if (cutTool == CutTool.Polygon && polygonPoints.Count >= 3) Run(CommitPolygon);
             bool pending = livePreview != null || componentLiveTargets != null || previewQueued ||
-                bisectPreview != null || fracturePreview != null;
+                holePunchPreview != null || bisectPreview != null || fracturePreview != null;
             if (pending)
             {
                 var pane = ActiveChannelTool;

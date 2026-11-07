@@ -62,7 +62,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void CloseLiveToolPanes()
         {
-            CloseSweepTool(); CloseCircularizeTool(); CloseFractureTool(); CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
+            CloseHolePunchTool(); CloseSweepTool(); CloseCircularizeTool(); CloseFractureTool(); CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
         private bool HasLiveTool(LiveTool kind) => livePreview != null && liveTool == kind;
         private bool CanRunLiveTool(LiveTool kind) => HasLiveTool(kind) || (kind == LiveTool.Bevel ? CanBevelEdges :
             kind==LiveTool.Circularize?CanCircularize:kind == LiveTool.Weld ? CanRangeWeldVertices : kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : kind == LiveTool.Bridge ? CanBridgeEdges : CanExtrude);
