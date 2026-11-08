@@ -7,10 +7,10 @@ namespace MashBoxSDK.AnimationStudio
     internal sealed partial class StudioModelEditor
     {
         internal static readonly StudioShortcut RepeatActionShortcut = StudioModelCommands.StableId("Edit/Repeat Last Action");
-        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace, Poke, FillHole, EdgeRingCollapse, FlipNormals }
+        private enum RepeatKind { Live, Combine, Split, Duplicate, Delete, Primitive, Empty, CenterPivot, Freeze, Soften, Harden, Blend, Bake, Cut, TargetWeld, Bridge, Group, Bisect, RecalculateNormals, BakePivot, Fracture, MaterialSlot, DuplicateFace, DetachFace, Poke, FillHole, EdgeRingCollapse, FlipNormals, Polygon, Spline, Sweep, HolePunch }
         private sealed class RepeatAction
         {
-            internal StudioMeshFracture.Settings fracture; internal Material fractureMaterial;
+            internal StudioSweepSettings sweep; internal StudioMeshFracture.Settings fracture; internal Material fractureMaterial;
             internal RepeatKind kind; internal LiveTool live; internal Vector4 parameters; internal Vector3 flow; internal bool welded;
         }
         private RepeatAction lastRepeatAction, repeatingAction;
@@ -31,7 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             // G finishes an existing preview once, without doubling that operation.
             if(FractureBusy) throw new InvalidOperationException("Wait for Fracture to finish or cancel computation.");
             if(fractureResult!=null){CommitFracture();return;}
-            if(bisectPreview!=null){ApplyBisect();return;}
+            if(holePunchPreview!=null){ApplyHolePunch();return;} if(bisectPreview!=null){ApplyBisect();return;}
             if (livePreview != null || componentLiveTargets != null || previewQueued) { FinishLiveTool(); return; }
             if (!CanRepeatLastAction) throw new InvalidOperationException("There is no completed modeling action to repeat in this workspace.");
             var action = lastRepeatAction; var oldWeld = weld;
@@ -53,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
                         if (action.live == LiveTool.Extrude) { extrusionDistance = action.parameters.x; extrudeFacesTogether = action.parameters.y >= .5f; extrusionInset = action.parameters.z; }
                         ApplyLiveTool(action.live); break;
                     case RepeatKind.Fracture: OpenFractureTool(); fractureSettings=action.fracture.Copy(); fractureMaterial=action.fractureMaterial; break;
-                    case RepeatKind.Bisect: OpenBisectTool(); break;
+                    case RepeatKind.HolePunch: OpenHolePunchTool(); break; case RepeatKind.Bisect: OpenBisectTool(); break;
                     case RepeatKind.Group: GroupSelectedObjects(); break;
                     case RepeatKind.Combine: CombineSelectedObjects(); break;
                     case RepeatKind.Bridge: ChooseSelectionAction("Bridge Edges", BridgeSelectedEdges, "Select two non-touching boundary edge groups on one mesh, with equal edge counts."); break;
@@ -66,6 +66,9 @@ namespace MashBoxSDK.AnimationStudio
                     case RepeatKind.Delete:
                         if (!CanDeleteSelection) throw new InvalidOperationException("Select objects or components to repeat Delete.");
                         DeleteSelection(); break;
+                    case RepeatKind.Sweep: OpenSweepTool(null,action.sweep);ApplySweep();break;
+                    case RepeatKind.Spline: RepeatSplineAction(Mathf.RoundToInt(action.parameters.x)); break;
+                    case RepeatKind.Polygon: BeginPolygon(commandView,commandLoaded); break;
                     case RepeatKind.Primitive: CreatePrimitive((PrimitiveType)Mathf.RoundToInt(action.parameters.x),commandView,commandLoaded); break;
                     case RepeatKind.Empty:
                         if (action.parameters.x >= .5f && Active < 0) throw new InvalidOperationException("Select a parent to repeat Empty Child.");

@@ -115,8 +115,11 @@ namespace MashBoxSDK.AnimationStudio
                 var matches=regions.Where(r=>r.Cell==region.Other&&r.Other==region.Cell).ToArray();
                 if(!matches.Any(r=>SameRing(region.Loop,r.Loop)))throw new InvalidOperationException("Neighboring fracture boundaries disagree; no partial fragments were published.");
             }
-            RefinePatchBoundaries(work,regions,interfaces,settings.Detail/scale,cancel);
-            MakeEvenPatchBoundaries(work,regions,interfaces);
+            if(!settings.SimplifyInterior)
+            {
+                RefinePatchBoundaries(work,regions,interfaces,settings.Detail/scale,cancel);
+                MakeEvenPatchBoundaries(work,regions,interfaces);
+            }
             var result=new Result{Source=source,Parameters=settings.Copy()};
             void SyncPoints(){while(result.Positions.Count<work.Points.Count){var p=(origin+work.Points[result.Positions.Count]*scale).Float;if(!Finite(p))throw new InvalidOperationException("Fracture generated non-finite geometry.");result.Positions.Add(p);result.Original.Add(p);result.SurfacePositions.Add(p);}}
             SyncPoints();var pieces=Enumerable.Range(0,sites.Count).Select(_=>new Piece()).ToArray();
@@ -143,10 +146,22 @@ namespace MashBoxSDK.AnimationStudio
             }
             for(int i=0;i<interfaces.Count;i++)
             {
-                Progress("Building shared quad patches",.55f+.3f*i/Math.Max(1,interfaces.Count));var region=interfaces[i];var normal=planes[region.Cell,region.Other].Normal;
+                Progress(settings.SimplifyInterior?"Building simplified shared interiors":"Building shared quad patches",.55f+.3f*i/Math.Max(1,interfaces.Count));var region=interfaces[i];var normal=planes[region.Cell,region.Other].Normal;
                 if(RingArea(work,region.Loop,normal)<=0)continue;
                 var related=interfaces.Where(r=>r.Cell==region.Cell&&r.Other==region.Other).Select(r=>r.Loop).ToList();
                 var domain=SectionDomains(work,related,normal).Single(d=>ReferenceEquals(d.outer,region.Loop));
+                if(settings.SimplifyInterior)
+                {
+                    var simple=SimplifyInterior(work,domain.outer,domain.holes,normal,cancel);
+                    SyncPoints();
+                    foreach(var face in simple)
+                    {
+                        var render=Enumerable.Range(1,face.Length-2).SelectMany(k=>new[]{face[0],face[k],face[k+1]}).ToArray();
+                        pieces[region.Cell].Faces.Add(new Face{Vertices=face,RenderTriangles=render,Exterior=-1,CutNormal=normal.Float});
+                        pieces[region.Other].Faces.Add(new Face{Vertices=face.Reverse().ToArray(),RenderTriangles=render.Reverse().ToArray(),Exterior=-1,CutNormal=-normal.Float});
+                    }
+                    continue;
+                }
                 var boundary=domain.outer.Concat(domain.holes.SelectMany(h=>h)).ToList();
                 int[] patchTriangles=TriangulateDomain(work,domain.outer,domain.holes,normal).Select(v=>boundary.IndexOf(v)).ToArray();
                 var patch=StudioMeshCuts.FractureQuadPatch(boundary.Select(v=>work.Points[v].Float).ToArray(),normal.Float,patchTriangles,domain.holes.Count==0);

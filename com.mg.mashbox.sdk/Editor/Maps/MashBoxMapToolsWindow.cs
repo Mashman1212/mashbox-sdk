@@ -26,7 +26,7 @@ namespace MashBoxSDK.MapTools
 {
     public partial class MashBoxMapToolsWindow : EditorWindow
     {
-        private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter, WorldBorders }
+        private enum ToolTab { ArtTools, Gameplay, Audio, Performance, Testing, MapExporter, WorldBorders, BundleInspector }
         [SerializeField] private WorldBorders.MGWorldBorderWindow worldBorderTool;
         private enum AuthoringToolTab { MGBrush, SplineLoft, Spline, MeshSculpt, UVSpline, Terrain, UVInspector, Mesh, Road }
         private const string PREF_KEY_MAP_TOOL_TAB = "MashBoxSDK.SelectedMapToolTab";
@@ -80,6 +80,7 @@ namespace MashBoxSDK.MapTools
         private List<MapValidationIssue> gameplayValidationIssues;
         private double nextGameplayValidationRefreshTime;
         [SerializeField] private MapPerformanceScannerPanel performanceScannerPanel = new();
+        [SerializeField] private MGBundleInspectorPanel bundleInspectorPanel = new();
         private double nextSceneToolCacheRefreshTime;
         private bool sceneToolCacheDirty = true;
         private Scene cachedScene;
@@ -230,6 +231,7 @@ namespace MashBoxSDK.MapTools
 
         private void OnDisable()
         {
+            bundleInspectorPanel?.Dispose();
             EditorApplication.hierarchyChanged -= MarkSceneToolCacheDirty;
             EditorSceneManager.activeSceneChangedInEditMode -= OnActiveSceneChangedInEditMode;
             Selection.selectionChanged -= OnAuthoringSelectionChanged;
@@ -612,10 +614,11 @@ namespace MashBoxSDK.MapTools
             embeddedHostVisible = true;
             EnsureInitialized();
             GUILayout.Space(6);
-            var newToolTab = (ToolTab)MashBoxTabDrawer.DrawTabs((int)currentToolTab, new[] { "Art Tools", "Gameplay", "Audio", "Performance", "Testing", "Exporter", "World Borders" }, MashBoxTabDrawer.TabVisualStyle.Secondary, new[]
+            var newToolTab = (ToolTab)MashBoxTabDrawer.DrawTabs((int)currentToolTab, new[] { "Art Tools", "Gameplay", "Audio", "Performance", "Testing", "Exporter", "World Borders", "Bundles" }, MashBoxTabDrawer.TabVisualStyle.Secondary, new[]
             {
                 false,
                 GameplayHasBlockingIssues(),
+                false,
                 false,
                 false,
                 false,
@@ -635,6 +638,10 @@ namespace MashBoxSDK.MapTools
 
             switch (currentToolTab)
             {
+                case ToolTab.BundleInspector:
+                    bundleInspectorPanel ??= new MGBundleInspectorPanel();
+                    bundleInspectorPanel.DrawGUI(Repaint);
+                    break;
                 case ToolTab.WorldBorders:
                     EnsureWorldBorderTool().DrawEmbedded();
                     break;

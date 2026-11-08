@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.Overlays;
+using UnityEditor.Toolbars;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -129,11 +130,11 @@ namespace MashBoxSDK.AnimationStudio
                 if (string.IsNullOrEmpty(raw))
                 {
                     // Unity may restore hidden overlays from its own window layout.
-                    // With no Studio preference, every Studio toolbar starts on.
+                    // With no Studio preference, Studio toolbars use their factory visibility.
                     RestoreFactoryToolbarPlacements(null);
                     NativeOverlaysEnabled = true;
                     foreach (var overlay in studioToolbarOverlays)
-                        if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) overlay.displayed = true;
+                        if (overlay.GetType().Assembly == typeof(MashBoxStudioViewport).Assembly) overlay.displayed = FactoryToolbarVisible(overlay.id);
                     return;
                 }
                 var saved = JsonUtility.FromJson<StoredToolbars>(raw);
@@ -174,10 +175,11 @@ namespace MashBoxSDK.AnimationStudio
             finally { restoringStoredToolbars = false; }
             SaveStoredToolbars(); UpdatePanelLayout(); MarkDirty(DirtyState.UI);
         }
+        internal static bool FactoryToolbarVisible(string id) => id != StudioCurvesToolbar.Id;
         private void RestoreFactoryToolbarPlacements(HashSet<string> savedIds)
         {
             string[] top = { StudioGridToolbar.Id, StudioViewportToolbar.Id, StudioDisplayToolbar.Id,
-                StudioPolygonPrimitivesToolbar.Id, StudioMeshToolsToolbar.Id, StudioMeshDisplayToolbar.Id };
+                StudioPolygonPrimitivesToolbar.Id, StudioMeshToolsToolbar.Id, StudioMeshDisplayToolbar.Id, StudioCurvesToolbar.Id };
             string[] left = { StudioTransformToolbar.Id, StudioSelectionToolbar.Id };
             void Place(string[] ids, string container, int layout)
             {
@@ -186,7 +188,7 @@ namespace MashBoxSDK.AnimationStudio
                         foreach (var overlay in studioToolbarOverlays)
                             if (overlay.id == ids[i])
                             {
-                                string state = "{\"containerId\":\"" + container + "\",\"dockPosition\":0,\"index\":" + (savedIds == null ? i : 1000) + ",\"displayed\":true,\"layout\":" + layout + "}";
+                                string state = "{\"containerId\":\"" + container + "\",\"dockPosition\":0,\"index\":" + (savedIds == null ? i : 1000) + ",\"displayed\":" + (FactoryToolbarVisible(ids[i]) ? "true" : "false") + ",\"layout\":" + layout + "}";
 #if UNITY_6000_0_OR_NEWER
                                 overlayCanvas.RestoreOverlay(overlay, JsonUtility.FromJson<SaveData>(state));
 #else
@@ -248,6 +250,7 @@ namespace MashBoxSDK.AnimationStudio
 
         private void InitializeStudioToolbars()
         {
+            if (IsEmbeddedView) return;
             UnbindStoredToolbarEvents();
             SyncCustomToolbarDefinitions();
             if (studioOverlayRoot == null)
@@ -269,7 +272,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (studioToolbarVersion < 2)
                 {
                     if (overlay.GetType().Assembly != typeof(MashBoxStudioViewport).Assembly) overlay.displayed = false;
-                    else if (overlay.id == DisplayToolbarId) overlay.displayed = true;
+                    else if (overlay.id == DisplayToolbarId) overlay.displayed = FactoryToolbarVisible(overlay.id);
                 }
                 if (!(overlay is ToolbarOverlay)) continue;
                 studioToolbarOverlays.Add(overlay);
@@ -377,12 +380,18 @@ namespace MashBoxSDK.AnimationStudio
                     return;
                 }
                 if (element.style.height.value.value != height) element.style.height = height;
-                if (element.ClassListContains("unity-editor-toolbar-toggle") || element.ClassListContains("unity-editor-toolbar-button"))
+                // EditorToolbarButton uses unity-toolbar-button in current Unity;
+                // the old class-name check skipped command/primitive buttons.
+                // Text/dropdown controls keep their intrinsic wider layout.
+                if (element is EditorToolbarToggle || (element is EditorToolbarButton && !(element is EditorToolbarDropdown)))
                 {
                     if (element.style.width.value.value != height) element.style.width = height;
                     element.style.minWidth = element.style.maxWidth = height;
                     element.style.minHeight = element.style.maxHeight = height;
+                    element.style.flexGrow = 0;
                     element.style.flexShrink = 0;
+                    element.style.marginLeft = element.style.marginRight = 1;
+                    element.style.marginTop = element.style.marginBottom = 1;
                     element.style.paddingLeft = element.style.paddingRight = 0;
                     element.style.paddingTop = element.style.paddingBottom = 0;
                     element.style.alignSelf = Align.Center;
@@ -394,8 +403,11 @@ namespace MashBoxSDK.AnimationStudio
                         input.style.flexGrow = 1;
                         input.style.alignItems = Align.Center;
                         input.style.justifyContent = Justify.Center;
+                        input.style.alignSelf = Align.Stretch;
                         input.style.paddingLeft = input.style.paddingRight = 0;
+                        input.style.paddingTop = input.style.paddingBottom = 0;
                         input.style.marginLeft = input.style.marginRight = 0;
+                        input.style.marginTop = input.style.marginBottom = 0;
                     }
                 }
                 else if (element.ClassListContains("unity-dropdown-toggle"))
@@ -466,9 +478,10 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void SetModelGridVisible(bool visible)
         {
+            if (!IsEmbeddedView && quadLayout && quadViews != null) { EditingView.SetModelGridVisible(visible); return; }
             if (modelGridVisible == visible) return;
             modelGridVisible = visible;
-            StudioPreferenceStore.SetFloat("Studio.GridVisible", visible ? 1 : 0);
+            if (!IsEmbeddedView) StudioPreferenceStore.SetFloat("Studio.GridVisible", visible ? 1 : 0);
             SyncStudioToolbarState();
             MarkDirty(DirtyState.Scene);
         }
@@ -476,7 +489,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             SyncStudioToolbarVisibility();
             var editor = Studio?.ToolbarModelEditor;
-            int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (modelGridVisible ? 2 : 0) |
+            int state = editor == null ? 0 : 128 | (editor.ToolbarLocalAxes ? 1 : 0) | (EditingView.modelGridVisible ? 2 : 0) |
                 (editor.ToolbarLighting ? 4 : 0) | (editor.ToolbarTextures ? 8 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.Wireframe ? 16 : 0) |
                 (editor.ModelDrawMode == DrawCameraMode.TexturedWire ? 32 : 0) | (!StudioSettings.Current.hideObjectWireframe ? 64 : 0) | (editor.ToolbarTransformState << 8) | ((int)editor.ToolbarComponentMode << 12) | (editor.HasBlendShape ? 16384 : 0) | (editor.CameraOptionsVisible ? 32768 : 0) | (editor.LightingOptionsVisible ? 65536 : 0) | (editor.BackfaceCulling ? 131072 : 0) | (editor.ToolbarComponentAxes ? 262144 : 0) | (editor.CheckerMap ? 524288 : 0) | (editor.CenterMode ? 1048576 : 0);
@@ -493,6 +506,7 @@ namespace MashBoxSDK.AnimationStudio
         private void ReleaseStudioToolbars()
         {
             CancelStoredToolbarSave();
+            if (IsEmbeddedView) return;
             UnbindStoredToolbarEvents();
             foreach (var overlay in studioToolbarOverlays)
             {

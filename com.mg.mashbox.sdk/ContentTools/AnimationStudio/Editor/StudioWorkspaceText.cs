@@ -33,8 +33,10 @@ namespace MashBoxSDK.AnimationStudio
         [Serializable] private sealed class NodeData
         {
             public string name, anchor, source, sourceNodePath;
+            public string constraintId;
+            public List<StudioModelConstraintData> constraints;
             public StudioModelDocument.VehiclePartData vehiclePart;
-            public bool isVehiclePart;
+            public bool isVehiclePart; public bool isSpline; public StudioSpline spline;
             public bool sourceMeshAsset;
             public int parent = -1, mesh = -1, siblingOrder = -1;
             public Vector3 position, scale, origin;
@@ -94,7 +96,8 @@ namespace MashBoxSDK.AnimationStudio
             }
             var data = new FileData { format = Format, version = Version, source = document.sourcePath, lighting = document.lighting, sceneUnits = document.sceneUnits, gridSpacing = document.gridSpacing,
                 nodes = document.nodes.Select(node => new NodeData {
-                    name = node.name, isVehiclePart = node.vehiclePart != null, vehiclePart = node.vehiclePart, anchor = node.anchorType, source = node.sourcePath, sourceNodePath = node.sourceNodePath, sourceMeshAsset = node.sourceMeshAsset, parent = node.parent, siblingOrder = node.siblingOrder,
+                    constraintId = node.constraintId, constraints = node.constraints,
+                    isSpline = node.spline != null, spline = node.spline, name = node.name, isVehiclePart = node.vehiclePart != null, vehiclePart = node.vehiclePart, anchor = node.anchorType, source = node.sourcePath, sourceNodePath = node.sourceNodePath, sourceMeshAsset = node.sourceMeshAsset, parent = node.parent, siblingOrder = node.siblingOrder,
                     position = node.position, rotation = node.rotation, scale = node.scale, origin = node.positionOffset, axes = node.pivotRotation, frozenRotation = node.frozenRotation, frozenPivotBaseline = node.frozenPivotBaseline,
                     rotationChannels = new[] { node.RotationChannels.x, node.RotationChannels.y, node.RotationChannels.z },
                     active = node.active, skinned = node.skinned, ao = node.vertexAOBaked, slice = node.previewTextureSlice,
@@ -178,7 +181,7 @@ namespace MashBoxSDK.AnimationStudio
                     var mesh = node.mesh < 0 ? null : instances[node.mesh];
                     var polygons = node.polygons != null && node.polygons.Length > 0 ? node.polygons : null;
                     var triangles = node.topologyTriangles != null && node.topologyTriangles.Length > 0 ? node.topologyTriangles : polygons != null && mesh ? mesh.triangles : null;
-                    ValidatePolygons(polygons, mesh);
+                    ValidatePolygons(polygons, mesh); if(node.isSpline) { if(node.spline==null || mesh) throw new InvalidDataException("Invalid spline node."); node.spline.Validate(); }
                     if(node.geometryVertices!=null&&node.geometryVertices.Length>0&&(!mesh||node.geometryVertices.Length!=mesh.vertexCount||node.geometryVertices.Any(g=>g<0||g>1000000000)))throw new InvalidDataException("Invalid geometric vertex identities.");
                     if(node.subdivision!=null)
                     {
@@ -190,7 +193,8 @@ namespace MashBoxSDK.AnimationStudio
                     if (groups != null && (!mesh || groups.Length != mesh.vertexCount || groups.Any(g => g < 0 || g >= mesh.vertexCount)))
                         throw new InvalidDataException("Invalid normal smoothing groups.");
                     document.nodes.Add(new StudioModelDocument.Node {
-                        name = node.name, vehiclePart = node.isVehiclePart ? node.vehiclePart : null, anchorType = node.anchor, sourcePath = node.source, sourceNodePath = node.sourceNodePath, sourceMeshAsset = node.sourceMeshAsset, parent = node.parent, siblingOrder = node.siblingOrder,
+                        constraintId = string.IsNullOrEmpty(node.constraintId) ? Guid.NewGuid().ToString("N") : node.constraintId, constraints = node.constraints ?? new List<StudioModelConstraintData>(),
+                        spline = node.isSpline ? node.spline : null, name = node.name, vehiclePart = node.isVehiclePart ? node.vehiclePart : null, anchorType = node.anchor, sourcePath = node.source, sourceNodePath = node.sourceNodePath, sourceMeshAsset = node.sourceMeshAsset, parent = node.parent, siblingOrder = node.siblingOrder,
                         position = node.position, rotation = node.rotation, scale = node.scale, positionOffset = node.origin, pivotRotation = node.axes, frozenRotation = node.frozenRotation, frozenPivotBaseline = node.frozenPivotBaseline,
                         active = node.active, skinned = node.skinned, vertexAOBaked = node.ao, previewTextureSlice = node.slice,
                         bones = node.bones ?? Array.Empty<int>(), rootBone = node.rootBone, mesh = mesh,
@@ -208,6 +212,7 @@ namespace MashBoxSDK.AnimationStudio
                         document.nodes[document.nodes.Count - 1].rotation = node.rotation;
                     }
                 }
+                StudioModelConstraints.ValidateDocument(document);
                 document.SetWorkspacePath(path);
                 // Reconstructing meshes marks native objects dirty; these values
                 // came from disk and do not represent unsaved user edits.

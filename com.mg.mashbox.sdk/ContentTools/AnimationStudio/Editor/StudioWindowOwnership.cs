@@ -58,7 +58,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (!links.TryGetValue(current, out current)) break;
             }
             return SceneView.lastActiveSceneView as MashBoxStudioViewport ??
-                Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
+                Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault(view => !view.IsEmbeddedView);
         }
         internal static void Register(EditorWindow window, EditorWindow owner)
         {

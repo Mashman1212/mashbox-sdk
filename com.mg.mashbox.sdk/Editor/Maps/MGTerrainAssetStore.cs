@@ -111,7 +111,14 @@ namespace MashBoxSDK.MapTools
         }
         internal static Texture2D SaveMap(Texture2D generated, string path, bool linear, MGTerrainAssetTransaction transaction, bool undo = false)
         {
-            if (Path.GetExtension(path).Equals(".asset", StringComparison.OrdinalIgnoreCase)) return Save(generated, path, transaction, undo);
+            if (Path.GetExtension(path).Equals(".asset", StringComparison.OrdinalIgnoreCase))
+            {
+                // Preserve legacy native capture GUIDs while giving them the same
+                // GPU format as PNG captures. Height/paint data use Save, not SaveMap.
+                var compressed = MGTerrainBakeTextureCompression.CompressedNativeCopy(generated, linear);
+                try { return Save(compressed, path, transaction, undo); }
+                finally { if (!EditorUtility.IsPersistent(compressed)) Object.DestroyImmediate(compressed); }
+            }
             if (!Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase)) throw new IOException("Unsupported terrain map output: " + path);
             transaction.Track(path);
             byte[] png = generated.EncodeToPNG();
@@ -119,13 +126,8 @@ namespace MashBoxSDK.MapTools
             MGTerrainAppearanceCaptureAssets.WritePng(path, png);
             AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
             var importer = (TextureImporter)AssetImporter.GetAtPath(path);
-            importer.textureType = TextureImporterType.Default; importer.sRGBTexture = !linear;
-            importer.convertToNormalmap = false; importer.flipGreenChannel = false; importer.alphaSource = TextureImporterAlphaSource.None;
-            importer.mipmapEnabled = true; importer.fadeout = false; importer.mipMapsPreserveCoverage = false;
-            importer.wrapMode = TextureWrapMode.Clamp; importer.filterMode = FilterMode.Trilinear;
-            importer.anisoLevel = 4; importer.maxTextureSize = Mathf.NextPowerOfTwo(Mathf.Max(generated.width, generated.height));
-            importer.textureCompression = TextureImporterCompression.Uncompressed;
-            importer.isReadable = false; importer.SaveAndReimport();
+            MGTerrainBakeTextureCompression.Configure(importer, linear, Mathf.NextPowerOfTwo(Mathf.Max(generated.width, generated.height)));
+            importer.SaveAndReimport();
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
         internal static T SaveGenerated<T>(T generated, MGTerrain tile, string role) where T : Object

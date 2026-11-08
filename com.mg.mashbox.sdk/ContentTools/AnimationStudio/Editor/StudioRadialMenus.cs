@@ -138,7 +138,8 @@ namespace MashBoxSDK.AnimationStudio
                 D("components","Standard","Select/Edge","Select/Object Mode","RadialPreset/uv","Select/Face","Select/Vertex","RadialPreset/pivot","RadialPreset/context-material-assign-selection"),
                 D("pivot","Pivot","Modify/Edit Pivot","Modify/Center Pivot","Modify/Freeze Transforms"),
                 D("uv","UVs","UV/Select UVs","UV/Select UV Shells"),
-                D("axes","Orientation","Legacy/ComponentAxes","Legacy/WorldAxes","Legacy/ObjectAxes","Legacy/CenterAxes"),
+                D("symmetry","Symmetry","Modify/Symmetry/Enabled","Modify/Symmetry/Space","Modify/Symmetry/X","Modify/Symmetry/Y","Modify/Symmetry/Z"),
+                D("axes","Orientation","RadialPreset/symmetry","Legacy/ComponentAxes","Legacy/WorldAxes","Legacy/ObjectAxes","Legacy/CenterAxes"),
                 D("8e912b9b50274f31b2a787d56ed430f6","Convert Selection","RadialPreset/convert-vertices","RadialPreset/convert-edges","RadialPreset/convert-faces","Select/Convert Selection/Objects"),
                 D("convert-vertices","To Vertices","Select/Convert Selection/Vertices","Select/Convert Selection/To Perimeter Vertices"),
                 D("convert-edges","To Edges","Select/Convert Selection/Edges","Select/Convert Selection/To Perimeter Edges"),
@@ -152,7 +153,9 @@ namespace MashBoxSDK.AnimationStudio
             {
                 try
                 {
-                    InitializeStorage();cached=LoadFiles();StudioModelCommands.SyncRadialMenus(cached);
+                    InitializeStorage();cached=LoadFiles();
+                    if (!cached.Any(p => p.id == "symmetry")) cached.Add(Defaults().Single(p => p.id == "symmetry"));
+                    StudioModelCommands.SyncRadialMenus(cached);
                     // Migration is complete only once the individual files load.
                     // Keep an empty legacy tombstone, never a second live store.
                     if(!string.IsNullOrEmpty(StudioPreferenceStore.GetString(PreferenceKey)))

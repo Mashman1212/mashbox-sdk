@@ -31,15 +31,19 @@ namespace MashBoxSDK.AnimationStudio
             }
             finally { EditorGUIUtility.SetIconSize(previous); }
         }
+        private static bool DrawChannelCategoryHeader(bool expanded, GUIContent content)
+        {
+            GUILayout.Space(4);
+            var rect = EditorGUILayout.GetControlRect(false, 20);
+            var background = new Rect(rect.x - 4, rect.y, rect.width + 8, rect.height);
+            EditorGUI.DrawRect(background, Color.Lerp(StudioTheme.Current.Panel, StudioTheme.Current.Button, .5f));
+            return DrawChannelCategoryFoldout(rect, expanded, content);
+        }
         private bool transformChannelsExpanded = true;
         private static readonly GUIContent TransformChannelHeader = new GUIContent("Transform", EditorGUIUtility.IconContent("Transform Icon").image);
         private bool DrawTransformChannelHeader()
         {
-            GUILayout.Space(4);
-            var rect=EditorGUILayout.GetControlRect(false,20);
-            var background = new Rect(rect.x-4,rect.y,rect.width+8,rect.height);
-            EditorGUI.DrawRect(background,Color.Lerp(StudioTheme.Current.Panel,StudioTheme.Current.Button,.5f));
-            bool expanded=DrawChannelCategoryFoldout(rect, transformChannelsExpanded, TransformChannelHeader);
+            bool expanded = DrawChannelCategoryHeader(transformChannelsExpanded, TransformChannelHeader);
             if (expanded != transformChannelsExpanded)
             {
                 transformChannelsExpanded=expanded;

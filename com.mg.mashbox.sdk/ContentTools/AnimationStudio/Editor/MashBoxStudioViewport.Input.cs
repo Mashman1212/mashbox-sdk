@@ -237,16 +237,18 @@ namespace MashBoxSDK.AnimationStudio
             // A release outside Unity may never reach the retained pointer handlers.
             // Clear ownership in every Studio mode, including native camera modes.
             if ((navigating || cameraDragStartedInCanvas || cameraDragStartedInUI) &&
-                (!UnityEditorInternal.InternalEditorUtility.isApplicationActive || focusedWindow != this))
+                (!UnityEditorInternal.InternalEditorUtility.isApplicationActive || focusedWindow != LayoutOwner))
                 ReleaseStudioInput();
         }
         private void TickStudioInput()
         {
             if (!UnityEditorInternal.InternalEditorUtility.isApplicationActive ||
-                focusedWindow != this || studioInputActive == null || !studioInputActive()) ReleaseStudioInput();
+                (focusedWindow != this && (!IsEmbeddedView || focusedWindow != QuadOwner)) || studioInputActive == null || !studioInputActive()) ReleaseStudioInput();
         }
         public override void OnDisable()
         {
+            UnbindPanelLayout();
+            ReleaseQuadViews(false);
             SaveStoredConfiguration();
             StudioPreferenceStore.Flush();
             ClearStatusMessages();
@@ -364,7 +366,7 @@ namespace MashBoxSDK.AnimationStudio
                     if (StudioShortcuts.Matches(action,evt))
                     {
                         navigating = true; navigation = action; navigationButton = evt.button;
-                        navigationControl = control; GUIUtility.hotControl = control; Focus(); evt.Use(); return;
+                        navigationControl = control; GUIUtility.hotControl = control; if (IsEmbeddedView) QuadOwner.Focus(); else Focus(); evt.Use(); return;
                     }
             }
             // Mouse gestures are owned here too; changing Unity's navigation profile
@@ -374,6 +376,14 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void EnsurePerspectiveCamera()
         {
+            if (IsOrthographicView) {
+                var desired = QuadRotation(ViewKind);
+                if (!orthographic || !camera.orthographic || Quaternion.Angle(rotation,desired) > .001f || in2DMode) {
+                    in2DMode=false; orthographic=true; camera.orthographic=true;
+                    LookAtDirect(pivot,desired,size); MarkDirty(DirtyState.Camera);
+                }
+                isRotationLocked=true; return;
+            }
             if (!in2DMode && !isRotationLocked && !orthographic && (!camera || !camera.orthographic)) return;
             var center = pivot; var frame = rotation; float viewSize = size;
             in2DMode = false; isRotationLocked = false; orthographic = false;
@@ -387,7 +397,7 @@ namespace MashBoxSDK.AnimationStudio
             delta *= NavigationSensitivity;
             if (action == StudioShortcut.Orbit)
             {
-                if (delta.sqrMagnitude == 0) return;
+                if (IsOrthographicView || delta.sqrMagnitude == 0) return;
                 var center = pivot; var frame = rotation; float viewSize = size;
                 bool projection = false;
                 // A deliberate orbit releases native SceneView's axis/2D locks.
@@ -406,3 +416,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

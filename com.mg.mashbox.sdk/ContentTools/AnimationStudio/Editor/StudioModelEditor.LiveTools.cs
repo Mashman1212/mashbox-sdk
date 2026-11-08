@@ -40,6 +40,7 @@ namespace MashBoxSDK.AnimationStudio
         private List<Vector4> liveExtrusionUV4 = new List<Vector4>();
         private void RepaintLiveToolPanes()
         {
+            if(sweepPane)sweepPane.Repaint();
             if(circularizePane)circularizePane.Repaint();
             if (rangeWeldToolPane) rangeWeldToolPane.Repaint();
             if (bevelToolPane) bevelToolPane.Repaint();
@@ -60,7 +61,8 @@ namespace MashBoxSDK.AnimationStudio
             else CloseExtrudeToolWindow();
         }
         private void CloseLiveToolPanes()
-        { CloseCircularizeTool(); CloseFractureTool(); CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
+        {
+            CloseHolePunchTool(); CloseSweepTool(); CloseCircularizeTool(); CloseFractureTool(); CloseBisectTool(); CloseSelectionActionPane(); CloseBevelToolWindow(); CloseMergeToolWindow(); CloseNormalsToolWindow(); CloseExtrudeToolWindow(); CloseEdgeFlowToolWindow(); CloseBridgeToolWindow(); }
         private bool HasLiveTool(LiveTool kind) => livePreview != null && liveTool == kind;
         private bool CanRunLiveTool(LiveTool kind) => HasLiveTool(kind) || (kind == LiveTool.Bevel ? CanBevelEdges :
             kind==LiveTool.Circularize?CanCircularize:kind == LiveTool.Weld ? CanRangeWeldVertices : kind == LiveTool.Merge ? CanMergeVertices : kind == LiveTool.Soften ? CanAdjustEdgeNormals : kind == LiveTool.EdgeFlow ? CanEditEdgeFlow : kind == LiveTool.Bridge ? CanBridgeEdges : CanExtrude);
@@ -106,11 +108,16 @@ namespace MashBoxSDK.AnimationStudio
                 throw new InvalidOperationException("Repair or delete the broken modifier, or Clear History, before applying another tool.");
             PrepareIsolationTopologyEdit();
             FinishChannelEdit(); StopTargetWeld(); StopCutTool(); CancelMarkingMenu(); EndPivotSnap();
+            liveSymmetryDeformation = kind == LiveTool.Circularize || kind == LiveTool.EdgeFlow ? CaptureSymmetryDeformation(ActiveMesh.vertices, SelectedVertices())?.Record() : null;
+            if (kind != LiveTool.Bridge) ExpandSymmetrySelection(); else RequireSingleSymmetryObject();
             liveMode = mode; liveSelection = Components.OrderBy(i => i).ToArray();
             liveWorld = Active >= 0 ? Transforms[Active].localToWorldMatrix : Matrix4x4.identity;
             liveMergePair = kind == LiveTool.Merge;
+            liveSymmetryMergePrimary = liveSymmetryMergeMirror = null;
+            if (kind == LiveTool.Merge) CaptureSymmetryMerge();
             liveEdges = mode == ComponentMode.Edge ? liveSelection.Select(i => Edges()[i]).ToArray() : null;
             liveFaces = mode == ComponentMode.Face ? liveSelection : null;
+            liveMirroredBridgeEdges = kind == LiveTool.Bridge ? CaptureSymmetryBridgeEdges(liveEdges) : null;
             livePoints = new HashSet<Vector3>(); liveEdgePoints = new HashSet<(Vector3, Vector3)>();
             if (ActiveMesh)
             {
@@ -133,6 +140,8 @@ namespace MashBoxSDK.AnimationStudio
             var parameters = LiveParameters(kind);
             if(kind==LiveTool.Bevel)parameters.x=BevelRangeUnlocked(parameters)?Mathf.Max(0,parameters.x):Mathf.Clamp01(parameters.x);
             var flowParameters = FlowParameters(kind);
+            if (kind == LiveTool.Circularize && liveSymmetryDeformation != null && (flowParameters.x > 0 || flowParameters.y > 0))
+            { liveValid=false; throw new InvalidOperationException("Symmetry Circularize currently requires Add Divisions and Supporting Edges off."); }
             if (liveEvaluated && liveValid && parameters.Equals(liveParameters) && flowParameters.Equals(liveFlowParameters)) return;
 #if MASHBOX_STUDIO_TESTS
             LiveProfileStage?.Invoke("live.start");
@@ -183,7 +192,7 @@ namespace MashBoxSDK.AnimationStudio
                 else if (kind == LiveTool.EdgeFlow)
                 { changed |= EvaluateEdgeFlow(target,parameters.x,Mathf.Clamp(Mathf.RoundToInt(parameters.y),1,64)); }
                 else if (kind == LiveTool.Merge || kind == LiveTool.Weld)
-                { merge = target.Topology.MergeVertices(target.Work, liveSelection, liveMergePair, parameters.x, liveWorld); changed |= merge != null; }
+                { merge = kind == LiveTool.Merge && liveSymmetryMergeMirror != null ? StudioMeshSymmetry.MergeGroups(target.Work,liveSymmetryMergePrimary,liveSymmetryMergeMirror) : target.Topology.MergeVertices(target.Work, liveSelection, liveMergePair, parameters.x, liveWorld); changed |= merge != null; }
                 else if (kind == LiveTool.Soften)
                 { target.Topology.SetEdgeNormals(target.Work, liveNormalEdges[index], parameters.x, false); changed = true; }
                 else
@@ -205,6 +214,12 @@ namespace MashBoxSDK.AnimationStudio
                     liveWallTips = tips.ToArray(); changed = true;
                 }
             }
+            if (liveSymmetryDeformation != null)
+                foreach (var target in livePreview.Targets)
+                {
+                    var values=target.Work.mesh.vertices;liveSymmetryDeformation.Apply(values);
+                    StudioModifierEvaluator.UpdateSurfacePositions(target.Work,values);
+                }
             // No target is published until all targets have evaluated successfully.
             livePreview.Publish(changed);
 #if MASHBOX_STUDIO_TESTS
@@ -335,7 +350,7 @@ namespace MashBoxSDK.AnimationStudio
             RemoveQueuedPreview(); EvaluateLiveTool(kind);
             CommitLiveTool(false);
         }
-        private void FinishLiveTool() { CloseFractureTool(); CommitLiveTool(true); }
+        private void FinishLiveTool() { if(sweepPending)ApplySweep(); CloseFractureTool(); CommitLiveTool(true); }
         private void CommitLiveTool(bool closePane)
         {
             if (previewQueued)
@@ -371,6 +386,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             ClearExtrudeDistanceGizmo();
             liveFlowParameters = Vector3.zero;
+            liveSymmetryDeformation = null; liveSymmetryMergePrimary = liveSymmetryMergeMirror = null;
+            liveMirroredBridgeEdges = null;
             livePreview = null; liveSelection = liveFaces = liveWallTips = null; liveEdges = null;
             liveNormalEdges = null; livePoints = null; liveEdgePoints = null;
             liveExtrusion = null; liveExtrusionDirections = liveExtrusionPositions = null;

@@ -15,6 +15,8 @@ namespace MashBoxSDK.AnimationStudio
         public sealed class Node
         {
             public string name;
+            public string constraintId = Guid.NewGuid().ToString("N");
+            public List<StudioModelConstraintData> constraints = new List<StudioModelConstraintData>();
             public string anchorType;
             [SerializeReference] public VehiclePartData vehiclePart;
             public string sourcePath;
@@ -62,7 +64,7 @@ namespace MashBoxSDK.AnimationStudio
             internal Quaternion BakeRotation => SameRotation(pivotRotation,FrozenFrame(frozenPivotBaseline)) ? FrozenFrame(frozenRotation) : pivotRotation;
             internal void ClearBakedOffsets()
             { positionOffset=Vector3.zero;pivotRotation=frozenRotation=frozenPivotBaseline=Quaternion.identity; }
-            public Mesh mesh;
+            [SerializeReference] public StudioSpline spline; public Mesh mesh;
             [SerializeReference] public StudioBlendShape blendShape;
             public int[] cutPolygons, cutTriangles;
             public int[] normalGroups;
@@ -220,6 +222,7 @@ namespace MashBoxSDK.AnimationStudio
                 skin.localBounds = node.mesh.bounds; skin.updateWhenOffscreen = true;
             }
             ApplyHierarchyOrder(result);
+            StudioModelConstraints.Build(this, result);
             return result;
         }
         public void ApplyTransform(int index, Transform target)
@@ -233,6 +236,7 @@ namespace MashBoxSDK.AnimationStudio
             var n = nodes[index]; n.position = source.localPosition - n.positionOffset;
             if (!Node.SameRotation(n.rotation, source.localRotation)) n.RotationChannels = TransformUtils.GetInspectorRotation(source);
             n.rotation = source.localRotation; n.scale = source.localScale;
+            StudioModelConstraints.ReadUnlocked(this, index, source);
             EditorUtility.SetDirty(this);
         }
         public bool IsBone(int index) => nodes.Any(n => n.skinned && (n.rootBone == index || n.bones.Contains(index)));
@@ -323,11 +327,18 @@ namespace MashBoxSDK.AnimationStudio
             var childIndices = Enumerable.Range(0, nodes.Count).Where(i => nodes[i].parent == index).ToArray();
             var childMatrices = childIndices.Select(i => newWorld.inverse * transforms[i].localToWorldMatrix).ToArray();
             var mesh = nodes[index].mesh;
-            Undo.RegisterCompleteObjectUndo(mesh ? new UnityEngine.Object[] {this,mesh} : new UnityEngine.Object[] {this}, label);
+            writingSweepFrame=nodes[index].modifiers?.operations.FirstOrDefault()?.kind=="Sweep";
+            try{Undo.RegisterCompleteObjectUndo(mesh ? new UnityEngine.Object[] {this,mesh} : new UnityEngine.Object[] {this}, label);}
+            finally{writingSweepFrame=false;}
+            if(nodes[index].modifiers?.operations.FirstOrDefault()?.kind=="Sweep")
+            {
+                var history=nodes[index].modifiers.Copy();var frame=new StudioModifierOperation{kind="SweepFrame",name=label,world=newWorld.inverse*t.localToWorldMatrix};history.operations.Add(frame);nodes[index].modifiers=history;
+            }
             if (mesh)
             {
                 TransformMesh(mesh, newWorld.inverse * t.localToWorldMatrix);
             }
+            if(nodes[index].spline != null) { var compensation = newWorld.inverse * t.localToWorldMatrix; foreach(var knot in nodes[index].spline.knots) { knot.position=compensation.MultiplyPoint3x4(knot.position); knot.incoming=compensation.MultiplyVector(knot.incoming); knot.outgoing=compensation.MultiplyVector(knot.outgoing); } }
             change(); ReadTransform(index, t);
             for (int j = 0; j < childIndices.Length; j++)
             {
@@ -351,7 +362,7 @@ namespace MashBoxSDK.AnimationStudio
                     throw new InvalidOperationException("Freezing this non-uniform scale would shear children. Freeze the mesh before rotating its children.");
             }
         }
-        private static void TransformMesh(Mesh mesh, Matrix4x4 matrix)
+        internal static void TransformMesh(Mesh mesh, Matrix4x4 matrix)
         {
             var vertices = mesh.vertices; var normals = mesh.normals; var tangents = mesh.tangents;
             var normalMatrix = matrix.inverse.transpose;

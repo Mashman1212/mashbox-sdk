@@ -25,6 +25,8 @@ namespace MashBoxSDK.AnimationStudio
             if ((state & (DirtyState.Scene | DirtyState.Camera)) != 0) state |= DirtyState.Overlay;
             if ((state & DirtyState.Overlay) != 0) state |= DirtyState.UI;
             viewportDirty |= state;
+            if (IsEmbeddedView) { cameraInputCanvas?.MarkDirtyRepaint(); QuadOwner.RepaintUI(); return; }
+            RepaintQuadViews(state);
             SyncStudioToolbarState();
             base.Repaint();
         }

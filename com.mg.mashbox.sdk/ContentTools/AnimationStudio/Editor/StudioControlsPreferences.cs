@@ -53,7 +53,7 @@ namespace MashBoxSDK.AnimationStudio
             if(window.position.width<780||window.position.height<560)
                 window.position=new Rect(window.position.x,window.position.y,960,680);
             var owner = focusedWindow as MashBoxStudioViewport ?? window.owner ?? SceneView.lastActiveSceneView as MashBoxStudioViewport ??
-                Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
+                Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault(view => !view.IsEmbeddedView);
             window.owner=owner;
             StudioWindowOwnership.ShowUtility(window, owner);
         }

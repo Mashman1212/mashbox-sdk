@@ -9,19 +9,27 @@ namespace MashBoxSDK.AnimationStudio
     {
         private StudioPreviewLighting previewLighting;
         private readonly StudioLightingSettings emptyLighting = new StudioLightingSettings();
+        private SceneView lightingOptionsView;
+        private StudioLightingSettings EditingLighting => lightingOptionsView is MashBoxStudioViewport tile && tile.IsEmbeddedView ? tile.ViewLighting : LightingSettings;
         internal StudioLightingSettings LightingSettings => Document ? Document.lighting ?? (Document.lighting = new StudioLightingSettings()) : emptyLighting;
-        internal void ConfigureLightingCamera(SceneView view) => previewLighting?.ConfigureModelCamera(view,LightingSettings,
-            displayLighting&&(displayTextures||checkerMap)&&!displayXray&&!wireframeOnly);
+        internal void ConfigureLightingCamera(SceneView view) {
+            var settings = view is MashBoxStudioViewport tile && tile.IsEmbeddedView ? tile.ViewLighting : LightingSettings;
+            if (view is MashBoxStudioViewport embedded && embedded.FourViews) previewLighting?.Apply(settings);
+            previewLighting?.ConfigureModelCamera(view,settings,displayLighting&&(displayTextures||checkerMap)&&!displayXray&&!wireframeOnly);
+        }
+        internal void ReleaseViewportLighting() { previewLighting?.RestoreCameras(); lightingOptionsView=null; }
         internal void SuspendLighting() { SetSubdivisionActive(false);previewLighting?.RestoreCameras(); }
         internal void EditLighting(Action<StudioLightingSettings> change)
         {
-            if (Document) Undo.RecordObject(Document,"Edit viewport lighting");
-            change(LightingSettings); previewLighting?.Apply(LightingSettings);
+            bool local = lightingOptionsView is MashBoxStudioViewport tile && tile.IsEmbeddedView;
+            if (!local && Document) Undo.RecordObject(Document,"Edit viewport lighting");
+            change(EditingLighting); previewLighting?.Apply(EditingLighting);
             ApplyDisplayMaterials();
-            if (Document) EditorUtility.SetDirty(Document);
+            if (!local && Document) EditorUtility.SetDirty(Document);
             repaint(); toolOptions?.Repaint();
         }
         internal bool LightingOptionsVisible { get; private set; }
+        internal void ShowLightingOptions(SceneView view, bool visible) { lightingOptionsView=view; ShowLightingOptions(visible); }
         internal void ShowLightingOptions(bool visible)
         {
             LightingOptionsVisible = visible;
@@ -31,7 +39,7 @@ namespace MashBoxSDK.AnimationStudio
         private static readonly string[] ViewportLightingModes = { "Camera Lighting", "Studio Lights" };
         private void DrawViewportLightingOptions()
         {
-            var s = LightingSettings;
+            var s = EditingLighting;
             EditorGUI.BeginChangeCheck();
             bool studioLights = EditorGUILayout.Popup("Lighting mode", s.studioLights ? 1 : 0, ViewportLightingModes) == 1;
             using (new EditorGUI.DisabledScope(!studioLights && !(previewLighting?.SupportsPhysicalMaterials??false)))

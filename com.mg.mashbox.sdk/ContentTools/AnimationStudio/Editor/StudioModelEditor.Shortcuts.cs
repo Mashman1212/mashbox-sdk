@@ -1,4 +1,4 @@
-﻿using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
+using Undo = MashBoxSDK.AnimationStudio.StudioUndo;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -11,6 +11,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             var evt = Event.current;
             if (evt == null || !evt.isKey || EditorGUIUtility.editingTextField || hierarchyRenameNode != null) return false;
+            ReconcileSplineEditingSelection();
             UpdatePivotTargetModifiers(evt);
             if (!markingOpen && evt.type == EventType.KeyDown && TryOpenRadial(view,evt,GUIUtility.GetControlID("MashBoxStudioMarkingMenu".GetHashCode(),FocusType.Passive))) return true;
             if (HandleSelectionPaintKey(view)) return true;
@@ -22,6 +23,7 @@ namespace MashBoxSDK.AnimationStudio
             if (HandleSaveShortcut() || HandleGridSnapKey(view) || HandleSizeShortcut(evt) || HandlePivotSnap(view)) return true;
             if (evt.type != EventType.KeyDown) return false;
             bool Is(StudioShortcut action) => StudioShortcuts.Pressed(action,evt);
+            if (SplineKey(evt)) return true; if (PolygonKey(evt)) return true;
             if (Is(StudioShortcut.Cancel) && GUIUtility.hotControl == 0 && ActiveChannelTool)
             { ActiveChannelTool.Close(); evt.Use(); repaint(); return true; }
             if (Is(StudioShortcut.Cancel))
@@ -78,7 +80,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         internal void ReleaseShortcutHolds()
         {
-            ResetTargetWeldGesture(); ReleaseMultiCutPointer(); ReleaseBisectPointer(); FinishSelectionPaint();
+            EndSplineGesture(false); ResetTargetWeldGesture(); ReleaseMultiCutPointer(); ReleaseBisectPointer(); FinishSelectionPaint();
             if (pivotSnapUndo >= 0) Undo.CollapseUndoOperations(pivotSnapUndo);
             EndPivotSnap(); ClearGridSnap(); surfaceSnapDragging = false;
         }

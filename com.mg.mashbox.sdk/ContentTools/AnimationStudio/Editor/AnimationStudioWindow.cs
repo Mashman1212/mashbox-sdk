@@ -320,7 +320,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             if (!this || EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode) return;
             // A hidden controller can survive closing the viewport. Never recreate it on reload or Play.
-            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault(view => view.Studio == this);
+            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault(view => !view.IsEmbeddedView && view.Studio == this);
             if (!viewport) return;
             if (rig != null)
             {
@@ -530,7 +530,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void OpenViewport()
         {
-            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault();
+            if (!viewport) viewport = Resources.FindObjectsOfTypeAll<MashBoxStudioViewport>().FirstOrDefault(view => !view.IsEmbeddedView);
             bool freshViewport = !viewport;
             bool dockable = !StudioSettings.Current.floatingStudioWindow;
             bool migrateHost = viewport && viewport.dockableHost != dockable;
@@ -1022,7 +1022,7 @@ namespace MashBoxSDK.AnimationStudio
                 StudioPreviewLighting.ConfigureStudioBackground(view);
                 return;
             }
-            if (view == viewport && modelingMode)
+            if (viewport && viewport.OwnsModelView(view) && IsModelingMode)
             {
                 if (view.camera) view.camera.cameraType = CameraType.Preview;
                 EnsureModelEditor();

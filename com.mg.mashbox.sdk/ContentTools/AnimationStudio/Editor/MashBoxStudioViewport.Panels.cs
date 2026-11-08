@@ -26,6 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         private float PanelLayoutWidth => PanelMargin * 2 + DividerWidth * 2;
         private float preferredLeft = 260, preferredRight = 350;
         private bool panelsInitialized, panelsModeling;
+        [System.NonSerialized] private VisualElement panelLayoutRoot;
         private bool animationSettingsExpanded;
         [SerializeField] private bool skinLeftTucked, skinRightTucked;
         [SerializeField] private bool skinInfluencesTucked = true;
@@ -53,6 +54,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             get
             {
+                if (IsEmbeddedView) return new Rect(Vector2.zero, rootVisualElement.contentRect.size);
                 var widths = PanelWidths;
                 float left = HierarchyLeft + widths.x + DividerWidth;
                 float right = StudioContentWidth - PanelMargin - widths.y - DividerWidth;
@@ -86,8 +88,12 @@ namespace MashBoxSDK.AnimationStudio
                 preferredRight = ValidWidth(StudioPreferenceStore.GetFloat(RightWidthKey, StudioPreferenceStore.GetFloat("MashBox.MGStudio.ChannelsWidth", 350)), 350, MinRight);
                 preferredToolHeight = StudioPreferenceStore.GetFloat(ToolOptionsHeightKey, 220);
                 panelsInitialized = true;
-                rootVisualElement.RegisterCallback<GeometryChangedEvent>(_ => UpdatePanelLayout());
+
             }
+            // Scalar settings survive reload; UI callbacks do not. Bind independently.
+            UnbindPanelLayout();
+            panelLayoutRoot = rootVisualElement;
+            panelLayoutRoot.RegisterCallback<GeometryChangedEvent>(OnPanelLayoutChanged);
             if (leftDivider == null)
             {
                 leftDivider = CreatePanelDivider(1, "mashbox-hierarchy-divider");
@@ -99,6 +105,16 @@ namespace MashBoxSDK.AnimationStudio
             }
             UpdatePanelLayout(); leftDivider.BringToFront(); rightDivider.BringToFront();
             viewportCameraButton?.BringToFront(); viewportLightingButton?.BringToFront();
+        }
+        private void OnPanelLayoutChanged(GeometryChangedEvent evt)
+        {
+            UpdatePanelLayout();
+            Repaint();
+        }
+        private void UnbindPanelLayout()
+        {
+            panelLayoutRoot?.UnregisterCallback<GeometryChangedEvent>(OnPanelLayoutChanged);
+            panelLayoutRoot = null;
         }
         private IMGUIContainer CreatePanelDivider(int side, string elementName)
         {
@@ -173,6 +189,8 @@ namespace MashBoxSDK.AnimationStudio
                 meshStatistics.style.top = optionsTop + (retopologyPanels ? 54 : 24) + 8;
             }
             LayoutWorkspaceStatistics(widths.y);
+            LayoutViewDirectionLabel(ModelCanvasRect,panelsModeling&&!quadLayout,"Perspective");
+            LayoutQuadViews();
             if (leftDivider == null || rightDivider == null) return;
             if (FoldablePanels)
             {
@@ -401,3 +419,4 @@ namespace MashBoxSDK.AnimationStudio
         }
     }
 }
+

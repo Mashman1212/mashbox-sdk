@@ -10,7 +10,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal static bool TryGet(string key, out Texture2D texture)
         {
-            string symbol = Symbol(key);
+            string symbol = key.StartsWith("Curves/",StringComparison.Ordinal) ? "curve-"+key.Substring(7) : Symbol(key);
             texture = symbol == null ? null : StudioToolbarIcons.Get("Studio symbol " + symbol + (EditorGUIUtility.isProSkin ? " dark" : " light"), () => Draw(symbol));
             return texture;
         }
@@ -24,7 +24,13 @@ namespace MashBoxSDK.AnimationStudio
         {
             switch (key)
             {
-                case "Animation/Rig Bones": return "rig-bones";
+                case "Constraints/Aim Constraint": return "constraint-aim";
+                case "Constraints/Look At Constraint": return "constraint-look";
+                case "Constraints/Parent Constraint": return "constraint-parent";
+                case "Constraints/Position Constraint": return "constraint-position";
+                case "Constraints/Rotation Constraint": return "constraint-rotation";
+                case "Constraints/Scale Constraint": return "constraint-scale";
+                case "Hierarchy/Spline": return "spline-hierarchy"; case "Animation/Rig Bones": return "rig-bones";
                 case "File/Save Workspace As…": return "save-as";
                 case "File/Export All… (FBX)": return "export-all";
                 case "File/Export Selection… (FBX)": return "export-selection";
@@ -61,7 +67,7 @@ namespace MashBoxSDK.AnimationStudio
                 case "Mesh Tools/Bridge Edges": return "bridge";
                 case "Mesh Tools/Circularize…": return "circularize";
                 case "Mesh Tools/Weld…": return "weld-range";
-                case "Mesh Tools/Bisect": return "bisect";
+                case "Mesh Tools/Hole Puncher": return "bisect"; case "Mesh Tools/Bisect": return "bisect";
                 case "Mesh Tools/Fracture": return "fracture";
                 case "Edit Mesh/Fill Hole": return "fill-hole";
                 case "Edit Mesh/To Edge Ring and Collapse": return "ring-collapse";
@@ -138,7 +144,33 @@ namespace MashBoxSDK.AnimationStudio
             var c=new Canvas();var w=c.White;var a=c.Accent;var g=c.Gold;
             switch(symbol)
             {
-                case "rig-bones":
+                case "curve-Linear Spline": case "curve-Convert to Linear": c.Path(w,3,5,8,19,16,5,21,16);c.Circle(8,19,2,a,true);break;
+                
+                case "curve-Edit Knots": c.Path(w,3,5,12,18,21,6);c.Rect(9,15,6,6,a);break;
+                case "curve-Object Mode":c.Rect(3,3,18,18,a);c.Arc(12,12,6,0,270,w);break;
+                case "curve-Finish Drawing":c.Path(a,3,12,9,5,21,20);break;
+                case "curve-Insert Knot":c.Arc(12,11,8,15,165,w);c.Plus(12,7,a);break;
+                case "curve-Cut at Point":c.Arc(12,11,8,15,75,w);c.Arc(12,11,8,105,165,w);c.Line(9,3,15,14,a,2);c.Line(15,3,9,14,a,2);break;
+                case "curve-Remove Knot":c.Arc(12,11,8,15,165,w);c.Line(8,7,16,7,a,2);break;
+                case "curve-Extend Endpoint":c.Arc(10,11,7,60,240,w);c.Arrow(13,17,21,21,a);break;
+                case "curve-Open Loop":c.Arc(12,12,8,40,320,w);c.Circle(18,17,2,a,true);c.Circle(18,7,2,a,true);break;
+                case "curve-Close Loop":c.Circle(12,12,8,w);c.Arc(12,12,8,-40,40,a);break;
+                case "curve-Reverse Direction":c.Arc(12,11,8,10,170,w);c.Arrow(20,6,4,6,a);break;
+                case "curve-Corner Tangents":c.Path(w,3,19,12,8,21,15);c.Circle(12,8,2,a,true);break;
+                case "curve-Aligned Tangents":c.Path(w,3,5,12,14,17,19);c.Circle(12,14,2,a,true);break;
+                case "curve-Mirrored Tangents":c.Path(w,3,3,12,12,21,21);c.Circle(12,12,2,a,true);c.Circle(3,3,1.5f,w,true);c.Circle(21,21,1.5f,w,true);break;
+                case "curve-Sweep Mesh":c.Path(w,4,20,4,9,8,4,16,4,20,9);c.Path(w,9,20,9,11,11,9,15,9,16,11);c.Line(4,15,9,15,a);c.Line(4,20,9,20,w);break;
+                case "curve-Smooth Knots":c.Arc(12,9,8,0,180,w);c.Line(3,17,21,17,a);c.Circle(12,17,2,a,true);break;
+                case "constraint-aim":c.Circle(18,17,4,w);c.Plus(18,17,w);c.Rect(2,3,5,5,w);c.Arrow(7,8,16,15,a);break;
+                case "constraint-look":c.Path(w,2,12,7,17,14,17,20,12,14,7,7,7,2,12);c.Circle(10,12,3,a,true);c.Arrow(14,12,23,12,a);break;
+                case "constraint-parent":c.Rect(8,16,8,6,w);c.Path(a,12,16,12,10,4,10,4,7);c.Path(a,12,10,20,10,20,7);c.Rect(1,1,6,6,w);c.Rect(17,1,6,6,w);break;
+                case "constraint-position":c.Circle(5,5,3,w);c.Circle(19,18,3,w);c.Arrow(8,8,16,15,a);c.Line(19,11,19,23,w);c.Line(13,18,24,18,w);break;
+                case "constraint-rotation":c.Rect(8,8,8,8,w);c.Arc(12,12,9,30,300,a);c.Arrow(19,7,21,12,a);break;
+                case "constraint-scale":c.Rect(2,2,7,7,w);c.Rect(14,14,9,9,w);c.Arrow(8,8,17,17,a);break;
+                case "spline-hierarchy": case "curve-Bezier Spline": case "curve-Convert to Bezier":
+                    var previous=new Vector2(4,8);
+                    for(int step=1;step<=32;step++){float t=step/32f,u=1-t;var point=u*u*u*new Vector2(4,8)+3*u*u*t*new Vector2(2,14)+3*u*t*t*new Vector2(11,18)+t*t*t*new Vector2(21,12);c.Line(previous.x,previous.y,point.x,point.y,w,1.7f);previous=point;}
+                    if(symbol!="spline-hierarchy")c.Circle(21,12,1.6f,a,true);break; case "rig-bones":
                     c.Circle(5,19,2,w);c.Circle(19,5,2,w);
                     c.Path(w,6,17,9,10,17,6,14,14,6,17);c.Line(6,17,17,6,a);break;
                 case "convert-vertices":case "convert-perimeter-vertices":

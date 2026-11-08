@@ -41,6 +41,7 @@ namespace MashBoxSDK.AnimationStudio
 #endif
         private void ClearComponentDrawing()
         {
+            InvalidateSymmetryDisplay();
             paintPickIndex = null;
             cachedSelectedStatistics=null; ReleaseVertexMarkers(); InvalidateHandleComponentFrame();
             foreach (var mesh in new[]{componentLines,componentDots,componentHighlight,componentHover}) if(mesh) UnityEngine.Object.DestroyImmediate(mesh);
@@ -145,13 +146,14 @@ namespace MashBoxSDK.AnimationStudio
 #endif
  }
             }
-            if(mode==drawnMode&&drawnComponents.SetEquals(Components))return;
+            var displayed = SymmetryDisplayComponents();
+            if(mode==drawnMode&&drawnComponents.SetEquals(displayed))return;
             {
                 DestroyComponentOverlay(componentHighlight);
-                componentHighlight=null;drawnMode=mode;drawnComponents.Clear();drawnComponents.UnionWith(Components);
+                componentHighlight=null;drawnMode=mode;drawnComponents.Clear();drawnComponents.UnionWith(displayed);
                 if(mode==ComponentMode.Vertex&&UseGpuVertexMarkers){UpdateVertexMarkerSelection();return;}
-                if(Components.Count==0)return;
-                componentHighlight=ComponentHighlight(Components);
+                if(displayed.Count==0)return;
+                componentHighlight=ComponentHighlight(displayed);
 #if MASHBOX_STUDIO_TESTS
                 ComponentOverlayBuilds++;
 #endif
@@ -227,7 +229,7 @@ EnsureComponentDrawing();EnsureComponentHover();
                 if(mode==ComponentMode.Edge)
                 {
                     if(!PaintHoverVisible && drawnHover>=0)DrawComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
-                    DrawComponentEdges(Components,new Color(1,.65f,.15f,1),3);
+                    DrawComponentEdges(SymmetryDisplayComponents(),new Color(1,.65f,.15f,1),3);
                     if(PaintHoverVisible && drawnHover>=0)DrawComponentEdges(new[]{drawnHover},new Color(1,.95f,.5f,1),3);
                 }
                 else

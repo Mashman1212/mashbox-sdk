@@ -45,6 +45,9 @@ namespace MashBoxSDK.AnimationStudio
             bool SelectedAncestor(int i)
             { for (int p = nodes[i].parent; p >= 0; p = nodes[p].parent) if (selected.Contains(p)) return true; return false; }
             var roots = selected.Where(i => !SelectedAncestor(i) && nodes[i].parent != parent).OrderBy(i => i).ToArray();
+            if (nodes.Any(n => n.constraints != null && n.constraints.Count > 0))
+                try { StudioModelConstraints.ValidateDocument(this, roots.ToDictionary(i => i, i => parent)); }
+                catch (InvalidOperationException e) { reason = e.Message; return false; }
             var target = parent < 0 ? null : transforms[parent];
             var inverse = target ? target.worldToLocalMatrix : Matrix4x4.identity;
             var names = new HashSet<string>(nodes.Where((n,i) => n.parent == parent && !roots.Contains(i)).Select(n => n.name));

@@ -17,6 +17,7 @@ namespace MashBoxSDK.AnimationStudio
             internal HashSet<int> componentIndices;
             internal Vector3[] positions, scales, meshVertices, workingVertices;
             internal bool undoRegistered;
+            internal StudioMeshSymmetry.Deformation symmetry;
             internal Vector3 factor = Vector3.one;
         }
         private ScaleDrag scaleDrag;
@@ -33,6 +34,7 @@ namespace MashBoxSDK.AnimationStudio
             var drag = new ScaleDrag { control = control, center = center, orientation = orientation };
             if (indices != null)
             {
+                drag.symmetry = CaptureSymmetryDeformation(vertices, indices);
                 drag.componentIndices = new HashSet<int>(indices);
                 drag.vertices = indices.ToArray(); drag.meshVertices = vertices;
                 drag.workingVertices = (Vector3[])vertices.Clone();
@@ -77,6 +79,7 @@ namespace MashBoxSDK.AnimationStudio
                     values[i] = worldToLocal.MultiplyPoint3x4(world);
                     if (!FiniteScalePoint(world) || !FiniteScalePoint(values[i])) return false;
                 }
+                drag.symmetry?.Apply(values);
                 if (!drag.undoRegistered)
                 {
                     PreserveFaceTopology();

@@ -325,7 +325,7 @@ namespace MashBoxSDK.AnimationStudio
     {
         internal const string Id = "MashBox/Viewport/Grid";
         public StudioToolbarGrid() : base("studio-toolbar-grid", "GridLayoutGroup Icon", "Show modeling grid") { }
-        protected override bool Read(StudioModelEditor editor) => view.modelGridVisible;
+        protected override bool Read(StudioModelEditor editor) => view.EditingView.modelGridVisible;
         protected override void Apply(StudioModelEditor editor, bool enabled) => view.SetModelGridVisible(enabled);
     }
     [EditorToolbarElement(Id, typeof(MashBoxStudioViewport))]

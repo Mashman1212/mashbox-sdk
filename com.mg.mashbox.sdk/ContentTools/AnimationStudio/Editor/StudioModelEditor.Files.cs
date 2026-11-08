@@ -165,6 +165,8 @@ namespace MashBoxSDK.AnimationStudio
 
         private void SaveAs()
         {
+            if(sweepPending)ApplySweep();
+            CaptureUnlockedConstraints(false);
             FinishLiveTool();
             if (!Document) return;
             string original = Document.WorkspacePath;

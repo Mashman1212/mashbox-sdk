@@ -184,8 +184,8 @@ namespace MashBoxSDK.AnimationStudio
             using(new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.Label(radial?"Clockwise order — first item at the top":"Toolbar contents", StudioControlsPreferences.SectionTitleStyle);
-                if(radial&&GUILayout.Button("+ Empty Spacer",GUILayout.Width(120)))
-                {Insert(StudioRadialMenus.SpacerKey,target.commands.Count);GUIUtility.ExitGUI();}
+                if(GUILayout.Button(radial?"+ Empty Spacer":"+ Spacer",GUILayout.Width(120)))
+                {Insert(radial?StudioRadialMenus.SpacerKey:StudioCustomToolbars.SpacerKey,target.commands.Count);GUIUtility.ExitGUI();}
             }
             itemScroll = EditorGUILayout.BeginScrollView(itemScroll, EditorStyles.helpBox, GUILayout.Height(Mathf.Max(140, (embeddedHost?embeddedHost.position.height-90:position.height) * .32f)));
             int insertion = target.commands.Count;
@@ -193,7 +193,7 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var row = EditorGUILayout.GetControlRect(false, 26);
                 var command = commands.Find(x => x.Key == target.commands[i]);
-                GUI.Label(new Rect(row.x + 4, row.y, row.width - 100, row.height), new GUIContent("≡  " + (command?.Path ?? target.commands[i]), StudioCommandIcons.Get(command == null ? "Unavailable" : target.commands[i]), "Drag to reorder"));
+                GUI.Label(new Rect(row.x + 4, row.y, row.width - 100, row.height), target.commands[i]==StudioCustomToolbars.SpacerKey ? new GUIContent("≡  Spacer") : new GUIContent("≡  " + (command?.Path ?? target.commands[i]), StudioCommandIcons.Get(command == null ? "Unavailable" : target.commands[i]), "Drag to reorder"));
                 if (Event.current.mousePosition.y < row.center.y && insertion == target.commands.Count) insertion = i;
                 int index = i;
                 using (new EditorGUI.DisabledScope(i == 0))

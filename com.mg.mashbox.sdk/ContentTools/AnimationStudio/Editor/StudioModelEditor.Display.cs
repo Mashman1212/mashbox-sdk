@@ -12,6 +12,7 @@ namespace MashBoxSDK.AnimationStudio
         {
             StudioPreferenceStore.SetFloat(PivotLockKey, pivotLocked ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.ContiguousPath", contiguousPath ? 1 : 0);
+            StudioPreferenceStore.SetFloat("Model.SlideComponents", slideComponents ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.PreserveMoveUVs", preserveMoveUVs ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.ThroughSelection", xray ? 1 : 0);
             StudioPreferenceStore.SetFloat("Model.PreventNegativeScale", preventNegativeScale ? 1 : 0);
@@ -30,6 +31,7 @@ namespace MashBoxSDK.AnimationStudio
             LoadPivotLock();
             if (CenterMode) { pivot = false; EndPivotSnap(); }
             transformChannelsExpanded = StudioPreferenceStore.GetFloat("Model.TransformChannelsExpanded", 1) >= .5f;
+            slideComponents=StudioPreferenceStore.GetFloat("Model.SlideComponents",0)>=.5f;
             preserveMoveUVs=StudioPreferenceStore.GetFloat("Model.PreserveMoveUVs",0)>=.5f;
             bool loadedPath=StudioPreferenceStore.GetFloat("Model.ContiguousPath",0)>=.5f;
             if(loadedPath!=contiguousPath){contiguousPath=loadedPath;foreach(var state in loopSelections.Values)state.Reset();}

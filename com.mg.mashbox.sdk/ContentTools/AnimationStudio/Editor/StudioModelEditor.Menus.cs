@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "View", "Select", "Create", "Modify", "Window", "Display", "Mesh Tools", "Edit Mesh", "Mesh Display", "UV", "Render" };
+        internal static readonly string[] ModelMenuTitles = { "File", "Edit", "View", "Select", "Create", "Modify", "Constraints", "Window", "Display", "Mesh Tools", "Edit Mesh", "Curves", "Mesh Display", "UV", "Render" };
         private readonly System.Collections.Generic.Dictionary<string,(GUIContent content,GUILayoutOption[] layout,GUIStyle style)> menuBarContents = new System.Collections.Generic.Dictionary<string,(GUIContent,GUILayoutOption[],GUIStyle)>();
         internal void DrawMenuBar(SceneView view, Action<StudioModelDocument> loaded)
         {
@@ -20,6 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private void PopulateModelMenu(string title,StudioMenu menu,SceneView view,Action<StudioModelDocument> loaded)
         {
+            if (view is MashBoxStudioViewport menuView) view = menuView.LayoutOwner.EditingView;
             switch(title)
             {
                 case "File": {
@@ -69,7 +70,20 @@ namespace MashBoxSDK.AnimationStudio
                     menu.AddItem(new GUIContent("X-ray Mode"), displayXray, () => SetXRayMode(!displayXray));
                     break; }
                 case "Window": {
-                    menu.AddItem(new GUIContent("Material Library"), StudioMaterialLibrary.Visible, () => StudioMaterialLibrary.Toggle(view as MashBoxStudioViewport), shortcutEligible: false);
+                    if (view is MashBoxStudioViewport layoutView) {
+                        var owner = layoutView.LayoutOwner;
+                        foreach(var choice in new[]{(name:"Front",kind:0),(name:"Side",kind:2),(name:"Top",kind:3),(name:"Perspective",kind:1)})
+                        {
+                            int kind=choice.kind;
+                            menu.AddItem(new GUIContent("View/"+choice.name), owner.FourViews && !owner.SplitLayout && owner.EditingView.ViewKind==kind,
+                                () => owner.SelectViewportCamera(kind), shortcutEligible:false);
+                        }
+                        string singleLabel = owner.SplitLayout ? StudioShortcuts.MenuLabel("Layout/Single View", StudioShortcut.MaximizeViewport) : "Layout/Single View";
+                        string splitLabel = owner.SplitLayout ? "Layout/2×2" : StudioShortcuts.MenuLabel("Layout/2×2", StudioShortcut.MaximizeViewport);
+                        menu.AddItem(new GUIContent(singleLabel), !owner.SplitLayout, () => owner.SetFourViews(false), shortcutEligible: false);
+                        menu.AddItem(new GUIContent(splitLabel), owner.SplitLayout, () => owner.SetFourViews(true), shortcutEligible: false);
+                    }
+                    menu.AddItem(new GUIContent("Material Library"), StudioMaterialLibrary.Visible, () => StudioMaterialLibrary.Toggle((view as MashBoxStudioViewport)?.LayoutOwner), shortcutEligible: false);
                     break; }
                 case "Display": {
                     menu.AddItem(new GUIContent("Tool Options"), !StudioSettings.Current.hideToolOptions, () => {
@@ -79,7 +93,7 @@ namespace MashBoxSDK.AnimationStudio
                     });
 
                     menu.AddSeparator("");
-                    if (view is MashBoxStudioViewport studioToolbarView) studioToolbarView.AddStudioToolbarMenu(menu);
+                    if (view is MashBoxStudioViewport studioToolbarView) studioToolbarView.LayoutOwner.AddStudioToolbarMenu(menu);
                     menu.AddSeparator("");
                     menu.AddItem(new GUIContent("Mesh Statistics"), StudioSettings.Current.showMeshStatistics, () => {
                         StudioSettings.Current.showMeshStatistics = !StudioSettings.Current.showMeshStatistics; StudioSettings.Save();
@@ -96,7 +110,8 @@ namespace MashBoxSDK.AnimationStudio
                         StudioSettings.Save();
                     });
                     break; }
-                case "Create": {
+                case "Curves": { PopulateSplineMenu(menu,view,loaded); break; } case "Create": {
+                    menu.AddItem(new GUIContent("Polygon Primitives/Polygon"), cutTool == CutTool.Polygon, () => Run(() => BeginPolygon(view, loaded)));
                     foreach (var type in new[] { PrimitiveType.Cube, PrimitiveType.Sphere, PrimitiveType.Plane, PrimitiveType.Quad, PrimitiveType.Cylinder })
                     { var primitive = type; menu.AddItem(new GUIContent("Polygon Primitives/" + type), false, () => Run(() => CreatePrimitive(primitive, view, loaded))); }
                     menu.AddSeparator("");
@@ -134,7 +149,12 @@ namespace MashBoxSDK.AnimationStudio
                     else menu.AddDisabledItem(new GUIContent("Isolate Selected"));
                 
                     break; }
+                case "Constraints": {
+                    for (int i = 0; i < StudioModelConstraints.Types.Length; i++)
+                    { var kind = (StudioConstraintKind)i; AddCommand(menu, StudioModelConstraints.Labels[i], true, () => AddModelConstraint(kind)); }
+                    break; }
                 case "Modify": {
+                    PopulateSymmetryMenu(menu);
                     menu.AddItem(new GUIContent(StudioShortcuts.MenuLabel("Select",StudioShortcut.Select)), !targetWeldActive && cutTool == CutTool.None && tool == Tool.None, () => ActivateTool(Tool.None));
                     AddAction(menu, "Move", MarkingAction.Move, view); AddAction(menu, "Rotate", MarkingAction.Rotate, view); AddAction(menu, "Scale", MarkingAction.Scale, view);
                     menu.AddSeparator("");
@@ -186,7 +206,7 @@ namespace MashBoxSDK.AnimationStudio
                     AddCommand(menu, "Combine Meshes…", true, OpenCombineTool, finishPreview: false);
                     AddCommand(menu, "Split Selection", true, () => ChooseSelectionAction("Split Selection", SplitSelectedComponents, "Select faces, edges or vertices to cut into a new mesh. Leave at least one face in each source mesh."));
                     menu.AddSeparator("");
-                    menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool, false));
+                    menu.AddItem(new GUIContent("Hole Puncher"), cutTool == CutTool.HolePunch, () => Run(OpenHolePunchTool, false)); menu.AddItem(new GUIContent("Bisect"), cutTool == CutTool.Bisect, () => Run(OpenBisectTool, false));
                     menu.AddItem(new GUIContent("Fracture"), fracturePane, () => Run(OpenFractureTool, false));
                     menu.AddSeparator("");
                     AddCommand(menu, "Deform/Blend Shape", Document && SelectedBlendMeshes.Length >= 2, CreateSelectedBlendShape);

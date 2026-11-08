@@ -1,3 +1,4 @@
+using UnityEngine.UIElements;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -38,6 +39,14 @@ namespace MashBoxSDK.AnimationStudio
 #if MASHBOX_STUDIO_TESTS
         internal static System.Action<Vector3,float> MoveHandleProbe;
 #endif
+        private Vector3 DrawSlidingMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier, Vector3? displayPosition)
+        {
+            // Native input retains its unconstrained frame. Only Repaint follows
+            // the constrained geometry, so changing the display cannot feed back
+            // into the next native Slider/Slider2D mouse sample.
+            if(Event.current.type==EventType.Repaint && displayPosition.HasValue)center=displayPosition.Value;
+            return DrawMoveHandle(center,orientation,sizeMultiplier);
+        }
         private Vector3 DrawMoveHandle(Vector3 center, Quaternion orientation, float sizeMultiplier = 1)
         {
             var evt = Event.current;
@@ -84,11 +93,29 @@ namespace MashBoxSDK.AnimationStudio
                 }
                 int free = moveHandleIds[6] = GUIUtility.GetControlID(0x4d5320, FocusType.Passive);
                 Handles.color = Color.yellow;
-                var freePosition = Handles.FreeMoveHandle(free, center, size * (pivot ? .1125f : .075f), Vector3.zero, pivot ? PivotTriangleCap : MoveRectangleCap);
+                var freePosition = DrawFreeMoveHandle(free, center, size * (pivot ? .1125f : .075f), pivot ? PivotTriangleCap : MoveRectangleCap);
                 TrackMoveControl(free, MoveAxes.Free, center, orientation);
                 if (GUIUtility.hotControl == free) result = freePosition;
             }
             return result;
+        }
+        private Vector3 freeMoveRight, freeMoveUp;
+        private int freeMoveFrameControl;
+        private Vector3 DrawFreeMoveHandle(int control, Vector3 center, float size, Handles.CapFunction cap)
+        {
+            // Keep screen-plane translation on the same native Slider2D path as the
+            // plane squares. The camera basis is latched for the owning gesture;
+            // constraint/player-loop updates cannot change its drag frame.
+            if (GUIUtility.hotControl != control || freeMoveFrameControl != control)
+            {
+                var camera = Camera.current;
+                var frame = camera ? camera.transform.rotation : Quaternion.identity;
+                freeMoveRight = Handles.inverseMatrix.MultiplyVector(frame * Vector3.right).normalized;
+                freeMoveUp = Handles.inverseMatrix.MultiplyVector(frame * Vector3.up).normalized;
+                freeMoveFrameControl = control;
+            }
+            return Handles.Slider2D(control, center, Vector3.Cross(freeMoveRight, freeMoveUp),
+                freeMoveRight, freeMoveUp, size, cap, Vector2.zero);
         }
         // Preserve native rectangle picking; fill only the hovered or captured plane.
         private static void DrawPlaneRectangleCap(int control, Vector3 position, Quaternion rotation, float size, EventType type)
@@ -165,12 +192,16 @@ namespace MashBoxSDK.AnimationStudio
             return ConstrainMove(origin, orientation * point, orientation, axes);
         }
         internal static bool TrySnapFreeMoveToGrid(Ray ray, float spacing, out Vector3 target)
+            => TrySnapFreeMoveToGrid(ray, spacing, Quaternion.identity, out target);
+        internal static bool TrySnapFreeMoveToGrid(Ray ray, float spacing, Quaternion frame, out Vector3 target)
         {
             target = default;
+            var inverse = Quaternion.Inverse(frame);
+            ray = new Ray(inverse * ray.origin, inverse * ray.direction);
             if (spacing <= 0 || float.IsNaN(spacing) || float.IsInfinity(spacing) ||
                 !new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float distance)) return false;
             var point = ray.GetPoint(distance);
-            target = new Vector3(Mathf.Round(point.x / spacing) * spacing, 0,
+            target = frame * new Vector3(Mathf.Round(point.x / spacing) * spacing, 0,
                 Mathf.Round(point.z / spacing) * spacing);
             return true;
         }
@@ -184,8 +215,9 @@ namespace MashBoxSDK.AnimationStudio
             return TryPivotSnapVertex(view.camera, point, EditorGUIUtility.pixelsPerPoint, out target, null,
                 (node, vertex) => !selected.TryGetValue(node, out var vertices) || !vertices.Contains(vertex));
         }
-        // Capture world endpoints once per gesture. Never traverse adjacency or
+        // Capture a world edge or complete spline once per gesture. Never traverse mesh adjacency or
         // re-query a moving target while sliding along the captured segment.
+        private StudioSpline capturedSnapSpline;
         private bool TryEdgeSnapTarget(SceneView view, Vector2 mouse, out Vector3 target)
         {
             target = default;
@@ -193,16 +225,23 @@ namespace MashBoxSDK.AnimationStudio
             var camera = view.camera;
             float dpi = EditorGUIUtility.pixelsPerPoint;
             var pointer = PivotCameraPoint(view, mouse);
+            return TryCapturedEdgeOrSplineSnap(camera,pointer,dpi,out target);
+        }
+        internal bool TryCapturedEdgeOrSplineSnap(Camera camera, Vector2 pointer, float dpi, out Vector3 target)
+        {
+            target=default;if(!camera||!Document)return false;
             OcclusionMesh[] occluders = null;
             if (!edgeSnapLatched)
             {
+                capturedSnapSpline = null;
                 var moving = MovingSnapVertices();
                 float best = 18 * 18, depth = float.PositiveInfinity;
+                int splineNode = -1;
                 for (int node = 0; node < Transforms.Length; node++)
                 {
                     var transform = Transforms[node];
                     if (!Document.nodes[node].mesh || !transform || !transform.gameObject.activeInHierarchy ||
-                        (!pivot && mode == ComponentMode.Object && IsSnapMovingNode(node))) continue;
+                        (!SplineInputActive && cutTool != CutTool.Polygon && !pivot && mode == ComponentMode.Object && IsSnapMovingNode(node))) continue;
                     var renderer = transform.GetComponent<Renderer>();
                     if (!renderer || !renderer.enabled) continue;
                     moving.TryGetValue(node, out var excluded);
@@ -224,12 +263,30 @@ namespace MashBoxSDK.AnimationStudio
                         float z = 1 / ((1-t)/sa.z+t/sb.z);
                         if (distance > best || Mathf.Abs(distance-best) < .01f && z >= depth) continue;
                         float edgeWeight = t * sa.z / ((1-t)*sb.z+t*sa.z);
-                        if (Occluded(view, Vector3.Lerp(a,b,edgeWeight), ref occluders)) continue;
+                        var point = Vector3.Lerp(a,b,edgeWeight);
+                        var ray = camera.ScreenPointToRay(camera.WorldToScreenPoint(point));
+                        if (occluders == null) occluders = CaptureOccluders();
+                        if (Occluded(ray, Vector3.Dot(point-ray.origin,ray.direction)-.001f, occluders)) continue;
                         best = distance; depth = z; edgeSnapStart = a; edgeSnapEnd = b; edgeSnapLatched = true;
                     }
                 }
+                for(int node=0;node<Transforms.Length;node++)
+                {
+                    var spline=Document.nodes[node].spline;var transform=Transforms[node];
+                    if(spline==null||!transform||!transform.gameObject.activeInHierarchy)continue;
+                    if(splineDraft==null&&splineEditing&&node==Active)continue;
+                    if(!SplineInputActive&&cutTool!=CutTool.Polygon&&!pivot&&mode==ComponentMode.Object&&IsSnapMovingNode(node))continue;
+                    if(!StudioSplineSnap.Closest(camera,pointer,dpi,spline,transform.localToWorldMatrix,out _,out float d,out float z)||d>best||Mathf.Abs(d-best)<.01f&&z>=depth)continue;
+                    best=d;depth=z;splineNode=node;
+                }
+                if(splineNode>=0)
+                {
+                    capturedSnapSpline=Document.nodes[splineNode].spline.Copy();var matrix=Transforms[splineNode].localToWorldMatrix;
+                    foreach(var knot in capturedSnapSpline.knots){knot.position=matrix.MultiplyPoint3x4(knot.position);knot.incoming=matrix.MultiplyVector(knot.incoming);knot.outgoing=matrix.MultiplyVector(knot.outgoing);}
+                    edgeSnapLatched=true;
+                }
             }
-            if (!edgeSnapLatched) return false;
+            if (!edgeSnapLatched || capturedSnapSpline != null) return capturedSnapSpline != null && StudioSplineSnap.Closest(camera,pointer,dpi,capturedSnapSpline,Matrix4x4.identity,out target,out _,out _);
             var start = camera.WorldToScreenPoint(edgeSnapStart);
             var end = camera.WorldToScreenPoint(edgeSnapEnd);
             var first = new Vector2(start.x/dpi,(camera.pixelHeight-start.y)/dpi);
@@ -277,7 +334,7 @@ namespace MashBoxSDK.AnimationStudio
         private Dictionary<int,HashSet<int>> MovingSnapVertices()
         {
             var result = new Dictionary<int,HashSet<int>>();
-            if (pivot || mode == ComponentMode.Object) return result;
+            if (SplineInputActive || cutTool == CutTool.Polygon || pivot || mode == ComponentMode.Object) return result;
             foreach (int node in ComponentTargetNodes(true))
                 using (new ComponentTargetScope(this,node)) result[node] = SelectedVertices();
             return result;
@@ -286,7 +343,8 @@ namespace MashBoxSDK.AnimationStudio
         {
             target = default;
             if (!Document) return false;
-            var moving = MovingSnapVertices();
+            capturedSnapSpline = null;
+                var moving = MovingSnapVertices();
             // Rank in the captured handle frame, never camera/screen space. The
             // locked coordinates only break ties; they cannot select another level.
             var inverse = Quaternion.Inverse(moveDragOrientation);
@@ -350,7 +408,7 @@ namespace MashBoxSDK.AnimationStudio
                 if (surfaceSnapDragging) return "Surface Snap · " +
                     (Application.platform == RuntimePlatform.OSXEditor ? "Cmd+Shift" : "Ctrl+Shift");
                 if (!pivotSnapHeld && !gridSnapHeld) return null;
-                string label = edgeSnapHeld ? "Edge Snap · "+StudioShortcuts.Label(StudioShortcut.EdgeSnap) : pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
+                string label = edgeSnapHeld ? "Edge / Spline Snap · "+StudioShortcuts.Label(StudioShortcut.EdgeSnap) : pivotSnapHeld ? "Vertex Snap · "+StudioShortcuts.Label(StudioShortcut.VertexSnap) : "Grid Snap · "+StudioShortcuts.Label(StudioShortcut.GridSnap);
                 if (pivotSnapHeld && gridSnapHeld) label += " (overrides grid)";
                 if (!edgeSnapHeld && moveDragControl != 0 && GUIUtility.hotControl == moveDragControl)
                     label += moveDragAxes == MoveAxes.Free ? " · Free" : " · " + moveDragAxes + (((int)moveDragAxes & ((int)moveDragAxes - 1)) == 0 ? " axis" : " plane");
@@ -415,7 +473,13 @@ namespace MashBoxSDK.AnimationStudio
                 var point=transformOrientationGuiPoint;
                 var canvas=view is MashBoxStudioViewport studio?studio.ModelCanvasRect:new Rect(Vector2.zero,view.position.size);
                 if(canvas.Contains(point)&&(!(view is MashBoxStudioViewport overlay)||!overlay.IsOverViewportControls(point)))
+                {
+                    if (view is MashBoxStudioViewport tile && tile.IsEmbeddedView) {
+                        var origin=tile.rootVisualElement.ChangeCoordinatesTo(tile.LayoutOwner.rootVisualElement,Vector2.zero);
+                        point+=origin;canvas.position+=origin;
+                    }
                     DrawCursorStatusLabel(canvas,point,ToolbarOrientationLabel,false,new Vector2(10,-11),transformOrientationLabelOnLeft);
+                }
             }
             DrawMarkingMenu();
         }

@@ -44,11 +44,14 @@ namespace MashBoxSDK.Maps.Spline
         static Camera ResolveCamera()
         {
             if (CameraOverride != null && CameraOverride.isActiveAndEnabled) return CameraOverride;
-            Camera main = Camera.main;
-            if (main != null && main.isActiveAndEnabled) return main;
-            if (s_CameraFrame == Time.frameCount && s_FallbackCamera != null && s_FallbackCamera.isActiveAndEnabled)
+            // Share the lookup across all chunks, including frames with no camera.
+            if (s_CameraFrame == Time.frameCount &&
+                (s_FallbackCamera == null || s_FallbackCamera.isActiveAndEnabled))
                 return s_FallbackCamera;
             s_CameraFrame = Time.frameCount;
+            s_FallbackCamera = Camera.main;
+            if (s_FallbackCamera != null && s_FallbackCamera.isActiveAndEnabled)
+                return s_FallbackCamera;
             s_FallbackCamera = null;
             int count = Camera.allCamerasCount;
             if (s_Cameras.Length < count) s_Cameras = new Camera[count];

@@ -8,7 +8,7 @@ namespace MashBoxSDK.AnimationStudio
 {
     internal sealed partial class StudioModelEditor
     {
-        internal enum CutTool { None, EdgeLoop, MultiCut, Bisect }
+        internal enum CutTool { None, EdgeLoop, MultiCut, Bisect, Polygon, HolePunch }
         private CutTool cutTool;
         private StudioMeshCuts cutTopology;
         private Mesh cutMesh;
@@ -20,7 +20,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool CanCutMesh => !HasBlendShape && ActiveMesh && !Document.nodes[Active].skinned && ActiveMesh.blendShapeCount == 0 && ActiveMesh.boneWeights.Length == 0;
         internal void ActivateCutTool(CutTool next)
         {
-            FinishToolsForSwitch();
+            FinishToolsForSwitch(); StopSplineEditing();
             if (!CanCutMesh) { error = "Select an editable static mesh to use the cut tools."; repaint(); return; }
 
             StopTargetWeld(); CancelMarkingMenu(); ResetCutGesture(); CameraOptionsVisible = false; LightingOptionsVisible = false; cutTool = next; tool = Tool.None; pivot = false;
@@ -32,10 +32,11 @@ namespace MashBoxSDK.AnimationStudio
             if (cutDragging && GUIUtility.hotControl == cutControl) GUIUtility.hotControl = 0;
             ResetMultiCutGesture(); cutDragging = false; pendingCuts.Clear(); cutPreview.Clear(); cutStart = cutHover = loopSeed = null;
         }
-        private void StopCutTool() { CloseBisectTool(); ResetCutGesture(); cutTool = CutTool.None; cutTopology = null; cutMesh = null; }
+        private void StopCutTool() { if (cutTool == CutTool.Polygon) { EndPivotSnap(); ClearGridSnap(); } polygonPoints.Clear(); polygonHover = null; CloseBisectTool(); CloseHolePunchTool(); ResetCutGesture(); cutTool = CutTool.None; cutTopology = null; cutMesh = null; }
         private void CommitCuts(IList<StudioMeshCuts.Cut> cuts)
         {
             if (cuts.Count == 0) return;
+            cuts = SymmetryCuts(cuts);
             Undo.IncrementCurrentGroup(); int group = Undo.GetCurrentGroup();
             string label = cutTool == CutTool.EdgeLoop || loopSeed.HasValue ? "Insert edge loop" : "Multi-Cut";
             Undo.SetCurrentGroupName(label); Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { Document, ActiveMesh }, label);
@@ -53,6 +54,7 @@ namespace MashBoxSDK.AnimationStudio
         private bool CutToolSceneGUI(SceneView view)
         {
             if (cutTool == CutTool.None) return false;
+            if (cutTool == CutTool.Polygon) return PolygonSceneGUI(view); if (cutTool == CutTool.HolePunch) return HolePunchSceneGUI(view);
             var evt = Event.current;
             if (!CanCutMesh && cutTool != CutTool.Bisect) { StopCutTool(); return false; }
             if (cutTool != CutTool.Bisect && (cutMesh != ActiveMesh || cutTopology == null))

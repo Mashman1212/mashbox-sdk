@@ -26,11 +26,14 @@ namespace MashBoxSDK.AnimationStudio
         public bool enabled=true,weld=true,normalizedBevel;
         public bool edgeExtension;
         public Vector4 parameters;
+        public StudioSweepSettings sweep;
         public PrimitiveType primitiveType;
         public Vector3Int cubeDivisions;
         public Vector3 flow;
         public Matrix4x4 world=Matrix4x4.identity;
         public int[] faces,edges,vertices,inputPolygons,inputGeometry;
+        public int[] mirroredEdges,mirroredVertices;
+        public StudioSymmetryDeformation symmetry;
         public int inputCount;
         public StudioSubdivisionSettings subdivision;
         public StudioModifierSource replacement;
@@ -53,7 +56,7 @@ namespace MashBoxSDK.AnimationStudio
         public StudioSubdivisionSettings displaySettings;
         public int revision;
         public StudioModifierHistory Copy()=>JsonUtility.FromJson<StudioModifierHistory>(JsonUtility.ToJson(this));
-        internal bool HasHistory=>source!=null&&!string.IsNullOrEmpty(source.mesh)&&operations!=null&&operations.Count>0;
+        internal bool HasHistory=>operations!=null&&operations.Count>0&&(operations[0].kind=="Sweep"||source!=null&&!string.IsNullOrEmpty(source.mesh));
         internal bool HasDisplay=>displaySource!=null&&!string.IsNullOrEmpty(displaySource.mesh)&&displaySettings!=null&&displaySettings.preview&&displaySettings.level>0;
     }
     internal static class StudioModifierEvaluator
@@ -63,10 +66,10 @@ namespace MashBoxSDK.AnimationStudio
             StudioMeshToolPreview.CopyMesh(from.mesh,to.mesh);to.cutPolygons=from.cutPolygons?.ToArray();to.cutTriangles=to.mesh.triangles;
             to.geometryVertices=from.geometryVertices?.ToArray();to.normalGroups=from.normalGroups?.ToArray();
         }
-        internal static StudioModelDocument.Node Evaluate(StudioModifierHistory history)
+        internal static StudioModelDocument.Node Evaluate(StudioModifierHistory history, Func<StudioSweepSettings,StudioModelDocument.Node> sweepGenerator=null)
         {
-            if(history?.source==null)throw new InvalidOperationException("Modifier history has no source mesh.");
-            var work=history.source.Restore();history.displaySource=null;history.displaySettings=null;
+            if(history==null||history.source==null&&history.operations.FirstOrDefault()?.kind!="Sweep")throw new InvalidOperationException("Modifier history has no source mesh.");
+            var work=history.operations.FirstOrDefault()?.kind=="Sweep"?new StudioModelDocument.Node{mesh=new Mesh()}:history.source.Restore();history.displaySource=null;history.displaySettings=null;
             foreach(var operation in history.operations)operation.failure=null;
             for(int i=0;i<history.operations.Count;i++)
             {
@@ -77,9 +80,14 @@ namespace MashBoxSDK.AnimationStudio
                     cutTriangles=work.cutTriangles,geometryVertices=work.geometryVertices,normalGroups=work.normalGroups};
                 try
                 {
-                    if(operation.kind!="Subdivision"&&operation.kind!="Primitive"&&!operation.Matches(work))
+                    if(operation.kind!="Sweep"&&operation.kind!="SweepFrame"&&operation.kind!="Subdivision"&&operation.kind!="Primitive"&&!operation.Matches(work))
                         throw new InvalidOperationException("The input topology changed. Delete this operation or restore the earlier topology.");
-                    Apply(trial,operation);
+                    if(operation.kind=="Sweep")
+                    {
+                        if(i!=0||sweepGenerator==null)throw new InvalidOperationException("Sweep must be the first history operation and requires its workspace source.");
+                        var generated=sweepGenerator(operation.sweep);try{Publish(generated,trial);}finally{UnityEngine.Object.DestroyImmediate(generated.mesh);}
+                    }
+                    else Apply(trial,operation);
                     history.displaySource=operation.kind=="Subdivision"?StudioModifierSource.Capture(work):null;
                     history.displaySettings=operation.kind=="Subdivision"?operation.subdivision.Copy():null;
                     UnityEngine.Object.DestroyImmediate(work.mesh);work=trial;
@@ -115,6 +123,7 @@ namespace MashBoxSDK.AnimationStudio
             if(operation.edges!=null)for(int i=0;i+1<operation.edges.Length;i+=2)edges.Add((operation.edges[i],operation.edges[i+1]));
             switch(operation.kind)
             {
+                case "SweepFrame":StudioModelDocument.TransformMesh(node.mesh,operation.world);break;
                 case "Bevel":
                     if(p.x<=0)return;
                     var bevel=topology.BevelEdges(node,edges,new StudioMeshCuts.BevelOptions {Width=p.x,NormalizedWidth=operation.normalizedBevel,UnlockWidthRange=(Mathf.RoundToInt(p.w)&2)!=0,Subdivisions=Mathf.Clamp(Mathf.RoundToInt(p.y),0,32),Tension=p.z,Junction=(StudioMeshCuts.BevelJunction)(Mathf.RoundToInt(p.w)&1)});
@@ -132,11 +141,19 @@ namespace MashBoxSDK.AnimationStudio
                 case "EdgeRingCollapse":topology.CollapseEdgeRings(node,edges);break;
                 case "Poke":topology.PokeFaces(node,operation.faces);break;
                 case "FlipNormals":topology.FlipNormals(node,operation.faces);break;
-                case "Bridge":topology.BridgeEdges(node,edges,Mathf.Clamp(Mathf.RoundToInt(p.x),0,64),Mathf.Clamp(p.y,-1,1));break;
+                case "Bridge":
+                    topology.BridgeEdges(node,edges,Mathf.Clamp(Mathf.RoundToInt(p.x),0,64),Mathf.Clamp(p.y,-1,1));
+                    if(operation.mirroredEdges!=null&&operation.mirroredEdges.Length>0)
+                    {
+                        var mirrored=new List<(int,int)>();
+                        for(int i=0;i+1<operation.mirroredEdges.Length;i+=2)mirrored.Add((operation.mirroredEdges[i],operation.mirroredEdges[i+1]));
+                        new StudioMeshCuts(node).BridgeEdges(node,mirrored,Mathf.Clamp(Mathf.RoundToInt(p.x),0,64),Mathf.Clamp(p.y,-1,1));
+                    }
+                    break;
                 case "MaterialSlot":if(p.y>=.5f)topology.RemoveMaterialSlot(node,Mathf.RoundToInt(p.x),Mathf.RoundToInt(p.w));else topology.AssignMaterialSlot(node,Mathf.RoundToInt(p.x),operation.faces);break;
                 case "Circularize":topology.Circularize(node,operation.vertices,operation.edges==null?null:edges,operation.faces,p,operation.flow);break;
                 case "Weld":topology.MergeVertices(node,operation.vertices,false,p.x,operation.world);break;
-                case "Merge":topology.MergeVertices(node,operation.vertices,true,p.x,operation.world);break;
+                case "Merge":if(operation.mirroredVertices!=null&&operation.mirroredVertices.Length>0)StudioMeshSymmetry.MergeGroups(node,operation.vertices,operation.mirroredVertices);else topology.MergeVertices(node,operation.vertices,true,p.x,operation.world);break;
                 case "Soften":topology.SetEdgeNormals(node,new HashSet<(int,int)>(edges),p.x,false);break;
                 case "EdgeFlow":SetPositions(node,topology.CreateEdgeFlowPlan(node.mesh,edges,operation.weld).Evaluate(p.x,Mathf.Clamp(Mathf.RoundToInt(p.y),1,64)));break;
                 case "Subdivision":
@@ -155,6 +172,7 @@ namespace MashBoxSDK.AnimationStudio
                     var replacement=operation.replacement.Restore();try{Publish(replacement,node);}finally{UnityEngine.Object.DestroyImmediate(replacement.mesh);}break;
                 default:throw new InvalidOperationException("Unknown modifier operation: "+operation.kind);
             }
+            if(operation.symmetry!=null&&operation.symmetry.HasMappings){var values=node.mesh.vertices;operation.symmetry.Apply(values);SetPositions(node,values);}
         }
         internal static void UpdateSurfacePositions(StudioModelDocument.Node node,Vector3[] points)=>SetPositions(node,points);
         private static void SetPositions(StudioModelDocument.Node node,Vector3[] points)

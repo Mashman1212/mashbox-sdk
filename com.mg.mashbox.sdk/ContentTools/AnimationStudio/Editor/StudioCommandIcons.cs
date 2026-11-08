@@ -26,6 +26,7 @@ namespace MashBoxSDK.AnimationStudio
         }
         private static string CanonicalIconKey(string key)
         {
+            if(key == "RadialPreset/symmetry" || key.StartsWith("Modify/Symmetry/", StringComparison.Ordinal)) return "Viewport/Orientation";
             if(key.StartsWith("Legacy/UV",StringComparison.Ordinal))return "UV/UV Sets/UV "+key.Substring("Legacy/UV".Length);
             if(key.StartsWith("RadialPreset/",StringComparison.Ordinal))
             {
@@ -78,7 +79,7 @@ namespace MashBoxSDK.AnimationStudio
             if (StudioSymbolIcons.TryGet(key, out icon)) { cache[identity] = icon; return icon; }
             if (key == "Viewport/Grid") { icon = StudioToolbarIcons.Get("GridLayoutGroup Icon"); cache[identity] = icon; return icon; }
             if (key == "Viewport/CheckerMap") { icon = StudioToolbarIcons.Get("CheckerMap"); cache[identity] = icon; return icon; }
-            if (key == "Create/Polygon Primitives/Plane" || key == "Create/Polygon Primitives/Quad" || key == "Create/Polygon Primitives/Cylinder")
+            if (key == "Create/Polygon Primitives/Polygon" || key == "Create/Polygon Primitives/Plane" || key == "Create/Polygon Primitives/Quad" || key == "Create/Polygon Primitives/Cylinder")
             {
                 string primitive = key.Substring(key.LastIndexOf('/') + 1);
                 icon = StudioToolbarIcons.Get("Studio primitive " + primitive, () => Primitive(primitive));
@@ -152,10 +153,10 @@ namespace MashBoxSDK.AnimationStudio
             }
             else
             {
-                var points = shape == "Plane" ? new[] { new Vector2(3, 10), new Vector2(10, 17), new Vector2(21, 13), new Vector2(14, 6) }
+                var points = shape == "Polygon" ? new[] { new Vector2(4, 6), new Vector2(3, 15), new Vector2(11, 21), new Vector2(21, 15), new Vector2(18, 4) } : shape == "Plane" ? new[] { new Vector2(3, 10), new Vector2(10, 17), new Vector2(21, 13), new Vector2(14, 6) }
                     : new[] { new Vector2(5, 5), new Vector2(19, 5), new Vector2(19, 19), new Vector2(5, 19) };
                 Polygon(points, fill);
-                for (int i = 0; i < 4; i++) Line(points[i], points[(i + 1) % 4], edge);
+                for (int i = 0; i < points.Length; i++) Line(points[i], points[(i + 1) % points.Length], edge);
                 if (shape == "Plane")
                     for (int i = 1; i <= 2; i++)
                     {

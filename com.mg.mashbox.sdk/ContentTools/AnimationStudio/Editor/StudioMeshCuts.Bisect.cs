@@ -226,7 +226,7 @@ namespace MashBoxSDK.AnimationStudio
             }
         }
 
-        private static void TriangulateSliceCap(List<int> polygon,List<Vector3> positions,Vector3 normal,List<int> indices)
+        internal static void TriangulateSliceCap(List<int> polygon,List<Vector3> positions,Vector3 normal,List<int> indices)
         {
             var chart=new CutChart(positions[polygon[0]],normal);
             var points=new Dictionary<int,(double x,double y)>();double scale=0;

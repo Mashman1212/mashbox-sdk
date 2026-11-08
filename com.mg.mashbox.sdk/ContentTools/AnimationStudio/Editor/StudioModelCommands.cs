@@ -69,7 +69,7 @@ namespace MashBoxSDK.AnimationStudio
                 return (StudioShortcut)(int)(hash | 0x80000000u);
             }
         }
-        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection", "Select/Grow Selection", "Select/Shrink Selection", "Edit/Repeat Last Action", "Mesh Tools/Bridge Edges", "Modify/Group", "Mesh Display/Subdivision Preview", "Select/Hide Selection", "Select/Unhide Last Hidden" };
+        internal static readonly string[] StandardKeys = { "Mesh Tools/Bevel…", "Mesh Display/Shaded Wireframe", "Mesh Tools/Merge Vertices", "Mesh Tools/Target Weld", "Mesh Tools/Insert Edge Loop", "Select/Isolate Selected", "Select/Invert Selection", "Select/Grow Selection", "Select/Shrink Selection", "Edit/Repeat Last Action", "Mesh Tools/Bridge Edges", "Modify/Group", "Mesh Display/Subdivision Preview", "Select/Hide Selection", "Select/Unhide Last Hidden", "Mesh Tools/Multi-Cut" };
         internal static StudioShortcut StableId(string key) => Hash(key);
         internal static StudioShortcuts.Binding[] StandardBindings(string key)
         {
@@ -78,6 +78,7 @@ namespace MashBoxSDK.AnimationStudio
             if (key == "Mesh Tools/Merge Vertices") return new[] { new StudioShortcuts.Binding(KeyCode.M) };
             if (key == "Mesh Tools/Bridge Edges") return new[] { new StudioShortcuts.Binding(KeyCode.B, StudioModifiers.Action | StudioModifiers.Shift) };
             if (key == "Mesh Tools/Target Weld") return new[] { new StudioShortcuts.Binding(KeyCode.T) };
+            if (key == "Mesh Tools/Multi-Cut") return new[] { new StudioShortcuts.Binding(KeyCode.X, StudioModifiers.Action) };
             if (key == "Mesh Tools/Insert Edge Loop") return new[] { new StudioShortcuts.Binding(KeyCode.X, StudioModifiers.Action | StudioModifiers.Shift) };
             if (key == "Select/Hide Selection") return new[] { new StudioShortcuts.Binding(KeyCode.H) };
             if (key == "Select/Unhide Last Hidden") return new[] { new StudioShortcuts.Binding(KeyCode.H, StudioModifiers.Action) };

@@ -92,6 +92,11 @@ namespace MashBoxSDK.AnimationStudio
         internal List<ToolbarCommand> RadialCommands(SceneView view)
         {
             var result=ToolbarCommands(view as MashBoxStudioViewport);
+            foreach(var command in result)
+            {
+                if(command.Key=="Modify/Symmetry/Enabled")command.Label="Symmetry: "+(symmetryEnabled?"On":"Off");
+                if(command.Key=="Modify/Symmetry/Space")command.Label="Position: "+(symmetryWorld?"World":"Object");
+            }
             result.Add(new ToolbarCommand { Key = StudioRadialMenus.MaterialAssignBranch, Path = "Material/Assign Selection", Label = "Assign Material ›", Enabled = CanAssignMaterialSlot });
             result.Add(new ToolbarCommand{Key=StudioRadialMenus.SpacerKey,Path="Layout/Empty Spacer",Label="Empty Spacer",Enabled=false});
             result.Add(new ToolbarCommand{Key="UV/Select UVs",Path="UV/Select UVs",Label="Select UVs",Enabled=false});
@@ -123,6 +128,24 @@ namespace MashBoxSDK.AnimationStudio
             HandleModelMarkingEvent(view,evt,id);
             if(evt.type!=EventType.Used)HandleModelKeyboard(view);
         }
+        private int SplineRadialTarget(SceneView view,Vector2 point)
+        {
+            if(!Document||!view||mode!=ComponentMode.Object)return -1;
+            int hit=-1;float best=9;
+            for(int i=0;i<Document.nodes.Count;i++)
+                if(Document.nodes[i].spline!=null&&SplineVisible(i)&&PickSplineSegment(view,Document.nodes[i].spline,Transforms[i].localToWorldMatrix,point,out _,out _,out float distance)&&distance<best)
+                {hit=i;best=distance;}
+            return hit;
+        }
+        private StudioCustomToolbarDefinition SplineSelectionRadial(StudioCustomToolbarDefinition preset,List<ToolbarCommand> commands,int target)
+        {
+            if(preset.id!="components"||!Document||target<0||target>=Document.nodes.Count||Document.nodes[target].spline==null)return preset;
+            var document=Document;var node=Document.nodes[target];
+            int Resolve()=>Document==document?Document.nodes.IndexOf(node):-1;
+            commands.Add(new ToolbarCommand{Key="SplineContext/CVs",Path="Selection/Control Vertices",Label="Control Vertices",Enabled=true,Checked=OwnsSplineEditingSelection&&Active==target,Execute=()=>Run(()=>EditSplineSource(Resolve()),false)});
+            commands.Add(new ToolbarCommand{Key="SplineContext/Object",Path="Selection/Spline Object Mode",Label="Object Mode",Enabled=true,Checked=Active==target&&!SplineInputActive,Execute=()=>{int index=Resolve();if(index<0)return;StopSplineEditing();SelectObject(index);repaint();}});
+            return new StudioCustomToolbarDefinition{id=preset.id,name="Spline Selection",commands=new List<string>{"SplineContext/CVs","SplineContext/Object"}};
+        }
         private bool TryOpenRadial(SceneView view,Event evt,int id)
         {
             if((evt.type!=EventType.MouseDown&&evt.type!=EventType.KeyDown)||GUIUtility.hotControl!=0||EditorGUIUtility.editingTextField)return false;
@@ -134,6 +157,8 @@ namespace MashBoxSDK.AnimationStudio
             if(!canvas.Contains(point)||(view is MashBoxStudioViewport overlay&&overlay.IsOverViewportControls(point)))return false;
             radialDefinitions=definitions.ToList();radialCommands=RadialCommands(view);
             AddMaterialSlotRadialContext(radialDefinitions,radialCommands);
+            preset=SplineSelectionRadial(preset,radialCommands,SplineRadialTarget(view,point));
+            int contextIndex=radialDefinitions.FindIndex(p=>p.id==preset.id);if(contextIndex>=0)radialDefinitions[contextIndex]=preset;
             radialParents.Clear();radialPreset=preset;radialBackArmed=false;
             markingView=view;markingControl=id;markingButton=evt.isMouse?evt.button:-1;markingKey=evt.isKey?evt.keyCode:KeyCode.None;
             markingOpen=true;suppressModelContext=true;GUIUtility.hotControl=id;GUIUtility.keyboardControl=0;
@@ -176,9 +201,12 @@ namespace MashBoxSDK.AnimationStudio
                         }
                         else
                         {
+                            // Spline mode actions belong to the hovered node, not the current
+                            // selection. Their closures validate the captured document/node.
+                            var splineCommand=key.StartsWith("SplineContext/",StringComparison.Ordinal)?RadialCommand(key):null;
                             CancelMarkingMenu();
-                            // Resolve again at release, never execute a stale context closure.
-                            var command=ResolveMaterialSlotRadialCommand(key)??RadialCommands(view).Find(x=>x.Key==key);
+                            // Ordinary commands still resolve against current selection at release.
+                            var command=splineCommand??ResolveMaterialSlotRadialCommand(key)??RadialCommands(view).Find(x=>x.Key==key);
                             if(command!=null&&command.Enabled&&key.StartsWith("Control/",StringComparison.Ordinal))StudioRadialControlWindow.Open(key,view as MashBoxStudioViewport);
                             else if(command!=null&&command.Enabled)command.Execute?.Invoke();
                         }
@@ -256,6 +284,15 @@ namespace MashBoxSDK.AnimationStudio
             {
                 var rect=new Rect(origin+relative.position,relative.size);
                 StudioTheme.DrawRadialButtonBackground(rect,hovered&&enabled);
+                bool symmetryAxisButton = iconKey == "Modify/Symmetry/X" || iconKey == "Modify/Symmetry/Y" || iconKey == "Modify/Symmetry/Z";
+                if (isChecked && symmetryAxisButton)
+                {
+                    // A full-size theme accent indicator, separate from the icon.
+                    var dot = new Rect(rect.xMax - 18, rect.center.y - 6, 12, 12);
+                    GUI.DrawTexture(dot, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0, Color.Lerp(palette.Accent, Color.white, .45f), 0, 6);
+                    dot = new Rect(dot.x + 1, dot.y + 1, 10, 10);
+                    GUI.DrawTexture(dot, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0, palette.Accent, 0, 5);
+                }
                 markingLabel.normal.textColor=enabled?new Color(.9f,.91f,.93f):new Color(.48f,.5f,.53f);
                 // 24px row: 16px icon with uniform 4px insets and a 4px text gap.
                 if(iconKey!=null)
@@ -265,8 +302,8 @@ namespace MashBoxSDK.AnimationStudio
                     if(!enabled)GUI.color=new Color(previous.r,previous.g,previous.b,previous.a*.45f);
                     if(icon)GUI.DrawTexture(new Rect(rect.x+4,rect.center.y-8,16,16),icon,ScaleMode.ScaleToFit,true);
                     GUI.color=previous;
-                    if(isChecked)GUI.Label(new Rect(rect.x+12,rect.center.y,10,10),"✓",markingLabel);
-                    rect=new Rect(rect.x+24,rect.y,Mathf.Max(0,rect.width-28),rect.height);
+                    if(isChecked&&!symmetryAxisButton)GUI.Label(new Rect(rect.x+12,rect.center.y,10,10),"✓",markingLabel);
+                    rect=new Rect(rect.x+24,rect.y,Mathf.Max(0,rect.width-(symmetryAxisButton?44:28)),rect.height);
                 }
                 markingLabel.alignment=iconKey!=null?TextAnchor.MiddleLeft:TextAnchor.MiddleCenter;
                 GUI.Label(rect,new GUIContent(text,tooltip??text),markingLabel);
@@ -328,6 +365,6 @@ namespace MashBoxSDK.AnimationStudio
             RecordSelectionChange(before);
             repaint(); toolOptions?.Repaint();
         }
-        private void SetComponentMode(ComponentMode next, SceneView view = null) => ChangeComponentMode(next,view);
+        private void SetComponentMode(ComponentMode next, SceneView view = null) { StopSplineEditing(); ChangeComponentMode(next,view); }
     }
 }

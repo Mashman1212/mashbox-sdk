@@ -105,6 +105,10 @@ public sealed class MapPerformanceScanResult
     public long DrawSubmissionsAfterRuntimeCombining { get; internal set; }
     public long SharedMemoryBytes { get; internal set; }
     public long TextureMemoryBytes { get; internal set; }
+    public int MgTerrainTileCount { get; internal set; }
+    public long MgTerrainDetailDrawSubmissions { get; internal set; }
+    public long MgTerrainPlacedDrawSubmissions { get; internal set; }
+    public long MgTerrainCachedMemoryBytes { get; internal set; }
     public long MeshMemoryBytes { get; internal set; }
     public long RuntimeCombinedMeshMemoryBytes { get; internal set; }
     public long TerrainDataMemoryBytes { get; internal set; }
@@ -118,7 +122,7 @@ public sealed class MapPerformanceScanResult
 }
 
 [Serializable]
-public class MapPerformanceScannerPanel
+public partial class MapPerformanceScannerPanel
 {
     public const int MaximumTextureDimension = 4096;
     public const float MinimumPublishPerformanceScore = 60f;
@@ -224,6 +228,9 @@ public class MapPerformanceScannerPanel
     {
         public Texture texture;
         public long memoryBytes;
+        public long importedBytes;
+        public long gpuBytes;
+        public long cpuBytes;
         public int materialUses;
         public bool usedByTerrain;
         public bool usedByTerrainSplat;
@@ -343,6 +350,12 @@ public class MapPerformanceScannerPanel
 
     public void DrawGUI(bool embeddedInParentWindow = false)
     {
+        if (hasScanResults && textureMemoryModelVersion != CurrentTextureMemoryModelVersion)
+        {
+            hasScanResults = false;
+            scanStatus = "Texture memory accounting has been updated. Run Scan Scene to refresh imported and runtime sizes.";
+        }
+        if (hasScanResults) EnsureDisplayCache();
         EditorGUILayout.Space(embeddedInParentWindow ? 6f : 10f);
         DrawTargetGame();
         EditorGUILayout.Space(4f);
@@ -525,6 +538,8 @@ public class MapPerformanceScannerPanel
         {
             ReportProgress("Preparing scene scan...", 0f);
 
+            displayCacheValid = false;
+            texturePage = terrainPage = rendererIssuePage = mgTerrainPage = 0;
             materialInfos.Clear();
             batches.Clear();
             processedMaterials.Clear();
@@ -532,6 +547,9 @@ public class MapPerformanceScannerPanel
             meshInfos.Clear();
             runtimeMeshCombinerInfos.Clear();
             terrainInfos.Clear();
+            mgTerrainInfos.Clear();
+            mgTerrainMeshes.Clear();
+            mgTerrainResidentBytes = mgTerrainDetailDraws = mgTerrainPlacedDraws = 0;
             textureInfos.Clear();
             meshLookup.Clear();
             terrainTextures.Clear();
@@ -584,6 +602,7 @@ public class MapPerformanceScannerPanel
             CollectAdditionalMeshes();
             CollectRuntimeMeshCombiners();
             CollectTerrains();
+            CollectMgTerrains();
             CollectLightingData();
             CollectPostVolumeData();
             CollectDecals();
@@ -618,6 +637,10 @@ public class MapPerformanceScannerPanel
                 DrawSubmissionsAfterRuntimeCombining = estimatedDrawCallsAfterRuntimeCombining,
                 SharedMemoryBytes = totalMapMemory,
                 TextureMemoryBytes = totalTextureMemory,
+                MgTerrainTileCount = mgTerrainInfos.Count,
+                MgTerrainDetailDrawSubmissions = mgTerrainDetailDraws,
+                MgTerrainPlacedDrawSubmissions = mgTerrainPlacedDraws,
+                MgTerrainCachedMemoryBytes = mgTerrainResidentBytes,
                 MeshMemoryBytes = totalMeshMemory,
                 RuntimeCombinedMeshMemoryBytes = totalRuntimeCombinedMeshMemory,
                 TerrainDataMemoryBytes = totalTerrainDataMemory,
@@ -688,6 +711,7 @@ public class MapPerformanceScannerPanel
 
     private string BuildTextReport()
     {
+        EnsureDisplayCache();
         var report = new StringBuilder(16 * 1024);
         var scene = SceneManager.GetActiveScene();
         var selectedGameName = EditorPrefs.GetString("ModIo.CurrentGame", string.Empty);
@@ -750,12 +774,12 @@ public class MapPerformanceScannerPanel
         Metric(
             "Active Decal Projectors",
             $"{decalDrawCalls:N0} (perfect with fewer than 300; full penalty at {DecalProjectorMaximumPenaltyThreshold:N0})");
-        Metric("Shader Variants", $"{batches.Count:N0} (perfect at {ShaderVariantPerfectScoreThreshold:N0} or fewer; full penalty at {ShaderVariantMaximumPenaltyThreshold:N0})");
+        Metric("Shader Variants", $"{ShaderVariantCount:N0} (perfect at {ShaderVariantPerfectScoreThreshold:N0} or fewer; full penalty at {ShaderVariantMaximumPenaltyThreshold:N0})");
         Metric("Texture Memory (Part of Shared Memory)", FormatBytes(totalTextureMemory));
         Metric("Unique Mesh Memory", $"{FormatBytes(totalMeshMemory)} ({meshInfos.Count:N0} meshes, {totalMeshUses:N0} uses)");
         Metric("Runtime Combined Mesh Memory", $"{FormatBytes(totalRuntimeCombinedMeshMemory)} ({runtimeMeshCombinerInfos.Count:N0} combiners)");
-        var uniqueTerrainTextureMemory = textureInfos.Where(info => info.usedByTerrain).Sum(info => info.memoryBytes);
-        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory;
+        var uniqueTerrainTextureMemory = cachedTerrainTextureBytes;
+        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory + mgTerrainResidentBytes + MgTerrainMeshMemoryBytes;
         Metric("Estimated Terrain Memory", $"{FormatBytes(estimatedTerrainMemory)} (within shared memory)");
         Metric("Terrain Data Memory", FormatBytes(totalTerrainDataMemory));
         Metric("Unique Terrain Texture Memory", FormatBytes(uniqueTerrainTextureMemory));
@@ -769,7 +793,7 @@ public class MapPerformanceScannerPanel
 
         Section("SCENE AND RENDERING");
         Metric("Materials", materialInfos.Count.ToString("N0"));
-        Metric("Shader Variants (Batches)", batches.Count.ToString("N0"));
+        Metric("Shader Batch Groups", batches.Count.ToString("N0"));
         Metric("Estimated Draw Submissions", totalDrawCalls.ToString("N0"));
         Metric("Scene Renderer Submissions", sceneRendererDrawCalls.ToString("N0"));
         Metric("Terrain Surface Chunks", terrainSurfaceChunkCount.ToString("N0"));
@@ -822,10 +846,12 @@ public class MapPerformanceScannerPanel
             var oversizedLabel = IsOversizedTexture(info.texture) ? "VALIDATION ERROR >4K | " : string.Empty;
             var location = string.IsNullOrWhiteSpace(info.assetPath) ? "runtime/generated" : info.assetPath;
             report.AppendLine(
-                $"- {oversizedLabel}{info.texture.name}: {FormatBytes(info.memoryBytes)} | " +
-                $"{info.texture.width:N0} x {info.texture.height:N0} | {info.texture.GetType().Name} | " +
+                $"- {oversizedLabel}{info.texture.name}: Imported {FormatBytes(info.importedBytes)} | Runtime {FormatBytes(info.memoryBytes)} (GPU incl. mips {FormatBytes(info.gpuBytes)}; CPU {FormatBytes(info.cpuBytes)}) | " +
+                $"{GetTextureDimensions(info.texture)} | {info.texture.GetType().Name} | " +
                 $"{GetTextureSourceDescription(info)} | {location}");
         }
+
+        report.AppendLine(TextureMemoryExplanation);
 
         Section($"LARGEST UNIQUE MESHES ({meshInfos.Count:N0} TOTAL)");
         if (meshInfos.Count == 0)
@@ -941,8 +967,9 @@ public class MapPerformanceScannerPanel
         report.AppendLine(
             "If a combiner adds a MeshCollider, the collider shares the generated Mesh; platform-specific physics cooking overhead is not included in this editor estimate.");
         report.AppendLine(
-            "Disabled components and inactive GameObjects contribute zero estimated draw submissions. Active manual RuntimeMeshCombiners are assumed to execute; the estimate uses one combined draw submission per non-null material and removes source draws only when Disable Source Renderers is enabled.");
+            "Disabled components, forced-off renderers and inactive GameObjects contribute zero estimated draw submissions. Active manual RuntimeMeshCombiners are assumed to execute; the estimate uses one combined draw submission per non-null material and removes source draws only when Disable Source Renderers is enabled.");
 
+        AppendMgTerrainReport(report);
         return report.ToString();
     }
 
@@ -964,7 +991,14 @@ public class MapPerformanceScannerPanel
 
     private void CollectRenderers()
     {
-        var renderers = FindSceneObjects<Renderer>();
+        var rendererSet = new HashSet<Renderer>(FindSceneObjects<Renderer>());
+        var surfaceRenderers = new List<MeshRenderer>();
+        foreach (var terrain in FindSceneObjects<MashBoxSDK.Maps.TerrainSystem.MGTerrain>())
+        {
+            terrain.GetSurfacePerformanceRenderers(surfaceRenderers);
+            foreach (var renderer in surfaceRenderers) rendererSet.Add(renderer);
+        }
+        var renderers = rendererSet.ToArray();
 
         for (var index = 0; index < renderers.Length; index++)
         {
@@ -983,7 +1017,13 @@ public class MapPerformanceScannerPanel
 
             var mats = renderer.sharedMaterials.Where(m => m != null).ToList();
             var contributesDraws = RendererContributesDrawSubmissions(renderer);
-            sceneRendererDrawCalls += EstimateRendererDrawSubmissions(renderer);
+            var mgSurface = renderer.GetComponentInParent<MashBoxSDK.Maps.TerrainSystem.MGTerrain>();
+            if (mgSurface != null)
+            {
+                terrainSurfaceDrawCalls += EstimateRendererDrawSubmissions(renderer);
+                if (contributesDraws) terrainSurfaceChunkCount++;
+            }
+            else sceneRendererDrawCalls += EstimateRendererDrawSubmissions(renderer);
             CollectRendererMesh(renderer, 1, false);
 
             foreach (var mat in mats)
@@ -1593,7 +1633,7 @@ public class MapPerformanceScannerPanel
 
     private static bool RendererContributesDrawSubmissions(Renderer renderer)
     {
-        return renderer != null && renderer.enabled && renderer.gameObject.activeInHierarchy;
+        return renderer != null && renderer.enabled && !renderer.forceRenderingOff && renderer.gameObject.activeInHierarchy;
     }
 
     private static bool BehaviourContributesDrawSubmissions(Behaviour behaviour)
@@ -1877,6 +1917,8 @@ public class MapPerformanceScannerPanel
                (string.IsNullOrWhiteSpace(materialPath) ? string.Empty : $" ({materialPath})");
     }
 
+    private int ShaderVariantCount { get { EnsureDisplayCache(); return cachedShaderVariantCount; } }
+
     private void BuildBatches()
     {
         foreach (var mat in materialInfos.Where(m => !m.isDecal))
@@ -1897,7 +1939,7 @@ public class MapPerformanceScannerPanel
 
     private void CalculateDrawCalls()
     {
-        totalDrawCalls = sceneRendererDrawCalls + terrainSurfaceDrawCalls + terrainDetailDrawCalls + terrainTreeDrawCalls + decalDrawCalls;
+        totalDrawCalls = sceneRendererDrawCalls + terrainSurfaceDrawCalls + terrainDetailDrawCalls + terrainTreeDrawCalls + decalDrawCalls + mgTerrainDetailDraws + mgTerrainPlacedDraws;
         estimatedDrawCallsAfterRuntimeCombining = totalDrawCalls;
         estimatedRendererIssuesAfterRuntimeCombining = rendererIssues.Count;
 
@@ -1950,7 +1992,8 @@ public class MapPerformanceScannerPanel
                 ReportProgress($"Measuring texture {index + 1:N0} of {textures.Count:N0}...", Mathf.Lerp(0.87f, 0.97f, (index + 1f) / Math.Max(1, textures.Count)));
 
             var texture = textures[index];
-            var memoryBytes = GetRuntimeTextureSizeBytes(texture);
+            var memory = MeasureTextureMemory(texture);
+            var memoryBytes = memory.RuntimeBytes;
             totalTextureMemory += memoryBytes;
 
             materialUses.TryGetValue(texture, out var useCount);
@@ -1958,6 +2001,9 @@ public class MapPerformanceScannerPanel
             {
                 texture = texture,
                 memoryBytes = memoryBytes,
+                importedBytes = memory.ImportedBytes,
+                gpuBytes = memory.GpuBytes,
+                cpuBytes = memory.CpuBytes,
                 materialUses = useCount,
                 usedByTerrain = terrainTextures.Contains(texture),
                 usedByTerrainSplat = terrainSplatTextures.Contains(texture),
@@ -1970,12 +2016,12 @@ public class MapPerformanceScannerPanel
         }
 
         textureInfos.Sort((left, right) => right.memoryBytes.CompareTo(left.memoryBytes));
+        textureMemoryModelVersion = CurrentTextureMemoryModelVersion;
     }
 
     private long GetRuntimeTextureSizeBytes(Texture texture)
     {
-        var runtimeSize = Profiler.GetRuntimeMemorySizeLong(texture);
-        return runtimeSize > 0 ? runtimeSize : EstimateTextureSizeBytes(texture);
+        return MeasureTextureMemory(texture).RuntimeBytes;
     }
 
     private void CalculateMemoryTotals()
@@ -1989,45 +2035,15 @@ public class MapPerformanceScannerPanel
         totalTerrainLightmapMemory = textureInfos.Where(info => info.usedByTerrainLightmap).Sum(info => info.memoryBytes);
         totalReflectionProbeMemory = textureInfos.Where(info => info.usedByReflectionProbe).Sum(info => info.memoryBytes);
         totalPostVolumeTextureMemory = textureInfos.Where(info => info.usedByPostVolume).Sum(info => info.memoryBytes);
+        displayCacheValid = false;
+        EnsureDisplayCache();
         totalMapMemory = totalTextureMemory + totalMeshMemory + totalRuntimeCombinedMeshMemory +
-                         totalTerrainDataMemory + totalLightProbeMemory + totalPostVolumeDataMemory;
+                         totalTerrainDataMemory + totalLightProbeMemory + totalPostVolumeDataMemory + mgTerrainResidentBytes;
     }
 
     private long EstimateTextureSizeBytes(Texture tex)
     {
-        var path = AssetDatabase.GetAssetPath(tex);
-        var importer = AssetImporter.GetAtPath(path) as TextureImporter;
-
-        if (importer != null)
-        {
-            // Texture dimensions are read from the imported object, not the source file. Unity has
-            // already applied the default and active-platform max-size overrides at this point.
-            var width = tex.width;
-            var height = tex.height;
-            var platformName = BuildPipeline.GetBuildTargetName(EditorUserBuildSettings.activeBuildTarget);
-            var platformSettings = importer.GetPlatformTextureSettings(platformName);
-            var format = platformSettings.overridden
-                ? platformSettings.format
-                : importer.GetPlatformTextureSettings("DefaultTexturePlatform").format;
-
-            if (format == TextureImporterFormat.Automatic)
-            {
-                format = importer.textureCompression == TextureImporterCompression.Uncompressed
-                    ? TextureImporterFormat.RGBA32
-                    : TextureImporterFormat.DXT5;
-            }
-
-            var bpp = format == TextureImporterFormat.DXT1 ? 4 :
-                      (format == TextureImporterFormat.DXT5 || format == TextureImporterFormat.BC7) ? 8 : 32;
-
-            long size = (long)width * height * bpp / 8;
-            if (importer.mipmapEnabled)
-                size = (long)(size * 1.33f);
-
-            return size;
-        }
-
-        return (long)tex.width * tex.height * 4;
+        return EstimateTextureStorageBytes(tex);
     }
 
     private List<Texture> GetTextures(Material mat)
@@ -2108,7 +2124,7 @@ public class MapPerformanceScannerPanel
         var shaderPenalty = Mathf.InverseLerp(
             ShaderVariantPerfectScoreThreshold,
             ShaderVariantMaximumPenaltyThreshold,
-            batches.Count);
+            ShaderVariantCount);
 
         var penalty =
             rendererPenalty * 0.4f +
@@ -2238,6 +2254,10 @@ public class MapPerformanceScannerPanel
         DrawTableRow("Estimated Visible Detail Chunk Groups", terrainDetailChunkCount.ToString("N0"));
         DrawTableRow("Terrain Detail Chunk Submissions", terrainDetailDrawCalls.ToString("N0"));
         DrawTableRow("Terrain Tree Batch Submissions", terrainTreeDrawCalls.ToString("N0"));
+        DrawTableRow("MG Terrain Tiles", mgTerrainInfos.Count.ToString("N0"));
+        DrawTableRow("MG Detail Submissions (estimated)", mgTerrainDetailDraws.ToString("N0"));
+        DrawTableRow("MG Placed Instance Submissions (estimated)", mgTerrainPlacedDraws.ToString("N0"));
+        DrawTableRow("MG Cached Runtime Memory (part of shared memory)", FormatBytes(mgTerrainResidentBytes));
         DrawScoredMetric(
             "Decal Materials",
             decalMaterials.Count,
@@ -2250,7 +2270,7 @@ public class MapPerformanceScannerPanel
             DecalProjectorMaximumPenaltyThreshold);
         DrawScoredMetric(
             "Shader Variants",
-            batches.Count,
+            ShaderVariantCount,
             ShaderVariantPerfectScoreThreshold,
             ShaderVariantMaximumPenaltyThreshold);
         DrawTableRow("Texture Memory (part of shared memory)", FormatBytes(totalTextureMemory));
@@ -2258,8 +2278,8 @@ public class MapPerformanceScannerPanel
         DrawTableRow(
             "Runtime Combined Mesh Memory (part of shared memory)",
             $"{FormatBytes(totalRuntimeCombinedMeshMemory)} ({runtimeMeshCombinerInfos.Count:N0} combiners)");
-        var uniqueTerrainTextureMemory = textureInfos.Where(info => info.usedByTerrain).Sum(info => info.memoryBytes);
-        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory;
+        var uniqueTerrainTextureMemory = cachedTerrainTextureBytes;
+        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory + mgTerrainResidentBytes + MgTerrainMeshMemoryBytes;
         DrawTableRow("Estimated Terrain Memory (within shared memory)", FormatBytes(estimatedTerrainMemory));
         DrawTableRow("Terrain Data Memory (part of shared memory)", FormatBytes(totalTerrainDataMemory));
         DrawTableRow("Unique Terrain Textures (part of shared memory)", FormatBytes(uniqueTerrainTextureMemory));
@@ -2317,8 +2337,8 @@ public class MapPerformanceScannerPanel
                 $"Decals cost {decalMaxPoints * 0.5f * (Mathf.InverseLerp(DecalMaterialPerfectScoreThreshold, DecalMaterialMaximumPenaltyThreshold, decalMaterials.Count) + Mathf.InverseLerp(DecalProjectorPerfectScoreThreshold, DecalProjectorMaximumPenaltyThreshold, decalDrawCalls)):F1} points. " +
                 "One unique decal material and up to 299 active Decal Projectors are free. Reuse decal materials and remove or disable unnecessary projectors."),
             (
-                shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, batches.Count),
-                $"Shader variants cost {shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, batches.Count):F1} points. " +
+                shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, ShaderVariantCount),
+                $"Shader variants cost {shaderMaxPoints * Mathf.InverseLerp(ShaderVariantPerfectScoreThreshold, ShaderVariantMaximumPenaltyThreshold, ShaderVariantCount):F1} points. " +
                 $"The first {ShaderVariantPerfectScoreThreshold:N0} are free. Reuse materials with matching shaders and keywords; each excess variant removed up to {ShaderVariantMaximumPenaltyThreshold:N0} recovers about 1.7 points.")
         };
 
@@ -2432,7 +2452,7 @@ public class MapPerformanceScannerPanel
 
         DrawTableSectionHeader("Scene & Rendering");
         DrawTableRow("Materials", materialInfos.Count.ToString("N0"));
-        DrawTableRow("Shader Variants (Batches)", batches.Count.ToString("N0"));
+        DrawTableRow("Shader Batch Groups", batches.Count.ToString("N0"));
         var unsupportedShaderMaterialCount = materialInfos.Count(info => !info.isSupportedShader);
         DrawTableRow(
             "Unsupported Shader Materials",
@@ -2455,7 +2475,7 @@ public class MapPerformanceScannerPanel
         DrawTableRow("Texture Import Target", EditorUserBuildSettings.activeBuildTarget.ToString());
 
         DrawTableSectionHeader("Memory Summary");
-        DrawTableRow("Texture Memory (Imported/Runtime)", FormatBytes(totalTextureMemory));
+        DrawTableRow("Texture Memory (Estimated Runtime)", FormatBytes(totalTextureMemory));
         var oversizedTextureCount = textureInfos.Count(info => IsOversizedTexture(info.texture));
         DrawTableRow(
             "Textures Above 4K",
@@ -2494,6 +2514,7 @@ public class MapPerformanceScannerPanel
 
         GUILayout.Space(10f);
         DrawTerrainUsage();
+        DrawMgTerrainUsage();
 
         GUILayout.Space(10f);
         DrawMeshUsage();
@@ -2546,17 +2567,18 @@ public class MapPerformanceScannerPanel
         var oversizedTextureCount = textureInfos.Count(info => IsOversizedTexture(info.texture));
         DrawCategorySummary(
             ("Unique Textures", textureInfos.Count.ToString("N0")),
-            ("Total Texture Memory", FormatBytes(totalTextureMemory)),
+            ("Total Runtime Texture Memory", FormatBytes(totalTextureMemory)),
             ("Textures Above 4K", oversizedTextureCount == 0 ? "0 - PASS" : $"{oversizedTextureCount:N0} - VALIDATION ERROR"),
             ("Import Target", EditorUserBuildSettings.activeBuildTarget.ToString()));
 
-        var columns = new[] { -108f, 1.7f, 0.8f, 0.9f, 0.8f, 1.5f, 2.5f };
+        EditorGUILayout.HelpBox(TextureMemoryExplanation, MessageType.Info);
+        var columns = new[] { -108f, 1.7f, 1.3f, 0.9f, 0.8f, 1.5f, 2.5f };
         DrawDataGridHeader(
-            new[] { "Actions", "Texture", "Memory", "Dimensions", "Type", "Used By", "Asset Location" },
+            new[] { "Actions", "Texture", "Imported / Runtime", "Dimensions", "Type", "Used By", "Asset Location" },
             columns);
 
         var rowIndex = 0;
-        foreach (var info in textureInfos)
+        foreach (var info in DrawReportPage(textureInfos, ref texturePage))
         {
             if (info.texture == null)
                 continue;
@@ -2570,8 +2592,8 @@ public class MapPerformanceScannerPanel
                 {
                     GUIContent.none,
                     new GUIContent(textureLabel, info.texture.name),
-                    new GUIContent(FormatBytes(info.memoryBytes)),
-                    new GUIContent($"{info.texture.width:N0} x {info.texture.height:N0}"),
+                    new GUIContent(TextureMemoryDescription(info), $"GPU incl. mipmaps: {FormatBytes(info.gpuBytes)}\nReadable CPU copy: {FormatBytes(info.cpuBytes)}\n{TextureMemoryExplanation}"),
+                    new GUIContent($"{GetTextureDimensions(info.texture)}"),
                     new GUIContent(info.texture.GetType().Name),
                     new GUIContent(source),
                     new GUIContent(location, location)
@@ -2796,7 +2818,7 @@ public class MapPerformanceScannerPanel
             return "Missing texture";
 
         var location = string.IsNullOrWhiteSpace(info.assetPath) ? "runtime/generated" : info.assetPath;
-        return $"{info.texture.name} ({info.texture.width:N0} x {info.texture.height:N0}) - {location}";
+        return $"{info.texture.name} ({GetTextureDimensions(info.texture)}) - {location}";
     }
 
     private void DrawTerrainUsage()
@@ -2809,10 +2831,8 @@ public class MapPerformanceScannerPanel
         if (!showTerrainDetails)
             return;
 
-        var uniqueTerrainTextureMemory = textureInfos
-            .Where(info => info.usedByTerrain)
-            .Sum(info => info.memoryBytes);
-        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory;
+        var uniqueTerrainTextureMemory = cachedTerrainTextureBytes;
+        var estimatedTerrainMemory = totalTerrainDataMemory + uniqueTerrainTextureMemory + totalTerrainLightmapMemory + mgTerrainResidentBytes + MgTerrainMeshMemoryBytes;
         var activeTerrainCount = terrainInfos.Count(info => info.contributesDrawSubmissions);
         DrawCategorySummary(
             ("Terrain Count", $"{terrainInfos.Count:N0} ({activeTerrainCount:N0} active)"),
@@ -2829,7 +2849,7 @@ public class MapPerformanceScannerPanel
 
         if (terrainInfos.Count == 0)
         {
-            EditorGUILayout.LabelField("No runtime terrains found.");
+            EditorGUILayout.LabelField("No Unity Terrain components found. MG terrain tiles are listed below.");
             return;
         }
 
@@ -2839,7 +2859,7 @@ public class MapPerformanceScannerPanel
             columns);
 
         var rowIndex = 0;
-        foreach (var info in terrainInfos.OrderByDescending(item => item.terrainDataMemory + item.textureMemory))
+        foreach (var info in DrawReportPage(cachedSortedTerrains, ref terrainPage))
         {
             DrawDataGridRow(
                 new[]
@@ -2892,7 +2912,7 @@ public class MapPerformanceScannerPanel
             columns);
 
         var rowIndex = 0;
-        foreach (var info in meshInfos.OrderByDescending(item => item.memoryBytes).Take(20))
+        foreach (var info in cachedLargestMeshes)
         {
             DrawDataGridRow(
                 new[]
@@ -3380,9 +3400,10 @@ public class MapPerformanceScannerPanel
 
         var columns = new[] { -66f, 1.8f, 2.2f, 2f };
         DrawDataGridHeader(new[] { "Action", "Renderer", "Reason", "Materials" }, columns);
-        for (var rowIndex = 0; rowIndex < rendererIssues.Count; rowIndex++)
+        var rowIndex = rendererIssuePage * ReportPageSize;
+        foreach (var issue in DrawReportPage(rendererIssues, ref rendererIssuePage))
         {
-            var issue = rendererIssues[rowIndex];
+            rowIndex++;
             var rendererPath = issue.renderer != null ? GetTransformPath(issue.renderer.transform) : "Missing Renderer";
             var materials = string.Join("\n", issue.materials.Where(material => material != null).Select(material => material.name));
             DrawDataGridRow(

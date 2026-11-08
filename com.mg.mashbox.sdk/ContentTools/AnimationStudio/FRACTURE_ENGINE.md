@@ -1,3 +1,7 @@
+## Fracture Simplify Interior (2026-11-06)
+
+Enable **Simplify Interior** in Fracture Tool Options, then Compute/Recompute. This performance mode removes interior roughness and dense detail sampling. It retains crack perimeters and uses one center fan where valid, or several convex center fans around concavities/cavities. Adjacent fan sectors pair into quads, retaining explicit center render diagonals; both sides share the exact same generated interface. Roughness and Detail scale are disabled while this mode is selected. Default is on; disable it to use rough, detailed interiors. Existing exterior attributes, material/UV publication, Piece Gap, cancellation and grouped Undo paths are retained. This option favors fewer triangles over preserving rough interior detail; reduction depends on the starting patch density.
+
 # Procedural Fracture
 
 Mesh Tools > Fracture is an explicit Compute operation on the active evaluated static mesh. Settings edits do not compute. Recompute uses the captured original; Execute/Apply commits one grouped StudioUndo action, and Cancel restores the original mesh and material bindings. Exploded inspection changes only the preview. Apply retains the pane for another operation; reopening resets declared defaults. Repeat Last Action finishes a ready preview, or reopens completed settings for another explicit Compute.

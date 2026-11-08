@@ -217,6 +217,7 @@ namespace MashBoxSDK.AnimationStudio
             Number(ToolChannelPane.DefaultKey("Bevel Edges","UnlockWidthRange"),0);
             Number("Model.ContiguousPath", 0);
             Number("Model.PreserveMoveUVs", 0);
+            Number("Model.SlideComponents", 0);
             Number(ToolChannelPane.DefaultKey("Bisect","Bisect Distance"),.01f);
             Number(ToolChannelPane.DefaultKey("Bisect","Fill"),1);
             Number(StudioModelEditor.PivotLockKey, 0);
