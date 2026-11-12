@@ -312,12 +312,20 @@ namespace MashBoxSDK.MapTools
                 using (new EditorGUI.DisabledScope(terrain.World != null))
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SurfaceChunkDistance"));
                 using (new EditorGUI.DisabledScope(terrain.World != null))
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SurfaceShaderDistance"));
+                using (new EditorGUI.DisabledScope(true))
+                    EditorGUILayout.ObjectField("Far shader", MGTerrain.SurfaceFarShader, typeof(Shader), false);
+                EditorGUILayout.LabelField("Shader chunks (near / far)", $"{terrain.NearSurfaceShaderChunks} / {terrain.FarSurfaceShaderChunks}");
+                EditorGUILayout.HelpBox("0 = no tessellation. Counts reflect the last prepared camera. POM remains enabled. An assigned World controls the distance.", MessageType.Info);
+                using (new EditorGUI.DisabledScope(terrain.World != null))
                 {
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SurfaceLodEnabled"), new GUIContent("Distant Surface LOD"));
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SurfaceLodPixelError"), new GUIContent("LOD Pixel Error"));
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SurfaceLodMinDistance"), new GUIContent("LOD Start Distance"));
                 }
-                EditorGUILayout.LabelField("Cached Surface LODs", terrain.CachedSurfaceLodCount.ToString());
+                using (new EditorGUI.DisabledScope(true))
+                    EditorGUILayout.ObjectField("Baked HLOD", terrain.BakedSurfaceLod, typeof(MGTerrainSurfaceLodAsset), false);
+                EditorGUILayout.LabelField("Loaded Baked LODs", terrain.CachedSurfaceLodCount.ToString());
                 EditorGUILayout.LabelField("Current Surface LOD", terrain.ActiveSurfaceLod == 0 ? "Original" : terrain.ActiveSurfaceLod.ToString());
                 EditorGUILayout.LabelField("Cached Render Chunks", terrain.SurfaceTileCount.ToString());
                 EditorGUILayout.LabelField("Enabled Surface Renderers", terrain.ActiveSurfaceRendererCount.ToString());

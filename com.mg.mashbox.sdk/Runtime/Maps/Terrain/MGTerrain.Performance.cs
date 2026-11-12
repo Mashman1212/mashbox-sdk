@@ -41,8 +41,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             if (MeshRenderer != null) renderers.Add(MeshRenderer);
             foreach (var tile in m_SurfaceTiles)
                 if (tile.renderer != null && !renderers.Contains(tile.renderer)) renderers.Add(tile.renderer);
-            if (m_SurfaceLodProxy != null && m_SurfaceLodProxy.renderer != null && !renderers.Contains(m_SurfaceLodProxy.renderer))
-                renderers.Add(m_SurfaceLodProxy.renderer);
         }
 
         /// <summary>Includes inactive cached surface LODs that are still resident.</summary>

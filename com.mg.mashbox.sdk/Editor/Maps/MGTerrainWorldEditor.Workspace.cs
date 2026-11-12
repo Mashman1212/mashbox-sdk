@@ -64,7 +64,19 @@ namespace MashBoxSDK.MapTools
             {
                 EditorGUILayout.LabelField("Surface geometry", EditorStyles.boldLabel);
                 Property("m_SurfaceChunkDistance", "Render chunk distance (m)");
-                Property("m_SurfaceLodEnabled", "Enable surface LOD");
+                Property("m_SurfaceShaderDistance", "Tessellation distance (m)");
+                using (new EditorGUI.DisabledScope(true))
+                    EditorGUILayout.ObjectField("Far shader", MGTerrain.SurfaceFarShader, typeof(Shader), false);
+                EditorGUILayout.LabelField("Shader chunks (near / far)", $"{world.Chunks.Sum(c => c != null ? c.NearSurfaceShaderChunks : 0)} / {world.Chunks.Sum(c => c != null ? c.FarSurfaceShaderChunks : 0)}");
+                EditorGUILayout.HelpBox("0 = no tessellation. Positive distances keep nearby chunks tessellated. POM remains enabled. Counts reflect the last prepared camera, before frustum culling; Scene and Game cameras select independently. Terrain components must be enabled.", MessageType.Info);
+                EditorGUILayout.LabelField("Baked tiles", $"{world.Chunks.Count(c => c != null && c.BakedSurfaceLod != null)} / {world.Chunks.Count}");
+                if (MGTerrainSurfaceLodBaker.IsBaking)
+                {
+                    if (GUILayout.Button("Cancel HLOD bake")) MGTerrainSurfaceLodBaker.Cancel();
+                }
+                else if (GUILayout.Button("Bake Surface HLOD")) MGTerrainSurfaceLodBaker.Bake(world);
+                EditorGUILayout.HelpBox("Bake after editing terrain geometry. Distant render chunks combine into one reduced mesh per terrain tile. Scene and Game cameras only select saved meshes; missing or stale bakes retain the original. See Diagnostics for each tile's selection reason.", MessageType.Info);
+                Property("m_SurfaceLodEnabled", "Enable baked surface HLOD");
                 using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("m_SurfaceLodEnabled").boolValue))
                 {
                     Property("m_SurfaceLodMinDistance", "LOD start distance (m)");

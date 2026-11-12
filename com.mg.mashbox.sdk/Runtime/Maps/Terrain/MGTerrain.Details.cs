@@ -777,6 +777,15 @@ namespace MashBoxSDK.Maps.TerrainSystem
             }
         }
 
+        /// <summary>Sets overall detail density without changing authored LOD or streaming settings.</summary>
+        public void SetDetailDensity(float density)
+        {
+            InitializeDetailSettingsIfNeeded();
+            density = Mathf.Clamp01(density);
+            if (Mathf.Approximately(m_OverallDetailDensity, density)) return;
+            m_OverallDetailDensity = density;
+            InvalidateRenderCache();
+        }
         /// <summary>Sets shadow casting for density details and refreshes cached batches.</summary>
         public void SetDenseDetailShadows(bool enabled)
         {

@@ -316,6 +316,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         internal static Texture2DArray LoadGeneratedArray(Material material, ArrayKind kind)
         {
             string materialPath = material != null ? AssetDatabase.GetAssetPath(material) : string.Empty;
+            if (string.IsNullOrEmpty(materialPath)) return null;
             string directory = Path.GetDirectoryName(materialPath)?.Replace('\\', '/');
             if (string.IsNullOrEmpty(directory))
                 return null;

@@ -64,10 +64,32 @@ namespace MashBoxSDK.MapTools
                 }
             }
         }
-        [MenuItem("Tools/MashBox/MG Terrain/Validation/Surface LOD")]
+        static readonly List<UnityEngine.Object> fixtures = new();
+        static void AssignFixture(MGTerrain terrain, object input, Array levels)
+        {
+            var asset = ScriptableObject.CreateInstance<MGTerrainSurfaceLodAsset>();
+            fixtures.Add(asset);
+            asset.Source = terrain.MeshFilter.sharedMesh;
+            asset.SourceVertexCount = asset.Source.vertexCount;
+            asset.Levels = new MGTerrainSurfaceLodAsset.Level[levels.Length];
+            var vertices = (Vector3[])Get(input,"vertices");
+            for (int i = 0; i < levels.Length; i++)
+            {
+                var level = levels.GetValue(i);
+                var indices = (int[])Get(level,"sourceIndices");
+                var mesh = new Mesh { vertices = indices.Select(j=>vertices[j]).ToArray() };
+                fixtures.Add(mesh);
+                var tris = (int[][])Get(level,"triangles"); mesh.subMeshCount = tris.Length;
+                for (int sub = 0; sub < tris.Length; sub++) mesh.SetTriangles(tris[sub],sub);
+                mesh.bounds = asset.Source.bounds;
+                asset.Levels[i] = new MGTerrainSurfaceLodAsset.Level { Mesh=mesh, Error=(float)Get(level,"error"), TriangleCount=(int)Get(level,"triangleCount") };
+            }
+            terrain.AssignBakedSurfaceLod(asset);
+        }
+        [MenuItem("Tools/MashBox/MG Terrain/Validation/Surface LOD %#F7")]
         public static void Run()
         {
-            string root=Path.Combine(Path.GetTempPath(),"mg-surface-lod"); Directory.CreateDirectory(root);
+            string root=Path.Combine(Directory.GetParent(Application.dataPath).FullName,"LocalDiagnostics","SurfaceHLOD"); Directory.CreateDirectory(root);
             var notes=new List<string>();
             var scene=EditorSceneManager.NewPreviewScene(); GameObject owner=null; Mesh mesh=null; Material materialA=null, materialB=null;
             try
@@ -84,8 +106,10 @@ namespace MashBoxSDK.MapTools
                 notes.Add("PASS: hole perimeter remains exact at every LOD.");
                 var split=Input(65); var all=((int[][])Get(split,"triangles"))[0]; Set(split,"triangles",new[]{all.Take(all.Length/2).ToArray(),all.Skip(all.Length/2).ToArray()}); ValidateTopology(split,Build(split));
                 notes.Add("PASS: material partition and mesh boundaries remain closed.");
-                var moved=Input(65); ((Vector3[])Get(moved,"vertices"))[20].x+=.1f; Check(Build(moved).Length==0,"Non-grid source must retain original geometry.");
-                notes.Add("PASS: arbitrary X/Z edits use original surface.");
+                var moved=Input(65); ((Vector3[])Get(moved,"vertices"))[20].x+=.1f; var repairedLevels=Build(moved); Check(repairedLevels.Length>0,"A local X/Z repair must not disable the entire tile.");
+                ValidateTopology(moved,repairedLevels);
+                foreach(var level in repairedLevels) Check(((int[])Get(level,"sourceIndices")).Contains(20),"Moved vertex must remain exact in every LOD.");
+                notes.Add("PASS: local X/Z repairs retain their original vertices and boundaries without blocking reduction elsewhere.");
                 var paint=Input(65); ((Color[])Get(paint,"colors"))[20*65+20]=Color.red;
                 foreach(var level in Build(paint)) Check(((int[])Get(level,"sourceIndices")).Contains(20*65+20),"Paint feature was removed.");
                 notes.Add("PASS: isolated vertex paint feature retained.");
@@ -95,12 +119,17 @@ namespace MashBoxSDK.MapTools
                 materialA=new Material(Shader.Find("Hidden/InternalErrorShader")); materialB=new Material(Shader.Find("Hidden/InternalErrorShader")); owner.GetComponent<MeshRenderer>().sharedMaterial=materialA;
                 var terrain=owner.AddComponent<MGTerrain>(); terrain.Configure(filter,owner.GetComponent<MeshRenderer>(),collider); terrain.ConfigureSurfaceGrid(65,65);
                 Set(terrain,"m_DrawInstances",false); owner.SetActive(true); terrain.RefreshSurfaceTiles();
-                Set(terrain,"m_SurfaceLodInput",input); foreach(var level in levels) Call(terrain,"UploadSurfaceLod",level);
+                AssignFixture(terrain,input,levels);
                 var camera=owner.AddComponent<Camera>(); camera.enabled=false; camera.pixelRect=new Rect(0,0,1920,1080);
                 camera.transform.position=new Vector3(32,100,-1500); camera.transform.LookAt(new Vector3(32,0,32));
                 // Camera shares the owner only in this synthetic preview; use a separate identity terrain transform.
                 var camGo=new GameObject("LOD test camera"); UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(camGo,scene); var testCamera=camGo.AddComponent<Camera>(); testCamera.enabled=false; testCamera.CopyFrom(camera); testCamera.transform.SetPositionAndRotation(camera.transform.position,camera.transform.rotation); owner.transform.SetPositionAndRotation(Vector3.zero,Quaternion.identity);
                 Call(terrain,"SelectSurfaceRendering",testCamera); Check(terrain.ActiveSurfaceLod>0,"Distant camera did not select LOD.");
+                Check(terrain.ActiveSurfaceRendererCount == 1, "Distant chunks must combine into one renderer.");
+                testCamera.cameraType = CameraType.SceneView;
+                Call(terrain,"SelectSurfaceRendering",testCamera);
+                Check(terrain.ActiveSurfaceLod>0, "Scene camera must select the baked HLOD.");
+                testCamera.cameraType = CameraType.Game;
                 Check(filter.sharedMesh==mesh && collider.sharedMesh==mesh,"LOD must never replace source/collision mesh.");
                 Set(terrain,"m_SurfaceLodPixelError",.25f); Call(terrain,"SelectSurfaceRendering",testCamera);
                 int flatLow = terrain.ActiveSurfaceLod;
@@ -119,7 +148,7 @@ namespace MashBoxSDK.MapTools
                 foreach(var lod in (IEnumerable)Get(terrain,"m_SurfaceLods")) Set(lod,"error",2f); testCamera.fieldOfView=90; Call(terrain,"SelectSurfaceRendering",testCamera); Check(terrain.ActiveSurfaceLod>0,"Wide view should permit bounded LOD."); testCamera.fieldOfView=10; Call(terrain,"SelectSurfaceRendering",testCamera); Check(terrain.ActiveSurfaceLod==0,"Zooming must restore detail when projected error grows.");
                 notes.Add("PASS: capture bypass and field-of-view changes respect the screen-space error limit.");
                 Call(terrain,"ReleaseSurfaceLods");
-                Set(terrain,"m_SurfaceLodInput",hills); foreach(var level in hillLevels) Call(terrain,"UploadSurfaceLod",level);
+                AssignFixture(terrain,hills,hillLevels);
                 float maximumError = (float)Get(hillLevels.GetValue(hillLevels.Length-1),"error");
                 Check(maximumError > .0001f, "Curved fixture must have nonzero simplification error.");
                 testCamera.orthographic = true; testCamera.orthographicSize = testCamera.pixelHeight * maximumError * .5f;
@@ -136,14 +165,14 @@ namespace MashBoxSDK.MapTools
                 Check(cachedMeshes.SequenceEqual(((IEnumerable)Get(terrain,"m_SurfaceLods")).Cast<object>().Select(l=>Get(l,"mesh"))), "Pixel-error changes rebuilt cached meshes.");
                 Set(terrain,"m_SurfaceLodPixelError",1.5f);
                 notes.Add("PASS: actual curved-grid LODs switch with pixel error; diagnostics agree without changing render state.");
-                testCamera.transform.position=new Vector3(32,100,-1500); Set(terrain,"m_DistantMorphTop",100f); Call(terrain,"SelectSurfaceRendering",testCamera); Check(terrain.ActiveSurfaceLod==0,"Shader-morphed terrain must retain safe original geometry.");
+                testCamera.transform.position=new Vector3(32,100,-1500); Set(terrain,"m_DistantMorphTop",100f); Call(terrain,"SelectSurfaceRendering",testCamera); Check(terrain.ActiveSurfaceLod>0,"Baked HLOD must remain available with distant morph.");
                 Set(terrain,"m_DistantMorphTop",float.NegativeInfinity); terrain.NotifySurfaceMeshChanged(); terrain.RefreshSurfaceTiles(); Check(terrain.CachedSurfaceLodCount==0,"Editing must invalidate all stale LODs.");
                 UnityEngine.Object.DestroyImmediate(camGo);
-                notes.Add("PASS: distance selection, camera reuse, source/collider identity, close-up fidelity, shader morph guard, edit invalidation.");
+                notes.Add("PASS: distance selection, camera reuse, source/collider identity, close-up fidelity, baked distant morph selection, edit invalidation.");
                 File.WriteAllLines(Path.Combine(root,"validation.txt"),notes); Debug.Log("MG Terrain Surface LOD validation passed.");
             }
             catch(Exception e) { notes.Add("FAIL: "+e); File.WriteAllLines(Path.Combine(root,"validation.txt"),notes); Debug.LogException(e); }
-            finally { if(owner!=null) UnityEngine.Object.DestroyImmediate(owner); if(mesh!=null) UnityEngine.Object.DestroyImmediate(mesh); if(materialA!=null) UnityEngine.Object.DestroyImmediate(materialA); if(materialB!=null) UnityEngine.Object.DestroyImmediate(materialB); EditorSceneManager.ClosePreviewScene(scene); }
+            finally { if(owner!=null) UnityEngine.Object.DestroyImmediate(owner); if(mesh!=null) UnityEngine.Object.DestroyImmediate(mesh); if(materialA!=null) UnityEngine.Object.DestroyImmediate(materialA); if(materialB!=null) UnityEngine.Object.DestroyImmediate(materialB); EditorSceneManager.ClosePreviewScene(scene); foreach(var fixture in fixtures) if(fixture!=null) UnityEngine.Object.DestroyImmediate(fixture); fixtures.Clear(); }
         }
     }
 }

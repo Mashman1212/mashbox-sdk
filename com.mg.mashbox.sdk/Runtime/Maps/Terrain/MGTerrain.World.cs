@@ -77,6 +77,8 @@ namespace MashBoxSDK.Maps.TerrainSystem
         {
             using var profile = s_WorldPrepareMarker.Auto();
             m_WorldPendingDraw = false;
+            // Surface shader/geometry LOD is independent of the editor detail visibility toggle.
+            PrepareSurfaceForCamera(camera);
             // Captures consume resident data, never the streaming or world budgets.
             if (camera != null && camera.cameraType == CameraType.Reflection)
             {
@@ -111,7 +113,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
                     m_WorldDetailsSleeping = true;
                 }
                 else if (!outside && canStream) m_WorldDetailsSleeping = false;
-                OnBeginCameraRendering(default, camera);
+                RenderInstances(camera);
                 // Streaming selection can reuse the previous view; it still participates in this frame's shared budget.
                 if (m_WorldDefersDraw && !m_WorldDetailsSleeping && canStream && m_DrawInstances
                     && (Application.isPlaying || m_DrawInstancesInEditMode)) m_WorldPendingDraw = true;

@@ -19,3 +19,7 @@ Logs/
 /com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/GrassLayerParameters/
 /com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/GrassShapes/
 /com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/GrassSubIdSize/
+
+# Local terrain investigation output belongs outside the SDK repository.
+/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/TerrainIsolation*/
+/com.mg.mashbox.sdk/Development~/MGTerrainImplementation~/TerrainShader*/

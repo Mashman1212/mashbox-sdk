@@ -31,14 +31,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
             var v = input.vertices;
             float dx = v[1].x - v[0].x, dz = v[w].z - v[0].z;
             if (dx <= 0 || dz <= 0) return Array.Empty<Level>();
-            float tolerance = Math.Max(dx, dz) * .0001f;
-            for (int z = 0; z < h; z++)
-                for (int x = 0; x < w; x++)
-                {
-                    var p = v[z * w + x];
-                    if (Math.Abs(p.x - (v[0].x + x * dx)) > tolerance || Math.Abs(p.z - (v[0].z + z * dz)) > tolerance)
-                        return Array.Empty<Level>(); // Sculpted X/Z or arbitrary meshes retain their original surface.
-                }
             var output = new List<Level>();
             int previousCount = 0;
             foreach (var indices in input.triangles) previousCount += indices.Length / 3;
@@ -68,6 +60,22 @@ namespace MashBoxSDK.Maps.TerrainSystem
             var cellMaterial = new int[cw * ch];
             var cellCount = new int[cw * ch];
             for (int i = 0; i < safe.Length; i++) { safe[i] = true; material[i] = -1; }
+            // A repaired/sculpted X/Z vertex protects only its incident blocks.
+            // Rejecting the entire tile for one sub-millimetre repair prevents any LOD.
+            // Include every block touching that vertex so all retained boundary edges
+            // still use the exact source positions, including moved seam vertices.
+            float gridDx = input.vertices[1].x - input.vertices[0].x;
+            float gridDz = input.vertices[w].z - input.vertices[0].z;
+            float tolerance = Math.Max(gridDx, gridDz) * .0001f;
+            for (int z = 0; z < h; z++) for (int x = 0; x < w; x++)
+            {
+                var p = input.vertices[z * w + x];
+                if (Math.Abs(p.x - (input.vertices[0].x + x * gridDx)) <= tolerance
+                    && Math.Abs(p.z - (input.vertices[0].z + z * gridDz)) <= tolerance) continue;
+                for (int cz = Math.Max(0,z-1); cz <= Math.Min(ch-1,z); cz++)
+                    for (int cx = Math.Max(0,x-1); cx <= Math.Min(cw-1,x); cx++)
+                        safe[(cz/stride)*nx+cx/stride] = false;
+            }
             // Only an intact, consistently wound, single-material grid quad may be replaced.
             for (int sub = 0; sub < input.triangles.Length; sub++)
             {

@@ -254,7 +254,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
         internal static void Track(Material material)
         {
-            if (material == null)
+            if (material == null || (material.hideFlags & HideFlags.DontSave) != 0)
                 return;
 
             if (SourceGuidByDependent.TryGetValue(material, out string previousSourceGuid))
@@ -325,7 +325,7 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
         internal static void QueueSynchronization(Material material)
         {
-            if (material == null || isSynchronizing)
+            if (material == null || isSynchronizing || (material.hideFlags & HideFlags.DontSave) != 0)
                 return;
 
             PendingMaterials.Add(material);
@@ -472,8 +472,28 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
         private int layerDragIndex = -1;
         private Vector2 layerDragStart;
         private static bool terrainLayerCacheBuilt;
-        private static int selectedControlTextureResolutionIndex = 2;
-        private static int selectedArrayTextureResolutionIndex = 2;
+        private const string ControlResolutionPreference = "MashBox.MGLitTrail.LastControlResolution";
+        private const string ArrayResolutionPreference = "MashBox.MGLitTrail.LastArrayResolution";
+        // Store pixel sizes rather than popup indices so reordering options is safe.
+        private static int selectedControlTextureResolutionIndex
+        {
+            get => GetPreferredResolutionIndex(ControlResolutionPreference);
+            set => SavePreferredResolution(ControlResolutionPreference, value);
+        }
+        private static int selectedArrayTextureResolutionIndex
+        {
+            get => GetPreferredResolutionIndex(ArrayResolutionPreference);
+            set => SavePreferredResolution(ArrayResolutionPreference, value);
+        }
+        private static int GetPreferredResolutionIndex(string key)
+        {
+            int index = System.Array.IndexOf(ControlTextureResolutions, EditorPrefs.GetInt(key, 1024));
+            return index >= 0 ? index : 2;
+        }
+        private static void SavePreferredResolution(string key, int index)
+        {
+            EditorPrefs.SetInt(key, ControlTextureResolutions[Mathf.Clamp(index, 0, ControlTextureResolutions.Length - 1)]);
+        }
         private static int selectedControlFillLayerId;
 
         private sealed class LayerDragData
@@ -509,16 +529,27 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
                     usesExternalArrays ? "Generate Trail Control Textures" : "Generate Trail Texture Assets",
                     EditorStyles.boldLabel);
                 EditorGUILayout.Space(3f);
+                EditorGUI.BeginChangeCheck();
                 controlResolutionIndex = EditorGUILayout.Popup(
                     new GUIContent("Control Resolution"),
                     controlResolutionIndex,
                     ControlTextureResolutionLabels);
+                if (EditorGUI.EndChangeCheck())
+                    selectedControlTextureResolutionIndex = controlResolutionIndex;
                 if (!usesExternalArrays)
                 {
+                    EditorGUI.BeginChangeCheck();
                     arrayResolutionIndex = EditorGUILayout.Popup(
                         new GUIContent("Array Resolution"),
                         arrayResolutionIndex,
                         ControlTextureResolutionLabels);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        selectedArrayTextureResolutionIndex = arrayResolutionIndex;
+                        Undo.RecordObject(material, "Change Trail Array Resolution");
+                        material.SetOverrideTag(ArrayResolutionTagName, ControlTextureResolutions[arrayResolutionIndex].ToString());
+                        EditorUtility.SetDirty(material);
+                    }
                 }
                 EditorGUILayout.HelpBox(
                     usesExternalArrays
@@ -592,6 +623,12 @@ namespace MashBoxSDK.Shaders.HDRP.Lit.Editor.EditorGui
 
         public override void ValidateMaterial(Material material)
         {
+            // Camera-local render caches must not enter asset authoring/synchronization.
+            if (material != null && (material.hideFlags & HideFlags.DontSave) != 0)
+            {
+                base.ValidateMaterial(material);
+                return;
+            }
             SetDepthOffsetDisabled(material);
             MGLitTrailLinkedMaterialSynchronizer.Track(material);
             MGLitTrailLinkedMaterialUtility.Synchronize(material);

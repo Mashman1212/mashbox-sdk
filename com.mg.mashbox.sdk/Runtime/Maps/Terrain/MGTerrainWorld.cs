@@ -25,9 +25,12 @@ namespace MashBoxSDK.Maps.TerrainSystem
         [SerializeField, Min(0f), Tooltip("Distance from the nearest point of a terrain tile at which its surface uses the original mesh instead of small render chunks. Preserves geometry and materials while reducing distant draw submissions. Zero keeps chunks at all distances.")]
         float m_SurfaceChunkDistance = 256f;
         public float SurfaceChunkDistance => Mathf.Max(0f, m_SurfaceChunkDistance);
+        [SerializeField, Min(0f), Tooltip("Distance from each render chunk at which MG Trail switches to its non-tessellated shader. Zero forces the non-tessellated shader. Near tessellation fades before this distance.")]
+        float m_SurfaceShaderDistance = 96f;
+        public float SurfaceShaderDistance => Mathf.Max(0f, m_SurfaceShaderDistance);
         [SerializeField, Tooltip("Simplify distant render surfaces while retaining original tile boundaries, grass sampling and collision.")]
         bool m_SurfaceLodEnabled = true;
-        [SerializeField, Range(.25f, 8f), Tooltip("Projected source-mesh height error allowed in pixels. Selects cached LODs beyond Start Distance. Flat tiles may use the same LOD at every value; shader-deformed tiles retain their original mesh.")] float m_SurfaceLodPixelError = 1.5f;
+        [SerializeField, Range(.25f, 8f), Tooltip("Projected source-mesh height error allowed in pixels. Selects explicitly baked HLOD meshes beyond Start Distance. Flat tiles may use the same LOD at every value. Re-bake after terrain geometry edits.")] float m_SurfaceLodPixelError = 1.5f;
         [SerializeField, Min(0f), Tooltip("Distance from the nearest point of each tile bounds, not its centre. Closer tiles always retain their original geometry. A 10% entry margin avoids flicker.")] float m_SurfaceLodMinDistance = 256f;
         public bool SurfaceLodEnabled => m_SurfaceLodEnabled;
         public float SurfaceLodPixelError => Mathf.Clamp(m_SurfaceLodPixelError, .25f, 8f);
