@@ -64,10 +64,23 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void OnTransformParentChanged() => RefreshWorldOwnership();
         internal long WorldSubmittedDetails => m_WorldPendingDraw ? m_LastSubmittedDensityDetailInstances : 0;
+        bool m_WorldDemandDirty = true;
+        long m_WorldRequestedDetails;
+        internal long WorldRequestedDetails
+        {
+            get
+            {
+                if (!m_WorldPendingDraw) return 0;
+                if (!m_WorldDemandDirty) return m_WorldRequestedDetails;
+                long count = 0;
+                foreach (var visible in m_VisibleDensityDetails)
+                    count += GetVisibleDensityDetailInstanceCount(visible);
+                m_WorldDemandDirty = false;
+                return m_WorldRequestedDetails = count;
+            }
+        }
         int GetBudgetedDetailInstanceCount(VisibleDensityDetail visible, float scale)
         {
-            if (UsesWorldBudget)
-                return GetVisibleDensityDetailInstanceCount(visible);
             return Mathf.FloorToInt(GetVisibleDensityDetailInstanceCount(visible) * scale);
         }
 

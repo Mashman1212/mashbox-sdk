@@ -1708,7 +1708,7 @@ namespace MashBoxSDK.Maps.TerrainSystem
 
         void DrawVisibleDensityDetails(Camera camera)
         {
-            if (m_WorldDefersDraw) { m_WorldPendingDraw = true; m_WorldDetailSubmissionRequired = true; return; }
+            if (m_WorldDefersDraw) { m_WorldPendingDraw = true; m_WorldDetailSubmissionRequired = true; m_WorldDemandDirty = true; return; }
             if (UsesWorldBudget && m_WorldDrawBudget == 0)
             {
                 ClearDensityDetailBrgVisibility();
@@ -1764,11 +1764,6 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 distantScale = distantAllocation / (float)Math.Max(1L, distantInstances);
             }
 
-            // Worlds retain selected populations without a view-dependent count quota.
-            if (UsesWorldBudget)
-            {
-                nearScale = distantScale = 1f;
-            }
 
             // Draw by stable LOD/distance priority, but share the remaining
             // budget proportionally between all middle/far cells. The old

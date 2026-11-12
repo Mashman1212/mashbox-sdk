@@ -88,6 +88,9 @@ namespace MashBoxSDK.MapTools
                 EditorGUILayout.LabelField("Foliage visibility", EditorStyles.boldLabel);
                 Property("m_DetailDistance", "Maximum detail distance (m)");
                 Property("m_UnloadMargin", "Unload margin (m)");
+                Property("m_MaxVisibleDetailInstances", "Maximum detail instances");
+                EditorGUILayout.LabelField("Zero is unlimited. Shared across tiles, before GPU culling.", EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField($"Selected / requested: {world.LastSubmittedDetailInstances:N0} / {world.LastRequestedDetailInstances:N0}");
                 EditorGUILayout.LabelField("A distance of zero uses each prototype's distance.", EditorStyles.wordWrappedMiniLabel);
             }
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))

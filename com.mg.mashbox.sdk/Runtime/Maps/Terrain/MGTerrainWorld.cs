@@ -102,9 +102,10 @@ namespace MashBoxSDK.Maps.TerrainSystem
         public IReadOnlyList<MGTerrain> Chunks => m_Chunks;
         public float DetailDistance => m_DetailDistance > 0f ? m_DetailDistance : float.PositiveInfinity;
         internal int CacheAllowance => Mathf.Max(1, m_CachedDetailCells / Mathf.Max(1, m_RenderChunks.Count));
-        // Compatibility for integrations querying the old cap. World populations
-        // are controlled by distance/density LOD and culling, never a count quota.
-        public int VisibleDetailBudget => int.MaxValue;
+        [SerializeField, Min(0), Tooltip("Maximum density-detail instances selected across this world per camera, before GPU culling. Zero is unlimited. Does not limit terrain geometry or resident memory.")]
+        int m_MaxVisibleDetailInstances = 500000;
+        public int VisibleDetailBudget => m_MaxVisibleDetailInstances > 0 ? m_MaxVisibleDetailInstances : int.MaxValue;
+        public long LastRequestedDetailInstances { get; private set; }
         public long LastSubmittedDetailInstances { get; private set; }
 
         // Runtime-only: existing authored maps keep their settings and enabled state.
@@ -264,10 +265,18 @@ namespace MashBoxSDK.Maps.TerrainSystem
                 // are world-wide: no per-tile/per-layer build cap changes their priority.
                 foreach (var tile in m_CellBuildTiles)
                     tile.PrepareWorldGrantedDetails(camera);
+                long remainingDemand = 0;
+                foreach (var chunk in m_RenderChunks) remainingDemand += chunk.WorldRequestedDetails;
+                LastRequestedDetailInstances = remainingDemand;
+                int remainingBudget = VisibleDetailBudget;
                 LastSubmittedDetailInstances = 0;
                 foreach (var chunk in m_RenderChunks)
                 {
-                    chunk.SubmitWorldDetails(camera, int.MaxValue);
+                    long demand = chunk.WorldRequestedDetails;
+                    int allocation = AllocateDetailBudget(demand, remainingDemand, remainingBudget);
+                    chunk.SubmitWorldDetails(camera, allocation);
+                    remainingDemand -= demand;
+                    remainingBudget -= allocation;
                     LastSubmittedDetailInstances += chunk.WorldSubmittedDetails;
                 }
             }
